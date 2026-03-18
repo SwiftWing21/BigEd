@@ -1,0 +1,9 @@
+commit	val_bpb	memory_gb	status	description
+f926148	1.127453	8.9	keep	baseline: ASPECT_RATIO=64 DEPTH=4
+a9901ae	1.110874	6.8	keep	increase DEPTH 4->6
+a9901ae	1.110155	6.9	keep	DEPTH=6 rerun (refined score)
+b5a977c	0.000000	0.0	crash	DEPTH=7 OOM (12GB GPU limit)
+9291721	1.127900	6.9	discard	MATRIX_LR 0.04->0.08 (worse)
+f237f58	1.114855	6.9	discard	WARMDOWN_RATIO 0.5->0.3 (worse)
+67136b4	1.165912	3.7	discard	DEVICE_BATCH_SIZE 32->16 (worse)
+aea8bee	1.106251	6.9	keep	WEIGHT_DECAY 0.2->0.05 + SCALAR_LR 0.5->0.85 (best)

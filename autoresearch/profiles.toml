@@ -1,0 +1,105 @@
+# Autoresearch Training Profiles
+# ─────────────────────────────────────────────────────────────────────────────
+# Hardware: RTX 3080 Ti (12GB VRAM), 32GB system RAM
+# VRAM safe cap: 10GB (stay under 12GB hard limit)
+#
+# active = which profile to use when running train_profile.py with no --profile arg
+
+active = "stable"
+
+# ─────────────────────────────────────────────────────────────────────────────
+# MICRO  — both Ollama and training share the GPU
+# Designed for: quick iteration, pipeline testing, running alongside Ollama
+# VRAM budget: <2GB for training (Ollama holds the rest ~7-9GB)
+# Model:  DEPTH=3, model_dim=256, HEAD_DIM=64 → ~3M params
+# ─────────────────────────────────────────────────────────────────────────────
+[profiles.micro]
+description      = "Pipeline testing — training <2GB, Ollama stays on GPU"
+
+# Ollama: keep on GPU alongside training
+ollama_mode      = "gpu"          # "gpu" | "cpu"
+
+# Model architecture
+DEPTH            = 3
+model_dim        = 256
+HEAD_DIM         = 64
+ASPECT_RATIO     = 64             # sequence_len = model_dim * ASPECT_RATIO / HEAD_DIM
+
+# Training hyperparameters (inherit from last known-good run)
+DEVICE_BATCH_SIZE  = 8
+TOTAL_BATCH_SIZE   = 65536
+MATRIX_LR          = 0.04
+SCALAR_LR          = 0.85
+WEIGHT_DECAY       = 0.05
+WARMDOWN_RATIO     = 0.5
+
+# Memory tuning
+gradient_checkpointing = false
+cpu_offload            = false
+vram_target_gb         = 1.8      # informational — used by launcher for OOM fallback
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# STABLE  — current proven sweet spot
+# Designed for: real research sessions, full model quality
+# VRAM budget: up to 70% = 8.4GB  (Ollama moves to CPU)
+# Model:  DEPTH=6, model_dim=384, HEAD_DIM=128 → ~26M params
+# ─────────────────────────────────────────────────────────────────────────────
+[profiles.stable]
+description      = "Full research — up to 70% VRAM, Ollama on CPU"
+
+ollama_mode      = "cpu"
+
+DEPTH            = 6
+model_dim        = 384
+HEAD_DIM         = 128
+ASPECT_RATIO     = 64
+
+DEVICE_BATCH_SIZE  = 32
+TOTAL_BATCH_SIZE   = 65536
+MATRIX_LR          = 0.04
+SCALAR_LR          = 0.85
+WEIGHT_DECAY       = 0.05
+WARMDOWN_RATIO     = 0.5
+
+gradient_checkpointing = false
+cpu_offload            = false
+vram_target_gb         = 8.4
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# FLAT_OUT  — maximum VRAM, system RAM overflow enabled
+# Designed for: pushing capacity limits, larger architecture experiments
+# VRAM budget: up to 95% = 11.4GB  (5% = ~0.6GB headroom for CUDA context/loading)
+# Ollama: CPU-only
+# System RAM: if model exceeds VRAM, optimizer states spill to 32GB system RAM
+# Model:  DEPTH=6, model_dim=512 → ~46M params  (~9-10GB VRAM)
+#   If that OOMs → falls back to DEPTH=6, model_dim=448 with gradient checkpointing
+# ─────────────────────────────────────────────────────────────────────────────
+[profiles.flat_out]
+description      = "Maximum VRAM — up to 95%, system RAM spillover enabled"
+
+ollama_mode      = "cpu"
+
+DEPTH            = 6
+model_dim        = 512
+HEAD_DIM         = 128
+ASPECT_RATIO     = 64
+
+DEVICE_BATCH_SIZE  = 32
+TOTAL_BATCH_SIZE   = 65536
+MATRIX_LR          = 0.04
+SCALAR_LR          = 0.85
+WEIGHT_DECAY       = 0.05
+WARMDOWN_RATIO     = 0.5
+
+# Memory extensions — enabled for flat_out
+gradient_checkpointing = true    # trades compute for ~30-40% VRAM reduction on activations
+cpu_offload            = true    # optimizer states (momentum buffers) go to CPU RAM
+                                 # 32GB system RAM can absorb full optimizer state easily
+                                 # ~2x slower per step, but unlocks larger models
+
+vram_target_gb  = 11.4
+# OOM fallback: if initial DEPTH/model_dim OOMs, launcher drops to:
+oom_fallback_depth     = 6
+oom_fallback_model_dim = 448
