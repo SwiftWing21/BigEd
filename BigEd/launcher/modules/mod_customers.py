@@ -54,6 +54,9 @@ class Module:
     def _db_conn(self):
         return self.app._db_conn()
 
+    def _db_query_bg(self, query_fn, callback):
+        self.app._db_query_bg(query_fn, callback)
+
     def build_tab(self, parent):
         parent.grid_columnconfigure(0, weight=1)
         parent.grid_rowconfigure(1, weight=1)
@@ -86,44 +89,47 @@ class Module:
         self.on_refresh()
 
     def on_refresh(self):
-        for w in self._rows:
-            w.destroy()
-        self._rows.clear()
+        def _fetch(con):
+            rows = con.execute(
+                "SELECT name, fleet_version, contact, notes, air_gapped, status, last_ping"
+                " FROM customers").fetchall()
+            return [dict(r) for r in rows]
 
-        con = self._db_conn()
-        rows = con.execute(
-            "SELECT name, fleet_version, contact, notes, air_gapped, status, last_ping"
-            " FROM customers").fetchall()
-        con.close()
-        records = [dict(r) for r in rows]
+        def _render(records):
+            for w in self._rows:
+                w.destroy()
+            self._rows.clear()
+            records = records or []
 
-        for i, rec in enumerate(records):
-            row = i + 1
-            bg = BG3 if i % 2 == 0 else BG2
-            st = rec.get("status", "Unknown")
-            airgap = rec.get("air_gapped", False)
+            for i, rec in enumerate(records):
+                row = i + 1
+                bg = BG3 if i % 2 == 0 else BG2
+                st = rec.get("status", "Unknown")
+                airgap = rec.get("air_gapped", False)
 
-            cols = [
-                (rec.get("name", "-"), TEXT, "w"),
-                (f"* {st}", self.STATUS_COLORS.get(st, DIM), "w"),
-                (rec.get("last_ping", "-"), DIM, "center"),
-                (rec.get("fleet_version", "-"), DIM, "center"),
-                ("Air-Gapped" if airgap else "Connected",
-                 ORANGE if airgap else GREEN, "center"),
-            ]
-            widgets = []
-            for col, (txt, color, anchor) in enumerate(cols):
-                lbl = ctk.CTkLabel(self._scroll, text=txt, font=FONT_SM,
-                                   text_color=color, anchor=anchor, fg_color=bg)
-                lbl.grid(row=row, column=col, padx=6, pady=2, sticky="ew")
-                widgets.append(lbl)
+                cols = [
+                    (rec.get("name", "-"), TEXT, "w"),
+                    (f"* {st}", self.STATUS_COLORS.get(st, DIM), "w"),
+                    (rec.get("last_ping", "-"), DIM, "center"),
+                    (rec.get("fleet_version", "-"), DIM, "center"),
+                    ("Air-Gapped" if airgap else "Connected",
+                     ORANGE if airgap else GREEN, "center"),
+                ]
+                widgets = []
+                for col, (txt, color, anchor) in enumerate(cols):
+                    lbl = ctk.CTkLabel(self._scroll, text=txt, font=FONT_SM,
+                                       text_color=color, anchor=anchor, fg_color=bg)
+                    lbl.grid(row=row, column=col, padx=6, pady=2, sticky="ew")
+                    widgets.append(lbl)
 
-            btn = ctk.CTkButton(self._scroll, text="Edit", font=FONT_SM,
-                                width=28, height=22, fg_color=bg, hover_color=BG3,
-                                command=lambda r=rec: self._edit_dialog(r))
-            btn.grid(row=row, column=5, padx=4, pady=2)
-            widgets.append(btn)
-            self._rows.extend(widgets)
+                btn = ctk.CTkButton(self._scroll, text="Edit", font=FONT_SM,
+                                    width=28, height=22, fg_color=bg, hover_color=BG3,
+                                    command=lambda r=rec: self._edit_dialog(r))
+                btn.grid(row=row, column=5, padx=4, pady=2)
+                widgets.append(btn)
+                self._rows.extend(widgets)
+
+        self._db_query_bg(_fetch, _render)
 
     def on_close(self):
         pass

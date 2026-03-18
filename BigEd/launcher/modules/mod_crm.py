@@ -75,6 +75,9 @@ class Module:
     def _db_conn(self):
         return self.app._db_conn()
 
+    def _db_query_bg(self, query_fn, callback):
+        self.app._db_query_bg(query_fn, callback)
+
     def build_tab(self, parent):
         parent.grid_columnconfigure(0, weight=1)
         parent.grid_rowconfigure(1, weight=1)
@@ -115,40 +118,44 @@ class Module:
         self.on_refresh()
 
     def on_refresh(self):
-        for w in self._rows:
-            w.destroy()
-        self._rows.clear()
-
         query = self._search_var.get().lower() if self._search_var else ""
-        con = self._db_conn()
-        rows = con.execute(
-            "SELECT company, industry, contact, email, phone, stage, notes FROM crm").fetchall()
-        con.close()
-        records = [dict(r) for r in rows]
 
-        displayed = 0
-        for rec in records:
-            if query and not any(query in str(v).lower() for v in rec.values()):
-                continue
-            row = displayed + 1
-            bg = BG3 if displayed % 2 == 0 else BG2
-            displayed += 1
-            for col, (key, anchor) in enumerate([
-                ("company", "w"), ("industry", "w"),
-                ("contact", "w"), ("stage", "center"),
-            ]):
-                txt = rec.get(key, "-")
-                color = self.STAGE_COLORS.get(txt, DIM) if key == "stage" else TEXT
-                lbl = ctk.CTkLabel(self._scroll, text=txt, font=FONT_SM,
-                                   text_color=color, anchor=anchor, fg_color=bg)
-                lbl.grid(row=row, column=col, padx=6, pady=2, sticky="ew")
-                self._rows.append(lbl)
+        def _fetch(con):
+            rows = con.execute(
+                "SELECT company, industry, contact, email, phone, stage, notes FROM crm").fetchall()
+            return [dict(r) for r in rows]
 
-            btn = ctk.CTkButton(self._scroll, text="Edit", font=FONT_SM,
-                                width=28, height=22, fg_color=bg, hover_color=BG3,
-                                command=lambda r=rec: self._edit_dialog(r))
-            btn.grid(row=row, column=4, padx=4, pady=2)
-            self._rows.append(btn)
+        def _render(records):
+            for w in self._rows:
+                w.destroy()
+            self._rows.clear()
+            records = records or []
+
+            displayed = 0
+            for rec in records:
+                if query and not any(query in str(v).lower() for v in rec.values()):
+                    continue
+                row = displayed + 1
+                bg = BG3 if displayed % 2 == 0 else BG2
+                displayed += 1
+                for col, (key, anchor) in enumerate([
+                    ("company", "w"), ("industry", "w"),
+                    ("contact", "w"), ("stage", "center"),
+                ]):
+                    txt = rec.get(key, "-")
+                    color = self.STAGE_COLORS.get(txt, DIM) if key == "stage" else TEXT
+                    lbl = ctk.CTkLabel(self._scroll, text=txt, font=FONT_SM,
+                                       text_color=color, anchor=anchor, fg_color=bg)
+                    lbl.grid(row=row, column=col, padx=6, pady=2, sticky="ew")
+                    self._rows.append(lbl)
+
+                btn = ctk.CTkButton(self._scroll, text="Edit", font=FONT_SM,
+                                    width=28, height=22, fg_color=bg, hover_color=BG3,
+                                    command=lambda r=rec: self._edit_dialog(r))
+                btn.grid(row=row, column=4, padx=4, pady=2)
+                self._rows.append(btn)
+
+        self._db_query_bg(_fetch, _render)
 
     def on_close(self):
         pass

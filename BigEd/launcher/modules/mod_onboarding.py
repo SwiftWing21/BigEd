@@ -56,6 +56,9 @@ class Module:
     def _db_conn(self):
         return self.app._db_conn()
 
+    def _db_query_bg(self, query_fn, callback):
+        self.app._db_query_bg(query_fn, callback)
+
     def build_tab(self, parent):
         parent.grid_columnconfigure(1, weight=1)
         parent.grid_rowconfigure(1, weight=1)
@@ -99,23 +102,31 @@ class Module:
         self.on_refresh()
 
     def on_refresh(self):
-        for w in self._rows:
-            w.destroy()
-        self._rows.clear()
-
         customer = self._customer_var.get() if self._customer_var else ""
-        con = self._db_conn()
-        rows = con.execute(
-            "SELECT category, step, done FROM onboarding WHERE customer=? ORDER BY id",
-            (customer,)).fetchall()
-        con.close()
-        steps = {}
-        for cat, step, done in rows:
-            steps.setdefault(cat, {})[step] = bool(done)
-        if not steps:
-            steps = {cat: {s: False for s in items}
-                     for cat, items in self._DEFAULT_STEPS}
 
+        def _fetch(con):
+            rows = con.execute(
+                "SELECT category, step, done FROM onboarding WHERE customer=? ORDER BY id",
+                (customer,)).fetchall()
+            steps = {}
+            for cat, step, done in rows:
+                steps.setdefault(cat, {})[step] = bool(done)
+            return steps
+
+        def _render(steps):
+            for w in self._rows:
+                w.destroy()
+            self._rows.clear()
+
+            if not steps:
+                steps = {cat: {s: False for s in items}
+                         for cat, items in self._DEFAULT_STEPS}
+
+            self._render_steps(steps, customer)
+
+        self._db_query_bg(_fetch, _render)
+
+    def _render_steps(self, steps, customer):
         row = 0
         total = done_count = 0
         for cat, items in steps.items():

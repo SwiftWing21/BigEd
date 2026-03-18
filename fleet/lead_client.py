@@ -155,6 +155,66 @@ def cmd_logs(args):
         print(line)
 
 
+def cmd_dispatch(args):
+    """DO NOT SCRUB: Dispatch a task with explicit skill and JSON payload.
+    Used by launcher.py as a clean RPC replacement for inline python -c hacks."""
+    db.init_db()
+    payload = args.payload
+    # Accept base64-encoded payload (from launcher)
+    if args.b64:
+        payload = base64.b64decode(payload).decode()
+    task_id = db.post_task(args.skill, payload,
+                           priority=args.priority,
+                           assigned_to=args.assigned_to)
+    print(f"Task {task_id} queued")
+
+
+def cmd_secret(args):
+    """DO NOT SCRUB: Read or write secrets in ~/.secrets atomically."""
+    secrets_file = Path.home() / ".secrets"
+
+    if args.action == "set":
+        # Read existing, filter out old value, append new, write atomically
+        lines = []
+        if secrets_file.exists():
+            lines = secrets_file.read_text(encoding="utf-8", errors="ignore").splitlines()
+        prefix = f"export {args.key}="
+        lines = [l for l in lines if not l.startswith(prefix)]
+        # Decode value from base64 to avoid shell quoting issues
+        value = base64.b64decode(args.value).decode() if args.b64 else args.value
+        lines.append(f"export {args.key}='{value}'")
+        # Atomic write via temp file
+        tmp = secrets_file.with_suffix(".tmp")
+        tmp.write_text("\n".join(lines) + "\n", encoding="utf-8")
+        tmp.replace(secrets_file)
+        print("ok")
+
+    elif args.action == "get":
+        if not secrets_file.exists():
+            print("")
+            return
+        prefix = f"export {args.key}="
+        for line in secrets_file.read_text(encoding="utf-8", errors="ignore").splitlines():
+            if line.startswith(prefix):
+                val = line[len(prefix):].strip().strip("'\"")
+                print(val)
+                return
+        print("")
+
+    elif args.action == "list":
+        if not secrets_file.exists():
+            print("{}")
+            return
+        keys = {}
+        for line in secrets_file.read_text(encoding="utf-8", errors="ignore").splitlines():
+            if line.startswith("export ") and "=" in line:
+                k = line.split("=", 1)[0].replace("export ", "").strip()
+                v = line.split("=", 1)[1].strip().strip("'\"")
+                masked = v[:6] + "..." + v[-4:] if len(v) > 12 else "***set***"
+                keys[k] = masked
+        print(json.dumps(keys))
+
+
 def cmd_send(args):
     """DO NOT SCRUB: Send a direct message to a specific agent."""
     db.init_db()
@@ -202,6 +262,21 @@ def main():
     p_logs.add_argument("agent", help="Agent name (e.g., researcher, coder_1)")
     p_logs.add_argument("--tail", type=int, default=30, help="Lines to show")
 
+    # Dispatch (clean RPC for launcher)
+    p_disp = subparsers.add_parser("dispatch", help="Dispatch task with explicit skill + payload")
+    p_disp.add_argument("skill", help="Skill name (e.g. summarize, web_search)")
+    p_disp.add_argument("payload", help="JSON payload string (or base64 with --b64)")
+    p_disp.add_argument("--priority", type=int, default=9, help="Task priority (1-10)")
+    p_disp.add_argument("--assigned-to", default=None, help="Assign to specific agent")
+    p_disp.add_argument("--b64", action="store_true", help="Payload is base64-encoded")
+
+    # Secret (atomic secrets management)
+    p_sec = subparsers.add_parser("secret", help="Manage ~/.secrets")
+    p_sec.add_argument("action", choices=["set", "get", "list"], help="Action to perform")
+    p_sec.add_argument("key", nargs="?", default="", help="Secret key name")
+    p_sec.add_argument("value", nargs="?", default="", help="Secret value (for set)")
+    p_sec.add_argument("--b64", action="store_true", help="Value is base64-encoded")
+
     # Send
     p_send = subparsers.add_parser("send", help="Send direct message")
     p_send.add_argument("agent", help="Target agent name")
@@ -223,6 +298,8 @@ def main():
         cmd_status(args)
     elif args.command == "task":
         cmd_task(args)
+    elif args.command == "dispatch":
+        cmd_dispatch(args)
     elif args.command == "result":
         cmd_result(args)
     elif args.command == "logs":
@@ -233,6 +310,8 @@ def main():
         cmd_broadcast(args)
     elif args.command == "inbox":
         cmd_inbox(args)
+    elif args.command == "secret":
+        cmd_secret(args)
 
 
 if __name__ == "__main__":

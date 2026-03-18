@@ -294,11 +294,18 @@ No hardcoded absolute paths exist in the codebase.
 
 ### Known Technical Debt
 
-See `TECH_DEBT.md` for tracked items. Key open items as of v0.30:
-- WSL RPC mechanisms (brittle `python -c` dispatch) — High
-- Flat task queue (no DAG/dependencies) — Medium
-- Bash-based secrets management — Medium
-- Main thread DB blocking — Low
+See `TECH_DEBT.md` for full tracking. As of v0.30:
+
+**Resolved:**
+- WSL RPC — all `python -c` hacks replaced with `lead_client.py dispatch` CLI
+- Secrets management — atomic Python writes via `lead_client.py secret` (no more bash grep/echo)
+- Main thread DB blocking — `_db_query_bg()` pattern for all refresh methods
+- Hardcoded paths — dynamic `_find_fleet_dir()` with env var override
+- Monolith — 6 modules extracted, launcher reduced from 5,800 to 3,500 lines
+
+**Open:**
+- Flat task queue (no DAG/dependencies) — Medium, planned for v0.31
+- Unvalidated skill outputs — Medium
 
 ## 9. Deployment
 

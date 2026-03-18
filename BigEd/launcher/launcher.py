@@ -1020,48 +1020,52 @@ class BigEdCC(ctk.CTk):
         self._agents_tab_refresh()
 
     def _agents_tab_refresh(self):
-        for w in self._agents_rows:
-            w.destroy()
-        self._agents_rows.clear()
-
         status = parse_status()
         agents = status.get("agents", [])
-        con = self._db_conn()
-        rows = con.execute("SELECT name, role, type, customer, notes FROM agents").fetchall()
-        con.close()
-        stored = [dict(r) for r in rows]
-        # Merge fleet DB agents + stored custom instances
-        seen = {a["name"] for a in agents}
-        all_agents = list(agents) + [a for a in stored if a["name"] not in seen]
 
-        for i, ag in enumerate(all_agents):
-            row = i + 1
-            bg = BG3 if i % 2 == 0 else BG2
-            name = ag.get("name", "—")
-            role = ag.get("role", "—")
-            ag_type = ag.get("type", "Internal")
-            st = ag.get("status", "—")
-            st_color = GREEN if st == "IDLE" else ORANGE if st == "BUSY" else RED
+        def _fetch(con):
+            rows = con.execute("SELECT name, role, type, customer, notes FROM agents").fetchall()
+            return [dict(r) for r in rows]
 
-            widgets = []
-            for col, (txt, anchor, color) in enumerate([
-                (name, "w", TEXT),
-                (role, "w", DIM),
-                (ag_type, "center", GOLD if ag_type != "Internal" else DIM),
-                (st, "center", st_color),
-            ]):
-                lbl = ctk.CTkLabel(self._agents_scroll, text=txt, font=FONT_SM,
-                                   text_color=color, anchor=anchor, fg_color=bg)
-                lbl.grid(row=row, column=col, padx=6, pady=2, sticky="ew")
-                widgets.append(lbl)
+        def _render(stored):
+            for w in self._agents_rows:
+                w.destroy()
+            self._agents_rows.clear()
 
-            edit_btn = ctk.CTkButton(
-                self._agents_scroll, text="✎", font=FONT_SM,
-                width=28, height=22, fg_color=bg, hover_color=BG3,
-                command=lambda a=ag: self._agents_edit_dialog(a))
-            edit_btn.grid(row=row, column=4, padx=4, pady=2)
-            widgets.append(edit_btn)
-            self._agents_rows.extend(widgets)
+            stored = stored or []
+            seen = {a["name"] for a in agents}
+            all_agents = list(agents) + [a for a in stored if a["name"] not in seen]
+
+            for i, ag in enumerate(all_agents):
+                row = i + 1
+                bg = BG3 if i % 2 == 0 else BG2
+                name = ag.get("name", "—")
+                role = ag.get("role", "—")
+                ag_type = ag.get("type", "Internal")
+                st = ag.get("status", "—")
+                st_color = GREEN if st == "IDLE" else ORANGE if st == "BUSY" else RED
+
+                widgets = []
+                for col, (txt, anchor, color) in enumerate([
+                    (name, "w", TEXT),
+                    (role, "w", DIM),
+                    (ag_type, "center", GOLD if ag_type != "Internal" else DIM),
+                    (st, "center", st_color),
+                ]):
+                    lbl = ctk.CTkLabel(self._agents_scroll, text=txt, font=FONT_SM,
+                                       text_color=color, anchor=anchor, fg_color=bg)
+                    lbl.grid(row=row, column=col, padx=6, pady=2, sticky="ew")
+                    widgets.append(lbl)
+
+                edit_btn = ctk.CTkButton(
+                    self._agents_scroll, text="✎", font=FONT_SM,
+                    width=28, height=22, fg_color=bg, hover_color=BG3,
+                    command=lambda a=ag: self._agents_edit_dialog(a))
+                edit_btn.grid(row=row, column=4, padx=4, pady=2)
+                widgets.append(edit_btn)
+                self._agents_rows.extend(widgets)
+
+        self._db_query_bg(_fetch, _render)
 
     def _agents_add_dialog(self):
         self._agents_edit_dialog({})
@@ -1116,6 +1120,20 @@ class BigEdCC(ctk.CTk):
         con = sqlite3.connect(str(DB_PATH))
         con.row_factory = sqlite3.Row
         return con
+
+    def _db_query_bg(self, query_fn, callback):
+        """Run query_fn(conn) in a background thread, call callback(results) on UI thread.
+        query_fn receives a sqlite3.Connection and should return serializable data.
+        callback receives the return value of query_fn (or None on error)."""
+        def _run():
+            try:
+                con = self._db_conn()
+                result = query_fn(con)
+                con.close()
+            except Exception:
+                result = None
+            self.after(0, lambda: callback(result))
+        threading.Thread(target=_run, daemon=True).start()
 
     def _db_init(self):
         con = self._db_conn()
@@ -1957,17 +1975,9 @@ class BigEdCC(ctk.CTk):
         if msg:
             self._log_output(msg)
         safe_skill = _shell_safe(skill)
-        safe_assign = f", assigned_to='{_shell_safe(assigned_to)}'" if assigned_to else ""
-        # Base64-encode the payload to avoid all shell/quote escaping issues.
-        # base64 output is [A-Za-z0-9+/=] — safe in any shell context.
         b64 = base64.b64encode(payload_json.encode()).decode()
-        cmd = (
-            f"~/.local/bin/uv run python -c \""
-            f"import sys,base64; sys.path.insert(0,'.'); import db; db.init_db(); "
-            f"p=base64.b64decode('{b64}').decode(); "
-            f"tid=db.post_task('{safe_skill}',p,priority=9{safe_assign}); "
-            f"print('Task',tid,'queued')\""
-        )
+        assign_flag = f" --assigned-to {_shell_safe(assigned_to)}" if assigned_to else ""
+        cmd = f"~/.local/bin/uv run python lead_client.py dispatch {safe_skill} {b64} --b64 --priority 9{assign_flag}"
         wsl_bg(cmd, lambda o, e: self.after(0, lambda: self._log_output(o or e)))
 
     def _log_output(self, text: str):
@@ -3713,12 +3723,9 @@ class KeyManagerDialog(ctk.CTkToplevel):
         if not value or not value.strip():
             return
         value = value.strip()
-        # Write via WSL — sanitize key_name to prevent shell injection
         safe_name = _shell_safe(key_name)
-        escaped = value.replace("'", "'\\''")
-        cmd = (f"grep -v '^export {safe_name}=' ~/.secrets > /tmp/_s_tmp && "
-               f"echo \"export {safe_name}='{escaped}'\" >> /tmp/_s_tmp && "
-               f"mv /tmp/_s_tmp ~/.secrets && echo ok")
+        b64_val = base64.b64encode(value.encode()).decode()
+        cmd = f"~/.local/bin/uv run python lead_client.py secret set {safe_name} {b64_val} --b64"
         def _on_key_saved(o, e):
             self.after(0, lambda: (
                 self._scan_lbl.configure(
@@ -3737,11 +3744,9 @@ class KeyManagerDialog(ctk.CTkToplevel):
         name = _shell_safe(name.strip().upper())
         # Trigger inference via fleet
         self._scan_lbl.configure(text=f"Inferring {name}...", text_color=ORANGE)
-        cmd = (f"~/.local/bin/uv run python -c \""
-               f"import sys,json; sys.path.insert(0,'.'); import db; db.init_db(); "
-               f"tid=db.post_task('key_manager',"
-               f"json.dumps({{\\\"action\\\":\\\"infer\\\",\\\"key_name\\\":\\\"{name}\\\"}})"
-               f",priority=9); print('Task',tid,'queued')\"")
+        payload = json.dumps({"action": "infer", "key_name": name})
+        b64 = base64.b64encode(payload.encode()).decode()
+        cmd = f"~/.local/bin/uv run python lead_client.py dispatch key_manager {b64} --b64 --priority 9"
         wsl_bg(cmd, lambda o, e: self.after(0, lambda: self._scan_lbl.configure(
             text=f"Inference queued → check reports/key_scan.md", text_color=DIM)))
         # Still open edit dialog
@@ -3749,11 +3754,9 @@ class KeyManagerDialog(ctk.CTkToplevel):
 
     def _scan_skills(self):
         self._scan_lbl.configure(text="Scanning...", text_color=ORANGE)
-        cmd = (f"~/.local/bin/uv run python -c \""
-               f"import sys,json; sys.path.insert(0,'.'); import db; db.init_db(); "
-               f"tid=db.post_task('key_manager',"
-               f"json.dumps({{\\\"action\\\":\\\"scan\\\"}})"
-               f",priority=9); print('Task',tid,'queued')\"")
+        payload = json.dumps({"action": "scan"})
+        b64 = base64.b64encode(payload.encode()).decode()
+        cmd = f"~/.local/bin/uv run python lead_client.py dispatch key_manager {b64} --b64 --priority 9"
         wsl_bg(cmd, lambda o, e: self.after(0, lambda: self._scan_lbl.configure(
             text="Scan queued → knowledge/reports/key_scan.md", text_color=GREEN)))
 
@@ -4036,12 +4039,9 @@ Keep responses concise. Lead with the most important insight or action.
                 return
             self._api_key = key
             if save_var.get():
-                b64_key = base64.b64encode(key.encode()).decode()
+                b64_val = base64.b64encode(key.encode()).decode()
                 wsl_bg(
-                    f"KEY=$(echo {b64_key} | base64 -d) && "
-                    f"grep -v '^export {env_name}=' ~/.secrets > /tmp/_s_tmp 2>/dev/null; "
-                    f"echo \"export {env_name}=$KEY\" >> /tmp/_s_tmp && "
-                    f"mv /tmp/_s_tmp ~/.secrets",
+                    f"~/.local/bin/uv run python lead_client.py secret set {env_name} {b64_val} --b64",
                     lambda o, e: None,
                 )
             if hasattr(self, '_init_model'):
@@ -4236,11 +4236,7 @@ Keep responses concise. Lead with the most important insight or action.
     def _execute_dispatch(self, skill: str, payload: dict):
         safe_skill = _shell_safe(skill)
         b64 = base64.b64encode(json.dumps(payload).encode()).decode()
-        cmd = (f"~/.local/bin/uv run python -c \""
-               f"import sys,base64; sys.path.insert(0,'.'); import db; db.init_db(); "
-               f"p=base64.b64decode('{b64}').decode(); "
-               f"tid=db.post_task('{safe_skill}',p,priority=10); "
-               f"print('Dispatched',tid)\"")
+        cmd = f"~/.local/bin/uv run python lead_client.py dispatch {safe_skill} {b64} --b64 --priority 10"
 
         def _on_dispatch(o, e):
             tid_str = o.split()[-1] if o else "?"
@@ -4259,30 +4255,21 @@ Keep responses concise. Lead with the most important insight or action.
     def _poll_task_result(self, task_id: int, skill: str, timeout: int = 60):
         """Poll DB for task completion and show result in chat."""
         deadline = time.time() + timeout
-        cmd_tpl = (
-            "~/.local/bin/uv run python -c \""
-            "import sys,json; sys.path.insert(0,'.'); import db; db.init_db(); "
-            "r=db.get_task_result({tid}); "
-            "print(json.dumps({{'status':r['status'],'result':r.get('result_json',''),"
-            "'error':r.get('error','')}})) if r else print('null')\"")
+        cmd = f"~/.local/bin/uv run python lead_client.py result {task_id}"
         while time.time() < deadline:
             time.sleep(2)
             try:
-                result = subprocess.run(
-                    ["wsl", "-e", "bash", "-lc",
-                     f"cd ~/Projects/Education/fleet && {cmd_tpl.format(tid=task_id)}"],
-                    capture_output=True, text=True, timeout=5)
-                if result.stdout.strip() and result.stdout.strip() != "null":
-                    data = json.loads(result.stdout.strip())
-                    if data["status"] == "DONE":
-                        brief = (data.get("result", "") or "")[:300]
+                out, err = wsl(cmd, capture=True, timeout=5)
+                if out and "Status:" in out:
+                    if "Status: DONE" in out:
+                        brief = out[:300]
                         self.after(0, lambda b=brief: self._append(
                             "system", f"Task {task_id} ({skill}) completed:\n{b}"))
                         return
-                    elif data["status"] == "FAILED":
-                        err = (data.get("error", "") or "")[:200]
-                        self.after(0, lambda e=err: self._append(
-                            "system", f"Task {task_id} ({skill}) failed: {e}"))
+                    elif "Status: FAILED" in out:
+                        brief = out[:200]
+                        self.after(0, lambda b=brief: self._append(
+                            "system", f"Task {task_id} ({skill}) failed: {b}"))
                         return
             except Exception:
                 pass
