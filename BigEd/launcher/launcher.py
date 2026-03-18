@@ -732,7 +732,7 @@ class BigEdCC(ctk.CTk):
         tabs.grid(row=1, column=1, sticky="nsew", padx=0, pady=0)
 
         for name in ("Command Center", "Agents", "CRM",
-                     "Onboarding", "Customers", "Accounts", "Outputs"):
+                     "Onboarding", "Customers", "Accounts", "Ingestion", "Outputs"):
             tabs.add(name)
 
         self._build_tab_cc(tabs.tab("Command Center"))
@@ -741,6 +741,7 @@ class BigEdCC(ctk.CTk):
         self._build_tab_onboarding(tabs.tab("Onboarding"))
         self._build_tab_customers(tabs.tab("Customers"))
         self._build_tab_accounts(tabs.tab("Accounts"))
+        self._build_tab_ingest(tabs.tab("Ingestion"))
         self._build_tab_outputs(tabs.tab("Outputs"))
         tabs.set("Command Center")
 
@@ -1834,6 +1835,313 @@ class BigEdCC(ctk.CTk):
                     " VALUES (?,?,?,?,?)", s)
         con.commit()
         con.close()
+
+    # ── Tab: Ingestion ───────────────────────────────────────────────────────
+    def _build_tab_ingest(self, parent):
+        """File import browser — pick files from configured path, ingest into RAG."""
+        parent.grid_columnconfigure(0, weight=1)
+        parent.grid_rowconfigure(1, weight=1)
+
+        # Header bar
+        hdr = ctk.CTkFrame(parent, fg_color="transparent")
+        hdr.grid(row=0, column=0, sticky="ew", pady=(4, 6))
+        hdr.grid_columnconfigure(2, weight=1)
+
+        ctk.CTkLabel(hdr, text="Source:", font=FONT_SM,
+                     text_color=DIM).grid(row=0, column=0, padx=(0, 6))
+
+        default_downloads = str(Path.home() / "Downloads")
+        ingest_path = _load_settings().get("ingest_path", default_downloads)
+        self._ingest_source_var = ctk.StringVar(value=ingest_path)
+        ctk.CTkOptionMenu(
+            hdr, values=["Downloads", "Custom..."],
+            font=FONT_SM, fg_color=BG3, button_color=ACCENT,
+            button_hover_color=ACCENT_H, height=26, width=120,
+            command=self._ingest_source_change,
+        ).grid(row=0, column=1, sticky="w")
+
+        self._ingest_path_label = ctk.CTkLabel(
+            hdr, text=ingest_path, font=("Consolas", 9), text_color=DIM, anchor="w")
+        self._ingest_path_label.grid(row=0, column=2, padx=(8, 0), sticky="w")
+
+        ctk.CTkButton(hdr, text="↻ Refresh", font=FONT_SM, height=26, width=80,
+                      fg_color=BG3, hover_color=BG,
+                      command=self._ingest_refresh_files
+                      ).grid(row=0, column=3, padx=(8, 0), sticky="e")
+
+        # Content: file list (left) + info/actions (right)
+        content = ctk.CTkFrame(parent, fg_color=BG)
+        content.grid(row=1, column=0, sticky="nsew")
+        content.grid_columnconfigure(0, weight=2)
+        content.grid_columnconfigure(1, weight=3)
+        content.grid_rowconfigure(0, weight=1)
+
+        # File list with checkboxes
+        left = ctk.CTkFrame(content, fg_color=BG2, corner_radius=4)
+        left.grid(row=0, column=0, sticky="nsew", padx=(0, 4))
+        left.grid_columnconfigure(0, weight=1)
+        left.grid_rowconfigure(1, weight=1)
+
+        # Select all / none bar
+        sel_bar = ctk.CTkFrame(left, fg_color=BG3, corner_radius=0)
+        sel_bar.grid(row=0, column=0, sticky="ew")
+        ctk.CTkButton(sel_bar, text="Select All", font=("Segoe UI", 9),
+                      width=70, height=22, fg_color="transparent", hover_color=BG2,
+                      text_color=DIM, command=self._ingest_select_all
+                      ).pack(side="left", padx=4, pady=2)
+        ctk.CTkButton(sel_bar, text="Select None", font=("Segoe UI", 9),
+                      width=75, height=22, fg_color="transparent", hover_color=BG2,
+                      text_color=DIM, command=self._ingest_select_none
+                      ).pack(side="left", padx=0, pady=2)
+        self._ingest_count_lbl = ctk.CTkLabel(
+            sel_bar, text="", font=("Segoe UI", 9), text_color=DIM)
+        self._ingest_count_lbl.pack(side="right", padx=8)
+
+        self._ingest_file_list = ctk.CTkScrollableFrame(
+            left, fg_color=BG2, corner_radius=0)
+        self._ingest_file_list.grid(row=1, column=0, sticky="nsew")
+        self._ingest_file_list.grid_columnconfigure(0, weight=1)
+
+        self._ingest_checks = []  # list of (BooleanVar, Path)
+        self._ingest_widgets = []
+
+        # Right panel: info + ingest button
+        right = ctk.CTkFrame(content, fg_color=BG2, corner_radius=4)
+        right.grid(row=0, column=1, sticky="nsew")
+        right.grid_columnconfigure(0, weight=1)
+
+        # Tag field
+        tag_frame = ctk.CTkFrame(right, fg_color="transparent")
+        tag_frame.pack(fill="x", padx=12, pady=(12, 4))
+        ctk.CTkLabel(tag_frame, text="Import tag:", font=FONT_SM,
+                     text_color=TEXT).pack(side="left")
+        self._ingest_tag_var = ctk.StringVar(value="import")
+        ctk.CTkEntry(tag_frame, textvariable=self._ingest_tag_var,
+                     font=FONT_SM, fg_color=BG, border_color="#444",
+                     text_color=TEXT, height=28, width=160
+                     ).pack(side="left", padx=(6, 0))
+
+        # Max file size
+        max_frame = ctk.CTkFrame(right, fg_color="transparent")
+        max_frame.pack(fill="x", padx=12, pady=4)
+        ctk.CTkLabel(max_frame, text="Max file size (MB):", font=FONT_SM,
+                     text_color=TEXT).pack(side="left")
+        self._ingest_maxmb_var = ctk.StringVar(value="50")
+        ctk.CTkEntry(max_frame, textvariable=self._ingest_maxmb_var,
+                     font=FONT_SM, fg_color=BG, border_color="#444",
+                     text_color=TEXT, height=28, width=60
+                     ).pack(side="left", padx=(6, 0))
+
+        # Supported formats info
+        info_frame = ctk.CTkFrame(right, fg_color=BG3, corner_radius=6)
+        info_frame.pack(fill="x", padx=12, pady=(8, 4))
+        ctk.CTkLabel(info_frame, text="Supported formats", font=("Segoe UI", 10, "bold"),
+                     text_color=GOLD).pack(padx=10, pady=(8, 2), anchor="w")
+        ctk.CTkLabel(info_frame,
+                     text="Text:   .md .txt .rst .log .toml .yaml .cfg .ini\n"
+                          "Code:  .py .js .ts .go .rs .java .c .cpp .cs .rb .sh\n"
+                          "Data:   .json .csv .tsv .xml .html\n"
+                          "Docs:  .pdf .docx\n"
+                          "Zip:     .zip (auto-extracted, nested supported)",
+                     font=("Consolas", 9), text_color=DIM, justify="left"
+                     ).pack(padx=10, pady=(0, 8), anchor="w")
+
+        # Ingest button
+        self._ingest_btn = ctk.CTkButton(
+            right, text="⬇  Ingest Selected", font=("Segoe UI", 11, "bold"),
+            height=36, fg_color=ACCENT, hover_color=ACCENT_H,
+            command=self._run_ingest)
+        self._ingest_btn.pack(padx=12, pady=(8, 4), fill="x")
+
+        # Status log
+        self._ingest_status = ctk.CTkTextbox(
+            right, font=("Consolas", 9), fg_color=BG,
+            text_color="#aaa", height=120, corner_radius=4)
+        self._ingest_status.pack(fill="both", expand=True, padx=12, pady=(4, 12))
+        self._ingest_status.insert("end", "Select files and click Ingest to import into RAG.\n")
+        self._ingest_status.configure(state="disabled")
+
+        self._ingest_refresh_files()
+
+    def _ingest_source_change(self, choice: str):
+        if choice == "Custom...":
+            from tkinter import filedialog
+            chosen = filedialog.askdirectory(
+                initialdir=self._ingest_source_var.get())
+            if chosen:
+                self._ingest_source_var.set(chosen)
+                self._ingest_path_label.configure(text=chosen)
+                self._ingest_refresh_files()
+        else:
+            default_downloads = str(Path.home() / "Downloads")
+            path = _load_settings().get("ingest_path", default_downloads)
+            self._ingest_source_var.set(path)
+            self._ingest_path_label.configure(text=path)
+            self._ingest_refresh_files()
+
+    def _ingest_refresh_files(self):
+        for w in self._ingest_widgets:
+            w.destroy()
+        self._ingest_widgets.clear()
+        self._ingest_checks.clear()
+
+        source = Path(self._ingest_source_var.get())
+        if not source.exists():
+            lbl = ctk.CTkLabel(self._ingest_file_list, text="Path not found",
+                               font=FONT_SM, text_color=DIM)
+            lbl.grid(row=0, column=0, padx=8, pady=20)
+            self._ingest_widgets.append(lbl)
+            self._ingest_count_lbl.configure(text="0 files")
+            return
+
+        # Supported extensions for display
+        supported = {
+            ".md", ".txt", ".rst", ".log", ".cfg", ".ini", ".toml", ".yaml", ".yml",
+            ".py", ".js", ".ts", ".tsx", ".jsx", ".go", ".rs", ".java", ".c", ".cpp",
+            ".h", ".hpp", ".cs", ".rb", ".sh", ".bat", ".ps1", ".sql",
+            ".json", ".csv", ".tsv", ".xml", ".html", ".htm",
+            ".pdf", ".docx", ".zip",
+        }
+
+        files = []
+        for f in sorted(source.iterdir(), key=lambda x: x.stat().st_mtime, reverse=True):
+            if f.is_file() and f.suffix.lower() in supported:
+                files.append(f)
+            if len(files) >= 200:
+                break
+
+        # Also list subdirectories (for folder ingest)
+        dirs = []
+        for d in sorted(source.iterdir()):
+            if d.is_dir() and not d.name.startswith("."):
+                dirs.append(d)
+                if len(dirs) >= 50:
+                    break
+
+        row = 0
+        for d in dirs:
+            var = ctk.BooleanVar(value=False)
+            bg = BG3 if row % 2 == 0 else BG2
+            cb = ctk.CTkCheckBox(
+                self._ingest_file_list,
+                text=f"📁 {d.name}/",
+                variable=var, font=("Consolas", 9),
+                text_color=GOLD, fg_color=ACCENT, hover_color=ACCENT_H,
+                checkbox_width=16, checkbox_height=16, corner_radius=3,
+            )
+            cb.grid(row=row, column=0, sticky="ew", padx=4, pady=1)
+            self._ingest_checks.append((var, d))
+            self._ingest_widgets.append(cb)
+            row += 1
+
+        for f in files:
+            var = ctk.BooleanVar(value=False)
+            ext = f.suffix.lower()
+            # Color code by type
+            if ext == ".zip":
+                color = ORANGE
+            elif ext in (".pdf", ".docx"):
+                color = "#7aa2f7"
+            elif ext in (".py", ".js", ".ts", ".go", ".rs", ".java"):
+                color = GREEN
+            else:
+                color = TEXT
+
+            cb = ctk.CTkCheckBox(
+                self._ingest_file_list,
+                text=f"  {f.name}  ({f.stat().st_size / 1024:.0f} KB)",
+                variable=var, font=("Consolas", 9),
+                text_color=color, fg_color=ACCENT, hover_color=ACCENT_H,
+                checkbox_width=16, checkbox_height=16, corner_radius=3,
+            )
+            cb.grid(row=row, column=0, sticky="ew", padx=4, pady=1)
+            self._ingest_checks.append((var, f))
+            self._ingest_widgets.append(cb)
+            row += 1
+
+        total = len(dirs) + len(files)
+        self._ingest_count_lbl.configure(text=f"{total} items")
+
+        if total == 0:
+            lbl = ctk.CTkLabel(self._ingest_file_list, text="No supported files found",
+                               font=FONT_SM, text_color=DIM)
+            lbl.grid(row=0, column=0, padx=8, pady=20)
+            self._ingest_widgets.append(lbl)
+
+    def _ingest_select_all(self):
+        for var, _ in self._ingest_checks:
+            var.set(True)
+
+    def _ingest_select_none(self):
+        for var, _ in self._ingest_checks:
+            var.set(False)
+
+    def _ingest_log(self, msg: str):
+        self._ingest_status.configure(state="normal")
+        self._ingest_status.insert("end", msg + "\n")
+        self._ingest_status.see("end")
+        self._ingest_status.configure(state="disabled")
+
+    def _run_ingest(self):
+        selected = [path for var, path in self._ingest_checks if var.get()]
+        if not selected:
+            self._ingest_log("No files selected.")
+            return
+
+        tag = self._ingest_tag_var.get().strip() or "import"
+        try:
+            max_mb = int(self._ingest_maxmb_var.get())
+        except ValueError:
+            max_mb = 50
+
+        self._ingest_btn.configure(state="disabled", text="Ingesting...")
+        self._ingest_log(f"Starting ingest: {len(selected)} items, tag='{tag}'")
+
+        def _do_ingest():
+            total_files = 0
+            total_chunks = 0
+            errors = []
+
+            for path in selected:
+                try:
+                    self.after(0, lambda p=path: self._ingest_log(f"  Processing: {p.name}"))
+                    payload = {
+                        "path": str(path),
+                        "tag": tag,
+                        "max_file_mb": max_mb,
+                        "recursive": True,
+                    }
+                    # Import and run directly
+                    import importlib.util
+                    spec = importlib.util.spec_from_file_location(
+                        "ingest", str(FLEET_DIR / "skills" / "ingest.py"))
+                    mod = importlib.util.module_from_spec(spec)
+                    spec.loader.exec_module(mod)
+                    result = mod.run(payload, {})
+
+                    if "error" in result:
+                        errors.append(f"{path.name}: {result['error']}")
+                        self.after(0, lambda e=result['error']: self._ingest_log(f"    Error: {e}"))
+                    else:
+                        fi = result.get("files_ingested", 0)
+                        ch = result.get("chunks_indexed", 0)
+                        total_files += fi
+                        total_chunks += ch
+                        self.after(0, lambda f=fi, c=ch: self._ingest_log(
+                            f"    Indexed {f} files, {c} chunks"))
+
+                except Exception as e:
+                    errors.append(f"{path.name}: {e}")
+                    self.after(0, lambda e=e: self._ingest_log(f"    Error: {e}"))
+
+            summary = f"Done: {total_files} files, {total_chunks} chunks indexed"
+            if errors:
+                summary += f", {len(errors)} errors"
+            self.after(0, lambda s=summary: self._ingest_log(s))
+            self.after(0, lambda: self._ingest_btn.configure(
+                state="normal", text="⬇  Ingest Selected"))
+
+        threading.Thread(target=_do_ingest, daemon=True).start()
 
     # ── Tab: Outputs ─────────────────────────────────────────────────────────
     def _build_tab_outputs(self, parent):
@@ -2943,6 +3251,41 @@ class SettingsDialog(ctk.CTkToplevel):
                      font=("Segoe UI", 9), text_color="#555555"
                      ).pack(padx=12, pady=(0, 12), anchor="w")
 
+        # Section: Ingestion
+        self._section_header(panel, "File Ingestion")
+        ingest_frame = ctk.CTkFrame(panel, fg_color=_GLASS_BG, corner_radius=6)
+        ingest_frame.pack(fill="x", padx=16, pady=(0, 12))
+        ingest_frame.grid_columnconfigure(1, weight=1)
+
+        default_downloads = str(Path.home() / "Downloads")
+        ingest_path = self._settings.get("ingest_path", default_downloads)
+
+        ctk.CTkLabel(ingest_frame, text="Default import path:", font=FONT_SM,
+                     text_color=TEXT).grid(row=0, column=0, padx=12, pady=(12, 4), sticky="w")
+        self._ingest_path_var = ctk.StringVar(value=ingest_path)
+        ctk.CTkEntry(ingest_frame, textvariable=self._ingest_path_var,
+                     font=("Consolas", 9), fg_color="#111111",
+                     border_color=_GLASS_BORDER, text_color=TEXT, height=28
+                     ).grid(row=1, column=0, columnspan=2, sticky="ew",
+                            padx=12, pady=(0, 4))
+
+        btn_row = ctk.CTkFrame(ingest_frame, fg_color="transparent")
+        btn_row.grid(row=2, column=0, columnspan=2, sticky="ew", padx=12, pady=(0, 10))
+        ctk.CTkButton(btn_row, text="Browse", font=FONT_SM,
+                      width=70, height=26, fg_color=BG3, hover_color=BG2,
+                      command=self._browse_ingest_path).pack(side="left")
+        ctk.CTkButton(btn_row, text="Save", font=FONT_SM,
+                      width=60, height=26, fg_color=ACCENT, hover_color=ACCENT_H,
+                      command=self._save_ingest_path).pack(side="left", padx=4)
+        self._ingest_path_status = ctk.CTkLabel(
+            btn_row, text="", font=("Segoe UI", 9), text_color=DIM)
+        self._ingest_path_status.pack(side="left", padx=8)
+
+        ctk.CTkLabel(ingest_frame,
+                     text="Files from this folder appear in the Ingestion tab for import into RAG.",
+                     font=("Segoe UI", 9), text_color="#555555"
+                     ).grid(row=3, column=0, columnspan=2, padx=12, pady=(0, 10), sticky="w")
+
     # ── Models Panel ─────────────────────────────────────────────────────
     def _build_models_panel(self):
         panel = ctk.CTkScrollableFrame(self._content, fg_color=_GLASS_PANEL)
@@ -3281,6 +3624,18 @@ class SettingsDialog(ctk.CTkToplevel):
     def _clear_names(self):
         for entry in self._name_entries.values():
             entry.delete(0, "end")
+
+    def _browse_ingest_path(self):
+        from tkinter import filedialog
+        chosen = filedialog.askdirectory(initialdir=self._ingest_path_var.get())
+        if chosen:
+            self._ingest_path_var.set(chosen)
+
+    def _save_ingest_path(self):
+        data = _load_settings()
+        data["ingest_path"] = self._ingest_path_var.get()
+        _save_settings(data)
+        self._ingest_path_status.configure(text="Saved.", text_color=GREEN)
 
     def _update_pipeline_preview(self):
         method = self._upscale_var.get()
