@@ -1,5 +1,5 @@
 """
-Fleet Manager App — Unified Setup
+BigEd CC — Unified Setup
 Auto-detects installation state on launch:
   • Not installed  →  Install only
   • Installed      →  Reinstall  |  Uninstall
@@ -26,16 +26,16 @@ else:
     BUNDLE   = Path(__file__).parent / "dist"
     SELF_EXE = Path(__file__)
 
-FLEET_EXE   = BUNDLE / "FleetControl.exe"
+FLEET_EXE   = BUNDLE / "BigEdCC.exe"
 UPDATER_EXE = BUNDLE / "Updater.exe"
 BANNER_PNG  = BUNDLE / "brick_banner.png"
 ICON_ICO    = BUNDLE / "brick.ico"
 
-APP_NAME    = "Fleet Manager App"
+APP_NAME    = "BigEd CC"
 APP_VERSION = "1.0"
 PUBLISHER   = "Max's Home Lab"
-DEFAULT_DIR = Path(os.environ.get("LOCALAPPDATA", "C:/Users/Public")) / "FleetControl"
-REG_KEY     = r"Software\Microsoft\Windows\CurrentVersion\Uninstall\FleetControl"
+DEFAULT_DIR = Path(os.environ.get("LOCALAPPDATA", "C:/Users/Public")) / "BigEdCC"
+REG_KEY     = r"Software\Microsoft\Windows\CurrentVersion\Uninstall\BigEdCC"
 
 # ─── Theme ────────────────────────────────────────────────────────────────────
 ctk.set_appearance_mode("dark")
@@ -82,7 +82,7 @@ def register_app(install_dir: Path, setup_exe: Path):
         winreg.SetValueEx(key, "Publisher",       0, winreg.REG_SZ,    PUBLISHER)
         winreg.SetValueEx(key, "InstallLocation", 0, winreg.REG_SZ,    str(install_dir))
         winreg.SetValueEx(key, "UninstallString", 0, winreg.REG_SZ,    str(setup_exe))
-        winreg.SetValueEx(key, "DisplayIcon",     0, winreg.REG_SZ,    str(install_dir / "FleetControl.exe"))
+        winreg.SetValueEx(key, "DisplayIcon",     0, winreg.REG_SZ,    str(install_dir / "BigEdCC.exe"))
         winreg.SetValueEx(key, "NoModify",        0, winreg.REG_DWORD, 1)
         winreg.SetValueEx(key, "NoRepair",        0, winreg.REG_DWORD, 1)
         winreg.CloseKey(key)
@@ -117,13 +117,13 @@ def create_shortcut(target: Path, shortcut_path: Path, icon: Path = None):
 
 def remove_shortcuts() -> list[str]:
     removed = []
-    desktop = Path(os.environ.get("USERPROFILE", "~")) / "Desktop" / "FleetControl.lnk"
+    desktop = Path(os.environ.get("USERPROFILE", "~")) / "Desktop" / "BigEdCC.lnk"
     if desktop.exists():
         desktop.unlink(missing_ok=True)
         removed.append("Desktop shortcut")
     programs = (
         Path(os.environ.get("APPDATA", "~"))
-        / "Microsoft/Windows/Start Menu/Programs/Fleet Manager App"
+        / "Microsoft/Windows/Start Menu/Programs/BigEd CC"
     )
     if programs.exists():
         shutil.rmtree(programs, ignore_errors=True)
@@ -230,13 +230,13 @@ class Setup(ctk.CTk):
 
     # ── Page: Welcome (not installed) ─────────────────────────────────────────
     def _page_welcome(self, parent):
-        ctk.CTkLabel(parent, text="Welcome to Fleet Manager App Setup",
+        ctk.CTkLabel(parent, text="Welcome to BigEd CC Setup",
                      font=("Segoe UI", 14, "bold"), text_color=GOLD,
                      ).pack(pady=(26, 10))
 
         desc = (
             "This will install the following components:\n\n"
-            "  •  FleetControl.exe   —  main dashboard & agent launcher\n"
+            "  •  BigEdCC.exe   —  main dashboard & agent launcher\n"
             "  •  Updater.exe        —  one-click rebuild tool\n"
             "  •  Setup.exe          —  reinstall / uninstall\n\n"
             f"Default location:  {DEFAULT_DIR}\n\n"
@@ -249,7 +249,7 @@ class Setup(ctk.CTk):
         if not FLEET_EXE.exists() or not UPDATER_EXE.exists():
             ctk.CTkLabel(
                 parent,
-                text="⚠  FleetControl.exe or Updater.exe not found in bundle.\n"
+                text="⚠  BigEdCC.exe or Updater.exe not found in bundle.\n"
                      "Run build.bat first, or use Re-install to build from source.",
                 font=("Segoe UI", 10), text_color=RED,
             ).pack(padx=32, pady=6, anchor="w")
@@ -267,7 +267,7 @@ class Setup(ctk.CTk):
 
     # ── Page: Installed (manage) ───────────────────────────────────────────────
     def _page_installed(self, parent):
-        ctk.CTkLabel(parent, text="Fleet Manager App is installed",
+        ctk.CTkLabel(parent, text="BigEd CC is installed",
                      font=("Segoe UI", 14, "bold"), text_color=GOLD,
                      ).pack(pady=(22, 4))
 
@@ -493,7 +493,7 @@ class Setup(ctk.CTk):
         btn_row.pack(side="bottom", fill="x", padx=24, pady=20)
 
         self._launch_btn = ctk.CTkButton(
-            btn_row, text="▶  Launch FleetControl", width=180, height=36,
+            btn_row, text="▶  Launch BigEdCC", width=180, height=36,
             fg_color=ACCENT, hover_color=ACCENT_H,
             command=self._launch_fleet)
         self._launch_btn.pack(side="left")
@@ -509,7 +509,7 @@ class Setup(ctk.CTk):
                       command=self.destroy).pack(side="right")
 
     def _launch_fleet(self):
-        exe = Path(self._install_dir.get()) / "FleetControl.exe"
+        exe = Path(self._install_dir.get()) / "BigEdCC.exe"
         if exe.exists():
             subprocess.Popen([str(exe)])
         self.destroy()
@@ -536,7 +536,7 @@ class Setup(ctk.CTk):
 
         steps += [
             (p(0.08), "Creating directory...",        lambda: self._step_mkdir(install_dir)),
-            (p(0.25), "Copying FleetControl.exe...",  lambda: self._step_copy(FLEET_EXE,   install_dir)),
+            (p(0.25), "Copying BigEdCC.exe...",  lambda: self._step_copy(FLEET_EXE,   install_dir)),
             (p(0.40), "Copying Updater.exe...",       lambda: self._step_copy(UPDATER_EXE, install_dir)),
             (p(0.50), "Copying Setup.exe...",         lambda: self._step_copy_self(install_dir)),
             (p(0.58), "Copying icon...",              lambda: self._step_copy(ICON_ICO,    install_dir)),
@@ -628,7 +628,7 @@ class Setup(ctk.CTk):
             ["pip", "install", "--upgrade", "-r", str(req)],
             ["python", str(src / "generate_icon.py")],
             ["python", "-m", "PyInstaller", "--onefile", "--windowed",
-             "--name", "FleetControl", "--icon", str(icon),
+             "--name", "BigEdCC", "--icon", str(icon),
              f"--add-data={banner};.", f"--add-data={icon};.",
              "--collect-all", "customtkinter",
              "--hidden-import", "psutil", "--hidden-import", "pynvml",
@@ -699,20 +699,20 @@ class Setup(ctk.CTk):
         return "Python packages installed"
 
     def _step_shortcuts(self, install_dir: Path) -> str:
-        target = install_dir / "FleetControl.exe"
+        target = install_dir / "BigEdCC.exe"
         icon   = install_dir / "brick.ico"
         created = []
         if self._desktop_sc.get():
             desktop = Path(os.environ.get("USERPROFILE", "~")) / "Desktop"
-            create_shortcut(target, desktop / "FleetControl.lnk", icon)
+            create_shortcut(target, desktop / "BigEdCC.lnk", icon)
             created.append("Desktop shortcut")
         if self._startmenu_sc.get():
             programs = (
                 Path(os.environ.get("APPDATA", "~"))
-                / "Microsoft/Windows/Start Menu/Programs/Fleet Manager App"
+                / "Microsoft/Windows/Start Menu/Programs/BigEd CC"
             )
             programs.mkdir(parents=True, exist_ok=True)
-            create_shortcut(target, programs / "FleetControl.lnk", icon)
+            create_shortcut(target, programs / "BigEdCC.lnk", icon)
             create_shortcut(install_dir / "Updater.exe", programs / "Updater.lnk", icon)
             create_shortcut(install_dir / "Setup.exe",   programs / "Setup.lnk",   icon)
             created.append("Start Menu folder")

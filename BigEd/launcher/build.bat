@@ -1,5 +1,5 @@
 @echo off
-REM Fleet Control — build launcher + updater
+REM BigEd CC — build launcher + updater
 REM Run from Windows cmd in this directory (not WSL)
 REM Requires Python: winget install Python.Python.3.11
 
@@ -14,12 +14,12 @@ python generate_icon.py
 if errorlevel 1 ( echo FAILED: generate_icon.py && pause && exit /b 1 )
 
 echo.
-echo == Closing running FleetControl.exe (if open) ==
-taskkill /f /im FleetControl.exe >nul 2>&1
+echo == Closing running BigEdCC.exe (if open) ==
+taskkill /f /im BigEdCC.exe >nul 2>&1
 
-echo == Building FleetControl.exe ==
-python -m PyInstaller --onefile --windowed --name "FleetControl" --icon "brick.ico" --add-data "brick_banner.png;." --add-data "brick.ico;." --collect-all customtkinter --hidden-import psutil --hidden-import pynvml launcher.py
-if errorlevel 1 ( echo FAILED: FleetControl build && pause && exit /b 1 )
+echo == Building BigEdCC.exe ==
+python -m PyInstaller --onefile --windowed --name "BigEdCC" --icon "brick.ico" --add-data "brick_banner.png;." --add-data "brick.ico;." --collect-all customtkinter --hidden-import psutil --hidden-import pynvml launcher.py
+if errorlevel 1 ( echo FAILED: BigEdCC build && pause && exit /b 1 )
 
 echo.
 echo == Closing running Updater.exe (if open) ==
@@ -40,9 +40,9 @@ if errorlevel 1 ( echo FAILED: Setup build && pause && exit /b 1 )
 
 echo.
 echo == Done ==
-echo   FleetControl.exe  -^>  dist\FleetControl.exe
+echo   BigEdCC.exe  -^>  dist\BigEdCC.exe
 echo   Updater.exe       -^>  dist\Updater.exe
 echo   Setup.exe         -^>  dist\Setup.exe
 echo.
-echo Run Updater.exe any time to upgrade packages and rebuild FleetControl.exe
+echo Run Updater.exe any time to upgrade packages and rebuild BigEdCC.exe
 pause

@@ -1,5 +1,5 @@
 """
-Fleet Control — GUI launcher for the Education agent fleet.
+BigEd CC — GUI launcher for the Education agent fleet.
 Dark mode, brick theme. Runs WSL commands via wsl.exe.
 """
 import base64
@@ -80,6 +80,134 @@ MONO     = ("Consolas", 11)
 FONT     = ("Segoe UI", 11)
 FONT_SM  = ("Segoe UI", 10)
 FONT_H   = ("Segoe UI", 13, "bold")
+
+
+# ─── Agent Name Themes ───────────────────────────────────────────────────────
+# Maps internal role names to themed display names.
+# "default" uses the internal names as-is.
+
+AGENT_THEMES = {
+    "default": {
+        "supervisor": "Supervisor",
+        "researcher": "Researcher",
+        "coder": "Coder",
+        "archivist": "Archivist",
+        "analyst": "Analyst",
+        "sales": "Sales",
+        "onboarding": "Onboarding",
+        "implementation": "Implementation",
+        "security": "Security",
+        "planner": "Planner",
+    },
+    "education": {
+        "supervisor": "Headmaster",
+        "researcher": "Professor",
+        "coder": "Engineer",
+        "archivist": "Librarian",
+        "analyst": "Examiner",
+        "sales": "Recruiter",
+        "onboarding": "Orientation",
+        "implementation": "Lab Tech",
+        "security": "Campus Security",
+        "planner": "Dean",
+    },
+    "space": {
+        "supervisor": "Admiral",
+        "researcher": "Science Officer",
+        "coder": "Engineer",
+        "archivist": "Quartermaster",
+        "analyst": "Navigator",
+        "sales": "Diplomat",
+        "onboarding": "Cadet Trainer",
+        "implementation": "Ops Chief",
+        "security": "Tactical",
+        "planner": "Helmsman",
+    },
+    "forge": {
+        "supervisor": "Forgemaster",
+        "researcher": "Alchemist",
+        "coder": "Artificer",
+        "archivist": "Lorekeeper",
+        "analyst": "Assayer",
+        "sales": "Merchant",
+        "onboarding": "Apprentice Master",
+        "implementation": "Smith",
+        "security": "Sentinel",
+        "planner": "Architect",
+    },
+}
+
+_active_theme = "default"
+_custom_names = {}  # role -> custom name overrides
+
+
+def _load_settings() -> dict:
+    """Load full settings dict."""
+    settings_file = DATA_DIR / "settings.json"
+    if settings_file.exists():
+        try:
+            return json.loads(settings_file.read_text())
+        except Exception:
+            pass
+    return {}
+
+
+def _save_settings(data: dict):
+    """Persist settings dict."""
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    settings_file = DATA_DIR / "settings.json"
+    settings_file.write_text(json.dumps(data, indent=2))
+
+
+def _load_theme_preference() -> str:
+    """Load saved theme from settings file."""
+    return _load_settings().get("agent_theme", "default")
+
+
+def _load_custom_names() -> dict:
+    """Load individual agent name overrides."""
+    return _load_settings().get("agent_names", {})
+
+
+def _save_theme_preference(theme: str):
+    """Persist theme choice."""
+    data = _load_settings()
+    data["agent_theme"] = theme
+    _save_settings(data)
+
+
+def _save_custom_names(names: dict):
+    """Persist individual agent name overrides."""
+    data = _load_settings()
+    data["agent_names"] = {k: v for k, v in names.items() if v}  # drop blanks
+    _save_settings(data)
+
+
+def themed_name(role: str) -> str:
+    """Get the display name for an agent role.
+
+    Priority: custom name > theme name > title-cased role.
+    """
+    # Custom name takes priority (exact match including numbered agents)
+    if role in _custom_names and _custom_names[role]:
+        return _custom_names[role]
+
+    theme_map = AGENT_THEMES.get(_active_theme, AGENT_THEMES["default"])
+    # Handle numbered agents like coder_1, coder_2
+    base_role = re.sub(r'_\d+$', '', role)
+    suffix = role[len(base_role):]  # e.g. "_1", "_2", or ""
+
+    # Check custom name for base role too
+    if base_role in _custom_names and _custom_names[base_role]:
+        display = _custom_names[base_role]
+        if suffix:
+            display += f" {suffix.lstrip('_')}"
+        return display
+
+    display = theme_map.get(base_role, role.replace("_", " ").title())
+    if suffix:
+        display += f" {suffix.lstrip('_')}"
+    return display
 
 
 def _shell_safe(s: str) -> str:
@@ -296,14 +424,19 @@ class Tooltip:
 
 
 # ─── Main App ─────────────────────────────────────────────────────────────────
-class FleetControl(ctk.CTk):
+class BigEdCC(ctk.CTk):
     def __init__(self):
         super().__init__()
 
-        self.title("Fleet Control")
+        self.title("BigEd CC")
         self.geometry("1050x960")
         self.minsize(800, 720)
         self.configure(fg_color=BG)
+
+        # Load agent name theme + custom names
+        global _active_theme, _custom_names
+        _active_theme = _load_theme_preference()
+        _custom_names = _load_custom_names()
 
         self._net_prev    = None
         self._net_time    = None
@@ -312,6 +445,8 @@ class FleetControl(ctk.CTk):
         self._system_running           = False
         self._system_intentional_stop  = False
         self._last_keepalive = 0.0  # epoch time of last keepalive ping
+        # Activity sparkline: per-agent rolling history (last 10 samples @ 1s each)
+        self._agent_activity = {}  # role -> deque of booleans (True=BUSY)
         psutil.cpu_percent(interval=None)  # prime the cpu sampler
 
         self._set_icon()
@@ -319,6 +454,7 @@ class FleetControl(ctk.CTk):
         self._current_log_agent = "supervisor"
         self._refresh_status()
         self._schedule_refresh()
+        self._schedule_agent_tick()
         self._schedule_hw()
         self._schedule_ollama_watch()
         threading.Thread(target=self._check_for_updates, daemon=True).start()
@@ -327,7 +463,7 @@ class FleetControl(ctk.CTk):
     def _on_close(self):
         """Ask whether to stop background processes before exiting."""
         dlg = ctk.CTkToplevel(self)
-        dlg.title("Close Fleet Control")
+        dlg.title("Close BigEd CC")
         dlg.geometry("380x160")
         dlg.resizable(False, False)
         dlg.configure(fg_color=BG2)
@@ -382,19 +518,18 @@ class FleetControl(ctk.CTk):
 
     # ── Build UI ──────────────────────────────────────────────────────────────
     def _build_ui(self):
-        self.grid_columnconfigure(1, weight=1)
-        self.grid_rowconfigure(2, weight=1)  # row 2 = main content
+        self.grid_columnconfigure(0, weight=0)   # sidebar
+        self.grid_columnconfigure(1, weight=1)   # main content
+        self.grid_rowconfigure(1, weight=1)      # tabs fill vertical space
 
-        self._build_header()   # row 0
-        self._build_stats()    # row 1
-        self._build_sidebar()  # row 2 (col 0)
-        self._build_main()     # row 2 (col 1)
-        self._build_tools()    # row 3 (full width — business tools tabs)
-        self._build_taskbar()  # row 4
+        self._build_header()   # row 0 (full width — header + stats merged)
+        self._build_sidebar()  # row 1 (col 0)
+        self._build_tabs()     # row 1 (col 1) — all content lives in tabs
+        self._build_taskbar()  # row 2 (full width)
 
     # ── Header ────────────────────────────────────────────────────────────────
     def _build_header(self):
-        hdr = ctk.CTkFrame(self, fg_color=BG3, height=56, corner_radius=0)
+        hdr = ctk.CTkFrame(self, fg_color=BG3, height=44, corner_radius=0)
         hdr.grid(row=0, column=0, columnspan=2, sticky="ew")
         hdr.grid_propagate(False)
         hdr.grid_columnconfigure(2, weight=1)
@@ -402,53 +537,49 @@ class FleetControl(ctk.CTk):
         banner = self._load_banner()
         if banner:
             ctk.CTkLabel(hdr, image=banner, text="").grid(
-                row=0, column=0, padx=(10, 6), pady=4)
+                row=0, column=0, padx=(10, 6), pady=2)
         else:
-            ctk.CTkLabel(hdr, text="🧱", font=("Segoe UI", 28)).grid(
-                row=0, column=0, padx=(10, 6), pady=4)
+            ctk.CTkLabel(hdr, text="🧱", font=("Segoe UI", 22)).grid(
+                row=0, column=0, padx=(10, 6), pady=2)
 
-        ctk.CTkLabel(hdr, text="FLEET CONTROL",
-                     font=("Segoe UI", 17, "bold"),
+        ctk.CTkLabel(hdr, text="BIGED CC",
+                     font=("Segoe UI", 14, "bold"),
                      text_color=GOLD).grid(row=0, column=1, padx=4, sticky="w")
 
+        # Inline stats
+        stats_frame = ctk.CTkFrame(hdr, fg_color="transparent")
+        stats_frame.grid(row=0, column=2, sticky="ew", padx=(8, 0))
+        kw = dict(font=("Consolas", 9), text_color=DIM)
+        self._stat_cpu = ctk.CTkLabel(stats_frame, text="CPU —", **kw)
+        self._stat_ram = ctk.CTkLabel(stats_frame, text="RAM —", **kw)
+        self._stat_gpu = ctk.CTkLabel(stats_frame, text="GPU —", **kw)
+        self._stat_net = ctk.CTkLabel(stats_frame, text="ETH —", **kw)
+        self._stat_cpu.pack(side="left", padx=6)
+        self._stat_ram.pack(side="left", padx=6)
+        self._stat_gpu.pack(side="left", padx=6)
+        self._stat_net.pack(side="left", padx=6)
+
         self._status_pills = ctk.CTkLabel(
-            hdr, text="● loading...", font=FONT_SM, text_color=DIM)
-        self._status_pills.grid(row=0, column=2, padx=16, sticky="e")
+            hdr, text="● loading...", font=("Consolas", 9), text_color=DIM)
+        self._status_pills.grid(row=0, column=3, padx=8, sticky="e")
 
         self._advisory_badge = ctk.CTkLabel(
-            hdr, text="", font=("Segoe UI", 10, "bold"),
+            hdr, text="", font=("Segoe UI", 9, "bold"),
             text_color="#1a1a1a", fg_color=ORANGE,
             corner_radius=8, width=0)
-        self._advisory_badge.grid(row=0, column=3, padx=(0, 6), pady=12)
+        self._advisory_badge.grid(row=0, column=4, padx=(0, 4), pady=10)
 
         self._update_badge = ctk.CTkButton(
-            hdr, text="", font=("Segoe UI", 10, "bold"),
+            hdr, text="", font=("Segoe UI", 9, "bold"),
             text_color=TEXT, fg_color="transparent",
             hover_color="#2a4a2a", corner_radius=8, width=0,
             command=self._launch_auto_update)
-        self._update_badge.grid(row=0, column=4, padx=(0, 12), pady=12)
-
-    # ── Stats bar ─────────────────────────────────────────────────────────────
-    def _build_stats(self):
-        bar = ctk.CTkFrame(self, fg_color="#111111", height=26, corner_radius=0)
-        bar.grid(row=1, column=0, columnspan=2, sticky="ew")
-        bar.grid_propagate(False)
-        bar.grid_columnconfigure((0, 1, 2, 3), weight=1)
-
-        kw = dict(font=("Consolas", 10), text_color=DIM, anchor="center")
-        self._stat_cpu = ctk.CTkLabel(bar, text="CPU —", **kw)
-        self._stat_ram = ctk.CTkLabel(bar, text="RAM —", **kw)
-        self._stat_gpu = ctk.CTkLabel(bar, text="GPU —", **kw)
-        self._stat_net = ctk.CTkLabel(bar, text="ETH —", **kw)
-        self._stat_cpu.grid(row=0, column=0, padx=8, pady=3)
-        self._stat_ram.grid(row=0, column=1, padx=8, pady=3)
-        self._stat_gpu.grid(row=0, column=2, padx=8, pady=3)
-        self._stat_net.grid(row=0, column=3, padx=8, pady=3)
+        self._update_badge.grid(row=0, column=5, padx=(0, 8), pady=10)
 
     # ── Sidebar ───────────────────────────────────────────────────────────────
     def _build_sidebar(self):
-        sb = ctk.CTkScrollableFrame(self, fg_color=BG2, width=160, corner_radius=0)
-        sb.grid(row=2, column=0, sticky="nsew")
+        sb = ctk.CTkScrollableFrame(self, fg_color=BG2, width=155, corner_radius=0)
+        sb.grid(row=1, column=0, sticky="nsew")
 
         # ── Collapsible section + button helpers ──────────────────────────────
         def section(label, default_open=True):
@@ -558,6 +689,22 @@ class FleetControl(ctk.CTk):
             tip="Set GPU power limit and thermal targets (RTX 3080 Ti)")
         btn(s, "🧠 LLM Model",      self._open_model_selector,
             tip="Switch the local Ollama model used by fleet workers")
+        # Agent theme selector
+        theme_label = ctk.CTkLabel(sb, text="  Agent Theme", font=FONT_SM,
+                                   text_color=DIM, anchor="w")
+        theme_label.pack(fill="x", padx=10, pady=(6, 0))
+        s["widgets"].append(theme_label)
+        self._theme_var = ctk.StringVar(value=_active_theme)
+        theme_menu = ctk.CTkOptionMenu(
+            sb, values=list(AGENT_THEMES.keys()), variable=self._theme_var,
+            font=FONT_SM, fg_color=BG3, button_color=ACCENT,
+            button_hover_color=ACCENT_H, height=28,
+            command=self._change_agent_theme,
+        )
+        theme_menu.pack(fill="x", padx=10, pady=2)
+        s["widgets"].append(theme_menu)
+        btn(s, "✏  Name Agents",    self._open_agent_names_dialog,
+            tip="Give custom names to individual agents")
         btn(s, "🤖 Claude Console", self._open_claude_console, "#1a1a2e", "#252540",
             tip="Open an interactive Claude API chat with fleet dispatch support")
         btn(s, "✦  Gemini Console", self._open_gemini_console, "#1a2a1a", "#253525",
@@ -568,9 +715,9 @@ class FleetControl(ctk.CTk):
         # ── BUILD ──────────────────────────────────────────────────────────────
         s = section("BUILD", default_open=False)
         btn(s, "🔄 Run Update",        self._launch_auto_update, "#1a3a1a", "#2a4a2a",
-            tip="Run Updater.exe in auto mode and relaunch Fleet Control")
-        btn(s, "▶  Run Fleet Control", self._run_fleet_control,  "#1a2a10", "#2a3a18",
-            tip="Launch the compiled Fleet Control from dist/")
+            tip="Run Updater.exe in auto mode and relaunch BigEd CC")
+        btn(s, "▶  Run BigEd CC", self._run_fleet_control,  "#1a2a10", "#2a3a18",
+            tip="Launch the compiled BigEd CC from dist/")
         btn(s, "🔨 Rebuild All",       self._rebuild_all,        "#2a1a10", "#3a2a18",
             tip="Recompile the app via PyInstaller (build.bat)")
 
@@ -588,118 +735,124 @@ class FleetControl(ctk.CTk):
         s["widgets"].append(menu)
 
     # ── Main area ─────────────────────────────────────────────────────────────
-    def _build_main(self):
-        main = ctk.CTkFrame(self, fg_color=BG, corner_radius=0)
-        main.grid(row=2, column=1, sticky="nsew", padx=0, pady=0)
-        main.grid_columnconfigure(0, weight=3)
-        main.grid_columnconfigure(1, weight=2)
-        main.grid_rowconfigure(0, weight=1)
+    # ── Tabs (primary content area) ──────────────────────────────────────────
+    def _build_tabs(self):
+        self._db_init()
 
-        # Left: log output
-        log_frame = ctk.CTkFrame(main, fg_color=BG2, corner_radius=6)
-        log_frame.grid(row=0, column=0, sticky="nsew", padx=(8, 4), pady=8)
-        log_frame.grid_rowconfigure(1, weight=1)
-        log_frame.grid_columnconfigure(0, weight=1)
+        tabs = ctk.CTkTabview(
+            self,
+            fg_color=BG,
+            segmented_button_fg_color=BG2,
+            segmented_button_selected_color=ACCENT,
+            segmented_button_selected_hover_color=ACCENT_H,
+            segmented_button_unselected_color=BG3,
+            segmented_button_unselected_hover_color=BG2,
+            text_color=TEXT,
+            corner_radius=0,
+        )
+        tabs.grid(row=1, column=1, sticky="nsew", padx=0, pady=0)
 
-        self._log_label = ctk.CTkLabel(
-            log_frame, text="LOG — supervisor", font=("Segoe UI", 10, "bold"),
-            text_color=GOLD, anchor="w")
-        self._log_label.grid(row=0, column=0, padx=10, pady=(6, 2), sticky="w")
+        for name in ("Command Center", "Agents", "CRM",
+                     "Onboarding", "Customers", "Accounts", "Outputs"):
+            tabs.add(name)
 
-        self._log_text = ctk.CTkTextbox(
-            log_frame, font=MONO, fg_color=BG2,
-            text_color="#c8c8c8", wrap="word", corner_radius=0)
-        self._log_text.grid(row=1, column=0, sticky="nsew", padx=4, pady=(0, 4))
+        self._build_tab_cc(tabs.tab("Command Center"))
+        self._build_tab_agents(tabs.tab("Agents"))
+        self._build_tab_crm(tabs.tab("CRM"))
+        self._build_tab_onboarding(tabs.tab("Onboarding"))
+        self._build_tab_customers(tabs.tab("Customers"))
+        self._build_tab_accounts(tabs.tab("Accounts"))
+        self._build_tab_outputs(tabs.tab("Outputs"))
+        tabs.set("Command Center")
 
-        # Right: ollama status + agents + task output
-        right = ctk.CTkFrame(main, fg_color=BG, corner_radius=0)
-        right.grid(row=0, column=1, sticky="nsew", padx=(4, 8), pady=8)
-        right.grid_rowconfigure(2, weight=1)
-        right.grid_columnconfigure(0, weight=1)
+    # ── Tab: Command Center (default) ────────────────────────────────────────
+    def _build_tab_cc(self, parent):
+        """Main view: agents + ollama status (left), log + I/O output (right)."""
+        parent.grid_columnconfigure(0, weight=2)
+        parent.grid_columnconfigure(1, weight=5)
+        parent.grid_rowconfigure(0, weight=1)
+
+        # ── Left column: Ollama + Agents ─────────────────────────────────────
+        left = ctk.CTkFrame(parent, fg_color=BG, corner_radius=0)
+        left.grid(row=0, column=0, sticky="nsew", padx=(0, 4))
+        left.grid_columnconfigure(0, weight=1)
+        left.grid_rowconfigure(1, weight=1)
 
         # Ollama status bar
-        ollama_frame = ctk.CTkFrame(right, fg_color=BG2, height=30,
-                                    corner_radius=6)
+        ollama_frame = ctk.CTkFrame(left, fg_color=BG2, height=28, corner_radius=6)
         ollama_frame.grid(row=0, column=0, sticky="ew", pady=(0, 4))
         ollama_frame.grid_propagate(False)
         ollama_frame.grid_columnconfigure(1, weight=1)
 
         ctk.CTkLabel(ollama_frame, text="OLLAMA",
-                     font=("Segoe UI", 9, "bold"), text_color=DIM,
-                     anchor="w").grid(row=0, column=0, padx=(10, 6), pady=5)
+                     font=("Segoe UI", 8, "bold"), text_color=DIM,
+                     anchor="w").grid(row=0, column=0, padx=(8, 4), pady=4)
 
         self._ollama_dot = ctk.CTkLabel(
-            ollama_frame, text="●", font=("Consolas", 12), text_color=DIM)
-        self._ollama_dot.grid(row=0, column=1, sticky="w", padx=(0, 4))
+            ollama_frame, text="●", font=("Consolas", 11), text_color=DIM)
+        self._ollama_dot.grid(row=0, column=1, sticky="w", padx=(0, 3))
 
         self._ollama_lbl = ctk.CTkLabel(
-            ollama_frame, text="checking...", font=("Segoe UI", 9),
+            ollama_frame, text="checking...", font=("Consolas", 9),
             text_color=DIM, anchor="w")
         self._ollama_lbl.grid(row=0, column=2, sticky="w")
 
         ctk.CTkButton(
-            ollama_frame, text="↺", width=22, height=20,
-            font=("Segoe UI", 10), fg_color=BG3, hover_color=BG,
+            ollama_frame, text="↺", width=20, height=18,
+            font=("Segoe UI", 9), fg_color=BG3, hover_color=BG,
             command=self._start_ollama,
-        ).grid(row=0, column=3, padx=(4, 8))
+        ).grid(row=0, column=3, padx=(3, 6))
 
-        # Agents table
-        agents_frame = ctk.CTkFrame(right, fg_color=BG2, corner_radius=6)
-        agents_frame.grid(row=1, column=0, sticky="ew")
+        # Agents panel
+        agents_frame = ctk.CTkFrame(left, fg_color=BG2, corner_radius=6)
+        agents_frame.grid(row=1, column=0, sticky="nsew")
         agents_frame.grid_columnconfigure(0, weight=1)
+        agents_frame.grid_rowconfigure(1, weight=1)
 
         ctk.CTkLabel(agents_frame, text="AGENTS",
-                     font=("Segoe UI", 10, "bold"), text_color=GOLD,
-                     anchor="w").grid(row=0, column=0, padx=10, pady=(6, 2), sticky="w")
+                     font=("Segoe UI", 9, "bold"), text_color=GOLD,
+                     anchor="w").grid(row=0, column=0, padx=8, pady=(4, 2), sticky="w")
 
         self._agents_frame_inner = ctk.CTkFrame(agents_frame, fg_color=BG2)
-        self._agents_frame_inner.grid(row=1, column=0, sticky="ew", padx=6, pady=(0, 6))
+        self._agents_frame_inner.grid(row=1, column=0, sticky="nsew", padx=4, pady=(0, 4))
 
-        # Task output
+        # ── Right column: Log + Task Output ──────────────────────────────────
+        right = ctk.CTkFrame(parent, fg_color=BG, corner_radius=0)
+        right.grid(row=0, column=1, sticky="nsew", padx=(4, 0))
+        right.grid_columnconfigure(0, weight=1)
+        right.grid_rowconfigure(0, weight=3)
+        right.grid_rowconfigure(1, weight=2)
+
+        # Log panel
+        log_frame = ctk.CTkFrame(right, fg_color=BG2, corner_radius=6)
+        log_frame.grid(row=0, column=0, sticky="nsew", pady=(0, 4))
+        log_frame.grid_rowconfigure(1, weight=1)
+        log_frame.grid_columnconfigure(0, weight=1)
+
+        self._log_label = ctk.CTkLabel(
+            log_frame, text="LOG — supervisor", font=("Segoe UI", 9, "bold"),
+            text_color=GOLD, anchor="w")
+        self._log_label.grid(row=0, column=0, padx=8, pady=(4, 2), sticky="w")
+
+        self._log_text = ctk.CTkTextbox(
+            log_frame, font=("Consolas", 10), fg_color=BG2,
+            text_color="#c8c8c8", wrap="word", corner_radius=0)
+        self._log_text.grid(row=1, column=0, sticky="nsew", padx=4, pady=(0, 4))
+
+        # Task output panel
         out_frame = ctk.CTkFrame(right, fg_color=BG2, corner_radius=6)
-        out_frame.grid(row=2, column=0, sticky="nsew", pady=(8, 0))
+        out_frame.grid(row=1, column=0, sticky="nsew")
         out_frame.grid_rowconfigure(1, weight=1)
         out_frame.grid_columnconfigure(0, weight=1)
 
-        ctk.CTkLabel(out_frame, text="TASK OUTPUT",
-                     font=("Segoe UI", 10, "bold"), text_color=GOLD,
-                     anchor="w").grid(row=0, column=0, padx=10, pady=(6, 2), sticky="w")
+        ctk.CTkLabel(out_frame, text="OUTPUT",
+                     font=("Segoe UI", 9, "bold"), text_color=GOLD,
+                     anchor="w").grid(row=0, column=0, padx=8, pady=(4, 2), sticky="w")
 
         self._output_text = ctk.CTkTextbox(
-            out_frame, font=MONO, fg_color=BG2,
+            out_frame, font=("Consolas", 10), fg_color=BG2,
             text_color="#c8c8c8", wrap="word", corner_radius=0)
         self._output_text.grid(row=1, column=0, sticky="nsew", padx=4, pady=(0, 4))
-
-    # ── Tools panel ───────────────────────────────────────────────────────────
-    def _build_tools(self):
-        self._db_init()
-        panel = ctk.CTkFrame(self, fg_color=BG2, corner_radius=0)
-        panel.grid(row=3, column=0, columnspan=2, sticky="nsew")
-        panel.grid_columnconfigure(0, weight=1)
-        panel.grid_rowconfigure(0, weight=1)
-        self.grid_rowconfigure(3, weight=2)   # tools panel shares vertical space
-
-        tabs = ctk.CTkTabview(
-            panel,
-            fg_color=BG3,
-            segmented_button_fg_color=BG2,
-            segmented_button_selected_color=ACCENT,
-            segmented_button_selected_hover_color=ACCENT_H,
-            segmented_button_unselected_color=BG2,
-            segmented_button_unselected_hover_color=BG3,
-            text_color=TEXT,
-            corner_radius=0,
-        )
-        tabs.grid(row=0, column=0, sticky="nsew", padx=0, pady=0)
-
-        for name in ("Agents", "CRM", "Onboarding", "Active Customers", "Accounts"):
-            tabs.add(name)
-
-        self._build_tab_agents(tabs.tab("Agents"))
-        self._build_tab_crm(tabs.tab("CRM"))
-        self._build_tab_onboarding(tabs.tab("Onboarding"))
-        self._build_tab_customers(tabs.tab("Active Customers"))
-        self._build_tab_accounts(tabs.tab("Accounts"))
 
     # ── Tab 1: Agents ─────────────────────────────────────────────────────────
     def _build_tab_agents(self, parent):
@@ -1703,31 +1856,169 @@ class FleetControl(ctk.CTk):
         con.commit()
         con.close()
 
+    # ── Tab: Outputs ─────────────────────────────────────────────────────────
+    def _build_tab_outputs(self, parent):
+        """Browse fleet knowledge outputs — reviews, reports, drafts, security."""
+        parent.grid_columnconfigure(0, weight=1)
+        parent.grid_rowconfigure(1, weight=1)
+
+        # Header with category filter
+        hdr = ctk.CTkFrame(parent, fg_color="transparent")
+        hdr.grid(row=0, column=0, sticky="ew", pady=(4, 6))
+        hdr.grid_columnconfigure(1, weight=1)
+
+        ctk.CTkLabel(hdr, text="Category:", font=FONT_SM,
+                     text_color=DIM).grid(row=0, column=0, padx=(0, 6))
+
+        categories = ["All", "Code Reviews", "Security", "Quality",
+                       "Drafts", "Reports", "Chains", "FMA Reviews"]
+        self._outputs_cat_var = ctk.StringVar(value="All")
+        ctk.CTkOptionMenu(
+            hdr, values=categories, variable=self._outputs_cat_var,
+            font=FONT_SM, fg_color=BG3, button_color=ACCENT,
+            button_hover_color=ACCENT_H, height=26, width=140,
+            command=lambda _: self._outputs_refresh()
+        ).grid(row=0, column=1, sticky="w")
+
+        ctk.CTkButton(hdr, text="↻ Refresh", font=FONT_SM, height=26, width=80,
+                      fg_color=BG3, hover_color=BG,
+                      command=self._outputs_refresh
+                      ).grid(row=0, column=2, sticky="e")
+
+        # Split: file list (left) + preview (right)
+        content = ctk.CTkFrame(parent, fg_color=BG)
+        content.grid(row=1, column=0, sticky="nsew")
+        content.grid_columnconfigure(0, weight=1)
+        content.grid_columnconfigure(1, weight=3)
+        content.grid_rowconfigure(0, weight=1)
+
+        self._outputs_list = ctk.CTkScrollableFrame(content, fg_color=BG2, corner_radius=4)
+        self._outputs_list.grid(row=0, column=0, sticky="nsew", padx=(0, 4))
+        self._outputs_list.grid_columnconfigure(0, weight=1)
+
+        preview_frame = ctk.CTkFrame(content, fg_color=BG2, corner_radius=4)
+        preview_frame.grid(row=0, column=1, sticky="nsew")
+        preview_frame.grid_rowconfigure(1, weight=1)
+        preview_frame.grid_columnconfigure(0, weight=1)
+
+        self._outputs_preview_label = ctk.CTkLabel(
+            preview_frame, text="Select a file to preview", font=FONT_SM,
+            text_color=DIM, anchor="w")
+        self._outputs_preview_label.grid(row=0, column=0, padx=8, pady=(4, 2), sticky="w")
+
+        self._outputs_preview = ctk.CTkTextbox(
+            preview_frame, font=("Consolas", 10), fg_color=BG2,
+            text_color="#c8c8c8", wrap="word", corner_radius=0)
+        self._outputs_preview.grid(row=1, column=0, sticky="nsew", padx=4, pady=(0, 4))
+
+        self._outputs_items = []
+        self._outputs_refresh()
+
+    _OUTPUTS_DIRS = {
+        "All": None,
+        "Code Reviews": "code_reviews",
+        "Security": "security",
+        "Quality": "quality",
+        "Drafts": "code_drafts",
+        "Reports": "reports",
+        "Chains": "chains",
+        "FMA Reviews": "fma_reviews",
+    }
+
+    def _outputs_refresh(self):
+        for w in self._outputs_items:
+            w.destroy()
+        self._outputs_items.clear()
+
+        cat = self._outputs_cat_var.get() if hasattr(self, "_outputs_cat_var") else "All"
+        knowledge = FLEET_DIR / "knowledge"
+        subdir = self._OUTPUTS_DIRS.get(cat)
+
+        files = []
+        if subdir:
+            target = knowledge / subdir
+            if target.exists():
+                files = sorted(target.rglob("*.md"), key=lambda f: f.stat().st_mtime,
+                               reverse=True)[:50]
+        else:
+            # All — scan all subdirs
+            if knowledge.exists():
+                files = sorted(knowledge.rglob("*.md"), key=lambda f: f.stat().st_mtime,
+                               reverse=True)[:50]
+
+        for i, f in enumerate(files):
+            rel = f.relative_to(knowledge)
+            bg = BG3 if i % 2 == 0 else BG2
+            btn = ctk.CTkButton(
+                self._outputs_list, text=str(rel), font=("Consolas", 9),
+                fg_color=bg, hover_color=ACCENT, text_color=TEXT,
+                anchor="w", height=22, corner_radius=2,
+                command=lambda path=f: self._outputs_show_file(path))
+            btn.grid(row=i, column=0, sticky="ew", padx=2, pady=1)
+            self._outputs_items.append(btn)
+
+        if not files:
+            lbl = ctk.CTkLabel(self._outputs_list, text="No files found",
+                               font=FONT_SM, text_color=DIM)
+            lbl.grid(row=0, column=0, padx=8, pady=20)
+            self._outputs_items.append(lbl)
+
+    def _outputs_show_file(self, path: Path):
+        try:
+            content = path.read_text(encoding="utf-8", errors="ignore")[:8000]
+        except Exception as e:
+            content = f"Error reading file: {e}"
+        self._outputs_preview_label.configure(text=path.name)
+        self._outputs_preview.configure(state="normal")
+        self._outputs_preview.delete("1.0", "end")
+        self._outputs_preview.insert("end", content)
+        self._outputs_preview.see("1.0")
+        self._outputs_preview.configure(state="disabled")
+
     # ── Task bar ──────────────────────────────────────────────────────────────
     def _build_taskbar(self):
-        bar = ctk.CTkFrame(self, fg_color=BG3, height=46, corner_radius=0)
-        bar.grid(row=4, column=0, columnspan=2, sticky="ew")
-        bar.grid_propagate(False)
+        bar = ctk.CTkFrame(self, fg_color=BG3, corner_radius=0)
+        bar.grid(row=2, column=0, columnspan=2, sticky="ew")
         bar.grid_columnconfigure(1, weight=1)
 
         ctk.CTkLabel(bar, text="▶ Task:", font=FONT_SM,
-                     text_color=DIM).grid(row=0, column=0, padx=(12, 6), pady=8)
+                     text_color=DIM).grid(row=0, column=0, padx=(12, 6), pady=8,
+                                          sticky="n")
 
-        self._task_entry = ctk.CTkEntry(
-            bar, font=MONO, fg_color=BG, border_color="#444",
-            text_color=TEXT, placeholder_text="search HIPAA AI compliance  |  pen_test  |  audit  |  summarize <url>")
-        self._task_entry.grid(row=0, column=1, padx=4, pady=8, sticky="ew")
-        self._task_entry.bind("<Return>", lambda e: self._dispatch_task())
+        self._task_entry = ctk.CTkTextbox(
+            bar, font=MONO, fg_color=BG, border_color="#444", border_width=1,
+            text_color=TEXT, wrap="word", corner_radius=4, height=34)
+        self._task_entry.grid(row=0, column=1, padx=4, pady=6, sticky="ew")
+        # Enter dispatches, Shift+Enter inserts newline
+        self._task_entry.bind("<Return>", self._on_task_enter)
+        self._task_entry.bind("<KeyRelease>", self._auto_resize_task_entry)
+
+        btn_col = ctk.CTkFrame(bar, fg_color="transparent")
+        btn_col.grid(row=0, column=2, padx=(4, 8), pady=6, sticky="n")
 
         ctk.CTkButton(
-            bar, text="Dispatch", font=FONT_SM, width=90, height=30,
+            btn_col, text="Dispatch", font=FONT_SM, width=90, height=30,
             fg_color=ACCENT, hover_color=ACCENT_H,
             command=self._dispatch_task,
-        ).grid(row=0, column=2, padx=(4, 8), pady=8)
+        ).pack(pady=(0, 2))
 
         self._task_status = ctk.CTkLabel(
-            bar, text="", font=FONT_SM, text_color=DIM)
-        self._task_status.grid(row=0, column=3, padx=(0, 12))
+            btn_col, text="", font=FONT_SM, text_color=DIM)
+        self._task_status.pack()
+
+    def _on_task_enter(self, event):
+        """Enter dispatches; Shift+Enter inserts newline."""
+        if event.state & 0x1:  # Shift held
+            return  # let default insert newline
+        self._dispatch_task()
+        return "break"  # prevent newline insertion
+
+    def _auto_resize_task_entry(self, _event=None):
+        """Grow/shrink the task textbox to fit content (1–4 lines)."""
+        content = self._task_entry.get("1.0", "end-1c")
+        line_count = max(1, min(4, content.count("\n") + 1))
+        new_h = 20 + line_count * 18
+        self._task_entry.configure(height=new_h)
 
     # ── Refresh ───────────────────────────────────────────────────────────────
     def _refresh_status(self):
@@ -1736,6 +2027,12 @@ class FleetControl(ctk.CTk):
         self._update_agents_table(status)
         self._refresh_log()
         self._update_advisory_badge()
+
+    def _refresh_agents_fast(self):
+        """Fast-path: update agent sparklines + pills only (no log I/O)."""
+        status = parse_status()
+        self._update_pills(status)
+        self._update_agents_table(status)
 
     def _check_status(self):
         """Refresh UI + show Ollama status + dump STATUS.md in one pass."""
@@ -1778,17 +2075,49 @@ class FleetControl(ctk.CTk):
             return GREEN, "BUSY"
         if status == "IDLE":
             if pending > 0:
-                return "#4488ff", f"IDLE  ({pending} queued)"
+                return "#4488ff", f"IDLE ({pending}q)"
             return "#cccc00", "IDLE"
-        return RED, "OFFLINE"
+        return RED, "OFF"
+
+    def _record_agent_activity(self, agents: list):
+        """Record current BUSY/IDLE state into rolling history."""
+        from collections import deque
+        seen = {a["name"]: a.get("status", "OFFLINE") for a in agents}
+        all_tracked = set(seen.keys()) | set(self._agent_activity.keys())
+        for name in all_tracked:
+            if name not in self._agent_activity:
+                self._agent_activity[name] = deque(maxlen=10)
+            is_busy = seen.get(name) == "BUSY"
+            self._agent_activity[name].append(is_busy)
+
+    def _spark_text(self, role: str) -> tuple:
+        """Return (sparkline_str, color) for an agent's recent activity.
+
+        Uses thin unicode bars: ▁ (idle) and ▇ (busy).
+        """
+        history = self._agent_activity.get(role)
+        if not history:
+            return "▁" * 10, DIM
+        bars = []
+        for active in history:
+            bars.append("▇" if active else "▁")
+        # Pad left if fewer than 10 samples
+        while len(bars) < 10:
+            bars.insert(0, "▁")
+        text = "".join(bars)
+        # Color: green if any recent activity, dim if all idle
+        has_recent = any(history)
+        return text, GREEN if has_recent else "#555555"
 
     def _update_agents_table(self, status):
         for widget in self._agents_frame_inner.winfo_children():
             widget.destroy()
 
         agents     = status.get("agents", [])
-        agent_names = {a["name"] for a in agents}
         pending    = status.get("tasks", {}).get("Pending", 0)
+
+        # Record activity for sparklines
+        self._record_agent_activity(agents)
 
         # All known roles — show offline ones too
         all_roles = ["researcher", "coder", "archivist", "analyst",
@@ -1808,22 +2137,35 @@ class FleetControl(ctk.CTk):
             row_frame.grid(row=i, column=0, sticky="ew", padx=4, pady=1)
             row_frame.grid_columnconfigure(1, weight=1)
 
-            # Coloured bubble
-            ctk.CTkLabel(row_frame, text="●", font=("Consolas", 13),
-                         text_color=color, width=16).grid(row=0, column=0, padx=(2, 4))
+            # Coloured status dot
+            ctk.CTkLabel(row_frame, text="●", font=("Consolas", 11),
+                         text_color=color, width=14).grid(row=0, column=0, padx=(2, 3))
 
+            # Agent name
+            display_name = themed_name(a['name'])
             ctk.CTkLabel(row_frame,
-                         text=f"{a['name']:<14} {label}",
-                         font=MONO, text_color=TEXT if label != "OFFLINE" else DIM,
-                         anchor="w").grid(row=0, column=1, sticky="w")
+                         text=display_name,
+                         font=("Consolas", 10), text_color=TEXT if label != "OFF" else DIM,
+                         anchor="w", width=110).grid(row=0, column=1, sticky="w")
+
+            # Activity sparkline
+            spark, spark_color = self._spark_text(a["name"])
+            ctk.CTkLabel(row_frame, text=spark, font=("Consolas", 9),
+                         text_color=spark_color, width=70
+                         ).grid(row=0, column=2, padx=(2, 4))
+
+            # Status label
+            ctk.CTkLabel(row_frame, text=label, font=("Consolas", 9),
+                         text_color=color, anchor="e", width=60
+                         ).grid(row=0, column=3, sticky="e", padx=(0, 2))
 
             # Recover button for offline agents
-            if label == "OFFLINE":
+            if label == "OFF":
                 ctk.CTkButton(
-                    row_frame, text="↺", width=24, height=20,
-                    font=("Segoe UI", 10), fg_color=ACCENT, hover_color=ACCENT_H,
+                    row_frame, text="↺", width=22, height=18,
+                    font=("Segoe UI", 9), fg_color=ACCENT, hover_color=ACCENT_H,
                     command=lambda r=a["name"]: self._recover_agent(r),
-                ).grid(row=0, column=2, padx=(4, 2))
+                ).grid(row=0, column=4, padx=(2, 2))
 
     def _refresh_log(self):
         agent = self._log_agent_var.get()
@@ -1873,8 +2215,14 @@ class FleetControl(ctk.CTk):
         self._stat_net.configure(text=net_s, text_color=DIM)
 
     def _schedule_refresh(self):
+        """Full refresh every 6s (includes log tail + advisories)."""
         self._refresh_status()
         self.after(6000, self._schedule_refresh)
+
+    def _schedule_agent_tick(self):
+        """Fast agent status tick every 2s for responsive sparklines."""
+        self._refresh_agents_fast()
+        self.after(2000, self._schedule_agent_tick)
 
     def _switch_log(self, agent):
         self._refresh_log()
@@ -2298,10 +2646,10 @@ class FleetControl(ctk.CTk):
 
     # ── Task dispatch ─────────────────────────────────────────────────────────
     def _dispatch_task(self):
-        text = self._task_entry.get().strip()
+        text = self._task_entry.get("1.0", "end-1c").strip()
         if not text:
             return
-        self._task_entry.delete(0, "end")
+        self._task_entry.delete("1.0", "end")
         self._task_status.configure(text="⏳ dispatching...", text_color=ORANGE)
 
         b64_text = base64.b64encode(text.encode()).decode()
@@ -2355,6 +2703,17 @@ class FleetControl(ctk.CTk):
     def _open_model_selector(self):
         ModelSelectorDialog(self)
 
+    def _change_agent_theme(self, choice: str):
+        global _active_theme
+        _active_theme = choice
+        _save_theme_preference(choice)
+        self._log_output(f"Agent theme changed to: {choice}")
+        if hasattr(self, "_refresh_agents_fast"):
+            self._refresh_agents_fast()
+
+    def _open_agent_names_dialog(self):
+        AgentNamesDialog(self)
+
     def _open_claude_console(self):
         ClaudeConsole(self)
 
@@ -2391,7 +2750,7 @@ class FleetControl(ctk.CTk):
             fg_color="#1a3a1a", hover_color="#2a4a2a")
 
     def _launch_auto_update(self):
-        """Launch Updater.exe in auto mode then close FleetControl."""
+        """Launch Updater.exe in auto mode then close BigEdCC."""
         if not UPDATER_EXE.exists():
             self._log_output(f"Updater.exe not found at {UPDATER_EXE}")
             return
@@ -2399,12 +2758,12 @@ class FleetControl(ctk.CTk):
         self.destroy()
 
     def _run_fleet_control(self):
-        exe = _DIST_DIR / "FleetControl.exe"
+        exe = _DIST_DIR / "BigEdCC.exe"
         if not exe.exists():
-            self._log_output(f"FleetControl.exe not found at {exe}")
+            self._log_output(f"BigEdCC.exe not found at {exe}")
             return
         subprocess.Popen([str(exe)], cwd=str(_DIST_DIR))
-        self._log_output("Launched Fleet Control from dist/")
+        self._log_output("Launched BigEd CC from dist/")
 
     def _rebuild_all(self):
         build_bat = HERE.parent / "build.bat" if getattr(sys, "frozen", False) else HERE / "build.bat"
@@ -2416,6 +2775,110 @@ class FleetControl(ctk.CTk):
             ["cmd", "/c", "start", "cmd", "/k", str(build_bat)],
             cwd=str(build_bat.parent),
         )
+
+
+# ─── Agent Names Dialog ───────────────────────────────────────────────────────
+class AgentNamesDialog(ctk.CTkToplevel):
+    """Let the user assign custom names to individual agents."""
+
+    ALL_ROLES = [
+        "supervisor", "researcher", "coder", "coder_1", "coder_2", "coder_3",
+        "archivist", "analyst", "sales", "onboarding", "implementation",
+        "security", "planner",
+    ]
+
+    def __init__(self, parent):
+        super().__init__(parent)
+        self.title("BigEd CC — Agent Names")
+        self.geometry("500x560")
+        self.configure(fg_color=BG)
+        self.grab_set()
+        self._parent = parent
+
+        ico = HERE / "brick.ico"
+        if ico.exists():
+            try: self.iconbitmap(str(ico))
+            except Exception: pass
+
+        self._entries = {}
+        self._build_ui()
+
+    def _build_ui(self):
+        self.grid_columnconfigure(0, weight=1)
+        self.grid_rowconfigure(1, weight=1)
+
+        # Header
+        hdr = ctk.CTkFrame(self, fg_color=BG3, height=48, corner_radius=0)
+        hdr.grid(row=0, column=0, sticky="ew")
+        ctk.CTkLabel(hdr, text="  Custom Agent Names", font=FONT_H,
+                     text_color=GOLD).pack(side="left", padx=12, pady=10)
+        ctk.CTkLabel(hdr, text="Leave blank to use theme name", font=FONT_SM,
+                     text_color=DIM).pack(side="right", padx=12)
+
+        # Scrollable form
+        form = ctk.CTkScrollableFrame(self, fg_color=BG)
+        form.grid(row=1, column=0, sticky="nsew", padx=10, pady=5)
+        form.grid_columnconfigure(1, weight=1)
+
+        for i, role in enumerate(self.ALL_ROLES):
+            # Role label (themed fallback)
+            theme_map = AGENT_THEMES.get(_active_theme, AGENT_THEMES["default"])
+            base = re.sub(r'_\d+$', '', role)
+            suffix = role[len(base):]
+            theme_default = theme_map.get(base, base.title())
+            if suffix:
+                theme_default += f" {suffix.lstrip('_')}"
+
+            ctk.CTkLabel(form, text=f"{role}:", font=MONO,
+                         text_color=DIM, anchor="e", width=120
+                         ).grid(row=i, column=0, padx=(4, 8), pady=3, sticky="e")
+
+            entry = ctk.CTkEntry(form, font=FONT, fg_color=BG2, border_color=BG3,
+                                 text_color=TEXT, placeholder_text=theme_default,
+                                 height=30)
+            entry.grid(row=i, column=1, sticky="ew", padx=(0, 4), pady=3)
+
+            # Pre-fill existing custom name
+            current = _custom_names.get(role, "")
+            if current:
+                entry.insert(0, current)
+
+            self._entries[role] = entry
+
+        # Buttons
+        btn_frame = ctk.CTkFrame(self, fg_color=BG)
+        btn_frame.grid(row=2, column=0, sticky="ew", padx=10, pady=(5, 10))
+
+        ctk.CTkButton(btn_frame, text="Save", font=FONT, width=100, height=32,
+                       fg_color=ACCENT, hover_color=ACCENT_H,
+                       command=self._save).pack(side="right", padx=4)
+        ctk.CTkButton(btn_frame, text="Clear All", font=FONT, width=100, height=32,
+                       fg_color=BG3, hover_color=BG2,
+                       command=self._clear_all).pack(side="right", padx=4)
+        ctk.CTkButton(btn_frame, text="Cancel", font=FONT, width=80, height=32,
+                       fg_color=BG3, hover_color=BG2,
+                       command=self.destroy).pack(side="right", padx=4)
+
+    def _save(self):
+        global _custom_names
+        names = {}
+        for role, entry in self._entries.items():
+            val = entry.get().strip()
+            if val:
+                names[role] = val
+        _custom_names = names
+        _save_custom_names(names)
+        if hasattr(self._parent, "_refresh_agents_fast"):
+            self._parent._refresh_agents_fast()
+        if hasattr(self._parent, "_log_output"):
+            count = len(names)
+            self._parent._log_output(
+                f"Custom agent names saved ({count} override{'s' if count != 1 else ''})")
+        self.destroy()
+
+    def _clear_all(self):
+        for entry in self._entries.values():
+            entry.delete(0, "end")
 
 
 # ─── GPU Thermal / Power Dialog ───────────────────────────────────────────────
@@ -2431,7 +2894,7 @@ class ThermalDialog(ctk.CTkToplevel):
 
     def __init__(self, parent):
         super().__init__(parent)
-        self.title("FMA — GPU Power & Thermal")
+        self.title("BigEd CC — GPU Power & Thermal")
         self.geometry("580x480")
         self.configure(fg_color=BG)
         self.grab_set()
@@ -2742,7 +3205,7 @@ OLLAMA_MODELS = [
 class ModelSelectorDialog(ctk.CTkToplevel):
     def __init__(self, parent):
         super().__init__(parent)
-        self.title("FMA — LLM Model Selector")
+        self.title("BigEd CC — LLM Model Selector")
         self.geometry("700x520")
         self.configure(fg_color=BG)
         self.grab_set()
@@ -2960,7 +3423,7 @@ class KeyManagerDialog(ctk.CTkToplevel):
 
     def __init__(self, parent):
         super().__init__(parent)
-        self.title("FMA — API Key Manager")
+        self.title("BigEd CC — API Key Manager")
         self.geometry("780x540")
         self.configure(fg_color=BG)
         self.grab_set()
@@ -3165,7 +3628,7 @@ class KeyManagerDialog(ctk.CTkToplevel):
 class HardwareDialog(ctk.CTkToplevel):
     def __init__(self, parent):
         super().__init__(parent)
-        self.title("FMA — Hardware")
+        self.title("BigEd CC — Hardware")
         self.geometry("600x480")
         self.configure(fg_color=BG)
         self.grab_set()
@@ -3344,7 +3807,7 @@ class HardwareDialog(ctk.CTkToplevel):
 class _ConsoleBase(ctk.CTkToplevel):
     """Shared base for Claude and Gemini chat consoles."""
     SYSTEM_PROMPT = """\
-You are an AI advisor integrated into Fleet Control, a local autonomous agent management system.
+You are an AI advisor integrated into BigEd CC, a local autonomous agent management system.
 You help the operator manage, review, and direct the fleet via natural language.
 
 Your capabilities:
@@ -3641,8 +4104,8 @@ class ClaudeConsole(_ConsoleBase):
     SYSTEM_PROMPT = _ConsoleBase.SYSTEM_PROMPT.replace(
         "Your capabilities:", (
             "You are the executive AI advisor (C-suite) for a local autonomous agent fleet "
-            "called Fleet Control.\n\nYour capabilities:"))
-    TITLE = "FMA — Claude Console"
+            "called BigEd CC.\n\nYour capabilities:"))
+    TITLE = "BigEd CC — Claude Console"
     HEADER_LABEL = "🤖  CLAUDE CONSOLE  —  C-Suite Mode"
     HEADER_COLOR = "#0d0d1a"
     HEADER_TEXT_COLOR = "#7b9fff"
@@ -3747,7 +4210,7 @@ class ClaudeConsole(_ConsoleBase):
 
 # ─── Gemini Console ───────────────────────────────────────────────────────────
 class GeminiConsole(_ConsoleBase):
-    TITLE = "FMA — Gemini Console"
+    TITLE = "BigEd CC — Gemini Console"
     HEADER_LABEL = "✦  GEMINI CONSOLE"
     HEADER_COLOR = "#0d1a0d"
     HEADER_TEXT_COLOR = "#4db86b"
@@ -3835,7 +4298,7 @@ class GeminiConsole(_ConsoleBase):
 
 # ─── Local (Ollama) Console ───────────────────────────────────────────────────
 class LocalConsole(_ConsoleBase):
-    TITLE = "FMA — Local Console"
+    TITLE = "BigEd CC — Local Console"
     HEADER_LABEL = "⚡  LOCAL CONSOLE  —  Ollama"
     HEADER_COLOR = "#1a1510"
     HEADER_TEXT_COLOR = "#d4a84b"
@@ -3923,7 +4386,7 @@ class ReviewDialog(ctk.CTkToplevel):
     """
     def __init__(self, parent):
         super().__init__(parent)
-        self.title("FMA — Review Settings")
+        self.title("BigEd CC — Review Settings")
         self.geometry("420x360")
         self.resizable(False, False)
         self.configure(fg_color=BG)
@@ -4063,5 +4526,5 @@ class ReviewDialog(ctk.CTkToplevel):
 
 # ─── Entry point ──────────────────────────────────────────────────────────────
 if __name__ == "__main__":
-    app = FleetControl()
+    app = BigEdCC()
     app.mainloop()

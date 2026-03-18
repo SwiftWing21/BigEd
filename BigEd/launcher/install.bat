@@ -2,7 +2,7 @@
 cd /d "%~dp0"
 
 echo.
-echo  Fleet Manager App -- Installer
+echo  BigEd CC -- Installer
 echo  ────────────────────────────────
 echo.
 

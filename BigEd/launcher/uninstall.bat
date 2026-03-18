@@ -2,7 +2,7 @@
 cd /d "%~dp0"
 
 echo.
-echo  Fleet Manager App -- Uninstaller
+echo  BigEd CC -- Uninstaller
 echo  ──────────────────────────────────
 echo.
 

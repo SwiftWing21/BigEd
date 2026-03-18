@@ -1,5 +1,5 @@
 """
-Fleet Control — Updater
+BigEd CC — Updater
 Only runs steps where tracked source files changed (or output is missing).
 Force Full Rebuild bypasses checks. Dark mode.
 """
@@ -21,7 +21,7 @@ else:
     SRC_DIR  = Path(__file__).parent
     DIST_DIR = SRC_DIR / "dist"
 
-EXE_PATH      = DIST_DIR / "FleetControl.exe"
+EXE_PATH      = DIST_DIR / "BigEdCC.exe"
 UPD_PATH      = DIST_DIR / "Updater.exe"
 UPD_NEW_PATH  = DIST_DIR / "Updater_new.exe"   # staged build — swapped on close
 REQ_FILE      = SRC_DIR  / "requirements.txt"
@@ -92,11 +92,11 @@ STEPS = [
         [SRC_DIR / "brick.ico", SRC_DIR / "brick_banner.png"],
     ),
     (
-        "Build FleetControl",
+        "Build BigEdCC",
         [
             "python", "-m", "PyInstaller",
             "--onefile", "--windowed",
-            "--name", "FleetControl",
+            "--name", "BigEdCC",
             "--icon", str(SRC_DIR / "brick.ico"),
             f"--add-data={SRC_DIR / 'brick_banner.png'};.",
             f"--add-data={SRC_DIR / 'brick.ico'};.",
@@ -129,7 +129,7 @@ STEPS = [
 class Updater(ctk.CTk):
     def __init__(self):
         super().__init__()
-        self.title("Fleet Control — Updater")
+        self.title("BigEd CC — Updater")
         self.geometry("640x500")
         self.resizable(False, False)
         self.configure(fg_color=BG)
@@ -224,7 +224,7 @@ class Updater(ctk.CTk):
         self._force_btn.grid(row=0, column=1, padx=4, pady=9)
 
         self._open_btn = ctk.CTkButton(
-            btn_frame, text="▶  Run Fleet Control", font=("Segoe UI", 11),
+            btn_frame, text="▶  Run BigEd CC", font=("Segoe UI", 11),
             width=150, height=34, fg_color=BG2, hover_color=BG,
             command=self._run_fleet_control)
         self._open_btn.grid(row=0, column=2, padx=4, pady=9)
@@ -258,7 +258,7 @@ class Updater(ctk.CTk):
             subprocess.Popen([str(EXE_PATH)], cwd=str(DIST_DIR))
             self._on_close()
         else:
-            self._log_line("FleetControl.exe not found — run update first.")
+            self._log_line("BigEdCC.exe not found — run update first.")
 
     # ── Manifest checks ───────────────────────────────────────────────────────
     def _should_run(self, tracked: list, outputs: list,
@@ -380,7 +380,7 @@ class Updater(ctk.CTk):
             self._log_line(f"✓ {EXE_PATH}")
             self._open_btn.configure(fg_color="#2a6a2a", hover_color="#3a7a3a")
         else:
-            self._log_line("⚠ FleetControl.exe not found — check log above.")
+            self._log_line("⚠ BigEdCC.exe not found — check log above.")
         if UPD_NEW_PATH.exists():
             self._pending_self_update = True
             self._log_line("✓ Updater_new.exe staged — Updater will self-update on close")
@@ -414,26 +414,26 @@ class Updater(ctk.CTk):
         self._force_btn.configure(state="normal")
 
 
-# ─── Auto mode (launched by FleetControl with --auto) ─────────────────────────
+# ─── Auto mode (launched by BigEdCC with --auto) ─────────────────────────
 class AutoUpdater(Updater):
     """
-    Runs the delta update immediately on open, then relaunches FleetControl.exe.
-    Launched by FleetControl when it detects changed source files on startup.
+    Runs the delta update immediately on open, then relaunches BigEdCC.exe.
+    Launched by BigEdCC when it detects changed source files on startup.
     """
     def __init__(self):
         super().__init__()
-        self.title("Fleet Control — Auto Updating...")
+        self.title("BigEd CC — Auto Updating...")
         # Disable manual buttons during auto-run
         self._run_btn.configure(state="disabled")
         self._force_btn.configure(state="disabled")
-        self._step_label.configure(text="Auto-update started by FleetControl...")
+        self._step_label.configure(text="Auto-update started by BigEdCC...")
         # Start after a brief moment so the window has time to render
         self.after(600, lambda: self._start_update(force=False))
 
     def _on_complete(self, skipped: int = 0):
         super()._on_complete(skipped)
         self._status_lbl.configure(
-            text="Relaunching FleetControl...", text_color=GREEN)
+            text="Relaunching BigEdCC...", text_color=GREEN)
         self.after(1500, self._relaunch)
 
     def _relaunch(self):

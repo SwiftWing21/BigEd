@@ -1,4 +1,4 @@
-# Build Reference — Fleet Manager App
+# Build Reference — BigEd CC
 
 All commands run from Windows cmd (not WSL) inside the `launcher/` directory.
 
@@ -10,13 +10,13 @@ cd C:\Users\max\Projects\Education\BigEd\launcher
 
 ## Full Build (build.bat)
 
-Runs all steps: install deps → generate icons → build FleetControl.exe → build Updater.exe.
+Runs all steps: install deps → generate icons → build BigEdCC.exe → build Updater.exe.
 
 ```bat
 .\build.bat
 ```
 
-Output: `dist\FleetControl.exe` and `dist\Updater.exe`
+Output: `dist\BigEdCC.exe` and `dist\Updater.exe`
 
 ---
 
@@ -32,9 +32,9 @@ pip install -r requirements.txt
 python generate_icon.py
 ```
 
-### Build FleetControl.exe only
+### Build BigEdCC.exe only
 ```bat
-python -m PyInstaller --onefile --windowed --name "FleetControl" --icon "brick.ico" --add-data "brick_banner.png;." --add-data "brick.ico;." --collect-all customtkinter --hidden-import psutil --hidden-import pynvml launcher.py
+python -m PyInstaller --onefile --windowed --name "BigEdCC" --icon "brick.ico" --add-data "brick_banner.png;." --add-data "brick.ico;." --collect-all customtkinter --hidden-import psutil --hidden-import pynvml launcher.py
 ```
 
 ### Build Updater.exe only
@@ -76,7 +76,7 @@ pip install -r requirements.txt
 ## Notes
 
 - Run cmd as **Administrator** if GPU power limit features need to write via NVML
-- `dist\` output is what gets installed — ship `dist\FleetControl.exe` + `dist\Updater.exe`
+- `dist\` output is what gets installed — ship `dist\BigEdCC.exe` + `dist\Updater.exe`
 - `brick.ico` and `brick_banner.png` must exist before building — run `generate_icon.py` first
 - PyInstaller `--add-data` uses `;` separator on Windows (not `:` like Linux)
 - If a build fails with a `PermissionError` on an exe, that exe is still running — close it first

@@ -17,7 +17,7 @@ Supported document types:
 Payload:
   doc_type    str   one of the types above
   client_name str   client or party name
-  our_name    str   our company name (default: "Fleet Control AI Services")
+  our_name    str   our company name (default: "BigEd AI Services")
   context     str   optional — extra details (scope, special terms, jurisdiction)
   jurisdiction str  optional — e.g. "California" (default: "California")
 """
@@ -30,7 +30,7 @@ import httpx
 FLEET_DIR   = Path(__file__).parent.parent
 LEGAL_DIR   = FLEET_DIR / "knowledge" / "legal"
 
-_OUR_DEFAULT = "Fleet Control AI Services"
+_OUR_DEFAULT = "BigEd AI Services"
 _JX_DEFAULT  = "California"
 
 # Each doc type gets a focused prompt template
