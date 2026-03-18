@@ -98,6 +98,11 @@ SKILL_MAP = {
     "sd15": "diffusion",
     "sdxl": "diffusion",
     "txt2img": "diffusion",
+    "ingest": "ingest",
+    "import": "ingest",
+    "import files": "ingest",
+    "import folder": "ingest",
+    "import zip": "ingest",
 }
 
 
