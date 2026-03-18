@@ -1,0 +1,27 @@
+[[tasks]]
+type = "discuss"
+[tasks.payload]
+agent_name = "implementation"
+topic = "local AI services business opportunity"
+role_perspective = "technical implementation specialist focused on deployment, reliability, and client outcomes"
+round = 1
+
+[[tasks]]
+type = "summarize"
+[tasks.payload]
+text = "What is the optimal technical setup for deploying a local LLM for a small healthcare practice using an RTX 3080 Ti? Cover Ollama configuration, HIPAA considerations, network isolation, and backup."
+
+[[tasks]]
+type = "summarize"
+[tasks.payload]
+text = "What models run well on a GTX 1070 8GB for accounting and legal document processing? Compare quantized 7B models for accuracy, speed, and VRAM usage."
+
+[[tasks]]
+type = "summarize"
+[tasks.payload]
+text = "How should a local AI implementation for a small business be monitored and maintained? Cover uptime, model updates, performance metrics, and client reporting."
+
+[[tasks]]
+type = "summarize"
+[tasks.payload]
+text = "What are the key technical differences between self-install and managed service AI deployment for SMBs? What support infrastructure is needed for each model?"

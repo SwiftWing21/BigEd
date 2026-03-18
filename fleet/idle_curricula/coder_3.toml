@@ -1,0 +1,134 @@
+# coder_3 — performance optimizer perspective
+# Produces: code_discuss contributions, code_review reports, skill_draft files
+
+# ── Code discussions ───────────────────────────────────────────────────────────
+
+[[tasks]]
+type = "code_discuss"
+[tasks.payload]
+agent_name = "coder_3"
+role_perspective = "performance optimizer"
+topic = "ollama call latency and timeout tuning"
+round = 1
+
+[[tasks]]
+type = "code_discuss"
+[tasks.payload]
+agent_name = "coder_3"
+role_perspective = "performance optimizer"
+topic = "fleet task throughput — how many workers can run in parallel safely"
+round = 1
+
+[[tasks]]
+type = "code_discuss"
+[tasks.payload]
+agent_name = "coder_3"
+role_perspective = "performance optimizer"
+topic = "SQLite query optimization in db.py — indexes, WAL, PRAGMA tuning"
+round = 1
+
+[[tasks]]
+type = "code_discuss"
+[tasks.payload]
+agent_name = "coder_3"
+role_perspective = "performance optimizer"
+topic = "batch lead research vs sequential — throughput and rate limit analysis"
+round = 1
+
+[[tasks]]
+type = "code_discuss"
+[tasks.payload]
+agent_name = "coder_3"
+role_perspective = "performance optimizer"
+topic = "web_crawl timeout and connection pooling with httpx"
+round = 1
+
+[[tasks]]
+type = "code_discuss"
+[tasks.payload]
+agent_name = "coder_3"
+role_perspective = "performance optimizer"
+topic = "Stability AI and Replicate API — parallel image generation batching"
+round = 1
+
+[[tasks]]
+type = "code_discuss"
+[tasks.payload]
+agent_name = "coder_3"
+role_perspective = "performance optimizer"
+topic = "code_index AST scanning — incremental indexing vs full rescan"
+round = 1
+
+# ── Code reviews ───────────────────────────────────────────────────────────────
+
+[[tasks]]
+type = "code_review"
+[tasks.payload]
+agent_name = "coder_3"
+perspective = "performance optimizer"
+file = "db.py"
+focus = "query patterns, connection reuse, WAL mode, missing indexes"
+
+[[tasks]]
+type = "code_review"
+[tasks.payload]
+agent_name = "coder_3"
+perspective = "performance optimizer"
+file = "skills/web_search.py"
+focus = "HTTP connection reuse, timeout values, response parsing efficiency"
+
+[[tasks]]
+type = "code_review"
+[tasks.payload]
+agent_name = "coder_3"
+perspective = "performance optimizer"
+file = "skills/generate_image.py"
+focus = "HTTP client setup, response streaming, file write efficiency"
+
+[[tasks]]
+type = "code_review"
+[tasks.payload]
+agent_name = "coder_3"
+perspective = "performance optimizer"
+file = "lead_client.py"
+focus = "CLI latency, DB query patterns, polling efficiency"
+
+# ── Skill drafts ───────────────────────────────────────────────────────────────
+
+[[tasks]]
+type = "skill_draft"
+[tasks.payload]
+agent_name = "coder_3"
+perspective = "performance optimizer"
+skill_name = "batch_web_crawl"
+description = "Crawls multiple URLs concurrently using httpx AsyncClient with a configurable concurrency limit. Takes a list of URLs (e.g. from lead_research output), crawls them in parallel, extracts contact info from each, and saves all results to knowledge/leads/crawled/batch_<date>.jsonl."
+inputs = "urls: list of strings, concurrency: int (default 5), save: bool"
+outputs = "list of crawl results, saved to knowledge/leads/crawled/batch_<date>.jsonl"
+
+[[tasks]]
+type = "skill_draft"
+[tasks.payload]
+agent_name = "coder_3"
+perspective = "performance optimizer"
+skill_name = "cache_ollama"
+description = "Thin caching wrapper for Ollama inference calls. Stores prompt->response pairs in knowledge/ollama_cache.db (SQLite). On cache hit, returns instantly without calling Ollama. Useful for repeated discuss/review tasks with identical prompts."
+inputs = "prompt, model, force_refresh (default False)"
+outputs = "response text, cache_hit bool, latency_ms"
+
+[[tasks]]
+type = "skill_draft"
+[tasks.payload]
+agent_name = "coder_3"
+perspective = "performance optimizer"
+skill_name = "db_vacuum"
+description = "Maintenance skill that runs VACUUM and ANALYZE on fleet.db, checks WAL size, removes DONE tasks older than N days, and reports DB file size before/after. Should run on a scheduled basis to keep the DB fast."
+inputs = "keep_days: int (default 30), vacuum: bool (default True)"
+outputs = "before_size_mb, after_size_mb, rows_deleted, wal_checkpointed"
+
+# ── Codebase indexing ──────────────────────────────────────────────────────────
+
+[[tasks]]
+type = "code_index"
+[tasks.payload]
+directory = "/home/max/autoresearch"
+max_files = 15

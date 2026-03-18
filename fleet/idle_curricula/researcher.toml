@@ -1,0 +1,29 @@
+[[tasks]]
+type = "arxiv_fetch"
+[tasks.payload]
+query = "language model training efficiency 2025"
+
+[[tasks]]
+type = "arxiv_fetch"
+[tasks.payload]
+query = "Muon optimizer neural network"
+
+[[tasks]]
+type = "arxiv_fetch"
+[tasks.payload]
+query = "transformer architecture scaling laws"
+
+[[tasks]]
+type = "web_search"
+[tasks.payload]
+query = "LLM pretraining tricks 2025"
+
+[[tasks]]
+type = "arxiv_fetch"
+[tasks.payload]
+query = "bits per byte language model evaluation"
+
+[[tasks]]
+type = "arxiv_fetch"
+[tasks.payload]
+query = "weight decay regularization deep learning"

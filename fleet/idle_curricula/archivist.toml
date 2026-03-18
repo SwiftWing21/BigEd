@@ -1,0 +1,14 @@
+[[tasks]]
+type = "flashcard"
+[tasks.payload]
+count = 3
+
+[[tasks]]
+type = "flashcard"
+[tasks.payload]
+count = 3
+
+[[tasks]]
+type = "flashcard"
+[tasks.payload]
+count = 3

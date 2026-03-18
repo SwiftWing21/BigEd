@@ -1,0 +1,61 @@
+# Designer agent idle curriculum
+# PIL-based asset generation + design research + SD prompt queuing
+
+[[tasks]]
+type = "generate_asset"
+[tasks.payload]
+type = "color_scheme"
+output_name = "fleet_color_scheme"
+[tasks.payload.spec]
+base = "#b22222"
+
+[[tasks]]
+type = "generate_asset"
+[tasks.payload]
+type = "icon"
+output_name = "fleet_icon_64"
+[tasks.payload.spec]
+size = 64
+style = "rounded"
+color = "#b22222"
+bg = "#1a1a1a"
+label = "FC"
+
+[[tasks]]
+type = "summarize"
+[tasks.payload]
+text = "What are the best practices for dark mode UI design in desktop applications? Cover color contrast ratios, accent color usage, typography, and accessibility standards (WCAG AA)."
+
+[[tasks]]
+type = "summarize"
+[tasks.payload]
+text = "What Stable Diffusion models and ControlNet configurations work best for generating UI icons, logos, and app banners? Include recommended samplers, CFG scales, and prompt structures."
+
+[[tasks]]
+type = "generate_asset"
+[tasks.payload]
+type = "sd_prompt"
+output_name = "fleet_logo_prompt"
+[tasks.payload.spec]
+prompt = "brick wall texture, dark dramatic lighting, deep red and charcoal tones, highly detailed stone masonry, cinematic, sharp focus, 4k"
+negative = "blurry, low quality, cartoon, anime, text, watermark"
+width = 512
+height = 512
+output_name = "fleet_logo_v1"
+
+[[tasks]]
+type = "summarize"
+[tasks.payload]
+text = "What are the best open-source icon sets and font choices for a dark-mode Python desktop application (tkinter/customtkinter)? List specific packages and where to download them."
+
+[[tasks]]
+type = "generate_asset"
+[tasks.payload]
+type = "banner"
+output_name = "fleet_banner_dark"
+[tasks.payload.spec]
+width = 400
+height = 60
+bg = "#1a1a1a"
+accent = "#b22222"
+pattern = "gradient"

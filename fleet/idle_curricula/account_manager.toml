@@ -1,0 +1,43 @@
+# account_manager agent — tracks service accounts, usage, costs, upgrade planning
+
+[[tasks]]
+type = "account_review"
+[tasks.payload]
+focus     = "all"
+threshold = 70
+
+[[tasks]]
+type = "account_review"
+[tasks.payload]
+focus     = "upgrades"
+threshold = 50
+
+[[tasks]]
+type = "summarize"
+[tasks.payload]
+text = "Compare pricing for AI image generation APIs in 2025: Stability AI, Ideogram, Flux, DALL-E 3, Midjourney API. For a small AI services company generating 50-200 marketing images per month for clients, which offers the best quality-to-cost ratio? Include free tier limits and paid tier pricing."
+
+[[tasks]]
+type = "summarize"
+[tasks.payload]
+text = "Compare text-to-video and short video generation APIs in 2025: Runway Gen-3, Kling, Hailuo (Minimax), Luma Dream Machine, LTX-Video on Replicate, WAN 2.1. For generating 5-15 second marketing clips, compare quality, pricing per second, API availability, and free tier options."
+
+[[tasks]]
+type = "summarize"
+[tasks.payload]
+text = "What are the best value web hosting options in 2025 for hosting client-facing dashboards and AI service portals? Compare: VPS providers (Hetzner, DigitalOcean, Linode), managed hosting (Railway, Render, Fly.io), and bare metal options. Focus on cost for 2-5 small client deployments."
+
+[[tasks]]
+type = "summarize"
+[tasks.payload]
+text = "Compare cloud GPU rental options for burst AI workloads in 2025: Lambda Labs, Vast.ai, RunPod, Paperspace, CoreWeave. For occasional training runs (4-8 hours, need 24GB+ VRAM) and overflow inference, what is the cost per hour and availability of A100/H100/RTX 4090 instances?"
+
+[[tasks]]
+type = "summarize"
+[tasks.payload]
+text = "What SaaS tools should a small local AI implementation company subscribe to for operations? Consider: CRM (HubSpot free vs paid), email outreach (Instantly, Apollo), project management (Linear, Notion), accounting (Wave free vs QuickBooks), e-signature (DocuSign vs HelloSign). Prioritize free tiers that cover early-stage needs."
+
+[[tasks]]
+type = "summarize"
+[tasks.payload]
+text = "At what revenue milestones should a bootstrapped AI services company upgrade from free to paid tiers? For each service category (AI APIs, search, video generation, web hosting, CRM, e-signature), what is the breakeven point where the paid tier pays for itself in time saved or quality improvement?"

@@ -1,0 +1,84 @@
+# Fleet API Key Registry
+# Each [[key]] defines a known credential: purpose, which skills use it,
+# pricing tier, and whether it's required or optional.
+# The key_manager skill scans this file to report status and suggest wiring.
+
+[[key]]
+name        = "ANTHROPIC_API_KEY"
+label       = "Anthropic / Claude API"
+purpose     = "Sonnet synthesis docs, Haiku fleet tasks, 100-discard reviews, val_bpb improvement reviews"
+skills      = ["synthesize", "review_discards"]
+tier        = "paid"
+required    = true
+env_var     = "ANTHROPIC_API_KEY"
+signup_hint = "console.anthropic.com → API Keys"
+
+[[key]]
+name        = "BRAVE_API_KEY"
+label       = "Brave Search API"
+purpose     = "Web search tier 1 — highest quality, 2k free queries/month"
+skills      = ["web_search", "lead_research"]
+tier        = "freemium"
+required    = false
+env_var     = "BRAVE_API_KEY"
+signup_hint = "brave.com/search/api → Free tier: 2000 queries/month"
+
+[[key]]
+name        = "TAVILY_API_KEY"
+label       = "Tavily Search API"
+purpose     = "Web search tier 2 — fallback after Brave, 1k free queries/month"
+skills      = ["web_search", "lead_research"]
+tier        = "freemium"
+required    = false
+env_var     = "TAVILY_API_KEY"
+signup_hint = "app.tavily.com → Free tier: 1000 queries/month"
+
+[[key]]
+name        = "HF_TOKEN"
+label       = "HuggingFace Token"
+purpose     = "Model downloads, dataset access for autoresearch training runs"
+skills      = []
+tier        = "free"
+required    = false
+env_var     = "HF_TOKEN"
+signup_hint = "huggingface.co/settings/tokens → New token (read access)"
+
+[[key]]
+name        = "OPENAI_API_KEY"
+label       = "OpenAI API"
+purpose     = "Not currently wired — available for future skill expansion"
+skills      = []
+tier        = "paid"
+required    = false
+env_var     = "OPENAI_API_KEY"
+signup_hint = "platform.openai.com/api-keys"
+
+[[key]]
+name        = "SERPAPI_KEY"
+label       = "SerpAPI"
+purpose     = "Web search alternative — Google results via API (100 free/month)"
+skills      = []
+tier        = "freemium"
+required    = false
+env_var     = "SERPAPI_KEY"
+signup_hint = "serpapi.com → Free tier: 100 searches/month"
+
+[[key]]
+name        = "STABILITY_API_KEY"
+label       = "Stability AI"
+purpose     = "Text-to-image generation for marketing campaigns (core ~$0.003/img, ultra ~$0.008/img)"
+skills      = ["generate_image", "marketing"]
+tier        = "paid"
+required    = false
+env_var     = "STABILITY_API_KEY"
+signup_hint = "platform.stability.ai → API Keys — starts with sk-..."
+
+[[key]]
+name        = "REPLICATE_API_TOKEN"
+label       = "Replicate"
+purpose     = "Short video generation (WAN, Minimax, LTX-Video) for marketing campaigns"
+skills      = ["generate_video", "marketing"]
+tier        = "paid"
+required    = false
+env_var     = "REPLICATE_API_TOKEN"
+signup_hint = "replicate.com/account/api-tokens — starts with r8_..."

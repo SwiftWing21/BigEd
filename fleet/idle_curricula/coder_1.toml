@@ -1,0 +1,134 @@
+# coder_1 — software architect perspective
+# Produces: code_discuss contributions, code_review reports, skill_draft files
+
+# ── Code discussions ───────────────────────────────────────────────────────────
+
+[[tasks]]
+type = "code_discuss"
+[tasks.payload]
+agent_name = "coder_1"
+role_perspective = "software architect"
+topic = "fleet skill module interface design"
+round = 1
+
+[[tasks]]
+type = "code_discuss"
+[tasks.payload]
+agent_name = "coder_1"
+role_perspective = "software architect"
+topic = "supervisor worker lifecycle and restart strategy"
+round = 1
+
+[[tasks]]
+type = "code_discuss"
+[tasks.payload]
+agent_name = "coder_1"
+role_perspective = "software architect"
+topic = "designing a skill pipeline — chaining skills in sequence"
+round = 1
+
+[[tasks]]
+type = "code_discuss"
+[tasks.payload]
+agent_name = "coder_1"
+role_perspective = "software architect"
+topic = "multi-customer fleet isolation — one fleet DB vs per-customer DB"
+round = 1
+
+[[tasks]]
+type = "code_discuss"
+[tasks.payload]
+agent_name = "coder_1"
+role_perspective = "software architect"
+topic = "designing a customer fleet remote monitoring webhook skill"
+round = 1
+
+[[tasks]]
+type = "code_discuss"
+[tasks.payload]
+agent_name = "coder_1"
+role_perspective = "software architect"
+topic = "fleet task priority and preemption — how to interrupt a long skill"
+round = 1
+
+[[tasks]]
+type = "code_discuss"
+[tasks.payload]
+agent_name = "coder_1"
+role_perspective = "software architect"
+topic = "launcher SQLite and fleet SQLite — shared vs separate databases"
+round = 1
+
+# ── Code reviews ───────────────────────────────────────────────────────────────
+
+[[tasks]]
+type = "code_review"
+[tasks.payload]
+agent_name = "coder_1"
+perspective = "software architect"
+file = "supervisor.py"
+focus = "module structure, worker lifecycle, restart coupling"
+
+[[tasks]]
+type = "code_review"
+[tasks.payload]
+agent_name = "coder_1"
+perspective = "software architect"
+file = "db.py"
+focus = "schema design, connection management, public interface"
+
+[[tasks]]
+type = "code_review"
+[tasks.payload]
+agent_name = "coder_1"
+perspective = "software architect"
+file = "skills/marketing.py"
+focus = "module composition, importlib usage, skill interface"
+
+[[tasks]]
+type = "code_review"
+[tasks.payload]
+agent_name = "coder_1"
+perspective = "software architect"
+file = "skills/synthesize.py"
+focus = "API integration pattern, output structure"
+
+# ── Skill drafts ───────────────────────────────────────────────────────────────
+
+[[tasks]]
+type = "skill_draft"
+[tasks.payload]
+agent_name = "coder_1"
+perspective = "software architect"
+skill_name = "email_outreach"
+description = "Composes and queues cold outreach emails for CRM leads. Reads leads from the fleet DB, generates personalised email copy using the local Ollama model, and saves drafts to knowledge/outreach/ for human review before sending."
+inputs = "lead_company, lead_contact, lead_industry, service_description"
+outputs = "draft email saved to knowledge/outreach/, summary of drafts generated"
+
+[[tasks]]
+type = "skill_draft"
+[tasks.payload]
+agent_name = "coder_1"
+perspective = "software architect"
+skill_name = "customer_health_check"
+description = "Pings a customer fleet endpoint and records latency, agent status, and fleet version to the customers table in the launcher SQLite DB. Flags degraded or offline customers."
+inputs = "customer_name, endpoint_url, expected_version"
+outputs = "health status dict, updates customers table, returns latency and status"
+
+[[tasks]]
+type = "skill_draft"
+[tasks.payload]
+agent_name = "coder_1"
+perspective = "software architect"
+skill_name = "skill_pipeline"
+description = "Executes a sequence of fleet skills in order, passing the output of each as input to the next. Enables multi-step workflows like: web_crawl → summarize → marketing."
+inputs = "steps: list of {skill, payload} dicts"
+outputs = "list of results from each step, final result"
+
+# ── Codebase indexing ──────────────────────────────────────────────────────────
+
+[[tasks]]
+type = "code_index"
+[tasks.payload]
+directory = "/mnt/c/Users/max/Projects/Education/fleet"
+max_files = 25

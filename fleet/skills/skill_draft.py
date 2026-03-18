@@ -1,0 +1,161 @@
+"""
+Skill draft generator — writes a new fleet skill file based on a description.
+
+Output goes to knowledge/code_drafts/ for HUMAN REVIEW — never auto-deployed.
+Each coder perspective produces a different kind of draft:
+  architect  → clean interface, extensible structure, well-defined payload schema
+  critic     → defensive coding, input validation, explicit error paths
+  optimizer  → async-friendly, minimal I/O, efficient data handling
+
+Payload:
+  skill_name    str  e.g. "email_outreach"
+  description   str  what the skill should do
+  perspective   str  "software architect" | "code critic / reviewer" | "performance optimizer"
+  agent_name    str  "coder_1"
+  inputs        str  optional — describe expected payload fields
+  outputs       str  optional — describe what the skill should return
+
+Output: knowledge/code_drafts/<skill_name>_draft_<date>_<agent>.py
+"""
+import re
+from datetime import datetime
+from pathlib import Path
+
+import httpx
+
+FLEET_DIR   = Path(__file__).parent.parent
+DRAFTS_DIR  = FLEET_DIR / "knowledge" / "code_drafts"
+
+# Example of a well-structured fleet skill — used as a style reference in the prompt
+_STYLE_EXAMPLE = '''\
+def run(payload, config):
+    """
+    Payload keys:
+      target   str  — what to operate on
+      options  dict — optional parameters
+    Returns dict with: result, saved_to, error (if any)
+    """
+    target = payload.get("target", "")
+    if not target:
+        return {"error": "No target provided"}
+    # ... implementation ...
+    return {"result": "...", "saved_to": "..."}
+'''
+
+PERSPECTIVE_GUIDANCE = {
+    "software architect": (
+        "Design a clean, extensible module. "
+        "Define a clear payload schema at the top. "
+        "Separate concerns into helper functions. "
+        "Document the public interface fully. "
+        "Think about how this skill will be composed with others."
+    ),
+    "code critic / reviewer": (
+        "Prioritize defensive coding. "
+        "Validate all inputs explicitly. "
+        "Handle every exception path with a useful error message. "
+        "Add inline comments explaining non-obvious decisions. "
+        "Never assume the payload is well-formed."
+    ),
+    "performance optimizer": (
+        "Minimize I/O operations and avoid redundant reads. "
+        "Use streaming or chunking where data may be large. "
+        "Set appropriate timeouts on all network calls. "
+        "Keep memory footprint small — process items incrementally. "
+        "Prefer generators over loading full lists into memory."
+    ),
+}
+
+
+def _ollama(prompt: str, config: dict) -> str:
+    resp = httpx.post(
+        f"{config['models']['ollama_host']}/api/generate",
+        json={"model": config["models"]["local"], "prompt": prompt, "stream": False},
+        timeout=300,
+    )
+    resp.raise_for_status()
+    return resp.json()["response"].strip()
+
+
+def _extract_code(raw: str) -> str:
+    """Pull the Python code block out of the model response."""
+    # Try fenced code block first
+    m = re.search(r"```python\s*(.*?)```", raw, re.DOTALL)
+    if m:
+        return m.group(1).strip()
+    m = re.search(r"```\s*(.*?)```", raw, re.DOTALL)
+    if m:
+        return m.group(1).strip()
+    # Fall back to the raw text
+    return raw.strip()
+
+
+def run(payload, config):
+    skill_name  = payload.get("skill_name", "unnamed_skill")
+    description = payload.get("description", "")
+    perspective = payload.get("perspective", "software architect")
+    agent_name  = payload.get("agent_name", "coder_1")
+    inputs_hint = payload.get("inputs", "")
+    outputs_hint = payload.get("outputs", "")
+
+    if not description:
+        return {"error": "No description provided"}
+
+    guidance = PERSPECTIVE_GUIDANCE.get(perspective, PERSPECTIVE_GUIDANCE["software architect"])
+
+    prompt = f"""You are a {perspective} writing a new Python skill module for a local AI agent fleet system.
+
+Fleet skill contract:
+- Every skill exports a single function: run(payload: dict, config: dict) -> dict
+- payload comes from the task queue (user-supplied, treat as untrusted)
+- config contains: config["models"]["ollama_host"], config["models"]["local"]
+- Skills save output to knowledge/ subdirectories and return a result dict
+- Skills must import everything they need internally (no top-level side effects)
+
+Style reference:
+```python
+{_STYLE_EXAMPLE}
+```
+
+SKILL NAME: {skill_name}
+DESCRIPTION: {description}
+{f"INPUTS: {inputs_hint}" if inputs_hint else ""}
+{f"OUTPUTS: {outputs_hint}" if outputs_hint else ""}
+
+YOUR PERSPECTIVE AS {perspective.upper()}:
+{guidance}
+
+Write the complete Python skill file. Include:
+1. Module docstring explaining purpose, payload keys, and output
+2. All imports
+3. Any helper functions needed
+4. The run(payload, config) function
+
+Respond with ONLY the Python code in a ```python ... ``` block."""
+
+    raw = _ollama(prompt, config)
+    code = _extract_code(raw)
+
+    # Add draft header warning
+    header = (
+        f'"""\nDRAFT — generated by {agent_name} ({perspective})\n'
+        f'Date: {datetime.now().strftime("%Y-%m-%d %H:%M")}\n'
+        f'Description: {description}\n'
+        f'STATUS: REVIEW BEFORE USE — not deployed automatically\n"""\n\n'
+    )
+    # Only prepend header if the code doesn't already have a module docstring
+    if not code.startswith('"""'):
+        code = header + code
+
+    DRAFTS_DIR.mkdir(parents=True, exist_ok=True)
+    safe_name = re.sub(r"[^a-z0-9_]", "_", skill_name.lower())
+    date_str  = datetime.now().strftime("%Y%m%d")
+    out_file  = DRAFTS_DIR / f"{safe_name}_draft_{date_str}_{agent_name}.py"
+    out_file.write_text(code)
+
+    return {
+        "skill_name":  skill_name,
+        "perspective": perspective,
+        "saved_to":    str(out_file),
+        "preview":     code[:400],
+    }

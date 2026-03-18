@@ -1,0 +1,29 @@
+[fleet]
+eco_mode = false
+idle_enabled = false        # set true to allow workers to run idle curriculum
+idle_timeout_secs = 30
+training_check_interval_secs = 15   # reduced: catch training start faster
+max_workers = 4
+
+[models]
+local = "qwen3:8b"
+complex = "qwen3:8b"
+complex_provider = "local"    # "claude" | "gemini" | "local"
+ollama_host = "http://localhost:11434"
+
+[review]
+enabled = false                # evaluator-optimizer pass on skill outputs
+provider = "api"               # "api" = Anthropic API key | "subscription" = Gemini free tier | "local" = Ollama
+claude_model = "claude-sonnet-4-6"
+gemini_model = "gemini-2.0-flash"
+local_model = "qwen3:8b"       # local reviewer; prefixed with /think for extended reasoning
+local_ctx = 16384              # extended context window for deeper review passes
+local_think = true             # prepend /think to prompt (enables CoT on supported models)
+
+[gpu]
+mode = "eco"  # "eco" = CPU-only Ollama, "full" = GPU
+
+[workers]
+nice_level = 15
+cpu_limit_percent = 10  # per worker via cpulimit; 4 workers = 40% total CPU
+coder_count = 3          # number of coder_N instances (coder_1 … coder_N)

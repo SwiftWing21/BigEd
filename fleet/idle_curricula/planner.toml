@@ -1,0 +1,31 @@
+# Planner idle curriculum — generates workload batches when no tasks are pending
+
+[[tasks]]
+type = "plan_workload"
+[tasks.payload]
+focus = "leads"
+max_tasks = 15
+
+[[tasks]]
+type = "plan_workload"
+[tasks.payload]
+focus = "research"
+max_tasks = 10
+
+[[tasks]]
+type = "plan_workload"
+[tasks.payload]
+focus = "business"
+max_tasks = 12
+
+[[tasks]]
+type = "plan_workload"
+[tasks.payload]
+focus = "all"
+max_tasks = 20
+
+[[tasks]]
+type = "plan_workload"
+[tasks.payload]
+focus = "security"
+max_tasks = 8

@@ -1,0 +1,76 @@
+# Security agent idle curriculum
+# Runs routine audits across fleet files, credentials, and configs
+
+[[tasks]]
+type = "security_audit"
+[tasks.payload]
+scope = "fleet_config"
+scan_dirs = ["/mnt/c/Users/max/Projects/Education/fleet"]
+check_permissions = true
+check_secrets = true
+check_gitignore = true
+
+[[tasks]]
+type = "security_audit"
+[tasks.payload]
+scope = "home_credentials"
+scan_dirs = ["/home/max"]
+check_permissions = true
+check_secrets = false  # avoid scanning all home files for secrets
+check_gitignore = false
+
+[[tasks]]
+type = "summarize"
+[tasks.payload]
+text = "What are the top 5 security best practices for running a local LLM API service (Ollama) on a development machine? Focus on network isolation, access control, and credential handling."
+
+[[tasks]]
+type = "summarize"
+[tasks.payload]
+text = "What HIPAA technical safeguards apply to a local AI assistant deployed for a small healthcare practice? Focus on access controls, audit logging, transmission security, and data encryption at rest."
+
+[[tasks]]
+type = "summarize"
+[tasks.payload]
+text = "What are common security vulnerabilities in Python web service deployments serving local LLM inference? Cover prompt injection, data leakage, dependency CVEs, and SSRF risks."
+
+[[tasks]]
+type = "security_audit"
+[tasks.payload]
+scope = "education_project"
+scan_dirs = ["/mnt/c/Users/max/Projects/Education"]
+check_permissions = false
+check_secrets = true
+check_gitignore = true
+
+[[tasks]]
+type = "pen_test"
+[tasks.payload]
+target = "auto"
+scan_type = "service"
+label = "local_network_routine"
+
+[[tasks]]
+type = "summarize"
+[tasks.payload]
+text = "What are the most important network hardening steps for a home lab running Ollama, WSL2, and local AI services? Cover firewall rules, binding services to localhost, and detecting unexpected listeners."
+
+[[tasks]]
+type = "summarize"
+[tasks.payload]
+text = "Ubiquiti UniFi security hardening guide for a home lab: cover changing default SSH credentials, enabling 2FA on the controller, restricting admin UI to management VLAN, disabling UPnP, guest VLAN isolation, and firmware update best practices."
+
+[[tasks]]
+type = "summarize"
+[tasks.payload]
+text = "What are known CVEs and security vulnerabilities in Ubiquiti UniFi controllers and network devices from 2022-2025? Include any remote code execution, authentication bypass, or credential exposure issues and their patches."
+
+[[tasks]]
+type = "summarize"
+[tasks.payload]
+text = "How should a UniFi network be segmented for a home lab running local AI services? Cover IoT VLAN, management VLAN, client VLAN, and how to isolate Ollama API and WSL2 services from guest and IoT traffic."
+
+[[tasks]]
+type = "summarize"
+[tasks.payload]
+text = "What UniFi firewall rules should be set to protect a local AI inference server (Ollama on port 11434) from LAN-wide access while still allowing specific trusted hosts? Provide concrete rule examples."

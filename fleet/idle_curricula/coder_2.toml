@@ -1,0 +1,134 @@
+# coder_2 — code critic / reviewer perspective
+# Produces: code_discuss contributions, code_review reports, skill_draft files
+
+# ── Code discussions ───────────────────────────────────────────────────────────
+
+[[tasks]]
+type = "code_discuss"
+[tasks.payload]
+agent_name = "coder_2"
+role_perspective = "code critic / reviewer"
+topic = "shell injection risks in lead_client and launcher dispatch"
+round = 1
+
+[[tasks]]
+type = "code_discuss"
+[tasks.payload]
+agent_name = "coder_2"
+role_perspective = "code critic / reviewer"
+topic = "error handling gaps in fleet skills — missing try/except patterns"
+round = 1
+
+[[tasks]]
+type = "code_discuss"
+[tasks.payload]
+agent_name = "coder_2"
+role_perspective = "code critic / reviewer"
+topic = "claim_task race condition and WAL correctness in db.py"
+round = 1
+
+[[tasks]]
+type = "code_discuss"
+[tasks.payload]
+agent_name = "coder_2"
+role_perspective = "code critic / reviewer"
+topic = "web_crawl.py — what can go wrong when scraping untrusted HTML"
+round = 1
+
+[[tasks]]
+type = "code_discuss"
+[tasks.payload]
+agent_name = "coder_2"
+role_perspective = "code critic / reviewer"
+topic = "wsl_bg callback patterns — race conditions and error swallowing in launcher"
+round = 1
+
+[[tasks]]
+type = "code_discuss"
+[tasks.payload]
+agent_name = "coder_2"
+role_perspective = "code critic / reviewer"
+topic = "what input validation is missing across fleet skill payloads"
+round = 1
+
+[[tasks]]
+type = "code_discuss"
+[tasks.payload]
+agent_name = "coder_2"
+role_perspective = "code critic / reviewer"
+topic = "Replicate and Stability AI API error handling — rate limits, auth failures, timeouts"
+round = 1
+
+# ── Code reviews ───────────────────────────────────────────────────────────────
+
+[[tasks]]
+type = "code_review"
+[tasks.payload]
+agent_name = "coder_2"
+perspective = "code critic / reviewer"
+file = "skills/web_crawl.py"
+focus = "input validation, error handling, HTML parsing edge cases, redirect safety"
+
+[[tasks]]
+type = "code_review"
+[tasks.payload]
+agent_name = "coder_2"
+perspective = "code critic / reviewer"
+file = "skills/lead_research.py"
+focus = "error handling, search result validation, file write safety"
+
+[[tasks]]
+type = "code_review"
+[tasks.payload]
+agent_name = "coder_2"
+perspective = "code critic / reviewer"
+file = "worker.py"
+focus = "task claim safety, exception handling, skill import failures"
+
+[[tasks]]
+type = "code_review"
+[tasks.payload]
+agent_name = "coder_2"
+perspective = "code critic / reviewer"
+file = "skills/generate_video.py"
+focus = "API error handling, timeout management, polling loop safety"
+
+# ── Skill drafts ───────────────────────────────────────────────────────────────
+
+[[tasks]]
+type = "skill_draft"
+[tasks.payload]
+agent_name = "coder_2"
+perspective = "code critic / reviewer"
+skill_name = "validate_payload"
+description = "Utility skill that validates a payload dict against a schema definition before dispatching to another skill. Returns clear error messages for missing or wrong-type fields. Prevents cryptic failures deep in skill execution."
+inputs = "payload: dict, schema: dict of {field: {type, required, default}}"
+outputs = "validated payload dict with defaults filled in, or error dict with field-level messages"
+
+[[tasks]]
+type = "skill_draft"
+[tasks.payload]
+agent_name = "coder_2"
+perspective = "code critic / reviewer"
+skill_name = "retry_wrapper"
+description = "Wraps any fleet skill call with configurable retry logic. Handles transient errors (network timeouts, Ollama overload, API rate limits) with exponential backoff. Logs each attempt and reason for retry."
+inputs = "skill_name, payload, max_retries (default 3), backoff_seconds (default 5)"
+outputs = "final result dict from the wrapped skill, or error after max retries"
+
+[[tasks]]
+type = "skill_draft"
+[tasks.payload]
+agent_name = "coder_2"
+perspective = "code critic / reviewer"
+skill_name = "audit_log"
+description = "Appends a structured audit entry to knowledge/audit.jsonl whenever a sensitive skill runs (key_manager, security_apply, pen_test, generate_video, email_outreach). Records: timestamp, skill, agent, payload summary, result status."
+inputs = "skill_name, agent_name, payload_summary, result_status, details"
+outputs = "audit entry appended to knowledge/audit.jsonl"
+
+# ── Codebase indexing ──────────────────────────────────────────────────────────
+
+[[tasks]]
+type = "code_index"
+[tasks.payload]
+directory = "/mnt/c/Users/max/Projects/Education/fleet/skills"
+max_files = 20

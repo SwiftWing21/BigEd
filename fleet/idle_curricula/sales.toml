@@ -1,0 +1,82 @@
+[[tasks]]
+type = "discuss"
+[tasks.payload]
+agent_name = "sales"
+topic = "local AI services business opportunity"
+role_perspective = "sales strategist focused on SMB outreach and revenue generation"
+round = 1
+
+[[tasks]]
+type = "lead_research"
+[tasks.payload]
+industry = "healthcare"
+zip_code = "95076"
+city = "Watsonville CA"
+
+[[tasks]]
+type = "lead_research"
+[tasks.payload]
+industry = "accounting"
+zip_code = "95076"
+city = "Watsonville CA"
+
+[[tasks]]
+type = "lead_research"
+[tasks.payload]
+industry = "legal"
+zip_code = "95076"
+city = "Watsonville CA"
+
+[[tasks]]
+type = "lead_research"
+[tasks.payload]
+industry = "healthcare"
+zip_code = "95060"
+city = "Santa Cruz CA"
+
+[[tasks]]
+type = "lead_research"
+[tasks.payload]
+industry = "accounting"
+zip_code = "95060"
+city = "Santa Cruz CA"
+
+[[tasks]]
+type = "lead_research"
+[tasks.payload]
+industry = "legal"
+zip_code = "95060"
+city = "Santa Cruz CA"
+
+[[tasks]]
+type = "summarize"
+[tasks.payload]
+text = "What are the most effective cold outreach strategies for selling local AI implementation services to small healthcare practices, accounting firms, and law offices? Focus on trust-building and privacy-first messaging."
+
+[[tasks]]
+type = "marketing"
+[tasks.payload]
+company        = "Sample Dental Practice"
+service        = "AI-powered patient scheduling and follow-up assistant (runs locally, no cloud)"
+audience       = "dental practice owners in Santa Cruz County CA"
+tone           = "professional and approachable"
+generate_image = true
+generate_video = false
+image_style    = "photographic"
+
+[[tasks]]
+type = "marketing"
+[tasks.payload]
+company        = "Sample Accounting Firm"
+service        = "Local AI bookkeeping assistant — automates categorization and monthly reports"
+audience       = "CPA and accounting firm owners"
+tone           = "trustworthy and data-driven"
+generate_image = true
+generate_video = false
+image_style    = "digital-art"
+
+[[tasks]]
+type = "web_crawl"
+[tasks.payload]
+url  = "https://www.yelp.com/search?find_desc=dentist&find_loc=Watsonville+CA"
+save = true

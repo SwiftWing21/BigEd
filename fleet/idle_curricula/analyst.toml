@@ -1,0 +1,21 @@
+# Analyst idle curriculum — autoresearch monitoring
+# Reads from Education/autoresearch/results.tsv (falls back to /home/max/autoresearch/)
+
+[[tasks]]
+type = "review_discards"
+[tasks.payload]
+# source resolved automatically by review_discards.py path detection
+
+[[tasks]]
+type = "analyze_results"
+[tasks.payload]
+source = "/mnt/c/Users/max/Projects/Education/autoresearch/results.tsv"
+
+[[tasks]]
+type = "review_discards"
+[tasks.payload]
+
+[[tasks]]
+type = "summarize"
+[tasks.payload]
+text = "Review these training results and suggest the next hyperparameter to tune: DEPTH=6, best val_bpb=1.106251, WEIGHT_DECAY=0.05, SCALAR_LR=0.85. What should we try next?"

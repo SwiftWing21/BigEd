@@ -1,0 +1,62 @@
+# ── Secrets / credentials ─────────────────────────────────────────────────────
+.env
+.env.*
+.secrets
+*.secrets
+secrets.*
+
+# ── Python bytecode ───────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*.pyo
+.Python
+
+# ── Virtual environments ──────────────────────────────────────────────────────
+.venv/
+venv/
+env/
+ENV/
+
+# ── Fleet — runtime databases ─────────────────────────────────────────────────
+fleet/fleet.db
+fleet/fleet.db-shm
+fleet/fleet.db-wal
+
+# ── Fleet — live status (regenerated on start) ────────────────────────────────
+fleet/STATUS.md
+
+# ── Fleet — logs ──────────────────────────────────────────────────────────────
+fleet/logs/
+
+# ── Fleet — generated knowledge (runtime output, not source) ──────────────────
+fleet/knowledge/leads/
+fleet/knowledge/reports/
+fleet/knowledge/summaries/
+fleet/knowledge/discussion/
+fleet/knowledge/code_discussion/
+fleet/knowledge/security/
+fleet/knowledge/marketing/
+fleet/knowledge/design/
+fleet/knowledge/flashcards.jsonl
+fleet/knowledge/code_index.jsonl
+fleet/knowledge/search_waterfall.jsonl
+fleet/knowledge/discard_tracker.json
+
+# ── Launcher — build artifacts ────────────────────────────────────────────────
+Max Stuff/launcher/dist/
+Max Stuff/launcher/build/
+
+# ── Launcher — PyInstaller spec files (contain absolute paths, regenerated) ───
+Max Stuff/launcher/*.spec
+
+# ── Launcher — CRM / tools SQLite database (user runtime data) ───────────────
+Max Stuff/launcher/data/
+
+# ── Claude Code local settings (permissions, not project instructions) ────────
+.claude/
+
+# ── OS junk ───────────────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+desktop.ini
+ehthumbs.db

@@ -1,0 +1,27 @@
+[[tasks]]
+type = "discuss"
+[tasks.payload]
+agent_name = "onboarding"
+topic = "local AI services business opportunity"
+role_perspective = "client onboarding specialist focused on smooth implementation and customer success"
+round = 1
+
+[[tasks]]
+type = "summarize"
+[tasks.payload]
+text = "Create a standard onboarding checklist for a small healthcare practice adopting a local AI assistant. Include data privacy setup, staff training, workflow integration, and success metrics."
+
+[[tasks]]
+type = "summarize"
+[tasks.payload]
+text = "Create a standard onboarding checklist for a small accounting or tax firm adopting local AI for document processing and client communication. Include data security, compliance, and training steps."
+
+[[tasks]]
+type = "summarize"
+[tasks.payload]
+text = "Create a standard onboarding checklist for a small law firm adopting local AI for document automation and billing. Include privilege protection, staff training, and success milestones."
+
+[[tasks]]
+type = "summarize"
+[tasks.payload]
+text = "What are the most common reasons SMB clients fail to adopt new technology? How should an onboarding agent proactively address these during implementation?"

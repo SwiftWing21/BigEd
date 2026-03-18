@@ -1,0 +1,40 @@
+[[tasks]]
+type = "code_index"
+[tasks.payload]
+directory = "/mnt/c/Users/max/Projects/Education"
+max_files = 30
+
+[[tasks]]
+type = "code_index"
+[tasks.payload]
+directory = "/home/max/autoresearch"
+max_files = 10
+
+[[tasks]]
+type = "summarize"
+[tasks.payload]
+url = "https://docs.python.org/3/library/sqlite3.html"
+
+[[tasks]]
+type = "summarize"
+[tasks.payload]
+url = "https://docs.python.org/3/library/asyncio.html"
+
+[[tasks]]
+type = "summarize"
+[tasks.payload]
+url = "https://docs.python.org/3/library/pathlib.html"
+
+[[tasks]]
+type = "code_discuss"
+[tasks.payload]
+topic = "fleet skill error handling patterns"
+role_perspective = "generalist coder"
+round = 1
+
+[[tasks]]
+type = "code_discuss"
+[tasks.payload]
+topic = "supervisor worker restart reliability"
+role_perspective = "generalist coder"
+round = 1

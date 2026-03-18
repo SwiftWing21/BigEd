@@ -1,0 +1,58 @@
+# legal agent — drafts business legal documents, researches AI law requirements
+
+[[tasks]]
+type = "legal_draft"
+[tasks.payload]
+doc_type    = "nda"
+client_name = "Prospective Client"
+context     = "AI implementation services, local deployment, no cloud data transfer"
+
+[[tasks]]
+type = "legal_draft"
+[tasks.payload]
+doc_type    = "service_agreement"
+client_name = "Template Client"
+context     = "Local AI fleet deployment for small business, monthly retainer model"
+
+[[tasks]]
+type = "legal_draft"
+[tasks.payload]
+doc_type    = "dpa"
+client_name = "Healthcare Practice Template"
+context     = "HIPAA-adjacent: patient scheduling AI, all data stays on-premise, no PHI leaves client hardware"
+
+[[tasks]]
+type = "legal_draft"
+[tasks.payload]
+doc_type    = "sow"
+client_name = "Template Client"
+context     = "Phase 1: fleet setup + training. Phase 2: ongoing managed service. 30-day implementation."
+
+[[tasks]]
+type = "legal_draft"
+[tasks.payload]
+doc_type    = "proposal"
+client_name = "Dental Practice"
+context     = "Local AI for patient scheduling and follow-up, replaces cloud SaaS, privacy-first pitch"
+
+[[tasks]]
+type = "legal_draft"
+[tasks.payload]
+doc_type    = "consultant"
+client_name = "Technical Contractor"
+context     = "Part-time fleet deployment specialist, 1099, IP assignment for fleet tools"
+
+[[tasks]]
+type = "summarize"
+[tasks.payload]
+text = "What are the key legal requirements for operating a local AI implementation business in California? Cover: business licensing, data privacy (CCPA), contracts with healthcare/legal clients, liability exposure for AI outputs, and any AI-specific regulations in effect or pending as of 2025."
+
+[[tasks]]
+type = "summarize"
+[tasks.payload]
+text = "What should a small AI services company include in its client contracts to limit liability for AI-generated outputs? Focus on: disclaimer language for AI accuracy, indemnification, limitation of liability caps, human-review requirements, and how courts have treated AI output liability so far."
+
+[[tasks]]
+type = "summarize"
+[tasks.payload]
+text = "What data processing and privacy obligations apply when deploying local AI for small healthcare practices in California? Cover HIPAA Business Associate requirements, California Consumer Privacy Act, and best practices for on-premise AI deployments that never send patient data to the cloud."
