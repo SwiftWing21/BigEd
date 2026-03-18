@@ -21,6 +21,9 @@ ENV/
 fleet/fleet.db
 fleet/fleet.db-shm
 fleet/fleet.db-wal
+fleet/rag.db
+fleet/rag.db-shm
+fleet/rag.db-wal
 
 # ── Fleet — live status (regenerated on start) ────────────────────────────────
 fleet/STATUS.md
@@ -40,6 +43,10 @@ fleet/knowledge/design/
 fleet/knowledge/code_writes/
 fleet/knowledge/code_drafts/
 fleet/knowledge/code_reviews/
+fleet/knowledge/fma_reviews/
+fleet/knowledge/quality/
+fleet/knowledge/chains/
+fleet/knowledge/biged_agents/
 fleet/knowledge/plans/
 fleet/knowledge/flashcards.jsonl
 fleet/knowledge/code_index.jsonl
@@ -47,14 +54,14 @@ fleet/knowledge/search_waterfall.jsonl
 fleet/knowledge/discard_tracker.json
 
 # ── Launcher — build artifacts ────────────────────────────────────────────────
-Max Stuff/launcher/dist/
-Max Stuff/launcher/build/
+BigEd/launcher/dist/
+BigEd/launcher/build/
 
 # ── Launcher — PyInstaller spec files (contain absolute paths, regenerated) ───
-Max Stuff/launcher/*.spec
+BigEd/launcher/*.spec
 
 # ── Launcher — CRM / tools SQLite database (user runtime data) ───────────────
-Max Stuff/launcher/data/
+BigEd/launcher/data/
 
 # ── Claude Code local settings (permissions, not project instructions) ────────
 .claude/

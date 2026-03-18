@@ -60,6 +60,7 @@ def _build_roles(config):
 ollama_proc = None
 discord_proc = None
 openclaw_proc = None
+dashboard_proc = None
 worker_procs = {}
 training_active = False
 
@@ -153,6 +154,31 @@ def stop_openclaw():
     openclaw_proc = None
 
 
+def start_dashboard(config):
+    global dashboard_proc
+    if not config.get("dashboard", {}).get("enabled", False):
+        log.info("Dashboard disabled in fleet.toml")
+        return
+    port = config.get("dashboard", {}).get("port", 5555)
+    log.info(f"Starting dashboard on http://localhost:{port}")
+    dashboard_proc = subprocess.Popen(
+        [PYTHON, str(FLEET_DIR / "dashboard.py"), "--port", str(port)],
+        cwd=str(FLEET_DIR),
+    )
+
+
+def stop_dashboard():
+    global dashboard_proc
+    if dashboard_proc and dashboard_proc.poll() is None:
+        log.info("Stopping dashboard")
+        dashboard_proc.terminate()
+        try:
+            dashboard_proc.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            dashboard_proc.kill()
+    dashboard_proc = None
+
+
 def start_worker(role, config):
     nice = config["workers"]["nice_level"]
     cpu_limit = config["workers"]["cpu_limit_percent"]
@@ -219,6 +245,7 @@ def write_status_md():
 
 def shutdown(sig, frame):
     log.info("Shutting down fleet...")
+    stop_dashboard()
     stop_openclaw()
     stop_discord_bot()
     for role, proc in worker_procs.items():
@@ -259,9 +286,10 @@ def main():
         start_worker(role, config)
         time.sleep(1)
 
-    # Start messaging bridges
+    # Start services
     start_discord_bot(config)
     start_openclaw(config)
+    start_dashboard(config)
 
     log.info(f"Fleet up — {len(ROLES)} workers, eco={config['fleet']['eco_mode']}")
 
@@ -287,6 +315,9 @@ def main():
         if openclaw_proc and openclaw_proc.poll() is not None:
             log.warning(f"OpenClaw died (exit={openclaw_proc.returncode}) — restarting")
             start_openclaw(config)
+        if dashboard_proc and dashboard_proc.poll() is not None:
+            log.warning(f"Dashboard died (exit={dashboard_proc.returncode}) — restarting")
+            start_dashboard(config)
 
         # Keep model loaded in VRAM unconditionally
         if now - last_keepalive >= OLLAMA_KEEPALIVE_INTERVAL:

@@ -176,6 +176,20 @@ max_files = 20
 # ── Code write reviews (critic perspective) ──────────────────────────────────
 
 [[tasks]]
+type = "security_review"
+[tasks.payload]
+target = ""
+severity_min = "MEDIUM"
+auto_fix = true
+
+[[tasks]]
+type = "code_quality"
+[tasks.payload]
+target = ""
+severity_min = "LOW"
+auto_fix = true
+
+[[tasks]]
 type = "code_write_review"
 [tasks.payload]
 agent_name = "coder_2"

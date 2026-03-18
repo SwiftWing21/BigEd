@@ -17,7 +17,7 @@
 | planner | Workload planning — queues 5–500 tasks based on fleet state |
 
 ## Quick Reference
-- Full command reference: `../Max Stuff/fleet_commands.md`
+- Full command reference: `../BigEd/fleet_commands.md`
 - Live status: `uv run python lead_client.py status`
 - Start fleet: `nohup uv run python supervisor.py >> logs/supervisor.log 2>&1 &`
 - Security advisories: `knowledge/security/pending/advisory_<id>.md`
@@ -30,6 +30,8 @@
 | `code_review` | `knowledge/code_reviews/<file>_review_<date>_<agent>.md` |
 | `fma_review` | `knowledge/fma_reviews/<file>_review_<date>_<agent>.md` + discussion logs |
 | `skill_draft` | `knowledge/code_drafts/<name>_draft_<date>_<agent>.py` |
+| `security_review` | `knowledge/security/reviews/security_review_<date>.md` |
+| `code_quality` | `knowledge/quality/reviews/quality_review_<date>.md` |
 
 Drafts are **never auto-deployed** — review before copying to `skills/`.
 

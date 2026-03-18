@@ -1,5 +1,21 @@
 # Planner idle curriculum — generates workload batches when no tasks are pending
 
+# ── Self-improvement: gap analysis + curriculum tuning ───────────────────────
+
+[[tasks]]
+type = "skill_learn"
+[tasks.payload]
+lookback_days = 14
+auto_queue = true
+max_proposals = 3
+
+[[tasks]]
+type = "curriculum_update"
+[tasks.payload]
+dry_run = false
+
+# ── Workload planning ───────────────────────────────────────────────────────
+
 [[tasks]]
 type = "plan_workload"
 [tasks.payload]
@@ -29,3 +45,11 @@ type = "plan_workload"
 [tasks.payload]
 focus = "security"
 max_tasks = 8
+
+# ── Security review (periodic fleet-wide scan) ───────────────────────────────
+
+[[tasks]]
+type = "security_review"
+[tasks.payload]
+severity_min = "LOW"
+auto_fix = false

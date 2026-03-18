@@ -4,7 +4,6 @@ idle_enabled = false        # set true to allow workers to run idle curriculum
 idle_timeout_secs = 30
 training_check_interval_secs = 15   # reduced: catch training start faster
 max_workers = 4
-
 openclaw_enabled = false     # multi-channel gateway (Discord/WhatsApp/Telegram/etc) — enable via FMA GUI
 discord_bot_enabled = true   # lightweight Discord-only bridge to biged-fleetchat
 
@@ -25,6 +24,10 @@ local_think = true             # prepend /think to prompt (enables CoT on suppor
 
 [gpu]
 mode = "eco"  # "eco" = CPU-only Ollama, "full" = GPU
+
+[dashboard]
+enabled = true                 # localhost web dashboard for fleet metrics
+port = 5555
 
 [openclaw]
 port = 18789

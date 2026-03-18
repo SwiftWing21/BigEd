@@ -205,6 +205,32 @@ async def cmd_result(message: discord.Message, args: str):
     await _reply(message, "\n".join(lines))
 
 
+async def cmd_rag(message: discord.Message, args: str):
+    """Search indexed .md files via RAG."""
+    if not args:
+        await _reply(message, "Usage: `/rag <search query>`")
+        return
+    await message.add_reaction("\U0001f50d")  # magnifying glass
+    try:
+        import sys
+        sys.path.insert(0, str(Path(__file__).parent))
+        from rag import RAGIndex
+        idx = RAGIndex()
+        chunks = await asyncio.to_thread(idx.search, args, 5)
+        if not chunks:
+            await _reply(message, f"No results for: **{args}**")
+        else:
+            lines = [f"**RAG results for:** {args}\n"]
+            for i, c in enumerate(chunks, 1):
+                lines.append(f"**{i}.** `{c['source']}` > {c['heading']}")
+                preview = c['text'][:300].replace('```', '` ` `')
+                lines.append(f"```\n{preview}\n```")
+            await _reply(message, "\n".join(lines))
+    except Exception as e:
+        await _reply(message, f"RAG error: {e}")
+    await message.remove_reaction("\U0001f50d", client.user)
+
+
 async def cmd_help(message: discord.Message, _args: str):
     await _reply(message, (
         "**Fleet Bot Commands**\n"
@@ -212,6 +238,7 @@ async def cmd_help(message: discord.Message, _args: str):
         "`/claude <prompt>` — Claude API\n"
         "`/gemini <prompt>` — Gemini API\n"
         "`/local <prompt>` — Local Ollama\n"
+        "`/rag <query>` — Search indexed docs (RAG)\n"
         "`/status` — Fleet status\n"
         "`/task <description>` — Queue a fleet task\n"
         "`/result <id>` — Get task result\n"
@@ -233,6 +260,14 @@ SKILL_MAP = {
     "security": "security_audit", "audit": "security_audit",
     "index": "code_index",
     "fma": "fma_review", "launcher": "fma_review", "fleet manager": "fma_review",
+    "rag": "rag_query", "lookup": "rag_query", "context": "rag_query",
+    "test skill": "skill_test", "promote": "skill_promote",
+    "skill gaps": "skill_learn", "chain": "skill_chain", "pipeline": "skill_chain",
+    "branch": "branch_manager", "product": "branch_manager",
+    "evolve": "skill_evolve", "benchmark": "benchmark",
+    "curriculum": "curriculum_update", "release": "product_release",
+    "security review": "security_review", "security scan": "security_review",
+    "quality": "code_quality", "lint": "code_quality", "best practices": "code_quality",
 }
 
 
@@ -282,6 +317,7 @@ COMMANDS = {
     "/status": cmd_status,
     "/task": cmd_task,
     "/result": cmd_result,
+    "/rag": cmd_rag,
     "/help": cmd_help,
 }
 
@@ -302,7 +338,8 @@ async def on_message(message: discord.Message):
     if message.channel.id != CHANNEL_ID:
         return
 
-    content = message.content.strip()
+    from skills._security import sanitize_discord_content
+    content = sanitize_discord_content(message.content.strip())
     if not content:
         return
 

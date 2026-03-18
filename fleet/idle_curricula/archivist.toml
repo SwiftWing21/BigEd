@@ -1,3 +1,12 @@
+# ── RAG index maintenance ────────────────────────────────────────────────────
+
+[[tasks]]
+type = "rag_index"
+[tasks.payload]
+mode = "update"
+
+# ── Flashcards ───────────────────────────────────────────────────────────────
+
 [[tasks]]
 type = "flashcard"
 [tasks.payload]
