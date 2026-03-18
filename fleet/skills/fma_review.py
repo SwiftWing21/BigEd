@@ -28,8 +28,8 @@ FLEET_DIR = Path(__file__).parent.parent
 KNOWLEDGE_DIR = FLEET_DIR / "knowledge"
 FMA_REVIEWS_DIR = KNOWLEDGE_DIR / "fma_reviews"
 
-# FMA source files — absolute paths on Windows, read via WSL or direct
-FMA_DIR = Path(r"/mnt/c/Users/max/Projects/Education/Max Stuff/launcher")
+# FMA source files — resolve relative to project root (cross-platform)
+FMA_DIR = FLEET_DIR.parent / "BigEd" / "launcher"
 FMA_FILES = [
     "launcher.py",
     "updater.py",

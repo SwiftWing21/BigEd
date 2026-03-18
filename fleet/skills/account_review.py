@@ -21,7 +21,7 @@ KNOWLEDGE_DIR = FLEET_DIR / "knowledge"
 REPORTS_DIR   = KNOWLEDGE_DIR / "reports"
 
 # Launcher's tools.db — accessible from WSL via the /mnt mount
-LAUNCHER_DB = Path("/mnt/c/Users/max/Projects/Education/Max Stuff/launcher/data/tools.db")
+LAUNCHER_DB = Path("/mnt/c/Users/max/Projects/Education/BigEd/launcher/data/tools.db")
 
 # Estimated paid tier costs for upgrade cost-benefit analysis
 _UPGRADE_COSTS = {

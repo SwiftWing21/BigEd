@@ -3,7 +3,7 @@
 All commands run from Windows cmd (not WSL) inside the `launcher/` directory.
 
 ```
-cd C:\Users\max\Projects\Education\Max Stuff\launcher
+cd C:\Users\max\Projects\Education\BigEd\launcher
 ```
 
 ---

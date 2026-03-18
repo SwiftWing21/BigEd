@@ -3,7 +3,7 @@
 ## Project Structure
 - Local education/learning project on Windows 11
 - `fleet/` — 8-agent local AI worker fleet (Ollama/qwen3:8b + Sonnet for synthesis)
-- `Max Stuff/` — personal reference docs, command sheets, notes
+- `BigEd/` — personal reference docs, command sheets, notes
 
 ## Machine (RTX 3080 Ti, 12GB VRAM)
 - VRAM safe limit: 10GB. Training sweet spot: DEPTH=6, ~26M params, 6.9GB
@@ -13,7 +13,7 @@
 
 ## Fleet
 - Config/status: `fleet/CLAUDE.md`, live status: `uv run python lead_client.py status`
-- Commands reference: `Max Stuff/fleet_commands.md` (read on demand, not loaded here)
+- Commands reference: `BigEd/fleet_commands.md` (read on demand, not loaded here)
 - Eco mode default: CPU-only Ollama, ~40% CPU, 0 VRAM
 
 ## API Guidelines (when making API calls or building apps)
