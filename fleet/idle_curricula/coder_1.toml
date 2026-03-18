@@ -125,6 +125,28 @@ description = "Executes a sequence of fleet skills in order, passing the output 
 inputs = "steps: list of {skill, payload} dicts"
 outputs = "list of results from each step, final result"
 
+# ── Code write (aider) ────────────────────────────────────────────────────────
+
+[[tasks]]
+type = "code_write"
+[tasks.payload]
+instructions = "Create a Python CLI tool that reads fleet.db and prints a summary of task success/failure rates per skill type, with a bar chart using Unicode blocks"
+create_files = ["task_stats.py"]
+
+[[tasks]]
+type = "code_write"
+[tasks.payload]
+instructions = "Create a Python script that monitors fleet agent heartbeats and sends a desktop notification (using plyer) when any agent has been offline for more than 5 minutes"
+create_files = ["heartbeat_monitor.py"]
+
+# ── Code write reviews ────────────────────────────────────────────────────────
+
+[[tasks]]
+type = "code_write_review"
+[tasks.payload]
+agent_name = "coder_1"
+perspective = "software architect"
+
 # ── Codebase indexing ──────────────────────────────────────────────────────────
 
 [[tasks]]

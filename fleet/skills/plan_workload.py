@@ -24,6 +24,8 @@ summarize        {"url": "https://..."} | {"description": "topic"}
 arxiv_fetch      {"query": "ML/AI paper topic"}
 discuss          {"topic": "topic", "agent_name": "planner", "role_perspective": "strategic planner", "round": 1}
 code_discuss     {"topic": "code topic", "agent_name": "coder_1", "role_perspective": "software architect", "round": 1}
+code_write       {"instructions": "what to build", "create_files": ["main.py"], "project_dir": "optional path"}
+code_write_review {"project_dir": "path to workspace", "perspective": "software architect", "agent_name": "coder_1"}
 lead_research    {"industry": "healthcare|accounting|legal", "zip_code": "95076", "radius_miles": 25}
 synthesize       {"doc_type": "business_pitch|agent_prep|strategic_report", "topic": "optional topic", "output_name": "filename_no_ext"}
 flashcard        {"topic": "subject"}

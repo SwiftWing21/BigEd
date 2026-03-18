@@ -37,6 +37,10 @@ fleet/knowledge/code_discussion/
 fleet/knowledge/security/
 fleet/knowledge/marketing/
 fleet/knowledge/design/
+fleet/knowledge/code_writes/
+fleet/knowledge/code_drafts/
+fleet/knowledge/code_reviews/
+fleet/knowledge/plans/
 fleet/knowledge/flashcards.jsonl
 fleet/knowledge/code_index.jsonl
 fleet/knowledge/search_waterfall.jsonl

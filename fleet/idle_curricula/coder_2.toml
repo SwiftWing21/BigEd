@@ -132,3 +132,11 @@ type = "code_index"
 [tasks.payload]
 directory = "/mnt/c/Users/max/Projects/Education/fleet/skills"
 max_files = 20
+
+# ── Code write reviews (critic perspective) ──────────────────────────────────
+
+[[tasks]]
+type = "code_write_review"
+[tasks.payload]
+agent_name = "coder_2"
+perspective = "code critic / reviewer"

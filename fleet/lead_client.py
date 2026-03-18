@@ -54,6 +54,13 @@ SKILL_MAP = {
     "code_discuss": "code_discuss",
     "code discuss": "code_discuss",
     "coding team": "code_discuss",
+    "code_write": "code_write",
+    "code write": "code_write",
+    "write code": "code_write",
+    "build": "code_write",
+    "code_write_review": "code_write_review",
+    "review code": "code_write_review",
+    "code review": "code_write_review",
 }
 
 
