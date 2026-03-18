@@ -1,5 +1,5 @@
 """
-FMA review skill — coder agents review Fleet Manager App files and discuss
+FMA review skill — coder agents review BigEd CC files and discuss
 enhancements, optimizations, and new feature ideas.
 
 Combines code_review (line-level findings) with code_discuss (multi-agent discussion)
@@ -122,7 +122,7 @@ def _do_review(file_path: Path, fname: str, perspective: str, agent_name: str, f
     focus_area = focus or PERSPECTIVE_FOCUS.get(perspective, "general quality and enhancement opportunities")
     categories = "\n".join(f"- {c}" for c in ENHANCEMENT_CATEGORIES)
 
-    prompt = f"""You are a {perspective} reviewing the Fleet Manager App (FMA) — a Windows GUI launcher
+    prompt = f"""You are a {perspective} reviewing the BigEd CC (FMA) — a Windows GUI launcher
 for a local AI agent fleet. The app uses customtkinter with a dark/brick theme.
 
 FILE: {fname} ({len(lines)} lines)
@@ -196,7 +196,7 @@ def _do_discuss(agent_name: str, perspective: str, round_num: int, focus: str, c
 
     categories = "\n".join(f"- {c}" for c in ENHANCEMENT_CATEGORIES)
 
-    prompt = f"""You are the {perspective} in a recurring FMA (Fleet Manager App) enhancement discussion.
+    prompt = f"""You are the {perspective} in a recurring FMA (BigEd CC) enhancement discussion.
 
 The FMA is a Windows GUI (customtkinter, dark/brick theme) that controls a local AI agent fleet:
 {fma_overview}

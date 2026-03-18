@@ -11,6 +11,13 @@ Commands:
   /status                 — Fleet status snapshot
   /task <natural request> — Queue a fleet task (auto-routes to skill)
   /result <id>            — Get result of a completed task
+
+Agent addressing (natural names):
+  biged <request>         — Supervisor (queues fleet task, reports result)
+  lcbiged <prompt>        — Local console (Ollama direct)
+  clauded <prompt>        — Claude API
+  gemined <prompt>        — Gemini API
+  Agents respond with status when unavailable (sleeping/resting).
 """
 import asyncio
 import json
@@ -242,7 +249,13 @@ async def cmd_help(message: discord.Message, _args: str):
         "`/status` — Fleet status\n"
         "`/task <description>` — Queue a fleet task\n"
         "`/result <id>` — Get task result\n"
-        "`/help` — This message"
+        "`/help` — This message\n\n"
+        "**Agent Addressing**\n"
+        "`biged <request>` — Supervisor (queues fleet task)\n"
+        "`lcbiged <prompt>` — Local console (Ollama direct)\n"
+        "`clauded <prompt>` — Claude API\n"
+        "`gemined <prompt>` — Gemini API\n"
+        "_Agents respond with status when unavailable._"
     ))
 
 
@@ -277,6 +290,108 @@ def _infer_skill(text: str) -> str:
         if keyword in lower:
             return skill
     return "summarize"  # safe default
+
+
+# ── Agent addressing system ───────────────────────────────────────────────────
+# Each addressable agent: (prefix, display_name, handler, readiness_check, sleep_msg)
+
+def _check_ollama() -> tuple:
+    """Check if Ollama is reachable."""
+    try:
+        import urllib.request
+        urllib.request.urlopen("http://localhost:11434/api/tags", timeout=2)
+        return True, ""
+    except Exception:
+        return False, "is sleeping... (Ollama not running)"
+
+
+def _check_claude_key() -> tuple:
+    if os.environ.get("ANTHROPIC_API_KEY"):
+        return True, ""
+    return False, "is sleeping... (no API key configured)"
+
+
+def _check_gemini_key() -> tuple:
+    if os.environ.get("GEMINI_API_KEY"):
+        return True, ""
+    return False, "is sleeping... (no API key configured)"
+
+
+def _check_fleet_online() -> tuple:
+    """Check if supervisor is running (agents registered)."""
+    try:
+        status = db.get_fleet_status()
+        agents = status.get("agents", [])
+        if agents:
+            busy = sum(1 for a in agents if a["status"] == "BUSY")
+            idle = sum(1 for a in agents if a["status"] == "IDLE")
+            if busy > 0:
+                return True, ""
+            if idle > 0:
+                return True, ""
+            return False, "is resting... (agents registered but none active)"
+        return False, "is sleeping... (no agents online)"
+    except Exception:
+        return False, "is sleeping... (fleet database unavailable)"
+
+
+async def _handle_biged(message, args):
+    """Supervisor handler — queues fleet task."""
+    payload = json.dumps({"instructions": args, "query": args, "prompt": args})
+    skill = _infer_skill(args)
+    task_id = db.post_task(skill, payload, priority=7)
+    await _reply(message, f"**biged** queued **{skill}** task **#{task_id}**.")
+    asyncio.create_task(_poll_and_report(message, task_id))
+
+
+async def _handle_clauded(message, args):
+    """Claude handler — direct API call."""
+    await message.add_reaction("\u23f3")
+    try:
+        from skills._models import _call_claude
+        models = config.get("models", {})
+        result = await asyncio.to_thread(_call_claude, "", args, models, 2048)
+        await _reply(message, f"**clauded**\n{_truncate(result)}")
+    except Exception as e:
+        await _reply(message, f"**clauded** error: {e}")
+    await message.remove_reaction("\u23f3", client.user)
+
+
+async def _handle_gemined(message, args):
+    """Gemini handler — direct API call."""
+    await message.add_reaction("\u23f3")
+    try:
+        from skills._models import _call_gemini
+        models = config.get("models", {})
+        result = await asyncio.to_thread(_call_gemini, "", args, models, 2048)
+        await _reply(message, f"**gemined**\n{_truncate(result)}")
+    except Exception as e:
+        await _reply(message, f"**gemined** error: {e}")
+    await message.remove_reaction("\u23f3", client.user)
+
+
+async def _handle_lcbiged(message, args):
+    """Local console handler — Ollama direct."""
+    await cmd_local(message, args)
+
+
+# Agent registry: (prefix, name, handler, readiness_fn)
+_AGENTS = [
+    ("biged ",   "biged",   _handle_biged,   _check_fleet_online),
+    ("lcbiged ", "lcbiged", _handle_lcbiged, _check_ollama),
+    ("clauded ", "clauded", _handle_clauded, _check_claude_key),
+    ("gemined ", "gemined", _handle_gemined, _check_gemini_key),
+]
+
+
+def _match_agent(lower: str):
+    """Match message start against registered agent names.
+    Returns (name, prefix_len, handler, ready_check, None) or None.
+    """
+    for prefix, name, handler, check in _AGENTS:
+        if lower.startswith(prefix) or lower == prefix.strip():
+            return name, len(prefix), handler, check, None
+    return None
 
 
 # ── Background polling ───────────────────────────────────────────────────────
@@ -343,16 +458,35 @@ async def on_message(message: discord.Message):
     if not content:
         return
 
-    # Match commands
+    lower = content.lower()
+
+    # ── Addressable agent names ──────────────────────────────────────────────
+    # Each agent has a Discord handle, a readiness check, and a handler.
+    agent_hit = _match_agent(lower)
+    if agent_hit:
+        name, prefix_len, handler, ready_check, sleep_msg = agent_hit
+        args = content[prefix_len:].strip()
+        if not args:
+            await _reply(message, f"**{name}** is listening. What do you need?")
+            return
+        ready, reason = ready_check()
+        if not ready:
+            await _reply(message, f"**{name}** {reason}")
+            return
+        log.info(f"{message.author}: {name} {args[:80]}")
+        await handler(message, args)
+        return
+
+    # ── Slash commands ───────────────────────────────────────────────────────
     for prefix, handler in COMMANDS.items():
-        if content.lower().startswith(prefix):
+        if lower.startswith(prefix):
             args = content[len(prefix):].strip()
             log.info(f"{message.author}: {prefix} {args[:80]}")
             await handler(message, args)
             return
 
     # No command prefix — treat as /local by default
-    log.info(f"{message.author}: (default→local) {content[:80]}")
+    log.info(f"{message.author}: (default->local) {content[:80]}")
     await cmd_local(message, content)
 
 
