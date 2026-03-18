@@ -36,6 +36,7 @@ FLEET_DIR    = Path(r"C:\Users\max\Projects\Education\fleet")
 STATUS_MD    = FLEET_DIR / "STATUS.md"
 FLEET_TOML   = FLEET_DIR / "fleet.toml"
 LOGS_DIR     = FLEET_DIR / "logs"
+HW_STATE_JSON = FLEET_DIR / "hw_state.json"
 PENDING_DIR  = FLEET_DIR / "knowledge" / "security" / "pending"
 REPORTS_DIR  = FLEET_DIR / "knowledge" / "reports"
 LEADS_DIR    = FLEET_DIR / "knowledge" / "leads"
@@ -267,7 +268,25 @@ def load_model_cfg() -> dict:
 # ─── Status parser ────────────────────────────────────────────────────────────
 def parse_status():
     """Read STATUS.md and return dict with agents + task counts."""
-    result = {"agents": [], "tasks": {}, "raw": "", "supervisor_status": "OFFLINE"}
+    result = {"agents": [], "tasks": {}, "raw": "", "supervisor_status": "OFFLINE", "hw_supervisor_status": "OFFLINE"}
+    
+    if HW_STATE_JSON.exists():
+        try:
+            mtime = HW_STATE_JSON.stat().st_mtime
+            age = time.time() - mtime
+            if age < 30:
+                hw_data = json.loads(HW_STATE_JSON.read_text(encoding="utf-8"))
+                if hw_data.get("status") == "transitioning":
+                    result["hw_supervisor_status"] = "TRANSIT"
+                else:
+                    result["hw_supervisor_status"] = "ONLINE"
+            elif age < 120:
+                result["hw_supervisor_status"] = "HUNG"
+            else:
+                result["hw_supervisor_status"] = "OFFLINE"
+        except Exception:
+            result["hw_supervisor_status"] = "OFFLINE"
+
     if not STATUS_MD.exists():
         return result
     try:
@@ -454,6 +473,7 @@ class BigEdCC(ctk.CTk):
         self._system_running           = False
         self._system_intentional_stop  = False
         self._last_keepalive = 0.0  # epoch time of last keepalive ping
+        self._sidebar_visible = True
         # Activity sparkline: per-agent rolling history (last 10 samples @ 1s each)
         self._agent_activity = {}  # role -> deque of booleans (True=BUSY)
         psutil.cpu_percent(interval=None)  # prime the cpu sampler
@@ -541,54 +561,73 @@ class BigEdCC(ctk.CTk):
         hdr = ctk.CTkFrame(self, fg_color=BG3, height=44, corner_radius=0)
         hdr.grid(row=0, column=0, columnspan=2, sticky="ew")
         hdr.grid_propagate(False)
-        hdr.grid_columnconfigure(2, weight=1)
+        hdr.grid_columnconfigure(3, weight=1)
 
         banner = self._load_banner()
         if banner:
             ctk.CTkLabel(hdr, image=banner, text="").grid(
-                row=0, column=0, padx=(10, 6), pady=2)
+                row=0, column=0, padx=(10, 2), pady=2)
         else:
             ctk.CTkLabel(hdr, text="🧱", font=("Segoe UI", 22)).grid(
-                row=0, column=0, padx=(10, 6), pady=2)
+                row=0, column=0, padx=(10, 2), pady=2)
+
+        self._sidebar_btn = ctk.CTkButton(
+            hdr, text="≡", font=("Segoe UI", 16), width=30, height=30,
+            fg_color="transparent", hover_color=BG2, text_color=TEXT,
+            command=self._toggle_sidebar
+        )
+        self._sidebar_btn.grid(row=0, column=1, padx=(2, 6))
 
         ctk.CTkLabel(hdr, text="BIGED CC",
                      font=("Segoe UI", 14, "bold"),
-                     text_color=GOLD).grid(row=0, column=1, padx=4, sticky="w")
+                     text_color=GOLD).grid(row=0, column=2, padx=4, sticky="w")
 
         # Inline stats
         stats_frame = ctk.CTkFrame(hdr, fg_color="transparent")
-        stats_frame.grid(row=0, column=2, sticky="ew", padx=(8, 0))
+        stats_frame.grid(row=0, column=3, sticky="ew", padx=(8, 0))
+        stats_frame.grid_columnconfigure((0, 1, 2, 3), weight=1)
         kw = dict(font=("Consolas", 9), text_color=DIM)
-        self._stat_cpu = ctk.CTkLabel(stats_frame, text="CPU —", **kw)
-        self._stat_ram = ctk.CTkLabel(stats_frame, text="RAM —", **kw)
-        self._stat_gpu = ctk.CTkLabel(stats_frame, text="GPU —", **kw)
-        self._stat_net = ctk.CTkLabel(stats_frame, text="ETH —", **kw)
-        self._stat_cpu.pack(side="left", padx=6)
-        self._stat_ram.pack(side="left", padx=6)
-        self._stat_gpu.pack(side="left", padx=6)
-        self._stat_net.pack(side="left", padx=6)
+        self._stat_cpu = ctk.CTkLabel(stats_frame, text="CPU —", anchor="w", **kw)
+        self._stat_ram = ctk.CTkLabel(stats_frame, text="RAM —", anchor="w", **kw)
+        self._stat_gpu = ctk.CTkLabel(stats_frame, text="GPU —", anchor="w", **kw)
+        self._stat_net = ctk.CTkLabel(stats_frame, text="ETH —", anchor="w", **kw)
+        self._stat_cpu.grid(row=0, column=0, padx=4, sticky="ew")
+        self._stat_ram.grid(row=0, column=1, padx=4, sticky="ew")
+        self._stat_gpu.grid(row=0, column=2, padx=4, sticky="ew")
+        self._stat_net.grid(row=0, column=3, padx=4, sticky="ew")
 
         self._status_pills = ctk.CTkLabel(
             hdr, text="● loading...", font=("Consolas", 9), text_color=DIM)
-        self._status_pills.grid(row=0, column=3, padx=8, sticky="e")
+        self._status_pills.grid(row=0, column=4, padx=8, sticky="e")
 
         self._advisory_badge = ctk.CTkLabel(
             hdr, text="", font=("Segoe UI", 9, "bold"),
             text_color="#1a1a1a", fg_color=ORANGE,
             corner_radius=8, width=0)
-        self._advisory_badge.grid(row=0, column=4, padx=(0, 4), pady=10)
+        self._advisory_badge.grid(row=0, column=5, padx=(0, 4), pady=10)
 
         self._update_badge = ctk.CTkButton(
             hdr, text="", font=("Segoe UI", 9, "bold"),
             text_color=TEXT, fg_color="transparent",
             hover_color="#2a4a2a", corner_radius=8, width=0,
             command=self._launch_auto_update)
-        self._update_badge.grid(row=0, column=5, padx=(0, 8), pady=10)
+        self._update_badge.grid(row=0, column=6, padx=(0, 8), pady=10)
 
     # ── Sidebar ───────────────────────────────────────────────────────────────
+    def _toggle_sidebar(self):
+        if self._sidebar_visible:
+            self._sidebar.grid_remove()
+            self._sidebar_btn.configure(text=">")
+            self._sidebar_visible = False
+        else:
+            self._sidebar.grid()
+            self._sidebar_btn.configure(text="≡")
+            self._sidebar_visible = True
+
     def _build_sidebar(self):
-        sb = ctk.CTkScrollableFrame(self, fg_color=BG2, width=155, corner_radius=0)
-        sb.grid(row=1, column=0, sticky="nsew")
+        self._sidebar = ctk.CTkScrollableFrame(self, fg_color=BG2, width=155, corner_radius=0)
+        self._sidebar.grid(row=1, column=0, sticky="nsew")
+        sb = self._sidebar
 
         # ── Collapsible section + button helpers ──────────────────────────────
         def section(label, default_open=True):
@@ -803,8 +842,11 @@ class BigEdCC(ctk.CTk):
         ag_hdr.grid_columnconfigure(1, weight=1)
         ctk.CTkLabel(ag_hdr, text="AGENTS", font=("Segoe UI", 9, "bold"), text_color=GOLD).grid(row=0, column=0, padx=8, pady=(4, 2), sticky="w")
         
-        self._sup_status_lbl = ctk.CTkLabel(ag_hdr, text="Sup: —", font=("Consolas", 9, "bold"), text_color=DIM)
+        self._sup_status_lbl = ctk.CTkLabel(ag_hdr, text="Task Sup: —", font=("Consolas", 9, "bold"), text_color=DIM)
         self._sup_status_lbl.grid(row=0, column=1, padx=8, pady=(4, 2), sticky="e")
+
+        self._hw_sup_status_lbl = ctk.CTkLabel(ag_hdr, text="HW Sup: —", font=("Consolas", 9, "bold"), text_color=DIM)
+        self._hw_sup_status_lbl.grid(row=0, column=2, padx=8, pady=(4, 2), sticky="e")
 
         self._agents_frame_inner = ctk.CTkFrame(agents_frame, fg_color=BG2)
         self._agents_frame_inner.grid(row=1, column=0, sticky="nsew", padx=4, pady=(0, 4))
@@ -2372,12 +2414,12 @@ class BigEdCC(ctk.CTk):
         """
         status = agent.get("status", "OFFLINE")
         if status == "BUSY":
-            return GREEN, "BUSY"
+            return GREEN, "ACTIVE"
         if status == "IDLE":
             if pending > 0:
-                return "#4488ff", f"IDLE ({pending}q)"
-            return "#cccc00", "IDLE"
-        return RED, "OFF"
+                return "#4488ff", f"RESTING ({pending}q)"
+            return "#cccc00", "RESTING"
+        return RED, "SLEEPING"
 
     def _record_agent_activity(self, agents: list):
         """Record current BUSY/IDLE state into rolling history."""
@@ -2418,17 +2460,27 @@ class BigEdCC(ctk.CTk):
 
         sup_status = status.get("supervisor_status", "OFFLINE")
         if sup_status == "ONLINE":
-            self._sup_status_lbl.configure(text="Sup: ONLINE", text_color=GREEN)
+            self._sup_status_lbl.configure(text="Task Sup: ONLINE", text_color=GREEN)
             if not self._system_running and not self._system_intentional_stop:
                 self._system_running = True
                 self._btn_system_toggle.configure(text="■  Stop", fg_color="#3a1e1e", hover_color="#4a2a2a")
         elif sup_status == "HUNG":
-            self._sup_status_lbl.configure(text="Sup: HUNG", text_color=ORANGE)
+            self._sup_status_lbl.configure(text="Task Sup: HUNG", text_color=ORANGE)
         else:
-            self._sup_status_lbl.configure(text="Sup: OFFLINE", text_color=RED)
+            self._sup_status_lbl.configure(text="Task Sup: OFFLINE", text_color=RED)
             if self._system_running:
                 self._system_running = False
                 self._btn_system_toggle.configure(text="▶  Start", fg_color="#1e3a1e", hover_color="#2a4a2a")
+
+        hw_status = status.get("hw_supervisor_status", "OFFLINE")
+        if hw_status == "ONLINE":
+            self._hw_sup_status_lbl.configure(text="HW Sup: ONLINE", text_color=GREEN)
+        elif hw_status == "TRANSIT":
+            self._hw_sup_status_lbl.configure(text="HW Sup: SCALING", text_color=ORANGE)
+        elif hw_status == "HUNG":
+            self._hw_sup_status_lbl.configure(text="HW Sup: HUNG", text_color=ORANGE)
+        else:
+            self._hw_sup_status_lbl.configure(text="HW Sup: OFFLINE", text_color=RED)
 
         # Record activity for sparklines
         self._record_agent_activity(agents)
@@ -2459,7 +2511,7 @@ class BigEdCC(ctk.CTk):
             display_name = themed_name(a['name'])
             ctk.CTkLabel(row_frame,
                          text=display_name,
-                         font=("Consolas", 10), text_color=TEXT if label != "OFF" else DIM,
+                         font=("Consolas", 10), text_color=TEXT if label != "SLEEPING" else DIM,
                          anchor="w", width=110).grid(row=0, column=1, sticky="w")
 
             # Activity sparkline
@@ -2470,11 +2522,11 @@ class BigEdCC(ctk.CTk):
 
             # Status label
             ctk.CTkLabel(row_frame, text=label, font=("Consolas", 9),
-                         text_color=color, anchor="e", width=60
+                         text_color=color, anchor="e", width=85
                          ).grid(row=0, column=3, sticky="e", padx=(0, 2))
 
             # Recover button for offline agents
-            if label == "OFF":
+            if label == "SLEEPING":
                 ctk.CTkButton(
                     row_frame, text="↺", width=22, height=18,
                     font=("Segoe UI", 9), fg_color=ACCENT, hover_color=ACCENT_H,

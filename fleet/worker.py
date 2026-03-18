@@ -136,8 +136,15 @@ def main():
                 db.complete_task(task['id'], json.dumps(result))
                 log.info(f"Task {task['id']} done")
             except Exception as e:
-                db.fail_task(task['id'], str(e))
-                log.error(f"Task {task['id']} failed: {e}")
+                err_str = str(e).lower()
+                # Overload / Network Drop detection
+                if any(k in err_str for k in ("timeout", "connection", "rate limit", "503", "502")):
+                    log.warning(f"Task {task['id']} failed due to overload/timeout. Re-queuing...")
+                    db.requeue_task(task['id'])
+                    time.sleep(10)  # Back off to let the system recover
+                else:
+                    db.fail_task(task['id'], str(e))
+                    log.error(f"Task {task['id']} failed: {e}")
             try:
                 db.heartbeat(role, status='IDLE')
             except Exception:

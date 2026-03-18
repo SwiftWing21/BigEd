@@ -297,16 +297,24 @@ def main():
     last_training_check = 0
     last_keepalive = 0
     training_interval = config["fleet"]["training_check_interval_secs"]
+    worker_next_start = {}
 
     while True:
         now = time.time()
 
-        # Restart dead workers
+        # Restart dead workers with cool-down backoff
         for role in list(worker_procs.keys()):
             proc = worker_procs.get(role)
             if proc and proc.poll() is not None:
-                log.warning(f"Worker '{role}' died (exit={proc.returncode}) — restarting")
+                log.warning(f"Worker '{role}' died (exit={proc.returncode}) — entering 15s cool-down")
+                worker_procs[role] = None
+                worker_next_start[role] = now + 15
+                
+        for role, next_time in list(worker_next_start.items()):
+            if worker_procs.get(role) is None and now >= next_time:
+                log.info(f"Cool-down complete. Respawning worker '{role}'")
                 start_worker(role, config)
+                worker_next_start.pop(role, None)
 
         # Restart messaging bridges if they died
         if discord_proc and discord_proc.poll() is not None:

@@ -181,17 +181,51 @@ def build_env(profile: dict) -> dict:
 # ── OOM fallback (flat_out only) ───────────────────────────────────────────
 
 def run_with_oom_fallback(profile_name: str, profile: dict, env: dict) -> int:
-    """Run train.py; if OOM and profile has a fallback, retry with smaller dims."""
+    """Run train.py; if OOM is detected, use soft reasoning to recover dimensions."""
     rc = subprocess.run([sys.executable, str(TRAIN_PY)], env=env).returncode
 
-    if rc != 0 and profile_name == "flat_out":
-        fallback_depth = profile.get("oom_fallback_depth")
-        fallback_dim   = profile.get("oom_fallback_model_dim")
-        if fallback_depth and fallback_dim:
-            print(f"\n[profile] OOM detected — retrying with DEPTH={fallback_depth} model_dim={fallback_dim}")
-            env["DEPTH"]     = str(fallback_depth)
-            env["model_dim"] = str(fallback_dim)
-            rc = subprocess.run([sys.executable, str(TRAIN_PY)], env=env).returncode
+    if rc != 0:
+        log_file = HERE / "run.log"
+        is_oom = False
+        if log_file.exists():
+            content = log_file.read_text(errors="ignore")
+            if "CUDA out of memory" in content or "OutOfMemoryError" in content:
+                is_oom = True
+
+        if is_oom:
+            print(f"\n[profile] ⚠ OOM detected in run.log!")
+            
+            current_bs = int(env.get("DEVICE_BATCH_SIZE", 32))
+            current_depth = int(env.get("DEPTH", 6))
+            
+            # Soft recovery 1: Try halving batch size first (less architectural impact)
+            if current_bs > 8:
+                new_bs = current_bs // 2
+                print(f"[profile] Soft recovery: Reducing DEVICE_BATCH_SIZE {current_bs} -> {new_bs}")
+                env["DEVICE_BATCH_SIZE"] = str(new_bs)
+                return run_with_oom_fallback(profile_name, profile, env)
+            
+            # Soft recovery 2: If batch size is tiny, reduce depth and reset batch size
+            elif current_depth > 3:
+                new_depth = current_depth - 1
+                new_dim = new_depth * int(env.get("ASPECT_RATIO", 64))
+                print(f"[profile] Soft recovery: Reducing DEPTH {current_depth} -> {new_depth} (model_dim={new_dim})")
+                env["DEPTH"] = str(new_depth)
+                env["model_dim"] = str(new_dim)
+                env["DEVICE_BATCH_SIZE"] = "32"
+                return run_with_oom_fallback(profile_name, profile, env)
+            else:
+                print("[profile] Minimum dimensions reached. Cannot recover from OOM.")
+                
+        elif profile_name == "flat_out":
+            # Legacy fallback for non-OOM crashes on flat_out
+            fallback_depth = profile.get("oom_fallback_depth")
+            fallback_dim   = profile.get("oom_fallback_model_dim")
+            if fallback_depth and fallback_dim:
+                print(f"\n[profile] Crash detected — retrying with DEPTH={fallback_depth} model_dim={fallback_dim}")
+                env["DEPTH"]     = str(fallback_depth)
+                env["model_dim"] = str(fallback_dim)
+                return run_with_oom_fallback(profile_name, profile, env)
 
     return rc
 

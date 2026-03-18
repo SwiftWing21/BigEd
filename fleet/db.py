@@ -148,6 +148,17 @@ def fail_task(task_id, error):
     _retry_write(_do)
 
 
+def requeue_task(task_id):
+    """Put a task back into the PENDING queue (e.g. on temporary overload)."""
+    def _do():
+        with get_conn() as conn:
+            conn.execute(
+                "UPDATE tasks SET status='PENDING', assigned_to=NULL WHERE id=?",
+                (task_id,)
+            )
+    _retry_write(_do)
+
+
 def post_task(type_, payload_json, priority=5, assigned_to=None):
     result = [None]
     def _do():
