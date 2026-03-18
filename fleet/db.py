@@ -53,6 +53,12 @@ CREATE TABLE IF NOT EXISTS messages (
     read_at    TEXT,
     body_json  TEXT
 );
+
+CREATE TABLE IF NOT EXISTS locks (
+    name        TEXT PRIMARY KEY,
+    holder      TEXT NOT NULL,
+    acquired_at TEXT DEFAULT (datetime('now'))
+);
 """
 
 
@@ -262,6 +268,50 @@ def get_task_result(task_id):
     with get_conn() as conn:
         row = conn.execute("SELECT * FROM tasks WHERE id=?", (task_id,)).fetchone()
         return dict(row) if row else None
+
+
+def acquire_lock(name, holder, timeout_secs=7200):
+    """Acquire a named exclusive lock. Returns True if acquired, False if held by another."""
+    def _do():
+        with get_conn() as conn:
+            # Check for stale lock
+            row = conn.execute("SELECT holder, acquired_at FROM locks WHERE name=?", (name,)).fetchone()
+            if row:
+                if row["holder"] == holder:
+                    return True  # already held by us
+                # Check if stale (exceeded timeout)
+                try:
+                    from datetime import datetime, timezone
+                    acquired = datetime.fromisoformat(row["acquired_at"]).replace(tzinfo=timezone.utc)
+                    age = (datetime.now(timezone.utc) - acquired).total_seconds()
+                    if age < timeout_secs:
+                        return False  # held by someone else, not stale
+                except Exception:
+                    return False
+                # Stale — remove and acquire
+                conn.execute("DELETE FROM locks WHERE name=?", (name,))
+            conn.execute(
+                "INSERT INTO locks (name, holder) VALUES (?, ?)", (name, holder))
+            return True
+    return _retry_write(_do)
+
+
+def release_lock(name, holder=None):
+    """Release a named lock. If holder specified, only release if we hold it."""
+    def _do():
+        with get_conn() as conn:
+            if holder:
+                conn.execute("DELETE FROM locks WHERE name=? AND holder=?", (name, holder))
+            else:
+                conn.execute("DELETE FROM locks WHERE name=?", (name,))
+    _retry_write(_do)
+
+
+def check_lock(name):
+    """Check who holds a lock. Returns holder string or None."""
+    with get_conn() as conn:
+        row = conn.execute("SELECT holder FROM locks WHERE name=?", (name,)).fetchone()
+        return row["holder"] if row else None
 
 
 def get_pending_count():

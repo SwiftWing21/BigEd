@@ -156,6 +156,23 @@ def run(payload, config):
     if not skill_path.exists():
         return {"error": f"skill '{skill_name}' not found"}
 
+    # Acquire exclusive training lock — only 1 training at a time
+    import sys as _sys
+    _sys.path.insert(0, str(FLEET_DIR))
+    import db as _db
+    _db.init_db()
+    lock_holder = f"skill_train:{skill_name}"
+    if not _db.acquire_lock("training", lock_holder):
+        current = _db.check_lock("training")
+        return {"error": f"training lock held by '{current}' — try later"}
+
+    try:
+        return _run_training(skill_name, skill_path, iterations, dry_run, config, lock_holder)
+    finally:
+        _db.release_lock("training", lock_holder)
+
+
+def _run_training(skill_name, skill_path, iterations, dry_run, config, lock_holder):
     evaluator = _get_evaluator(skill_name)
 
     # Baseline evaluation

@@ -145,6 +145,45 @@ def test_stale_recovery():
     return found, f"{'recovered' if found else 'missed'} task {tid}"
 
 
+def test_training_lock():
+    """9. Training lock acquire/check/release round-trip."""
+    import db
+    db.init_db()
+    # Acquire
+    ok1 = db.acquire_lock("training", "smoke_trainer")
+    if not ok1:
+        return False, "acquire failed"
+    # Check holder
+    holder = db.check_lock("training")
+    if holder != "smoke_trainer":
+        return False, f"expected smoke_trainer, got {holder}"
+    # Second acquire should fail
+    ok2 = db.acquire_lock("training", "smoke_other")
+    if ok2:
+        db.release_lock("training")
+        return False, "second acquire should have failed"
+    # Release
+    db.release_lock("training", "smoke_trainer")
+    after = db.check_lock("training")
+    if after is not None:
+        return False, f"lock not released: {after}"
+    return True, "acquire/check/block/release OK"
+
+
+def test_thermal_readings():
+    """10. GPU thermal readings available (if GPU present)."""
+    try:
+        import pynvml
+        pynvml.nvmlInit()
+        handle = pynvml.nvmlDeviceGetHandleByIndex(0)
+        temp = pynvml.nvmlDeviceGetTemperature(handle, pynvml.NVML_TEMPERATURE_GPU)
+        mem = pynvml.nvmlDeviceGetMemoryInfo(handle)
+        vram_gb = round(mem.used / (1024**3), 1)
+        return True, f"GPU {temp}°C, VRAM {vram_gb}GB used"
+    except Exception as e:
+        return False, f"no GPU thermal data: {e}"
+
+
 def cleanup():
     """Remove smoke test artifacts from DB."""
     import db
@@ -152,6 +191,7 @@ def cleanup():
         conn.execute("DELETE FROM agents WHERE name LIKE 'smoke_%'")
         conn.execute("DELETE FROM tasks WHERE type LIKE 'smoke_%'")
         conn.execute("DELETE FROM messages WHERE from_agent LIKE 'smoke_%' OR to_agent LIKE 'smoke_%'")
+        conn.execute("DELETE FROM locks WHERE holder LIKE 'smoke_%'")
 
 
 def main():
@@ -167,6 +207,8 @@ def main():
         ("Message round-trip", test_message_roundtrip),
         ("Broadcast round-trip", test_broadcast_roundtrip),
         ("Stale recovery", test_stale_recovery),
+        ("Training lock", test_training_lock),
+        ("Thermal readings", test_thermal_readings),
     ]
 
     results = []

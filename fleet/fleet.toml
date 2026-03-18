@@ -26,6 +26,34 @@ local_think = true             # prepend /think to prompt (enables CoT on suppor
 [gpu]
 mode = "eco"  # "eco" = CPU-only Ollama, "full" = GPU
 
+[thermal]
+gpu_max_sustained_c = 75      # sustained temp ceiling — reduce workers above this
+gpu_max_burst_c = 78          # hard ceiling — pause GPU tasks above this
+cpu_max_sustained_c = 80      # CPU package temp ceiling
+cooldown_target_c = 72        # resume GPU tasks when below this for cooldown_window
+cooldown_window_secs = 60     # consecutive seconds below target to resume
+poll_interval_secs = 5        # hw_supervisor main loop interval
+grace_period_secs = 15        # worker drain time before model swap
+cooldown_after_swap_secs = 30 # prevent rapid model bouncing
+ambient_estimation = true     # track cooldown rate to estimate ambient temp
+
+[thermal.vram]
+# Thresholds for dynamic model tier selection (fraction 0.0-1.0)
+emergency = 0.90              # >90% → emergency eviction
+high = 0.75                   # >75% → scale to mid tier
+restore = 0.60                # <60% → restore default model
+
+[models.tiers]
+default = "qwen3:8b"
+mid = "qwen3:4b"
+low = "qwen3:1.7b"
+critical = "qwen3:0.6b"
+
+[training]
+exclusive_lock = true         # only 1 training process at a time
+auto_pause_gpu_tasks = true   # pause GPU-heavy skills during training
+lock_timeout_secs = 7200      # auto-release stale locks after 2h
+
 [dashboard]
 enabled = true                 # localhost web dashboard for fleet metrics
 port = 5555
