@@ -5,6 +5,9 @@ idle_timeout_secs = 30
 training_check_interval_secs = 15   # reduced: catch training start faster
 max_workers = 4
 
+openclaw_enabled = false     # multi-channel gateway (Discord/WhatsApp/Telegram/etc) — enable via FMA GUI
+discord_bot_enabled = true   # lightweight Discord-only bridge to biged-fleetchat
+
 [models]
 local = "qwen3:8b"
 complex = "qwen3:8b"
@@ -22,6 +25,11 @@ local_think = true             # prepend /think to prompt (enables CoT on suppor
 
 [gpu]
 mode = "eco"  # "eco" = CPU-only Ollama, "full" = GPU
+
+[openclaw]
+port = 18789
+channel = "stable"           # stable | beta | dev
+# Configure channels in openclaw onboard — Discord, WhatsApp, Telegram, etc.
 
 [workers]
 nice_level = 15

@@ -256,6 +256,7 @@ class Updater(ctk.CTk):
     def _run_fleet_control(self):
         if EXE_PATH.exists():
             subprocess.Popen([str(EXE_PATH)], cwd=str(DIST_DIR))
+            self._on_close()
         else:
             self._log_line("FleetControl.exe not found — run update first.")
 

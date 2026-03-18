@@ -28,9 +28,18 @@
 | `code_discuss` | `knowledge/code_discussion/` + messages table |
 | `code_index` | `knowledge/code_index.jsonl` |
 | `code_review` | `knowledge/code_reviews/<file>_review_<date>_<agent>.md` |
+| `fma_review` | `knowledge/fma_reviews/<file>_review_<date>_<agent>.md` + discussion logs |
 | `skill_draft` | `knowledge/code_drafts/<name>_draft_<date>_<agent>.py` |
 
 Drafts are **never auto-deployed** — review before copying to `skills/`.
+
+## Messaging Bridges
+| Bridge | Config flag | Status |
+|--------|------------|--------|
+| Discord bot (`discord_bot.py`) | `discord_bot_enabled` | Active — routes `biged-fleetchat` channel to fleet |
+| OpenClaw gateway | `openclaw_enabled` | Installed, disabled by default — multi-channel (WhatsApp/Telegram/Slack/etc) |
+
+Discord commands: `/aider`, `/claude`, `/gemini`, `/local`, `/status`, `/task`, `/result`, `/help`
 
 ## Files
 - `fleet.db` — SQLite store (tasks, agents, messages)

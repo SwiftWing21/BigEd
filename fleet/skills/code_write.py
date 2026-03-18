@@ -28,6 +28,19 @@ KNOWLEDGE_DIR = FLEET_DIR / "knowledge"
 WRITES_DIR = KNOWLEDGE_DIR / "code_writes"
 WORKSPACE = WRITES_DIR / "workspace"
 
+AGENT_REPO = "git@github.com:SwiftWing21/biged-agent-vm.git"
+
+
+def _git_env() -> dict:
+    """Build env with GitHub PAT for HTTPS auth if SSH isn't available."""
+    env = os.environ.copy()
+    pat = os.environ.get("GITHUB_PAT", "")
+    if pat:
+        # Enable git credential via PAT for HTTPS remotes
+        env["GIT_ASKPASS"] = "/bin/true"
+        env["GIT_TERMINAL_PROMPT"] = "0"
+    return env
+
 
 def _ensure_workspace(project_dir: Path):
     """Ensure the project dir exists and has a git repo (aider requires one)."""
@@ -35,7 +48,7 @@ def _ensure_workspace(project_dir: Path):
     git_dir = project_dir / ".git"
     if not git_dir.exists():
         subprocess.run(
-            ["git", "init"], cwd=str(project_dir),
+            ["git", "init", "-b", "main"], cwd=str(project_dir),
             capture_output=True, timeout=10,
         )
         # Initial commit so aider has a baseline
@@ -46,6 +59,22 @@ def _ensure_workspace(project_dir: Path):
         subprocess.run(
             ["git", "commit", "--allow-empty", "-m", "init workspace"],
             cwd=str(project_dir), capture_output=True, timeout=10,
+        )
+    # Ensure remote is set
+    r = subprocess.run(
+        ["git", "remote", "get-url", "origin"], cwd=str(project_dir),
+        capture_output=True, text=True, timeout=5,
+    )
+    if r.returncode != 0:
+        # Use HTTPS with PAT if available, otherwise SSH
+        pat = os.environ.get("GITHUB_PAT", "")
+        if pat:
+            remote = f"https://{pat}@github.com/SwiftWing21/biged-agent-vm.git"
+        else:
+            remote = AGENT_REPO
+        subprocess.run(
+            ["git", "remote", "add", "origin", remote],
+            cwd=str(project_dir), capture_output=True, timeout=5,
         )
 
 

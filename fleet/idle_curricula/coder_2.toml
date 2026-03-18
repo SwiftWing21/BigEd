@@ -125,6 +125,46 @@ description = "Appends a structured audit entry to knowledge/audit.jsonl wheneve
 inputs = "skill_name, agent_name, payload_summary, result_status, details"
 outputs = "audit entry appended to knowledge/audit.jsonl"
 
+# ── FMA review & enhancement discussion ──────────────────────────────────────
+
+[[tasks]]
+type = "fma_review"
+[tasks.payload]
+agent_name = "coder_2"
+perspective = "code critic / reviewer"
+file = "launcher.py"
+focus = "error handling, edge cases, UX bugs, crash scenarios, input validation"
+mode = "both"
+round = 1
+
+[[tasks]]
+type = "fma_review"
+[tasks.payload]
+agent_name = "coder_2"
+perspective = "code critic / reviewer"
+file = "updater.py"
+focus = "subprocess error handling, build failure recovery, self-update race conditions"
+mode = "both"
+round = 2
+
+[[tasks]]
+type = "fma_review"
+[tasks.payload]
+agent_name = "coder_2"
+perspective = "code critic / reviewer"
+focus = "security of Discord bot bridge, token handling, message injection risks, permission gaps"
+mode = "discuss"
+round = 3
+
+[[tasks]]
+type = "fma_review"
+[tasks.payload]
+agent_name = "coder_2"
+perspective = "code critic / reviewer"
+file = "uninstaller.py"
+focus = "cleanup completeness, leftover files, registry safety, error recovery"
+mode = "review"
+
 # ── Codebase indexing ──────────────────────────────────────────────────────────
 
 [[tasks]]

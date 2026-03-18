@@ -147,6 +147,46 @@ type = "code_write_review"
 agent_name = "coder_1"
 perspective = "software architect"
 
+# ── FMA review & enhancement discussion ──────────────────────────────────────
+
+[[tasks]]
+type = "fma_review"
+[tasks.payload]
+agent_name = "coder_1"
+perspective = "software architect"
+file = "launcher.py"
+focus = "module structure, GUI architecture, extensibility, new feature integration points"
+mode = "both"
+round = 1
+
+[[tasks]]
+type = "fma_review"
+[tasks.payload]
+agent_name = "coder_1"
+perspective = "software architect"
+file = "updater.py"
+focus = "update pipeline design, self-update mechanism, build step orchestration"
+mode = "both"
+round = 2
+
+[[tasks]]
+type = "fma_review"
+[tasks.payload]
+agent_name = "coder_1"
+perspective = "software architect"
+focus = "Discord/OpenClaw integration, fleet skill exposure via GUI, settings panel design"
+mode = "discuss"
+round = 3
+
+[[tasks]]
+type = "fma_review"
+[tasks.payload]
+agent_name = "coder_1"
+perspective = "software architect"
+file = "installer.py"
+focus = "installation flow, dependency management, cross-environment compatibility"
+mode = "review"
+
 # ── Codebase indexing ──────────────────────────────────────────────────────────
 
 [[tasks]]

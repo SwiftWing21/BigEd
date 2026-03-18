@@ -82,3 +82,34 @@ tier        = "paid"
 required    = false
 env_var     = "REPLICATE_API_TOKEN"
 signup_hint = "replicate.com/account/api-tokens — starts with r8_..."
+
+[[key]]
+name        = "GITHUB_PAT"
+label       = "GitHub Personal Access Token"
+purpose     = "Coder agents push to biged-agent-vm repo, fork projects to new repos"
+skills      = ["code_write", "code_fork"]
+tier        = "free"
+required    = false
+env_var     = "GITHUB_PAT"
+signup_hint = "github.com/settings/tokens → Fine-grained: repo access to SwiftWing21/*"
+
+[[key]]
+name        = "DISCORD_BOT_TOKEN"
+label       = "Discord Bot Token"
+purpose     = "Fleet bridge bot — routes messages from biged-fleetchat to fleet agents (aider, Claude, Gemini, local)"
+skills      = ["discord_bot"]
+tier        = "free"
+required    = false
+env_var     = "DISCORD_BOT_TOKEN"
+signup_hint = "discord.com/developers/applications → Bot → Reset Token"
+channel_id  = 1483720731014594560
+
+[[key]]
+name        = "GEMINI_API_KEY"
+label       = "Google Gemini API"
+purpose     = "Gemini Console chat, fleet task review (free tier)"
+skills      = ["gemini_console"]
+tier        = "freemium"
+required    = false
+env_var     = "GEMINI_API_KEY"
+signup_hint = "aistudio.google.com/apikey → Free tier: generous quota"

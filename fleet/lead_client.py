@@ -61,6 +61,10 @@ SKILL_MAP = {
     "code_write_review": "code_write_review",
     "review code": "code_write_review",
     "code review": "code_write_review",
+    "fma": "fma_review",
+    "fma review": "fma_review",
+    "launcher review": "fma_review",
+    "fleet manager": "fma_review",
 }
 
 

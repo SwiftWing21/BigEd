@@ -58,6 +58,8 @@ def _build_roles(config):
     return roles
 
 ollama_proc = None
+discord_proc = None
+openclaw_proc = None
 worker_procs = {}
 training_active = False
 
@@ -96,6 +98,59 @@ def stop_ollama():
         except subprocess.TimeoutExpired:
             ollama_proc.kill()
     ollama_proc = None
+
+
+def start_discord_bot(config):
+    global discord_proc
+    if not config["fleet"].get("discord_bot_enabled", True):
+        log.info("Discord bot disabled in fleet.toml")
+        return
+    if not os.environ.get("DISCORD_BOT_TOKEN"):
+        log.info("DISCORD_BOT_TOKEN not set — Discord bot disabled")
+        return
+    log.info("Starting Discord bot")
+    discord_proc = subprocess.Popen(
+        [PYTHON, str(FLEET_DIR / "discord_bot.py")],
+        cwd=str(FLEET_DIR),
+    )
+
+
+def stop_discord_bot():
+    global discord_proc
+    if discord_proc and discord_proc.poll() is None:
+        log.info("Stopping Discord bot")
+        discord_proc.terminate()
+        try:
+            discord_proc.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            discord_proc.kill()
+    discord_proc = None
+
+
+def start_openclaw(config):
+    global openclaw_proc
+    if not config["fleet"].get("openclaw_enabled", False):
+        log.info("OpenClaw disabled in fleet.toml (set openclaw_enabled=true to enable)")
+        return
+    port = config.get("openclaw", {}).get("port", 18789)
+    log.info(f"Starting OpenClaw gateway on port {port}")
+    openclaw_proc = subprocess.Popen(
+        ["openclaw", "gateway", "--port", str(port)],
+        cwd=str(FLEET_DIR),
+        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+    )
+
+
+def stop_openclaw():
+    global openclaw_proc
+    if openclaw_proc and openclaw_proc.poll() is None:
+        log.info("Stopping OpenClaw gateway")
+        openclaw_proc.terminate()
+        try:
+            openclaw_proc.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            openclaw_proc.kill()
+    openclaw_proc = None
 
 
 def start_worker(role, config):
@@ -164,6 +219,8 @@ def write_status_md():
 
 def shutdown(sig, frame):
     log.info("Shutting down fleet...")
+    stop_openclaw()
+    stop_discord_bot()
     for role, proc in worker_procs.items():
         proc.terminate()
     for role, proc in worker_procs.items():
@@ -202,6 +259,10 @@ def main():
         start_worker(role, config)
         time.sleep(1)
 
+    # Start messaging bridges
+    start_discord_bot(config)
+    start_openclaw(config)
+
     log.info(f"Fleet up — {len(ROLES)} workers, eco={config['fleet']['eco_mode']}")
 
     last_status = 0
@@ -218,6 +279,14 @@ def main():
             if proc and proc.poll() is not None:
                 log.warning(f"Worker '{role}' died (exit={proc.returncode}) — restarting")
                 start_worker(role, config)
+
+        # Restart messaging bridges if they died
+        if discord_proc and discord_proc.poll() is not None:
+            log.warning(f"Discord bot died (exit={discord_proc.returncode}) — restarting")
+            start_discord_bot(config)
+        if openclaw_proc and openclaw_proc.poll() is not None:
+            log.warning(f"OpenClaw died (exit={openclaw_proc.returncode}) — restarting")
+            start_openclaw(config)
 
         # Keep model loaded in VRAM unconditionally
         if now - last_keepalive >= OLLAMA_KEEPALIVE_INTERVAL:

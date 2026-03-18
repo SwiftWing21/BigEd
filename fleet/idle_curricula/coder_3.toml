@@ -125,6 +125,46 @@ description = "Maintenance skill that runs VACUUM and ANALYZE on fleet.db, check
 inputs = "keep_days: int (default 30), vacuum: bool (default True)"
 outputs = "before_size_mb, after_size_mb, rows_deleted, wal_checkpointed"
 
+# ── FMA review & enhancement discussion ──────────────────────────────────────
+
+[[tasks]]
+type = "fma_review"
+[tasks.payload]
+agent_name = "coder_3"
+perspective = "performance optimizer"
+file = "launcher.py"
+focus = "startup time, threading efficiency, GUI responsiveness, memory footprint, WSL call latency"
+mode = "both"
+round = 1
+
+[[tasks]]
+type = "fma_review"
+[tasks.payload]
+agent_name = "coder_3"
+perspective = "performance optimizer"
+file = "updater.py"
+focus = "build step parallelization, manifest hash caching, subprocess overhead"
+mode = "both"
+round = 2
+
+[[tasks]]
+type = "fma_review"
+[tasks.payload]
+agent_name = "coder_3"
+perspective = "performance optimizer"
+focus = "FMA resource usage — CPU/RAM during idle, polling intervals, GPU monitoring overhead"
+mode = "discuss"
+round = 3
+
+[[tasks]]
+type = "fma_review"
+[tasks.payload]
+agent_name = "coder_3"
+perspective = "performance optimizer"
+file = "generate_icon.py"
+focus = "PIL image generation efficiency, file I/O patterns"
+mode = "review"
+
 # ── Codebase indexing ──────────────────────────────────────────────────────────
 
 [[tasks]]

@@ -1,0 +1,339 @@
+#!/usr/bin/env python3
+"""
+Fleet Discord bridge — long-lived bot process managed by supervisor.
+Routes messages from biged-fleetchat to fleet agents and posts results back.
+
+Commands:
+  /aider <instructions>   — code_write via aider + local Ollama
+  /claude <prompt>        — Claude API (Sonnet)
+  /gemini <prompt>        — Gemini API
+  /local <prompt>         — Local Ollama (qwen3:8b)
+  /status                 — Fleet status snapshot
+  /task <natural request> — Queue a fleet task (auto-routes to skill)
+  /result <id>            — Get result of a completed task
+"""
+import asyncio
+import json
+import logging
+import os
+import signal
+import sys
+import time
+from pathlib import Path
+
+try:
+    import discord
+except ImportError:
+    print("discord.py not installed. Run: pip install discord.py")
+    sys.exit(1)
+
+FLEET_DIR = Path(__file__).parent
+sys.path.insert(0, str(FLEET_DIR))
+
+import db
+from config import load_config
+
+# ── Config ───────────────────────────────────────────────────────────────────
+CHANNEL_ID = 1483720731014594560
+TOKEN = os.environ.get("DISCORD_BOT_TOKEN", "")
+MAX_MSG_LEN = 1900  # Discord limit is 2000, leave room for formatting
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [DISCORD] %(message)s",
+    handlers=[
+        logging.FileHandler(FLEET_DIR / "logs" / "discord_bot.log"),
+        logging.StreamHandler(sys.stdout),
+    ],
+)
+log = logging.getLogger("discord_bot")
+
+# ── Discord client ───────────────────────────────────────────────────────────
+intents = discord.Intents.default()
+intents.message_content = True
+client = discord.Client(intents=intents)
+
+config = None
+
+
+def _truncate(text: str, limit: int = MAX_MSG_LEN) -> str:
+    if len(text) <= limit:
+        return text
+    return text[:limit] + "\n... (truncated)"
+
+
+def _format_code(text: str, lang: str = "") -> str:
+    return f"```{lang}\n{_truncate(text, MAX_MSG_LEN - 20)}\n```"
+
+
+async def _reply(message: discord.Message, text: str):
+    """Send a reply, splitting into multiple messages if needed."""
+    chunks = []
+    while len(text) > 2000:
+        # Find a good split point
+        split = text.rfind("\n", 0, 1900)
+        if split == -1:
+            split = 1900
+        chunks.append(text[:split])
+        text = text[split:]
+    chunks.append(text)
+    for chunk in chunks:
+        if chunk.strip():
+            await message.channel.send(chunk)
+
+
+# ── Command handlers ─────────────────────────────────────────────────────────
+
+async def cmd_status(message: discord.Message, _args: str):
+    """Fleet status snapshot."""
+    try:
+        status = db.get_fleet_status()
+        lines = ["**Fleet Status**\n"]
+        lines.append("```")
+        lines.append(f"{'Agent':<20} {'Role':<18} {'Status':<8}")
+        lines.append("-" * 48)
+        for a in status["agents"]:
+            lines.append(f"{a['name']:<20} {a['role']:<18} {a['status']:<8}")
+        t = status["tasks"]
+        lines.append(f"\nTasks: {t['PENDING']} pending | {t['RUNNING']} running | {t['DONE']} done | {t['FAILED']} failed")
+        lines.append("```")
+        await _reply(message, "\n".join(lines))
+    except Exception as e:
+        await _reply(message, f"Error getting status: {e}")
+
+
+async def cmd_local(message: discord.Message, args: str):
+    """Send prompt to local Ollama."""
+    if not args:
+        await _reply(message, "Usage: `/local <prompt>`")
+        return
+    await message.add_reaction("\u23f3")  # hourglass
+    try:
+        from skills._models import _call_local
+        models = config.get("models", {})
+        result = await asyncio.to_thread(_call_local, "", args, models, 2048)
+        await _reply(message, f"**Local ({models.get('local', 'qwen3:8b')})**\n{_truncate(result)}")
+    except Exception as e:
+        await _reply(message, f"Local error: {e}")
+    await message.remove_reaction("\u23f3", client.user)
+
+
+async def cmd_claude(message: discord.Message, args: str):
+    """Send prompt to Claude API."""
+    if not args:
+        await _reply(message, "Usage: `/claude <prompt>`")
+        return
+    if not os.environ.get("ANTHROPIC_API_KEY"):
+        await _reply(message, "ANTHROPIC_API_KEY not set.")
+        return
+    await message.add_reaction("\u23f3")
+    try:
+        from skills._models import _call_claude
+        models = config.get("models", {})
+        result = await asyncio.to_thread(_call_claude, "", args, models, 2048)
+        await _reply(message, f"**Claude**\n{_truncate(result)}")
+    except Exception as e:
+        await _reply(message, f"Claude error: {e}")
+    await message.remove_reaction("\u23f3", client.user)
+
+
+async def cmd_gemini(message: discord.Message, args: str):
+    """Send prompt to Gemini API."""
+    if not args:
+        await _reply(message, "Usage: `/gemini <prompt>`")
+        return
+    if not os.environ.get("GEMINI_API_KEY"):
+        await _reply(message, "GEMINI_API_KEY not set.")
+        return
+    await message.add_reaction("\u23f3")
+    try:
+        from skills._models import _call_gemini
+        models = config.get("models", {})
+        result = await asyncio.to_thread(_call_gemini, "", args, models, 2048)
+        await _reply(message, f"**Gemini**\n{_truncate(result)}")
+    except Exception as e:
+        await _reply(message, f"Gemini error: {e}")
+    await message.remove_reaction("\u23f3", client.user)
+
+
+async def cmd_aider(message: discord.Message, args: str):
+    """Queue a code_write task via aider."""
+    if not args:
+        await _reply(message, "Usage: `/aider <instructions>`")
+        return
+    payload = json.dumps({"instructions": args})
+    task_id = db.post_task("code_write", payload, priority=7)
+    await _reply(message, f"Queued aider task **#{task_id}**. Use `/result {task_id}` to check.")
+    # Poll for completion in background
+    asyncio.create_task(_poll_and_report(message, task_id))
+
+
+async def cmd_task(message: discord.Message, args: str):
+    """Queue a generic fleet task with auto-routing."""
+    if not args:
+        await _reply(message, "Usage: `/task <description>`")
+        return
+    skill = _infer_skill(args)
+    payload = json.dumps({"instructions": args, "query": args, "prompt": args})
+    task_id = db.post_task(skill, payload, priority=5)
+    await _reply(message, f"Queued **{skill}** task **#{task_id}**. Use `/result {task_id}` to check.")
+
+
+async def cmd_result(message: discord.Message, args: str):
+    """Get task result by ID."""
+    if not args or not args.strip().isdigit():
+        await _reply(message, "Usage: `/result <task_id>`")
+        return
+    task = db.get_task_result(int(args.strip()))
+    if not task:
+        await _reply(message, f"Task #{args.strip()} not found.")
+        return
+    status = task["status"]
+    lines = [f"**Task #{task['id']}** — {task['type']} — `{status}`"]
+    if task.get("result_json"):
+        try:
+            result = json.loads(task["result_json"])
+            if isinstance(result, dict):
+                summary = result.get("summary", result.get("response", json.dumps(result, indent=2)))
+            else:
+                summary = str(result)
+            lines.append(_format_code(str(summary)))
+        except Exception:
+            lines.append(_format_code(task["result_json"]))
+    if task.get("error"):
+        lines.append(f"**Error:** {task['error']}")
+    await _reply(message, "\n".join(lines))
+
+
+async def cmd_help(message: discord.Message, _args: str):
+    await _reply(message, (
+        "**Fleet Bot Commands**\n"
+        "`/aider <instructions>` — Code generation via aider\n"
+        "`/claude <prompt>` — Claude API\n"
+        "`/gemini <prompt>` — Gemini API\n"
+        "`/local <prompt>` — Local Ollama\n"
+        "`/status` — Fleet status\n"
+        "`/task <description>` — Queue a fleet task\n"
+        "`/result <id>` — Get task result\n"
+        "`/help` — This message"
+    ))
+
+
+# ── Skill inference (mirrors lead_client.py) ─────────────────────────────────
+
+SKILL_MAP = {
+    "code write": "code_write", "build": "code_write", "aider": "code_write",
+    "code review": "code_write_review", "review": "code_write_review",
+    "summarize": "summarize", "summary": "summarize",
+    "arxiv": "arxiv_fetch", "paper": "arxiv_fetch",
+    "search": "web_search", "google": "web_search", "find": "web_search",
+    "plan": "plan_workload", "workload": "plan_workload",
+    "flashcard": "flashcard", "quiz": "flashcard",
+    "lead": "lead_research", "prospect": "lead_research",
+    "security": "security_audit", "audit": "security_audit",
+    "index": "code_index",
+    "fma": "fma_review", "launcher": "fma_review", "fleet manager": "fma_review",
+}
+
+
+def _infer_skill(text: str) -> str:
+    lower = text.lower()
+    for keyword, skill in SKILL_MAP.items():
+        if keyword in lower:
+            return skill
+    return "summarize"  # safe default
+
+
+# ── Background polling ───────────────────────────────────────────────────────
+
+async def _poll_and_report(message: discord.Message, task_id: int, timeout: int = 660):
+    """Poll for task completion and post result back to Discord."""
+    start = time.time()
+    while time.time() - start < timeout:
+        await asyncio.sleep(10)
+        task = db.get_task_result(task_id)
+        if not task:
+            continue
+        if task["status"] in ("DONE", "FAILED"):
+            if task["status"] == "DONE":
+                try:
+                    result = json.loads(task["result_json"])
+                    summary = result.get("summary", str(result)[:800])
+                    diff = result.get("diff", "")
+                    text = f"Task **#{task_id}** complete.\n**Summary:** {summary}"
+                    if diff:
+                        text += f"\n{_format_code(diff[:1200], 'diff')}"
+                    await _reply(message, text)
+                except Exception:
+                    await _reply(message, f"Task **#{task_id}** done.\n{_format_code(task['result_json'])}")
+            else:
+                await _reply(message, f"Task **#{task_id}** failed: {task.get('error', 'unknown')}")
+            return
+    await _reply(message, f"Task **#{task_id}** still running after {timeout}s. Use `/result {task_id}` to check later.")
+
+
+# ── Command dispatch ─────────────────────────────────────────────────────────
+
+COMMANDS = {
+    "/aider": cmd_aider,
+    "/claude": cmd_claude,
+    "/gemini": cmd_gemini,
+    "/local": cmd_local,
+    "/status": cmd_status,
+    "/task": cmd_task,
+    "/result": cmd_result,
+    "/help": cmd_help,
+}
+
+
+@client.event
+async def on_ready():
+    log.info(f"Bot connected as {client.user} — watching channel {CHANNEL_ID}")
+    channel = client.get_channel(CHANNEL_ID)
+    if channel:
+        await channel.send("Fleet bot online.")
+
+
+@client.event
+async def on_message(message: discord.Message):
+    # Ignore own messages and wrong channels
+    if message.author == client.user:
+        return
+    if message.channel.id != CHANNEL_ID:
+        return
+
+    content = message.content.strip()
+    if not content:
+        return
+
+    # Match commands
+    for prefix, handler in COMMANDS.items():
+        if content.lower().startswith(prefix):
+            args = content[len(prefix):].strip()
+            log.info(f"{message.author}: {prefix} {args[:80]}")
+            await handler(message, args)
+            return
+
+    # No command prefix — treat as /local by default
+    log.info(f"{message.author}: (default→local) {content[:80]}")
+    await cmd_local(message, content)
+
+
+# ── Entry ────────────────────────────────────────────────────────────────────
+
+def main():
+    global config
+    if not TOKEN:
+        log.error("DISCORD_BOT_TOKEN not set — exiting")
+        sys.exit(1)
+
+    db.init_db()
+    config = load_config()
+    (FLEET_DIR / "logs").mkdir(exist_ok=True)
+
+    log.info("Starting Discord bot...")
+    client.run(TOKEN, log_handler=None)
+
+
+if __name__ == "__main__":
+    main()
