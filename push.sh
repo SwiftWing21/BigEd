@@ -21,6 +21,13 @@ cd "$(dirname "$0")"
 
 REMOTE_URL="git@github.com:SwiftWing21/BigEd.git"
 BRANCH="main"
+SSH_KEY="$HOME/.ssh/id_ed25519"
+
+# ── SSH agent ───────────────────────────────────────────────────────────────
+if ! ssh-add -l &>/dev/null; then
+    eval "$(ssh-agent -s)" > /dev/null
+    ssh-add "$SSH_KEY"
+fi
 
 # ── Colors ──────────────────────────────────────────────────────────────────
 RED='\033[0;31m'
