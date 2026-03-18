@@ -63,6 +63,16 @@ port = 18789
 channel = "stable"           # stable | beta | dev
 # Configure channels in openclaw onboard — Discord, WhatsApp, Telegram, etc.
 
+[launcher.tabs]
+command_center = true   # always on — core fleet view
+agents = true           # always on — agent status + sparklines
+crm = false             # bolt-on: contact/lead management
+onboarding = false      # bolt-on: customer onboarding checklists
+customers = false       # bolt-on: deployment tracking
+accounts = false        # bolt-on: service account monitoring
+ingestion = true        # file/folder import to RAG
+outputs = true          # knowledge browser
+
 [workers]
 nice_level = 15
 cpu_limit_percent = 10  # per worker via cpulimit; 4 workers = 40% total CPU

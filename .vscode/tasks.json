@@ -1,0 +1,33 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Smoke Test (fast)",
+      "type": "shell",
+      "command": "uv run python fleet/smoke_test.py --fast",
+      "group": "test",
+      "presentation": { "reveal": "always", "panel": "shared" }
+    },
+    {
+      "label": "Smoke Test (full)",
+      "type": "shell",
+      "command": "uv run python fleet/smoke_test.py",
+      "group": { "kind": "test", "isDefault": true },
+      "presentation": { "reveal": "always", "panel": "shared" }
+    },
+    {
+      "label": "Fleet Status",
+      "type": "shell",
+      "command": "uv run python fleet/lead_client.py status",
+      "group": "none",
+      "presentation": { "reveal": "always", "panel": "shared" }
+    },
+    {
+      "label": "Syntax Check All",
+      "type": "shell",
+      "command": "python -c \"import py_compile, pathlib; files = list(pathlib.Path('fleet').glob('*.py')) + list(pathlib.Path('fleet/skills').glob('*.py')); [py_compile.compile(str(f), doraise=True) for f in files]; print(f'{len(files)} files OK')\"",
+      "group": "build",
+      "presentation": { "reveal": "always", "panel": "shared" }
+    }
+  ]
+}

@@ -265,6 +265,27 @@ def load_model_cfg() -> dict:
         return defaults
 
 
+def load_tab_cfg() -> dict:
+    """Read [launcher.tabs] from fleet.toml to determine which UI tabs are enabled."""
+    defaults = {
+        "command_center": True,
+        "agents": True,
+        "crm": False,
+        "onboarding": False,
+        "customers": False,
+        "accounts": False,
+        "ingestion": True,
+        "outputs": True,
+    }
+    try:
+        import tomllib
+        with open(FLEET_TOML, "rb") as f:
+            data = tomllib.load(f)
+        return {**defaults, **data.get("launcher", {}).get("tabs", {})}
+    except Exception:
+        return defaults
+
+
 # ─── Status parser ────────────────────────────────────────────────────────────
 def parse_status():
     """Read STATUS.md and return dict with agents + task counts."""
@@ -782,18 +803,39 @@ class BigEdCC(ctk.CTk):
         )
         tabs.grid(row=1, column=1, sticky="nsew", padx=0, pady=0)
 
-        for name in ("Command Center", "Agents", "CRM",
-                     "Onboarding", "Customers", "Accounts", "Ingestion", "Outputs"):
-            tabs.add(name)
+        tab_cfg = load_tab_cfg()
 
+        # Always-on core tabs
+        tabs.add("Command Center")
         self._build_tab_cc(tabs.tab("Command Center"))
+        
+        tabs.add("Agents")
         self._build_tab_agents(tabs.tab("Agents"))
-        self._build_tab_crm(tabs.tab("CRM"))
-        self._build_tab_onboarding(tabs.tab("Onboarding"))
-        self._build_tab_customers(tabs.tab("Customers"))
-        self._build_tab_accounts(tabs.tab("Accounts"))
-        self._build_tab_ingest(tabs.tab("Ingestion"))
-        self._build_tab_outputs(tabs.tab("Outputs"))
+
+        if tab_cfg.get("crm", False):
+            tabs.add("CRM")
+            self._build_tab_crm(tabs.tab("CRM"))
+            
+        if tab_cfg.get("onboarding", False):
+            tabs.add("Onboarding")
+            self._build_tab_onboarding(tabs.tab("Onboarding"))
+            
+        if tab_cfg.get("customers", False):
+            tabs.add("Customers")
+            self._build_tab_customers(tabs.tab("Customers"))
+            
+        if tab_cfg.get("accounts", False):
+            tabs.add("Accounts")
+            self._build_tab_accounts(tabs.tab("Accounts"))
+            
+        if tab_cfg.get("ingestion", True):
+            tabs.add("Ingestion")
+            self._build_tab_ingest(tabs.tab("Ingestion"))
+            
+        if tab_cfg.get("outputs", True):
+            tabs.add("Outputs")
+            self._build_tab_outputs(tabs.tab("Outputs"))
+            
         tabs.set("Command Center")
 
     # ── Tab: Command Center (default) ────────────────────────────────────────
@@ -3109,8 +3151,8 @@ class BigEdCC(ctk.CTk):
         _active_theme = choice
         _save_theme_preference(choice)
         self._log_output(f"Agent theme changed to: {choice}")
-        if hasattr(self, "_refresh_agents_fast"):
-            self._refresh_agents_fast()
+        if hasattr(self, "_refresh_status"):
+            self._refresh_status()
 
     def _open_claude_console(self):
         ClaudeConsole(self)
@@ -3408,6 +3450,53 @@ class SettingsDialog(ctk.CTkToplevel):
                      text="Files from this folder appear in the Ingestion tab for import into RAG.",
                      font=("Segoe UI", 9), text_color="#555555"
                      ).grid(row=3, column=0, columnspan=2, padx=12, pady=(0, 10), sticky="w")
+                     
+        # Section: Visible Tabs
+        self._section_header(panel, "Visible Tabs (Requires Restart)")
+        tabs_frame = ctk.CTkFrame(panel, fg_color=_GLASS_BG, corner_radius=6)
+        tabs_frame.pack(fill="x", padx=16, pady=(0, 12))
+
+        ctk.CTkLabel(tabs_frame, text="Enable or disable modular launcher tabs.",
+                     font=("Segoe UI", 9), text_color=DIM).pack(padx=12, pady=(10, 0), anchor="w")
+
+        tab_grid = ctk.CTkFrame(tabs_frame, fg_color="transparent")
+        tab_grid.pack(fill="x", padx=12, pady=8)
+
+        self._tab_vars = {}
+        tab_cfg = load_tab_cfg()
+
+        for i, (tab_key, label) in enumerate([
+            ("crm", "CRM"), ("onboarding", "Onboarding"),
+            ("customers", "Customers"), ("accounts", "Accounts"),
+            ("ingestion", "Ingestion"), ("outputs", "Outputs")
+        ]):
+            var = ctk.BooleanVar(value=tab_cfg.get(tab_key, False))
+            self._tab_vars[tab_key] = var
+            cb = ctk.CTkCheckBox(tab_grid, text=label, variable=var, font=FONT_SM,
+                                 text_color=TEXT, fg_color=ACCENT, hover_color=ACCENT_H)
+            cb.grid(row=i // 2, column=i % 2, padx=(0, 20), pady=6, sticky="w")
+
+        btn_row_tabs = ctk.CTkFrame(tabs_frame, fg_color="transparent")
+        btn_row_tabs.pack(fill="x", padx=12, pady=(0, 12))
+        ctk.CTkButton(btn_row_tabs, text="Save Tabs", font=FONT_SM, width=100, height=26,
+                      fg_color=BG3, hover_color=BG2, command=self._save_tabs).pack(side="left")
+        self._tabs_status = ctk.CTkLabel(btn_row_tabs, text="", font=("Segoe UI", 9), text_color=DIM)
+        self._tabs_status.pack(side="left", padx=8)
+
+        # Section: Backup & Restore
+        self._section_header(panel, "Backup & Restore")
+        backup_frame = ctk.CTkFrame(panel, fg_color=_GLASS_BG, corner_radius=6)
+        backup_frame.pack(fill="x", padx=16, pady=(0, 12))
+
+        ctk.CTkLabel(backup_frame, text="Export or import configurations securely.",
+                     font=("Segoe UI", 9), text_color=DIM).pack(padx=12, pady=(10, 6), anchor="w")
+
+        btn_row2 = ctk.CTkFrame(backup_frame, fg_color="transparent")
+        btn_row2.pack(fill="x", padx=12, pady=(0, 12))
+        ctk.CTkButton(btn_row2, text="Export Config", font=FONT_SM, width=120, height=28,
+                      fg_color=BG3, hover_color=BG2, command=self._export_config).pack(side="left")
+        ctk.CTkButton(btn_row2, text="Import Config", font=FONT_SM, width=120, height=28,
+                      fg_color=BG3, hover_color=BG2, command=self._import_config).pack(side="left", padx=8)
 
     # ── Models Panel ─────────────────────────────────────────────────────
     def _build_models_panel(self):
@@ -3737,8 +3826,8 @@ class SettingsDialog(ctk.CTkToplevel):
                 names[role] = val
         _custom_names = names
         _save_custom_names(names)
-        if hasattr(self._parent, "_refresh_agents_fast"):
-            self._parent._refresh_agents_fast()
+        if hasattr(self._parent, "_refresh_status"):
+            self._parent._refresh_status()
         count = len(names)
         self._names_status.configure(
             text=f"Saved ({count} override{'s' if count != 1 else ''})",
@@ -3850,6 +3939,77 @@ class SettingsDialog(ctk.CTkToplevel):
                 self._parent._claude_research_var.set(use_claude)
         except Exception:
             pass
+            
+    def _save_tabs(self):
+        try:
+            text = ""
+            if FLEET_TOML.exists():
+                text = FLEET_TOML.read_text(encoding="utf-8")
+            
+            block = ("[launcher.tabs]\n"
+                     "command_center = true\n"
+                     "agents = true\n")
+            for k, v in self._tab_vars.items():
+                block += f"{k} = {'true' if str(v.get()).lower() == 'true' else 'false'}\n"
+                
+            # Regex reliably overwrites the entire [launcher.tabs] block or appends it.
+            if re.search(r'^\[launcher\.tabs\]', text, re.M):
+                text = re.sub(r'^\[launcher\.tabs\].*?(?=\n\[|\Z)', block.strip(), text, flags=re.M|re.S)
+            else:
+                text = text.rstrip() + "\n\n" + block.strip() + "\n"
+                
+            FLEET_TOML.write_text(text, encoding="utf-8")
+            self._tabs_status.configure(text="Saved. Restart app to apply.", text_color=GREEN)
+        except Exception as e:
+            self._tabs_status.configure(text=f"Error: {e}", text_color=RED)
+
+    def _export_config(self):
+        from tkinter import filedialog
+        path = filedialog.asksaveasfilename(defaultextension=".json", filetypes=[("JSON Backup", "*.json")])
+        if not path:
+            return
+
+        payload = {"settings": _load_settings()}
+        Path(path).write_text(json.dumps(payload, indent=2))
+        if hasattr(self, "_status"):
+            self._status.configure(text=f"Exported to {Path(path).name}", text_color=GREEN)
+
+    def _import_config(self):
+        from tkinter import filedialog
+        path = filedialog.askopenfilename(filetypes=[("JSON Backup", "*.json")])
+        if not path:
+            return
+
+        try:
+            data = json.loads(Path(path).read_text())
+        except Exception:
+            if hasattr(self, "_status"):
+                self._status.configure(text="Invalid file format", text_color=RED)
+            return
+
+        # Handle legacy nested format or direct settings
+        payload = data.get("data", data) if "data" in data else data
+        self._apply_import(payload)
+
+    def _apply_import(self, payload):
+        settings = payload.get("settings")
+        if settings:
+            _save_settings(settings)
+            global _active_theme, _custom_names
+            _active_theme = settings.get("agent_theme", "default")
+            _custom_names = settings.get("agent_names", {})
+            
+            self._theme_var.set(_active_theme)
+            for role, entry in self._name_entries.items():
+                entry.delete(0, "end")
+                if _custom_names.get(role):
+                    entry.insert(0, _custom_names[role])
+            
+            if hasattr(self._parent, "_refresh_status"):
+                self._parent._refresh_status()
+
+        if hasattr(self, "_status"):
+            self._status.configure(text="Import successful.", text_color=GREEN)
 
     def _load_hw_info(self):
         lines = []
@@ -4007,8 +4167,8 @@ class AgentNamesDialog(ctk.CTkToplevel):
                 names[role] = val
         _custom_names = names
         _save_custom_names(names)
-        if hasattr(self._parent, "_refresh_agents_fast"):
-            self._parent._refresh_agents_fast()
+        if hasattr(self._parent, "_refresh_status"):
+            self._parent._refresh_status()
         if hasattr(self._parent, "_log_output"):
             count = len(names)
             self._parent._log_output(

@@ -1,0 +1,81 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Smoke Test (fast)",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/fleet/smoke_test.py",
+      "args": ["--fast"],
+      "cwd": "${workspaceFolder}/fleet",
+      "console": "integratedTerminal"
+    },
+    {
+      "name": "Smoke Test (full)",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/fleet/smoke_test.py",
+      "cwd": "${workspaceFolder}/fleet",
+      "console": "integratedTerminal"
+    },
+    {
+      "name": "Single Worker (researcher)",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/fleet/worker.py",
+      "args": ["--role", "researcher"],
+      "cwd": "${workspaceFolder}/fleet",
+      "console": "integratedTerminal"
+    },
+    {
+      "name": "Single Worker (coder_1)",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/fleet/worker.py",
+      "args": ["--role", "coder_1"],
+      "cwd": "${workspaceFolder}/fleet",
+      "console": "integratedTerminal"
+    },
+    {
+      "name": "Supervisor",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/fleet/supervisor.py",
+      "cwd": "${workspaceFolder}/fleet",
+      "console": "integratedTerminal"
+    },
+    {
+      "name": "HW Supervisor",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/fleet/hw_supervisor.py",
+      "cwd": "${workspaceFolder}/fleet",
+      "console": "integratedTerminal"
+    },
+    {
+      "name": "Lead Client (status)",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/fleet/lead_client.py",
+      "args": ["status"],
+      "cwd": "${workspaceFolder}/fleet",
+      "console": "integratedTerminal"
+    },
+    {
+      "name": "Launcher (GUI debug)",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/BigEd/launcher/launcher.py",
+      "cwd": "${workspaceFolder}/BigEd/launcher",
+      "console": "integratedTerminal"
+    },
+    {
+      "name": "Dashboard",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/fleet/dashboard.py",
+      "cwd": "${workspaceFolder}/fleet",
+      "console": "integratedTerminal"
+    }
+  ]
+}

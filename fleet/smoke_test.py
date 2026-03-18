@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
 """Smoke test — validates the entire fleet startup chain. Run: uv run python smoke_test.py"""
 
+import argparse
 import importlib
 import json
+import os
 import sys
 import time
 import urllib.request
@@ -195,21 +197,40 @@ def cleanup():
 
 
 def main():
+    parser = argparse.ArgumentParser(description="Fleet Smoke Test")
+    parser.add_argument("--fast", action="store_true", help="Fast mode: skip Ollama/RAG/Thermal, use in-memory DB")
+    parser.add_argument("--full", action="store_true", help="Full mode (default)")
+    args = parser.parse_args()
+
+    if args.fast:
+        os.environ["FLEET_TEST_DB"] = ":memory:"
+
     print("Fleet Smoke Test")
+    if args.fast:
+        print("Mode: FAST (in-memory DB, skipping external services)")
     print("=" * 40)
 
     tests = [
         ("Skill imports", test_skill_imports),
         ("DB health", test_db_health),
         ("Config health", test_config),
-        ("Ollama reachable", test_ollama_reachable),
-        ("RAG search", test_rag_search),
+    ]
+    
+    if not args.fast:
+        tests.extend([
+            ("Ollama reachable", test_ollama_reachable),
+            ("RAG search", test_rag_search),
+        ])
+        
+    tests.extend([
         ("Message round-trip", test_message_roundtrip),
         ("Broadcast round-trip", test_broadcast_roundtrip),
         ("Stale recovery", test_stale_recovery),
         ("Training lock", test_training_lock),
-        ("Thermal readings", test_thermal_readings),
-    ]
+    ])
+
+    if not args.fast:
+        tests.append(("Thermal readings", test_thermal_readings))
 
     results = []
     for name, fn in tests:

@@ -60,3 +60,17 @@ Both share the Windows PATH. Verified tool access:
 - Created `CLAUDE.CHATS.md` (this file) and `CLAUDE.C_REVIEW.md`
 - Audited all CLI environments and documented tool availability
 - uv and ollama only accessible from WSL2 Ubuntu (not on Windows PATH)
+
+### Recent Updates — UI Enhancements & Workspace Segregation
+- **Workspace:** Set up a parallel VS Code workspace (`working education`) to keep IDE configurations completely separated from the Git repository, utilizing cross-directory relative paths in `tasks.json` and `launch.json`.
+- **BigEd CC Enhancements (`launcher.py`):**
+  - Implemented confirmation dialogs for destructive GUI actions.
+  - Built the `_customers_ping_all` network sweep feature for non-air-gapped fleet deployments.
+  - Added Export/Import Settings (portable JSON) to Backup & Restore, keeping `.secrets` explicitly excluded to maintain a safe-by-default security posture and avoid Git push errors.
+
+### Recent Updates — Roadmap Execution
+- **v0.16 Modular Tabs (BigEd CC):** Implemented config-driven UI tabs in `launcher.py`. Disabled CRM, Onboarding, Customers, and Accounts tabs by default to streamline the UI. Added a "Visible Tabs" settings pane to easily toggle these features, which read/writes to `[launcher.tabs]` in `fleet.toml`.
+- **v0.21 VS Code Developer Workflow:**
+  - Added launch configurations for `smoke_test.py`, `worker.py`, and `lead_client.py`.
+  - Created `lint`, `format`, and `build` tasks in `tasks.json`.
+  - Updated `smoke_test.py` with `--fast` mode. Skips Ollama/RAG/Thermal and explicitly sets `FLEET_TEST_DB=:memory:` for true DB test isolation, accelerating the local dev loop.

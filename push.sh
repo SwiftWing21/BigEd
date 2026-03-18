@@ -157,27 +157,46 @@ echo ""
 if [[ -n "${1:-}" ]]; then
     MSG="$1"
 else
-    # Auto-generate from changed files
-    added=$(git diff --cached --name-only --diff-filter=A | wc -l)
-    modified=$(git diff --cached --name-only --diff-filter=M | wc -l)
-    deleted=$(git diff --cached --name-only --diff-filter=D | wc -l)
+    info "Generating smart commit message via local AI..."
+    # Feed the first 500 lines of the diff to Ollama for a smart commit message
+    AI_MSG=$(python3 -c '
+import sys, json, urllib.request
+diff = sys.stdin.read()
+prompt = "Write a concise, conventional git commit message for this diff. Output ONLY the commit message, no markdown formatting, no explanations.\\n\\nDIFF:\\n" + diff
+data = json.dumps({"model": "qwen3:8b", "prompt": prompt, "stream": False}).encode("utf-8")
+req = urllib.request.Request("http://localhost:11434/api/generate", data=data, headers={"Content-Type": "application/json"})
+try:
+    with urllib.request.urlopen(req, timeout=10) as r:
+        resp = json.loads(r.read().decode())["response"]
+        print(resp.strip().strip("`").strip("\""))
+except Exception:
+    pass
+' <<< "$(git diff --cached | head -n 500)")
 
-    parts=()
-    [[ "$added" -gt 0 ]]    && parts+=("${added} added")
-    [[ "$modified" -gt 0 ]] && parts+=("${modified} modified")
-    [[ "$deleted" -gt 0 ]]  && parts+=("${deleted} deleted")
+    if [[ -n "$AI_MSG" && "$AI_MSG" != "null" ]]; then
+        MSG="$AI_MSG"
+    else
+        # Fallback to basic file-counting if Ollama is offline or fails
+        added=$(git diff --cached --name-only --diff-filter=A | wc -l)
+        modified=$(git diff --cached --name-only --diff-filter=M | wc -l)
+        deleted=$(git diff --cached --name-only --diff-filter=D | wc -l)
 
-    summary=$(IFS=", "; echo "${parts[*]}")
+        parts=()
+        [[ "$added" -gt 0 ]]    && parts+=("${added} added")
+        [[ "$modified" -gt 0 ]] && parts+=("${modified} modified")
+        [[ "$deleted" -gt 0 ]]  && parts+=("${deleted} deleted")
 
-    # Try to identify main areas changed
-    areas=()
-    git diff --cached --name-only | grep -q "^fleet/"           && areas+=("fleet")
-    git diff --cached --name-only | grep -q "^Max Stuff/"       && areas+=("launcher")
-    git diff --cached --name-only | grep -q "^autoresearch/"    && areas+=("autoresearch")
-    area_str=""
-    [[ ${#areas[@]} -gt 0 ]] && area_str="[$(IFS=","; echo "${areas[*]}")] "
+        summary=$(IFS=", "; echo "${parts[*]}")
 
-    MSG="${area_str}Update: ${summary}"
+        areas=()
+        git diff --cached --name-only | grep -q "^fleet/"           && areas+=("fleet")
+        git diff --cached --name-only | grep -q "^Max Stuff/"       && areas+=("launcher")
+        git diff --cached --name-only | grep -q "^autoresearch/"    && areas+=("autoresearch")
+        area_str=""
+        [[ ${#areas[@]} -gt 0 ]] && area_str="[$(IFS=","; echo "${areas[*]}")] "
+
+        MSG="${area_str}Update: ${summary}"
+    fi
 fi
 
 echo -e "${DIM}Commit message: ${MSG}${RESET}"
