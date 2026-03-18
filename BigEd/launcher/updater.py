@@ -8,6 +8,7 @@ import json
 import subprocess
 import sys
 import threading
+import time
 from datetime import datetime
 from pathlib import Path
 
@@ -138,6 +139,7 @@ class Updater(ctk.CTk):
         self._build_ui()
         self._running = False
         self._pending_self_update = False
+        self._start_time = 0.0
         self.protocol("WM_DELETE_WINDOW", self._on_close)
 
     def _set_icon(self):
@@ -162,16 +164,38 @@ class Updater(ctk.CTk):
         ctk.CTkLabel(hdr, text="FLEET CONTROL  —  UPDATER",
                      font=("Segoe UI", 14, "bold"),
                      text_color=GOLD).grid(row=0, column=1, sticky="w")
+                     
+        manifest = load_manifest()
+        last_date = manifest.get("__last_date__", "")
+        if last_date:
+            last_dur = manifest.get("__last_duration__", 0.0)
+            last_size = manifest.get("__last_size_mb__", 0.0)
+            last_info = f"Last update: {last_date} ({last_dur:.1f}s, {last_size:.1f} MB)"
+        else:
+            last_info = "Last update: Never"
+            
+        self._last_update_lbl = ctk.CTkLabel(
+            hdr, text=last_info, font=("Segoe UI", 9), text_color=DIM)
+        self._last_update_lbl.grid(row=0, column=2, padx=16, sticky="e")
 
         # ── Progress ──────────────────────────────────────────────────────────
         prog_frame = ctk.CTkFrame(self, fg_color=BG2, corner_radius=0)
         prog_frame.grid(row=1, column=0, sticky="ew")
         prog_frame.grid_columnconfigure(0, weight=1)
 
+        info_row = ctk.CTkFrame(prog_frame, fg_color="transparent")
+        info_row.grid(row=0, column=0, sticky="ew", padx=16, pady=(10, 4))
+        info_row.grid_columnconfigure(1, weight=1)
+
         self._step_label = ctk.CTkLabel(
-            prog_frame, text="Ready — changed files only",
+            info_row, text="Ready — changed files only",
             font=("Segoe UI", 11), text_color=DIM, anchor="w")
-        self._step_label.grid(row=0, column=0, padx=16, pady=(10, 4), sticky="w")
+        self._step_label.grid(row=0, column=0, sticky="w")
+
+        self._timer_lbl = ctk.CTkLabel(
+            info_row, text="00:00",
+            font=("Consolas", 11), text_color=GOLD, anchor="e")
+        self._timer_lbl.grid(row=0, column=2, sticky="e")
 
         self._progress = ctk.CTkProgressBar(
             prog_frame, height=12, corner_radius=4,
@@ -288,6 +312,8 @@ class Updater(ctk.CTk):
         if self._running:
             return
         self._running = True
+        self._start_time = time.time()
+        self._update_stopwatch()
         for btn in (self._run_btn, self._force_btn):
             btn.configure(state="disabled")
         self._log.configure(state="normal")
@@ -299,6 +325,14 @@ class Updater(ctk.CTk):
         label = "Running full rebuild..." if force else "Checking for changes..."
         self._step_label.configure(text=label)
         threading.Thread(target=self._run_steps, args=(force,), daemon=True).start()
+
+    def _update_stopwatch(self):
+        if not self._running:
+            return
+        elapsed = int(time.time() - self._start_time)
+        mins, secs = divmod(elapsed, 60)
+        self._timer_lbl.configure(text=f"{mins:02d}:{secs:02d}")
+        self.after(1000, self._update_stopwatch)
 
     def _run_steps(self, force: bool):
         manifest = load_manifest()
@@ -368,6 +402,30 @@ class Updater(ctk.CTk):
             return False
 
     def _on_complete(self, skipped: int = 0):
+        self._running = False
+
+        # Record build stats if an actual compile/build step occurred (not just skips)
+        if skipped < len(STEPS):
+            dur = time.time() - self._start_time
+            size_mb = 0.0
+            if EXE_PATH.exists():
+                size_mb += EXE_PATH.stat().st_size / (1024 * 1024)
+            if UPD_NEW_PATH.exists():
+                size_mb += UPD_NEW_PATH.stat().st_size / (1024 * 1024)
+            elif UPD_PATH.exists():
+                size_mb += UPD_PATH.stat().st_size / (1024 * 1024)
+
+            manifest = load_manifest()
+            manifest["__last_date__"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            manifest["__last_duration__"] = dur
+            manifest["__last_size_mb__"] = size_mb
+            save_manifest(manifest)
+
+            if hasattr(self, "_last_update_lbl"):
+                self._last_update_lbl.configure(
+                    text=f"Last update: {manifest['__last_date__']} ({dur:.1f}s, {size_mb:.1f} MB)"
+                )
+
         self._step_label.configure(text="✓ Update complete")
         skip_note = f"  ({skipped} step{'s' if skipped != 1 else ''} skipped — unchanged)" if skipped else ""
         self._status_lbl.configure(
@@ -384,7 +442,6 @@ class Updater(ctk.CTk):
         if UPD_NEW_PATH.exists():
             self._pending_self_update = True
             self._log_line("✓ Updater_new.exe staged — Updater will self-update on close")
-        self._running = False
 
     def _on_close(self):
         self._launch_swap_if_needed()
