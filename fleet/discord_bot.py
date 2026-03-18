@@ -281,6 +281,8 @@ SKILL_MAP = {
     "curriculum": "curriculum_update", "release": "product_release",
     "security review": "security_review", "security scan": "security_review",
     "quality": "code_quality", "lint": "code_quality", "best practices": "code_quality",
+    "diffusion": "diffusion", "generate image": "diffusion", "stable diffusion": "diffusion",
+    "sd15": "diffusion", "sdxl": "diffusion", "txt2img": "diffusion",
 }
 
 

@@ -92,6 +92,12 @@ SKILL_MAP = {
     "quality": "code_quality",
     "lint": "code_quality",
     "best practices": "code_quality",
+    "diffusion": "diffusion",
+    "generate image": "diffusion",
+    "stable diffusion": "diffusion",
+    "sd15": "diffusion",
+    "sdxl": "diffusion",
+    "txt2img": "diffusion",
 }
 
 

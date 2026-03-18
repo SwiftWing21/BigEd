@@ -677,34 +677,13 @@ class BigEdCC(ctk.CTk):
                                     "#1e2e1e", "#2a3e2a",
                                     tip="Allow workers to run background curriculum tasks when idle")
 
-        # ── CONFIG ────────────────────────────────────────────────────────────
+        # ── SETTINGS (single entry point) ──────────────────────────────────
         s = section("CONFIG")
-        btn(s, "🔑 API Keys",       self._open_keys_dialog,
-            tip="Add or rotate Anthropic, Gemini and other API keys")
-        btn(s, "🧪 Review",         self._open_review_dialog,
-            tip="Configure the evaluator-optimizer review pass for skill outputs")
-        btn(s, "🖥  Hardware",      self._open_hw_dialog,
-            tip="View CPU, RAM and GPU hardware details")
-        btn(s, "⚡ GPU Power",      self._open_thermal_dialog, "#1a1a10", "#2a2a18",
-            tip="Set GPU power limit and thermal targets (RTX 3080 Ti)")
-        btn(s, "🧠 LLM Model",      self._open_model_selector,
-            tip="Switch the local Ollama model used by fleet workers")
-        # Agent theme selector
-        theme_label = ctk.CTkLabel(sb, text="  Agent Theme", font=FONT_SM,
-                                   text_color=DIM, anchor="w")
-        theme_label.pack(fill="x", padx=10, pady=(6, 0))
-        s["widgets"].append(theme_label)
-        self._theme_var = ctk.StringVar(value=_active_theme)
-        theme_menu = ctk.CTkOptionMenu(
-            sb, values=list(AGENT_THEMES.keys()), variable=self._theme_var,
-            font=FONT_SM, fg_color=BG3, button_color=ACCENT,
-            button_hover_color=ACCENT_H, height=28,
-            command=self._change_agent_theme,
-        )
-        theme_menu.pack(fill="x", padx=10, pady=2)
-        s["widgets"].append(theme_menu)
-        btn(s, "✏  Name Agents",    self._open_agent_names_dialog,
-            tip="Give custom names to individual agents")
+        btn(s, "⚙  Settings",       self._open_settings,
+            tip="Open the unified settings panel")
+
+        # ── CONSOLES ─────────────────────────────────────────────────────────
+        s = section("CONSOLES", default_open=False)
         btn(s, "🤖 Claude Console", self._open_claude_console, "#1a1a2e", "#252540",
             tip="Open an interactive Claude API chat with fleet dispatch support")
         btn(s, "✦  Gemini Console", self._open_gemini_console, "#1a2a1a", "#253525",
@@ -2691,17 +2670,8 @@ class BigEdCC(ctk.CTk):
         self._output_text.see("end")
         self._output_text.configure(state="disabled")
 
-    def _open_keys_dialog(self):
-        KeyManagerDialog(self)
-
-    def _open_hw_dialog(self):
-        HardwareDialog(self)
-
-    def _open_thermal_dialog(self):
-        ThermalDialog(self)
-
-    def _open_model_selector(self):
-        ModelSelectorDialog(self)
+    def _open_settings(self):
+        SettingsDialog(self)
 
     def _change_agent_theme(self, choice: str):
         global _active_theme
@@ -2710,9 +2680,6 @@ class BigEdCC(ctk.CTk):
         self._log_output(f"Agent theme changed to: {choice}")
         if hasattr(self, "_refresh_agents_fast"):
             self._refresh_agents_fast()
-
-    def _open_agent_names_dialog(self):
-        AgentNamesDialog(self)
 
     def _open_claude_console(self):
         ClaudeConsole(self)
@@ -2775,6 +2742,700 @@ class BigEdCC(ctk.CTk):
             ["cmd", "/c", "start", "cmd", "/k", str(build_bat)],
             cwd=str(build_bat.parent),
         )
+
+
+# ─── Unified Settings Dialog ─────────────────────────────────────────────────
+# Dark glass aesthetic — gradient header, nav sidebar, content panel.
+
+_SETTINGS_NAV = [
+    ("General",   "general"),
+    ("Models",    "models"),
+    ("Hardware",  "hardware"),
+    ("API Keys",  "keys"),
+    ("Review",    "review"),
+]
+
+# Glass palette
+_GLASS_BG    = "#0f0f0f"
+_GLASS_NAV   = "#141414"
+_GLASS_PANEL = "#181818"
+_GLASS_HOVER = "#222222"
+_GLASS_SEL   = "#1a1a2e"
+_GLASS_BORDER = "#2a2a2a"
+
+
+class SettingsDialog(ctk.CTkToplevel):
+    """Unified settings panel — dark glass look with left nav + content area."""
+
+    def __init__(self, parent):
+        super().__init__(parent)
+        self.title("BigEd CC — Settings")
+        self.geometry("820x580")
+        self.minsize(700, 480)
+        self.configure(fg_color=_GLASS_BG)
+        self.grab_set()
+        self._parent = parent
+        self._nav_buttons = {}
+        self._panels = {}
+        self._active_section = None
+
+        ico = HERE / "brick.ico"
+        if ico.exists():
+            try: self.iconbitmap(str(ico))
+            except Exception: pass
+
+        # Load current settings
+        self._settings = _load_settings()
+
+        self._build_ui()
+        self._show_section("general")
+
+    def _build_ui(self):
+        self.grid_columnconfigure(0, weight=0)  # nav
+        self.grid_columnconfigure(1, weight=1)  # content
+        self.grid_rowconfigure(1, weight=1)
+
+        # ── Gradient header ──────────────────────────────────────────────
+        hdr = ctk.CTkFrame(self, fg_color="#111118", height=50, corner_radius=0)
+        hdr.grid(row=0, column=0, columnspan=2, sticky="ew")
+        hdr.grid_propagate(False)
+        hdr.grid_columnconfigure(1, weight=1)
+        ctk.CTkLabel(hdr, text="⚙  SETTINGS",
+                     font=("Segoe UI", 15, "bold"), text_color=GOLD
+                     ).grid(row=0, column=0, padx=18, pady=12, sticky="w")
+        ctk.CTkLabel(hdr, text="BigEd CC configuration",
+                     font=("Segoe UI", 9), text_color="#555555"
+                     ).grid(row=0, column=1, padx=8, sticky="w")
+
+        # ── Left nav ────────────────────────────────────────────────────
+        nav = ctk.CTkFrame(self, fg_color=_GLASS_NAV, width=160, corner_radius=0)
+        nav.grid(row=1, column=0, sticky="nsew")
+        nav.grid_propagate(False)
+
+        for i, (label, key) in enumerate(_SETTINGS_NAV):
+            b = ctk.CTkButton(
+                nav, text=f"  {label}", font=("Segoe UI", 11),
+                fg_color="transparent", hover_color=_GLASS_HOVER,
+                text_color=DIM, anchor="w", height=38, corner_radius=0,
+                command=lambda k=key: self._show_section(k),
+            )
+            b.pack(fill="x", padx=0, pady=(1 if i else 8, 0))
+            self._nav_buttons[key] = b
+
+        # ── Content area ────────────────────────────────────────────────
+        self._content = ctk.CTkFrame(self, fg_color=_GLASS_PANEL, corner_radius=0)
+        self._content.grid(row=1, column=1, sticky="nsew")
+        self._content.grid_columnconfigure(0, weight=1)
+        self._content.grid_rowconfigure(0, weight=1)
+
+        # Pre-build all panels
+        self._build_general_panel()
+        self._build_models_panel()
+        self._build_hardware_panel()
+        self._build_keys_panel()
+        self._build_review_panel()
+
+    def _show_section(self, key: str):
+        if self._active_section == key:
+            return
+        # Update nav highlighting
+        for k, b in self._nav_buttons.items():
+            if k == key:
+                b.configure(fg_color=_GLASS_SEL, text_color=GOLD)
+            else:
+                b.configure(fg_color="transparent", text_color=DIM)
+        # Show/hide panels
+        for k, panel in self._panels.items():
+            if k == key:
+                panel.grid(row=0, column=0, sticky="nsew", padx=0, pady=0)
+            else:
+                panel.grid_forget()
+        self._active_section = key
+
+    # ── General Panel ────────────────────────────────────────────────────
+    def _build_general_panel(self):
+        panel = ctk.CTkScrollableFrame(self._content, fg_color=_GLASS_PANEL)
+        self._panels["general"] = panel
+
+        # Section: Agent Theme
+        self._section_header(panel, "Agent Theme")
+        theme_frame = ctk.CTkFrame(panel, fg_color=_GLASS_BG, corner_radius=6)
+        theme_frame.pack(fill="x", padx=16, pady=(0, 12))
+        theme_frame.grid_columnconfigure(1, weight=1)
+
+        ctk.CTkLabel(theme_frame, text="Theme", font=FONT_SM,
+                     text_color=TEXT).grid(row=0, column=0, padx=12, pady=10, sticky="w")
+        self._theme_var = ctk.StringVar(value=_active_theme)
+        ctk.CTkOptionMenu(
+            theme_frame, values=list(AGENT_THEMES.keys()),
+            variable=self._theme_var, font=FONT_SM,
+            fg_color=BG3, button_color=ACCENT, button_hover_color=ACCENT_H,
+            height=30, width=160,
+            command=self._on_theme_change,
+        ).grid(row=0, column=1, padx=12, pady=10, sticky="w")
+
+        ctk.CTkLabel(theme_frame,
+                     text="Themes change how agent roles are displayed throughout the UI.",
+                     font=("Segoe UI", 9), text_color="#555555"
+                     ).grid(row=1, column=0, columnspan=2, padx=12, pady=(0, 10), sticky="w")
+
+        # Section: Custom Agent Names
+        self._section_header(panel, "Custom Agent Names")
+        names_frame = ctk.CTkFrame(panel, fg_color=_GLASS_BG, corner_radius=6)
+        names_frame.pack(fill="x", padx=16, pady=(0, 12))
+        names_frame.grid_columnconfigure(1, weight=1)
+
+        self._name_entries = {}
+        all_roles = [
+            "supervisor", "researcher", "coder", "coder_1", "coder_2", "coder_3",
+            "archivist", "analyst", "sales", "onboarding", "implementation",
+            "security", "planner",
+        ]
+        for i, role in enumerate(all_roles):
+            theme_map = AGENT_THEMES.get(_active_theme, AGENT_THEMES["default"])
+            base = re.sub(r'_\d+$', '', role)
+            suffix = role[len(base):]
+            theme_default = theme_map.get(base, base.title())
+            if suffix:
+                theme_default += f" {suffix.lstrip('_')}"
+
+            ctk.CTkLabel(names_frame, text=f"{role}:", font=("Consolas", 10),
+                         text_color=DIM, anchor="e", width=110
+                         ).grid(row=i, column=0, padx=(10, 6), pady=2, sticky="e")
+            entry = ctk.CTkEntry(names_frame, font=FONT_SM, fg_color="#111111",
+                                 border_color=_GLASS_BORDER, text_color=TEXT,
+                                 placeholder_text=theme_default, height=28)
+            entry.grid(row=i, column=1, sticky="ew", padx=(0, 10), pady=2)
+            current = _custom_names.get(role, "")
+            if current:
+                entry.insert(0, current)
+            self._name_entries[role] = entry
+
+        name_btn_frame = ctk.CTkFrame(names_frame, fg_color="transparent")
+        name_btn_frame.grid(row=len(all_roles), column=0, columnspan=2,
+                            sticky="ew", padx=10, pady=(6, 10))
+        ctk.CTkButton(name_btn_frame, text="Save Names", font=FONT_SM,
+                      width=100, height=28, fg_color=ACCENT, hover_color=ACCENT_H,
+                      command=self._save_names).pack(side="right", padx=4)
+        ctk.CTkButton(name_btn_frame, text="Clear All", font=FONT_SM,
+                      width=80, height=28, fg_color=BG3, hover_color=BG2,
+                      command=self._clear_names).pack(side="right", padx=4)
+        self._names_status = ctk.CTkLabel(name_btn_frame, text="", font=("Segoe UI", 9),
+                                          text_color=DIM)
+        self._names_status.pack(side="left", padx=8)
+
+        # Section: Fleet Behavior
+        self._section_header(panel, "Fleet Behavior")
+        behavior_frame = ctk.CTkFrame(panel, fg_color=_GLASS_BG, corner_radius=6)
+        behavior_frame.pack(fill="x", padx=16, pady=(0, 12))
+
+        self._claude_research_var2 = ctk.BooleanVar(
+            value=self._parent._get_complex_provider() == "claude")
+        ctk.CTkSwitch(
+            behavior_frame, text="  Claude for research decisions",
+            variable=self._claude_research_var2,
+            font=FONT_SM, text_color=TEXT,
+            progress_color=ACCENT, button_color=TEXT,
+            command=self._on_claude_research_toggle,
+        ).pack(padx=12, pady=(12, 4), anchor="w")
+        ctk.CTkLabel(behavior_frame,
+                     text="When ON, complex analysis routes through Claude API instead of local LLM.",
+                     font=("Segoe UI", 9), text_color="#555555"
+                     ).pack(padx=12, pady=(0, 12), anchor="w")
+
+    # ── Models Panel ─────────────────────────────────────────────────────
+    def _build_models_panel(self):
+        panel = ctk.CTkScrollableFrame(self._content, fg_color=_GLASS_PANEL)
+        self._panels["models"] = panel
+
+        # LLM Model button
+        self._section_header(panel, "LLM Model")
+        llm_frame = ctk.CTkFrame(panel, fg_color=_GLASS_BG, corner_radius=6)
+        llm_frame.pack(fill="x", padx=16, pady=(0, 12))
+
+        current_model = load_model_cfg().get("local", "qwen3:8b")
+        ctk.CTkLabel(llm_frame, text=f"Current: {current_model}",
+                     font=("Consolas", 10), text_color=TEXT
+                     ).pack(padx=12, pady=(12, 4), anchor="w")
+        ctk.CTkLabel(llm_frame,
+                     text="Select the Ollama model used by fleet workers for local inference.",
+                     font=("Segoe UI", 9), text_color="#555555"
+                     ).pack(padx=12, pady=(0, 6), anchor="w")
+        ctk.CTkButton(llm_frame, text="Open Model Selector", font=FONT_SM,
+                      width=160, height=30, fg_color=BG3, hover_color=BG2,
+                      command=lambda: ModelSelectorDialog(self._parent)
+                      ).pack(padx=12, pady=(0, 12), anchor="w")
+
+        # Diffusion Models
+        self._section_header(panel, "Image Generation (Stable Diffusion)")
+        diff_frame = ctk.CTkFrame(panel, fg_color=_GLASS_BG, corner_radius=6)
+        diff_frame.pack(fill="x", padx=16, pady=(0, 12))
+
+        diff_settings = self._settings.get("diffusion", {})
+
+        # SD 1.5 toggle
+        sd15_row = ctk.CTkFrame(diff_frame, fg_color="transparent")
+        sd15_row.pack(fill="x", padx=12, pady=(12, 0))
+        sd15_row.grid_columnconfigure(1, weight=1)
+
+        self._sd15_var = ctk.BooleanVar(value=diff_settings.get("sd15_enabled", True))
+        ctk.CTkSwitch(
+            sd15_row, text="  SD 1.5  —  GPU (fp16)",
+            variable=self._sd15_var, font=FONT_SM, text_color=TEXT,
+            progress_color=GREEN, button_color=TEXT,
+        ).grid(row=0, column=0, sticky="w")
+        ctk.CTkLabel(sd15_row, text="~4 GB VRAM  |  ~30s/image  |  512x512",
+                     font=("Consolas", 9), text_color="#555555"
+                     ).grid(row=0, column=1, padx=(12, 0), sticky="w")
+
+        sd15_detail = ctk.CTkFrame(diff_frame, fg_color="transparent")
+        sd15_detail.pack(fill="x", padx=24, pady=(2, 0))
+        ctk.CTkLabel(sd15_detail,
+                     text="Fast local generation on GPU. Good for iteration and drafts.",
+                     font=("Segoe UI", 9), text_color="#444444"
+                     ).pack(anchor="w")
+
+        # SDXL toggle
+        sdxl_row = ctk.CTkFrame(diff_frame, fg_color="transparent")
+        sdxl_row.pack(fill="x", padx=12, pady=(12, 0))
+        sdxl_row.grid_columnconfigure(1, weight=1)
+
+        self._sdxl_var = ctk.BooleanVar(value=diff_settings.get("sdxl_enabled", False))
+        ctk.CTkSwitch(
+            sdxl_row, text="  SDXL  —  CPU (fp32)",
+            variable=self._sdxl_var, font=FONT_SM, text_color=TEXT,
+            progress_color=ORANGE, button_color=TEXT,
+        ).grid(row=0, column=0, sticky="w")
+        ctk.CTkLabel(sdxl_row, text="~12 GB RAM  |  ~10-15 min/image  |  768x768",
+                     font=("Consolas", 9), text_color="#555555"
+                     ).grid(row=0, column=1, padx=(12, 0), sticky="w")
+
+        sdxl_detail = ctk.CTkFrame(diff_frame, fg_color="transparent")
+        sdxl_detail.pack(fill="x", padx=24, pady=(2, 0))
+        ctk.CTkLabel(sdxl_detail,
+                     text="Higher quality output on CPU. Slow but no VRAM cost.",
+                     font=("Segoe UI", 9), text_color="#444444"
+                     ).pack(anchor="w")
+
+        # Default model selector
+        default_row = ctk.CTkFrame(diff_frame, fg_color="transparent")
+        default_row.pack(fill="x", padx=12, pady=(12, 0))
+        ctk.CTkLabel(default_row, text="Default model:", font=FONT_SM,
+                     text_color=TEXT).pack(side="left")
+        self._diff_default_var = ctk.StringVar(
+            value=diff_settings.get("default_model", "sd15"))
+        ctk.CTkOptionMenu(
+            default_row, values=["sd15", "sdxl"],
+            variable=self._diff_default_var, font=FONT_SM,
+            fg_color=BG3, button_color=ACCENT, button_hover_color=ACCENT_H,
+            height=28, width=100,
+        ).pack(side="left", padx=(8, 0))
+
+        # Steps / guidance
+        params_row = ctk.CTkFrame(diff_frame, fg_color="transparent")
+        params_row.pack(fill="x", padx=12, pady=(10, 0))
+
+        ctk.CTkLabel(params_row, text="Steps:", font=FONT_SM,
+                     text_color=TEXT).pack(side="left")
+        self._diff_steps_var = ctk.StringVar(
+            value=str(diff_settings.get("default_steps", 30)))
+        ctk.CTkEntry(params_row, textvariable=self._diff_steps_var,
+                     font=FONT_SM, fg_color="#111111", border_color=_GLASS_BORDER,
+                     text_color=TEXT, width=50, height=28
+                     ).pack(side="left", padx=(4, 16))
+
+        ctk.CTkLabel(params_row, text="Guidance:", font=FONT_SM,
+                     text_color=TEXT).pack(side="left")
+        self._diff_guidance_var = ctk.StringVar(
+            value=str(diff_settings.get("default_guidance", 7.5)))
+        ctk.CTkEntry(params_row, textvariable=self._diff_guidance_var,
+                     font=FONT_SM, fg_color="#111111", border_color=_GLASS_BORDER,
+                     text_color=TEXT, width=50, height=28
+                     ).pack(side="left", padx=(4, 0))
+
+        # ── Upscale section ───────────────────────────────────────────
+        self._section_header(panel, "Upscale Pipeline (SD 1.5)")
+        up_frame = ctk.CTkFrame(panel, fg_color=_GLASS_BG, corner_radius=6)
+        up_frame.pack(fill="x", padx=16, pady=(0, 12))
+
+        ctk.CTkLabel(up_frame,
+                     text="Apply after base 512x512 generation to increase resolution.",
+                     font=("Segoe UI", 9), text_color="#555555"
+                     ).pack(padx=12, pady=(10, 6), anchor="w")
+
+        # Upscale method
+        method_row = ctk.CTkFrame(up_frame, fg_color="transparent")
+        method_row.pack(fill="x", padx=12, pady=(0, 4))
+        ctk.CTkLabel(method_row, text="Method:", font=FONT_SM,
+                     text_color=TEXT).pack(side="left")
+        self._upscale_var = ctk.StringVar(
+            value=diff_settings.get("default_upscale", "none"))
+        ctk.CTkSegmentedButton(
+            method_row, values=["none", "refine", "x4"],
+            variable=self._upscale_var, font=FONT_SM,
+            selected_color=ACCENT, selected_hover_color=ACCENT_H,
+        ).pack(side="left", padx=(8, 0))
+
+        # Method descriptions
+        desc_frame = ctk.CTkFrame(up_frame, fg_color="#111111", corner_radius=4)
+        desc_frame.pack(fill="x", padx=12, pady=(4, 8))
+        ctk.CTkLabel(desc_frame,
+                     text="none     — output at base resolution (512x512)\n"
+                          "refine   — img2img re-pass at higher res (~30s/pass, same model)\n"
+                          "x4       — SD upscaler 512→2048 (~90s, ~3 GB extra download)",
+                     font=("Consolas", 9), text_color="#555555", justify="left"
+                     ).pack(padx=10, pady=8, anchor="w")
+
+        # Refine params
+        refine_row = ctk.CTkFrame(up_frame, fg_color="transparent")
+        refine_row.pack(fill="x", padx=12, pady=(0, 4))
+
+        ctk.CTkLabel(refine_row, text="Passes:", font=FONT_SM,
+                     text_color=TEXT).pack(side="left")
+        self._upscale_passes_var = ctk.StringVar(
+            value=str(diff_settings.get("default_upscale_passes", 1)))
+        ctk.CTkEntry(refine_row, textvariable=self._upscale_passes_var,
+                     font=FONT_SM, fg_color="#111111", border_color=_GLASS_BORDER,
+                     text_color=TEXT, width=40, height=28
+                     ).pack(side="left", padx=(4, 14))
+
+        ctk.CTkLabel(refine_row, text="Scale:", font=FONT_SM,
+                     text_color=TEXT).pack(side="left")
+        self._upscale_factor_var = ctk.StringVar(
+            value=str(diff_settings.get("default_upscale_factor", 1.5)))
+        ctk.CTkEntry(refine_row, textvariable=self._upscale_factor_var,
+                     font=FONT_SM, fg_color="#111111", border_color=_GLASS_BORDER,
+                     text_color=TEXT, width=50, height=28
+                     ).pack(side="left", padx=(4, 14))
+
+        ctk.CTkLabel(refine_row, text="Strength:", font=FONT_SM,
+                     text_color=TEXT).pack(side="left")
+        self._upscale_strength_var = ctk.StringVar(
+            value=str(diff_settings.get("default_upscale_strength", 0.35)))
+        ctk.CTkEntry(refine_row, textvariable=self._upscale_strength_var,
+                     font=FONT_SM, fg_color="#111111", border_color=_GLASS_BORDER,
+                     text_color=TEXT, width=50, height=28
+                     ).pack(side="left", padx=(4, 0))
+
+        # Pipeline preview
+        preview_frame = ctk.CTkFrame(up_frame, fg_color="#111111", corner_radius=4)
+        preview_frame.pack(fill="x", padx=12, pady=(4, 10))
+        self._pipeline_preview = ctk.CTkLabel(
+            preview_frame, text="", font=("Consolas", 9), text_color=GOLD, anchor="w")
+        self._pipeline_preview.pack(padx=10, pady=6, anchor="w")
+        self._update_pipeline_preview()
+
+        # Bind updates to preview
+        self._upscale_var.trace_add("write", lambda *_: self._update_pipeline_preview())
+        self._upscale_passes_var.trace_add("write", lambda *_: self._update_pipeline_preview())
+        self._upscale_factor_var.trace_add("write", lambda *_: self._update_pipeline_preview())
+
+        # Save button
+        save_row = ctk.CTkFrame(diff_frame, fg_color="transparent")
+        save_row.pack(fill="x", padx=12, pady=(12, 12))
+        ctk.CTkButton(save_row, text="Save Diffusion Settings", font=FONT_SM,
+                      width=160, height=30, fg_color=ACCENT, hover_color=ACCENT_H,
+                      command=self._save_diffusion).pack(side="right")
+        self._diff_status = ctk.CTkLabel(save_row, text="", font=("Segoe UI", 9),
+                                         text_color=DIM)
+        self._diff_status.pack(side="left", padx=8)
+
+        # First-run notice
+        notice = ctk.CTkFrame(panel, fg_color="#1a1a10", corner_radius=6)
+        notice.pack(fill="x", padx=16, pady=(0, 12))
+        ctk.CTkLabel(notice,
+                     text="Models download from HuggingFace on first use (~5 GB for SD1.5, ~7 GB for SDXL, ~3 GB x4 upscaler).\n"
+                          "Requires: pip install diffusers transformers accelerate torch",
+                     font=("Segoe UI", 9), text_color=ORANGE, justify="left"
+                     ).pack(padx=12, pady=10, anchor="w")
+
+    # ── Hardware Panel ───────────────────────────────────────────────────
+    def _build_hardware_panel(self):
+        panel = ctk.CTkFrame(self._content, fg_color=_GLASS_PANEL)
+        self._panels["hardware"] = panel
+        panel.grid_columnconfigure(0, weight=1)
+        panel.grid_rowconfigure(2, weight=1)
+
+        # GPU Power section
+        self._section_header_grid(panel, "GPU Power & Thermal", row=0)
+        gpu_frame = ctk.CTkFrame(panel, fg_color=_GLASS_BG, corner_radius=6)
+        gpu_frame.grid(row=1, column=0, sticky="ew", padx=16, pady=(0, 8))
+        ctk.CTkLabel(gpu_frame,
+                     text="Control GPU power limits and monitor thermals.",
+                     font=("Segoe UI", 9), text_color="#555555"
+                     ).pack(padx=12, pady=(10, 4), anchor="w")
+        ctk.CTkButton(gpu_frame, text="Open GPU Power Manager", font=FONT_SM,
+                      width=180, height=30, fg_color=BG3, hover_color=BG2,
+                      command=lambda: ThermalDialog(self._parent)
+                      ).pack(padx=12, pady=(0, 10), anchor="w")
+
+        # Hardware Details section
+        self._section_header_grid(panel, "Hardware Details", row=2)
+        hw_text = ctk.CTkTextbox(panel, font=("Consolas", 10),
+                                 fg_color=_GLASS_BG, text_color=TEXT,
+                                 wrap="none", corner_radius=6)
+        hw_text.grid(row=3, column=0, sticky="nsew", padx=16, pady=(0, 12))
+        hw_text.insert("end", "Loading hardware info...")
+        hw_text.configure(state="disabled")
+        self._hw_text = hw_text
+
+        bar = ctk.CTkFrame(panel, fg_color="transparent", height=36)
+        bar.grid(row=4, column=0, sticky="ew", padx=16, pady=(0, 12))
+        ctk.CTkButton(bar, text="↻ Refresh", font=FONT_SM, width=90, height=28,
+                      fg_color=BG3, hover_color=BG2,
+                      command=lambda: threading.Thread(
+                          target=self._load_hw_info, daemon=True).start()
+                      ).pack(side="left")
+
+        threading.Thread(target=self._load_hw_info, daemon=True).start()
+
+    # ── Keys Panel ───────────────────────────────────────────────────────
+    def _build_keys_panel(self):
+        panel = ctk.CTkFrame(self._content, fg_color=_GLASS_PANEL)
+        self._panels["keys"] = panel
+        panel.grid_columnconfigure(0, weight=1)
+        panel.grid_rowconfigure(0, weight=1)
+
+        # Embed a simple message + launch button (full KeyManager is complex)
+        inner = ctk.CTkFrame(panel, fg_color=_GLASS_BG, corner_radius=6)
+        inner.place(relx=0.5, rely=0.4, anchor="center")
+
+        ctk.CTkLabel(inner, text="🔑", font=("Segoe UI", 32)
+                     ).pack(pady=(24, 8))
+        ctk.CTkLabel(inner, text="API Key Manager",
+                     font=("Segoe UI", 14, "bold"), text_color=GOLD
+                     ).pack(pady=(0, 4))
+        ctk.CTkLabel(inner,
+                     text="Add, rotate, and manage API keys for Anthropic, Gemini,\n"
+                          "Stability AI, Replicate, and other services.",
+                     font=("Segoe UI", 10), text_color="#555555", justify="center"
+                     ).pack(padx=24, pady=(0, 12))
+        ctk.CTkButton(inner, text="Open Key Manager", font=("Segoe UI", 11),
+                      width=160, height=34, fg_color=ACCENT, hover_color=ACCENT_H,
+                      command=lambda: KeyManagerDialog(self._parent)
+                      ).pack(pady=(0, 24))
+
+    # ── Review Panel ─────────────────────────────────────────────────────
+    def _build_review_panel(self):
+        panel = ctk.CTkFrame(self._content, fg_color=_GLASS_PANEL)
+        self._panels["review"] = panel
+        panel.grid_columnconfigure(0, weight=1)
+        panel.grid_rowconfigure(0, weight=1)
+
+        inner = ctk.CTkFrame(panel, fg_color=_GLASS_BG, corner_radius=6)
+        inner.place(relx=0.5, rely=0.4, anchor="center")
+
+        ctk.CTkLabel(inner, text="🧪", font=("Segoe UI", 32)
+                     ).pack(pady=(24, 8))
+        ctk.CTkLabel(inner, text="Review Settings",
+                     font=("Segoe UI", 14, "bold"), text_color=GOLD
+                     ).pack(pady=(0, 4))
+        ctk.CTkLabel(inner,
+                     text="Configure the evaluator-optimizer review pass.\n"
+                          "Enable/disable reviews and choose provider (API, subscription, local).",
+                     font=("Segoe UI", 10), text_color="#555555", justify="center"
+                     ).pack(padx=24, pady=(0, 12))
+        ctk.CTkButton(inner, text="Open Review Settings", font=("Segoe UI", 11),
+                      width=170, height=34, fg_color=ACCENT, hover_color=ACCENT_H,
+                      command=lambda: ReviewDialog(self._parent)
+                      ).pack(pady=(0, 24))
+
+    # ── Helpers ──────────────────────────────────────────────────────────
+    def _section_header(self, parent, text: str):
+        ctk.CTkLabel(parent, text=text, font=("Segoe UI", 12, "bold"),
+                     text_color=GOLD).pack(padx=16, pady=(16, 6), anchor="w")
+
+    def _section_header_grid(self, parent, text: str, row: int):
+        ctk.CTkLabel(parent, text=text, font=("Segoe UI", 12, "bold"),
+                     text_color=GOLD).grid(row=row, column=0, padx=16,
+                                           pady=(16, 6), sticky="w")
+
+    def _on_theme_change(self, choice: str):
+        self._parent._change_agent_theme(choice)
+        # Update placeholder text in name entries
+        theme_map = AGENT_THEMES.get(choice, AGENT_THEMES["default"])
+        for role, entry in self._name_entries.items():
+            base = re.sub(r'_\d+$', '', role)
+            suffix = role[len(base):]
+            theme_default = theme_map.get(base, base.title())
+            if suffix:
+                theme_default += f" {suffix.lstrip('_')}"
+            entry.configure(placeholder_text=theme_default)
+
+    def _save_names(self):
+        global _custom_names
+        names = {}
+        for role, entry in self._name_entries.items():
+            val = entry.get().strip()
+            if val:
+                names[role] = val
+        _custom_names = names
+        _save_custom_names(names)
+        if hasattr(self._parent, "_refresh_agents_fast"):
+            self._parent._refresh_agents_fast()
+        count = len(names)
+        self._names_status.configure(
+            text=f"Saved ({count} override{'s' if count != 1 else ''})",
+            text_color=GREEN)
+
+    def _clear_names(self):
+        for entry in self._name_entries.values():
+            entry.delete(0, "end")
+
+    def _update_pipeline_preview(self):
+        method = self._upscale_var.get()
+        if method == "none":
+            text = "512x512  (~30s)"
+        elif method == "refine":
+            try:
+                passes = int(self._upscale_passes_var.get())
+            except ValueError:
+                passes = 1
+            try:
+                factor = float(self._upscale_factor_var.get())
+            except ValueError:
+                factor = 1.5
+            w, h = 512, 512
+            stages = ["512x512"]
+            time_est = 30
+            for _ in range(passes):
+                w = (int(w * factor) // 8) * 8
+                h = (int(h * factor) // 8) * 8
+                stages.append(f"{w}x{h}")
+                time_est += 30
+            text = " → ".join(stages) + f"  (~{time_est}s)"
+        elif method == "x4":
+            text = "512x512 → 2048x2048  (~2 min)"
+        else:
+            text = ""
+        if hasattr(self, "_pipeline_preview"):
+            self._pipeline_preview.configure(text=f"Pipeline: {text}")
+
+    def _save_diffusion(self):
+        try:
+            steps = int(self._diff_steps_var.get())
+        except ValueError:
+            steps = 30
+        try:
+            guidance = float(self._diff_guidance_var.get())
+        except ValueError:
+            guidance = 7.5
+
+        try:
+            upscale_passes = int(self._upscale_passes_var.get())
+        except ValueError:
+            upscale_passes = 1
+        try:
+            upscale_factor = float(self._upscale_factor_var.get())
+        except ValueError:
+            upscale_factor = 1.5
+        try:
+            upscale_strength = float(self._upscale_strength_var.get())
+        except ValueError:
+            upscale_strength = 0.35
+
+        data = _load_settings()
+        data["diffusion"] = {
+            "sd15_enabled": self._sd15_var.get(),
+            "sdxl_enabled": self._sdxl_var.get(),
+            "default_model": self._diff_default_var.get(),
+            "default_steps": steps,
+            "default_guidance": guidance,
+            "default_upscale": self._upscale_var.get(),
+            "default_upscale_passes": upscale_passes,
+            "default_upscale_factor": upscale_factor,
+            "default_upscale_strength": upscale_strength,
+        }
+        _save_settings(data)
+        self._diff_status.configure(text="Saved.", text_color=GREEN)
+
+    def _on_claude_research_toggle(self):
+        # Sync with parent's toggle logic
+        use_claude = self._claude_research_var2.get()
+        try:
+            text = FLEET_TOML.read_text(encoding="utf-8")
+            if use_claude:
+                m = re.search(r'^claude_model\s*=\s*["\']([^"\']+)["\']', text, re.M)
+                claude_model = m.group(1) if m else "claude-sonnet-4-6"
+                provider, complex_v = "claude", claude_model
+            else:
+                m = re.search(r'^local\s*=\s*["\']([^"\']+)["\']', text, re.M)
+                local_model = m.group(1) if m else "qwen3:8b"
+                provider, complex_v = "local", local_model
+            text = re.sub(r'^(complex_provider\s*=\s*)["\'][^"\']*["\']',
+                          f'\\g<1>"{provider}"', text, flags=re.M)
+            text = re.sub(r'^(complex\s*=\s*)["\'][^"\']*["\']',
+                          f'\\g<1>"{complex_v}"', text, flags=re.M)
+            FLEET_TOML.write_text(text, encoding="utf-8")
+            # Update parent's checkbox if it exists
+            if hasattr(self._parent, "_claude_research_var"):
+                self._parent._claude_research_var.set(use_claude)
+        except Exception:
+            pass
+
+    def _load_hw_info(self):
+        lines = []
+        lines.append("── CPU ─────────────────────────────────────────────────")
+        try:
+            cpu = psutil.cpu_freq()
+            try:
+                name = subprocess.check_output(
+                    ["wmic", "cpu", "get", "Name"],
+                    creationflags=subprocess.CREATE_NO_WINDOW,
+                    text=True, timeout=5).strip().split("\n")[-1].strip()
+            except Exception:
+                name = "Unknown"
+            lines.append(f"  Name        : {name}")
+            lines.append(f"  Cores       : {psutil.cpu_count(logical=False)} physical  "
+                         f"{psutil.cpu_count(logical=True)} logical")
+            if cpu:
+                lines.append(f"  Frequency   : {cpu.current:.0f} MHz  "
+                             f"(max {cpu.max:.0f} MHz)")
+            lines.append(f"  Usage       : {psutil.cpu_percent(interval=1):.1f}%")
+        except Exception as e:
+            lines.append(f"  Error: {e}")
+
+        lines.append("")
+        lines.append("── RAM ─────────────────────────────────────────────────")
+        try:
+            vm = psutil.virtual_memory()
+            lines.append(f"  Total       : {vm.total/1e9:.1f} GB")
+            lines.append(f"  Used        : {vm.used/1e9:.1f} GB  ({vm.percent:.1f}%)")
+            lines.append(f"  Available   : {vm.available/1e9:.1f} GB")
+        except Exception as e:
+            lines.append(f"  Error: {e}")
+
+        lines.append("")
+        lines.append("── GPU ─────────────────────────────────────────────────")
+        if _GPU_OK:
+            try:
+                name = pynvml.nvmlDeviceGetName(_GPU_HANDLE)
+                mem = pynvml.nvmlDeviceGetMemoryInfo(_GPU_HANDLE)
+                util = pynvml.nvmlDeviceGetUtilizationRates(_GPU_HANDLE)
+                temp = pynvml.nvmlDeviceGetTemperature(
+                    _GPU_HANDLE, pynvml.NVML_TEMPERATURE_GPU)
+                power = pynvml.nvmlDeviceGetPowerUsage(_GPU_HANDLE) / 1000
+                lines.append(f"  Name        : {name}")
+                lines.append(f"  VRAM Total  : {mem.total/1e9:.1f} GB")
+                lines.append(f"  VRAM Used   : {mem.used/1e9:.2f} GB  "
+                             f"({mem.used*100//mem.total}%)")
+                lines.append(f"  VRAM Free   : {mem.free/1e9:.2f} GB")
+                lines.append(f"  GPU Usage   : {util.gpu}%")
+                lines.append(f"  Temp        : {temp}°C")
+                lines.append(f"  Power       : {power:.1f} W")
+            except Exception as e:
+                lines.append(f"  Error: {e}")
+        else:
+            lines.append("  No NVIDIA GPU detected via NVML")
+
+        result = "\n".join(lines)
+        self.after(0, lambda: self._update_hw_text(result))
+
+    def _update_hw_text(self, text: str):
+        self._hw_text.configure(state="normal")
+        self._hw_text.delete("1.0", "end")
+        self._hw_text.insert("end", text)
+        self._hw_text.configure(state="disabled")
 
 
 # ─── Agent Names Dialog ───────────────────────────────────────────────────────

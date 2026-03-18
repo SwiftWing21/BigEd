@@ -144,6 +144,7 @@ class Setup(ctk.CTk):
         )
         self._desktop_sc   = ctk.BooleanVar(value=True)
         self._startmenu_sc = ctk.BooleanVar(value=True)
+        self._diffusion    = ctk.BooleanVar(value=False)
         self._mode         = None   # "install" | "reinstall" | "uninstall"
 
         self.title(APP_NAME)
@@ -423,6 +424,23 @@ class Setup(ctk.CTk):
                         fg_color=ACCENT, hover_color=ACCENT_H,
                         ).pack(padx=20, pady=(3, 10), anchor="w")
 
+        # ── Optional components ──────────────────────────────────────────
+        opt_frame = ctk.CTkFrame(parent, fg_color=BG2, corner_radius=6)
+        opt_frame.pack(fill="x", padx=28, pady=4)
+        ctk.CTkLabel(opt_frame, text="Optional components:", font=("Segoe UI", 10),
+                     text_color=DIM, anchor="w",
+                     ).pack(padx=12, pady=(10, 4), anchor="w")
+        ctk.CTkCheckBox(opt_frame, text="Stable Diffusion (local image generation)",
+                        variable=self._diffusion,
+                        font=("Segoe UI", 11), text_color=TEXT,
+                        fg_color=ACCENT, hover_color=ACCENT_H,
+                        ).pack(padx=20, pady=3, anchor="w")
+        ctk.CTkLabel(opt_frame,
+                     text="Installs diffusers, transformers, accelerate, torch (~2.5 GB download).\n"
+                          "Models download separately on first use (~5-7 GB each).",
+                     font=("Segoe UI", 9), text_color=DIM, justify="left",
+                     ).pack(padx=34, pady=(0, 10), anchor="w")
+
         btn_row = ctk.CTkFrame(parent, fg_color="transparent")
         btn_row.pack(side="bottom", fill="x", padx=24, pady=16)
         back_target = "installed" if self._is_installed else "welcome"
@@ -542,7 +560,13 @@ class Setup(ctk.CTk):
             (p(0.58), "Copying icon...",              lambda: self._step_copy(ICON_ICO,    install_dir)),
             (p(0.65), "Registering with Windows...", lambda: self._step_register(install_dir)),
             (p(0.78), "Creating shortcuts...",        lambda: self._step_shortcuts(install_dir)),
-            (p(0.95), "Installing Python packages...",lambda: self._step_pip()),
+            (p(0.85), "Installing Python packages...",lambda: self._step_pip()),
+        ]
+        if self._diffusion.get():
+            steps.append(
+                (p(0.95), "Installing Stable Diffusion...", lambda: self._step_pip_diffusion()),
+            )
+        steps += [
             (1.00,    "Done.",                        lambda: None),
         ]
 
@@ -697,6 +721,20 @@ class Setup(ctk.CTk):
         if result.returncode != 0:
             raise RuntimeError((result.stderr or result.stdout or "pip failed")[-300:])
         return "Python packages installed"
+
+    def _step_pip_diffusion(self) -> str:
+        python = shutil.which("python") or shutil.which("python3") or "python"
+        pkgs = ["diffusers", "transformers", "accelerate", "torch"]
+        self.after(0, lambda: self._log("  pip install " + " ".join(pkgs)))
+        result = subprocess.run(
+            [python, "-m", "pip", "install", "--quiet"] + pkgs,
+            capture_output=True, text=True,
+            creationflags=subprocess.CREATE_NO_WINDOW,
+            timeout=600,  # torch is large, allow up to 10 min
+        )
+        if result.returncode != 0:
+            raise RuntimeError((result.stderr or result.stdout or "pip failed")[-300:])
+        return "Stable Diffusion dependencies installed"
 
     def _step_shortcuts(self, install_dir: Path) -> str:
         target = install_dir / "BigEdCC.exe"
