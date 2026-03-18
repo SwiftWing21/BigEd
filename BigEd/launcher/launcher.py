@@ -532,13 +532,22 @@ class BigEdCC(ctk.CTk):
         btn_row = ctk.CTkFrame(dlg, fg_color="transparent")
         btn_row.pack(side="bottom", fill="x", padx=20, pady=16)
 
+        def _close_modules():
+            for mod in getattr(self, "_modules", {}).values():
+                try:
+                    mod.on_close()
+                except Exception:
+                    pass
+
         def _stop_and_close():
             dlg.destroy()
+            _close_modules()
             self._stop_system()
             self.after(2000, self.destroy)
 
         def _just_close():
             dlg.destroy()
+            _close_modules()
             self.destroy()
 
         ctk.CTkButton(btn_row, text="Stop & Exit", width=110, height=32,
@@ -808,34 +817,53 @@ class BigEdCC(ctk.CTk):
         # Always-on core tabs
         tabs.add("Command Center")
         self._build_tab_cc(tabs.tab("Command Center"))
-        
+
         tabs.add("Agents")
         self._build_tab_agents(tabs.tab("Agents"))
 
-        if tab_cfg.get("crm", False):
-            tabs.add("CRM")
-            self._build_tab_crm(tabs.tab("CRM"))
-            
-        if tab_cfg.get("onboarding", False):
-            tabs.add("Onboarding")
-            self._build_tab_onboarding(tabs.tab("Onboarding"))
-            
-        if tab_cfg.get("customers", False):
-            tabs.add("Customers")
-            self._build_tab_customers(tabs.tab("Customers"))
-            
-        if tab_cfg.get("accounts", False):
-            tabs.add("Accounts")
-            self._build_tab_accounts(tabs.tab("Accounts"))
-            
-        if tab_cfg.get("ingestion", True):
-            tabs.add("Ingestion")
-            self._build_tab_ingest(tabs.tab("Ingestion"))
-            
-        if tab_cfg.get("outputs", True):
-            tabs.add("Outputs")
-            self._build_tab_outputs(tabs.tab("Outputs"))
-            
+        # Load modular tabs via module system
+        self._modules = {}
+        try:
+            from modules import load_modules
+            self._modules = load_modules(self, tab_cfg)
+            for name, mod in self._modules.items():
+                label = getattr(mod, "LABEL", name.title())
+                # Check for deprecation banner
+                deprecated = False
+                try:
+                    from modules import _load_manifest
+                    manifest = _load_manifest()
+                    meta = manifest.get(name, {})
+                    deprecated = meta.get("deprecated", False)
+                except Exception:
+                    pass
+                tabs.add(label)
+                tab_frame = tabs.tab(label)
+                if deprecated:
+                    # Show deprecation banner
+                    banner = ctk.CTkFrame(tab_frame, fg_color="#3a2a00", corner_radius=4)
+                    banner.pack(fill="x", padx=4, pady=(4, 0))
+                    since = meta.get("deprecated_since", "")
+                    sunset = meta.get("sunset_version", "")
+                    notes = meta.get("migration_notes", "")
+                    msg = f"DEPRECATED (since {since})"
+                    if sunset:
+                        msg += f" - will be removed in {sunset}"
+                    if notes:
+                        msg += f"\n{notes}"
+                    ctk.CTkLabel(banner, text=msg, font=FONT_SM,
+                                 text_color=ORANGE, wraplength=600
+                                 ).pack(padx=8, pady=4)
+                    # Wrap in sub-frame for module content
+                    content = ctk.CTkFrame(tab_frame, fg_color="transparent")
+                    content.pack(fill="both", expand=True)
+                    mod.build_tab(content)
+                else:
+                    mod.build_tab(tab_frame)
+        except ImportError:
+            # Fallback: no module system available, skip modular tabs
+            pass
+
         tabs.set("Command Center")
 
     # ── Tab: Command Center (default) ────────────────────────────────────────

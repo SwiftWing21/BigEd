@@ -28,6 +28,15 @@ fleet/rag.db-wal
 # ── Fleet — live status (regenerated on start) ────────────────────────────────
 fleet/STATUS.md
 
+# ── Fleet — misplaced VS Code configs (Gemini artifacts) ─────────────────────
+fleet/launch.json
+fleet/tasks.json
+fleet/skills/launch.json
+fleet/skills/tasks.json
+
+# ── Scratch / temp docs ──────────────────────────────────────────────────────
+how_we_roll.md
+
 # ── Fleet — logs ──────────────────────────────────────────────────────────────
 fleet/logs/
 

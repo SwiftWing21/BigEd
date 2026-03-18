@@ -53,6 +53,19 @@ critical = "qwen3:0.6b"
 exclusive_lock = true         # only 1 training process at a time
 auto_pause_gpu_tasks = true   # pause GPU-heavy skills during training
 lock_timeout_secs = 7200      # auto-release stale locks after 2h
+default_profile = "conservative"  # aggressive | conservative | exploratory
+
+[training.profiles.conservative]
+max_iterations = 3
+temperature = 0.3
+
+[training.profiles.aggressive]
+max_iterations = 10
+temperature = 0.7
+
+[training.profiles.exploratory]
+max_iterations = 5
+temperature = 0.9
 
 [dashboard]
 enabled = true                 # localhost web dashboard for fleet metrics
@@ -63,6 +76,9 @@ port = 18789
 channel = "stable"           # stable | beta | dev
 # Configure channels in openclaw onboard — Discord, WhatsApp, Telegram, etc.
 
+[launcher]
+profile = "research"    # deployment profile: minimal | research | consulting | full
+
 [launcher.tabs]
 command_center = true   # always on — core fleet view
 agents = true           # always on — agent status + sparklines
@@ -72,6 +88,18 @@ customers = false       # bolt-on: deployment tracking
 accounts = false        # bolt-on: service account monitoring
 ingestion = true        # file/folder import to RAG
 outputs = true          # knowledge browser
+
+[launcher.profiles.minimal]
+modules = ["ingestion", "outputs"]
+
+[launcher.profiles.research]
+modules = ["ingestion", "outputs"]
+
+[launcher.profiles.consulting]
+modules = ["crm", "onboarding", "customers", "accounts", "ingestion", "outputs"]
+
+[launcher.profiles.full]
+modules = ["crm", "onboarding", "customers", "accounts", "ingestion", "outputs"]
 
 [workers]
 nice_level = 15
