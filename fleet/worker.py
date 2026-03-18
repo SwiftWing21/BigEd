@@ -8,6 +8,7 @@ import logging
 import os
 import signal
 import sys
+import threading
 import time
 import urllib.request
 from pathlib import Path
@@ -17,6 +18,8 @@ sys.path.insert(0, str(FLEET_DIR))
 
 import db
 from config import load_config
+
+HW_STATE_FILE = FLEET_DIR / "hw_state.json"
 
 
 def setup_logging(role):
@@ -72,13 +75,38 @@ def wait_for_ollama(host: str, timeout: int, log) -> bool:
     return False
 
 
+SKILL_TIMEOUTS = {
+    "code_write": 900,
+    "code_write_review": 900,
+    "fma_review": 900,
+    "pen_test": 600,
+    "security_audit": 600,
+}
+DEFAULT_SKILL_TIMEOUT = 600
+
+
 def run_skill(skill_name, payload, config, log):
-    try:
-        module = importlib.import_module(f"skills.{skill_name}")
-        return module.run(payload, config)
-    except Exception as e:
-        log.error(f"Skill '{skill_name}' error: {e}")
-        raise
+    timeout = SKILL_TIMEOUTS.get(skill_name, DEFAULT_SKILL_TIMEOUT)
+    result = [None]
+    exc = [None]
+
+    def _target():
+        try:
+            module = importlib.import_module(f"skills.{skill_name}")
+            result[0] = module.run(payload, config)
+        except Exception as e:
+            exc[0] = e
+
+    t = threading.Thread(target=_target, daemon=True)
+    t.start()
+    t.join(timeout=timeout)
+    if t.is_alive():
+        log.error(f"Skill '{skill_name}' timed out after {timeout}s")
+        raise TimeoutError(f"Skill '{skill_name}' exceeded {timeout}s timeout")
+    if exc[0]:
+        log.error(f"Skill '{skill_name}' error: {exc[0]}")
+        raise exc[0]
+    return result[0]
 
 
 def main():
@@ -92,6 +120,13 @@ def main():
 
     db.init_db()
     db.register_agent(role, role, os.getpid())
+
+    # Load role-based skill affinity from config
+    base_role = role.split("_")[0]
+    affinity_skills = config.get("affinity", {}).get(base_role, None)
+    if affinity_skills:
+        log.info(f"Skill affinity: {', '.join(affinity_skills)}")
+
     log.info(f"Started (pid={os.getpid()}, eco={config['fleet']['eco_mode']})")
 
     # Verify Ollama is reachable before joining the fleet
@@ -122,7 +157,52 @@ def main():
         except Exception as e:
             log.warning(f"Heartbeat failed: {e}")
 
-        task = db.claim_task(role)
+        # Pause during hw_supervisor model transitions
+        try:
+            if HW_STATE_FILE.exists():
+                hw = json.loads(HW_STATE_FILE.read_text(encoding="utf-8"))
+                if hw.get("status") == "transitioning":
+                    log.info("HW transition in progress — pausing task claims")
+                    time.sleep(5)
+                    continue
+        except Exception:
+            pass
+
+        # Check inbox for broadcast/direct messages — act on known types
+        paused = getattr(main, '_paused', False)
+        try:
+            msgs = db.get_messages(role, unread_only=True, limit=5)
+            for m in msgs:
+                log.info(f"Message from {m['from_agent']}: {m['body_json']}")
+                try:
+                    body = json.loads(m['body_json']) if isinstance(m['body_json'], str) else m['body_json']
+                except Exception:
+                    body = {}
+                msg_type = body.get("type", "")
+                if msg_type == "pause":
+                    log.info("Received PAUSE command — suspending task claims")
+                    paused = True
+                    main._paused = True
+                elif msg_type == "resume":
+                    log.info("Received RESUME command — resuming task claims")
+                    paused = False
+                    main._paused = False
+                elif msg_type == "ping":
+                    log.info(f"PING from {m['from_agent']} — responding")
+                    db.post_message(role, m['from_agent'],
+                                    json.dumps({"type": "pong", "status": "alive", "role": role}))
+                elif msg_type == "config_reload":
+                    log.info("Reloading config")
+                    config = load_config()
+        except Exception:
+            pass
+
+        if paused:
+            db.heartbeat(role, status='PAUSED')
+            time.sleep(5)
+            continue
+
+        task = db.claim_task(role, affinity_skills=affinity_skills)
         if task:
             last_task_time = time.time()
             log.info(f"Task {task['id']} claimed: {task['type']}")

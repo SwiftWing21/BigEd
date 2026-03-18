@@ -104,15 +104,34 @@ def heartbeat(name, status='IDLE', current_task_id=None):
     _retry_write(_do)
 
 
-def claim_task(agent_name):
-    """Atomically claim the highest-priority pending task for this agent."""
+def claim_task(agent_name, affinity_skills=None):
+    """Atomically claim the highest-priority pending task for this agent.
+
+    If affinity_skills is provided, prefer tasks matching those skills first.
+    Falls back to any unassigned task if no affinity match is available.
+    """
     with get_conn() as conn:
-        row = conn.execute("""
-            SELECT id, type, payload_json FROM tasks
-            WHERE status='PENDING' AND (assigned_to=? OR assigned_to IS NULL)
-            ORDER BY priority DESC, created_at ASC
-            LIMIT 1
-        """, (agent_name,)).fetchone()
+        row = None
+        # Try affinity-matched tasks first
+        if affinity_skills:
+            placeholders = ','.join('?' * len(affinity_skills))
+            row = conn.execute(f"""
+                SELECT id, type, payload_json FROM tasks
+                WHERE status='PENDING' AND (assigned_to=? OR assigned_to IS NULL)
+                  AND type IN ({placeholders})
+                ORDER BY priority DESC, created_at ASC
+                LIMIT 1
+            """, (agent_name, *affinity_skills)).fetchone()
+
+        # Fall back to any available task
+        if not row:
+            row = conn.execute("""
+                SELECT id, type, payload_json FROM tasks
+                WHERE status='PENDING' AND (assigned_to=? OR assigned_to IS NULL)
+                ORDER BY priority DESC, created_at ASC
+                LIMIT 1
+            """, (agent_name,)).fetchone()
+
         if not row:
             return None
         conn.execute("""
@@ -182,10 +201,72 @@ def post_message(from_agent, to_agent, body_json):
     _retry_write(_do)
 
 
+def get_messages(agent_name, unread_only=True, limit=20):
+    """Retrieve messages for an agent. Marks them read on fetch."""
+    with get_conn() as conn:
+        where = "WHERE to_agent=?"
+        if unread_only:
+            where += " AND read_at IS NULL"
+        rows = conn.execute(f"""
+            SELECT id, from_agent, to_agent, created_at, body_json
+            FROM messages {where}
+            ORDER BY created_at DESC LIMIT ?
+        """, (agent_name, limit)).fetchall()
+        if rows:
+            ids = [r['id'] for r in rows]
+            conn.execute(
+                f"UPDATE messages SET read_at=datetime('now') WHERE id IN ({','.join('?' * len(ids))})",
+                ids
+            )
+        return [dict(r) for r in rows]
+
+
+def broadcast_message(from_agent, body_json):
+    """Send a message to ALL registered agents."""
+    def _do():
+        with get_conn() as conn:
+            agents = conn.execute("SELECT name FROM agents").fetchall()
+            for a in agents:
+                conn.execute("""
+                    INSERT INTO messages (from_agent, to_agent, body_json)
+                    VALUES (?, ?, ?)
+                """, (from_agent, a['name'], body_json))
+            return len(agents)
+    return _retry_write(_do)
+
+
+def recover_stale_tasks(timeout_secs=900):
+    """Requeue RUNNING tasks whose assigned agent has gone stale (no heartbeat)."""
+    recovered = []
+    def _do():
+        with get_conn() as conn:
+            rows = conn.execute("""
+                SELECT t.id, t.assigned_to, t.type
+                FROM tasks t
+                LEFT JOIN agents a ON t.assigned_to = a.name
+                WHERE t.status = 'RUNNING'
+                  AND (a.last_heartbeat IS NULL
+                       OR (julianday('now') - julianday(a.last_heartbeat)) * 86400 > ?)
+            """, (timeout_secs,)).fetchall()
+            for r in rows:
+                conn.execute(
+                    "UPDATE tasks SET status='PENDING', assigned_to=NULL WHERE id=?",
+                    (r['id'],)
+                )
+                recovered.append(dict(r))
+    _retry_write(_do)
+    return recovered
+
+
 def get_task_result(task_id):
     with get_conn() as conn:
         row = conn.execute("SELECT * FROM tasks WHERE id=?", (task_id,)).fetchone()
         return dict(row) if row else None
+
+
+def get_pending_count():
+    with get_conn() as conn:
+        return conn.execute("SELECT COUNT(*) as n FROM tasks WHERE status='PENDING'").fetchone()['n']
 
 
 def get_fleet_status():

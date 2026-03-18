@@ -476,6 +476,11 @@ class BigEdCC(ctk.CTk):
         self._sidebar_visible = True
         # Activity sparkline: per-agent rolling history (last 10 samples @ 1s each)
         self._agent_activity = {}  # role -> deque of booleans (True=BUSY)
+        # Cached agent row widgets — prevents flicker from destroy/recreate cycle
+        self._agent_rows = {}  # role -> {frame, dot, name, spark, status, recover}
+        # Stats color hysteresis — require 2 consecutive samples above/below threshold
+        self._hw_prev_colors = {"cpu": DIM, "ram": DIM, "gpu": DIM}
+        self._hw_prev_values = {"cpu": 0.0, "ram": 0.0, "gpu": 0.0}
         psutil.cpu_percent(interval=None)  # prime the cpu sampler
 
         self._set_icon()
@@ -483,7 +488,6 @@ class BigEdCC(ctk.CTk):
         self._current_log_agent = "supervisor"
         self._refresh_status()
         self._schedule_refresh()
-        self._schedule_agent_tick()
         self._schedule_hw()
         self._schedule_ollama_watch()
         threading.Thread(target=self._check_for_updates, daemon=True).start()
@@ -558,7 +562,7 @@ class BigEdCC(ctk.CTk):
 
     # ── Header ────────────────────────────────────────────────────────────────
     def _build_header(self):
-        hdr = ctk.CTkFrame(self, fg_color=BG3, height=44, corner_radius=0)
+        hdr = ctk.CTkFrame(self, fg_color=BG3, height=50, corner_radius=0)
         hdr.grid(row=0, column=0, columnspan=2, sticky="ew")
         hdr.grid_propagate(False)
         hdr.grid_columnconfigure(3, weight=1)
@@ -566,52 +570,51 @@ class BigEdCC(ctk.CTk):
         banner = self._load_banner()
         if banner:
             ctk.CTkLabel(hdr, image=banner, text="").grid(
-                row=0, column=0, padx=(10, 2), pady=2)
+                row=0, column=0, padx=(10, 2), pady=(4, 0))
         else:
             ctk.CTkLabel(hdr, text="🧱", font=("Segoe UI", 22)).grid(
-                row=0, column=0, padx=(10, 2), pady=2)
+                row=0, column=0, padx=(10, 2), pady=(4, 0))
 
         self._sidebar_btn = ctk.CTkButton(
             hdr, text="≡", font=("Segoe UI", 16), width=30, height=30,
             fg_color="transparent", hover_color=BG2, text_color=TEXT,
             command=self._toggle_sidebar
         )
-        self._sidebar_btn.grid(row=0, column=1, padx=(2, 6))
+        self._sidebar_btn.grid(row=0, column=1, padx=(2, 6), pady=(4, 0))
 
         ctk.CTkLabel(hdr, text="BIGED CC",
                      font=("Segoe UI", 14, "bold"),
-                     text_color=GOLD).grid(row=0, column=2, padx=4, sticky="w")
+                     text_color=GOLD).grid(row=0, column=2, padx=4, pady=(4, 0), sticky="w")
 
         # Inline stats
         stats_frame = ctk.CTkFrame(hdr, fg_color="transparent")
-        stats_frame.grid(row=0, column=3, sticky="ew", padx=(8, 0))
-        stats_frame.grid_columnconfigure((0, 1, 2, 3), weight=1)
+        stats_frame.grid(row=0, column=3, sticky="w", padx=(8, 0), pady=(8, 0))
         kw = dict(font=("Consolas", 9), text_color=DIM)
-        self._stat_cpu = ctk.CTkLabel(stats_frame, text="CPU —", anchor="w", **kw)
-        self._stat_ram = ctk.CTkLabel(stats_frame, text="RAM —", anchor="w", **kw)
-        self._stat_gpu = ctk.CTkLabel(stats_frame, text="GPU —", anchor="w", **kw)
-        self._stat_net = ctk.CTkLabel(stats_frame, text="ETH —", anchor="w", **kw)
-        self._stat_cpu.grid(row=0, column=0, padx=4, sticky="ew")
-        self._stat_ram.grid(row=0, column=1, padx=4, sticky="ew")
-        self._stat_gpu.grid(row=0, column=2, padx=4, sticky="ew")
-        self._stat_net.grid(row=0, column=3, padx=4, sticky="ew")
+        self._stat_cpu = ctk.CTkLabel(stats_frame, text="CPU —", **kw)
+        self._stat_ram = ctk.CTkLabel(stats_frame, text="RAM —", **kw)
+        self._stat_gpu = ctk.CTkLabel(stats_frame, text="GPU —", **kw)
+        self._stat_net = ctk.CTkLabel(stats_frame, text="ETH —", **kw)
+        self._stat_cpu.pack(side="left", padx=(0, 8))
+        self._stat_ram.pack(side="left", padx=(0, 8))
+        self._stat_gpu.pack(side="left", padx=(0, 8))
+        self._stat_net.pack(side="left", padx=(0, 8))
 
         self._status_pills = ctk.CTkLabel(
             hdr, text="● loading...", font=("Consolas", 9), text_color=DIM)
-        self._status_pills.grid(row=0, column=4, padx=8, sticky="e")
+        self._status_pills.grid(row=0, column=4, padx=8, pady=(8, 0), sticky="e")
 
         self._advisory_badge = ctk.CTkLabel(
             hdr, text="", font=("Segoe UI", 9, "bold"),
             text_color="#1a1a1a", fg_color=ORANGE,
             corner_radius=8, width=0)
-        self._advisory_badge.grid(row=0, column=5, padx=(0, 4), pady=10)
+        self._advisory_badge.grid(row=0, column=5, padx=(0, 4), pady=(8, 0))
 
         self._update_badge = ctk.CTkButton(
             hdr, text="", font=("Segoe UI", 9, "bold"),
             text_color=TEXT, fg_color="transparent",
             hover_color="#2a4a2a", corner_radius=8, width=0,
             command=self._launch_auto_update)
-        self._update_badge.grid(row=0, column=6, padx=(0, 8), pady=10)
+        self._update_badge.grid(row=0, column=6, padx=(0, 8), pady=(8, 0))
 
     # ── Sidebar ───────────────────────────────────────────────────────────────
     def _toggle_sidebar(self):
@@ -2370,12 +2373,6 @@ class BigEdCC(ctk.CTk):
         self._refresh_log()
         self._update_advisory_badge()
 
-    def _refresh_agents_fast(self):
-        """Fast-path: update agent sparklines + pills only (no log I/O)."""
-        status = parse_status()
-        self._update_pills(status)
-        self._update_agents_table(status)
-
     def _check_status(self):
         """Refresh UI + show Ollama status + dump STATUS.md in one pass."""
         self._refresh_status()
@@ -2452,9 +2449,6 @@ class BigEdCC(ctk.CTk):
         return text, GREEN if has_recent else "#555555"
 
     def _update_agents_table(self, status):
-        for widget in self._agents_frame_inner.winfo_children():
-            widget.destroy()
-
         agents     = status.get("agents", [])
         pending    = status.get("tasks", {}).get("Pending", 0)
 
@@ -2497,41 +2491,68 @@ class BigEdCC(ctk.CTk):
             else:
                 rows.append({"name": role, "status": "OFFLINE"})
 
+        active_roles = set()
         for i, a in enumerate(rows):
+            role_key = a["name"]
+            active_roles.add(role_key)
             color, label = self._agent_bubble_color(a, pending)
-            row_frame = ctk.CTkFrame(self._agents_frame_inner, fg_color="transparent")
-            row_frame.grid(row=i, column=0, sticky="ew", padx=4, pady=1)
-            row_frame.grid_columnconfigure(1, weight=1)
-
-            # Coloured status dot
-            ctk.CTkLabel(row_frame, text="●", font=("Consolas", 11),
-                         text_color=color, width=14).grid(row=0, column=0, padx=(2, 3))
-
-            # Agent name
             display_name = themed_name(a['name'])
-            ctk.CTkLabel(row_frame,
-                         text=display_name,
-                         font=("Consolas", 10), text_color=TEXT if label != "SLEEPING" else DIM,
-                         anchor="w", width=110).grid(row=0, column=1, sticky="w")
-
-            # Activity sparkline
             spark, spark_color = self._spark_text(a["name"])
-            ctk.CTkLabel(row_frame, text=spark, font=("Consolas", 9),
-                         text_color=spark_color, width=70
-                         ).grid(row=0, column=2, padx=(2, 4))
+            name_color = TEXT if label != "SLEEPING" else DIM
 
-            # Status label
-            ctk.CTkLabel(row_frame, text=label, font=("Consolas", 9),
-                         text_color=color, anchor="e", width=85
-                         ).grid(row=0, column=3, sticky="e", padx=(0, 2))
+            if role_key in self._agent_rows:
+                # Update existing row widgets — no destroy/recreate
+                cached = self._agent_rows[role_key]
+                cached["frame"].grid(row=i, column=0, sticky="ew", padx=4, pady=1)
+                cached["dot"].configure(text_color=color)
+                cached["name"].configure(text=display_name, text_color=name_color)
+                cached["spark"].configure(text=spark, text_color=spark_color)
+                cached["status"].configure(text=label, text_color=color)
+                # Show/hide recover button
+                if label == "SLEEPING":
+                    cached["recover"].grid(row=0, column=4, padx=(2, 2))
+                else:
+                    cached["recover"].grid_remove()
+            else:
+                # Create row for the first time
+                row_frame = ctk.CTkFrame(self._agents_frame_inner, fg_color="transparent")
+                row_frame.grid(row=i, column=0, sticky="ew", padx=4, pady=1)
+                row_frame.grid_columnconfigure(1, weight=1)
 
-            # Recover button for offline agents
-            if label == "SLEEPING":
-                ctk.CTkButton(
+                dot_lbl = ctk.CTkLabel(row_frame, text="●", font=("Consolas", 11),
+                             text_color=color, width=14)
+                dot_lbl.grid(row=0, column=0, padx=(2, 3))
+
+                name_lbl = ctk.CTkLabel(row_frame, text=display_name,
+                             font=("Consolas", 10), text_color=name_color,
+                             anchor="w", width=110)
+                name_lbl.grid(row=0, column=1, sticky="w")
+
+                spark_lbl = ctk.CTkLabel(row_frame, text=spark, font=("Consolas", 9),
+                             text_color=spark_color, width=70)
+                spark_lbl.grid(row=0, column=2, padx=(2, 4))
+
+                status_lbl = ctk.CTkLabel(row_frame, text=label, font=("Consolas", 9),
+                             text_color=color, anchor="e", width=85)
+                status_lbl.grid(row=0, column=3, sticky="e", padx=(0, 2))
+
+                recover_btn = ctk.CTkButton(
                     row_frame, text="↺", width=22, height=18,
                     font=("Segoe UI", 9), fg_color=ACCENT, hover_color=ACCENT_H,
-                    command=lambda r=a["name"]: self._recover_agent(r),
-                ).grid(row=0, column=4, padx=(2, 2))
+                    command=lambda r=role_key: self._recover_agent(r),
+                )
+                if label == "SLEEPING":
+                    recover_btn.grid(row=0, column=4, padx=(2, 2))
+
+                self._agent_rows[role_key] = {
+                    "frame": row_frame, "dot": dot_lbl, "name": name_lbl,
+                    "spark": spark_lbl, "status": status_lbl, "recover": recover_btn,
+                }
+
+        # Hide rows for roles no longer present
+        for role_key, cached in self._agent_rows.items():
+            if role_key not in active_roles:
+                cached["frame"].grid_remove()
 
     def _refresh_log(self):
         agent = self._log_agent_var.get()
@@ -2563,32 +2584,53 @@ class BigEdCC(ctk.CTk):
             except Exception:
                 pass
         threading.Thread(target=_sample, daemon=True).start()
-        self.after(2000, self._schedule_hw)
+        self.after(3000, self._schedule_hw)
 
     def _apply_hw(self, cpu_s, ram_s, gpu_s, net_s):
-        def color(pct_str, warn=70, crit=90):
+        def _target_color(pct_str, warn=70, crit=90):
             try:
                 v = float(pct_str.rstrip("%"))
                 return RED if v >= crit else ORANGE if v >= warn else GREEN
             except Exception:
                 return DIM
+        def _hysteresis(key, pct_str, warn=70, crit=90):
+            """Only change color if 2 consecutive samples agree (prevents flicker)."""
+            target = _target_color(pct_str, warn, crit)
+            try:
+                val = float(pct_str.rstrip("%"))
+            except Exception:
+                val = 0.0
+            prev_color = self._hw_prev_colors.get(key, DIM)
+            prev_val = self._hw_prev_values.get(key, 0.0)
+            # Check if both current and previous sample agree on the target color
+            prev_target = _target_color(f"{prev_val}%", warn, crit)
+            self._hw_prev_values[key] = val
+            if target == prev_target:
+                self._hw_prev_colors[key] = target
+                return target
+            return prev_color  # hold previous color during transition
+
         cpu_pct = cpu_s.split()[1] if len(cpu_s.split()) > 1 else "0%"
         ram_pct = ram_s.split()[-1] if ram_s.split() else "0%"
         gpu_pct = gpu_s.split()[1] if _GPU_OK and len(gpu_s.split()) > 1 else "0%"
-        self._stat_cpu.configure(text=cpu_s, text_color=color(cpu_pct))
-        self._stat_ram.configure(text=ram_s, text_color=color(ram_pct))
-        self._stat_gpu.configure(text=gpu_s, text_color=color(gpu_pct) if _GPU_OK else DIM)
+        self._stat_cpu.configure(text=cpu_s, text_color=_hysteresis("cpu", cpu_pct))
+        self._stat_ram.configure(text=ram_s, text_color=_hysteresis("ram", ram_pct))
+        self._stat_gpu.configure(text=gpu_s, text_color=_hysteresis("gpu", gpu_pct) if _GPU_OK else DIM)
         self._stat_net.configure(text=net_s, text_color=DIM)
 
     def _schedule_refresh(self):
-        """Full refresh every 6s (includes log tail + advisories)."""
-        self._refresh_status()
-        self.after(6000, self._schedule_refresh)
-
-    def _schedule_agent_tick(self):
-        """Fast agent status tick every 2s for responsive sparklines."""
-        self._refresh_agents_fast()
-        self.after(2000, self._schedule_agent_tick)
+        """Unified refresh every 4s — pills + agents + log/advisory (threaded I/O)."""
+        self._update_pills(parse_status())
+        self._update_agents_table(parse_status())
+        # Log tail + advisory badge in background thread to avoid blocking main thread
+        def _bg_io():
+            try:
+                self.after(0, self._refresh_log)
+                self.after(0, self._update_advisory_badge)
+            except Exception:
+                pass
+        threading.Thread(target=_bg_io, daemon=True).start()
+        self.after(4000, self._schedule_refresh)
 
     def _switch_log(self, agent):
         self._refresh_log()
@@ -3018,57 +3060,22 @@ class BigEdCC(ctk.CTk):
         if not text:
             return
         self._task_entry.delete("1.0", "end")
-        self._task_status.configure(text="⏳ parsing intent...", text_color=ORANGE)
+        self._task_status.configure(text="⏳ dispatching...", text_color=ORANGE)
 
         b64_text = base64.b64encode(text.encode()).decode()
-        # Remove --wait so it returns immediately with the task ID
         cmd = (f'~/.local/bin/uv run python lead_client.py task '
-               f'"$(echo {b64_text} | base64 -d)"')
+               f'"$(echo {b64_text} | base64 -d)" --wait')
         self._log_output(f"→ {text}")
 
         def _done(out, err):
-            result = (out or "") + "\n" + (err or "")
-            # Extract task ID to start background polling
-            import re
-            m = re.search(r'Task (\d+) queued', result)
-            if m:
-                task_id = int(m.group(1))
-                self.after(0, lambda: self._task_status.configure(text=f"⏳ waiting (Task {task_id})...", text_color=ORANGE))
-                self.after(0, lambda: self._poll_task_result(task_id))
-            else:
-                self.after(0, lambda: self._log_output(f"← {result[:1200]}"))
-                self.after(0, lambda: self._task_status.configure(text="✓ dispatched", text_color=GREEN))
+            def _update():
+                result = out or err or "(no output)"
+                self._log_output(f"← {result[:1200]}")
+                self._task_status.configure(text="✓ done", text_color=GREEN)
                 self.after(3000, lambda: self._task_status.configure(text=""))
+            self.after(0, _update)
 
-        wsl_bg(cmd, _done, timeout=15)
-
-    def _poll_task_result(self, task_id: int):
-        """Background poll SQLite for task completion so the UI doesn't block."""
-        try:
-            con = self._db_conn()
-            row = con.execute("SELECT status, result_json, error FROM tasks WHERE id=?", (task_id,)).fetchone()
-            con.close()
-            
-            if not row:
-                self.after(2000, lambda: self._poll_task_result(task_id))
-                return
-                
-            status = row["status"]
-            if status in ("DONE", "FAILED"):
-                if status == "DONE":
-                    res = row["result_json"] or "(empty)"
-                    self._log_output(f"← [Task {task_id} DONE]\n{res[:1200]}")
-                    self._task_status.configure(text="✓ done", text_color=GREEN)
-                else:
-                    err = row["error"] or "(unknown error)"
-                    self._log_output(f"← [Task {task_id} FAILED]\n{err}")
-                    self._task_status.configure(text="✗ failed", text_color=RED)
-                self.after(3000, lambda: self._task_status.configure(text=""))
-            else:
-                self.after(2000, lambda: self._poll_task_result(task_id))
-        except Exception as e:
-            self._log_output(f"Error polling task {task_id}: {e}")
-            self._task_status.configure(text="✗ error", text_color=RED)
+        wsl_bg(cmd, _done, timeout=300)
 
     def _dispatch_raw(self, skill: str, payload_json: str, assigned_to=None, msg=None):
         if msg:
@@ -5193,6 +5200,26 @@ Keep responses concise. Lead with the most important insight or action.
     def _can_send(self) -> bool:
         return True
 
+    def _fleet_context_prompt(self) -> str:
+        """Build system prompt with live fleet context injected."""
+        try:
+            status = parse_status()
+            agents = status.get("agents", [])
+            busy = sum(1 for a in agents if a["status"] == "BUSY")
+            idle = sum(1 for a in agents if a["status"] == "IDLE")
+            t = status.get("tasks", {})
+            hw_status = status.get("hw_supervisor_status", "OFFLINE")
+            context = (
+                f"\n\n[Fleet Context — live]\n"
+                f"Agents: {len(agents)} total, {idle} idle, {busy} busy\n"
+                f"Tasks: {t.get('Pending', 0)} pending, {t.get('Running', 0)} running, "
+                f"{t.get('Done', 0)} done, {t.get('Failed', 0)} failed\n"
+                f"HW Supervisor: {hw_status}\n"
+                f"Supervisor: {status.get('supervisor_status', 'OFFLINE')}")
+            return self.SYSTEM_PROMPT + context
+        except Exception:
+            return self.SYSTEM_PROMPT
+
     def _do_send(self, text: str):
         raise NotImplementedError
 
@@ -5218,10 +5245,53 @@ Keep responses concise. Lead with the most important insight or action.
         cmd = (f"~/.local/bin/uv run python -c \""
                f"import sys,base64; sys.path.insert(0,'.'); import db; db.init_db(); "
                f"p=base64.b64decode('{b64}').decode(); "
-               f"tid=db.post_task('{safe_skill}',p,priority=9); "
+               f"tid=db.post_task('{safe_skill}',p,priority=10); "
                f"print('Dispatched',tid)\"")
-        wsl_bg(cmd, lambda o, e: self.after(0, lambda: self._append(
-            "system", f"✓ Dispatched {safe_skill} (task {o.split()[-1] if o else '?'})")))
+
+        def _on_dispatch(o, e):
+            tid_str = o.split()[-1] if o else "?"
+            self.after(0, lambda: self._append(
+                "system", f"✓ Dispatched {safe_skill} (task {tid_str}, priority 10)"))
+            # Poll for task result in background
+            try:
+                tid = int(tid_str)
+                threading.Thread(target=self._poll_task_result,
+                                 args=(tid, safe_skill), daemon=True).start()
+            except (ValueError, TypeError):
+                pass
+
+        wsl_bg(cmd, _on_dispatch)
+
+    def _poll_task_result(self, task_id: int, skill: str, timeout: int = 60):
+        """Poll DB for task completion and show result in chat."""
+        deadline = time.time() + timeout
+        cmd_tpl = (
+            "~/.local/bin/uv run python -c \""
+            "import sys,json; sys.path.insert(0,'.'); import db; db.init_db(); "
+            "r=db.get_task_result({tid}); "
+            "print(json.dumps({{'status':r['status'],'result':r.get('result_json',''),"
+            "'error':r.get('error','')}})) if r else print('null')\"")
+        while time.time() < deadline:
+            time.sleep(2)
+            try:
+                result = subprocess.run(
+                    ["wsl", "-e", "bash", "-lc",
+                     f"cd ~/Projects/Education/fleet && {cmd_tpl.format(tid=task_id)}"],
+                    capture_output=True, text=True, timeout=5)
+                if result.stdout.strip() and result.stdout.strip() != "null":
+                    data = json.loads(result.stdout.strip())
+                    if data["status"] == "DONE":
+                        brief = (data.get("result", "") or "")[:300]
+                        self.after(0, lambda b=brief: self._append(
+                            "system", f"Task {task_id} ({skill}) completed:\n{b}"))
+                        return
+                    elif data["status"] == "FAILED":
+                        err = (data.get("error", "") or "")[:200]
+                        self.after(0, lambda e=err: self._append(
+                            "system", f"Task {task_id} ({skill}) failed: {e}"))
+                        return
+            except Exception:
+                pass
 
     def _append(self, role: str, text: str):
         prefix = self.ROLE_PREFIXES.get(role, role.title())
@@ -5331,7 +5401,7 @@ class ClaudeConsole(_ConsoleBase):
             msg = client.messages.create(
                 model=model_id,
                 max_tokens=1024,
-                system=self.SYSTEM_PROMPT,
+                system=self._fleet_context_prompt(),
                 messages=self._history[-20:],
             )
             reply = msg.content[0].text
@@ -5422,7 +5492,10 @@ class GeminiConsole(_ConsoleBase):
 
     def _call_api(self, text: str):
         try:
-            response = self._chat_session.send_message(text)
+            # Inject live fleet context as a preamble to the user message
+            context = self._fleet_context_prompt()[len(self.SYSTEM_PROMPT):]
+            enriched = f"{context}\n\nUser: {text}" if context else text
+            response = self._chat_session.send_message(enriched)
             reply = response.text
             self.after(0, lambda: self._on_reply(reply))
         except Exception as e:
@@ -5488,8 +5561,8 @@ class LocalConsole(_ConsoleBase):
 
     def _call_ollama(self):
         host = self._mcfg.get("ollama_host", "http://localhost:11434")
-        model = self._mcfg.get("local", "qwen3:8b")
-        messages = [{"role": "system", "content": self.SYSTEM_PROMPT}] + self._history[-20:]
+        model = self._mcfg.get("conductor_model", self._mcfg.get("local", "qwen3:8b"))
+        messages = [{"role": "system", "content": self._fleet_context_prompt()}] + self._history[-20:]
         body = json.dumps({
             "model": model,
             "messages": messages,

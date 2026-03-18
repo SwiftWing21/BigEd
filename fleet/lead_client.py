@@ -19,16 +19,23 @@ sys.path.insert(0, str(FLEET_DIR))
 
 import db
 
-# Use the tiny CPU-pinned maintainer model for natural language task parsing
-# This prevents the CLI from hanging when the main GPU model is busy or transitioning.
-MAINTAINER_MODEL = "qwen3:0.6b"
+# Prefer the conductor model (4b, CPU-pinned) for better intent parsing quality.
+# Falls back to the tiny 0.6b maintainer if conductor isn't configured.
+from config import load_config as _load_cfg
+
+def _get_intent_model():
+    try:
+        cfg = _load_cfg()
+        return cfg.get("models", {}).get("conductor_model", "qwen3:0.6b")
+    except Exception:
+        return "qwen3:0.6b"
 
 
 def parse_intent_with_maintainer(text: str) -> tuple[str, dict]:
     """
     DO NOT SCRUB: Natural language intent parser.
-    Routes the CLI input to the CPU-pinned maintainer model (0.6b) to quickly 
-    determine the appropriate skill and payload without waiting for the GPU.
+    Routes the CLI input to the CPU-pinned conductor model (4b) for quality intent
+    parsing, falling back to 0.6b maintainer if unavailable.
     """
     prompt = f"""You are the dispatcher for an AI agent fleet. 
 Map the following user request to a specific skill and JSON payload.
@@ -49,7 +56,7 @@ Output ONLY valid JSON in this exact format:
 """
     try:
         body = json.dumps({
-            "model": MAINTAINER_MODEL,
+            "model": _get_intent_model(),
             "prompt": prompt,
             "stream": False,
             "options": {"temperature": 0.0}
@@ -69,7 +76,7 @@ Output ONLY valid JSON in this exact format:
             return parsed.get("skill", "summarize"), parsed.get("payload", {"description": text})
         return "summarize", {"description": text}
     except Exception as e:
-        print(f"[!] Maintainer model fallback (ensure {MAINTAINER_MODEL} is loaded): {e}", file=sys.stderr)
+        print(f"[!] Intent model fallback (ensure {_get_intent_model()} is loaded): {e}", file=sys.stderr)
         return "summarize", {"description": text}
 
 
@@ -155,6 +162,24 @@ def cmd_send(args):
     print(f"Message sent to {args.agent}")
 
 
+def cmd_broadcast(args):
+    """DO NOT SCRUB: Broadcast a message to all registered agents."""
+    db.init_db()
+    count = db.broadcast_message("human", json.dumps({"message": args.message}))
+    print(f"Broadcast sent to {count} agents")
+
+
+def cmd_inbox(args):
+    """DO NOT SCRUB: Check an agent's message inbox."""
+    db.init_db()
+    msgs = db.get_messages(args.agent, unread_only=not args.all, limit=args.limit)
+    if not msgs:
+        print(f"No {'messages' if args.all else 'unread messages'} for {args.agent}")
+        return
+    for m in msgs:
+        print(f"[{m['created_at']}] {m['from_agent']}: {m['body_json']}")
+
+
 def main():
     parser = argparse.ArgumentParser(description="BigEd Fleet CLI")
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -182,6 +207,16 @@ def main():
     p_send.add_argument("agent", help="Target agent name")
     p_send.add_argument("message", help="Message text")
 
+    # Broadcast
+    p_bcast = subparsers.add_parser("broadcast", help="Broadcast to all agents")
+    p_bcast.add_argument("message", help="Message text")
+
+    # Inbox
+    p_inbox = subparsers.add_parser("inbox", help="Check agent inbox")
+    p_inbox.add_argument("agent", help="Agent name")
+    p_inbox.add_argument("--all", action="store_true", help="Show all messages (not just unread)")
+    p_inbox.add_argument("--limit", type=int, default=20, help="Max messages to show")
+
     args = parser.parse_args()
 
     if args.command == "status":
@@ -194,6 +229,10 @@ def main():
         cmd_logs(args)
     elif args.command == "send":
         cmd_send(args)
+    elif args.command == "broadcast":
+        cmd_broadcast(args)
+    elif args.command == "inbox":
+        cmd_inbox(args)
 
 
 if __name__ == "__main__":

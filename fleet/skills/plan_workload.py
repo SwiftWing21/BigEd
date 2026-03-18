@@ -63,6 +63,27 @@ def _survey_knowledge():
     }
 
 
+def _survey_fleet():
+    """Get current fleet agent/task state for context-aware planning."""
+    import sys
+    sys.path.insert(0, str(FLEET_DIR))
+    import db
+    try:
+        status = db.get_fleet_status()
+        agents = status.get("agents", [])
+        idle = sum(1 for a in agents if a.get("status") == "IDLE")
+        busy = sum(1 for a in agents if a.get("status") == "BUSY")
+        return {
+            "agents_total": len(agents),
+            "agents_idle": idle,
+            "agents_busy": busy,
+            "queue_depth": status.get("tasks", {}).get("PENDING", 0),
+            "running": status.get("tasks", {}).get("RUNNING", 0),
+        }
+    except Exception:
+        return {"agents_total": 0, "note": "fleet status unavailable"}
+
+
 def _parse_tasks(raw: str) -> list:
     """Extract and parse the first JSON array from the LLM response."""
     m = re.search(r'\[.*\]', raw, re.DOTALL)
@@ -80,6 +101,7 @@ def run(payload, config):
 
     state     = _survey_db()
     knowledge = _survey_knowledge()
+    fleet     = _survey_fleet()
 
     system = """\
 You are the workload planner for a local AI agent fleet.
@@ -111,6 +133,7 @@ Rules:
         f"CURRENTLY PENDING ({len(state['pending'])}):\n"
         f"{json.dumps(state['pending'], indent=2)}\n\n"
         f"KNOWLEDGE FILES:\n{json.dumps(knowledge, indent=2)}\n\n"
+        f"FLEET STATE:\n{json.dumps(fleet, indent=2)}\n\n"
         f"Output JSON array only:"
     )
 

@@ -195,6 +195,19 @@ def start_worker(role, config):
 
 
 OLLAMA_KEEPALIVE_INTERVAL = 240  # ping every 4 min (under the 5 min Ollama default)
+HW_STATE_FILE = FLEET_DIR / "hw_state.json"
+STALE_TASK_RECOVERY_INTERVAL = 300  # check every 5 min
+STALE_TASK_TIMEOUT = 900  # 15 min with no heartbeat = stale
+
+
+def read_hw_state():
+    """Read hw_supervisor state — returns dict or None."""
+    try:
+        if HW_STATE_FILE.exists():
+            return json.loads(HW_STATE_FILE.read_text(encoding="utf-8"))
+    except Exception:
+        pass
+    return None
 
 
 
@@ -213,6 +226,25 @@ def _ping_ollama_keepalive(config, keep_alive="24h"):
         log.debug(f"Ollama keep-alive ping sent (keep_alive={keep_alive})")
     except Exception as e:
         log.warning(f"Ollama keep-alive ping failed: {e}")
+
+
+def _warmup_conductor(config):
+    """Pre-load the conductor model on CPU (num_gpu=0) for user chat."""
+    host = config.get("models", {}).get("ollama_host", "http://localhost:11434")
+    model = config.get("models", {}).get("conductor_model")
+    if not model:
+        return
+    body = json.dumps({"model": model, "keep_alive": "24h", "options": {"num_gpu": 0}}).encode()
+    req = urllib.request.Request(
+        f"{host}/api/generate", data=body,
+        headers={"Content-Type": "application/json"}, method="POST",
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=30) as _:
+            pass
+        log.info(f"Conductor model '{model}' warmed up on CPU")
+    except Exception as e:
+        log.warning(f"Conductor warmup failed: {e}")
 
 
 def write_status_md():
@@ -280,6 +312,7 @@ def main():
     # Start Ollama — always CPU in eco mode
     start_ollama(gpu=not config["fleet"]["eco_mode"])
     _ping_ollama_keepalive(config)  # pre-load model into VRAM, keep indefinitely
+    _warmup_conductor(config)       # pre-load conductor model on CPU
 
     # Start workers with stagger
     for role in ROLES:
@@ -296,6 +329,7 @@ def main():
     last_status = 0
     last_training_check = 0
     last_keepalive = 0
+    last_stale_check = 0
     training_interval = config["fleet"]["training_check_interval_secs"]
     worker_next_start = {}
 
@@ -348,6 +382,18 @@ def main():
                 start_ollama(gpu=not config["fleet"]["eco_mode"])
                 _ping_ollama_keepalive(config)
                 training_active = False
+
+        # Log hw_supervisor transitions
+        hw_state = read_hw_state()
+        if hw_state and hw_state.get("status") == "transitioning":
+            log.info(f"HW supervisor transitioning to {hw_state.get('model')} — workers pausing claims")
+
+        # Recover stale RUNNING tasks (crashed workers)
+        if now - last_stale_check >= STALE_TASK_RECOVERY_INTERVAL:
+            last_stale_check = now
+            recovered = db.recover_stale_tasks(STALE_TASK_TIMEOUT)
+            for t in recovered:
+                log.warning(f"Recovered stale task {t['id']} ({t['type']}) from {t['assigned_to']}")
 
         # Write status snapshot
         if now - last_status >= 30:

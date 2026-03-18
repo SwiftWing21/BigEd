@@ -11,6 +11,7 @@ discord_bot_enabled = true   # lightweight Discord-only bridge to biged-fleetcha
 local = "qwen3:8b"
 complex = "qwen3:8b"
 complex_provider = "local"    # "claude" | "gemini" | "local"
+conductor_model = "qwen3:4b"  # CPU-pinned user chat model (num_gpu=0, ~2-3GB RAM, 0 VRAM)
 ollama_host = "http://localhost:11434"
 
 [review]
@@ -38,3 +39,19 @@ channel = "stable"           # stable | beta | dev
 nice_level = 15
 cpu_limit_percent = 10  # per worker via cpulimit; 4 workers = 40% total CPU
 coder_count = 3          # number of coder_N instances (coder_1 … coder_N)
+
+# Role-based skill affinity — agents prefer tasks matching their affinity.
+# Unassigned tasks with affinity skills are claimed preferentially by matching agents.
+# Agents can still claim non-affinity tasks if nothing else is available.
+[affinity]
+researcher = ["web_search", "arxiv_fetch", "summarize", "web_crawl", "rag_query"]
+coder = ["code_write", "code_review", "code_discuss", "code_write_review", "code_index", "code_quality", "fma_review", "skill_draft", "skill_test", "skill_evolve"]
+archivist = ["flashcard", "rag_index", "rag_query", "ingest"]
+analyst = ["analyze_results", "benchmark", "synthesize"]
+sales = ["lead_research", "marketing", "generate_asset"]
+onboarding = ["discuss"]
+implementation = ["code_write", "discuss"]
+security = ["security_audit", "pen_test", "security_review", "security_apply"]
+planner = ["plan_workload", "curriculum_update"]
+legal = ["legal_draft"]
+account_manager = ["account_review"]
