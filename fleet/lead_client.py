@@ -89,7 +89,9 @@ def cmd_status(args):
         print(f"{a['name']:<15} | {a['role']:<15} | {a['status']:<8} | Last: {db.utc_to_local(a['last_heartbeat'])}")
     print("\n=== TASKS ===")
     t = st["tasks"]
-    print(f"Pending: {t['PENDING']}  Running: {t['RUNNING']}  Done: {t['DONE']}  Failed: {t['FAILED']}")
+    waiting = t.get('WAITING', 0)
+    waiting_str = f"  Waiting: {waiting}" if waiting else ""
+    print(f"Pending: {t['PENDING']}  Running: {t['RUNNING']}  Done: {t['DONE']}  Failed: {t['FAILED']}{waiting_str}")
 
 
 def cmd_task(args):

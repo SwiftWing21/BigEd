@@ -275,6 +275,88 @@ def test_db_wal_stress():
     return len(errors) == 0, f"{len(errors)} errors (0 expected)"
 
 
+def test_task_dag():
+    """11. Task dependency chain: A → B → C, complete A, verify B promotes."""
+    import db
+    db.init_db()
+    # Post chain: A → B → C
+    task_ids = db.post_task_chain([
+        {"type": "soak_dag_a", "payload": {"step": "a"}},
+        {"type": "soak_dag_b", "payload": {"step": "b"}},
+        {"type": "soak_dag_c", "payload": {"step": "c"}},
+    ], priority=5)
+    if len(task_ids) != 3:
+        return False, f"expected 3 tasks, got {len(task_ids)}"
+
+    # A should be PENDING, B and C should be WAITING
+    a, b, c = task_ids
+    ra = db.get_task_result(a)
+    rb = db.get_task_result(b)
+    rc = db.get_task_result(c)
+    if ra["status"] != "PENDING":
+        return False, f"task A should be PENDING, got {ra['status']}"
+    if rb["status"] != "WAITING":
+        return False, f"task B should be WAITING, got {rb['status']}"
+    if rc["status"] != "WAITING":
+        return False, f"task C should be WAITING, got {rc['status']}"
+
+    # Complete A → B should promote to PENDING, C still WAITING
+    db.complete_task(a, json.dumps({"result": "done_a"}))
+    rb = db.get_task_result(b)
+    rc = db.get_task_result(c)
+    if rb["status"] != "PENDING":
+        return False, f"task B should be PENDING after A done, got {rb['status']}"
+    if rc["status"] != "WAITING":
+        return False, f"task C should still be WAITING, got {rc['status']}"
+
+    # Complete B → C should promote
+    db.complete_task(b, json.dumps({"result": "done_b"}))
+    rc = db.get_task_result(c)
+    if rc["status"] != "PENDING":
+        return False, f"task C should be PENDING after B done, got {rc['status']}"
+
+    return True, "chain A->B->C promoted correctly"
+
+
+def test_task_dag_cascade_fail():
+    """12. DAG cascade: fail A → B should auto-fail."""
+    import db
+    db.init_db()
+    task_ids = db.post_task_chain([
+        {"type": "soak_dag_f1", "payload": {}},
+        {"type": "soak_dag_f2", "payload": {}},
+    ], priority=5)
+    a, b = task_ids
+    db.fail_task(a, "intentional failure")
+    rb = db.get_task_result(b)
+    if rb["status"] != "FAILED":
+        return False, f"task B should cascade-fail, got {rb['status']}"
+    if "Dependency" not in (rb.get("error") or ""):
+        return False, f"expected dependency error message, got: {rb.get('error', '')[:60]}"
+    return True, "cascade fail propagated"
+
+
+def test_post_task_validation():
+    """13. post_task rejects invalid JSON payloads."""
+    import db
+    db.init_db()
+    try:
+        db.post_task("soak_valid", "not valid json{{{")
+        return False, "should have raised ValueError"
+    except ValueError:
+        pass
+    # Valid JSON should work
+    tid = db.post_task("soak_valid", '{"ok": true}')
+    if not tid:
+        return False, "valid post_task returned None"
+    # Priority clamping
+    tid2 = db.post_task("soak_valid", '{}', priority=99)
+    r = db.get_task_result(tid2)
+    if r["priority"] != 10:
+        return False, f"priority should be clamped to 10, got {r['priority']}"
+    return True, "validation + clamping works"
+
+
 def cleanup():
     """Remove soak test artifacts from DB."""
     import db
@@ -293,7 +375,7 @@ def main():
 
     os.environ["FLEET_TEST_DB"] = ":memory:"
 
-    print("Fleet Soak Test (v0.29)")
+    print("Fleet Soak Test (v0.31)")
     print("=" * 50)
 
     tests = [
@@ -307,6 +389,9 @@ def main():
         ("Deprecation lifecycle", test_deprecation_lifecycle),
         ("Module manifest validation", test_module_data_export),
         ("DB WAL stress", test_db_wal_stress),
+        ("Task DAG (dependency chain)", test_task_dag),
+        ("Task DAG (cascade fail)", test_task_dag_cascade_fail),
+        ("Post task validation", test_post_task_validation),
     ]
 
     results = []

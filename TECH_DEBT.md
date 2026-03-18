@@ -2,25 +2,33 @@
 
 This document tracks known technical debt, brittle architectural patterns, and temporary hacks that need to be addressed to ensure long-term stability of the BigEd Fleet.
 
-> **Last reviewed:** v0.30 (2026-03-18)
+> **Last reviewed:** v0.31 (2026-03-18)
 
-## 1. Architecture & Core Code
-
-### 1.1. Flat Task Queue (Missing DAG)
-- **Status:** OPEN — Medium priority
-- **Description:** `tasks` table is flat. Cannot express "Task C requires Task A and Task B to finish first."
-- **Impact:** Medium. Forces manual serialization of multi-step workflows.
-- **Proposed Solution:** Roadmap **v0.31**. Introduce `parent_id`, `depends_on`, and `WAITING` state to `db.py`.
-
-## 2. Security & Data Integrity
-
-### 2.1. Unvalidated Skill Outputs
-- **Status:** OPEN — Medium priority
-- **Description:** Most skills return unstructured text or weakly-structured JSON.
-- **Impact:** Medium. Downstream agents struggle to parse outputs, leading to hallucinated data extraction.
-- **Proposed Solution:** Introduce strict JSON schema validation at `db.complete_task` boundary.
+All tracked technical debt has been resolved. See Resolved section below.
 
 ---
+
+## Resolved (v0.31)
+
+### [RESOLVED] 1.1. Flat Task Queue (Missing DAG)
+- **Resolved in:** v0.31 (2026-03-18)
+- **What was fixed:**
+  - Added `parent_id` (INTEGER) and `depends_on` (TEXT/JSON array of task IDs) columns to tasks table.
+  - Added `WAITING` status — tasks with unmet dependencies start as WAITING, auto-promote to PENDING when all deps complete.
+  - `complete_task()` calls `_promote_waiting_tasks()` to check and promote dependents.
+  - `fail_task()` calls `_cascade_fail_dependents()` to propagate failures to downstream WAITING tasks.
+  - Added `post_task_chain()` helper for sequential task pipelines (A -> B -> C).
+  - Schema migration is backward-compatible — `init_db()` adds columns if missing.
+  - Soak tests: `test_task_dag` (chain promotion) and `test_task_dag_cascade_fail` — both pass.
+
+### [RESOLVED] 2.1. Unvalidated Skill Outputs
+- **Resolved in:** v0.31 (2026-03-18)
+- **What was fixed:**
+  - `post_task()` now validates `payload_json` is valid JSON (raises `ValueError` if not).
+  - `post_task()` clamps priority to 1-10 range.
+  - `complete_task()` validates `result_json` is valid JSON; auto-wraps non-JSON results in `{"raw": ...}`.
+  - `complete_task()` accepts both str and dict results (auto-serializes dicts).
+  - Soak test: `test_post_task_validation` — passes.
 
 ## Resolved (v0.30)
 

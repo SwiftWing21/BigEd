@@ -1,4 +1,4 @@
-# BigEd CC v0.30 — Framework Blueprint
+# BigEd CC v0.31 — Framework Blueprint
 
 > **Production-ready modular AI agent platform.** Customer-deployable, 24/7 capable, with safe deprecation, thermal management, and iterative skill training.
 
@@ -7,7 +7,7 @@
 ## 1. Architecture Overview
 
 ```
-BigEd CC (v0.30)
+BigEd CC (v0.31)
 ├── Launcher (BigEd/launcher/)
 │   ├── launcher.py          — Core app shell (~4700 lines)
 │   │   ├── Header            — CPU/RAM/GPU/ETH stats (3s poll, hysteresis)
@@ -170,12 +170,36 @@ Thermal flow: `hw_supervisor.py` reads GPU/CPU temps → writes `hw_state.json` 
 
 ```sql
 agents:   id, name(UNIQUE), role, status, current_task_id, last_heartbeat, pid
-tasks:    id, created_at, assigned_to, status, priority, type, payload_json, result_json, error
+tasks:    id, created_at, assigned_to, status, priority, type, payload_json, result_json, error,
+          parent_id, depends_on
 messages: id, from_agent, to_agent, created_at, read_at, body_json
 locks:    name(PK), holder, acquired_at
 ```
 
 WAL mode, 30s busy timeout, retry writes with jittered backoff.
+
+### Task DAG (Dependency Graph)
+
+Tasks support dependencies via `depends_on` (JSON array of task IDs) and `parent_id`:
+
+```
+Status flow:  WAITING → PENDING → RUNNING → DONE/FAILED
+                                              ↓
+                                    _promote_waiting_tasks()
+                                    _cascade_fail_dependents()
+```
+
+- **WAITING**: Task has unmet dependencies — not claimable by workers
+- When a task completes, `_promote_waiting_tasks()` checks all WAITING tasks and promotes those whose deps are all DONE
+- When a task fails, `_cascade_fail_dependents()` fails all downstream WAITING tasks
+- `post_task_chain([{type, payload}, ...])` creates a sequential pipeline (A → B → C)
+- `post_task(..., depends_on=[id1, id2])` for fan-in patterns (C waits for both A and B)
+
+### Input/Output Validation
+
+- `post_task()` validates `payload_json` is valid JSON, clamps priority to 1-10
+- `complete_task()` validates `result_json` is valid JSON, auto-wraps non-JSON in `{"raw": ...}`
+- `complete_task()` accepts both str and dict (auto-serializes dicts)
 
 ## 4. Dashboard v2
 
@@ -303,9 +327,7 @@ See `TECH_DEBT.md` for full tracking. As of v0.30:
 - Hardcoded paths — dynamic `_find_fleet_dir()` with env var override
 - Monolith — 6 modules extracted, launcher reduced from 5,800 to 3,500 lines
 
-**Open:**
-- Flat task queue (no DAG/dependencies) — Medium, planned for v0.31
-- Unvalidated skill outputs — Medium
+**Open:** None — all tracked tech debt resolved as of v0.31.
 
 ## 9. Deployment
 
@@ -357,3 +379,4 @@ BigEdCC/
 | v0.28 | Training v2 | Discovery logging, profiles, cross-skill learning |
 | v0.29 | Testing | Soak test, module integration tests, deprecation tests |
 | v0.30 | Production | Framework blueprint, portable paths, tech debt review, customer-deployable |
+| v0.31 | Task Graph | DAG dependencies, cascade fail, input/output validation, zero tech debt |

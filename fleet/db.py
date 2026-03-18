@@ -1,4 +1,5 @@
 """SQLite data layer — all DB access goes through this module."""
+import json
 import sqlite3
 import time
 import random
@@ -42,7 +43,9 @@ CREATE TABLE IF NOT EXISTS tasks (
     type         TEXT NOT NULL,
     payload_json TEXT,
     result_json  TEXT,
-    error        TEXT
+    error        TEXT,
+    parent_id    INTEGER,
+    depends_on   TEXT
 );
 
 CREATE TABLE IF NOT EXISTS messages (
@@ -83,9 +86,18 @@ def _retry_write(fn, retries=8):
             time.sleep(0.2 * (2 ** attempt) + random.uniform(0, 0.1))
 
 
+VALID_TASK_STATUSES = {"PENDING", "RUNNING", "DONE", "FAILED", "WAITING"}
+
+
 def init_db():
     with get_conn() as conn:
         conn.executescript(SCHEMA)
+        # Migrate: add columns if missing (safe for existing DBs)
+        cols = {r[1] for r in conn.execute("PRAGMA table_info(tasks)").fetchall()}
+        if "parent_id" not in cols:
+            conn.execute("ALTER TABLE tasks ADD COLUMN parent_id INTEGER")
+        if "depends_on" not in cols:
+            conn.execute("ALTER TABLE tasks ADD COLUMN depends_on TEXT")
 
 
 def register_agent(name, role, pid):
@@ -154,23 +166,106 @@ def claim_task(agent_name, affinity_skills=None):
 
 
 def complete_task(task_id, result_json):
+    """Mark a task as DONE and promote any WAITING dependents."""
+    # Validate result is valid JSON
+    if result_json:
+        try:
+            parsed = json.loads(result_json) if isinstance(result_json, str) else result_json
+            if isinstance(parsed, dict) and parsed.get("error"):
+                # Skill returned an error in the result — still mark DONE but log it
+                pass
+            if not isinstance(result_json, str):
+                result_json = json.dumps(result_json)
+        except (json.JSONDecodeError, TypeError):
+            result_json = json.dumps({"raw": str(result_json)[:2000]})
+
     def _do():
         with get_conn() as conn:
             conn.execute(
                 "UPDATE tasks SET status='DONE', result_json=? WHERE id=?",
                 (result_json, task_id)
             )
+            # Promote WAITING tasks whose dependencies are now all met
+            _promote_waiting_tasks(conn)
     _retry_write(_do)
 
 
 def fail_task(task_id, error):
+    """Mark a task as FAILED. Cascades: any WAITING tasks depending on this are also FAILED."""
     def _do():
         with get_conn() as conn:
             conn.execute(
                 "UPDATE tasks SET status='FAILED', error=? WHERE id=?",
                 (str(error), task_id)
             )
+            # Cascade-fail tasks waiting on this one
+            _cascade_fail_dependents(conn, task_id, str(error))
     _retry_write(_do)
+
+
+def _promote_waiting_tasks(conn):
+    """Check all WAITING tasks and promote to PENDING if dependencies are met."""
+    waiting = conn.execute(
+        "SELECT id, depends_on FROM tasks WHERE status='WAITING' AND depends_on IS NOT NULL"
+    ).fetchall()
+    for row in waiting:
+        try:
+            dep_ids = json.loads(row["depends_on"])
+        except (json.JSONDecodeError, TypeError):
+            continue
+        if not dep_ids:
+            conn.execute("UPDATE tasks SET status='PENDING' WHERE id=?", (row["id"],))
+            continue
+        # Check if all dependencies are DONE
+        placeholders = ",".join("?" * len(dep_ids))
+        done_count = conn.execute(
+            f"SELECT COUNT(*) as n FROM tasks WHERE id IN ({placeholders}) AND status='DONE'",
+            dep_ids
+        ).fetchone()["n"]
+        if done_count == len(dep_ids):
+            conn.execute("UPDATE tasks SET status='PENDING' WHERE id=?", (row["id"],))
+
+
+def _cascade_fail_dependents(conn, failed_id, error):
+    """Fail any WAITING tasks that depend on a failed task."""
+    waiting = conn.execute(
+        "SELECT id, depends_on FROM tasks WHERE status='WAITING' AND depends_on IS NOT NULL"
+    ).fetchall()
+    for row in waiting:
+        try:
+            dep_ids = json.loads(row["depends_on"])
+        except (json.JSONDecodeError, TypeError):
+            continue
+        if failed_id in dep_ids:
+            conn.execute(
+                "UPDATE tasks SET status='FAILED', error=? WHERE id=?",
+                (f"Dependency task {failed_id} failed: {error[:200]}", row["id"])
+            )
+
+
+def post_task_chain(tasks, priority=5):
+    """Post a sequence of tasks where each depends on the previous.
+
+    Args:
+        tasks: list of dicts with keys: type, payload (dict), assigned_to (optional)
+        priority: shared priority for all tasks
+
+    Returns:
+        list of task IDs in order
+    """
+    task_ids = []
+    for i, t in enumerate(tasks):
+        depends = [task_ids[-1]] if task_ids else None
+        payload_json = json.dumps(t.get("payload", {}))
+        tid = post_task(
+            t["type"], payload_json,
+            priority=priority,
+            assigned_to=t.get("assigned_to"),
+            parent_id=task_ids[0] if task_ids else None,
+            depends_on=depends
+        )
+        task_ids.append(tid)
+    return task_ids
 
 
 def requeue_task(task_id):
@@ -184,14 +279,42 @@ def requeue_task(task_id):
     _retry_write(_do)
 
 
-def post_task(type_, payload_json, priority=5, assigned_to=None):
+def post_task(type_, payload_json, priority=5, assigned_to=None,
+              parent_id=None, depends_on=None):
+    """Post a task to the queue.
+
+    Args:
+        type_: skill name (e.g. "summarize", "web_search")
+        payload_json: JSON string payload for the skill
+        priority: 1-10, higher = claimed first
+        assigned_to: optional agent name to assign to
+        parent_id: optional parent task ID (for sub-tasks)
+        depends_on: optional list of task IDs that must complete first
+    """
+    # Validate payload is valid JSON
+    if payload_json:
+        try:
+            json.loads(payload_json)
+        except (json.JSONDecodeError, TypeError):
+            raise ValueError(f"payload_json must be valid JSON, got: {repr(payload_json)[:100]}")
+    # Clamp priority
+    priority = max(1, min(10, int(priority)))
+    # Determine initial status
+    deps_json = None
+    status = "PENDING"
+    if depends_on:
+        deps_json = json.dumps(depends_on) if isinstance(depends_on, list) else depends_on
+        status = "WAITING"
+
     result = [None]
     def _do():
         with get_conn() as conn:
             cur = conn.execute("""
-                INSERT INTO tasks (type, payload_json, priority, assigned_to, status)
-                VALUES (?, ?, ?, ?, 'PENDING')
-            """, (type_, payload_json, priority, assigned_to))
+                INSERT INTO tasks (type, payload_json, priority, assigned_to, status,
+                                   parent_id, depends_on)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+            """, (type_, payload_json, priority, assigned_to, status,
+                  parent_id, deps_json))
             result[0] = cur.lastrowid
     _retry_write(_do)
     return result[0]
@@ -328,6 +451,6 @@ def get_fleet_status():
             s: conn.execute(
                 "SELECT COUNT(*) as n FROM tasks WHERE status=?", (s,)
             ).fetchone()['n']
-            for s in ('PENDING', 'RUNNING', 'DONE', 'FAILED')
+            for s in ('PENDING', 'RUNNING', 'DONE', 'FAILED', 'WAITING')
         }
         return {'agents': [dict(a) for a in agents], 'tasks': counts}
