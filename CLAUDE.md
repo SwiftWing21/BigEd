@@ -10,6 +10,7 @@
 - DEPTH=7+ causes OOM. Don't run Ollama on GPU while train.py is running
 - Ollama safe during training: `CUDA_VISIBLE_DEVICES=-1 ollama serve &`
 - Python: use `uv run` not `python`. Full details: `MACHINE_PROFILE.md`
+- **See `GEMINI.md` for architectural history, VRAM optimizations, and error-recovery mechanisms.**
 
 ## Fleet
 - Architecture includes a dual-supervisor system:

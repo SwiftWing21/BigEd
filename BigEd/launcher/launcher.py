@@ -3018,22 +3018,57 @@ class BigEdCC(ctk.CTk):
         if not text:
             return
         self._task_entry.delete("1.0", "end")
-        self._task_status.configure(text="⏳ dispatching...", text_color=ORANGE)
+        self._task_status.configure(text="⏳ parsing intent...", text_color=ORANGE)
 
         b64_text = base64.b64encode(text.encode()).decode()
+        # Remove --wait so it returns immediately with the task ID
         cmd = (f'~/.local/bin/uv run python lead_client.py task '
-               f'"$(echo {b64_text} | base64 -d)" --wait')
+               f'"$(echo {b64_text} | base64 -d)"')
         self._log_output(f"→ {text}")
 
         def _done(out, err):
-            def _update():
-                result = out or err or "(no output)"
-                self._log_output(f"← {result[:1200]}")
-                self._task_status.configure(text="✓ done", text_color=GREEN)
+            result = (out or "") + "\n" + (err or "")
+            # Extract task ID to start background polling
+            import re
+            m = re.search(r'Task (\d+) queued', result)
+            if m:
+                task_id = int(m.group(1))
+                self.after(0, lambda: self._task_status.configure(text=f"⏳ waiting (Task {task_id})...", text_color=ORANGE))
+                self.after(0, lambda: self._poll_task_result(task_id))
+            else:
+                self.after(0, lambda: self._log_output(f"← {result[:1200]}"))
+                self.after(0, lambda: self._task_status.configure(text="✓ dispatched", text_color=GREEN))
                 self.after(3000, lambda: self._task_status.configure(text=""))
-            self.after(0, _update)
 
-        wsl_bg(cmd, _done, timeout=300)
+        wsl_bg(cmd, _done, timeout=15)
+
+    def _poll_task_result(self, task_id: int):
+        """Background poll SQLite for task completion so the UI doesn't block."""
+        try:
+            con = self._db_conn()
+            row = con.execute("SELECT status, result_json, error FROM tasks WHERE id=?", (task_id,)).fetchone()
+            con.close()
+            
+            if not row:
+                self.after(2000, lambda: self._poll_task_result(task_id))
+                return
+                
+            status = row["status"]
+            if status in ("DONE", "FAILED"):
+                if status == "DONE":
+                    res = row["result_json"] or "(empty)"
+                    self._log_output(f"← [Task {task_id} DONE]\n{res[:1200]}")
+                    self._task_status.configure(text="✓ done", text_color=GREEN)
+                else:
+                    err = row["error"] or "(unknown error)"
+                    self._log_output(f"← [Task {task_id} FAILED]\n{err}")
+                    self._task_status.configure(text="✗ failed", text_color=RED)
+                self.after(3000, lambda: self._task_status.configure(text=""))
+            else:
+                self.after(2000, lambda: self._poll_task_result(task_id))
+        except Exception as e:
+            self._log_output(f"Error polling task {task_id}: {e}")
+            self._task_status.configure(text="✗ error", text_color=RED)
 
     def _dispatch_raw(self, skill: str, payload_json: str, assigned_to=None, msg=None):
         if msg:
