@@ -138,7 +138,56 @@ Manual test protocol (documented, not automated):
 
 ---
 
-## v0.34 — The Evaluator-Optimizer Loop (Guard Rails)
+## v0.34 — New User Walkthrough (First-Run Experience)
+
+**Goal:** Guide new users through initial setup on first launch, with the ability to skip individual steps or the entire walkthrough.
+
+### 34.1 Walkthrough Engine (`launcher.py`)
+
+A modal overlay or toplevel dialog sequence that triggers on first launch (or when `fleet.toml` has no `[walkthrough] completed = true`).
+
+**Core mechanics:**
+- Each step is a standalone dialog with: title, description, action area, and navigation buttons
+- **"Skip" checkbox** per step — marks step as skipped, advances to next
+- **"Skip All" button** — closes walkthrough immediately, marks all remaining as skipped
+- **"Don't show again" checkbox** — persists to `fleet.toml [walkthrough] completed = true`
+- Progress indicator: step N of M (dots or progress bar, matching updater style)
+- Steps can be re-triggered from Config sidebar: "Re-run Setup Walkthrough"
+
+### 34.2 Walkthrough Steps
+
+| Step | Title | What it does | Skippable reason |
+|------|-------|-------------|-----------------|
+| 1 | Welcome | Brief overview of BigEd CC, what the fleet does | Returning users |
+| 2 | API Keys | Guide through setting Claude/Gemini/search API keys via Key Manager dialog | User may only use local models |
+| 3 | Fleet Profile | Select deployment profile (minimal/research/consulting/full), show what modules each enables | Already configured |
+| 4 | Ollama Setup | Check if Ollama is running, show model tier table, offer to pull default model | Already installed |
+| 5 | First Task | Pre-filled taskbar dispatch (e.g. "Research local AI deployment for small businesses") with explanation of what happens | User wants to explore first |
+| 6 | Console Tour | Highlight the 3 console tabs (Claude/Gemini/Local), show how to switch and dispatch | Experienced users |
+
+### 34.3 Persistence & Config
+
+```toml
+[walkthrough]
+completed = false          # set true after finish or Skip All
+skipped_steps = []         # list of step numbers skipped
+completed_at = ""          # ISO date when walkthrough was completed/skipped
+```
+
+### 34.4 Implementation Notes
+
+- Dialog class: `WalkthroughDialog(ctk.CTkToplevel)` with step state machine
+- Each step is a dict: `{"title", "description", "build_content_fn", "validate_fn"}`
+- `build_content_fn(parent_frame)` renders step-specific UI into the dialog body
+- `validate_fn()` returns `(ok, msg)` — allows steps to verify setup before advancing (e.g., "Ollama not reachable" warning)
+- Skip checkbox state passed to navigation: skipped steps log to `fleet.toml` but don't block progress
+- Walkthrough respects current profile — only shows relevant steps (e.g., skip API Keys step if profile is minimal/local-only)
+
+**Files:** `launcher.py` (new `WalkthroughDialog` class + trigger in `__init__` after `_build_ui`)
+
+---
+
+## v0.35 — The Evaluator-Optimizer Loop (Guard Rails)
 **Goal:** Prevent sub-par or hallucinated outputs from being finalized without adversarial review.
 - Introduce `REVIEW` state to the task lifecycle.
 - High-stakes skills (like `legal_draft`, `security_audit`, `coder` outputs) transition to `REVIEW` instead of `DONE`.
@@ -146,14 +195,14 @@ Manual test protocol (documented, not automated):
 
 ---
 
-## v0.35 — Semantic Watchdog (Checker Agent)
+## v0.36 — Semantic Watchdog (Checker Agent)
 **Goal:** Move beyond mechanical process restarts to semantic health monitoring.
 - A lightweight background skill that monitors the `tasks` table for hallucination loops or excessive error rates (N failures in a row).
 - If an anomaly is detected, it proactively changes the worker's status to `QUARANTINED` and sends an alert to the dashboard.
 
 ---
 
-## v0.36 — Unified Human-in-the-Loop (HitL)
+## v0.37 — Unified Human-in-the-Loop (HitL)
 **Goal:** Allow agents to dynamically request human input mid-task.
 - Upgrade the `messages` table and UI to support direct Agent <-> Human threads via a new "Fleet Comm" tab.
 - Agents can pause execution, post a message ("Found 3 leads, which one should I draft the proposal for?"), enter a `WAITING_HUMAN` state, and resume once the operator replies.
