@@ -9,7 +9,7 @@
 ```
 BigEd CC (v0.30)
 ├── Launcher (BigEd/launcher/)
-│   ├── launcher.py          — Core app shell (~2500 lines)
+│   ├── launcher.py          — Core app shell (~4700 lines)
 │   │   ├── Header            — CPU/RAM/GPU/ETH stats (3s poll, hysteresis)
 │   │   ├── Sidebar           — Fleet/Security/Research/Config/Consoles
 │   │   ├── Core Tabs          — Command Center, Agents (always on)
@@ -279,7 +279,28 @@ Negative results are logged — they narrow the search space.
 | `[workers]` | nice_level, cpu_limit_percent, coder_count |
 | `[affinity]` | role → skill mapping |
 
-## 8. Deployment
+## 8. Portability
+
+### Dynamic Path Resolution
+
+`launcher.py` computes `FLEET_DIR` dynamically at startup:
+1. Check `BIGED_FLEET_DIR` environment variable (explicit override)
+2. Walk up from `_SRC_DIR` (max 6 levels), looking for a directory containing `fleet/fleet.toml`
+3. Fallback: `_SRC_DIR.parent.parent / "fleet"` (original relative assumption)
+
+WSL paths are converted dynamically from Windows `FLEET_DIR` (e.g. `C:\Users\...\fleet` → `/mnt/c/Users/.../fleet`).
+
+No hardcoded absolute paths exist in the codebase.
+
+### Known Technical Debt
+
+See `TECH_DEBT.md` for tracked items. Key open items as of v0.30:
+- WSL RPC mechanisms (brittle `python -c` dispatch) — High
+- Flat task queue (no DAG/dependencies) — Medium
+- Bash-based secrets management — Medium
+- Main thread DB blocking — Low
+
+## 9. Deployment
 
 ### Package Contents
 
@@ -328,4 +349,4 @@ BigEdCC/
 | v0.27 | Dashboard v2 | SSE live updates, thermal/training/module endpoints, alerts |
 | v0.28 | Training v2 | Discovery logging, profiles, cross-skill learning |
 | v0.29 | Testing | Soak test, module integration tests, deprecation tests |
-| v0.30 | Production | Framework blueprint, release checklist, customer-deployable |
+| v0.30 | Production | Framework blueprint, portable paths, tech debt review, customer-deployable |
