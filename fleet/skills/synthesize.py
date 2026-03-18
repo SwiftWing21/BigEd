@@ -13,7 +13,7 @@ KNOWLEDGE_DIR = Path(__file__).parent.parent / "knowledge"
 
 def _sonnet(system, user, config=None):
     from skills._models import call_complex
-    return call_complex(system, user, config or {}, max_tokens=4096)
+    return call_complex(system, user, config or {}, max_tokens=4096, cache_system=True)
 
 
 def _load_all_discussion(topic=None):

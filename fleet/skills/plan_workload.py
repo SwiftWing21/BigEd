@@ -114,7 +114,7 @@ Rules:
         f"Output JSON array only:"
     )
 
-    raw = call_complex(system, user, config, max_tokens=4096)
+    raw = call_complex(system, user, config, max_tokens=4096, cache_system=True)
 
     try:
         tasks = _parse_tasks(raw)

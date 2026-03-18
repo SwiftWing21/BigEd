@@ -19,8 +19,6 @@ import re
 from datetime import datetime
 from pathlib import Path
 
-import httpx
-
 FLEET_DIR      = Path(__file__).parent.parent
 KNOWLEDGE_DIR  = FLEET_DIR / "knowledge"
 REVIEWS_DIR    = KNOWLEDGE_DIR / "code_reviews"
@@ -47,15 +45,7 @@ PERSPECTIVE_FOCUS = {
     "performance optimizer":    "query efficiency, I/O patterns, timeouts, caching opportunities",
 }
 
-
-def _ollama(prompt: str, config: dict) -> str:
-    resp = httpx.post(
-        f"{config['models']['ollama_host']}/api/generate",
-        json={"model": config["models"]["local"], "prompt": prompt, "stream": False},
-        timeout=300,
-    )
-    resp.raise_for_status()
-    return resp.json()["response"].strip()
+from skills.summarize import _ollama
 
 
 def _pick_file(requested: str) -> Path | None:

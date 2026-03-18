@@ -12,6 +12,9 @@
 - Python: use `uv run` not `python`. Full details: `MACHINE_PROFILE.md`
 
 ## Fleet
+- Architecture includes a dual-supervisor system:
+  - `supervisor.py`: Core task distribution, agent lifecycles, and queue management.
+  - `hw_supervisor.py`: CPU-bound hardware manager. Actively monitors VRAM and dynamically scales Ollama `local` models down (to 4b/1.7b) during high pressure to ensure task distribution never stalls from an OOM event.
 - Config/status: `fleet/CLAUDE.md`, live status: `uv run python lead_client.py status`
 - Commands reference: `BigEd/fleet_commands.md` (read on demand, not loaded here)
 - Eco mode default: CPU-only Ollama, ~40% CPU, 0 VRAM

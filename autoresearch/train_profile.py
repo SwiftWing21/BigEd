@@ -43,15 +43,35 @@ RESULTS_TSV = HERE / "results.tsv"
 
 def _ollama_running() -> bool:
     try:
-        r = subprocess.run(["pgrep", "-f", "ollama serve"], capture_output=True)
-        return r.returncode == 0
+        if os.name == "nt":
+            r = subprocess.run(["tasklist", "/FI", "IMAGENAME eq ollama.exe"], capture_output=True, text=True)
+            return "ollama.exe" in r.stdout
+        else:
+            r = subprocess.run(["pgrep", "-f", "ollama serve"], capture_output=True)
+            return r.returncode == 0
     except FileNotFoundError:
         return False
 
 
+def _get_ollama_vram_gb() -> float:
+    import urllib.request
+    import json
+    try:
+        req = urllib.request.Request("http://localhost:11434/api/ps")
+        with urllib.request.urlopen(req, timeout=2) as r:
+            data = json.loads(r.read())
+            vram_bytes = sum(m.get("size_vram", 0) for m in data.get("models", []))
+            return vram_bytes / (1024**3)
+    except Exception:
+        return 0.0
+
+
 def _stop_ollama():
     print("[profile] Stopping Ollama...")
-    subprocess.run(["pkill", "-f", "ollama serve"], capture_output=True)
+    if os.name == "nt":
+        subprocess.run(["taskkill", "/F", "/IM", "ollama.exe"], capture_output=True)
+    else:
+        subprocess.run(["pkill", "-f", "ollama serve"], capture_output=True)
     time.sleep(2)
 
 
@@ -87,10 +107,28 @@ def load_profile(name: str | None = None) -> tuple[str, dict]:
         config = tomllib.load(f)
 
     active = name or config.get("active", "stable")
+    
+    if active == "balanced":
+        return "balanced", {
+            "description": "Auto-adjusts training dimensions to fit alongside running Ollama models",
+            "vram_target_gb": 10.0,
+            "ollama_mode": "gpu",
+            "DEPTH": 4,           # Overridden dynamically in main()
+            "model_dim": 256,
+            "HEAD_DIM": 128,
+            "ASPECT_RATIO": 64,
+            "DEVICE_BATCH_SIZE": 16,
+            "TOTAL_BATCH_SIZE": 65536,
+            "MATRIX_LR": 0.04,
+            "SCALAR_LR": 0.85,
+            "WEIGHT_DECAY": 0.05,
+            "WARMDOWN_RATIO": 0.5,
+        }
+        
     profiles = config.get("profiles", {})
 
     if active not in profiles:
-        available = ", ".join(profiles)
+        available = ", ".join(list(profiles.keys()) + ["balanced"])
         sys.exit(f"Unknown profile '{active}'. Available: {available}")
 
     return active, profiles[active]
@@ -101,6 +139,7 @@ def list_profiles():
         config = tomllib.load(f)
     active = config.get("active", "stable")
     print("Available profiles:")
+    print(f"  {'balanced':<12} {'Auto-adjusts training to fit alongside active Ollama models':<55} VRAM ≤10.0GB" + (" ← active" if active == "balanced" else ""))
     for name, p in config["profiles"].items():
         marker = " ← active" if name == active else ""
         vram = p.get("vram_target_gb", "?")
@@ -177,6 +216,28 @@ def main():
         )
 
     profile_name, profile = load_profile(args.profile)
+
+    if profile_name == "balanced":
+        vram_in_use = _get_ollama_vram_gb()
+        available = 10.0 - vram_in_use
+        print(f"\n[profile] BALANCED MODE: Ollama is using ~{vram_in_use:.1f}GB VRAM.")
+        print(f"[profile] Available for training: ~{available:.1f}GB")
+        if available >= 6.5:
+            profile["DEPTH"] = 6
+            profile["ASPECT_RATIO"] = 64
+            profile["DEVICE_BATCH_SIZE"] = 32
+            print("[profile] Auto-selected: DEPTH=6, DEVICE_BATCH_SIZE=32")
+        elif available >= 4.0:
+            profile["DEPTH"] = 4
+            profile["ASPECT_RATIO"] = 64
+            profile["DEVICE_BATCH_SIZE"] = 16
+            print("[profile] Auto-selected: DEPTH=4, DEVICE_BATCH_SIZE=16")
+        else:
+            profile["DEPTH"] = 3
+            profile["ASPECT_RATIO"] = 64
+            profile["DEVICE_BATCH_SIZE"] = 8
+            print("[profile] Auto-selected: DEPTH=3, DEVICE_BATCH_SIZE=8 (Aggressive VRAM saving)")
+        profile["model_dim"] = profile["DEPTH"] * profile["ASPECT_RATIO"]
 
     print(f"\n{'='*60}")
     print(f"  Autoresearch — profile: {profile_name.upper()}")

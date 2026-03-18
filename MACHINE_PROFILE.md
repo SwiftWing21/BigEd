@@ -113,3 +113,4 @@ VRAM_LIMIT_GB=10                         # Set before training runs
 3. **WSL2 paths** — from Windows: `\\wsl.localhost\Ubuntu\home\max\...`; from WSL: `/home/max/...`
 4. **Use `uv run`** not `python` in autoresearch — it manages the venv automatically
 5. **OOM recovery** — reduce DEPTH or DEVICE_BATCH_SIZE first; batch size has less impact than depth
+6. **Hardware Supervisor (`fleet/hw_supervisor.py`)** — A secondary CPU-bound daemon continuously monitors VRAM. If you are drafting fleet skills or managing models, know that this supervisor exists to automatically step down the Ollama model size (e.g., to 1.7b or 4b) when VRAM usage exceeds 80%. This guarantees task distribution and worker agents survive high-VRAM events (like `train.py` runs).

@@ -267,10 +267,19 @@ def load_model_cfg() -> dict:
 # ─── Status parser ────────────────────────────────────────────────────────────
 def parse_status():
     """Read STATUS.md and return dict with agents + task counts."""
-    result = {"agents": [], "tasks": {}, "raw": ""}
+    result = {"agents": [], "tasks": {}, "raw": "", "supervisor_status": "OFFLINE"}
     if not STATUS_MD.exists():
         return result
     try:
+        mtime = STATUS_MD.stat().st_mtime
+        age = time.time() - mtime
+        if age < 30:
+            result["supervisor_status"] = "ONLINE"
+        elif age < 120:
+            result["supervisor_status"] = "HUNG"
+        else:
+            result["supervisor_status"] = "OFFLINE"
+            
         text = STATUS_MD.read_text(encoding="utf-8", errors="ignore")
         result["raw"] = text
         lines = text.splitlines()
@@ -702,7 +711,7 @@ class BigEdCC(ctk.CTk):
 
         # ── LOGS ──────────────────────────────────────────────────────────────
         s = section("LOGS")
-        agents = ["supervisor", "researcher", "security", "sales",
+        agents = ["supervisor", "hw_supervisor", "researcher", "security", "sales",
                   "analyst", "archivist", "onboarding", "implementation", "planner"]
         self._log_agent_var = ctk.StringVar(value="supervisor")
         menu = ctk.CTkOptionMenu(
@@ -789,9 +798,13 @@ class BigEdCC(ctk.CTk):
         agents_frame.grid_columnconfigure(0, weight=1)
         agents_frame.grid_rowconfigure(1, weight=1)
 
-        ctk.CTkLabel(agents_frame, text="AGENTS",
-                     font=("Segoe UI", 9, "bold"), text_color=GOLD,
-                     anchor="w").grid(row=0, column=0, padx=8, pady=(4, 2), sticky="w")
+        ag_hdr = ctk.CTkFrame(agents_frame, fg_color="transparent")
+        ag_hdr.grid(row=0, column=0, sticky="ew")
+        ag_hdr.grid_columnconfigure(1, weight=1)
+        ctk.CTkLabel(ag_hdr, text="AGENTS", font=("Segoe UI", 9, "bold"), text_color=GOLD).grid(row=0, column=0, padx=8, pady=(4, 2), sticky="w")
+        
+        self._sup_status_lbl = ctk.CTkLabel(ag_hdr, text="Sup: —", font=("Consolas", 9, "bold"), text_color=DIM)
+        self._sup_status_lbl.grid(row=0, column=1, padx=8, pady=(4, 2), sticky="e")
 
         self._agents_frame_inner = ctk.CTkFrame(agents_frame, fg_color=BG2)
         self._agents_frame_inner.grid(row=1, column=0, sticky="nsew", padx=4, pady=(0, 4))
@@ -2403,6 +2416,20 @@ class BigEdCC(ctk.CTk):
         agents     = status.get("agents", [])
         pending    = status.get("tasks", {}).get("Pending", 0)
 
+        sup_status = status.get("supervisor_status", "OFFLINE")
+        if sup_status == "ONLINE":
+            self._sup_status_lbl.configure(text="Sup: ONLINE", text_color=GREEN)
+            if not self._system_running and not self._system_intentional_stop:
+                self._system_running = True
+                self._btn_system_toggle.configure(text="■  Stop", fg_color="#3a1e1e", hover_color="#4a2a2a")
+        elif sup_status == "HUNG":
+            self._sup_status_lbl.configure(text="Sup: HUNG", text_color=ORANGE)
+        else:
+            self._sup_status_lbl.configure(text="Sup: OFFLINE", text_color=RED)
+            if self._system_running:
+                self._system_running = False
+                self._btn_system_toggle.configure(text="▶  Start", fg_color="#1e3a1e", hover_color="#2a4a2a")
+
         # Record activity for sparklines
         self._record_agent_activity(agents)
 
@@ -2771,6 +2798,7 @@ class BigEdCC(ctk.CTk):
         self._log_output("Stopping fleet + Ollama...")
         stop_cmd = (
             "pkill -f supervisor.py 2>/dev/null; "
+            "pkill -f hw_supervisor.py 2>/dev/null; "
             "pkill -f 'worker.py' 2>/dev/null; "
             "sleep 1; "
             "pkill -x ollama 2>/dev/null; "
@@ -2801,8 +2829,9 @@ class BigEdCC(ctk.CTk):
         """Kill supervisor, restart everything cleanly."""
         self._log_output("Recovering fleet (stop + restart)...")
         fleet_cmd = (
-            "pkill -f supervisor.py; sleep 2; "
+            "pkill -f supervisor.py; pkill -f hw_supervisor.py; sleep 2; "
             "mkdir -p logs knowledge/summaries knowledge/reports && "
+            "nohup ~/.local/bin/uv run python hw_supervisor.py >> logs/hw_supervisor.log 2>&1 & "
             "nohup ~/.local/bin/uv run python supervisor.py "
             ">> logs/supervisor.log 2>&1 & echo \"PID: $!\""
         )
@@ -4190,8 +4219,9 @@ class ThermalDialog(ctk.CTkToplevel):
                 self.after(0, lambda: self._status_lbl.configure(
                     text=f"✗ {err}", text_color=RED))
         except Exception as e:
-            self.after(0, lambda: self._status_lbl.configure(
-                text=f"✗ {e}", text_color=RED))
+            err_msg = f"✗ {e}"
+            self.after(0, lambda m=err_msg: self._status_lbl.configure(
+                text=m, text_color=RED))
 
 
 # ─── LLM Model Selector Dialog ────────────────────────────────────────────────

@@ -22,8 +22,6 @@ import json
 from datetime import datetime
 from pathlib import Path
 
-import httpx
-
 FLEET_DIR = Path(__file__).parent.parent
 KNOWLEDGE_DIR = FLEET_DIR / "knowledge"
 FMA_REVIEWS_DIR = KNOWLEDGE_DIR / "fma_reviews"
@@ -53,15 +51,7 @@ ENHANCEMENT_CATEGORIES = [
     "Integration opportunities (Discord, OpenClaw, fleet skills)",
 ]
 
-
-def _ollama(prompt: str, config: dict) -> str:
-    resp = httpx.post(
-        f"{config['models']['ollama_host']}/api/generate",
-        json={"model": config["models"]["local"], "prompt": prompt, "stream": False},
-        timeout=300,
-    )
-    resp.raise_for_status()
-    return resp.json()["response"].strip()
+from skills.summarize import _ollama
 
 
 def _pick_file(requested: str) -> tuple[Path, str] | tuple[None, str]:

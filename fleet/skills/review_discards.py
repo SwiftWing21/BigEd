@@ -12,6 +12,7 @@ from datetime import date
 from pathlib import Path
 
 _RESULTS_CANDIDATES = [
+    Path(r"C:\Users\max\Projects\Education\autoresearch\results.tsv"),      # Windows native path
     Path("/mnt/c/Users/max/Projects/Education/autoresearch/results.tsv"),  # Education dir (preferred)
     Path("/home/max/autoresearch/results.tsv"),                             # legacy WSL path
 ]
@@ -89,7 +90,7 @@ def _sonnet_review(context, trigger, config=None):
         "Be specific and actionable."
     )
 
-    return call_complex(system, user, config or {}, max_tokens=1024)
+    return call_complex(system, user, config or {}, max_tokens=1024, cache_system=True)
 
 
 def _save_report(label, trigger, context, analysis, review_num):
