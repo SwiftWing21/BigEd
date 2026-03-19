@@ -645,28 +645,47 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
         btn_row = ctk.CTkFrame(dlg, fg_color="transparent")
         btn_row.pack(side="bottom", fill="x", padx=20, pady=16)
 
-        def _close_modules():
-            for mod in getattr(self, "_modules", {}).values():
-                try:
-                    mod.on_close()
-                except Exception:
-                    pass
-            # v0.45: Stop SSE client on exit
+        def _shutdown_gui():
+            """Stop all timers and background threads before destroy."""
+            # Signal all timers to stop
+            self._boot_active = False
+            self._system_running = False
+
+            # Stop SSE client
             if getattr(self, '_sse', None):
                 try:
                     self._sse.stop()
                 except Exception:
                     pass
 
+            # Close modules (DAL connections, etc.)
+            for mod in getattr(self, "_modules", {}).values():
+                try:
+                    mod.on_close()
+                except Exception:
+                    pass
+
         def _stop_and_close():
             dlg.destroy()
-            _close_modules()
-            self._stop_system()
-            self.after(2000, self.destroy)
+            self._log_output("Shutting down fleet...")
+            _shutdown_gui()
+            # Stop fleet via wsl — synchronous with timeout, then destroy
+            try:
+                wsl(
+                    "pkill -f supervisor.py 2>/dev/null; "
+                    "pkill -f hw_supervisor.py 2>/dev/null; "
+                    "pkill -f 'worker.py' 2>/dev/null; "
+                    "pkill -f 'dispatch_marathon.py' 2>/dev/null; "
+                    "sleep 1; pkill -f ollama 2>/dev/null",
+                    capture=True, timeout=8,
+                )
+            except Exception:
+                pass  # best effort — app is closing
+            self.destroy()
 
         def _just_close():
             dlg.destroy()
-            _close_modules()
+            _shutdown_gui()
             self.destroy()
 
         ctk.CTkButton(btn_row, text="Stop & Exit", width=110, height=32,
