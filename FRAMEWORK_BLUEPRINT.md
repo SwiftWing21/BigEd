@@ -35,7 +35,7 @@ BigEd CC (v0.41)
 │   ├── lead_client.py         — CLI entry point (status, task, broadcast, inbox)
 │   ├── rag.py                 — FTS5/BM25 RAG engine
 │   ├── config.py              — TOML config loader + is_offline/is_air_gap/AIR_GAP_SKILLS
-│   ├── dashboard.py           — Flask web dashboard v2 (SSE, alerts, 14 endpoints)
+│   ├── dashboard.py           — Flask web dashboard v2 (SSE, alerts, 40 endpoints)
 │   ├── smoke_test.py          — 10-check startup verification (--fast mode)
 │   ├── soak_test.py           — 10-check extended validation (concurrency, WAL stress)
 │   ├── fleet.toml             — Master configuration
@@ -715,6 +715,7 @@ Over time, `resolutions.jsonl` becomes a knowledge base:
 | `MACHINE_PROFILE.md` | Hardware specs and VRAM limits for this dev machine |
 | `fleet/CLAUDE.md` | Worker roles, skill outputs, messaging bridges |
 | Section 14 (this doc) | Architectural Pattern 6: Reactive Streaming IPC — SSE event flow, fallback strategy, deprecated file-polling |
+| Section 15 (this doc) | Security Architecture — defense-in-depth layers, OWASP LLM Top 10 coverage, compliance grades, controls reference |
 
 ---
 
@@ -744,6 +745,72 @@ These functions are kept for fallback but should be removed once SSE covers all 
 - `parse_status()` — reads STATUS.md (replaced by SSE status events)
 - `write_status_md()` in supervisor.py — writes STATUS.md (only needed for fallback)
 - `_schedule_refresh()` file-reading branches — replaced by `_handle_sse_status()`
+
+---
+
+## 15. Security Architecture
+
+### 15.1 Defense-in-Depth Layers
+
+| Layer | Components | Status |
+|-------|-----------|--------|
+| 1. Input Validation | PII scan, secret detection (14 patterns + base64), prompt injection (8 patterns), path traversal bounds, JSON schema validation | Active |
+| 2. Execution Controls | Air-gap whitelist (14 skills), offline mode, affinity routing, Docker sandbox, skill timeout (600s), skill name whitelist | Active |
+| 3. Output Guardrails | guardrails.py (toxicity, PII redaction, refusal, topic rails), adversarial review (3 providers), secret redaction | Active |
+| 4. Post-Execution Monitoring | DLP scrub (task results + knowledge files), failure streak quarantine, stuck review auto-pass, integrity hashes | Active |
+| 5. Audit & Observability | HMAC-signed audit log, per-worker logs with rotation, cost tracking, debug reports, resolution tracking | Active |
+
+### 15.2 OWASP LLM Top 10 Coverage
+
+| # | Risk | Grade | Implementation |
+|---|------|-------|---------------|
+| LLM01 | Prompt Injection | B+ | 8 injection patterns, blocking on detection |
+| LLM02 | Insecure Output | A- | Adversarial review + guardrails.py + DLP |
+| LLM04 | Model DoS | B+ | Token budgets + pre-execution cost estimation |
+| LLM06 | Sensitive Info | A- | 14 secret patterns + base64 + PII + env-match |
+| LLM07 | Insecure Plugin | A- | safe_path(), parameterized SQL, JSON validation |
+| LLM08 | Excessive Agency | A | Affinity routing, quarantine, HitL, air-gap, capability budget |
+| LLM09 | Overreliance | A- | Adversarial review, failure streaks, REVIEW gate |
+
+### 15.3 Compliance Standards
+
+| Standard | Grade | Key Controls |
+|----------|-------|-------------|
+| OWASP LLM Top 10 | B+ | Strong on 7/10 risks |
+| NIST AI RMF | B | Good monitoring; formal governance planned |
+| GDPR | B | Right to erasure, data classification, DLP |
+| SOC 2 Type II | B- | Monitoring + audit; incident SOP documented |
+| EU AI Act | B+ | Human oversight, risk assessment, model cards |
+
+### 15.4 Security Controls Reference
+
+| Control | File | Config |
+|---------|------|--------|
+| Dashboard bearer auth | dashboard.py | `[security] dashboard_token` |
+| Rate limiting | dashboard.py | 60 req/60s per IP |
+| CSRF protection | dashboard.py | Single-use tokens |
+| Input PII/secret scan | _watchdog.py | 14 patterns + base64 |
+| Prompt injection detection | _watchdog.py | 8 patterns, blocking |
+| Path traversal prevention | code_review.py | FLEET_DIR bounds check |
+| SSRF blocklist | browser_crawl.py | Internal IP blocklist |
+| Entity validation | home_assistant.py | Regex format check |
+| nmap target validation | pen_test.py | Alphanumeric + IP only |
+| Error sanitization | dashboard.py | File paths stripped |
+| Skill name whitelist | worker.py | Only skills/*.py names |
+| Docker sandbox | worker.py | --network=none --memory=512m |
+| Worker resource limits | supervisor.py | Windows Job Objects / cgroups |
+| Token budgets | _models.py | warn/throttle/block per skill |
+| Cost estimation | _models.py | Pre-execution token estimate |
+| Capability budget | worker.py | 500 calls/session limit |
+| Knowledge integrity | integrity.py | SHA-256 manifest + verify |
+| Audit log | audit_log.py | HMAC-signed JSON events |
+| Log rotation | supervisor.py | RotatingFileHandler 10MB/5 |
+| TLS | dashboard.py | --tls flag, self-signed cert |
+| Data classification | db.py | public/internal/confidential/restricted |
+| Right to erasure | db.py | delete_user_data() GDPR Art. 17 |
+| Secret rotation | secret_rotate.py | Slack+AWS auto, others semi-auto |
+| DB encryption | db_encrypt.py | SQLCipher AES-256 |
+| Schema migrations | db_migrate.py | PRAGMA user_version + .sql files |
 
 ---
 
@@ -803,4 +870,4 @@ These functions are kept for fallback but should be removed once SSE covers all 
 | 3.0 | Intelligent | ML-driven routing, predictive scaling, NL fleet control |
 | 4.0 | Enterprise | Multi-tenant, RBAC, audit logging, SLA monitoring |
 | 5.0 | Platform | Self-hosted SaaS, web launcher, marketplace, semver transition at 9.x → 0.1.00 |
-| — | Post-1.0 Hardening | DLP expansion (Azure/GCP/DB-URI/private-key patterns, extended file-type scrub), MQTT wildcard blocking, 66 skills, 39+ dashboard endpoints, 17 smoke tests, doc drift cleanup |
+| — | Post-1.0 Hardening | DLP expansion (Azure/GCP/DB-URI/private-key patterns, extended file-type scrub), MQTT wildcard blocking, 66 skills, 40 dashboard endpoints, 17 smoke tests, doc drift cleanup |
