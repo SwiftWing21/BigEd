@@ -544,6 +544,32 @@ Completed 2026-03-19.
 
 ---
 
+## 0.15.00 — Model Manager & Hardware Profiles
+
+**Goal:** Automated model inventory, installation, and hardware-aware profile switching.
+
+- **model_manager.py skill:** Check installed vs needed, pull missing, detect hardware, recommend profiles
+- **model_profiles.toml:** Predefined configs (dev_cpu, dev_gpu, dev_gpu_light, dev_cpu_light, minimal, production)
+- **CLI:** `model-check`, `model-install`, `model-profile list|apply|recommend`
+- **Startup validation:** hw_supervisor validates all configured models exist, warns + suggests pull commands
+
+---
+
+## 0.16.00 — Multi-Backend Model Support
+
+**Goal:** Support local model providers beyond Ollama — llamafile, vLLM, LM Studio, any OpenAI-compatible server.
+
+- **Backend abstraction in providers.py:** Unified interface for Ollama, llama.cpp, vLLM, LM Studio
+- **OpenAI-compatible API routing:** All local backends expose `/v1/chat/completions` — single adapter
+- **fleet.toml [models] expansion:** `backend` field (ollama/llamacpp/vllm/lmstudio/openai_compat), per-backend host config
+- **Model registry:** `[models.registry]` maps logical names to backend-specific identifiers + download URLs
+- **HuggingFace search:** `lead_client.py model-search "codellama"` — find GGUF models by name
+- **Auto-backend detection:** `model-install codellama:13b` detects best available backend and pulls/downloads
+- **llamafile single-binary support:** Download .llamafile → serve as self-contained binary, zero install
+- **Model installer UI:** Launcher module or walkthrough step for browsing + installing models
+
+---
+
 ## Parallel Track: Platform (Cross-Platform Support)
 
 > These items run in parallel to version milestones. They don't bump version numbers — they are infrastructure improvements that land alongside regular releases.
