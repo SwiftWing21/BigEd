@@ -68,6 +68,7 @@ openclaw_proc = None
 dashboard_proc = None
 worker_procs = {}
 training_active = False
+ollama_evicted_for_training = False
 
 
 def start_ollama(gpu=False):
@@ -480,7 +481,7 @@ def _memory_watchdog(worker_procs_dict, config):
 
 
 def main():
-    global training_active, config
+    global training_active, config, ollama_evicted_for_training
 
     (FLEET_DIR / "logs").mkdir(parents=True, exist_ok=True)
     (FLEET_DIR / "knowledge" / "summaries").mkdir(parents=True, exist_ok=True)
@@ -554,7 +555,6 @@ def main():
 
     last_status = 0
     last_training_check = 0
-    ollama_evicted_for_training = False  # True only if we switched Ollama to CPU for training
     last_stale_check = 0
     last_watchdog = 0
     last_watchdog_full = 0

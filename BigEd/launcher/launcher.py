@@ -1140,8 +1140,8 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
         tabs.add("Command Center")
         self._build_tab_cc(tabs.tab("Command Center"))
 
-        tabs.add("Agents")
-        self._build_tab_agents(tabs.tab("Agents"))
+        tabs.add("Fleet")
+        self._build_tab_agents(tabs.tab("Fleet"))
 
         tabs.add("Fleet Comm")
         self._build_tab_comm(tabs.tab("Fleet Comm"))
@@ -1389,6 +1389,10 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
             stored = stored or []
             seen = {a["name"] for a in agents}
             all_agents = list(agents) + [a for a in stored if a["name"] not in seen]
+            # Filter out supervisors and legacy ghost agents from the grid
+            _EXCLUDE = {"supervisor", "hw_supervisor", "dr_ders", "coder"}
+            all_agents = [a for a in all_agents if a.get("name") not in _EXCLUDE
+                          and a.get("role") != "supervisor"]
 
             # Query fleet.db for per-agent task counts + enhanced data
             agent_task_counts = {}
@@ -1431,9 +1435,20 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
                                 "ORDER BY id DESC LIMIT 1", (aname,)
                             ).fetchone()
                             if row and row["result_json"]:
-                                txt = str(row["result_json"]).strip()
-                                if len(txt) > 40:
-                                    txt = txt[:37] + "..."
+                                raw = str(row["result_json"]).strip()
+                                # Try to extract a meaningful summary from JSON
+                                try:
+                                    import json as _j
+                                    parsed = _j.loads(raw)
+                                    if isinstance(parsed, dict):
+                                        txt = parsed.get("summary") or parsed.get("output") or parsed.get("status") or parsed.get("error") or raw
+                                    else:
+                                        txt = raw
+                                except Exception:
+                                    txt = raw
+                                txt = str(txt).strip()
+                                if len(txt) > 45:
+                                    txt = txt[:42] + "..."
                                 agent_last_result[aname] = txt
                     except Exception:
                         pass
