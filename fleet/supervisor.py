@@ -274,6 +274,23 @@ def _evict_gpu_models(config):
         log.warning(f"VRAM eviction best-effort failed: {e}")
 
 
+def _check_training_checkpoints():
+    """Monitor autoresearch checkpoints directory for training progress."""
+    checkpoint_dir = FLEET_DIR.parent / "autoresearch" / "checkpoints"
+    if not checkpoint_dir.exists():
+        return None
+    checkpoints = sorted(checkpoint_dir.glob("*.pt"), key=lambda f: f.stat().st_mtime, reverse=True)
+    if not checkpoints:
+        return None
+    latest = checkpoints[0]
+    return {
+        "latest": latest.name,
+        "count": len(checkpoints),
+        "mtime": latest.stat().st_mtime,
+        "size_mb": round(latest.stat().st_size / 1e6, 1),
+    }
+
+
 def write_status_md():
     try:
         status = db.get_fleet_status()
@@ -311,6 +328,16 @@ def write_status_md():
             f"- Training detected: {training_active}",
             f"- Ollama mode: {'CPU-only (training active)' if training_active else 'eco CPU' if config['fleet']['eco_mode'] else 'GPU'}",
         ]
+        # Marathon training status
+        checkpoint_info = _check_training_checkpoints()
+        if checkpoint_info:
+            lines += [
+                "",
+                "## Marathon",
+                f"- Latest checkpoint: {checkpoint_info['latest']} ({checkpoint_info['size_mb']} MB)",
+                f"- Total checkpoints: {checkpoint_info['count']}",
+            ]
+
         (FLEET_DIR / "STATUS.md").write_text("\n".join(lines))
     except Exception as e:
         log.warning(f"STATUS.md write failed: {e}")
@@ -453,6 +480,18 @@ def main():
                     }))
                 except Exception:
                     pass
+                # v0.43: Log marathon training start
+                try:
+                    checkpoint_info = _check_training_checkpoints()
+                    db.post_task("marathon_log", json.dumps({
+                        "session_id": "autoresearch",
+                        "goal": "ML training session",
+                        "completed_steps": ["Training detected", "Ollama switched to CPU"],
+                        "next_step": "Monitor checkpoints",
+                        "notes": f"Checkpoints: {checkpoint_info}" if checkpoint_info else "No checkpoints yet",
+                    }), priority=2)
+                except Exception:
+                    pass
             elif not training_now and training_active:
                 log.info("Training finished — restoring Ollama mode")
                 stop_ollama()
@@ -464,6 +503,18 @@ def main():
                         "title": "Training finished — Ollama restored",
                         "tags": ["training"],
                     }))
+                except Exception:
+                    pass
+                # v0.43: Log marathon training end
+                try:
+                    checkpoint_info = _check_training_checkpoints()
+                    db.post_task("marathon_log", json.dumps({
+                        "session_id": "autoresearch",
+                        "goal": "ML training session",
+                        "completed_steps": ["Training completed", "Ollama restored to GPU",
+                                           f"Final checkpoints: {checkpoint_info['count']}" if checkpoint_info else "No checkpoints"],
+                        "next_step": "Evaluate training results",
+                    }), priority=2)
                 except Exception:
                     pass
 

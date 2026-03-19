@@ -200,6 +200,19 @@ def test_usage_tracking():
     return ok, f"logged: {row['calls']} calls, ${row['total_cost']:.4f}"
 
 
+def test_idle_run_log():
+    """Idle run table round-trip: log + stats."""
+    import db
+    db.init_db()
+    db.log_idle_run("smoke_idle_agent", "smoke_idle_skill", result="ok", cost_usd=0.001)
+    stats = db.get_idle_stats(period="day")
+    found = any(r["skill"] == "smoke_idle_skill" for r in stats)
+    if not found:
+        return False, "idle run not found in stats"
+    row = next(r for r in stats if r["skill"] == "smoke_idle_skill")
+    return True, f"{row['runs']} idle runs, ${row.get('total_cost', 0):.4f}"
+
+
 def test_budget_check():
     """Budget check returns correct exceeded status."""
     import db
@@ -292,6 +305,10 @@ def cleanup():
             conn.execute("DELETE FROM usage WHERE skill LIKE 'smoke_%' OR skill LIKE 'soak_%'")
         except Exception:
             pass
+        try:
+            conn.execute("DELETE FROM idle_runs WHERE agent LIKE 'smoke_%' OR agent LIKE 'soak_%'")
+        except Exception:
+            pass
 
 
 def main():
@@ -327,6 +344,7 @@ def main():
         ("Note round-trip", test_note_round_trip),
         ("Backward-compat messages", test_backward_compat_messages),
         ("Usage tracking", test_usage_tracking),
+        ("Idle run log", test_idle_run_log),
         ("Budget check", test_budget_check),
         ("Stale recovery", test_stale_recovery),
         ("Training lock", test_training_lock),

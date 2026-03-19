@@ -33,6 +33,47 @@ def _count_snapshots(content: str) -> int:
     return len(re.findall(r"^## Snapshot \d+", content, re.MULTILINE))
 
 
+def log_session_boundary(event: str, config: dict = None) -> None:
+    """Quick session boundary log — called by worker/supervisor on start/stop.
+
+    event: "fleet_start", "fleet_stop", "midnight_rollover", "training_start", "training_end"
+    """
+    session_id = "fleet"
+    now = datetime.now()
+
+    # Build snapshot
+    snapshot = {
+        "session_id": session_id,
+        "goal": f"Fleet session ({event})",
+        "completed_steps": [f"Event: {event}", f"Time: {now.strftime('%Y-%m-%d %H:%M:%S')}"],
+        "next_step": "Continue operations" if "start" in event else "Session ended",
+    }
+
+    # Append to marathon log file directly (no task dispatch needed)
+    marathon_dir = FLEET_DIR / "knowledge" / "marathon"
+    marathon_dir.mkdir(parents=True, exist_ok=True)
+    log_file = marathon_dir / f"{session_id}.md"
+
+    # Count existing snapshots
+    snapshot_num = 1
+    if log_file.exists():
+        content = log_file.read_text(encoding="utf-8")
+        snapshot_num = content.count("## Snapshot") + 1
+
+    entry = f"""
+## Snapshot {snapshot_num} — {now.strftime('%Y-%m-%d %H:%M')}
+**Event:** {event}
+**Completed:** {', '.join(snapshot['completed_steps'])}
+**Next:** {snapshot['next_step']}
+---
+"""
+    try:
+        with open(log_file, "a", encoding="utf-8") as f:
+            f.write(entry)
+    except Exception:
+        pass
+
+
 def run(payload, config):
     session_id = payload.get("session_id", "")
     goal = payload.get("goal", "")

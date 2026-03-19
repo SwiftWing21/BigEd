@@ -250,11 +250,24 @@ def main():
     idle_timeout = config['fleet']['idle_timeout_secs']
     idle_count = 0
 
+    # v0.43: Log session boundary on worker start
+    try:
+        from skills.marathon_log import log_session_boundary
+        log_session_boundary("fleet_start")
+    except Exception:
+        pass
+
     running = True
 
     def shutdown(sig, frame):
         nonlocal running
         log.info("Shutdown signal received — cleaning up child processes")
+        # v0.43: Log session boundary on worker stop
+        try:
+            from skills.marathon_log import log_session_boundary
+            log_session_boundary("fleet_stop")
+        except Exception:
+            pass
         running = False
         _cleanup_children()
 

@@ -508,6 +508,68 @@ def cmd_uninstall_service(args):
             print(f"Error: {e}")
 
 
+def cmd_marathon(args):
+    """DO NOT SCRUB: Show active marathon sessions and recent snapshots."""
+    marathon_dir = FLEET_DIR / "knowledge" / "marathon"
+    if not marathon_dir.exists():
+        print("No marathon sessions found.")
+        return
+
+    sessions = sorted(marathon_dir.glob("*.md"), key=lambda f: f.stat().st_mtime, reverse=True)
+    if not sessions:
+        print("No marathon sessions found.")
+        return
+
+    print(f"\nMarathon Sessions ({len(sessions)} total)")
+    print("=" * 50)
+    for s in sessions[:5]:
+        content = s.read_text(encoding="utf-8")
+        snapshot_count = content.count("## Snapshot")
+        # Get last snapshot date
+        import re
+        dates = re.findall(r"## Snapshot \d+ — (\d{4}-\d{2}-\d{2} \d{2}:\d{2})", content)
+        last_date = dates[-1] if dates else "unknown"
+        print(f"  {s.stem:<20} {snapshot_count:>3} snapshots  last: {last_date}")
+
+    if args.session:
+        # Show detail for specific session
+        target = marathon_dir / f"{args.session}.md"
+        if target.exists():
+            content = target.read_text(encoding="utf-8")
+            # Show last 3 snapshots
+            parts = content.split("## Snapshot")
+            recent = parts[-3:] if len(parts) > 3 else parts[1:]
+            print(f"\n--- Last {len(recent)} snapshots for '{args.session}' ---")
+            for p in recent:
+                print(f"## Snapshot{p.rstrip()}")
+        else:
+            print(f"Session '{args.session}' not found.")
+    print()
+
+
+def cmd_marathon_checkpoint(args):
+    """DO NOT SCRUB: Show autoresearch training checkpoint status."""
+    checkpoint_dir = FLEET_DIR.parent / "autoresearch" / "checkpoints"
+    if not checkpoint_dir.exists():
+        print("No checkpoint directory found (autoresearch/checkpoints/).")
+        return
+
+    checkpoints = sorted(checkpoint_dir.glob("*.pt"), key=lambda f: f.stat().st_mtime, reverse=True)
+    if not checkpoints:
+        print("No checkpoints found.")
+        return
+
+    print(f"\nTraining Checkpoints ({len(checkpoints)} total)")
+    print(f"{'Name':<30} {'Size MB':>8} {'Modified':>20}")
+    print("-" * 62)
+    for cp in checkpoints[:10]:
+        size = round(cp.stat().st_size / 1e6, 1)
+        from datetime import datetime
+        mtime = datetime.fromtimestamp(cp.stat().st_mtime).strftime("%Y-%m-%d %H:%M:%S")
+        print(f"  {cp.name:<28} {size:>8.1f} {mtime:>20}")
+    print()
+
+
 def main():
     parser = argparse.ArgumentParser(description="BigEd Fleet CLI")
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -592,6 +654,12 @@ def main():
     subparsers.add_parser("install-service", help="Install fleet as auto-start system service")
     subparsers.add_parser("uninstall-service", help="Uninstall fleet system service")
 
+    # Marathon (v0.43)
+    p_marathon = subparsers.add_parser("marathon", help="Show marathon sessions")
+    p_marathon.add_argument("session", nargs="?", default=None, help="Session ID for detail view")
+
+    subparsers.add_parser("marathon-checkpoint", help="Show training checkpoints")
+
     args = parser.parse_args()
 
     if args.command == "status":
@@ -626,6 +694,10 @@ def main():
         cmd_install_service(args)
     elif args.command == "uninstall-service":
         cmd_uninstall_service(args)
+    elif args.command == "marathon":
+        cmd_marathon(args)
+    elif args.command == "marathon-checkpoint":
+        cmd_marathon_checkpoint(args)
 
 
 if __name__ == "__main__":

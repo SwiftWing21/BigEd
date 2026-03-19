@@ -6,7 +6,7 @@ v0.27: New endpoints (/api/thermal, /api/training, /api/modules, /api/data_stats
        Server-Sent Events for live updates, alert system.
 CT-2:  Cost intelligence endpoints (/api/usage, /api/usage/delta).
 
-29 endpoints total (23 data + 6 process control).
+31 endpoints total (25 data + 6 process control).
 
 Usage:
     python dashboard.py                # http://localhost:5555
@@ -886,6 +886,51 @@ def api_fleet_idle():
             "total_cost": round(total_cost, 4),
             "skills": stats,
         })
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/fleet/marathon")
+def api_fleet_marathon():
+    """v0.43: Marathon session status — active sessions and recent snapshots."""
+    try:
+        marathon_dir = FLEET_DIR / "knowledge" / "marathon"
+        if not marathon_dir.exists():
+            return jsonify({"sessions": []})
+
+        import re
+        sessions = []
+        for f in sorted(marathon_dir.glob("*.md"), key=lambda f: f.stat().st_mtime, reverse=True)[:10]:
+            content = f.read_text(encoding="utf-8")
+            snapshot_count = content.count("## Snapshot")
+            dates = re.findall(r"## Snapshot \d+ — (\d{4}-\d{2}-\d{2} \d{2}:\d{2})", content)
+            sessions.append({
+                "session_id": f.stem,
+                "snapshots": snapshot_count,
+                "last_snapshot": dates[-1] if dates else None,
+                "size_bytes": f.stat().st_size,
+            })
+        return jsonify({"sessions": sessions})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/fleet/checkpoints")
+def api_fleet_checkpoints():
+    """v0.43: Training checkpoint status from autoresearch."""
+    try:
+        checkpoint_dir = FLEET_DIR.parent / "autoresearch" / "checkpoints"
+        if not checkpoint_dir.exists():
+            return jsonify({"checkpoints": [], "count": 0})
+
+        checkpoints = []
+        for cp in sorted(checkpoint_dir.glob("*.pt"), key=lambda f: f.stat().st_mtime, reverse=True)[:10]:
+            checkpoints.append({
+                "name": cp.name,
+                "size_mb": round(cp.stat().st_size / 1e6, 1),
+                "modified": cp.stat().st_mtime,
+            })
+        return jsonify({"checkpoints": checkpoints, "count": len(list(checkpoint_dir.glob("*.pt")))})
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 

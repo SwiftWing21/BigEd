@@ -15,6 +15,8 @@ Tests:
   10. DB WAL mode stress
   11. Usage budget check (CT-4)
   12. Usage delta comparison (CT-3)
+  13. Marathon log write (v0.43)
+  14. Idle run logging (v0.42)
 
 Run: uv run python soak_test.py [--duration MINUTES] [--fast]
 """
@@ -695,6 +697,46 @@ def test_usage_delta_comparison():
     return True, f"Delta: {row['delta_pct']}% {row['direction']}"
 
 
+def test_marathon_log_write():
+    """v0.43: Marathon log writes and reads back correctly."""
+    import json
+    from pathlib import Path
+    marathon_dir = Path(__file__).parent / "knowledge" / "marathon"
+    marathon_dir.mkdir(parents=True, exist_ok=True)
+    test_file = marathon_dir / "soak_marathon_test.md"
+
+    # Write a test snapshot
+    try:
+        from skills.marathon_log import run
+        result = run({
+            "session_id": "soak_marathon_test",
+            "goal": "Soak test marathon",
+            "completed_steps": ["step1", "step2"],
+            "next_step": "step3",
+        }, {})
+        data = json.loads(result)
+        assert data["status"] == "logged", f"Expected 'logged', got {data['status']}"
+        assert test_file.exists(), "Marathon log file not created"
+        content = test_file.read_text(encoding="utf-8")
+        assert "Soak test marathon" in content, "Goal not in log"
+        return True, f"snapshot {data.get('snapshot_number', '?')} written"
+    finally:
+        if test_file.exists():
+            test_file.unlink()
+
+
+def test_idle_run_logging():
+    """v0.42: Idle run table insert and stats."""
+    import db
+    db.init_db()
+    db.log_idle_run("soak_idle_agent", "summarize", result="ok", cost_usd=0.001)
+    stats = db.get_idle_stats(period="day")
+    found = any(r["skill"] == "summarize" for r in stats)
+    assert found, "Idle run not found in stats"
+    row = next(r for r in stats if r["skill"] == "summarize")
+    return True, f"{row['runs']} idle runs, ${row.get('total_cost', 0):.4f}"
+
+
 def cleanup():
     """Remove soak test artifacts from DB."""
     import db
@@ -708,6 +750,11 @@ def cleanup():
         conn.execute("DELETE FROM notes WHERE channel='soak_notes_test'")
         conn.execute("DELETE FROM usage WHERE skill='soak_budget_test'")
         conn.execute("DELETE FROM usage WHERE skill='soak_delta_test'")
+        conn.execute("DELETE FROM idle_runs WHERE agent LIKE 'soak_%'")
+    # Clean up marathon test file if it exists
+    marathon_test = Path(__file__).parent / "knowledge" / "marathon" / "soak_marathon_test.md"
+    if marathon_test.exists():
+        marathon_test.unlink()
 
 
 def main():
@@ -748,6 +795,8 @@ def main():
         ("Post task validation", test_post_task_validation),
         ("Usage budget check (CT-4)", test_usage_budget_check),
         ("Usage delta comparison (CT-3)", test_usage_delta_comparison),
+        ("Marathon log write (v0.43)", test_marathon_log_write),
+        ("Idle run logging (v0.42)", test_idle_run_logging),
     ]
 
     results = []

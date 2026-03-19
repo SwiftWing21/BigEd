@@ -210,7 +210,7 @@ Status flow:  WAITING → PENDING → RUNNING → DONE/FAILED
 
 ## 4. Dashboard v2
 
-### Endpoints (27 total: 21 data + 6 process control)
+### Endpoints (31 total: 25 data + 6 process control)
 
 | Endpoint | Data Source | Purpose |
 |----------|-----------|---------|
@@ -239,6 +239,10 @@ Status flow:  WAITING → PENDING → RUNNING → DONE/FAILED
 | `/api/fleet/workers` | fleet.db + os.kill(0) | List workers with PID + alive check |
 | `POST /api/fleet/worker/<name>/restart` | os.kill + DB | Restart specific worker by name |
 | `/api/fleet/health` | fleet.db + Ollama + hw_state | Overall fleet health summary |
+| `/api/fleet/uptime` | fleet.db agents table | Supervisor uptime since start |
+| `/api/fleet/idle` | fleet.db idle_runs | Idle evolution statistics |
+| `/api/fleet/marathon` | knowledge/marathon/ | Marathon session list + snapshot counts |
+| `/api/fleet/checkpoints` | autoresearch/checkpoints/ | Training checkpoint status |
 | `/api/stream` | SSE | Live push updates (5s interval) |
 
 ### Alert System

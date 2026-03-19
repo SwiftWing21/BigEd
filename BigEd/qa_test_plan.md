@@ -152,6 +152,23 @@
 | T16.2 Regression API | GET /api/usage/regression | Returns regressions array (skills >20% increase) |
 | T16.3 Delta Direction | Insert usage in two periods, call get_usage_delta() | Returns correct "up"/"down"/"flat" direction |
 
+## Suite 17: Marathon ML & Context Persistence — v0.43 (4 tests)
+
+| Test | Action | Verify |
+|------|--------|--------|
+| T17.1 Marathon Write | `marathon_log.run({session_id: "test", ...})` | Snapshot file created in knowledge/marathon/ |
+| T17.2 Session Boundary | `log_session_boundary("fleet_start")` | Entry appended to fleet.md marathon log |
+| T17.3 Checkpoint API | GET /api/fleet/checkpoints | Returns checkpoint list (or empty array) |
+| T17.4 Marathon API | GET /api/fleet/marathon | Returns session list with snapshot counts |
+
+## Suite 18: Idle Evolution — v0.42 (3 tests)
+
+| Test | Action | Verify |
+|------|--------|--------|
+| T18.1 Idle Log | `db.log_idle_run("test", "summarize")` | Row appears in idle_runs table |
+| T18.2 Idle Stats | `db.get_idle_stats("day")` after logging | Returns aggregated skill runs |
+| T18.3 Least Evolved | `db.get_least_evolved_skill()` | Returns skill with oldest/no idle run |
+
 ---
 
-## Total: 64 tests across 16 suites
+## Total: 71 tests across 18 suites
