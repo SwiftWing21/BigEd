@@ -169,6 +169,23 @@
 | T18.2 Idle Stats | `db.get_idle_stats("day")` after logging | Returns aggregated skill runs |
 | T18.3 Least Evolved | `db.get_least_evolved_skill()` | Returns skill with oldest/no idle run |
 
+## Suite 19: HA Fallback & Omni-Box — v0.45 (3 tests)
+
+| Test | Action | Verify |
+|------|--------|--------|
+| T19.1 Fallback Chain | Check FALLBACK_CHAIN constant | Contains claude, gemini, local in order |
+| T19.2 Offline Restrict | Build chain with offline_mode=True | Chain restricted to ["local"] only |
+| T19.3 Omnibox Import | `from ui.omnibox import OmniBox` | Class importable, has _build_command_list |
+
+## Suite 20: GitHub Sync & Owner Core — v0.46/v0.47 (4 tests)
+
+| Test | Action | Verify |
+|------|--------|--------|
+| T20.1 GitHub Status | `github_sync.run({action: "status"}, {})` | Returns authenticated: true/false |
+| T20.2 Owner Gate Deny | `_verify_owner_key()` without key | Returns False |
+| T20.3 Owner Gate Allow | `_verify_owner_key()` with 32-char key | Returns True |
+| T20.4 DAL CRUD | DataAccess ensure_table + insert + query + delete | Full round-trip succeeds |
+
 ---
 
-## Total: 71 tests across 18 suites
+## Total: 78 tests across 20 suites

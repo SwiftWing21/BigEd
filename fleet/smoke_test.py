@@ -276,6 +276,41 @@ def test_training_lock():
     return True, "acquire/check/block/release OK"
 
 
+def test_ha_fallback():
+    """HA fallback chain builds correctly from config."""
+    from skills._models import FALLBACK_CHAIN
+    # Verify chain exists and has expected providers
+    assert len(FALLBACK_CHAIN) == 3, f"Expected 3 providers, got {len(FALLBACK_CHAIN)}"
+    assert "claude" in FALLBACK_CHAIN
+    assert "local" in FALLBACK_CHAIN
+    return True, f"chain: {' > '.join(FALLBACK_CHAIN)}"
+
+
+def test_dal_roundtrip():
+    """DAL ensure_table + insert + query + delete round-trip."""
+    import tempfile, os
+    from pathlib import Path
+    # Use temp file to avoid polluting real DB
+    tmp = tempfile.NamedTemporaryFile(suffix=".db", delete=False)
+    tmp.close()
+    try:
+        sys.path.insert(0, str(Path(__file__).parent.parent / "BigEd" / "launcher"))
+        from data_access import DataAccess
+        dal = DataAccess(tmp.name)
+        dal.ensure_table("smoke_dal", {"name": "TEXT", "value": "INTEGER"})
+        rid = dal.insert("smoke_dal", {"name": "test", "value": 42})
+        rows = dal.query("smoke_dal", where={"name": "test"})
+        assert len(rows) == 1, f"Expected 1 row, got {len(rows)}"
+        assert rows[0]["value"] == 42
+        dal.delete("smoke_dal", where={"name": "test"})
+        rows2 = dal.query("smoke_dal")
+        assert len(rows2) == 0, f"Expected 0 rows after delete, got {len(rows2)}"
+        dal.close()
+        return True, f"CRUD round-trip OK (row id={rid})"
+    finally:
+        os.unlink(tmp.name)
+
+
 def test_thermal_readings():
     """10. GPU thermal readings available (if GPU present)."""
     try:
@@ -348,6 +383,8 @@ def main():
         ("Budget check", test_budget_check),
         ("Stale recovery", test_stale_recovery),
         ("Training lock", test_training_lock),
+        ("HA fallback", test_ha_fallback),
+        ("DAL round-trip", test_dal_roundtrip),
     ])
 
     if not args.fast:

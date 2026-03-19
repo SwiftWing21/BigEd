@@ -694,6 +694,7 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
         hdr.grid(row=0, column=0, columnspan=2, sticky="ew")
         hdr.grid_propagate(False)
         hdr.grid_columnconfigure(3, weight=1)
+        self._header = hdr  # v0.44: store ref for update banner row shift
 
         banner = self._load_banner()
         if banner:
@@ -1564,6 +1565,7 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
     def _build_taskbar(self):
         bar = ctk.CTkFrame(self, fg_color=BG3, corner_radius=0)
         bar.grid(row=2, column=0, columnspan=2, sticky="ew")
+        self._taskbar = bar  # v0.44: store ref for update banner row shift
         bar.grid_columnconfigure(1, weight=1)
 
         ctk.CTkLabel(bar, text="▶ Task:", font=FONT_SM,
@@ -2527,26 +2529,105 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
 
     # ── Self-update ───────────────────────────────────────────────────────────
     def _check_for_updates(self):
-        """Background thread: compare source file hashes to stored manifest."""
+        """v0.44: Check for updates via git and apply if available."""
         try:
-            manifest = {}
-            if UPDATE_MANIFEST.exists():
-                manifest = json.loads(UPDATE_MANIFEST.read_text())
-            changed = [
-                name for name, path in _UPDATE_TRACKED.items()
-                if path.exists()
-                and hashlib.md5(path.read_bytes()).hexdigest() != manifest.get(name, "")
-            ]
-            if changed:
-                self.after(0, lambda: self._show_update_badge(changed))
-        except Exception:
-            pass
+            project_root = str(_SRC_DIR.parent.parent)
+            # Check if we're in a git repo
+            result = subprocess.run(
+                ["git", "rev-parse", "--git-dir"],
+                capture_output=True, text=True, timeout=5,
+                cwd=project_root
+            )
+            if result.returncode != 0:
+                return False, "Not a git repository"
 
-    def _show_update_badge(self, changed: list):
-        names = ", ".join(changed)
-        self._update_badge.configure(
-            text=f"  🔄 {len(changed)} file(s) changed ({names}) — click to rebuild  ",
-            fg_color="#1a3a1a", hover_color="#2a4a2a")
+            # Fetch latest
+            subprocess.run(
+                ["git", "fetch", "--quiet"],
+                capture_output=True, timeout=30,
+                cwd=project_root
+            )
+
+            # Check if behind
+            result = subprocess.run(
+                ["git", "rev-list", "--count", "HEAD..@{u}"],
+                capture_output=True, text=True, timeout=10,
+                cwd=project_root
+            )
+            behind = int(result.stdout.strip()) if result.returncode == 0 else 0
+
+            if behind == 0:
+                return False, "Up to date"
+
+            msg = f"{behind} commits behind"
+            self.after(0, lambda: self._show_update_banner(msg))
+            return True, msg
+        except Exception as e:
+            return False, f"Update check failed: {e}"
+
+    def _show_update_banner(self, msg):
+        """v0.44: Show a non-intrusive update available banner."""
+        if hasattr(self, '_update_banner'):
+            return  # already showing
+        self._update_banner = ctk.CTkFrame(self, fg_color="#1b5e20", height=32, corner_radius=0)
+        self._update_banner.grid(row=0, column=0, columnspan=2, sticky="ew")
+        self._update_banner.grid_propagate(False)
+        ctk.CTkLabel(self._update_banner, text=f"Update available ({msg})",
+                     font=("Segoe UI", 10), text_color="#c8e6c9"
+                     ).pack(side="left", padx=12)
+        ctk.CTkButton(self._update_banner, text="Update Now", width=90, height=24,
+                      font=("Segoe UI", 10, "bold"), fg_color="#2e7d32",
+                      hover_color="#388e3c", command=lambda: threading.Thread(
+                          target=self._apply_update, daemon=True).start()
+                      ).pack(side="right", padx=12, pady=4)
+        # Shift existing content down to make room for banner
+        self._header.grid_configure(row=1)
+        self._sidebar.grid_configure(row=2)
+        self._tabs.grid_configure(row=2)
+        self._taskbar.grid_configure(row=3)
+        self.grid_rowconfigure(1, weight=0)
+        self.grid_rowconfigure(2, weight=1)
+
+    def _apply_update(self):
+        """v0.44: Pull updates and hot-reload via os.execv."""
+        project_root = str(_SRC_DIR.parent.parent)
+
+        try:
+            self._log_output("Pulling updates...")
+            result = subprocess.run(
+                ["git", "pull", "--ff-only"],
+                capture_output=True, text=True, timeout=60,
+                cwd=project_root
+            )
+            if result.returncode != 0:
+                self._log_output(f"Pull failed: {result.stderr.strip()}")
+                return False
+
+            self._log_output(result.stdout.strip())
+
+            # Sync dependencies if uv is available
+            import shutil
+            if shutil.which("uv"):
+                self._log_output("Syncing dependencies...")
+                subprocess.run(
+                    ["uv", "sync"],
+                    capture_output=True, timeout=120,
+                    cwd=str(Path(project_root) / "fleet")
+                )
+
+            # Hot-reload: restart ourselves
+            self._log_output("Restarting BigEd CC...")
+            if sys.platform != "win32":
+                # Unix: os.execv replaces current process
+                os.execv(sys.executable, [sys.executable] + sys.argv)
+            else:
+                # Windows: start new process, exit current
+                subprocess.Popen([sys.executable] + sys.argv)
+                sys.exit(0)
+
+        except Exception as e:
+            self._log_output(f"Update failed: {e}")
+            return False
 
     def _launch_auto_update(self):
         """Launch Updater.exe in auto mode then close BigEdCC."""
