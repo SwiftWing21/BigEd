@@ -1904,9 +1904,12 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
         When SSE is active, agent/task polling is skipped (SSE handles it);
         only module refreshes and log tailing run, at a slower 8s interval.
         """
+        # Determine next poll interval (SSE active = 8s, fallback = 4s)
+        next_interval = 4000
         try:
             # If SSE is active, skip file-based polling for agent/task data
             if getattr(self, '_sse_active', False):
+                next_interval = 8000  # slower poll when SSE active
                 # SSE handles agent/task updates — only do module refreshes here
                 self._refresh_counter = getattr(self, '_refresh_counter', 0) + 1
                 # Log tail + action badge in background thread
@@ -1928,40 +1931,38 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
                         except Exception:
                             pass
                         break
-                self.after(8000, self._schedule_refresh)  # slower poll when SSE active
-                return
-
-            # Fallback: full file-based polling when SSE is not connected
-            status = parse_status()
-            self._update_pills(status)
-            self._update_agents_table(status)
-            # Refresh Agents tab every 8s (every other cycle) — uses cache, no flicker
-            self._refresh_counter = getattr(self, '_refresh_counter', 0) + 1
-            if self._refresh_counter % 2 == 0:
-                self._agents_tab_refresh()
-            # Log tail + action badge in background thread to avoid blocking main thread
-            def _bg_io():
-                try:
-                    self.after(0, self._refresh_log)
-                    self.after(0, self._update_action_badge)
-                except Exception:
-                    pass
-            threading.Thread(target=_bg_io, daemon=True).start()
-            # Refresh the active module tab (only the visible one to avoid unnecessary DB work)
-            active_tab = self._tabs.get()
-            if active_tab == "Fleet Comm" and self._refresh_counter % 3 == 0:
-                self._refresh_comm()
-            for name, mod in self._modules.items():
-                if getattr(mod, "LABEL", name.title()) == active_tab:
+            else:
+                # Fallback: full file-based polling when SSE is not connected
+                status = parse_status()
+                self._update_pills(status)
+                self._update_agents_table(status)
+                # Refresh Agents tab every 8s (every other cycle) — uses cache, no flicker
+                self._refresh_counter = getattr(self, '_refresh_counter', 0) + 1
+                if self._refresh_counter % 2 == 0:
+                    self._agents_tab_refresh()
+                # Log tail + action badge in background thread to avoid blocking main thread
+                def _bg_io():
                     try:
-                        mod.on_refresh()
+                        self.after(0, self._refresh_log)
+                        self.after(0, self._update_action_badge)
                     except Exception:
                         pass
-                    break
+                threading.Thread(target=_bg_io, daemon=True).start()
+                # Refresh the active module tab (only the visible one to avoid unnecessary DB work)
+                active_tab = self._tabs.get()
+                if active_tab == "Fleet Comm" and self._refresh_counter % 3 == 0:
+                    self._refresh_comm()
+                for name, mod in self._modules.items():
+                    if getattr(mod, "LABEL", name.title()) == active_tab:
+                        try:
+                            mod.on_refresh()
+                        except Exception:
+                            pass
+                        break
         except Exception as e:
             self._log_output(f"Refresh error: {e}")
         finally:
-            self.after(4000, self._schedule_refresh)
+            self.after(next_interval, self._schedule_refresh)
 
     def _switch_log(self, agent):
         self._refresh_log()
