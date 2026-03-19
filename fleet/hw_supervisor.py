@@ -827,6 +827,24 @@ def main():
                 except Exception:
                     pass
 
+                # RAM-based worker scaling recommendation (every 15min / 180 polls)
+                worker_recommendation = None
+                if poll_count % 180 == 0:
+                    try:
+                        ram = psutil.virtual_memory()
+                        ram_pct = ram.percent
+                        if ram_pct > 90:
+                            worker_recommendation = "reduce"
+                            log.warning(f"RAM {ram_pct:.0f}% — recommending worker reduction")
+                        elif ram_pct > 80:
+                            worker_recommendation = "hold"
+                            log.info(f"RAM {ram_pct:.0f}% — holding worker count")
+                        elif ram_pct < 60:
+                            worker_recommendation = "increase"
+                            log.info(f"RAM {ram_pct:.0f}% — headroom available for more workers")
+                    except Exception:
+                        pass
+
                 write_state("ready", current_model, thermal, models_loaded, conductor_status)
 
         except Exception as e:

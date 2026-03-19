@@ -425,7 +425,13 @@ def main():
     elif offline:
         log.info("OFFLINE mode enabled — Discord, OpenClaw disabled")
 
-    ROLES = _build_roles(config)
+    ALL_ROLES = _build_roles(config)
+    max_workers = config.get("fleet", {}).get("max_workers", 10)
+    # Boot with capped worker count — hw_supervisor can scale up later
+    ROLES = ALL_ROLES[:max_workers]
+    if len(ALL_ROLES) > max_workers:
+        log.info(f"Worker cap: starting {len(ROLES)}/{len(ALL_ROLES)} workers (max_workers={max_workers})")
+        log.info(f"Deferred: {', '.join(ALL_ROLES[max_workers:])}")
 
     signal.signal(signal.SIGINT, shutdown)
     signal.signal(signal.SIGTERM, shutdown)
@@ -468,9 +474,28 @@ def main():
     last_sup_notes_ts = None  # ISO timestamp of last sup note read
     training_interval = config["fleet"]["training_check_interval_secs"]
     worker_next_start = {}
+    # Dynamic worker scaling — deferred roles that weren't started at boot
+    deferred_roles = ALL_ROLES[max_workers:] if len(ALL_ROLES) > max_workers else []
+    last_scale_check = 0
+    scale_interval = config.get("fleet", {}).get("worker_scale_interval_secs", 900)
 
     while True:
         now = time.time()
+
+        # Dynamic worker scaling — start deferred workers if RAM allows (every 15min)
+        if deferred_roles and now - last_scale_check >= scale_interval:
+            last_scale_check = now
+            try:
+                import psutil as _ps
+                ram_pct = _ps.virtual_memory().percent
+                if ram_pct < 75:  # enough headroom
+                    role = deferred_roles.pop(0)
+                    log.info(f"Scaling up: starting deferred worker '{role}' (RAM {ram_pct:.0f}%)")
+                    start_worker(role, config)
+                elif ram_pct > 85:
+                    log.info(f"Scaling hold: RAM {ram_pct:.0f}% — {len(deferred_roles)} workers deferred")
+            except Exception as e:
+                log.debug(f"Scale check error: {e}")
 
         # Restart dead workers with cool-down backoff
         for role in list(worker_procs.keys()):
