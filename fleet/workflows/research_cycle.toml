@@ -1,0 +1,38 @@
+[workflow]
+name = "research_cycle"
+description = "Autonomous research loop — detect gaps, research, summarize, generate training data"
+priority = 3
+
+[[steps]]
+name = "detect"
+skill = "research_loop"
+[steps.payload]
+action = "detect_gaps"
+
+[[steps]]
+name = "research"
+skill = "web_search"
+depends_on = ["detect"]
+[steps.payload]
+query = "$topic best practices"
+
+[[steps]]
+name = "summarize"
+skill = "summarize"
+depends_on = ["research"]
+[steps.payload]
+description = "Summarize research findings"
+
+[[steps]]
+name = "flashcards"
+skill = "flashcard"
+depends_on = ["summarize"]
+[steps.payload]
+content = "Generate flashcards from research"
+
+[[steps]]
+name = "index"
+skill = "rag_index"
+depends_on = ["summarize"]
+[steps.payload]
+action = "index"
