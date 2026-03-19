@@ -145,6 +145,16 @@ Implementation:
   - Identifies: ESPHome, Shelly, Xiaomi, Switchbot, iBeacon, Tile, AirTag
 ```
 
+### ha_context.py (NEW)
+```
+Actions:
+  gather           — collect all environmental context (time, weather, presence, energy)
+  build_profile    — analyze motion/presence history → build activity_profile.json
+  detect_patterns  — find recurring patterns (wake, leave, return, sleep, room usage)
+  seasonal_adjust  — detect seasonal shifts in patterns and suggest automation updates
+  predict          — predict next likely activity based on current time + day + patterns
+```
+
 ### ha_teach.py (NEW)
 ```
 Actions:
@@ -241,6 +251,125 @@ automation:
       target:
         entity_id: "{{ light_entity }}"
 ```
+
+---
+
+## Context-Aware Automation Engine
+
+### Environmental Context (auto-detected)
+
+Every automation recommendation and blueprint generation considers:
+
+```
+┌─────────────────────────────────────────────────┐
+│  CONTEXT LAYER (gathered automatically)          │
+│                                                  │
+│  TIME                                            │
+│  ├── Local timezone (from HA or system)          │
+│  ├── Day/night cycle (sunrise/sunset for lat/lon)│
+│  ├── Day of week (weekday vs weekend patterns)   │
+│  ├── Season (spring/summer/fall/winter)           │
+│  ├── Time of year (holidays, DST transitions)     │
+│  └── Work hours vs leisure (learned from motion)  │
+│                                                  │
+│  WEATHER                                         │
+│  ├── Current temp + forecast (from HA weather)   │
+│  ├── Humidity, wind, UV index                    │
+│  ├── Heating/cooling degree days                 │
+│  └── Severe weather alerts                       │
+│                                                  │
+│  PRESENCE + ACTIVITY                             │
+│  ├── Motion sensor patterns (per room, per hour) │
+│  ├── Door open/close frequency                   │
+│  ├── Device tracker (home/away/zones)            │
+│  ├── Media player state (active entertainment)   │
+│  └── Sleep patterns (bedroom motion gaps)        │
+│                                                  │
+│  ENERGY                                          │
+│  ├── Current consumption (smart plugs/meters)    │
+│  ├── Solar production (if available)             │
+│  ├── Utility rate periods (peak/off-peak)        │
+│  └── Historical usage patterns                   │
+└─────────────────────────────────────────────────┘
+```
+
+### Activity Learning (opt-in, motion-based)
+
+When user enables activity logging, agents build a **life pattern model**:
+
+```python
+# knowledge/ha_context/activity_profile.json
+{
+  "timezone": "America/Los_Angeles",
+  "location": {"lat": 36.6, "lon": -121.9},  # from HA config
+  "patterns": {
+    "weekday": {
+      "wake": {"avg": "06:45", "range": ["06:15", "07:30"], "confidence": 0.85},
+      "leave_home": {"avg": "08:15", "range": ["07:45", "09:00"], "confidence": 0.72},
+      "return_home": {"avg": "17:30", "range": ["16:45", "18:30"], "confidence": 0.68},
+      "wind_down": {"avg": "21:00", "range": ["20:30", "22:00"], "confidence": 0.78},
+      "sleep": {"avg": "22:30", "range": ["21:45", "23:30"], "confidence": 0.82}
+    },
+    "weekend": {
+      "wake": {"avg": "08:30", "confidence": 0.65},
+      "active_hours": ["09:00-12:00", "14:00-18:00"],
+      "entertainment": {"peak": "19:00-23:00", "confidence": 0.70}
+    },
+    "rooms": {
+      "kitchen": {"peak_hours": ["07:00-08:30", "17:30-19:30"], "daily_visits": 8},
+      "living_room": {"peak_hours": ["18:00-22:00"], "daily_visits": 12},
+      "bedroom": {"quiet_hours": ["22:30-06:45"], "daily_visits": 4},
+      "office": {"peak_hours": ["09:00-17:00"], "weekday_only": true}
+    }
+  },
+  "seasonal_shifts": {
+    "summer": {"wake_earlier": true, "outdoor_time": "18:00-21:00"},
+    "winter": {"wake_later": true, "heating_start": "06:00"}
+  },
+  "learning_window_days": 14,  # rolling window for pattern detection
+  "last_updated": "2026-03-19T12:00:00"
+}
+```
+
+### Context-Aware Recommendation Examples
+
+| Context | Detected Pattern | Suggested Automation |
+|---------|-----------------|---------------------|
+| **Morning routine** | Motion in kitchen 06:45-07:30 weekdays | "Turn on kitchen lights at 06:40, start coffee maker, play morning news" |
+| **Leaving home** | No motion + door close at ~08:15 | "Lock doors, arm security, set thermostat to away mode, turn off lights" |
+| **Sunset shift** | Sunset time changes seasonally | "Adjust outdoor lights trigger from 17:00 (winter) to 20:30 (summer)" |
+| **Cold snap** | Weather forecast < 35°F tonight | "Pre-heat house before wake time, close garage door if open" |
+| **Weekend mode** | Later wake, more living room activity | "Delay morning automations 2hrs on weekends, extend evening entertainment lighting" |
+| **Seasonal** | December detected | "Suggest holiday lighting schedule, fireplace automation, guest mode" |
+| **Energy peak** | Utility peak hours 14:00-19:00 | "Shift EV charging to off-peak, pre-cool house before peak" |
+| **Sleep detected** | Bedroom motion stops, no activity 15min | "Dim all lights, lock doors, arm night security, set thermostat to sleep" |
+| **Rain detected** | Weather: rain + windows open (if sensor) | "Alert: close windows, adjust irrigation schedule" |
+| **Guest mode** | Unusual activity patterns (more rooms active) | "Suggest guest lighting preset, extend HVAC zones" |
+
+### Ebb & Flow Adaptation
+
+The system continuously adapts as life schedules shift:
+
+```
+Week 1-2: Baseline learning (minimum data needed)
+Week 3+:  Confident patterns emerge, recommendations get specific
+Monthly:  Seasonal adjustments detected
+Ongoing:  Detects schedule changes automatically:
+          - New job (leave time shifted)
+          - Vacation (extended away)
+          - Work from home days (no leave, office active)
+          - New baby (night activity pattern change)
+          - Roommate moved in (second activity cluster)
+```
+
+### Privacy Design
+
+- **All processing local** — activity data never leaves the machine
+- **Opt-in only** — activity logging requires explicit user toggle
+- **Anonymized patterns** — stores time ranges, not raw motion events
+- **Rolling window** — old data expires after configurable period (default 14 days)
+- **GDPR erasure** — `lead_client.py gdpr-erase` includes activity profile
+- **No cloud dependency** — works entirely with local HA + Ollama
 
 ---
 
