@@ -293,6 +293,60 @@ def _cascade_fail_dependents(conn, failed_id, error):
             )
 
 
+def validate_dag(task_ids: list) -> tuple:
+    """Validate a set of tasks form a valid DAG (no cycles, no missing deps).
+
+    Returns (valid, error_message).
+    """
+    with get_conn() as conn:
+        # Build adjacency from depends_on
+        graph = {}  # task_id -> [dependency_ids]
+        for tid in task_ids:
+            row = conn.execute("SELECT depends_on FROM tasks WHERE id=?", (tid,)).fetchone()
+            if not row:
+                return False, f"Task {tid} not found"
+            deps = []
+            if row["depends_on"]:
+                try:
+                    deps = json.loads(row["depends_on"])
+                except (json.JSONDecodeError, TypeError):
+                    pass
+            graph[tid] = deps
+
+        # Check for missing dependencies (deps referencing tasks outside the set)
+        all_ids = set(task_ids)
+        for tid, deps in graph.items():
+            for dep in deps:
+                if dep not in all_ids:
+                    # Check if it exists in DB at all
+                    exists = conn.execute("SELECT id FROM tasks WHERE id=?", (dep,)).fetchone()
+                    if not exists:
+                        return False, f"Task {tid} depends on non-existent task {dep}"
+
+        # Cycle detection using DFS
+        WHITE, GRAY, BLACK = 0, 1, 2
+        color = {tid: WHITE for tid in task_ids}
+
+        def has_cycle(node):
+            color[node] = GRAY
+            for dep in graph.get(node, []):
+                if dep not in color:
+                    continue  # external dep, skip
+                if color[dep] == GRAY:
+                    return True  # back edge = cycle
+                if color[dep] == WHITE and has_cycle(dep):
+                    return True
+            color[node] = BLACK
+            return False
+
+        for tid in task_ids:
+            if color[tid] == WHITE:
+                if has_cycle(tid):
+                    return False, f"Cycle detected involving task {tid}"
+
+        return True, "DAG valid"
+
+
 def post_task_chain(tasks, priority=5):
     """Post a sequence of tasks where each depends on the previous.
 
@@ -315,6 +369,13 @@ def post_task_chain(tasks, priority=5):
             depends_on=depends
         )
         task_ids.append(tid)
+
+    # Validate the chain forms a valid DAG
+    valid, msg = validate_dag(task_ids)
+    if not valid:
+        import logging
+        logging.getLogger("db").warning(f"Task chain DAG validation: {msg}")
+
     return task_ids
 
 

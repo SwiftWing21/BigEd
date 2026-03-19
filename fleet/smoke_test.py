@@ -311,6 +311,19 @@ def test_dal_roundtrip():
         os.unlink(tmp.name)
 
 
+def test_dag_validation():
+    """DAG validation detects valid chains."""
+    import db
+    db.init_db()
+    # Create a simple valid chain
+    tids = db.post_task_chain([
+        {"type": "smoke_dag_a", "payload": {}},
+        {"type": "smoke_dag_b", "payload": {}},
+    ])
+    valid, msg = db.validate_dag(tids)
+    return valid, f"chain of {len(tids)}: {msg}"
+
+
 def test_thermal_readings():
     """10. GPU thermal readings available (if GPU present)."""
     try:
@@ -385,6 +398,7 @@ def main():
         ("Training lock", test_training_lock),
         ("HA fallback", test_ha_fallback),
         ("DAL round-trip", test_dal_roundtrip),
+        ("DAG validation", test_dag_validation),
     ])
 
     if not args.fast:
