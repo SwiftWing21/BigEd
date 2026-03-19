@@ -222,3 +222,265 @@ class DataAccess:
         }
         for table, columns in schemas.items():
             self.ensure_table(table, columns)
+
+
+# ─── Fleet DB helpers (fleet.db — read-only queries for the launcher UI) ─────
+
+class FleetDB:
+    """Static helper methods for querying fleet.db from the launcher.
+
+    All methods accept a db_path argument so they work without global state.
+    They open a short-lived connection, run the query, and close.
+    """
+
+    @staticmethod
+    def _connect(db_path: str | Path, timeout: int = 2):
+        """Open a connection to fleet.db with Row factory."""
+        conn = sqlite3.connect(str(db_path), timeout=timeout)
+        conn.row_factory = sqlite3.Row
+        return conn
+
+    @staticmethod
+    def count_waiting_human(db_path: str | Path) -> int:
+        """Count tasks with status WAITING_HUMAN."""
+        try:
+            if not Path(db_path).exists():
+                return 0
+            conn = FleetDB._connect(db_path)
+            row = conn.execute(
+                "SELECT COUNT(*) as n FROM tasks WHERE status = 'WAITING_HUMAN'"
+            ).fetchone()
+            conn.close()
+            return row["n"] if row else 0
+        except Exception:
+            return 0
+
+    @staticmethod
+    def queued_task_count(db_path: str | Path) -> int:
+        """Count tasks in active states (PENDING/RUNNING/WAITING)."""
+        try:
+            if not Path(db_path).exists():
+                return 0
+            conn = FleetDB._connect(db_path)
+            row = conn.execute(
+                "SELECT COUNT(*) as n FROM tasks WHERE status IN ('PENDING','RUNNING','WAITING')"
+            ).fetchone()
+            conn.close()
+            return row["n"] if row else 0
+        except Exception:
+            return 0
+
+    @staticmethod
+    def agent_task_counts(db_path: str | Path) -> dict[str, int]:
+        """Return {agent_name: done_task_count} for all agents with completed tasks."""
+        result = {}
+        try:
+            if not Path(db_path).exists():
+                return result
+            conn = FleetDB._connect(db_path)
+            for row in conn.execute(
+                "SELECT assigned_to, COUNT(*) as n FROM tasks "
+                "WHERE status='DONE' GROUP BY assigned_to"
+            ).fetchall():
+                if row["assigned_to"]:
+                    result[row["assigned_to"]] = row["n"]
+            conn.close()
+        except Exception:
+            pass
+        return result
+
+    @staticmethod
+    def agent_token_speeds(db_path: str | Path) -> dict[str, float]:
+        """Return {agent_name: avg_tok_per_sec} from usage table (last hour)."""
+        result = {}
+        try:
+            if not Path(db_path).exists():
+                return result
+            conn = FleetDB._connect(db_path)
+            try:
+                for row in conn.execute(
+                    "SELECT agent, AVG(tokens_per_sec) as avg_tps FROM usage "
+                    "WHERE tokens_per_sec > 0 AND created_at > datetime('now', '-1 hour') "
+                    "GROUP BY agent"
+                ).fetchall():
+                    if row["agent"]:
+                        result[row["agent"]] = round(row["avg_tps"], 1)
+            except sqlite3.OperationalError:
+                pass  # tokens_per_sec column may not exist yet
+            conn.close()
+        except Exception:
+            pass
+        return result
+
+    @staticmethod
+    def agent_last_results(db_path: str | Path,
+                           agent_names: list[str]) -> dict[str, str]:
+        """Return {agent_name: truncated_result_summary} for given agents."""
+        result = {}
+        try:
+            if not Path(db_path).exists():
+                return result
+            conn = FleetDB._connect(db_path)
+            for aname in agent_names:
+                if not aname:
+                    continue
+                row = conn.execute(
+                    "SELECT result_json FROM tasks WHERE assigned_to=? AND status='DONE' "
+                    "ORDER BY id DESC LIMIT 1", (aname,)
+                ).fetchone()
+                if row and row["result_json"]:
+                    raw = str(row["result_json"]).strip()
+                    try:
+                        parsed = json.loads(raw)
+                        if isinstance(parsed, dict):
+                            txt = (parsed.get("summary") or parsed.get("output")
+                                   or parsed.get("status") or parsed.get("error") or raw)
+                        else:
+                            txt = raw
+                    except Exception:
+                        txt = raw
+                    txt = str(txt).strip()
+                    if len(txt) > 45:
+                        txt = txt[:42] + "..."
+                    result[aname] = txt
+            conn.close()
+        except Exception:
+            pass
+        return result
+
+    @staticmethod
+    def waiting_human_by_agent(db_path: str | Path) -> tuple[int, set[str]]:
+        """Return (total_waiting_count, {agent_names_with_waiting_tasks})."""
+        total = 0
+        agents = set()
+        try:
+            if not Path(db_path).exists():
+                return total, agents
+            conn = FleetDB._connect(db_path)
+            try:
+                for row in conn.execute(
+                    "SELECT assigned_to, COUNT(*) as n FROM tasks "
+                    "WHERE status='WAITING_HUMAN' GROUP BY assigned_to"
+                ).fetchall():
+                    total += row["n"]
+                    if row["assigned_to"]:
+                        agents.add(row["assigned_to"])
+            except Exception:
+                pass
+            conn.close()
+        except Exception:
+            pass
+        return total, agents
+
+    @staticmethod
+    def waiting_human_tasks(db_path: str | Path) -> list[dict]:
+        """Fetch WAITING_HUMAN tasks with their operator questions.
+
+        Returns list of dicts with keys: id, type, assigned_to, created_at, question.
+        """
+        waiting = []
+        try:
+            if not Path(db_path).exists():
+                return waiting
+            conn = FleetDB._connect(db_path, timeout=5)
+            try:
+                rows = conn.execute("""
+                    SELECT t.id, t.type, t.assigned_to, t.created_at
+                    FROM tasks t WHERE t.status = 'WAITING_HUMAN'
+                    ORDER BY t.created_at ASC
+                """).fetchall()
+                for r in rows:
+                    item = dict(r)
+                    msg = conn.execute("""
+                        SELECT body_json FROM messages
+                        WHERE to_agent = 'operator'
+                        AND body_json LIKE '%human_input_request%'
+                        AND body_json LIKE ?
+                        ORDER BY id DESC LIMIT 1
+                    """, (f'%"task_id": {r["id"]}%',)).fetchone()
+                    item["question"] = ""
+                    if msg:
+                        try:
+                            body = json.loads(msg["body_json"])
+                            item["question"] = body.get("question", "")
+                        except Exception:
+                            pass
+                    waiting.append(item)
+            finally:
+                conn.close()
+        except Exception:
+            pass
+        return waiting
+
+    @staticmethod
+    def send_human_response(db_path: str | Path, task_id: int,
+                            response: str) -> bool:
+        """Send an operator response to a WAITING_HUMAN task.
+
+        Updates task status to PENDING and inserts a human_response message.
+        Returns True on success.
+        """
+        try:
+            conn = FleetDB._connect(db_path, timeout=5)
+            try:
+                row = conn.execute(
+                    "SELECT assigned_to, payload_json FROM tasks WHERE id=?",
+                    (task_id,)
+                ).fetchone()
+                if not row:
+                    return False
+                agent = row["assigned_to"]
+                try:
+                    payload = json.loads(row["payload_json"]) if row["payload_json"] else {}
+                except Exception:
+                    payload = {}
+                payload["_human_response"] = response
+                conn.execute("""
+                    UPDATE tasks SET status='PENDING', payload_json=?
+                    WHERE id=? AND status='WAITING_HUMAN'
+                """, (json.dumps(payload), task_id))
+                if agent:
+                    conn.execute("""
+                        INSERT INTO messages (from_agent, to_agent, body_json)
+                        VALUES ('operator', ?, ?)
+                    """, (agent, json.dumps({
+                        "type": "human_response",
+                        "task_id": task_id,
+                        "response": response,
+                    })))
+                conn.commit()
+            finally:
+                conn.close()
+            return True
+        except Exception:
+            return False
+
+    @staticmethod
+    def model_performance(db_path: str | Path) -> list[dict]:
+        """Get per-model tok/s metrics from the usage table (last hour).
+
+        Returns list of dicts with keys: model, avg_tps, calls, avg_ms.
+        """
+        try:
+            if not Path(db_path).exists():
+                return []
+            conn = FleetDB._connect(db_path)
+            try:
+                rows = conn.execute("""
+                    SELECT model,
+                           ROUND(AVG(tokens_per_sec), 1) as avg_tps,
+                           COUNT(*) as calls,
+                           ROUND(AVG(eval_duration_ms), 0) as avg_ms
+                    FROM usage
+                    WHERE created_at > datetime('now', '-1 hour')
+                      AND tokens_per_sec > 0
+                    GROUP BY model
+                    ORDER BY avg_tps DESC
+                """).fetchall()
+                return [dict(r) for r in rows]
+            except sqlite3.OperationalError:
+                return []  # columns don't exist yet
+            finally:
+                conn.close()
+        except Exception:
+            return []

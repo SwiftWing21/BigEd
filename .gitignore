@@ -37,6 +37,9 @@ fleet/skills/tasks.json
 # ── Scratch / temp docs ──────────────────────────────────────────────────────
 how_we_roll.md
 
+# ── Fleet — TLS certs (auto-generated, never commit) ─────────────────────────
+fleet/certs/
+
 # ── Fleet — logs ──────────────────────────────────────────────────────────────
 fleet/logs/
 

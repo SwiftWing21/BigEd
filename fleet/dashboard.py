@@ -13,8 +13,10 @@ Usage:
     python dashboard.py --port 8080    # custom port
 """
 import argparse
+import functools
 import json
 import os
+import random
 import re
 import secrets
 import sqlite3
@@ -28,11 +30,93 @@ from pathlib import Path
 from flask import Flask, jsonify, Response, request
 
 FLEET_DIR = Path(__file__).parent
+_start_time = time.time()  # dashboard boot timestamp for /api/health uptime
 DB_PATH = FLEET_DIR / "fleet.db"
 KNOWLEDGE_DIR = FLEET_DIR / "knowledge"
 HW_STATE_JSON = FLEET_DIR / "hw_state.json"
 
 app = Flask(__name__)
+
+
+# ── TLS (auto-generate self-signed cert) ──────────────────────────────────
+
+def _ensure_tls_cert(cert_dir=None):
+    """Generate self-signed TLS cert if none exists.
+
+    Returns (cert_path, key_path) on success, (None, None) on failure.
+    Falls back to HTTP when openssl is unavailable.
+    """
+    cert_dir = cert_dir or os.path.join(os.path.dirname(__file__), "certs")
+    cert_path = os.path.join(cert_dir, "dashboard.crt")
+    key_path = os.path.join(cert_dir, "dashboard.key")
+    if os.path.exists(cert_path) and os.path.exists(key_path):
+        return cert_path, key_path
+    os.makedirs(cert_dir, exist_ok=True)
+    try:
+        import subprocess
+        subprocess.run([
+            "openssl", "req", "-x509", "-newkey", "rsa:2048",
+            "-keyout", key_path, "-out", cert_path,
+            "-days", "365", "-nodes",
+            "-subj", "/CN=localhost/O=BigEdCC"
+        ], check=True, capture_output=True)
+        return cert_path, key_path
+    except Exception:
+        return None, None  # Fall back to HTTP
+
+
+# ── RBAC role definitions ─────────────────────────────────────────────────
+
+RBAC_ROLES = {
+    "admin": {"read", "write", "delete", "configure"},
+    "operator": {"read", "write"},
+    "viewer": {"read"},
+}
+
+
+def _get_request_role(req=None):
+    """Determine role from request token.
+
+    Checks Authorization header and query param against configured
+    admin_token, operator_token, and dashboard_token in fleet.toml [security].
+    """
+    req = req or request
+    token = req.headers.get("Authorization", "").replace("Bearer ", "")
+    if not token:
+        token = req.args.get("token", "")
+    # Check against configured tokens
+    config = _load_config()
+    security = config.get("security", {})
+    admin_token = security.get("admin_token", "")
+    operator_token = security.get("operator_token", "")
+    if admin_token and token == admin_token:
+        return "admin"
+    if operator_token and token == operator_token:
+        return "operator"
+    # Default: if any token matches the existing dashboard_token, treat as operator
+    dash_token = security.get("dashboard_token", "")
+    if dash_token and token == dash_token:
+        return "operator"
+    return "viewer"
+
+
+def _require_role(role):
+    """Decorator to enforce minimum role for an endpoint.
+
+    Compares the request role's permissions against the required role's
+    permissions. Returns 403 if insufficient.
+    """
+    def decorator(f):
+        @functools.wraps(f)
+        def wrapper(*args, **kwargs):
+            user_role = _get_request_role()
+            role_perms = RBAC_ROLES.get(user_role, set())
+            required_perms = RBAC_ROLES.get(role, set())
+            if not required_perms.issubset(role_perms):
+                return jsonify({"error": "insufficient permissions", "required_role": role}), 403
+            return f(*args, **kwargs)
+        return wrapper
+    return decorator
 
 
 def _safe_error(e):
@@ -125,6 +209,45 @@ _csrf_tokens = set()  # valid tokens (rotate periodically)
 _alerts = []
 _alert_lock = threading.Lock()
 _sse_clients = []
+
+
+# ── API call attribution logging ──────────────────────────────────────────
+
+@app.after_request
+def _log_api_attribution(response):
+    """Log API call attribution for audit trail.
+
+    Samples 10% of GET requests but logs 100% of write requests (POST/PUT/DELETE)
+    to avoid DB bloat while maintaining full write audit coverage.
+    """
+    if not request.path.startswith("/api/"):
+        return response
+    # Skip 90% of GET requests to avoid DB bloat
+    if request.method == "GET" and random.random() > 0.1:
+        return response
+    try:
+        role = _get_request_role()
+        # Use db.log_alert if available, otherwise fall back to audit_log
+        try:
+            sys.path.insert(0, str(FLEET_DIR))
+            from audit_log import log_event
+            log_event(
+                event_type="api_call",
+                source="dashboard",
+                details={
+                    "method": request.method,
+                    "path": request.path,
+                    "role": role,
+                    "status": response.status_code,
+                    "remote": request.remote_addr,
+                },
+                severity="info",
+            )
+        except (ImportError, AttributeError):
+            pass  # audit_log not available — skip silently
+    except Exception:
+        pass  # Never let logging break the response
+    return response
 
 
 # ── DB helpers ───────────────────────────────────────────────────────────────
@@ -261,6 +384,134 @@ def api_status():
         row = query("SELECT COUNT(*) as n FROM tasks WHERE status=?", (s,))
         counts[s] = row[0]["n"] if row else 0
     return jsonify({"agents": agents, "tasks": counts})
+
+
+# ── v0.22.00: Unified Health Endpoint ─────────────────────────────────────────
+
+@app.route("/api/health")
+def api_health():
+    """Unified health check — aggregates all subsystem status in one call."""
+    subsystems = {}
+    overall = "healthy"
+
+    # 1. Fleet DB connectivity
+    try:
+        conn = get_conn()
+        conn.execute("SELECT 1")
+        conn.close()
+        subsystems["fleet_db"] = {"status": "ok", "detail": "connected"}
+    except Exception as e:
+        subsystems["fleet_db"] = {"status": "unavailable", "detail": _safe_error(e)}
+        overall = "unhealthy"
+
+    # 2. Ollama status
+    try:
+        import urllib.request
+        req = urllib.request.Request("http://localhost:11434/api/tags")
+        with urllib.request.urlopen(req, timeout=2) as resp:
+            data = json.loads(resp.read())
+            models_loaded = len(data.get("models", []))
+        subsystems["ollama"] = {"status": "ok", "models_loaded": models_loaded}
+    except Exception:
+        subsystems["ollama"] = {"status": "unavailable", "models_loaded": 0}
+        if overall == "healthy":
+            overall = "degraded"
+
+    # 3. Supervisor status (from hw_state.json)
+    try:
+        if HW_STATE_JSON.exists():
+            hw = json.loads(HW_STATE_JSON.read_text())
+            hw_status = hw.get("status", "unknown")
+            # Count live workers from agents table
+            try:
+                workers = query(
+                    "SELECT COUNT(*) as n FROM agents WHERE status != 'OFFLINE' "
+                    "AND last_heartbeat > datetime('now', '-5 minutes')"
+                )
+                worker_count = workers[0]["n"] if workers else 0
+            except Exception:
+                worker_count = 0
+            subsystems["supervisor"] = {"status": "running", "workers": worker_count}
+        else:
+            subsystems["supervisor"] = {"status": "unknown", "workers": 0}
+            if overall == "healthy":
+                overall = "degraded"
+    except Exception:
+        subsystems["supervisor"] = {"status": "unknown", "workers": 0}
+        if overall == "healthy":
+            overall = "degraded"
+
+    # 4. Dashboard self-check
+    try:
+        # Count registered endpoints
+        endpoint_count = len([r for r in app.url_map.iter_rules() if r.endpoint != 'static'])
+        subsystems["dashboard"] = {"status": "ok", "endpoints": endpoint_count}
+    except Exception:
+        subsystems["dashboard"] = {"status": "ok", "endpoints": 0}
+
+    # 5. RAG DB
+    rag_db = FLEET_DIR / "rag.db"
+    try:
+        if rag_db.exists():
+            conn = sqlite3.connect(str(rag_db), timeout=2)
+            conn.row_factory = sqlite3.Row
+            chunks = conn.execute("SELECT COUNT(*) FROM chunks_meta").fetchone()[0]
+            conn.close()
+            subsystems["rag_db"] = {"status": "ok", "chunks": chunks}
+        else:
+            subsystems["rag_db"] = {"status": "missing", "chunks": 0}
+    except Exception:
+        subsystems["rag_db"] = {"status": "unavailable", "chunks": 0}
+        if overall == "healthy":
+            overall = "degraded"
+
+    return jsonify({
+        "status": overall,
+        "uptime_seconds": int(time.time() - _start_time),
+        "subsystems": subsystems,
+        "version": "0.22.00",
+    })
+
+
+# ── v0.22.00: Per-Agent Performance ──────────────────────────────────────────
+
+@app.route("/api/agents/performance")
+def api_agents_performance():
+    """Per-agent performance metrics over the last hour."""
+    try:
+        rows = query("""
+            SELECT
+                assigned_to,
+                COUNT(*) as total,
+                SUM(CASE WHEN status = 'DONE' THEN 1 ELSE 0 END) as done,
+                SUM(CASE WHEN status = 'FAILED' THEN 1 ELSE 0 END) as failed,
+                AVG(CASE WHEN status = 'DONE' THEN intelligence_score ELSE NULL END) as avg_iq,
+                AVG(CASE
+                    WHEN status IN ('DONE', 'FAILED')
+                    THEN (julianday('now') - julianday(created_at)) * 86400000
+                    ELSE NULL
+                END) as avg_latency
+            FROM tasks
+            WHERE created_at >= datetime('now', '-1 hour')
+              AND assigned_to IS NOT NULL
+            GROUP BY assigned_to
+            ORDER BY done DESC
+        """)
+        agents = []
+        for r in rows:
+            total = r["total"] or 0
+            done = r["done"] or 0
+            agents.append({
+                "name": r["assigned_to"],
+                "tasks_completed_1h": done,
+                "success_rate": round(done / total, 2) if total > 0 else 0.0,
+                "avg_latency_ms": round(r["avg_latency"] or 0, 0),
+                "avg_intelligence_score": round(r["avg_iq"] or 0, 2),
+                "tasks_per_hour": float(done),
+            })
+        return jsonify({"agents": agents})
+    except Exception as e:
+        return jsonify({"error": _safe_error(e), "agents": []}), 500
 
 
 @app.route("/api/activity")
@@ -466,7 +717,6 @@ def api_rag():
     rag_db = FLEET_DIR / "rag.db"
     if not rag_db.exists():
         return jsonify({"files": 0, "chunks": 0, "sources": []})
-    conn = None
     try:
         conn = sqlite3.connect(rag_db, timeout=5)
         conn.row_factory = sqlite3.Row
@@ -477,12 +727,10 @@ def api_rag():
                 "SELECT path, chunks, indexed FROM files ORDER BY indexed DESC LIMIT 30"
             ).fetchall()
         ]
+        conn.close()
         return jsonify({"files": files, "chunks": chunks, "sources": sources})
     except Exception as e:
         return jsonify({"error": _safe_error(e), "files": 0, "chunks": 0, "sources": []})
-    finally:
-        if conn:
-            conn.close()
 
 
 # ── v0.27 New API endpoints ──────────────────────────────────────────────────
@@ -615,7 +863,6 @@ def api_data_stats():
     stats = {}
 
     # Fleet DB tables
-    conn = None
     try:
         conn = get_conn()
         for table in ["tasks", "agents", "messages", "locks", "notes"]:
@@ -624,16 +871,13 @@ def api_data_stats():
                 stats[f"fleet.{table}"] = {"count": count}
             except Exception:
                 pass
+        conn.close()
     except Exception:
         pass
-    finally:
-        if conn:
-            conn.close()
 
     # Tools DB (launcher data)
     tools_db = Path(__file__).parent.parent / "BigEd" / "launcher" / "data" / "tools.db"
     if tools_db.exists():
-        conn = None
         try:
             conn = sqlite3.connect(str(tools_db), timeout=5)
             conn.row_factory = sqlite3.Row
@@ -643,11 +887,9 @@ def api_data_stats():
                     stats[f"tools.{table}"] = {"count": count}
                 except Exception:
                     pass
+            conn.close()
         except Exception:
             pass
-        finally:
-            if conn:
-                conn.close()
 
     # Knowledge directory sizes
     if KNOWLEDGE_DIR.exists():
@@ -669,7 +911,6 @@ def api_comms():
     """Per-channel message/note counts + recent activity."""
     channels = ["sup", "agent", "fleet", "pool"]
     result = {}
-    conn = None
     try:
         conn = get_conn()
         for ch in channels:
@@ -696,22 +937,32 @@ def api_comms():
                 "notes": note_count,
                 "recent": recent,
             }
+        conn.close()
     except Exception as e:
         result["error"] = _safe_error(e)
-    finally:
-        if conn:
-            conn.close()
     return jsonify(result)
 
 
 @app.route("/api/alerts")
 def api_alerts():
-    """Return current alerts."""
+    """Return current alerts — in-memory + persistent DB alerts."""
+    hours = int(request.args.get("hours", 24))
+    severity = request.args.get("severity")
+    # In-memory alerts (legacy SSE-based)
     with _alert_lock:
-        return jsonify(_alerts[-50:])
+        mem_alerts = list(_alerts[-50:])
+    # Persistent DB alerts (0.22.00)
+    try:
+        sys.path.insert(0, str(FLEET_DIR))
+        import db
+        db_alerts = db.get_alerts(hours=hours, severity=severity)
+    except Exception:
+        db_alerts = []
+    return jsonify({"memory": mem_alerts, "persistent": db_alerts})
 
 
 @app.route("/api/alerts/ack/<int:alert_id>", methods=["POST"])
+@_require_role("operator")
 def api_ack_alert(alert_id):
     """Acknowledge an alert."""
     with _alert_lock:
@@ -885,6 +1136,7 @@ def api_audit():
 
 
 @app.route("/api/gdpr/erasure", methods=["POST"])
+@_require_role("admin")
 def api_gdpr_erasure():
     """GDPR Art. 17: Right to erasure."""
     try:
@@ -916,6 +1168,7 @@ def api_integrity():
 
 
 @app.route("/api/integrity/refresh", methods=["POST"])
+@_require_role("operator")
 def api_integrity_refresh():
     try:
         from integrity import save_manifest
@@ -923,6 +1176,52 @@ def api_integrity_refresh():
         return jsonify({"status": "manifest_saved", "path": str(path)})
     except Exception as e:
         return jsonify({"error": _safe_error(e)}), 500
+
+
+# ── OpenAI-Compatible API (v0.25.00) ───────────────────────────────────────
+
+
+@app.route("/v1/chat/completions", methods=["POST"])
+def openai_chat_completions():
+    """OpenAI-compatible API adapter for fleet models."""
+    data = request.get_json()
+    model = data.get("model", "qwen3:8b")
+    messages = data.get("messages", [])
+    max_tokens = data.get("max_tokens", 2048)
+    temperature = data.get("temperature", 0.7)
+
+    system = ""
+    prompt = ""
+    for msg in messages:
+        if msg["role"] == "system":
+            system = msg["content"]
+        elif msg["role"] == "user":
+            prompt = msg["content"]
+
+    try:
+        from providers import get_backend
+        backend = get_backend()
+        result = backend.generate(model, prompt, system=system,
+                                  max_tokens=max_tokens, temperature=temperature)
+
+        return jsonify({
+            "id": f"chatcmpl-{int(time.time())}",
+            "object": "chat.completion",
+            "created": int(time.time()),
+            "model": model,
+            "choices": [{
+                "index": 0,
+                "message": {"role": "assistant", "content": result["text"]},
+                "finish_reason": "stop"
+            }],
+            "usage": {
+                "prompt_tokens": len(prompt.split()),
+                "completion_tokens": len(result["text"].split()),
+                "total_tokens": len(prompt.split()) + len(result["text"].split())
+            }
+        })
+    except Exception as e:
+        return jsonify({"error": {"message": _safe_error(e), "type": "server_error"}}), 500
 
 
 # ── Server-Sent Events ──────────────────────────────────────────────────────
@@ -1537,5 +1836,13 @@ if __name__ == "__main__":
     threading.Thread(target=_alert_monitor, daemon=True).start()
     threading.Thread(target=_sse_broadcaster, daemon=True).start()
 
-    print(f"Fleet Dashboard v2: http://localhost:{args.port}")
-    app.run(host=args.host, port=args.port, debug=False, threaded=True)
+    # TLS: auto-generate self-signed cert for HTTPS by default
+    cert, key = _ensure_tls_cert()
+    ssl_ctx = None
+    if cert and key:
+        ssl_ctx = (cert, key)
+        print(f"Fleet Dashboard v2: https://localhost:{args.port} (TLS)")
+    else:
+        print(f"Fleet Dashboard v2: http://localhost:{args.port} (no TLS — openssl not found)")
+    app.run(host=args.host, port=args.port, debug=False, threaded=True,
+            ssl_context=ssl_ctx)

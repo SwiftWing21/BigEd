@@ -19,22 +19,11 @@ from pathlib import Path
 
 import customtkinter as ctk
 
-# ─── Theme constants (copied from launcher.py — consoles are standalone) ─────
-BG       = "#1a1a1a"
-BG2      = "#242424"
-BG3      = "#2d2d2d"
-ACCENT   = "#b22222"
-ACCENT_H = "#8b0000"
-GOLD     = "#c8a84b"
-TEXT     = "#e2e2e2"
-DIM      = "#888888"
-GREEN    = "#4caf50"
-ORANGE   = "#ff9800"
-RED      = "#f44336"
-MONO     = ("Consolas", 11)
-FONT     = ("Segoe UI", 11)
-FONT_SM  = ("Segoe UI", 10)
-FONT_H   = ("Segoe UI", 13, "bold")
+# ─── Theme (single source of truth) ──────────────────────────────────────────
+from ui.theme import (
+    BG, BG2, BG3, ACCENT, ACCENT_H, GOLD, TEXT, DIM,
+    GREEN, ORANGE, RED, MONO, FONT, FONT_SM, FONT_H,
+)
 
 # ─── Chat history persistence ─────────────────────────────────────────────────
 HISTORY_DIR = Path(__file__).parent.parent / "data" / "console_history"

@@ -87,18 +87,11 @@ def _get_python():
     return sys.executable  # not frozen — sys.executable IS Python
 
 
-# ─── Theme constants (copied from launcher.py — boot module is standalone) ────
-BG       = "#1a1a1a"
-BG2      = "#242424"
-BG3      = "#2d2d2d"
-ACCENT   = "#b22222"
-ACCENT_H = "#8b0000"
-GOLD     = "#c8a84b"
-TEXT     = "#e2e2e2"
-DIM      = "#888888"
-GREEN    = "#4caf50"
-ORANGE   = "#ff9800"
-RED      = "#f44336"
+# ─── Theme (single source of truth) ──────────────────────────────────────────
+from ui.theme import (
+    BG, BG2, BG3, ACCENT, ACCENT_H, GOLD, TEXT, DIM,
+    GREEN, ORANGE, RED,
+)
 
 # ─── Lazy imports from launcher ──────────────────────────────────────────────
 

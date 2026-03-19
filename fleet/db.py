@@ -1,5 +1,6 @@
 """SQLite data layer — all DB access goes through this module."""
 import json
+import os
 import sqlite3
 import time
 import random
@@ -101,9 +102,24 @@ CREATE TABLE IF NOT EXISTS idle_runs (
 """
 
 
-def get_conn():
-    conn = sqlite3.connect(DB_PATH, check_same_thread=False, timeout=30)
-    conn.row_factory = sqlite3.Row
+def get_conn(db_path=None):
+    """Get DB connection, with SQLCipher if available and configured.
+
+    SQLCipher provides transparent AES-256 encryption for the fleet database.
+    On fresh installs with sqlcipher3 installed, set BIGED_DB_KEY env var to
+    enable encryption. Falls back to plain sqlite3 when sqlcipher3 is absent.
+    """
+    path = db_path or DB_PATH
+    try:
+        import sqlcipher3 as sqlite3_mod
+        conn = sqlite3_mod.connect(str(path), check_same_thread=False, timeout=30)
+        key = os.environ.get("BIGED_DB_KEY", "")
+        if key:
+            conn.execute(f"PRAGMA key = '{key}'")
+        conn.row_factory = sqlite3_mod.Row
+    except ImportError:
+        conn = sqlite3.connect(str(path), check_same_thread=False, timeout=30)
+        conn.row_factory = sqlite3.Row
     # WAL + busy_timeout at SQLite level (more reliable than Python-level timeout)
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA synchronous=NORMAL")
@@ -148,6 +164,8 @@ def init_db():
             conn.execute("ALTER TABLE tasks ADD COLUMN classification TEXT DEFAULT 'internal'")
         if "intelligence_score" not in cols:
             conn.execute("ALTER TABLE tasks ADD COLUMN intelligence_score REAL DEFAULT NULL")
+        if "trace_id" not in cols:
+            conn.execute("ALTER TABLE tasks ADD COLUMN trace_id TEXT DEFAULT NULL")
         # Migrate messages: add channel column if missing
         msg_cols = {r[1] for r in conn.execute("PRAGMA table_info(messages)").fetchall()}
         if "channel" not in msg_cols:
@@ -426,16 +444,22 @@ def validate_dag(task_ids: list) -> tuple:
         return True, "DAG valid"
 
 
-def post_task_chain(tasks, priority=5):
+def post_task_chain(tasks, priority=5, trace_id=None):
     """Post a sequence of tasks where each depends on the previous.
 
     Args:
         tasks: list of dicts with keys: type, payload (dict), assigned_to (optional)
         priority: shared priority for all tasks
+        trace_id: optional shared trace_id for the entire chain (auto-generated if None)
 
     Returns:
         list of task IDs in order
     """
+    import uuid
+    # v0.23 S3: Shared trace_id across the entire chain
+    if trace_id is None:
+        trace_id = str(uuid.uuid4())[:8]
+
     task_ids = []
     for i, t in enumerate(tasks):
         depends = [task_ids[-1]] if task_ids else None
@@ -445,7 +469,8 @@ def post_task_chain(tasks, priority=5):
             priority=priority,
             assigned_to=t.get("assigned_to"),
             parent_id=task_ids[0] if task_ids else None,
-            depends_on=depends
+            depends_on=depends,
+            trace_id=trace_id,
         )
         task_ids.append(tid)
 
@@ -557,7 +582,7 @@ def reject_task(task_id, critique):
 
 def post_task(type_, payload_json, priority=5, assigned_to=None,
               parent_id=None, depends_on=None, conditions=None,
-              classification="internal"):
+              classification="internal", trace_id=None):
     """Post a task to the queue.
 
     Args:
@@ -573,7 +598,12 @@ def post_task(type_, payload_json, priority=5, assigned_to=None,
             Example: {"1": "approved", "2": None}
         classification: data classification label (default "internal").
             Common values: "public", "internal", "confidential", "restricted".
+        trace_id: optional distributed trace ID for request correlation.
+            Auto-generated if not provided. DAG child tasks inherit parent's
+            trace_id for end-to-end tracing.
     """
+    import uuid
+
     # Validate payload is valid JSON
     if payload_json:
         try:
@@ -582,6 +612,23 @@ def post_task(type_, payload_json, priority=5, assigned_to=None,
             raise ValueError(f"payload_json must be valid JSON, got: {repr(payload_json)[:100]}")
     # Clamp priority
     priority = max(1, min(10, int(priority)))
+
+    # v0.23 S3: For DAG child tasks, inherit parent's trace_id
+    if trace_id is None and parent_id:
+        try:
+            with get_conn() as conn:
+                parent_row = conn.execute(
+                    "SELECT trace_id FROM tasks WHERE id=?", (parent_id,)
+                ).fetchone()
+                if parent_row and parent_row["trace_id"]:
+                    trace_id = parent_row["trace_id"]
+        except Exception:
+            pass
+
+    # Auto-generate trace_id if still not set
+    if trace_id is None:
+        trace_id = str(uuid.uuid4())[:8]
+
     # Determine initial status
     deps_json = None
     conds_json = None
@@ -597,10 +644,11 @@ def post_task(type_, payload_json, priority=5, assigned_to=None,
         with get_conn() as conn:
             cur = conn.execute("""
                 INSERT INTO tasks (type, payload_json, priority, assigned_to, status,
-                                   parent_id, depends_on, conditions, classification)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                                   parent_id, depends_on, conditions, classification,
+                                   trace_id)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (type_, payload_json, priority, assigned_to, status,
-                  parent_id, deps_json, conds_json, classification))
+                  parent_id, deps_json, conds_json, classification, trace_id))
             result[0] = cur.lastrowid
     _retry_write(_do)
     return result[0]
@@ -1043,3 +1091,68 @@ def get_dag_graph(parent_id: int) -> dict:
             for dep in deps:
                 edges.append({"from": dep, "to": t["id"]})
         return {"nodes": nodes, "edges": edges, "parent_id": parent_id}
+
+
+# ── Alert Escalation Pipeline (0.22.00) ──────────────────────────────────────
+
+def log_alert(severity, source, message, details=None):
+    """Log an alert to the audit trail for escalation.
+
+    Args:
+        severity: "info", "warning", "critical"
+        source: subsystem name (e.g. "supervisor", "ollama", "thermal")
+        message: human-readable alert message
+        details: optional dict with structured context
+    """
+    def _do():
+        with get_conn() as conn:
+            conn.execute(
+                "CREATE TABLE IF NOT EXISTS alerts ("
+                "id INTEGER PRIMARY KEY, severity TEXT, source TEXT, "
+                "message TEXT, details TEXT, created_at TEXT DEFAULT (datetime('now')), "
+                "acknowledged_at TEXT)",
+            )
+            conn.execute(
+                "INSERT INTO alerts (severity, source, message, details) VALUES (?, ?, ?, ?)",
+                (severity, source, message, json.dumps(details) if details else None)
+            )
+    _retry_write(_do)
+
+
+def get_alerts(hours=24, severity=None):
+    """Retrieve recent alerts from the persistent alert table.
+
+    Args:
+        hours: lookback window (default 24)
+        severity: optional filter ("info", "warning", "critical")
+
+    Returns:
+        list of alert dicts, newest first (max 100)
+    """
+    with get_conn() as conn:
+        # Ensure table exists (safe for first call)
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS alerts ("
+            "id INTEGER PRIMARY KEY, severity TEXT, source TEXT, "
+            "message TEXT, details TEXT, created_at TEXT DEFAULT (datetime('now')), "
+            "acknowledged_at TEXT)",
+        )
+        q = "SELECT * FROM alerts WHERE created_at > datetime('now', ?)"
+        params = [f'-{hours} hours']
+        if severity:
+            q += " AND severity = ?"
+            params.append(severity)
+        q += " ORDER BY created_at DESC LIMIT 100"
+        rows = conn.execute(q, params).fetchall()
+        return [dict(r) for r in rows]
+
+
+def acknowledge_alert(alert_id):
+    """Mark a persistent alert as acknowledged."""
+    def _do():
+        with get_conn() as conn:
+            conn.execute(
+                "UPDATE alerts SET acknowledged_at = datetime('now') WHERE id = ?",
+                (alert_id,)
+            )
+    _retry_write(_do)

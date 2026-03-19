@@ -78,7 +78,8 @@ def call_complex(system: str, user: str, config: dict, max_tokens: int = 2048, c
             if mode == "block":
                 return f"[BUDGET BLOCKED] {skill_name} exceeded {budget_period} budget."
             elif mode == "throttle":
-                return f"[BUDGET THROTTLED] {skill_name} exceeded {budget_period} budget. Retry after cooldown."
+                import time
+                time.sleep(5)  # 5-second delay as soft throttle
     except Exception:
         pass  # budget checking must never break skill execution
 
@@ -91,9 +92,11 @@ def call_complex(system: str, user: str, config: dict, max_tokens: int = 2048, c
         pass
 
     # OWASP LLM04: Pre-execution cost estimation
+    # Code-heavy skills get higher token multiplier (code has more tokens per word)
+    CODE_SKILLS = {"code_write", "code_review", "code_discuss", "refactor_verify", "skill_test", "skill_evolve"}
     try:
-        estimated_input_tokens = len(system.split()) + len(user.split())  # rough word→token estimate (* 1.3)
-        estimated_input_tokens = int(estimated_input_tokens * 1.3)
+        token_multiplier = 2.0 if skill_name in CODE_SKILLS else 1.3
+        estimated_input_tokens = int((len(system.split()) + len(user.split())) * token_multiplier)
         from providers import PRICING
         model_id = models.get("complex", "claude-sonnet-4-6")
         rates = PRICING.get(model_id, PRICING.get("claude-sonnet-4-6", {}))

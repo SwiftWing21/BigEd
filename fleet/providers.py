@@ -2,6 +2,7 @@
 import os
 import time
 import threading
+from abc import ABC, abstractmethod
 
 # Circuit breaker state per provider
 _circuit_state = {}  # provider -> {"failures": int, "last_failure": float, "open_until": float}
@@ -49,6 +50,166 @@ def _circuit_record_success(provider: str):
         if provider in _circuit_state:
             _circuit_state[provider]["failures"] = 0
             _circuit_state[provider]["open_until"] = 0
+
+# ── Multi-Backend Abstraction (v0.25.00) ────────────────────────────────────
+
+
+class LocalBackend(ABC):
+    """Abstract base class for local model backends."""
+    name: str = "unknown"
+
+    @abstractmethod
+    def generate(self, model: str, prompt: str, system: str = "",
+                 max_tokens: int = 2048, temperature: float = 0.7) -> dict:
+        """Generate completion. Returns {"text": str, "tokens_per_sec": float, "eval_duration_ms": int}."""
+        ...
+
+    @abstractmethod
+    def list_models(self) -> list[dict]:
+        """List available models. Returns [{"name": str, "size": int, "modified": str}]."""
+        ...
+
+    @abstractmethod
+    def health_check(self) -> bool:
+        """Return True if backend is reachable."""
+        ...
+
+
+class OllamaBackend(LocalBackend):
+    """Ollama backend — current default."""
+    name = "ollama"
+
+    def __init__(self, base_url="http://localhost:11434"):
+        self.base_url = base_url
+
+    def generate(self, model, prompt, system="", max_tokens=2048, temperature=0.7):
+        import json, urllib.request
+        payload = json.dumps({
+            "model": model, "prompt": prompt, "system": system,
+            "stream": False,
+            "options": {"num_predict": max_tokens, "temperature": temperature}
+        }).encode()
+        req = urllib.request.Request(f"{self.base_url}/api/generate",
+                                     data=payload,
+                                     headers={"Content-Type": "application/json"})
+        resp = urllib.request.urlopen(req, timeout=120)
+        data = json.loads(resp.read())
+        tps = 0.0
+        eval_ms = 0
+        if data.get("eval_count") and data.get("eval_duration"):
+            eval_ms = data["eval_duration"] / 1_000_000
+            tps = data["eval_count"] / (eval_ms / 1000) if eval_ms > 0 else 0
+        return {"text": data.get("response", ""), "tokens_per_sec": round(tps, 1), "eval_duration_ms": round(eval_ms)}
+
+    def list_models(self):
+        import json, urllib.request
+        resp = urllib.request.urlopen(f"{self.base_url}/api/tags", timeout=5)
+        data = json.loads(resp.read())
+        return [{"name": m["name"], "size": m.get("size", 0), "modified": m.get("modified_at", "")}
+                for m in data.get("models", [])]
+
+    def health_check(self):
+        try:
+            import urllib.request
+            urllib.request.urlopen(f"{self.base_url}/api/tags", timeout=2)
+            return True
+        except Exception:
+            return False
+
+
+class LlamaCppBackend(LocalBackend):
+    """llama.cpp server backend (OpenAI-compatible API)."""
+    name = "llama_cpp"
+
+    def __init__(self, base_url="http://localhost:8080"):
+        self.base_url = base_url
+
+    def generate(self, model, prompt, system="", max_tokens=2048, temperature=0.7):
+        import json, urllib.request
+        messages = []
+        if system:
+            messages.append({"role": "system", "content": system})
+        messages.append({"role": "user", "content": prompt})
+        payload = json.dumps({
+            "model": model, "messages": messages,
+            "max_tokens": max_tokens, "temperature": temperature
+        }).encode()
+        req = urllib.request.Request(f"{self.base_url}/v1/chat/completions",
+                                     data=payload,
+                                     headers={"Content-Type": "application/json"})
+        t0 = time.time()
+        resp = urllib.request.urlopen(req, timeout=120)
+        elapsed_ms = (time.time() - t0) * 1000
+        data = json.loads(resp.read())
+        text = data["choices"][0]["message"]["content"] if data.get("choices") else ""
+        usage = data.get("usage", {})
+        tps = usage.get("completion_tokens", 0) / (elapsed_ms / 1000) if elapsed_ms > 0 else 0
+        return {"text": text, "tokens_per_sec": round(tps, 1), "eval_duration_ms": round(elapsed_ms)}
+
+    def list_models(self):
+        import json, urllib.request
+        try:
+            resp = urllib.request.urlopen(f"{self.base_url}/v1/models", timeout=5)
+            data = json.loads(resp.read())
+            return [{"name": m["id"], "size": 0, "modified": ""} for m in data.get("data", [])]
+        except Exception:
+            return []
+
+    def health_check(self):
+        try:
+            import urllib.request
+            urllib.request.urlopen(f"{self.base_url}/v1/models", timeout=2)
+            return True
+        except Exception:
+            return False
+
+
+class LlamafileBackend(LlamaCppBackend):
+    """llamafile backend — same protocol as llama.cpp server."""
+    name = "llamafile"
+
+
+# Backend registry
+_BACKENDS: dict[str, type[LocalBackend]] = {
+    "ollama": OllamaBackend,
+    "llama_cpp": LlamaCppBackend,
+    "llamafile": LlamafileBackend,
+}
+
+
+def get_backend(name="ollama", **kwargs) -> LocalBackend:
+    """Get a local backend by name."""
+    cls = _BACKENDS.get(name, OllamaBackend)
+    return cls(**kwargs)
+
+
+def register_backend(name: str, cls: type[LocalBackend]):
+    """Register a new local backend."""
+    _BACKENDS[name] = cls
+
+
+def _load_backend_config(config: dict) -> dict:
+    """Load backend configuration from fleet.toml [models.backends]."""
+    backends = config.get("models", {}).get("backends", {})
+    return {
+        "default": backends.get("default", "ollama"),
+        "ollama_url": backends.get("ollama_url", "http://localhost:11434"),
+        "llama_cpp_url": backends.get("llama_cpp_url", "http://localhost:8080"),
+    }
+
+
+def search_huggingface(query: str, limit: int = 5) -> list[dict]:
+    """Search HuggingFace Hub for GGUF models."""
+    import json, urllib.request, urllib.parse
+    url = f"https://huggingface.co/api/models?search={urllib.parse.quote(query)}&filter=gguf&sort=downloads&limit={limit}"
+    try:
+        resp = urllib.request.urlopen(url, timeout=10)
+        models = json.loads(resp.read())
+        return [{"id": m["id"], "downloads": m.get("downloads", 0),
+                 "likes": m.get("likes", 0)} for m in models]
+    except Exception:
+        return []
+
 
 # CT-1: Model pricing per million tokens (as of 2025)
 PRICING = {
@@ -322,7 +483,8 @@ def _call_local(system: str, user: str, models: dict, max_tokens: int,
         f"{host}/api/generate", data=body,
         headers={"Content-Type": "application/json"}, method="POST",
     )
-    with urllib.request.urlopen(req, timeout=120) as r:
+    timeout = config.get("fleet", {}).get("local_timeout", 120) if config else 120
+    with urllib.request.urlopen(req, timeout=timeout) as r:
         data = json.loads(r.read())
 
     # Extract Ollama performance metrics
@@ -354,3 +516,33 @@ def _call_local(system: str, user: str, models: dict, max_tokens: int,
         pass  # Usage logging must never break skill execution
 
     return data.get("response", "")
+
+
+# ── v0.23 S3: Agent Affinity Routing (swarm specialization) ──────────────────
+
+def get_agent_affinity(agent_name, skill_name, config):
+    """Check if agent has demonstrated specialization for this skill type.
+
+    Queries the last 24 hours of task history for the agent+skill combo.
+    If the agent has completed >= 5 tasks of this type with > 80% success
+    rate, it has affinity and should be preferred for routing.
+
+    Returns True if the agent has affinity, False otherwise.
+    """
+    try:
+        import db
+        # Query recent success rate for this agent+skill combo
+        conn = db.get_conn()
+        row = conn.execute(
+            "SELECT COUNT(*) as total, "
+            "SUM(CASE WHEN status='DONE' THEN 1 ELSE 0 END) as success "
+            "FROM tasks WHERE assigned_to=? AND type=? "
+            "AND created_at > datetime('now', '-24 hours')",
+            (agent_name, skill_name)
+        ).fetchone()
+        conn.close()
+        if row and row['total'] >= 5 and row['success'] / row['total'] > 0.8:
+            return True  # Agent has affinity for this skill
+    except Exception:
+        pass
+    return False

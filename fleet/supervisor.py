@@ -47,6 +47,14 @@ logging.basicConfig(
 )
 log = logging.getLogger("supervisor")
 
+import json as _json
+
+def _json_log(level, event, **kwargs):
+    """Structured JSON log line for fleet processes (0.22.00 observability)."""
+    import time as _t
+    entry = {"ts": _t.strftime("%Y-%m-%dT%H:%M:%S"), "level": level, "event": event, **kwargs}
+    print(_json.dumps(entry), flush=True)
+
 BASE_ROLES = ["researcher", "coder", "archivist", "analyst", "sales", "onboarding", "implementation", "security", "planner", "legal", "account_manager"]
 PYTHON = sys.executable
 
@@ -69,7 +77,6 @@ dashboard_proc = None
 worker_procs = {}
 training_active = False
 ollama_evicted_for_training = False
-ollama_available = True
 
 
 def start_ollama(gpu=False):
@@ -81,6 +88,7 @@ def start_ollama(gpu=False):
         del env["CUDA_VISIBLE_DEVICES"]
     mode = "GPU" if gpu else "CPU"
     log.info(f"Starting Ollama ({mode} mode)")
+    _json_log("INFO", "ollama_start", mode=mode)
     ollama_proc = subprocess.Popen(
         ["ollama", "serve"], env=env,
         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
@@ -92,6 +100,7 @@ def stop_ollama():
     global ollama_proc
     if ollama_proc and ollama_proc.poll() is None:
         log.info("Stopping Ollama")
+        _json_log("INFO", "ollama_stop")
         ollama_proc.terminate()
         try:
             ollama_proc.wait(timeout=5)
@@ -362,7 +371,7 @@ def write_status_md():
             "",
             "## GPU",
             f"- Training detected: {training_active}",
-            f"- Ollama mode: {'UNAVAILABLE' if not ollama_available else 'CPU-only (training evicted models)' if ollama_evicted_for_training else 'GPU + training coexist' if training_active else 'eco CPU' if config['fleet']['eco_mode'] else 'GPU'}",
+            f"- Ollama mode: {'CPU-only (training evicted models)' if ollama_evicted_for_training else 'GPU + training coexist' if training_active else 'eco CPU' if config['fleet']['eco_mode'] else 'GPU'}",
         ]
         # Marathon training status
         checkpoint_info = _check_training_checkpoints()
@@ -381,6 +390,7 @@ def write_status_md():
 
 def shutdown(sig, frame):
     log.info("Shutting down fleet...")
+    _json_log("INFO", "supervisor_shutdown")
     stop_dashboard()
     stop_openclaw()
     stop_discord_bot()
@@ -482,7 +492,7 @@ def _memory_watchdog(worker_procs_dict, config):
 
 
 def main():
-    global training_active, config, ollama_evicted_for_training, ollama_available
+    global training_active, config, ollama_evicted_for_training
 
     (FLEET_DIR / "logs").mkdir(parents=True, exist_ok=True)
     (FLEET_DIR / "knowledge" / "summaries").mkdir(parents=True, exist_ok=True)
@@ -553,6 +563,8 @@ def main():
 
     mode_label = " [AIR-GAP]" if air_gap else " [OFFLINE]" if offline else ""
     log.info(f"Fleet up — {len(ROLES)} workers, eco={config['fleet']['eco_mode']}{mode_label}")
+    _json_log("INFO", "supervisor_startup", workers=len(ROLES),
+              eco=config["fleet"]["eco_mode"], mode=mode_label.strip() or "normal")
 
     last_status = 0
     last_training_check = 0
@@ -563,15 +575,17 @@ def main():
     last_sup_notes_ts = None  # ISO timestamp of last sup note read
     training_interval = config["fleet"]["training_check_interval_secs"]
     worker_next_start = {}
-    worker_crash_count = {}
-    worker_last_crash = {}
-    BACKOFF_SCHEDULE = [15, 30, 60, 120, 300]  # escalating, capped at 300s
     # Dynamic worker scaling — deferred roles that weren't started at boot
     deferred_roles = ALL_ROLES[max_workers:] if len(ALL_ROLES) > max_workers else []
     last_scale_check = 0
     scale_interval = config.get("fleet", {}).get("worker_scale_interval_secs", 900)
     last_model_recommend = 0
     MODEL_RECOMMEND_INTERVAL = 6 * 3600  # every 6 hours
+    # v0.23 S3: Auto-Intelligence — periodic evolution + research dispatch
+    last_auto_evolution = 0
+    AUTO_EVOLUTION_INTERVAL = 3600  # dispatch evolution_coordinator every 1 hour
+    last_auto_research = 0
+    AUTO_RESEARCH_INTERVAL = 7200  # dispatch research_loop every 2 hours
 
     while True:
         now = time.time()
@@ -591,25 +605,19 @@ def main():
             except Exception as e:
                 log.debug(f"Scale check error: {e}")
 
-        # Restart dead workers with escalating backoff
+        # Restart dead workers with cool-down backoff
         for role in list(worker_procs.keys()):
             proc = worker_procs.get(role)
             if proc and proc.poll() is not None:
+                log.warning(f"Worker '{role}' died (exit={proc.returncode}) — entering 15s cool-down")
+                _json_log("WARNING", "worker_crash", worker=role, exit_code=proc.returncode)
                 worker_procs[role] = None
-                # Reset crash count if worker was stable for 5+ minutes
-                last = worker_last_crash.get(role, 0)
-                if now - last > 300:
-                    worker_crash_count[role] = 0
-                count = worker_crash_count.get(role, 0)
-                backoff = BACKOFF_SCHEDULE[min(count, len(BACKOFF_SCHEDULE) - 1)]
-                worker_crash_count[role] = count + 1
-                worker_last_crash[role] = now
-                log.warning(f"Worker '{role}' died (exit={proc.returncode}) — backoff {backoff}s (crash #{count+1})")
-                worker_next_start[role] = now + backoff
-
+                worker_next_start[role] = now + 15
+                
         for role, next_time in list(worker_next_start.items()):
             if worker_procs.get(role) is None and now >= next_time:
-                log.info(f"Backoff complete. Respawning worker '{role}' (crash count: {worker_crash_count.get(role, 0)})")
+                log.info(f"Cool-down complete. Respawning worker '{role}'")
+                _json_log("INFO", "worker_respawn", worker=role)
                 start_worker(role, config)
                 worker_next_start.pop(role, None)
 
@@ -644,6 +652,7 @@ def main():
             if training_now and not training_active:
                 needs_eviction, reason = training_needs_eviction(config, training_profile)
                 log.info(f"train.py detected (profile={training_profile or 'unknown'}) — {reason}")
+                _json_log("INFO", "training_detected", profile=training_profile or "unknown", reason=reason)
                 training_active = True
 
                 if needs_eviction:
@@ -705,38 +714,10 @@ def main():
                 except Exception as e:
                     log.warning(f"[training] failed to post marathon_log (end): {e}")
 
-        # Log Dr. Ders transitions + Ollama degradation awareness
+        # Log Dr. Ders transitions
         hw_state = read_hw_state()
         if hw_state and hw_state.get("status") == "transitioning":
             log.info(f"Dr. Ders transitioning to {hw_state.get('model')} — workers pausing claims")
-
-        # Graceful Ollama degradation — detect via hw_state or direct probe
-        try:
-            was_available = ollama_available
-            if hw_state:
-                # Dr. Ders tracks model state; empty models_loaded = Ollama down or no models
-                models = hw_state.get("models_loaded")
-                hw_status = hw_state.get("status", "")
-                # Ollama is unavailable if Dr. Ders reports degraded with no models
-                if hw_status == "degraded" and (models is None or len(models) == 0):
-                    ollama_available = False
-                else:
-                    ollama_available = True
-            else:
-                # No hw_state — probe Ollama directly (lightweight /api/tags)
-                try:
-                    urllib.request.urlopen("http://localhost:11434/api/tags", timeout=2)
-                    ollama_available = True
-                except Exception:
-                    ollama_available = False
-
-            # Log transitions
-            if was_available and not ollama_available:
-                log.warning("Ollama unavailable — local model tasks will queue until recovery")
-            elif not was_available and ollama_available:
-                log.info("Ollama recovered — local model tasks can resume")
-        except Exception as e:
-            log.debug(f"Ollama degradation check error: {e}")
 
         # Sup-channel: read inbox + notes every 30s (aligned with status write)
         if now - last_status >= 30:
@@ -766,6 +747,8 @@ def main():
             recovered = db.recover_stale_tasks(STALE_TASK_TIMEOUT)
             for t in recovered:
                 log.warning(f"Recovered stale task {t['id']} ({t['type']}) from {t['assigned_to']}")
+                _json_log("WARNING", "stale_task_recovered", task_id=t["id"],
+                          task_type=t["type"], agent=t["assigned_to"])
             if recovered:
                 try:
                     db.post_note("sup", "supervisor", json.dumps({
@@ -813,6 +796,39 @@ def main():
                     log.warning(f"Watchdog alert: {a['message']}")
             except Exception as e:
                 log.warning(f"Watchdog error: {e}")
+
+        # v0.23 S3: Auto-Intelligence — periodic evolution pipeline dispatch
+        if now - last_auto_evolution >= AUTO_EVOLUTION_INTERVAL:
+            last_auto_evolution = now
+            try:
+                evo_skill_path = FLEET_DIR / "skills" / "evolution_coordinator.py"
+                if evo_skill_path.exists():
+                    # Check if any agent is idle before dispatching
+                    with db.get_conn() as _conn:
+                        idle_agents = _conn.execute(
+                            "SELECT COUNT(*) as cnt FROM agents WHERE status='IDLE' "
+                            "AND (julianday('now') - julianday(last_heartbeat)) * 86400 < 60"
+                        ).fetchone()
+                    if idle_agents and idle_agents["cnt"] > 0:
+                        db.post_task("evolution_coordinator",
+                                     json.dumps({"trigger": "supervisor_periodic"}),
+                                     priority=2)
+                        log.info("Auto-intelligence: dispatched evolution_coordinator pipeline")
+            except Exception as e:
+                log.debug(f"Auto-evolution dispatch error: {e}")
+
+        # v0.23 S3: Auto-Intelligence — periodic research cycle dispatch
+        if now - last_auto_research >= AUTO_RESEARCH_INTERVAL:
+            last_auto_research = now
+            try:
+                research_skill_path = FLEET_DIR / "skills" / "research_loop.py"
+                if research_skill_path.exists():
+                    db.post_task("research_loop",
+                                 json.dumps({"trigger": "supervisor_periodic"}),
+                                 priority=2)
+                    log.info("Auto-intelligence: dispatched research_loop cycle")
+            except Exception as e:
+                log.debug(f"Auto-research dispatch error: {e}")
 
         # Periodic model recommendation — HITL upgrade suggestions (every 6h)
         if now - last_model_recommend >= MODEL_RECOMMEND_INTERVAL:

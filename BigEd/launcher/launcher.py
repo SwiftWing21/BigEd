@@ -14,7 +14,6 @@ import subprocess
 import sys
 import threading
 import time
-import urllib.request
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -23,6 +22,11 @@ import customtkinter as ctk
 from PIL import Image
 import psutil
 import tomlkit
+
+from fleet_api import (
+    fleet_api as _fleet_api_call, fleet_health, fleet_stop,
+    ollama_tags, ollama_ps, ollama_is_running, ollama_keepalive,
+)
 
 # GPU via pynvml (NVIDIA); graceful fallback if unavailable
 try:
@@ -131,21 +135,10 @@ _UPDATE_TRACKED = {
 ctk.set_appearance_mode("dark")
 ctk.set_default_color_theme("dark-blue")
 
-BG       = "#1a1a1a"
-BG2      = "#242424"
-BG3      = "#2d2d2d"
-ACCENT   = "#b22222"
-ACCENT_H = "#8b0000"
-GOLD     = "#c8a84b"
-TEXT     = "#e2e2e2"
-DIM      = "#888888"
-GREEN    = "#4caf50"
-ORANGE   = "#ff9800"
-RED      = "#f44336"
-MONO     = ("Consolas", 11)
-FONT     = ("Segoe UI", 11)
-FONT_SM  = ("Segoe UI", 10)
-FONT_H   = ("Segoe UI", 13, "bold")
+from ui.theme import (
+    BG, BG2, BG3, ACCENT, ACCENT_H, GOLD, TEXT, DIM,
+    GREEN, ORANGE, RED, MONO, FONT, FONT_SM, FONT_H,
+)
 
 
 def _relative_time(iso_str):
@@ -550,16 +543,8 @@ def count_pending_advisories() -> int:
 
 
 def count_waiting_human() -> int:
-    try:
-        db_path = FLEET_DIR / "fleet.db"
-        if db_path.exists():
-            conn = sqlite3.connect(str(db_path), timeout=2)
-            row = conn.execute("SELECT COUNT(*) FROM tasks WHERE status = 'WAITING_HUMAN'").fetchone()
-            conn.close()
-            return row[0] if row else 0
-    except Exception:
-        pass
-    return 0
+    from data_access import FleetDB
+    return FleetDB.count_waiting_human(FLEET_DIR / "fleet.db")
 
 # ─── Tooltip ──────────────────────────────────────────────────────────────────
 class Tooltip:
@@ -685,8 +670,9 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
         if _should_show_walkthrough():
             self._safe_after(500, lambda: WalkthroughDialog(self))
 
-        # Auto-start fleet on launch — no button press needed
-        self._safe_after(1000, self._start_system)
+        # Auto-start fleet on launch — skip if first-run walkthrough is pending
+        if not _should_show_walkthrough():
+            self._safe_after(1000, self._start_system)
 
     _CLOSE_PREFS_FILE = DATA_DIR / "close_preferences.json"
 
@@ -1433,93 +1419,30 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
                           and a.get("role") != "supervisor"]
 
             # Query fleet.db for per-agent task counts + enhanced data
-            agent_task_counts = {}
-            agent_tok_speed = {}     # name -> avg tok/s (float or None)
-            agent_last_result = {}   # name -> truncated last result string
-            agent_waiting = set()    # names with WAITING_HUMAN tasks
+            from data_access import FleetDB
+            db_path = FLEET_DIR / "fleet.db"
+            agent_task_counts = FleetDB.agent_task_counts(db_path)
+            agent_tok_speed = FleetDB.agent_token_speeds(db_path)
+            agent_names = [a.get("name", "") for a in all_agents]
+            agent_last_result = FleetDB.agent_last_results(db_path, agent_names)
+            n_waiting_human, agent_waiting = FleetDB.waiting_human_by_agent(db_path)
             agent_iq_score = {}      # name -> avg intelligence_score (float or None)
-            n_waiting_human = 0      # total WAITING_HUMAN count
-            n_unique_models = 0      # unique loaded Ollama models
             try:
-                db_path = FLEET_DIR / "fleet.db"
-                if db_path.exists():
-                    conn = sqlite3.connect(str(db_path), timeout=2)
-                    conn.row_factory = sqlite3.Row
-                    for row in conn.execute(
-                        "SELECT assigned_to, COUNT(*) as n FROM tasks WHERE status='DONE' GROUP BY assigned_to"
-                    ).fetchall():
-                        if row["assigned_to"]:
-                            agent_task_counts[row["assigned_to"]] = row["n"]
-
-                    # Token speed per agent (last hour)
-                    try:
-                        for row in conn.execute(
-                            "SELECT agent, AVG(tokens_per_sec) as avg_tps FROM usage "
-                            "WHERE tokens_per_sec > 0 AND created_at > datetime('now', '-1 hour') "
-                            "GROUP BY agent"
-                        ).fetchall():
-                            if row["agent"]:
-                                agent_tok_speed[row["agent"]] = round(row["avg_tps"], 1)
-                    except Exception:
-                        pass  # tokens_per_sec column may not exist yet
-
-                    # Last completed task result per agent
-                    try:
-                        for ag_entry in all_agents:
-                            aname = ag_entry.get("name", "")
-                            if not aname:
-                                continue
-                            row = conn.execute(
-                                "SELECT result_json FROM tasks WHERE assigned_to=? AND status='DONE' "
-                                "ORDER BY id DESC LIMIT 1", (aname,)
-                            ).fetchone()
-                            if row and row["result_json"]:
-                                raw = str(row["result_json"]).strip()
-                                # Try to extract a meaningful summary from JSON
-                                try:
-                                    import json as _j
-                                    parsed = _j.loads(raw)
-                                    if isinstance(parsed, dict):
-                                        txt = parsed.get("summary") or parsed.get("output") or parsed.get("status") or parsed.get("error") or raw
-                                    else:
-                                        txt = raw
-                                except Exception:
-                                    txt = raw
-                                txt = str(txt).strip()
-                                if len(txt) > 50:
-                                    txt = txt[:47] + "\u2026"
-                                agent_last_result[aname] = txt
-                    except Exception:
-                        pass
-
-                    # WAITING_HUMAN tasks
-                    try:
-                        wh_rows = conn.execute(
-                            "SELECT assigned_to, COUNT(*) as n FROM tasks WHERE status='WAITING_HUMAN' GROUP BY assigned_to"
-                        ).fetchall()
-                        for row in wh_rows:
-                            n_waiting_human += row["n"]
-                            if row["assigned_to"]:
-                                agent_waiting.add(row["assigned_to"])
-                    except Exception:
-                        pass
-
-                    # Intelligence score per agent (last 24h)
-                    try:
-                        for row in conn.execute(
-                            "SELECT assigned_to, AVG(intelligence_score) as avg_iq "
-                            "FROM tasks WHERE intelligence_score IS NOT NULL "
-                            "AND created_at > datetime('now', '-24 hours') "
-                            "GROUP BY assigned_to"
-                        ).fetchall():
-                            if row["assigned_to"]:
-                                agent_iq_score[row["assigned_to"]] = round(row["avg_iq"], 2)
-                    except Exception:
-                        pass  # intelligence_score column may not exist yet
-
-                    conn.close()
+                import sqlite3 as _sq
+                conn = _sq.connect(str(db_path), timeout=2)
+                conn.row_factory = _sq.Row
+                for row in conn.execute(
+                    "SELECT assigned_to, AVG(intelligence_score) as avg_iq "
+                    "FROM tasks WHERE intelligence_score IS NOT NULL "
+                    "AND created_at > datetime('now', '-24 hours') "
+                    "GROUP BY assigned_to"
+                ).fetchall():
+                    if row["assigned_to"]:
+                        agent_iq_score[row["assigned_to"]] = round(row["avg_iq"], 2)
+                conn.close()
             except Exception:
                 pass
+            n_unique_models = 0      # unique loaded Ollama models
 
             # Count unique loaded Ollama models from hw_state.json
             try:
@@ -1855,44 +1778,13 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
     def _refresh_comm(self):
         """Load WAITING_HUMAN tasks and security advisories into Fleet Comm."""
         def _fetch():
-            waiting = []
+            from data_access import FleetDB
+            waiting = FleetDB.waiting_human_tasks(FLEET_DIR / "fleet.db")
+            # Mark tasks without questions
+            for item in waiting:
+                if not item.get("question"):
+                    item["question"] = "(no question)"
             advisories = []
-            try:
-                db_path = FLEET_DIR / "fleet.db"
-                if db_path.exists():
-                    conn = sqlite3.connect(str(db_path), timeout=5)
-                    try:
-                        conn.row_factory = sqlite3.Row
-                        # Fetch WAITING_HUMAN tasks
-                        rows = conn.execute("""
-                            SELECT t.id, t.type, t.assigned_to, t.created_at
-                            FROM tasks t WHERE t.status = 'WAITING_HUMAN'
-                            ORDER BY t.created_at ASC
-                        """).fetchall()
-                        for r in rows:
-                            item = dict(r)
-                            # Find the question
-                            msg = conn.execute("""
-                                SELECT body_json FROM messages
-                                WHERE to_agent = 'operator'
-                                AND body_json LIKE '%human_input_request%'
-                                AND body_json LIKE ?
-                                ORDER BY id DESC LIMIT 1
-                            """, (f'%"task_id": {r["id"]}%',)).fetchone()
-                            if msg:
-                                try:
-                                    body = json.loads(msg["body_json"])
-                                    item["question"] = body.get("question", "")
-                                except Exception:
-                                    item["question"] = ""
-                            else:
-                                item["question"] = "(no question)"
-                            waiting.append(item)
-                    finally:
-                        conn.close()
-            except Exception:
-                pass
-            # Security advisories
             try:
                 if PENDING_DIR.exists():
                     for f in sorted(PENDING_DIR.glob("advisory_*.md"))[:10]:
@@ -2014,40 +1906,15 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
             return
         def _bg():
             try:
-                db_path = FLEET_DIR / "fleet.db"
-                conn = sqlite3.connect(str(db_path), timeout=5)
-                try:
-                    conn.row_factory = sqlite3.Row
-                    row = conn.execute(
-                        "SELECT assigned_to, payload_json FROM tasks WHERE id=?",
-                        (task_id,)).fetchone()
-                    if row:
-                        agent = row["assigned_to"]
-                        try:
-                            payload = json.loads(row["payload_json"]) if row["payload_json"] else {}
-                        except Exception:
-                            payload = {}
-                        payload["_human_response"] = response
-                        conn.execute("""
-                            UPDATE tasks SET status='PENDING', payload_json=?
-                            WHERE id=? AND status='WAITING_HUMAN'
-                        """, (json.dumps(payload), task_id))
-                        if agent:
-                            conn.execute("""
-                                INSERT INTO messages (from_agent, to_agent, body_json)
-                                VALUES ('operator', ?, ?)
-                            """, (agent, json.dumps({
-                                "type": "human_response",
-                                "task_id": task_id,
-                                "response": response,
-                            })))
-                        conn.commit()
-                finally:
-                    conn.close()
-                self._safe_after(0, lambda: (
-                    self._log_output(f"Response sent to task #{task_id}"),
-                    self._refresh_comm()
-                ))
+                from data_access import FleetDB
+                ok = FleetDB.send_human_response(FLEET_DIR / "fleet.db", task_id, response)
+                if ok:
+                    self._safe_after(0, lambda: (
+                        self._log_output(f"Response sent to task #{task_id}"),
+                        self._refresh_comm()
+                    ))
+                else:
+                    self._safe_after(0, lambda: self._log_output(f"Task #{task_id} not found"))
             except Exception as e:
                 self._safe_after(0, lambda: self._log_output(f"Send error: {e}"))
         threading.Thread(target=_bg, daemon=True).start()
@@ -2162,36 +2029,9 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
 
     def _refresh_model_perf(self):
         """Query fleet.db for per-model tok/s metrics and update the panel."""
-        try:
-            db_path = FLEET_DIR / "fleet.db"
-            if not db_path.exists():
-                return
-            conn = sqlite3.connect(str(db_path), timeout=2)
-            conn.row_factory = sqlite3.Row
-            try:
-                rows = conn.execute("""
-                    SELECT u.model,
-                           ROUND(AVG(u.tokens_per_sec), 1) as avg_tps,
-                           COUNT(*) as calls,
-                           ROUND(AVG(u.eval_duration_ms), 0) as avg_ms,
-                           (SELECT ROUND(AVG(t.intelligence_score), 2)
-                            FROM tasks t
-                            WHERE t.model = u.model
-                              AND t.intelligence_score IS NOT NULL
-                              AND t.created_at > datetime('now', '-1 hour')
-                           ) as avg_iq
-                    FROM usage u
-                    WHERE u.created_at > datetime('now', '-1 hour')
-                      AND u.tokens_per_sec > 0
-                    GROUP BY u.model
-                    ORDER BY avg_tps DESC
-                """).fetchall()
-            except sqlite3.OperationalError:
-                # tokens_per_sec / eval_duration_ms columns don't exist yet
-                conn.close()
-                return
-            conn.close()
-        except Exception:
+        from data_access import FleetDB
+        rows = FleetDB.model_performance(FLEET_DIR / "fleet.db")
+        if rows is None:
             return
 
         # Update UI on main thread
@@ -2286,12 +2126,11 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
             self._log_output(STATUS_MD.read_text())
         # Check Ollama status natively via HTTP API
         def _check_ollama():
-            try:
-                with urllib.request.urlopen("http://localhost:11434/api/tags", timeout=3) as r:
-                    data = json.loads(r.read())
+            data = ollama_tags()
+            if data:
                 models = [m["name"] for m in data.get("models", [])]
                 msg = f"Ollama running\nModels: {', '.join(models)}"
-            except Exception:
+            else:
                 msg = "Ollama not running"
             self._safe_after(0, lambda: self._log_output(msg))
         threading.Thread(target=_check_ollama, daemon=True).start()
@@ -2537,39 +2376,9 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
     def _refresh_action_items(self):
         """Fetch HITL tasks and advisories in background, update action cards."""
         def _fetch():
-            waiting, advisories = [], []
-            try:
-                db_path = FLEET_DIR / "fleet.db"
-                if db_path.exists():
-                    conn = sqlite3.connect(str(db_path), timeout=2)
-                    try:
-                        conn.row_factory = sqlite3.Row
-                        rows = conn.execute("""
-                            SELECT t.id, t.type, t.assigned_to, t.created_at
-                            FROM tasks t WHERE t.status = 'WAITING_HUMAN'
-                            ORDER BY t.created_at ASC
-                        """).fetchall()
-                        for r in rows:
-                            item = dict(r)
-                            msg = conn.execute("""
-                                SELECT body_json FROM messages
-                                WHERE to_agent = 'operator'
-                                AND body_json LIKE '%human_input_request%'
-                                AND body_json LIKE ?
-                                ORDER BY id DESC LIMIT 1
-                            """, (f'%"task_id": {r["id"]}%',)).fetchone()
-                            item["question"] = ""
-                            if msg:
-                                try:
-                                    body = json.loads(msg["body_json"])
-                                    item["question"] = body.get("question", "")
-                                except Exception:
-                                    pass
-                            waiting.append(item)
-                    finally:
-                        conn.close()
-            except Exception:
-                pass
+            from data_access import FleetDB
+            waiting = FleetDB.waiting_human_tasks(FLEET_DIR / "fleet.db")
+            advisories = []
             try:
                 if PENDING_DIR.exists():
                     for f in sorted(PENDING_DIR.glob("advisory_*.md"))[:10]:
@@ -2893,27 +2702,12 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
         detail format: "model GPU(queued) VRAM | conductor" or similar.
         Reads hw_state.json for conductor status when available.
         """
-        try:
-            with urllib.request.urlopen(
-                "http://localhost:11434/api/tags", timeout=2
-            ) as r:
-                json.loads(r.read())  # just confirm server is up
-        except Exception:
+        if not ollama_is_running():
             return False, "not reachable", False
 
         # Get queued task count from fleet.db
-        queued = 0
-        try:
-            db_path = FLEET_DIR / "fleet.db"
-            if db_path.exists():
-                conn = sqlite3.connect(str(db_path), timeout=2)
-                row = conn.execute(
-                    "SELECT COUNT(*) FROM tasks WHERE status IN ('PENDING','RUNNING','WAITING')"
-                ).fetchone()
-                queued = row[0] if row else 0
-                conn.close()
-        except Exception:
-            pass
+        from data_access import FleetDB
+        queued = FleetDB.queued_task_count(FLEET_DIR / "fleet.db")
         queue_str = f"({queued})" if queued else ""
 
         # Determine CPU/GPU mode
@@ -2934,27 +2728,23 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
             pass
 
         # Server is up — check if a model is currently loaded in VRAM
-        try:
-            with urllib.request.urlopen(
-                "http://localhost:11434/api/ps", timeout=2
-            ) as r:
-                data = json.loads(r.read())
-                models = data.get("models", [])
-                if models:
-                    names = [m["name"].split(":")[0] for m in models]
-                    vram_str = ""
-                    if _GPU_OK and not eco:
-                        try:
-                            mem = pynvml.nvmlDeviceGetMemoryInfo(_GPU_HANDLE)
-                            vram_str = f" {mem.used/1e9:.1f}GB"
-                        except Exception:
-                            pass
-                    model_list = "+".join(names) if len(names) <= 2 else f"{names[0]}+{len(names)-1}"
-                    return True, f"{model_list} {mode_str}{queue_str}{vram_str}{conductor_suffix}", True
-                else:
-                    return True, f"idle {mode_str}{queue_str} — unloaded{conductor_suffix}", False
-        except Exception:
-            return True, f"up {mode_str}{queue_str}{conductor_suffix}", False
+        ps_data = ollama_ps()
+        if ps_data is not None:
+            models = ps_data.get("models", [])
+            if models:
+                names = [m["name"].split(":")[0] for m in models]
+                vram_str = ""
+                if _GPU_OK and not eco:
+                    try:
+                        mem = pynvml.nvmlDeviceGetMemoryInfo(_GPU_HANDLE)
+                        vram_str = f" {mem.used/1e9:.1f}GB"
+                    except Exception:
+                        pass
+                model_list = "+".join(names) if len(names) <= 2 else f"{names[0]}+{len(names)-1}"
+                return True, f"{model_list} {mode_str}{queue_str}{vram_str}{conductor_suffix}", True
+            else:
+                return True, f"idle {mode_str}{queue_str} — unloaded{conductor_suffix}", False
+        return True, f"up {mode_str}{queue_str}{conductor_suffix}", False
 
     def _get_complex_provider(self) -> str:
         try:
@@ -3004,17 +2794,7 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
 
     def _send_keepalive(self, model: str):
         """Ping Ollama with keep_alive=-1 to prevent model unload."""
-        try:
-            body = json.dumps({"model": model, "prompt": "", "keep_alive": "-1"}).encode()
-            req = urllib.request.Request(
-                "http://localhost:11434/api/generate",
-                data=body, method="POST",
-                headers={"Content-Type": "application/json"},
-            )
-            with urllib.request.urlopen(req, timeout=5):
-                pass
-        except Exception:
-            pass
+        ollama_keepalive(model)
 
     def _schedule_ollama_watch(self):
         try:
@@ -3107,11 +2887,7 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
 
     def _is_ollama_running(self) -> bool:
         """Check if Ollama is running via HTTP API (cross-platform)."""
-        try:
-            urllib.request.urlopen("http://localhost:11434/api/tags", timeout=2)
-            return True
-        except Exception:
-            return False
+        return ollama_is_running()
 
     def _run_ollama_start(self, callback=None):
         """Start Ollama natively on Windows, poll until responsive."""
@@ -3170,36 +2946,23 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
 
     def _ollama_status(self):
         def _bg():
-            try:
-                with urllib.request.urlopen("http://localhost:11434/api/tags", timeout=3) as r:
-                    data = json.loads(r.read())
+            data = ollama_tags()
+            if data:
                 models = [m["name"] for m in data.get("models", [])]
                 msg = f"Ollama running\nModels: {', '.join(models)}"
-            except Exception:
+            else:
                 msg = "Ollama not running"
             self._safe_after(0, lambda: self._log_output(msg))
         threading.Thread(target=_bg, daemon=True).start()
 
-    # ── REST API helpers (v0.45: TECH_DEBT 4.3) ─────────────────────────────
+    # ── REST API helpers (delegated to fleet_api.py — TECH_DEBT 4.3) ────────
     def _fleet_api(self, endpoint, method="GET", json_data=None):
         """Call fleet dashboard REST API. Returns dict or None on failure."""
-        port = 5555  # from fleet.toml dashboard.port
-        url = f"http://localhost:{port}{endpoint}"
-        try:
-            if method == "POST":
-                data = json.dumps(json_data or {}).encode()
-                req = urllib.request.Request(url, data=data, method="POST",
-                                            headers={"Content-Type": "application/json"})
-            else:
-                req = urllib.request.Request(url)
-            with urllib.request.urlopen(req, timeout=5) as resp:
-                return json.loads(resp.read())
-        except Exception:
-            return None
+        return _fleet_api_call(endpoint, method=method, json_data=json_data)
 
     def _check_fleet_health(self):
         """Quick health check via REST API."""
-        return self._fleet_api("/api/fleet/health")
+        return fleet_health()
 
     # ── Fleet commands ────────────────────────────────────────────────────────
     def _recover_agent(self, role: str):

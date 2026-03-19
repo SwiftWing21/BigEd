@@ -265,9 +265,25 @@ def _cleanup_children():
             pass
 
 
+_last_evolution_pipeline = 0   # epoch timestamp of last evolution_coordinator dispatch
+_last_research_trigger = 0    # epoch timestamp of last research_loop dispatch
+_EVOLUTION_COOLDOWN = 3600    # 1 hour between evolution pipeline runs
+_RESEARCH_COOLDOWN = 7200     # 2 hours between research cycle runs
+_IDLE_MINUTES_FOR_EVOLUTION = 5  # agent must be idle this long to trigger pipeline
+
+
 def _run_idle_evolution(agent_name, config):
-    """Run one idle skill evolution cycle."""
+    """Run one idle skill evolution cycle.
+
+    v0.23: Also triggers evolution_coordinator pipeline and research_loop
+    when agents are idle, enabling fleet self-improvement without operator
+    intervention.
+    """
+    global _last_evolution_pipeline, _last_research_trigger
     log = logging.getLogger(agent_name)
+    now = time.time()
+
+    # --- Original: skill_test on least-evolved skill ---
     try:
         skill = db.get_least_evolved_skill()
         if not skill:
@@ -285,6 +301,35 @@ def _run_idle_evolution(agent_name, config):
         db.log_idle_run(agent_name, skill)
     except Exception as e:
         log.debug(f"Idle evolution skipped: {e}")
+
+    # --- v0.23 S3: Auto-trigger evolution pipeline on idle ---
+    try:
+        if (now - _last_evolution_pipeline >= _EVOLUTION_COOLDOWN):
+            # Verify evolution_coordinator skill exists before dispatching
+            skills_dir = Path(__file__).parent / "skills"
+            if (skills_dir / "evolution_coordinator.py").exists():
+                log.info("Idle mode: dispatching evolution_coordinator pipeline")
+                db.post_task("evolution_coordinator",
+                             json.dumps({"trigger": "auto_idle", "agent": agent_name}),
+                             priority=2)
+                _last_evolution_pipeline = now
+                db.log_idle_run(agent_name, "evolution_coordinator")
+    except Exception as e:
+        log.debug(f"Evolution pipeline dispatch skipped: {e}")
+
+    # --- v0.23 S3: Auto-trigger research cycle on knowledge gaps ---
+    try:
+        if (now - _last_research_trigger >= _RESEARCH_COOLDOWN):
+            skills_dir = Path(__file__).parent / "skills"
+            if (skills_dir / "research_loop.py").exists():
+                log.info("Idle mode: dispatching research_loop cycle")
+                db.post_task("research_loop",
+                             json.dumps({"trigger": "auto_idle", "agent": agent_name}),
+                             priority=2)
+                _last_research_trigger = now
+                db.log_idle_run(agent_name, "research_loop")
+    except Exception as e:
+        log.debug(f"Research cycle dispatch skipped: {e}")
 
 
 def main():
@@ -469,10 +514,19 @@ def main():
                         log.info(f"Task {task['id']} REVIEW PASS → done")
                         # Intelligence scoring (non-blocking)
                         try:
-                            from intelligence import score_task_output
+                            from intelligence import score_task_output, score_task_output_tier2
                             intel_score = score_task_output(task['type'], result, config)
                             if intel_score is not None:
                                 db.update_intelligence_score(task['id'], intel_score)
+                            # v0.23 Tier 2: LLM-based quality eval (sampled ~10%)
+                            t2_score = score_task_output_tier2(
+                                task['type'], task.get('payload_json', ''),
+                                result, config)
+                            if t2_score is not None:
+                                # Blend: 60% Tier1 + 40% Tier2
+                                blended = round(0.6 * (intel_score or 0.5) + 0.4 * t2_score, 3)
+                                db.update_intelligence_score(task['id'], blended)
+                                log.info(f"Task {task['id']} Tier2 score: {t2_score:.3f} → blended: {blended:.3f}")
                         except Exception:
                             pass  # scoring must never block task processing
                 else:
@@ -480,10 +534,19 @@ def main():
                     log.info(f"Task {task['id']} done")
                     # Intelligence scoring (non-blocking)
                     try:
-                        from intelligence import score_task_output
+                        from intelligence import score_task_output, score_task_output_tier2
                         intel_score = score_task_output(task['type'], result, config)
                         if intel_score is not None:
                             db.update_intelligence_score(task['id'], intel_score)
+                        # v0.23 Tier 2: LLM-based quality eval (sampled ~10%)
+                        t2_score = score_task_output_tier2(
+                            task['type'], task.get('payload_json', ''),
+                            result, config)
+                        if t2_score is not None:
+                            # Blend: 60% Tier1 + 40% Tier2
+                            blended = round(0.6 * (intel_score or 0.5) + 0.4 * t2_score, 3)
+                            db.update_intelligence_score(task['id'], blended)
+                            log.info(f"Task {task['id']} Tier2 score: {t2_score:.3f} → blended: {blended:.3f}")
                     except Exception:
                         pass  # scoring must never block task processing
                 # CT-4: Post-execution budget check

@@ -6,6 +6,15 @@ Each dialog is a CTkToplevel window that manages a specific configuration area:
 - SettingsDialog:     unified settings with nav sidebar (General, Models, HW, Keys, Review, Ops)
 - AgentNamesDialog:   per-agent custom display name editor
 - KeyManagerDialog:   API key viewer / editor with WSL secret store
+
+── Tab Sections ──────────────────────────────────────────────────────────
+This file contains 6 tab builders. Future refactor: split each into its own module.
+1. General Settings    — _build_general_panel   (~line 158)
+2. Models Settings     — _build_models_panel    (~line 332)
+3. Hardware Settings   — _build_hardware_panel  (~line 539)
+4. API Keys Settings   — _build_keys_panel      (~line 580)
+5. Review Settings     — _build_review_panel    (~line 606)
+6. Operations Settings — _build_operations_panel (~line 632)
 """
 import base64
 import json
@@ -17,22 +26,11 @@ from pathlib import Path
 import customtkinter as ctk
 import psutil
 
-# ─── Theme constants (copied from launcher.py — dialogs are standalone) ───────
-BG       = "#1a1a1a"
-BG2      = "#242424"
-BG3      = "#2d2d2d"
-ACCENT   = "#b22222"
-ACCENT_H = "#8b0000"
-GOLD     = "#c8a84b"
-TEXT     = "#e2e2e2"
-DIM      = "#888888"
-GREEN    = "#4caf50"
-ORANGE   = "#ff9800"
-RED      = "#f44336"
-MONO     = ("Consolas", 11)
-FONT     = ("Segoe UI", 11)
-FONT_SM  = ("Segoe UI", 10)
-FONT_H   = ("Segoe UI", 13, "bold")
+# ─── Theme (single source of truth) ──────────────────────────────────────────
+from ui.theme import (
+    BG, BG2, BG3, ACCENT, ACCENT_H, GOLD, TEXT, DIM,
+    GREEN, ORANGE, RED, MONO, FONT, FONT_SM, FONT_H,
+)
 
 # ─── Lazy imports from launcher ──────────────────────────────────────────────
 # These are resolved at runtime to avoid circular imports.
