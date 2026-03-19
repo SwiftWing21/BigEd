@@ -269,11 +269,8 @@ def probe_provider_health(provider: str) -> dict:
         if provider == "claude":
             import anthropic
             client = anthropic.Anthropic(api_key=os.environ.get("ANTHROPIC_API_KEY", ""))
-            # Minimal request — just check auth works
-            client.messages.create(
-                model="claude-haiku-4-5", max_tokens=1,
-                messages=[{"role": "user", "content": "hi"}],
-            )
+            # Auth check only — no inference, no token cost
+            client.models.list(limit=1)
         elif provider == "gemini":
             import urllib.request as _ur
             req = _ur.Request(

@@ -66,6 +66,7 @@ def call_complex(system: str, user: str, config: dict, max_tokens: int = 2048, c
         provider = "local"
 
     # CT-4: Budget check with configurable enforcement
+    budget = None  # cached for reuse in cost estimation below
     try:
         budget = check_budget(skill_name, config)
         if budget and budget["exceeded"]:
@@ -95,12 +96,10 @@ def call_complex(system: str, user: str, config: dict, max_tokens: int = 2048, c
     try:
         estimated_input_tokens = len(system.split()) + len(user.split())  # rough word→token estimate (* 1.3)
         estimated_input_tokens = int(estimated_input_tokens * 1.3)
-        from providers import PRICING
         model_id = models.get("complex", "claude-sonnet-4-6")
         rates = PRICING.get(model_id, PRICING.get("claude-sonnet-4-6", {}))
         estimated_cost = estimated_input_tokens * rates.get("input", 3.0) / 1_000_000
-        # Check against budget
-        budget = check_budget(skill_name, config)
+        # Reuse budget from earlier check (avoid second DB query)
         if budget and budget.get("enforcement") == "block":
             remaining = budget.get("remaining_usd", 999)
             if estimated_cost > remaining:

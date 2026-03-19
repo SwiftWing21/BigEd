@@ -15,6 +15,7 @@ import sys
 import threading
 import time
 import urllib.request
+from datetime import datetime, timezone
 from pathlib import Path
 
 import tkinter as tk
@@ -145,6 +146,27 @@ MONO     = ("Consolas", 11)
 FONT     = ("Segoe UI", 11)
 FONT_SM  = ("Segoe UI", 10)
 FONT_H   = ("Segoe UI", 13, "bold")
+
+
+def _relative_time(iso_str):
+    """Convert ISO datetime string to relative time like '2m ago', '1h ago'."""
+    try:
+        dt = datetime.fromisoformat(iso_str.replace("Z", "+00:00"))
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        delta = datetime.now(timezone.utc) - dt
+        secs = int(delta.total_seconds())
+        if secs < 60:
+            return f"{secs}s ago"
+        mins = secs // 60
+        if mins < 60:
+            return f"{mins}m ago"
+        hrs = mins // 60
+        if hrs < 24:
+            return f"{hrs}h ago"
+        return f"{hrs // 24}d ago"
+    except Exception:
+        return ""
 
 
 # ─── Agent Name Themes ───────────────────────────────────────────────────────
@@ -1266,13 +1288,16 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
 
         act_hdr = ctk.CTkFrame(actions_frame, fg_color="transparent")
         act_hdr.grid(row=0, column=0, sticky="ew")
-        act_hdr.grid_columnconfigure(1, weight=1)
+        act_hdr.grid_columnconfigure(2, weight=1)
         ctk.CTkLabel(act_hdr, text="ACTIONS",
                      font=("Segoe UI", 9, "bold"), text_color=GOLD
-                     ).grid(row=0, column=0, padx=8, pady=(4, 2), sticky="w")
+                     ).grid(row=0, column=0, padx=(8, 2), pady=(4, 2), sticky="w")
+        ctk.CTkLabel(act_hdr, text="(R to refresh)",
+                     font=("Consolas", 8), text_color=DIM
+                     ).grid(row=0, column=1, padx=(0, 4), pady=(4, 2), sticky="w")
         self._actions_count_lbl = ctk.CTkLabel(
             act_hdr, text="", font=("Consolas", 9), text_color=DIM)
-        self._actions_count_lbl.grid(row=0, column=1, padx=8, pady=(4, 2), sticky="e")
+        self._actions_count_lbl.grid(row=0, column=2, padx=8, pady=(4, 2), sticky="e")
 
         self._actions_scroll = ctk.CTkScrollableFrame(
             actions_frame, fg_color=BG2, corner_radius=0, height=180)
@@ -1404,6 +1429,7 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
             agent_tok_speed = {}     # name -> avg tok/s (float or None)
             agent_last_result = {}   # name -> truncated last result string
             agent_waiting = set()    # names with WAITING_HUMAN tasks
+            agent_iq_score = {}      # name -> avg intelligence_score (float or None)
             n_waiting_human = 0      # total WAITING_HUMAN count
             n_unique_models = 0      # unique loaded Ollama models
             try:
@@ -1452,8 +1478,8 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
                                 except Exception:
                                     txt = raw
                                 txt = str(txt).strip()
-                                if len(txt) > 45:
-                                    txt = txt[:42] + "..."
+                                if len(txt) > 50:
+                                    txt = txt[:47] + "\u2026"
                                 agent_last_result[aname] = txt
                     except Exception:
                         pass
@@ -1469,6 +1495,19 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
                                 agent_waiting.add(row["assigned_to"])
                     except Exception:
                         pass
+
+                    # Intelligence score per agent (last 24h)
+                    try:
+                        for row in conn.execute(
+                            "SELECT assigned_to, AVG(intelligence_score) as avg_iq "
+                            "FROM tasks WHERE intelligence_score IS NOT NULL "
+                            "AND created_at > datetime('now', '-24 hours') "
+                            "GROUP BY assigned_to"
+                        ).fetchall():
+                            if row["assigned_to"]:
+                                agent_iq_score[row["assigned_to"]] = round(row["avg_iq"], 2)
+                    except Exception:
+                        pass  # intelligence_score column may not exist yet
 
                     conn.close()
             except Exception:
@@ -1525,6 +1564,10 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
 
                 # Compute display values
                 display_name = themed_name(name)
+                if len(display_name) > 18:
+                    display_name = display_name[:16] + "\u2026"
+                if task_display and len(task_display) > 40:
+                    task_display = task_display[:38] + "\u2026"
                 dot_color = GREEN if st in ("IDLE", "BUSY") else RED
                 if st == "BUSY":
                     status_text, status_color = "ACTIVE", GREEN
@@ -1543,6 +1586,13 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
                 tps_text = f"{tps} tok/s" if tps is not None else "\u2014 tok/s"
                 last_result = agent_last_result.get(name, "")
                 is_waiting = name in agent_waiting
+                iq = agent_iq_score.get(name)
+                if iq is not None:
+                    iq_text = f"IQ: {iq:.2f}"
+                    iq_color = GREEN if iq >= 0.7 else ORANGE if iq >= 0.4 else RED
+                else:
+                    iq_text = "IQ: --"
+                    iq_color = DIM
 
                 if name in self._agent_cards:
                     # Update existing card
@@ -1558,6 +1608,7 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
                     c["model_lbl"].configure(text=model_text)
                     c["tps_lbl"].configure(text=tps_text)
                     c["last_result_lbl"].configure(text=last_result)
+                    c["iq_lbl"].configure(text=iq_text, text_color=iq_color)
                     # WAITING_HUMAN indicator
                     if is_waiting:
                         c["waiting_badge"].configure(text="Needs Input")
@@ -1572,7 +1623,7 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
                         display_name, status_text, status_color, dot_color,
                         name_color, task_display, spark, spark_color,
                         count_text, ag, model_text, tps_text, last_result,
-                        is_waiting)
+                        is_waiting, iq_text, iq_color)
 
             # Hide stale cards
             for key, c in self._agent_cards.items():
@@ -1585,7 +1636,7 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
                            status_text, status_color, dot_color, name_color,
                            task_display, spark, spark_color, count_text, agent_data,
                            model_text="", tps_text="\u2014 tok/s", last_result="",
-                           is_waiting=False):
+                           is_waiting=False, iq_text="IQ: --", iq_color=DIM):
         """Create a single agent dashboard card and return widget dict."""
         border_w = 2 if is_waiting else 0
         border_c = ORANGE if is_waiting else BG2
@@ -1618,6 +1669,11 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
         tps_lbl = ctk.CTkLabel(card, text=tps_text,
                                font=("Consolas", 8), text_color=DIM)
         tps_lbl.place(relx=1.0, x=-8, y=24, anchor="ne")
+
+        # Intelligence score (next to tok/s line)
+        iq_lbl = ctk.CTkLabel(card, text=iq_text,
+                               font=("Consolas", 8), text_color=iq_color)
+        iq_lbl.place(relx=1.0, x=-70, y=24, anchor="ne")
 
         # Current task
         task_lbl = ctk.CTkLabel(card, text=task_display,
@@ -1658,7 +1714,7 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
             "spark_lbl": spark_lbl, "count_lbl": count_lbl,
             "edit_btn": edit_btn, "model_lbl": model_lbl,
             "tps_lbl": tps_lbl, "last_result_lbl": last_result_lbl,
-            "waiting_badge": waiting_badge,
+            "waiting_badge": waiting_badge, "iq_lbl": iq_lbl,
         }
 
     def _agents_add_dialog(self):
@@ -1739,6 +1795,29 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
         except Exception as e:
             print(f"[DB] init error: {e}")
 
+
+    # ── Fleet Comm helpers ──────────────────────────────────────────────────
+    @staticmethod
+    def _fmt_ago(iso_ts):
+        """Return relative timestamp like '3m ago' from an ISO timestamp string."""
+        if not iso_ts:
+            return ""
+        try:
+            from datetime import datetime, timezone
+            ts = datetime.fromisoformat(iso_ts.replace("Z", "+00:00"))
+            if ts.tzinfo is None:
+                ts = ts.replace(tzinfo=timezone.utc)
+            now = datetime.now(timezone.utc)
+            delta = (now - ts).total_seconds()
+            if delta < 60:
+                return f"{int(delta)}s ago"
+            if delta < 3600:
+                return f"{int(delta // 60)}m ago"
+            if delta < 86400:
+                return f"{int(delta // 3600)}h ago"
+            return f"{int(delta // 86400)}d ago"
+        except Exception:
+            return ""
 
     # ── Fleet Comm tab ─────────────────────────────────────────────────────
     def _build_tab_comm(self, parent):
@@ -1830,29 +1909,44 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
             self._comm_cards.clear()
 
             total = len(waiting) + len(advisories)
-            self._comm_status.configure(
-                text=f"{len(waiting)} pending | {len(advisories)} advisories" if total else "no pending items")
+            if total:
+                self._comm_status.configure(
+                    text=f"{total} pending", text_color=ORANGE)
+            else:
+                self._comm_status.configure(
+                    text="All clear", text_color=GREEN)
 
             if not total:
-                lbl = ctk.CTkLabel(self._comm_scroll, text="No pending human input requests.",
+                lbl = ctk.CTkLabel(self._comm_scroll, text="No pending communications",
                                    font=FONT, text_color=DIM)
-                lbl.pack(pady=20)
+                lbl.pack(pady=40)
                 self._comm_cards.append(lbl)
                 return
 
             # Render WAITING_HUMAN cards
             for item in waiting:
-                card = ctk.CTkFrame(self._comm_scroll, fg_color=BG2, corner_radius=6)
-                card.pack(fill="x", padx=4, pady=3)
-                self._comm_cards.append(card)
+                # Outer wrapper with orange left accent stripe
+                wrapper = ctk.CTkFrame(self._comm_scroll, fg_color=ORANGE, corner_radius=6)
+                wrapper.pack(fill="x", padx=4, pady=3)
+                self._comm_cards.append(wrapper)
+                card = ctk.CTkFrame(wrapper, fg_color=BG2, corner_radius=6)
+                card.pack(fill="both", expand=True, padx=(2, 0))
 
-                # Header row
+                # Header row: title left, timestamp right
                 top = ctk.CTkFrame(card, fg_color="transparent")
-                top.pack(fill="x", padx=8, pady=(6, 0))
-                ctk.CTkLabel(top, text=f"Task #{item['id']}: {item['type']}",
-                             font=("Segoe UI", 11, "bold"), text_color=GOLD).pack(side="left")
-                ctk.CTkLabel(top, text=f"Agent: {item.get('assigned_to', '?')}",
-                             font=FONT_SM, text_color=DIM).pack(side="right")
+                top.pack(fill="x", padx=8, pady=(8, 0))
+                # Left side: type + agent stacked
+                hdr_left = ctk.CTkFrame(top, fg_color="transparent")
+                hdr_left.pack(side="left")
+                ctk.CTkLabel(hdr_left, text=item.get("type", "task"),
+                             font=("Segoe UI", 10, "bold"), text_color=TEXT).pack(anchor="w")
+                ctk.CTkLabel(hdr_left, text=item.get("assigned_to", "?"),
+                             font=("Segoe UI", 8), text_color=DIM).pack(anchor="w")
+                # Right side: relative timestamp
+                ago = self._fmt_ago(item.get("created_at"))
+                if ago:
+                    ctk.CTkLabel(top, text=ago,
+                                 font=("Segoe UI", 8), text_color=DIM).pack(side="right")
 
                 # Question
                 ctk.CTkLabel(card, text=item.get("question", ""),
@@ -1861,7 +1955,7 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
 
                 # Reply field + send button
                 reply_frame = ctk.CTkFrame(card, fg_color="transparent")
-                reply_frame.pack(fill="x", padx=8, pady=(4, 6))
+                reply_frame.pack(fill="x", padx=8, pady=(4, 8))
                 reply_frame.grid_columnconfigure(0, weight=1)
 
                 reply_var = ctk.StringVar()
@@ -1884,19 +1978,19 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
                 self._comm_cards.append(card)
 
                 top = ctk.CTkFrame(card, fg_color="transparent")
-                top.pack(fill="x", padx=8, pady=(6, 6))
-                ctk.CTkLabel(top, text=f"Advisory: {adv['title']}",
-                             font=("Segoe UI", 11, "bold"), text_color=ORANGE).pack(side="left")
+                top.pack(fill="x", padx=8, pady=(8, 8))
+                ctk.CTkLabel(top, text=f"\U0001f512 {adv['title']}",
+                             font=("Segoe UI", 10, "bold"), text_color=ORANGE).pack(side="left")
                 ctk.CTkButton(
                     top, text="Approve", width=70, height=24,
-                    fg_color="#1e3a1e", hover_color="#2a4a2a",
-                    font=FONT_SM,
+                    fg_color=GREEN, hover_color="#388e3c",
+                    font=FONT_SM, text_color="#ffffff",
                     command=lambda p=adv["path"]: self._approve_advisory(p),
                 ).pack(side="right", padx=(4, 0))
                 ctk.CTkButton(
                     top, text="Dismiss", width=70, height=24,
                     fg_color=BG3, hover_color=BG,
-                    font=FONT_SM,
+                    font=FONT_SM, text_color=DIM,
                     command=lambda p=adv["path"]: self._dismiss_advisory(p),
                 ).pack(side="right")
 
@@ -2034,13 +2128,13 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
         ctk.CTkLabel(frame, text="\u26a1 MODEL PERFORMANCE",
                      font=("Segoe UI", 9, "bold"), text_color=GOLD,
                      anchor="w").grid(row=0, column=0, padx=8, pady=(4, 2),
-                                      sticky="w", columnspan=4)
+                                      sticky="w", columnspan=5)
 
         # Column headers
         hdr_frame = ctk.CTkFrame(frame, fg_color="transparent")
         hdr_frame.grid(row=1, column=0, sticky="ew", padx=4)
         for col_idx, (hdr_text, width, anchor) in enumerate([
-            ("Model", 100, "w"), ("tok/s", 55, "e"),
+            ("Model", 100, "w"), ("tok/s", 55, "e"), ("IQ", 40, "e"),
             ("Calls", 45, "e"), ("Avg ms", 55, "e"),
         ]):
             ctk.CTkLabel(hdr_frame, text=hdr_text, font=("Consolas", 8),
@@ -2068,14 +2162,20 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
             conn.row_factory = sqlite3.Row
             try:
                 rows = conn.execute("""
-                    SELECT model,
-                           ROUND(AVG(tokens_per_sec), 1) as avg_tps,
+                    SELECT u.model,
+                           ROUND(AVG(u.tokens_per_sec), 1) as avg_tps,
                            COUNT(*) as calls,
-                           ROUND(AVG(eval_duration_ms), 0) as avg_ms
-                    FROM usage
-                    WHERE created_at > datetime('now', '-1 hour')
-                      AND tokens_per_sec > 0
-                    GROUP BY model
+                           ROUND(AVG(u.eval_duration_ms), 0) as avg_ms,
+                           (SELECT ROUND(AVG(t.intelligence_score), 2)
+                            FROM tasks t
+                            WHERE t.model = u.model
+                              AND t.intelligence_score IS NOT NULL
+                              AND t.created_at > datetime('now', '-1 hour')
+                           ) as avg_iq
+                    FROM usage u
+                    WHERE u.created_at > datetime('now', '-1 hour')
+                      AND u.tokens_per_sec > 0
+                    GROUP BY u.model
                     ORDER BY avg_tps DESC
                 """).fetchall()
             except sqlite3.OperationalError:
@@ -2107,7 +2207,13 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
             tps_val = r["avg_tps"] or 0
             calls_val = r["calls"] or 0
             avg_ms_val = int(r["avg_ms"] or 0)
+            iq_val = r["avg_iq"]
             tps_color = GREEN if tps_val == best_tps else TEXT
+            if iq_val is not None:
+                iq_text = f"{iq_val:.2f}"
+                iq_color = GREEN if iq_val >= 0.7 else (ORANGE if iq_val >= 0.4 else RED)
+            else:
+                iq_text, iq_color = "--", DIM
 
             if model in self._model_perf_labels:
                 # Update existing labels
@@ -2116,10 +2222,12 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
                 lbl["name"].grid(row=i, column=0, padx=2, pady=1)
                 lbl["tps"].configure(text=f"{tps_val:.1f}", text_color=tps_color)
                 lbl["tps"].grid(row=i, column=1, padx=2, pady=1)
+                lbl["iq"].configure(text=iq_text, text_color=iq_color)
+                lbl["iq"].grid(row=i, column=2, padx=2, pady=1)
                 lbl["calls"].configure(text=str(calls_val))
-                lbl["calls"].grid(row=i, column=2, padx=2, pady=1)
+                lbl["calls"].grid(row=i, column=3, padx=2, pady=1)
                 lbl["avg_ms"].configure(text=str(avg_ms_val))
-                lbl["avg_ms"].grid(row=i, column=3, padx=2, pady=1)
+                lbl["avg_ms"].grid(row=i, column=4, padx=2, pady=1)
             else:
                 # Create new row labels
                 parent = self._model_perf_data_frame
@@ -2130,16 +2238,20 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
                                         font=("Consolas", 9, "bold"),
                                         text_color=tps_color, anchor="e", width=55)
                 tps_lbl.grid(row=i, column=1, padx=2, pady=1)
+                iq_lbl = ctk.CTkLabel(parent, text=iq_text,
+                                       font=("Consolas", 9),
+                                       text_color=iq_color, anchor="e", width=40)
+                iq_lbl.grid(row=i, column=2, padx=2, pady=1)
                 calls_lbl = ctk.CTkLabel(parent, text=str(calls_val),
                                           font=("Consolas", 9),
                                           text_color=TEXT, anchor="e", width=45)
-                calls_lbl.grid(row=i, column=2, padx=2, pady=1)
+                calls_lbl.grid(row=i, column=3, padx=2, pady=1)
                 ms_lbl = ctk.CTkLabel(parent, text=str(avg_ms_val),
                                        font=("Consolas", 9),
                                        text_color=TEXT, anchor="e", width=55)
-                ms_lbl.grid(row=i, column=3, padx=2, pady=1)
+                ms_lbl.grid(row=i, column=4, padx=2, pady=1)
                 self._model_perf_labels[model] = {
-                    "name": name_lbl, "tps": tps_lbl,
+                    "name": name_lbl, "tps": tps_lbl, "iq": iq_lbl,
                     "calls": calls_lbl, "avg_ms": ms_lbl,
                 }
 
@@ -2486,12 +2598,20 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
 
             for item in waiting:
                 card = ctk.CTkFrame(self._actions_scroll, fg_color=BG3, corner_radius=6)
-                card.pack(fill="x", padx=2, pady=2)
+                card.pack(fill="x", padx=2, pady=(1, 1))
                 self._action_cards.append(card)
                 agent_name = item.get("assigned_to", "?")
-                ctk.CTkLabel(card, text=f"\U0001f916 {agent_name} — Task #{item['id']}",
-                             font=("Segoe UI", 10, "bold"), text_color=GOLD
-                             ).pack(fill="x", padx=6, pady=(4, 0), anchor="w")
+                card_hdr = ctk.CTkFrame(card, fg_color="transparent")
+                card_hdr.pack(fill="x", padx=6, pady=(4, 0))
+                card_hdr.grid_columnconfigure(0, weight=1)
+                ctk.CTkLabel(card_hdr, text=f"\U0001f916 {agent_name} — Task #{item['id']}",
+                             font=("Segoe UI", 10, "bold"), text_color=GOLD,
+                             anchor="w").grid(row=0, column=0, sticky="w")
+                rel = _relative_time(item.get("created_at", ""))
+                if rel:
+                    ctk.CTkLabel(card_hdr, text=rel, font=("Consolas", 8),
+                                 text_color=DIM, anchor="e"
+                                 ).grid(row=0, column=1, sticky="e")
                 question = item.get("question", "")[:120]
                 ctk.CTkLabel(card, text=question, font=FONT_SM,
                              text_color=TEXT, wraplength=280, anchor="w", justify="left"
@@ -2506,7 +2626,7 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
 
             for adv in advisories:
                 card = ctk.CTkFrame(self._actions_scroll, fg_color="#2a1a1a", corner_radius=6)
-                card.pack(fill="x", padx=2, pady=2)
+                card.pack(fill="x", padx=2, pady=(1, 1))
                 self._action_cards.append(card)
                 top = ctk.CTkFrame(card, fg_color="transparent")
                 top.pack(fill="x", padx=6, pady=(4, 4))

@@ -31,21 +31,21 @@
 
 ## Scoreboard
 
-> Last updated: **v0.21.03** | Audited by: Opus (2026-03-19)
+> Last updated: **v0.21.04** | Audited by: Opus (2026-03-19)
 
 | Dimension | Grade | Trend | Key Gap |
 |-----------|-------|-------|---------|
 | **Architecture / SoC** | A | → | launcher.py still 4,561 LOC; TECH_DEBT 4.3/4.4 open |
-| **Code Quality** | A | ↑ | Deferred imports in providers; double budget check |
+| **Code Quality** | A | ↑ | Deferred imports in providers; P1-01/P2-01 resolved |
 | **Testing** | A- | → | 22/22 smoke; no per-skill unit tests; dashboard untested |
 | **Security** | B+ | ↑ | OWASP B+, 26 controls; prod config not hardened by default |
 | **Reliability / S1** | B+ | ↑ | 8 MEDIUM issues open; S1 milestone (0.21.00) planned |
 | **Observability / S2** | B | → | JSON logging not unified; no `/api/health` aggregate |
-| **Usability / UX** | A- | ↑ | HITL inline added; settings dialog could split further |
+| **Usability / UX** | A | ↑ | IQ on cards, timestamps, Fleet Comm modernized |
 | **Dynamic Abilities** | A | → | HA fallback, circuit breaker, VRAM scaling all active |
 | **Module / Plugin Support** | B+ | → | 6 modules; no formal manifest/discovery registry |
 | **Data Processing + HITL** | A | ↑ | Intelligence scoring live (0.21.03); HITL model recs active |
-| **Performance** | A | → | Tok/s tracking live; token estimation inaccurate for code |
+| **Performance** | A | ↑ | Health probe no longer burns tokens (P1-02 fixed) |
 | **Documentation** | A | → | CLAUDE.md thorough; compliance docs complete |
 | **Overall** | **A-** | ↑ | S-tier path clear via 0.21.00→0.24.00 milestones |
 
@@ -61,17 +61,15 @@
 
 ### HIGH (P1) — Fix before next milestone
 
-#### P1-01 — Double budget DB query per inference call
+#### P1-01 — Double budget DB query per inference call [DONE v0.21.04]
 **File:** `fleet/skills/_models.py:61,94`
 **Detail:** `check_budget()` is called twice in `call_complex()` — once for enforcement check (line 61), once for cost pre-estimation (line 94). Each call hits `db.get_usage_summary()`. High-frequency skills (flashcard, rag_query) run this 2x per task.
-**Fix:** Cache result from first call, pass to second check. Single DB round-trip.
-**Target:** 0.21.02 or 0.22.00
+**Fix:** Cached result from first call, reused in second check. Single DB round-trip.
 
-#### P1-02 — Claude health probe burns API tokens
+#### P1-02 — Claude health probe burns API tokens [DONE v0.21.04]
 **File:** `fleet/providers.py:268-273`
 **Detail:** `probe_provider_health("claude")` sends a real 1-token inference request to validate auth. At scale (Dr. Ders keepalive ~240s), this adds real cost and quota consumption.
-**Fix:** Replace with an `anthropic.Anthropic().models.list()` call or auth-only check (no inference). Or add a TTL cache so probe runs at most once per 5 minutes.
-**Target:** 0.21.02
+**Fix:** Replaced `client.messages.create()` with `client.models.list(limit=1)` — auth-only, zero inference cost.
 
 #### P1-03 — Budget throttle blocks worker thread
 **File:** `fleet/skills/_models.py:73`
@@ -83,11 +81,10 @@
 
 ### MEDIUM (P2) — Fix within 2 milestones
 
-#### P2-01 — Redundant import inside function body
+#### P2-01 — Redundant import inside function body [DONE v0.21.04]
 **File:** `fleet/skills/_models.py:89`
 **Detail:** `from providers import PRICING` on line 89 is already imported at the module top (line 14). Redundant in-function import — harmless but misleading.
-**Fix:** Remove the in-function import. Already available at module scope.
-**Target:** 0.21.02
+**Fix:** Removed the in-function import. Already available at module scope.
 
 #### P2-02 — Token estimation is word-count-based (inaccurate for code)
 **File:** `fleet/skills/_models.py:87-88`
@@ -366,6 +363,11 @@
 | HA fallback cascade | Claude→Gemini→Local with circuit breaker | v0.45 |
 | Swarm 3-tier intelligence | Evolution, research, specialization | 0.17–0.19 |
 | Cost tracking CT-1/2/3/4 | Token budgets, cost attribution, enforcement | v0.31–v0.38 |
+| Double budget check (P1-01) | Cached first check_budget() result, single DB round-trip | v0.21.04 |
+| Health probe token burn (P1-02) | client.models.list(limit=1) replaces inference call | v0.21.04 |
+| Redundant import (P2-01) | Removed in-function `from providers import PRICING` | v0.21.04 |
+| Fleet tab IQ scores | Intelligence score on agent cards (color-coded thresholds) | v0.21.04 |
+| Fleet Comm modernization | Orange accent stripe, stacked headers, counter badge | v0.21.04 |
 
 ---
 

@@ -296,13 +296,23 @@ Completed 2026-03-19. Three major features:
 
 Smoke: 22/22. Skills: 74.
 
-### 0.21.04 — UX Polish + Fleet Tab Refinement [PLANNED]
-- **Goal:** Refine the Fleet tab and status displays post-swarm dashboard overhaul
-- **Grading Alignment:** Usability/UX → A- to A | Est: S (~3-5k tokens)
-- Fleet tab: refine card layout, fix clipped labels, intelligence score on cards
-- Model Performance panel: add intelligence score column alongside tok/s
-- Action panel: improve card density, add timestamps, keyboard shortcuts
-- Fleet Comm tab: modernize to match new swarm dashboard aesthetic
+### 0.21.04 — UX Polish + Fleet Tab Refinement + P1 Fixes [DONE]
+
+Completed 2026-03-19. UX refinements and audit fixes across 3 files:
+
+**Fleet tab agent cards:** Intelligence score (IQ: 0.85) on each card with color coding (green/orange/red by threshold). Agent name truncated to 18 chars, task label to 40, last result to 50 — eliminates clipped labels.
+
+**Model Performance panel:** New IQ column (avg intelligence_score per model, last 1h) alongside tok/s, calls, avg ms. Color-coded thresholds.
+
+**Action panel:** Relative timestamps ("3m ago") on WAITING_HUMAN cards. Tighter card density (1px padding). "(R to refresh)" keyboard hint on header.
+
+**Fleet Comm tab modernization:** Orange left accent stripe on WAITING_HUMAN cards. Stacked header (task type bold + agent name dim + relative timestamp right). Counter badge: "N pending" (orange) / "All clear" (green). Advisory cards: lock icon prefix, green Approve button, gray Dismiss. Centered empty state.
+
+**P1-01 fix:** Double `check_budget()` call eliminated — cached result reused for cost estimation (single DB round-trip).
+
+**P1-02 fix:** Claude health probe replaced `client.messages.create()` with `client.models.list(limit=1)` — zero inference cost.
+
+**P2-01 fix:** Redundant `from providers import PRICING` in-function import removed.
 
 ### 0.21.00 — S1: Reliability (99.99% uptime)
 - **Goal:** Close all P2-06/07/08 reliability gaps, achieve zero unhandled crashes
@@ -386,14 +396,14 @@ Smoke: 22/22. Skills: 74.
 
 ## Audit Coverage Check (per AUDIT_TRACKER.md)
 
-> Reviewed at v0.21.03.
+> Reviewed at v0.21.04.
 
-- **Criteria fully covered:** Architecture/SoC (A), Code Quality (A), Dynamic Abilities (A), Performance (A), Documentation (A), Data Processing+HITL (A)
-- **Criteria partially covered:** Testing (A-, no per-skill unit tests), Security (B+, SQLCipher/TLS/RBAC planned), Usability/UX (A-, Fleet tab needs polish), Module/Plugin Support (B+, no manifest)
+- **Criteria fully covered:** Architecture/SoC (A), Code Quality (A), Dynamic Abilities (A), Performance (A), Documentation (A), Data Processing+HITL (A), Usability/UX (A)
+- **Criteria partially covered:** Testing (A-, no per-skill unit tests), Security (B+, SQLCipher/TLS/RBAC planned), Module/Plugin Support (B+, no manifest)
 - **Criteria not addressed this cycle:** Observability/S2 (B, planned 0.22.00), Reliability/S1 (B+, planned 0.21.00)
 
-**P1 issues remaining:** P1-01 (double budget query), P1-02 (health probe cost), P1-03 (throttle blocks thread)
-**P2 issues remaining:** P2-01 through P2-09 (all tracked, targets assigned)
+**P1 issues remaining:** P1-03 (throttle blocks thread)
+**P2 issues remaining:** P2-02 through P2-09 (all tracked, targets assigned)
 
 ---
 
