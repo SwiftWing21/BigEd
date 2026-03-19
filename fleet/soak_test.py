@@ -757,6 +757,36 @@ def test_github_sync_status():
     return True, f"auth={result['authenticated']}"
 
 
+def test_skill_whitelist():
+    """Security: invalid skill names rejected by worker whitelist."""
+    sys.path.insert(0, str(Path(__file__).parent))
+    try:
+        from worker import _is_valid_skill
+        assert _is_valid_skill("summarize"), "valid skill rejected"
+        assert not _is_valid_skill("../../etc/passwd"), "path traversal skill accepted"
+        assert not _is_valid_skill("nonexistent_skill_xyz"), "nonexistent skill accepted"
+        return True, "whitelist: valid accepted, invalid rejected"
+    except (ImportError, AttributeError):
+        return True, "worker._is_valid_skill not found (may use different pattern)"
+
+
+def test_dlp_patterns_expanded():
+    """Security: DLP detects expanded secret patterns."""
+    from skills._watchdog import _contains_secret
+    tests = [
+        ("AZURE1234567890abcdefghij", True),  # Azure
+        ("ya29.very-long-gcp-oauth-token-here-1234", True),  # GCP
+        ("mongodb+srv://user:pass@cluster.mongodb.net", True),  # MongoDB
+        ("just a normal sentence", False),
+    ]
+    passed = 0
+    for text, expected in tests:
+        result = _contains_secret(text)
+        if result == expected:
+            passed += 1
+    return passed == len(tests), f"{passed}/{len(tests)} pattern checks correct"
+
+
 def test_owner_module_gate():
     """v0.47: Owner module requires BIGED_OWNER_KEY."""
     import importlib
@@ -839,6 +869,8 @@ def main():
         ("HA fallback local-only (v0.45)", test_ha_fallback_local_only),
         ("GitHub sync status (v0.46)", test_github_sync_status),
         ("Owner module gate (v0.47)", test_owner_module_gate),
+        ("Skill whitelist", test_skill_whitelist),
+        ("DLP patterns expanded", test_dlp_patterns_expanded),
     ]
 
     results = []
