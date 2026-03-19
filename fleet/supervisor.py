@@ -566,6 +566,8 @@ def main():
     deferred_roles = ALL_ROLES[max_workers:] if len(ALL_ROLES) > max_workers else []
     last_scale_check = 0
     scale_interval = config.get("fleet", {}).get("worker_scale_interval_secs", 900)
+    last_model_recommend = 0
+    MODEL_RECOMMEND_INTERVAL = 6 * 3600  # every 6 hours
 
     while True:
         now = time.time()
@@ -771,6 +773,15 @@ def main():
                     log.warning(f"Watchdog alert: {a['message']}")
             except Exception as e:
                 log.warning(f"Watchdog error: {e}")
+
+        # Periodic model recommendation — HITL upgrade suggestions (every 6h)
+        if now - last_model_recommend >= MODEL_RECOMMEND_INTERVAL:
+            last_model_recommend = now
+            try:
+                db.post_task("model_recommend", json.dumps({"action": "analyze"}), priority=3)
+                log.info("Dispatched model_recommend analysis task")
+            except Exception as e:
+                log.debug(f"Model recommend dispatch error: {e}")
 
         # Write status snapshot
         if now - last_status >= 30:

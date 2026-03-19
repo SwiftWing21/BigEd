@@ -146,6 +146,8 @@ def init_db():
             conn.execute("ALTER TABLE tasks ADD COLUMN conditions TEXT")
         if "classification" not in cols:
             conn.execute("ALTER TABLE tasks ADD COLUMN classification TEXT DEFAULT 'internal'")
+        if "intelligence_score" not in cols:
+            conn.execute("ALTER TABLE tasks ADD COLUMN intelligence_score REAL DEFAULT NULL")
         # Migrate messages: add channel column if missing
         msg_cols = {r[1] for r in conn.execute("PRAGMA table_info(messages)").fetchall()}
         if "channel" not in msg_cols:
@@ -160,6 +162,31 @@ def init_db():
             conn.execute("ALTER TABLE usage ADD COLUMN prompt_duration_ms REAL DEFAULT NULL")
         if "tokens_per_sec" not in usage_cols:
             conn.execute("ALTER TABLE usage ADD COLUMN tokens_per_sec REAL DEFAULT NULL")
+        if "provider" not in usage_cols:
+            conn.execute("ALTER TABLE usage ADD COLUMN provider TEXT DEFAULT NULL")
+
+
+def update_intelligence_score(task_id, score):
+    """Store intelligence quality score (0.0-1.0) for a completed task."""
+    def _do():
+        with get_conn() as conn:
+            conn.execute("UPDATE tasks SET intelligence_score=? WHERE id=?", (score, task_id))
+    _retry_write(_do)
+
+
+def get_skill_quality_stats(hours=24):
+    """Return avg intelligence_score per skill over recent window."""
+    with get_conn() as conn:
+        rows = conn.execute("""
+            SELECT type as skill,
+                   ROUND(AVG(intelligence_score), 3) as avg_score,
+                   COUNT(*) as sample_count
+            FROM tasks
+            WHERE intelligence_score IS NOT NULL
+              AND created_at >= datetime('now', ?)
+            GROUP BY type ORDER BY avg_score DESC
+        """, (f"-{hours} hours",)).fetchall()
+        return [dict(r) for r in rows]
 
 
 def register_agent(name, role, pid):

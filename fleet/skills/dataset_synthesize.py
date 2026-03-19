@@ -1,8 +1,9 @@
 """v0.49: Synthetic dataset generation for ML training (autoresearch pipeline)."""
 import json
+import sys
 from datetime import datetime
 from pathlib import Path
-from skills._models import call_complex
+from skills._models import call_complex, get_last_provider
 
 SKILL_NAME = "dataset_synthesize"
 DESCRIPTION = "Generate synthetic JSONL training datasets for the autoresearch ML pipeline"
@@ -10,6 +11,38 @@ REQUIRES_NETWORK = False  # can use local Ollama
 
 FLEET_DIR = Path(__file__).parent.parent
 DATASETS_DIR = FLEET_DIR / "knowledge" / "datasets"
+
+
+# ---------------------------------------------------------------------------
+# ToS: Gemini-sourced content excluded — Google ToS prohibits using Gemini
+# output to train competing models. Defense-in-depth: check both thread-local
+# provider tag (Approach B) and usage table (Approach A).
+# ---------------------------------------------------------------------------
+
+def _is_gemini_sourced_by_provider() -> bool:
+    """Check thread-local: did the last call_complex() use Gemini?"""
+    return get_last_provider() == "gemini"
+
+
+def _is_gemini_sourced_by_db(task_id) -> bool:
+    """Check usage table: was this task served by Gemini?"""
+    if task_id is None:
+        return False
+    try:
+        import db
+        with db.get_conn() as conn:
+            row = conn.execute(
+                "SELECT model, provider FROM usage WHERE task_id=? ORDER BY id DESC LIMIT 1",
+                (task_id,)
+            ).fetchone()
+            if row:
+                if (row["provider"] or "").lower() == "gemini":
+                    return True
+                if "gemini" in (row["model"] or "").lower():
+                    return True
+    except Exception:
+        pass
+    return False
 
 
 # ---------------------------------------------------------------------------
@@ -88,6 +121,9 @@ def _gen_conversation(topic: str, index: int, config: dict) -> dict | None:
         _CONVERSATION_SYSTEM, user_prompt, config,
         max_tokens=512, skill_name="dataset_synthesize",
     )
+    # ToS: Gemini-sourced content excluded
+    if _is_gemini_sourced_by_provider():
+        return None
     entry = _parse_json_response(raw)
     if entry is None or "messages" not in entry:
         return None
@@ -112,6 +148,9 @@ def _gen_instruction(topic: str, index: int, config: dict) -> dict | None:
         _INSTRUCTION_SYSTEM, user_prompt, config,
         max_tokens=512, skill_name="dataset_synthesize",
     )
+    # ToS: Gemini-sourced content excluded
+    if _is_gemini_sourced_by_provider():
+        return None
     entry = _parse_json_response(raw)
     if entry is None or "instruction" not in entry or "output" not in entry:
         return None
@@ -133,6 +172,9 @@ def _gen_tinystories(topic: str, index: int, config: dict) -> dict | None:
         _TINYSTORIES_SYSTEM, user_prompt, config,
         max_tokens=512, skill_name="dataset_synthesize",
     )
+    # ToS: Gemini-sourced content excluded
+    if _is_gemini_sourced_by_provider():
+        return None
     entry = _parse_json_response(raw)
     if entry is None or "text" not in entry:
         return None
@@ -161,13 +203,21 @@ def run(payload: dict, config: dict) -> str:
     gen = generators.get(format_type, _gen_instruction)
 
     entries = []
+    gemini_excluded = 0
     for i in range(count):
         try:
             entry = gen(topic, i, config)
-            if entry:
+            if entry is None and _is_gemini_sourced_by_provider():
+                # ToS: Gemini-sourced content excluded
+                gemini_excluded += 1
+            elif entry:
                 entries.append(entry)
         except Exception as e:
             entries.append({"error": str(e), "index": i})
+
+    if gemini_excluded > 0:
+        print(f"[ToS] dataset_synthesize: excluded {gemini_excluded}/{count} samples "
+              f"(Gemini-sourced, cannot train competing models)", file=sys.stderr)
 
     # Write JSONL
     with open(output_path, "w", encoding="utf-8") as f:
@@ -178,6 +228,7 @@ def run(payload: dict, config: dict) -> str:
         "status": "ok",
         "format": format_type,
         "count": len(entries),
+        "gemini_excluded": gemini_excluded,
         "output": str(output_path),
         "topic": topic,
     })

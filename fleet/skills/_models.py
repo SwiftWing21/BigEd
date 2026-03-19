@@ -9,6 +9,15 @@ Providers:
   local   — Ollama local model (same as config['models']['local'])
 """
 import os
+import threading
+
+# Thread-local tracking of which provider served the last call_complex()
+_last_provider = threading.local()
+
+
+def get_last_provider():
+    """Return the provider that served the last call_complex() in this thread."""
+    return getattr(_last_provider, 'name', 'unknown')
 
 from providers import (
     PRICING, FALLBACK_CHAIN, calculate_cost,
@@ -137,6 +146,9 @@ def call_complex(system: str, user: str, config: dict, max_tokens: int = 2048, c
                                       skill_name=skill_name, task_id=task_id, agent_name=agent_name)
 
             _circuit_record_success(prov)
+
+            # ToS: Tag which provider served this response (for Gemini exclusion in training)
+            _last_provider.name = prov
 
             if i > 0:
                 fallback_used = prov

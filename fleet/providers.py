@@ -195,6 +195,7 @@ def _call_claude(system: str, user: str, models: dict, max_tokens: int, cache_sy
                     cache_create_tokens=getattr(resp.usage, "cache_creation_input_tokens", 0) or 0,
                     cost_usd=calculate_cost(resp.usage, model_id),
                     task_id=task_id, agent=agent_name,
+                    provider="claude",
                 )
             except Exception:
                 pass  # Usage logging must never break skill execution
@@ -251,6 +252,7 @@ def _call_gemini(system: str, user: str, models: dict, max_tokens: int,
                     getattr(usage, "candidates_token_count", 0) or 0,
                     model_name),
                 task_id=task_id, agent=agent_name,
+                provider="gemini",
             )
     except Exception:
         pass
@@ -346,6 +348,7 @@ def _call_local(system: str, user: str, models: dict, max_tokens: int,
             cache_read_tokens=0, cache_create_tokens=0,
             cost_usd=0.0,
             task_id=task_id, agent=agent_name,
+            provider="local",
             eval_duration_ms=eval_duration_ms,
             prompt_duration_ms=prompt_duration_ms,
             tokens_per_sec=tok_per_sec if tok_per_sec > 0 else None,

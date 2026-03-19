@@ -467,9 +467,25 @@ def main():
                     else:
                         db.complete_task(task['id'], json.dumps(result))
                         log.info(f"Task {task['id']} REVIEW PASS → done")
+                        # Intelligence scoring (non-blocking)
+                        try:
+                            from intelligence import score_task_output
+                            intel_score = score_task_output(task['type'], result, config)
+                            if intel_score is not None:
+                                db.update_intelligence_score(task['id'], intel_score)
+                        except Exception:
+                            pass  # scoring must never block task processing
                 else:
                     db.complete_task(task['id'], json.dumps(result))
                     log.info(f"Task {task['id']} done")
+                    # Intelligence scoring (non-blocking)
+                    try:
+                        from intelligence import score_task_output
+                        intel_score = score_task_output(task['type'], result, config)
+                        if intel_score is not None:
+                            db.update_intelligence_score(task['id'], intel_score)
+                    except Exception:
+                        pass  # scoring must never block task processing
                 # CT-4: Post-execution budget check
                 try:
                     from skills._models import check_budget

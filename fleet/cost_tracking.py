@@ -17,18 +17,18 @@ def log_usage(skill, model, input_tokens, output_tokens,
               cache_read_tokens=0, cache_create_tokens=0,
               cost_usd=0.0, task_id=None, agent=None,
               eval_duration_ms=None, prompt_duration_ms=None,
-              tokens_per_sec=None):
+              tokens_per_sec=None, provider=None):
     """Insert a usage record after each API call. Must never raise."""
     def _do():
         with _get_conn() as conn:
             conn.execute(
                 """INSERT INTO usage (skill, model, input_tokens, output_tokens,
                    cache_read_tokens, cache_create_tokens, cost_usd, task_id, agent,
-                   eval_duration_ms, prompt_duration_ms, tokens_per_sec)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                   eval_duration_ms, prompt_duration_ms, tokens_per_sec, provider)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (skill, model, input_tokens, output_tokens,
                  cache_read_tokens, cache_create_tokens, cost_usd, task_id, agent,
-                 eval_duration_ms, prompt_duration_ms, tokens_per_sec),
+                 eval_duration_ms, prompt_duration_ms, tokens_per_sec, provider),
             )
     _retry_write(_do)
 
