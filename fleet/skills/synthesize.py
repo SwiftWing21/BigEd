@@ -4,7 +4,6 @@ Used to produce business pitch, agent prep docs, or strategic reports.
 Uses Sonnet for synthesis quality — this is a high-value, infrequent call.
 """
 import json
-import os
 from datetime import date
 from pathlib import Path
 

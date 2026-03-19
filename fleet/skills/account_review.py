@@ -9,7 +9,6 @@ Payload:
   focus       str   "upgrades" | "cost" | "all" (default: "all")
   threshold   int   usage_pct threshold to flag for upgrade (default: 70)
 """
-import json
 import sqlite3
 from datetime import datetime
 from pathlib import Path

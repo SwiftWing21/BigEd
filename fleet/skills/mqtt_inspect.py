@@ -18,7 +18,6 @@ Returns: {action, messages: [...], count, duration_sec}
 """
 import json
 import os
-import sys
 import threading
 import time
 from datetime import datetime

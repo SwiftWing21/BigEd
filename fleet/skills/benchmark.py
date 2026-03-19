@@ -12,7 +12,6 @@ Output: knowledge/reports/benchmark_<skill>_<date>.md
 Returns: {skill, total_runs, passed, failed, avg_ms, min_ms, max_ms, error_rate}
 """
 import importlib
-import json
 import time
 from datetime import datetime
 from pathlib import Path

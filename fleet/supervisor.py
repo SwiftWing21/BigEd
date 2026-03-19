@@ -17,6 +17,7 @@ sys.path.insert(0, str(FLEET_DIR))
 
 import db
 from config import load_config, is_offline, is_air_gap
+from marathon import is_training_running, _check_training_checkpoints, _evict_gpu_models
 
 
 def _load_secrets():
@@ -63,14 +64,6 @@ openclaw_proc = None
 dashboard_proc = None
 worker_procs = {}
 training_active = False
-
-
-def is_training_running():
-    try:
-        r = subprocess.run(["pgrep", "-f", "[t]rain\\.py"], capture_output=True, text=True)
-        return r.returncode == 0
-    except Exception:
-        return False
 
 
 def start_ollama(gpu=False):
@@ -246,49 +239,6 @@ def _warmup_conductor(config):
         log.info(f"Conductor model '{model}' warmed up on CPU")
     except Exception as e:
         log.warning(f"Conductor warmup failed: {e}")
-
-
-def _evict_gpu_models(config):
-    """Pre-flight VRAM eviction: unload all GPU models before training starts.
-    Sends keep_alive=0 to each loaded model so PyTorch gets clean VRAM."""
-    host = config.get("models", {}).get("ollama_host", "http://localhost:11434")
-    try:
-        with urllib.request.urlopen(f"{host}/api/ps", timeout=3) as r:
-            data = json.loads(r.read())
-        for model in data.get("models", []):
-            name = model.get("name", "")
-            if not name:
-                continue
-            body = json.dumps({"model": name, "keep_alive": 0}).encode()
-            req = urllib.request.Request(
-                f"{host}/api/generate", data=body,
-                headers={"Content-Type": "application/json"}, method="POST",
-            )
-            try:
-                with urllib.request.urlopen(req, timeout=5) as resp:
-                    resp.read()
-                log.info(f"Evicted model '{name}' from VRAM")
-            except Exception:
-                pass
-    except Exception as e:
-        log.warning(f"VRAM eviction best-effort failed: {e}")
-
-
-def _check_training_checkpoints():
-    """Monitor autoresearch checkpoints directory for training progress."""
-    checkpoint_dir = FLEET_DIR.parent / "autoresearch" / "checkpoints"
-    if not checkpoint_dir.exists():
-        return None
-    checkpoints = sorted(checkpoint_dir.glob("*.pt"), key=lambda f: f.stat().st_mtime, reverse=True)
-    if not checkpoints:
-        return None
-    latest = checkpoints[0]
-    return {
-        "latest": latest.name,
-        "count": len(checkpoints),
-        "mtime": latest.stat().st_mtime,
-        "size_mb": round(latest.stat().st_size / 1e6, 1),
-    }
 
 
 def write_status_md():

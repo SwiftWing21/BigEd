@@ -9,10 +9,8 @@ Actions:
   infer    — use Ollama to infer purpose + suggest skill wiring for a new key
   wire     — insert env usage into a skill file (requires approval payload)
 """
-import json
 import os
 import re
-import sys
 from pathlib import Path
 
 from skills._models import call_complex

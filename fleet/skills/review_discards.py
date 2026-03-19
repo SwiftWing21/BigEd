@@ -7,7 +7,6 @@ All results saved to knowledge/reports/ and returned to Ollama context.
 """
 import csv
 import json
-import os
 from datetime import date
 from pathlib import Path
 

@@ -30,7 +30,6 @@ Returns: {files_scanned, findings: [{file, severity, category, line, detail}], a
 import ast
 import json
 import re
-from collections import Counter
 from datetime import datetime
 from pathlib import Path
 

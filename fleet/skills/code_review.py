@@ -14,7 +14,6 @@ Payload:
 
 Output: knowledge/code_reviews/<filename>_review_<date>.md
 """
-import json
 import re
 from datetime import datetime
 from pathlib import Path

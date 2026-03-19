@@ -15,7 +15,6 @@ Payload:
 Returns:
   {"summary": str, "diff": str, "files_changed": list, "commit": str, "saved_to": str}
 """
-import json
 import os
 import re
 import subprocess

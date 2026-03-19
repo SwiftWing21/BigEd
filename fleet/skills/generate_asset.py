@@ -4,7 +4,6 @@ Supports: icon, banner, color_scheme, sd_prompt (Stable Diffusion prompt queue).
 Saves outputs to knowledge/design/
 """
 import json
-import random
 from datetime import datetime
 from pathlib import Path
 

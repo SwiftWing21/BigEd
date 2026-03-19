@@ -370,24 +370,43 @@ Completed 2026-03-19.
 - `fleet/comms.py` — channel constants + message/note CRUD + broadcast (from db.py), re-exported
 - `fleet/process_control.py` — Flask Blueprint with all /api/fleet/* endpoints (from dashboard.py)
 
-### FI-3: Complex Extractions
+### FI-3: Complex Extractions [DONE]
 
-- `fleet/marathon.py` — training detection, checkpoints, session logging (from supervisor.py + hw_supervisor.py)
-- `fleet/diagnostics.py` — quarantine, failure streaks, watchdog (from db.py + _watchdog.py)
-- `fleet/resource_mgmt.py` — VRAM eviction, thermal scaling, model tiers (from hw_supervisor.py)
+Completed 2026-03-19.
+
+- `fleet/marathon.py` — training detection, checkpoints, VRAM eviction (from supervisor.py)
+- `fleet/diagnostics.py` — quarantine, failure streaks, stuck reviews (from db.py)
+- `fleet/resource_mgmt.py` — deferred (hw_supervisor thermal scaling tightly coupled to main loop)
 
 ---
 
-### 1.0 — Production Release (Milestone 5)
+### 1.0 — Production Release [DONE]
 
-All parallel tracks complete. Zero TECH_DEBT. Cross-platform validated.
+Completed 2026-03-19.
 
-- PT-3/PT-4: Platform packaging (AppImage, .app/DMG) + CI matrix
-- 4.2: Launcher polling → SSE migration
-- 4.4: Data Access Layer (unified schema registry)
-- 4.6: tomlkit integration (safe config writes)
-- Full test suite: smoke 12+, soak 27+, GUI smoke, 8h marathon
-- Version scheme: `1.0.0`
+- All milestones (1-8) complete: v0.31 through v0.48
+- All parallel tracks done: PT-1/2/3/4, DT-1/2/3/4, CT-1/2/3/4, CM-1/2/3/4, GR-1/2/3/4
+- All TECH_DEBT resolved: 4.1 through 4.8
+- Feature isolation: FI-1/2/3 (9 extracted modules)
+- v0.48 dead code scanner + cleanup
+- Test suite: smoke 15/15, GUI smoke 8/8, soak 27+
+- 55 skills, 31 dashboard endpoints, launcher 3492 lines (-39%)
+- Cross-platform: CI matrix, 3 packagers, NativeWindowsBridge, detect_cli()
+
+---
+
+## Version Transition: 1.0 → 0.01.01
+
+> **New versioning:** `MAJOR.MINOR.PATCH` where MAJOR tracks release milestones.
+> v1.0 becomes the baseline. Next version: `0.01.01` (first post-1.0 patch).
+> Full semver transition at 9.x → 0.1.00.
+
+### 0.01.01 — Post-Release Stabilization
+
+- Architecture research findings incorporated (agent patterns, task routing, UI comparison)
+- Dead code graveyard quarantine executed (scanner findings resolved)
+- Soak test run under full production load (8-hour validation)
+- Community-reported bug fixes from 1.0 release
 
 ### 2.0 — Multi-Fleet & Remote Orchestration
 

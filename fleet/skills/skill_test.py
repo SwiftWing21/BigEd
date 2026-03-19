@@ -13,7 +13,6 @@ Returns: {passed, errors, output_preview, tested_file, saved_to}
 """
 import importlib.util
 import json
-import sys
 import traceback
 from datetime import datetime
 from pathlib import Path

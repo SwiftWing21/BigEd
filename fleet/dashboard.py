@@ -19,7 +19,7 @@ import sqlite3
 import sys
 import time
 import threading
-from collections import Counter, defaultdict
+from collections import defaultdict
 from datetime import datetime, timedelta
 from pathlib import Path
 

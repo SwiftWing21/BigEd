@@ -10,7 +10,6 @@ Payload:
 Output: knowledge/releases/<product>_v<version>.md
 Returns: {product, version, tag, changelog_preview, saved_to}
 """
-import json
 import os
 import re
 import subprocess

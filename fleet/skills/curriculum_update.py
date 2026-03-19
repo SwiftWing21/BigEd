@@ -16,10 +16,8 @@ Payload:
 Output: fleet/idle_curricula/<role>.toml (updated)
 Returns: {roles_updated, tasks_added, tasks_removed, preview}
 """
-import json
 import re
 import sys
-from datetime import datetime
 from pathlib import Path
 
 FLEET_DIR = Path(__file__).parent.parent
