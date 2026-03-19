@@ -18,7 +18,7 @@ vision_model = "llava"        # local multimodal model for image analysis (llava
 ollama_host = "http://localhost:11434"
 
 [review]
-enabled = false                # evaluator-optimizer pass on skill outputs
+enabled = true                 # evaluator-optimizer pass on skill outputs (Gemini P0: adversarial review on by default)
 max_rounds = 2                 # max review-reject cycles per task (prevents loops)
 provider = "api"               # "api" = Anthropic API key | "subscription" = Gemini free tier | "local" = Ollama
 claude_model = "claude-sonnet-4-6"
