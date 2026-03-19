@@ -534,6 +534,16 @@ Completed 2026-03-19.
 
 ---
 
+## 0.10.00 — Advanced Agent Flows (Skill Synergy)
+
+**Goal:** Transition from isolated skill execution to complex, multi-agent automated pipelines, fully utilizing the 55+ skill inventory and specialized agent roles.
+
+- **Proactive CRM Pipeline:** Link the `sales` and `onboarding` agents to the GUI modules via automated DAGs. The fleet autonomously triggers `lead_research`, followed by `account_review`, and stages outreach proposals in the CRM without operator prompting.
+- **Knowledge Consolidation Flow:** Introduce `rag_compress` and `knowledge_prune` skills. Empower the `archivist` to autonomously detect topic bloat in `knowledge/`, summarize fragmented markdown files into master documents, and prune the originals to maintain RAG accuracy.
+- **Swarm Consensus (Group Meetings):** Leverage the Layer 2 (`agent`) comms channel for pre-execution debates. For complex architectural tasks, force the `coder`, `security`, and `researcher` agents to reach a documented consensus in the chat before the `planner` dispatches the execution tasks.
+
+---
+
 ## Parallel Track: Platform (Cross-Platform Support)
 
 > These items run in parallel to version milestones. They don't bump version numbers — they are infrastructure improvements that land alongside regular releases.

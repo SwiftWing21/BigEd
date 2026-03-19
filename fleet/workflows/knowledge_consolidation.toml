@@ -1,0 +1,24 @@
+[workflow]
+name = "knowledge_consolidation"
+description = "Archivist consolidates fragmented knowledge files into master documents"
+priority = 4
+
+[[steps]]
+name = "scan"
+skill = "rag_query"
+[steps.payload]
+query = "list all topics with more than 3 knowledge files"
+
+[[steps]]
+name = "consolidate"
+skill = "summarize"
+depends_on = ["scan"]
+[steps.payload]
+description = "Merge related knowledge fragments into consolidated documents"
+
+[[steps]]
+name = "index"
+skill = "rag_index"
+depends_on = ["consolidate"]
+[steps.payload]
+action = "reindex"

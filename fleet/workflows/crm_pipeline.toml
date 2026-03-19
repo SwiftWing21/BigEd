@@ -1,0 +1,35 @@
+[workflow]
+name = "crm_pipeline"
+description = "Autonomous CRM pipeline — research leads, review accounts, stage proposals"
+priority = 6
+
+[[steps]]
+name = "research"
+skill = "lead_research"
+[steps.payload]
+industry = "$industry"
+zip_code = "$zip_code"
+
+[[steps]]
+name = "review"
+skill = "account_review"
+depends_on = ["research"]
+[steps.payload]
+context = "Review research findings and assess lead quality"
+
+[[steps]]
+name = "proposal"
+skill = "marketing"
+depends_on = ["review"]
+[steps.condition]
+review = "qualified"
+[steps.payload]
+campaign_type = "outreach"
+target = "$industry leads"
+
+[[steps]]
+name = "summarize"
+skill = "summarize"
+depends_on = ["proposal"]
+[steps.payload]
+description = "Summarize the CRM pipeline results for operator review"
