@@ -126,7 +126,8 @@ def call_complex(system: str, user: str, config: dict, max_tokens: int = 2048, c
 
         try:
             if prov == "gemini":
-                result = _call_gemini(system, user, models, max_tokens)
+                result = _call_gemini(system, user, models, max_tokens,
+                                      skill_name=skill_name, task_id=task_id, agent_name=agent_name)
             elif prov == "local":
                 result = _call_local(system, user, models, max_tokens,
                                      skill_name=skill_name, config=config,

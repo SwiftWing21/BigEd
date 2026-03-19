@@ -205,9 +205,13 @@ def _call_claude(system: str, user: str, models: dict, max_tokens: int, cache_sy
             time.sleep(base_delay * (2 ** attempt))
 
 
-def _call_gemini(system: str, user: str, models: dict, max_tokens: int) -> str:
+def _call_gemini(system: str, user: str, models: dict, max_tokens: int,
+                 skill_name: str = "unknown", task_id=None, agent_name=None) -> str:
     import google.generativeai as genai
-    genai.configure(api_key=os.environ.get("GEMINI_API_KEY"))
+    api_key = os.environ.get("GEMINI_API_KEY")
+    if not api_key:
+        raise RuntimeError("GEMINI_API_KEY not set — configure via lead_client.py secret set GEMINI_API_KEY <key>")
+    genai.configure(api_key=api_key)
     model_name = models.get("complex", "gemini-2.0-flash")
     model = genai.GenerativeModel(
         model_name=model_name,
@@ -217,13 +221,26 @@ def _call_gemini(system: str, user: str, models: dict, max_tokens: int) -> str:
         user,
         generation_config={"max_output_tokens": max_tokens},
     )
+
+    # Safety check — Gemini may block responses for policy reasons
+    if hasattr(resp, 'candidates') and resp.candidates:
+        candidate = resp.candidates[0]
+        finish_reason = getattr(candidate, 'finish_reason', None)
+        # finish_reason enum: STOP=1, MAX_TOKENS=2, SAFETY=3, RECITATION=4, OTHER=5
+        if finish_reason and finish_reason != 1 and finish_reason != 2:
+            reason_name = {3: "SAFETY", 4: "RECITATION", 5: "OTHER"}.get(finish_reason, str(finish_reason))
+            import sys
+            print(f"[GEMINI] Response blocked: finishReason={reason_name} (skill={skill_name})", file=sys.stderr)
+            if finish_reason == 3:
+                raise RuntimeError(f"Gemini safety block on skill={skill_name} — content policy triggered")
+
     # Track Gemini usage (best-effort)
     try:
         usage = resp.usage_metadata
         if usage:
             import db
             db.log_usage(
-                skill="unknown",  # caller should pass skill_name in future
+                skill=skill_name,
                 model=model_name,
                 input_tokens=getattr(usage, "prompt_token_count", 0) or 0,
                 output_tokens=getattr(usage, "candidates_token_count", 0) or 0,
@@ -233,6 +250,7 @@ def _call_gemini(system: str, user: str, models: dict, max_tokens: int) -> str:
                     getattr(usage, "prompt_token_count", 0) or 0,
                     getattr(usage, "candidates_token_count", 0) or 0,
                     model_name),
+                task_id=task_id, agent=agent_name,
             )
     except Exception:
         pass

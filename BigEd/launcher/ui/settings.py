@@ -1114,7 +1114,7 @@ class KeyManagerDialog(ctk.CTkToplevel):
         ctk.CTkLabel(hdr, text="🔑  API KEY MANAGER",
                      font=("Segoe UI", 13, "bold"), text_color=GOLD
                      ).grid(row=0, column=0, padx=14, pady=10, sticky="w")
-        ctk.CTkLabel(hdr, text="Keys are stored in WSL ~/.secrets  |  masked values shown",
+        ctk.CTkLabel(hdr, text="Keys stored in ~/.secrets  |  masked values shown",
                      font=("Segoe UI", 9), text_color=DIM
                      ).grid(row=0, column=1, padx=8, sticky="w")
 
@@ -1216,12 +1216,13 @@ class KeyManagerDialog(ctk.CTkToplevel):
             return []
 
     def _read_secrets_via_wsl(self):
-        """Read masked key values from WSL ~/.secrets."""
-        L = _launcher()
+        """Read masked key values from ~/.secrets (native, no WSL)."""
+        secrets_file = Path.home() / ".secrets"
         masked = {}
         try:
-            out, _ = L.wsl("cat ~/.secrets 2>/dev/null", capture=True)
-            for line in out.splitlines():
+            if not secrets_file.exists():
+                return masked
+            for line in secrets_file.read_text(encoding="utf-8", errors="ignore").splitlines():
                 line = line.strip()
                 if line.startswith("export "):
                     line = line[7:].strip()
@@ -1246,41 +1247,55 @@ class KeyManagerDialog(ctk.CTkToplevel):
         if not value or not value.strip():
             return
         value = value.strip()
-        safe_name = L._shell_safe(key_name)
-        b64_val = base64.b64encode(value.encode()).decode()
-        cmd = f"~/.local/bin/uv run python lead_client.py secret set {safe_name} {b64_val} --b64"
-        def _on_key_saved(o, e):
-            self.after(0, lambda: (
-                self._scan_lbl.configure(
-                    text=f"✓ {key_name} saved" if "ok" in o else f"✗ {e[:40]}",
-                    text_color=GREEN if "ok" in o else RED),
-                self.after(400, self._load_keys)
-            ))
-        L.wsl_bg(cmd, _on_key_saved)
+        # Save key natively to ~/.secrets
+        def _save_bg():
+            try:
+                secrets_file = Path.home() / ".secrets"
+                lines = []
+                found = False
+                if secrets_file.exists():
+                    for line in secrets_file.read_text(encoding="utf-8", errors="ignore").splitlines():
+                        stripped = line.strip()
+                        raw = stripped[7:].strip() if stripped.startswith("export ") else stripped
+                        if "=" in raw and raw.split("=", 1)[0].strip() == key_name:
+                            lines.append(f"export {key_name}={value}")
+                            found = True
+                        else:
+                            lines.append(line)
+                if not found:
+                    lines.append(f"export {key_name}={value}")
+                secrets_file.write_text("\n".join(lines) + "\n", encoding="utf-8")
+                import os
+                os.environ[key_name] = value  # update current process too
+                self.after(0, lambda: (
+                    self._scan_lbl.configure(text=f"✓ {key_name} saved", text_color=GREEN),
+                    self.after(400, self._load_keys)))
+            except Exception as e:
+                self.after(0, lambda: self._scan_lbl.configure(
+                    text=f"✗ {str(e)[:40]}", text_color=RED))
+        threading.Thread(target=_save_bg, daemon=True).start()
 
     def _add_custom_key(self):
-        L = _launcher()
         name_dialog = ctk.CTkInputDialog(
             text="Enter env var name (e.g. MY_API_KEY):", title="Add Key")
         name = name_dialog.get_input()
         if not name or not name.strip():
             return
-        name = L._shell_safe(name.strip().upper())
-        # Trigger inference via fleet
-        self._scan_lbl.configure(text=f"Inferring {name}...", text_color=ORANGE)
-        payload = json.dumps({"action": "infer", "key_name": name})
-        b64 = base64.b64encode(payload.encode()).decode()
-        cmd = f"~/.local/bin/uv run python lead_client.py dispatch key_manager {b64} --b64 --priority 9"
-        L.wsl_bg(cmd, lambda o, e: self.after(0, lambda: self._scan_lbl.configure(
-            text=f"Inference queued → check reports/key_scan.md", text_color=DIM)))
-        # Still open edit dialog
+        name = re.sub(r'[^A-Z0-9_]', '', name.strip().upper())
         self._edit_key(name, name)
 
     def _scan_skills(self):
         L = _launcher()
         self._scan_lbl.configure(text="Scanning...", text_color=ORANGE)
-        payload = json.dumps({"action": "scan"})
-        b64 = base64.b64encode(payload.encode()).decode()
-        cmd = f"~/.local/bin/uv run python lead_client.py dispatch key_manager {b64} --b64 --priority 9"
-        L.wsl_bg(cmd, lambda o, e: self.after(0, lambda: self._scan_lbl.configure(
-            text="Scan queued → knowledge/reports/key_scan.md", text_color=GREEN)))
+        def _bg():
+            try:
+                result = subprocess.run(
+                    [L._get_fleet_python(), str(L.FLEET_DIR / "lead_client.py"),
+                     "dispatch", "key_manager", json.dumps({"action": "scan"}), "--priority", "9"],
+                    capture_output=True, text=True, timeout=30, cwd=str(L.FLEET_DIR),
+                )
+                msg = "Scan queued → knowledge/reports/key_scan.md" if result.returncode == 0 else f"Error: {result.stderr[:40]}"
+                self.after(0, lambda: self._scan_lbl.configure(text=msg, text_color=GREEN if result.returncode == 0 else RED))
+            except Exception as e:
+                self.after(0, lambda: self._scan_lbl.configure(text=f"Error: {str(e)[:40]}", text_color=RED))
+        threading.Thread(target=_bg, daemon=True).start()
