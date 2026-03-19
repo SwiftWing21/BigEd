@@ -1,3 +1,5 @@
+import os
+import sys
 import tomllib
 from pathlib import Path
 
@@ -27,3 +29,13 @@ def is_offline(config: dict) -> bool:
 
 def is_air_gap(config: dict) -> bool:
     return config.get("fleet", {}).get("air_gap_mode", False)
+
+
+def is_native_windows() -> bool:
+    """Check if running natively on Windows (not inside WSL).
+
+    Returns True only when:
+    - The Python interpreter is running on Windows (sys.platform == "win32")
+    - AND we are NOT inside a WSL environment (WSL_DISTRO_NAME not set)
+    """
+    return sys.platform == "win32" and not os.environ.get("WSL_DISTRO_NAME")

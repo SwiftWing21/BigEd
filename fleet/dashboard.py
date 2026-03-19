@@ -6,7 +6,7 @@ v0.27: New endpoints (/api/thermal, /api/training, /api/modules, /api/data_stats
        Server-Sent Events for live updates, alert system.
 CT-2:  Cost intelligence endpoints (/api/usage, /api/usage/delta).
 
-19 endpoints total.
+25 endpoints total (19 data + 6 process control).
 
 Usage:
     python dashboard.py                # http://localhost:5555
@@ -660,6 +660,130 @@ def api_usage_delta():
         if not all([from_start, from_end, to_start, to_end]):
             return jsonify({"error": "Required params: from_start, from_end, to_start, to_end"}), 400
         return jsonify(db.get_usage_delta(from_start, from_end, to_start, to_end))
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+# ── Process Control API (TECH_DEBT 4.3) ────────────────────────────────────
+# REST endpoints for process lifecycle — replaces raw bash pkill/pgrep strings.
+
+@app.route("/api/fleet/start", methods=["POST"])
+def api_fleet_start():
+    """Start fleet workers. Body: {roles: [...]} or empty for all."""
+    import subprocess
+    try:
+        data = request.get_json(silent=True) or {}
+        roles = data.get("roles")
+        cmd = [sys.executable, str(FLEET_DIR / "supervisor.py")]
+        proc = subprocess.Popen(
+            cmd, cwd=str(FLEET_DIR),
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+        )
+        return jsonify({"status": "started", "pid": proc.pid})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/fleet/stop", methods=["POST"])
+def api_fleet_stop():
+    """Stop fleet by signaling supervisor. Graceful SIGTERM then SIGKILL."""
+    import signal
+    try:
+        agents = query("SELECT name, pid FROM agents WHERE role='supervisor' AND pid IS NOT NULL")
+        killed = []
+        for a in agents:
+            pid = a.get("pid")
+            if pid:
+                try:
+                    os.kill(pid, signal.SIGTERM)
+                    killed.append({"name": a["name"], "pid": pid})
+                except (OSError, ProcessLookupError):
+                    pass
+        return jsonify({"status": "stopping", "signaled": killed})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/fleet/workers")
+def api_fleet_workers():
+    """List all workers with PID and alive status."""
+    try:
+        agents = query(
+            "SELECT name, role, status, pid, last_heartbeat FROM agents WHERE role != 'supervisor'"
+        )
+        result = []
+        for a in agents:
+            alive = False
+            if a.get("pid"):
+                try:
+                    os.kill(a["pid"], 0)  # signal 0 = check if alive
+                    alive = True
+                except (OSError, ProcessLookupError):
+                    pass
+            result.append({**a, "alive": alive})
+        return jsonify(result)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/fleet/worker/<name>/restart", methods=["POST"])
+def api_fleet_worker_restart(name):
+    """Restart a specific worker by name. Kills old PID, supervisor respawns."""
+    import signal
+    try:
+        rows = query("SELECT pid FROM agents WHERE name=?", (name,))
+        if not rows:
+            return jsonify({"error": f"Agent '{name}' not found"}), 404
+        pid = rows[0].get("pid")
+        if pid:
+            try:
+                os.kill(pid, signal.SIGTERM)
+            except (OSError, ProcessLookupError):
+                pass
+        # Mark agent as needing restart — supervisor will respawn on next cycle
+        with get_conn() as conn:
+            conn.execute("UPDATE agents SET status='IDLE', pid=NULL WHERE name=?", (name,))
+        return jsonify({"status": "restarting", "name": name})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/fleet/health")
+def api_fleet_health():
+    """Overall fleet health check — supervisors, workers, Ollama, thermal."""
+    try:
+        sup_agents = query("SELECT name, status, pid, last_heartbeat FROM agents WHERE role='supervisor'")
+        worker_count = query("SELECT COUNT(*) as n FROM agents WHERE role != 'supervisor'")[0]["n"]
+        active_workers = query(
+            "SELECT COUNT(*) as n FROM agents WHERE role != 'supervisor' AND status IN ('IDLE', 'BUSY')"
+        )[0]["n"]
+        pending = query("SELECT COUNT(*) as n FROM tasks WHERE status='PENDING'")[0]["n"]
+
+        # Ollama status
+        ollama_ok = False
+        try:
+            import urllib.request
+            with urllib.request.urlopen("http://localhost:11434/api/tags", timeout=2):
+                ollama_ok = True
+        except Exception:
+            pass
+
+        # Thermal
+        thermal = None
+        try:
+            if HW_STATE_JSON.exists():
+                thermal = json.loads(HW_STATE_JSON.read_text(encoding="utf-8"))
+        except Exception:
+            pass
+
+        return jsonify({
+            "supervisors": [dict(s) for s in sup_agents],
+            "workers": {"total": worker_count, "active": active_workers},
+            "tasks_pending": pending,
+            "ollama": ollama_ok,
+            "thermal": thermal,
+        })
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 

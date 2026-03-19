@@ -1,8 +1,9 @@
 """
 FleetBridge — platform abstraction for launcher ↔ fleet communication.
 
-On Windows: commands run inside WSL Ubuntu via wsl.exe
-On Linux/macOS: commands run natively via bash
+On Windows (WSL):    commands run inside WSL Ubuntu via wsl.exe
+On Windows (native): commands run directly in Windows Python (no WSL)
+On Linux/macOS:      commands run natively via bash
 
 Usage:
     from fleet_bridge import create_bridge
@@ -10,6 +11,9 @@ Usage:
     bridge.run("uv run python lead_client.py status", capture=True)
     bridge.run_bg("uv run python supervisor.py", callback=on_done)
 """
+import os
+import re
+import shutil
 import subprocess
 import sys
 import threading
@@ -116,8 +120,104 @@ class DirectBridge(FleetBridge):
         return True  # Native environment — always available
 
 
+class NativeWindowsBridge(FleetBridge):
+    """Windows native: runs fleet commands directly in Windows Python (no WSL).
+
+    Use when fleet/ code runs natively on Windows (not inside WSL).
+    Translates common bash-isms (nohup, &, ~/ paths) to Windows equivalents.
+    Set BIGED_NATIVE_WINDOWS=1 to activate.
+    """
+
+    _HAS_UV: Optional[bool] = None  # cached uv availability check
+
+    @classmethod
+    def _uv_available(cls) -> bool:
+        """Check (and cache) whether the 'uv' tool is on PATH."""
+        if cls._HAS_UV is None:
+            cls._HAS_UV = shutil.which("uv") is not None
+        return cls._HAS_UV
+
+    # -- bash→Windows translation ------------------------------------------------
+
+    @staticmethod
+    def _translate_cmd(cmd: str) -> str:
+        """Strip/rewrite bash-isms so the command runs under Windows cmd.exe.
+
+        Transformations:
+        * Remove 'nohup ' prefix and trailing ' &'
+        * Expand '~/' to the user home directory (Windows-style)
+        * Remove 'source ~/.secrets 2>/dev/null;' preamble
+        * Strip shell redirects to /dev/null
+        """
+        c = cmd
+        # Strip nohup … &
+        c = c.replace("nohup ", "")
+        c = re.sub(r"\s*&\s*$", "", c)
+        # Remove source-secrets preamble (with optional redirect)
+        c = re.sub(r"source\s+~/\.secrets\s*[^;]*;\s*", "", c)
+        # Expand ~/.local/bin/uv → uv  (Windows puts it on PATH via pip/pipx)
+        c = c.replace("~/.local/bin/uv", "uv")
+        # Generic ~/ → user home
+        c = c.replace("~/", str(Path.home()).replace("\\", "/") + "/")
+        # Strip /dev/null redirects (not valid on Windows)
+        c = re.sub(r"\s*2>/dev/null", "", c)
+        c = re.sub(r"\s*>/dev/null", "", c)
+        return c.strip()
+
+    def _prepare_cmd(self, cmd: str) -> str:
+        """Full pipeline: translate bash-isms, then handle uv fallback."""
+        c = self._translate_cmd(cmd)
+        # If uv is not available, fall back to plain python
+        if not self._uv_available():
+            c = re.sub(r"\buv run python\b", "python", c)
+            c = re.sub(r"\buv run\b", "python -m", c)
+        return c
+
+    # -- FleetBridge interface ----------------------------------------------------
+
+    def fleet_path(self) -> str:
+        return str(self.fleet_dir)
+
+    def run(self, cmd: str, capture: bool = False, timeout: int = 60) -> Tuple[str, str]:
+        clean = self._prepare_cmd(cmd)
+        if capture:
+            r = subprocess.run(
+                clean, shell=True, capture_output=True, text=True,
+                timeout=timeout, cwd=str(self.fleet_dir),
+                creationflags=_NO_WINDOW,
+            )
+            return r.stdout.strip(), r.stderr.strip()
+        else:
+            subprocess.Popen(
+                clean, shell=True, cwd=str(self.fleet_dir),
+                creationflags=_NO_WINDOW,
+            )
+            return "", ""
+
+    def is_available(self) -> bool:
+        """Check that the fleet directory exists and Python is callable."""
+        if not self.fleet_dir.is_dir():
+            return False
+        try:
+            r = subprocess.run(
+                "python --version", shell=True, capture_output=True,
+                text=True, timeout=5, creationflags=_NO_WINDOW,
+            )
+            return r.returncode == 0
+        except Exception:
+            return False
+
+
 def create_bridge(fleet_dir: Path) -> FleetBridge:
-    """Create the appropriate bridge for the current platform."""
+    """Create the appropriate bridge for the current platform.
+
+    Bridge selection order:
+    1. BIGED_NATIVE_WINDOWS=1 env var → NativeWindowsBridge  (Windows, no WSL)
+    2. sys.platform == "win32"        → WslBridge             (Windows + WSL)
+    3. Everything else                → DirectBridge           (Linux / macOS)
+    """
+    if os.environ.get("BIGED_NATIVE_WINDOWS", "").lower() in ("1", "true"):
+        return NativeWindowsBridge(fleet_dir)
     if sys.platform == "win32":
         return WslBridge(fleet_dir)
     else:

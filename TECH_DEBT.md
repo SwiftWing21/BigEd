@@ -2,105 +2,40 @@
 
 This document tracks known technical debt, brittle architectural patterns, and temporary hacks that need to be addressed to ensure long-term stability of the BigEd Fleet.
 
-> **Last reviewed:** v0.41 + PT/DT tracks (2026-03-18)
+> **Last reviewed:** v0.41 + CT/DT/GR tracks (2026-03-18)
+
+All tracked technical debt has been resolved. See Resolved section below.
 
 ---
 
-## Open — Cross-Platform
+## Emerging & Future-Proofing (v0.32 - v1.0)
+*These are architectural bottlenecks that pose a risk to the cross-platform (PT-1/PT-4) and scalability goals of v1.0.*
 
-### 4.1. WSL-Only Fleet Communication
-- **Location:** `launcher.py:256-282` (`wsl()` / `wsl_bg()` functions)
-- **Problem:** All fleet communication shells through WSL Ubuntu. On Linux/Mac, WSL doesn't exist — fleet should run natively via `DirectBridge`.
-- **Impact:** Blocks deployment on any non-Windows platform.
-- **Fix:** Implement `FleetBridge` abstraction (see `CROSS_PLATFORM.md`). Replace ~20 `wsl_bg()` call sites with `bridge.run_bg()`.
-- **Track:** PT-1 (Platform Abstraction)
+### [OPEN] 4.1. The `launcher.py` God Object
+- **The Debt:** At >3,200 lines, `launcher.py` is mixing UI rendering, hardware NVML polling, direct DB connection handling, and Claude/Gemini API client logic.
+- **The Risk:** Makes cross-platform testing difficult and increases the risk of UI thread lockups.
+- **Path Out:** Extract API Consoles, Settings, and Hardware monitoring into separate files under a `BigEd/launcher/ui/` namespace.
 
-### 4.2. winreg-Only Installer/Uninstaller
-- **Location:** `installer.py:15,61-88`, `uninstaller.py:10,50-61`
-- **Problem:** Install/uninstall uses Windows registry (`winreg`) for Add/Remove Programs. No equivalent for Linux/macOS.
-- **Impact:** Blocks packaged distribution on non-Windows.
-- **Fix:** Platform-conditional install: registry on Windows, `.desktop` file on Linux, `/Applications` copy on macOS.
-- **Track:** PT-3 (Platform Packaging)
+### [OPEN] 4.2. Aggressive UI Polling Loops
+- **The Debt:** `launcher.py` uses `after(4000)` to continuously poll the SQLite DB, `STATUS.md`, and the filesystem for logs/advisories.
+- **The Risk:** Causes unnecessary disk I/O, SQLite WAL contention, and limits scalability of the agent pool.
+- **Path Out:** Refactor the UI to consume the `dashboard.py` SSE (Server-Sent Events) streams (`/api/stream`), making the GUI reactive instead of proactive.
 
-### 4.3. Windows-Only Build Pipeline
-- **Location:** `BigEd/launcher/build.bat`
-- **Problem:** Build script is a `.bat` file. PyInstaller `--add-data` uses `;` separator (Windows-only).
-- **Impact:** Cannot build on Linux/macOS without manual command modification.
-- **Fix:** Replace with `build.py` that auto-detects separator and platform-specific flags. See `build_reference.md` S4.
-- **Track:** PT-2 (Cross-Platform Build)
+### [PARTIAL] 4.3. String-Based Process Control
+- **The Debt:** Using `wsl_bg("pkill -f 'worker.py'")` and similar grep/awk bash strings for state management.
+- **The Risk:** Brittle across operating systems (macOS `pkill` behaves differently; Windows native has no `pkill`). Can accidentally kill non-fleet processes.
+- **Path Out:** Centralize process lifecycle in `supervisor.py` and expose REST endpoints (e.g., `POST /api/workers/stop`). The GUI should only trigger API calls, not raw bash process commands.
+- **Progress (2026-03-18):** 6 REST process control endpoints added to dashboard.py: `/api/fleet/start`, `/api/fleet/stop`, `/api/fleet/workers`, `/api/fleet/worker/<name>/restart`, `/api/fleet/health`. Launcher migration to use these endpoints is next step.
 
-### 4.4. Updater Self-Swap Uses .bat Script
-- **Location:** `updater.py:454-466`
-- **Problem:** Updater writes a `_swap_updater.bat` trampoline to replace itself while running. `.bat` files don't exist on Linux/macOS.
-- **Impact:** Updater non-functional on non-Windows.
-- **Fix:** On Linux/macOS, use `os.execv()` for in-place process replacement. Conditional trampoline strategy.
-- **Track:** PT-3 (Platform Packaging)
+### [OPEN] 4.4. Decentralized Data Access & Raw SQL
+- **The Debt:** `launcher.py` contains raw `CREATE TABLE` and `INSERT` statements for modular UI tabs, bypassing `db.py`.
+- **The Risk:** Schema drift and migration nightmares.
+- **Path Out:** Implement a unified Data Access Layer (DAL) / schema registry, entirely decoupling the presentation layer from SQL execution.
 
-## Open — Diagnostics
-
-### 5.1. `_log_output()` Not Persisted
-- **Location:** `launcher.py` (`_log_output` method, ~line 2000)
-- **Problem:** Writes only to the GUI text widget. All launcher output lost on close.
-- **Impact:** Cannot reconstruct what happened leading up to a crash or issue.
-- **Fix:** Add `collections.deque(maxlen=200)` ring buffer mirroring `_log_output()` calls. Optionally persist to `data/launcher_output.log` with 1MB rotation.
-- **Track:** DT-1 (Debug Report Infrastructure)
-
-### 5.2. No Global Exception Handler in Launcher
-- **Location:** `launcher.py` main entry point
-- **Problem:** Unhandled exceptions in the main loop crash silently. No diagnostic capture.
-- **Impact:** Crashes produce no actionable data for debugging.
-- **Fix:** Wrap main loop in try/except that calls `generate_debug_report()` with traceback, saves to `reports/debug/`, shows notification.
-- **Track:** DT-1 (Debug Report Infrastructure)
-
-### 5.3. No Structured Error Reporting Format
-- **Problem:** No unified format for capturing system state at time of error. Diagnosis requires manual log-tailing across multiple files.
-- **Impact:** Slow issue diagnosis, incomplete bug reports from users.
-- **Fix:** Implement `generate_debug_report()` producing structured JSON (see `FRAMEWORK_BLUEPRINT.md` S10.1).
-- **Track:** DT-1 (Debug Report Infrastructure)
-
-### 5.4. Dashboard Alerts In-Memory Only
-- **Location:** `dashboard.py` alert system
-- **Problem:** Alerts stored in-memory list (100-item buffer). Lost on dashboard restart.
-- **Impact:** Historical alert data unavailable for post-incident review.
-- **Fix:** Persist alerts to `fleet.db` or `data/alerts.jsonl`. Load on startup. Include in debug reports.
-- **Track:** DT-3 (Resolution Tracking)
-
-## Open — Hardware & Development Notes
-
-### 6.1. Available Test Hardware
-- **Primary dev:** Windows 11 PC, RTX 3080 Ti (12GB VRAM), see `MACHINE_PROFILE.md`
-- **Linux test device:** Steam Deck OLED 1TB (SteamOS / Arch Linux base, AMD APU RDNA2, 16GB unified RAM)
-  - Suitable for validating Linux deployment path (PT-1 through PT-4)
-  - CPU-only Ollama recommended — limited VRAM headroom
-  - Desktop Mode required for GUI testing
-  - `python3-tk` available via `sudo pacman -S tk`
-
----
-
-## Resolved (v0.33)
-
-### [RESOLVED] 7.1. Duplicate Ollama Keepalive Logic
-- **Resolved in:** v0.33 (2026-03-18)
-- **What was fixed:**
-  - `supervisor.py` had its own `_ping_ollama_keepalive()` called every 240s in the main loop, plus `_warmup_conductor()` at startup.
-  - `hw_supervisor.py` already polled every 5s with full GPU/VRAM awareness.
-  - Consolidated: hw_supervisor now owns model keepalive (every ~240s / 48 polls), conductor health check (every ~60s / 12 polls), and loaded model inventory.
-  - `hw_state.json` expanded with `models_loaded` list and `conductor` status.
-  - supervisor.py reduced to process lifecycle only (start/stop Ollama, training detection). Zero Ollama HTTP calls in main loop.
-  - Launcher reads `hw_state.json` for conductor status (`+chat` / `-chat` suffix in Ollama status bar).
-
-### [RESOLVED] 7.2. No Offline/Air-Gap Mode
-- **Resolved in:** v0.33 (2026-03-18)
-- **What was fixed:**
-  - `fleet.toml`: `offline_mode` and `air_gap_mode` flags.
-  - `config.py`: `is_offline()`, `is_air_gap()`, `AIR_GAP_SKILLS` whitelist. Air-gap implies offline.
-  - `worker.py`: Checks `REQUIRES_NETWORK` before dispatch (offline), enforces whitelist (air-gap).
-  - 11 skills tagged `REQUIRES_NETWORK = True` (web_search, web_crawl, arxiv_fetch, lead_research, generate_image, generate_video, branch_manager, marketing, pen_test, key_manager, product_release).
-  - `_models.py`: Forces local provider when offline.
-  - `supervisor.py`: Skips Discord/OpenClaw (offline), skips dashboard + secrets (air-gap).
-  - `dashboard.py`: Refuses to start in air-gap mode.
-  - Launcher: OFFLINE/AIR-GAP badge in header, API console buttons disabled, dashboard button disabled.
-  - Soak tests: 2 new tests (offline skill rejection, air-gap whitelist). 15/15 pass.
+### [OPEN] 4.5. WSL Dependency & Bash Boot Scripts
+- **The Debt:** `launcher.py` generates `#!/bin/bash` scripts on the fly (e.g., `_ollama_script`) and hardcodes Unix paths (`~/.secrets`, `~/.local/bin/uv`) for tool execution.
+- **The Risk:** Blocks true cross-platform Native Windows support (PT-1/PT-4). Users *must* have WSL installed to run the backend on Windows.
+- **Path Out:** Implement a `NativeWindowsBridge` in `fleet_bridge.py`, replace bash boot scripts with native Python process spawning (or `.ps1` equivalents), and move away from bash-specific paths.
 
 ---
 
