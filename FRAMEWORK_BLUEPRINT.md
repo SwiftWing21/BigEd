@@ -751,4 +751,15 @@ Over time, `resolutions.jsonl` becomes a knowledge base:
 | — | DT-4 Stability | stability_report.py skill, resolutions.jsonl pattern detection, knowledge output |
 | — | Cross-Platform | FleetBridge abstraction, platform packaging, CI/CD matrix (parallel track) |
 | — | Diagnostics | Debug reports, issue submission, resolution tracking, stability analysis (parallel track) |
+| — | GR-1/2/3/4 Hardening | VRAM eviction, zombie cleanup, base64 DLP, WSL NAT detection |
+| — | 4.1 God Object | Console/settings/boot extracted to ui/ namespace (5747→3492 lines, -39%) |
+| — | 4.3/4.5 Process+Bridge | REST process control API (6 endpoints), NativeWindowsBridge, detect_cli() |
+| — | 4.7/4.8 Skill Audit | 17 skills migrated to call_complex(), cross-platform network detection |
 | — | Offline/Air-Gap | Network-aware skill dispatch, local-only fallback, air-gap whitelist, recovery backup |
+| v0.42 | Auto-Boot | Zero-click start (systemd/launchd/Task Scheduler), idle skill evolution |
+| v0.43 | Marathon ML | Multi-hour training with checkpoint/resume, context persistence |
+| 1.0 | Production | Zero debt, full cross-platform, all parallel tracks complete |
+| 2.0 | Multi-Fleet | Federated supervisor mesh, remote dashboard, fleet cloning |
+| 3.0 | Intelligent | ML-driven routing, predictive scaling, NL fleet control |
+| 4.0 | Enterprise | Multi-tenant, RBAC, audit logging, SLA monitoring |
+| 5.0 | Platform | Self-hosted SaaS, web launcher, marketplace, semver transition at 9.x → 0.1.00 |

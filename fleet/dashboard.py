@@ -6,7 +6,7 @@ v0.27: New endpoints (/api/thermal, /api/training, /api/modules, /api/data_stats
        Server-Sent Events for live updates, alert system.
 CT-2:  Cost intelligence endpoints (/api/usage, /api/usage/delta).
 
-27 endpoints total (21 data + 6 process control).
+29 endpoints total (23 data + 6 process control).
 
 Usage:
     python dashboard.py                # http://localhost:5555
@@ -839,6 +839,52 @@ def api_fleet_health():
             "tasks_pending": pending,
             "ollama": ollama_ok,
             "thermal": thermal,
+        })
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/fleet/uptime")
+def api_fleet_uptime():
+    """v0.42: Fleet uptime since supervisor started."""
+    try:
+        agents = query("SELECT name, last_heartbeat FROM agents WHERE role='supervisor' ORDER BY name")
+        if not agents:
+            return jsonify({"uptime_seconds": 0, "status": "not running"})
+        # Use oldest supervisor heartbeat as start proxy
+        import time
+        from datetime import datetime, timezone
+        oldest = None
+        for a in agents:
+            hb = a.get("last_heartbeat")
+            if hb:
+                try:
+                    dt = datetime.fromisoformat(hb).replace(tzinfo=timezone.utc)
+                    if oldest is None or dt < oldest:
+                        oldest = dt
+                except Exception:
+                    pass
+        if oldest:
+            uptime = (datetime.now(timezone.utc) - oldest).total_seconds()
+            return jsonify({"uptime_seconds": int(uptime), "status": "running"})
+        return jsonify({"uptime_seconds": 0, "status": "unknown"})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/fleet/idle")
+def api_fleet_idle():
+    """v0.42: Idle evolution statistics."""
+    try:
+        sys.path.insert(0, str(FLEET_DIR))
+        import db
+        stats = db.get_idle_stats(period=request.args.get("period", "week"))
+        total_runs = sum(r.get("runs", 0) for r in stats)
+        total_cost = sum(r.get("total_cost", 0) for r in stats)
+        return jsonify({
+            "total_runs": total_runs,
+            "total_cost": round(total_cost, 4),
+            "skills": stats,
         })
     except Exception as e:
         return jsonify({"error": str(e)}), 500

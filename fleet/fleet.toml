@@ -153,3 +153,13 @@ security_audit = 3.00
 plan_workload = 2.00
 summarize = 1.50
 synthesize = 2.00
+
+# v0.42: Auto-boot — fleet starts automatically on system login
+[autoboot]
+enabled = false  # set true after running: lead_client.py install-service
+
+# v0.42: Idle skill evolution — workers self-improve when no tasks pending
+[idle]
+enabled = false  # set true to allow workers to evolve skills during downtime
+threshold_polls = 6  # consecutive idle polls before entering idle mode (~30s at 5s/poll)
+skills = ["skill_evolve", "skill_test", "code_quality", "benchmark"]

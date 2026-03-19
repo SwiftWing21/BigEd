@@ -1,6 +1,8 @@
-# BigEd CC Roadmap: v0.31 → v1.0
+# BigEd CC Roadmap: v0.31 → 5.0
 
-> **Goal of v1.0:** Autonomous, cross-platform, verifiably safe agent fleet. From flat task queue to graph-based, self-correcting, deploy-anywhere swarm.
+> **Goal of 1.0:** Autonomous, cross-platform, verifiably safe agent fleet.
+> **Goal of 5.0:** Multi-tenant SaaS-ready platform with federated fleet orchestration.
+> **Version scheme:** v0.41 → v0.42 → ... → v0.99 → 1.0 → ... → 9.x → 0.1.00 (semver transition)
 
 ---
 
@@ -11,7 +13,8 @@
 | 1. Verification & Onboarding | v0.33 – v0.34 | Prove it works, make it approachable | Smoke 10/10, Soak 13/13, GUI smoke, no P0 debt |
 | 2. Autonomous Safety | v0.35 – v0.38 | Self-correction, operator comms, isolation | + review cycle, watchdog, HitL, sandbox tests; .secrets never in output |
 | 3. External Integration | v0.39 – v0.41 | Network, browser, vision | + network/browser/vision tests; no OOM on 12GB |
-| 4. Cross-Platform & v1.0 | PT-1 – PT-4, DT-1 – DT-4 | Anyone, anywhere, clear diagnostics | All tests on Win/Linux/macOS; FleetBridge 100%; zero debt |
+| 4. Autonomous Continuity | v0.42 – v0.43 | Auto-boot, idle evolve, marathon ML | Zero-click start, stable multi-hour ML |
+| 5. Cross-Platform & v1.0 | PT-1 – PT-4, DT-1 – DT-4 | Anyone, anywhere, clear diagnostics | All tests on Win/Linux/macOS; FleetBridge 100%; zero debt |
 
 ## Release Process
 
@@ -282,6 +285,112 @@ Completed 2026-03-18. **Milestone 3 (External Integration) complete.**
 - Smoke: 10/10 (49 skills), Soak: 25/25 (2 new: skill imports + integration config)
 
 **Goal:** Enable fleet agents to process visual data completely offline.
+
+---
+
+## v0.42 — Auto-Boot & Idle Skill Evolution
+
+**Goal:** Zero-click fleet startup. Workers productively self-improve when idle.
+
+### 42.1 Auto-Boot (System Service)
+
+Platform-aware auto-start so the fleet runs on login/boot without manual intervention.
+
+- **Windows:** Task Scheduler entry via `schtasks /create` — runs `supervisor.py` on user login
+- **Linux:** `systemd --user` service file (`biged-fleet.service`) — `ExecStart=uv run python supervisor.py`
+- **macOS:** `launchd` plist in `~/Library/LaunchAgents/` — runs on login
+- `lead_client.py install-service` / `uninstall-service` commands — platform-conditional
+- `fleet.toml [autoboot] enabled = true` config flag
+- `supervisor.py` idempotent start: checks if already running before spawning
+
+### 42.2 Idle Skill Evolution
+
+When no tasks are pending, workers auto-discover improvement opportunities.
+
+- `worker.py`: Idle detection — if no task claimed after N polls (configurable), enter idle mode
+- Idle mode dispatches one of: `skill_evolve`, `skill_test`, `code_quality`, `benchmark`
+- Skill selection: round-robin from skills with oldest `last_evolved` timestamp
+- `fleet.toml [idle] enabled, interval_secs, skills` — configurable idle behavior
+- `db.py`: `idle_runs` table tracking which skills were evolved, when, results
+- Idle work is low-priority (priority=1) — any real task immediately preempts
+- Budget-aware: idle work respects CT-4 daily budgets
+
+### 42.3 Fleet Health Dashboard
+
+- `/api/fleet/uptime` endpoint — fleet uptime since last start, restart count
+- Auto-boot status in launcher sidebar (service installed / running / not configured)
+
+---
+
+## v0.43 — Marathon ML & Context Persistence
+
+**Goal:** Stable multi-hour ML training with checkpoint/resume. Session context survives restarts.
+
+### 43.1 Marathon Training Integration
+
+- `autoresearch/` integration: `marathon_log` skill writes progress snapshots every N minutes
+- Checkpoint detection: hw_supervisor monitors `autoresearch/checkpoints/` for new files
+- Training resume: if supervisor restarts mid-training, detect checkpoint and resume
+- VRAM budgeting: reserve 6GB for training, remaining for fleet (auto-scale to tier_low)
+
+### 43.2 Context Persistence
+
+- `marathon_log` auto-invoked at session boundaries (fleet start, fleet stop, midnight rollover)
+- `knowledge/marathon/` serves as long-term project memory across sessions
+- `lead_client.py marathon status` — shows active marathon sessions, snapshots, progress
+
+### 43.3 Stability Gate
+
+- 8-hour soak test: start fleet, run mixed workload + ML training, verify zero crashes
+- Memory leak detection: RSS/VRAM tracked hourly, alert on >10% growth
+- **Milestone 4 complete** when: auto-boot working on Win+Linux, idle evolution running, 8h soak clean
+
+---
+
+## Long-Range Roadmap: 1.0 → 5.0
+
+### 1.0 — Production Release (Milestone 5)
+
+All parallel tracks complete. Zero TECH_DEBT. Cross-platform validated.
+
+- PT-3/PT-4: Platform packaging (AppImage, .app/DMG) + CI matrix
+- 4.2: Launcher polling → SSE migration
+- 4.4: Data Access Layer (unified schema registry)
+- 4.6: tomlkit integration (safe config writes)
+- Full test suite: smoke 12+, soak 27+, GUI smoke, 8h marathon
+- Version scheme: `1.0.0`
+
+### 2.0 — Multi-Fleet & Remote Orchestration
+
+- Fleet-to-fleet communication (federated supervisor mesh)
+- Remote dashboard access (auth + TLS)
+- Fleet cloning (deploy identical fleet to new machine via config export)
+- Plugin marketplace (community skills via git repos)
+- Version scheme: `2.x.y`
+
+### 3.0 — Intelligent Orchestration
+
+- ML-driven task routing (learn which agent handles which skill best)
+- Predictive scaling (anticipate load from task patterns)
+- Natural language fleet control ("scale up coders, pause research")
+- Auto-generated SOPs from fleet behavior patterns
+- Version scheme: `3.x.y`
+
+### 4.0 — Enterprise & Multi-Tenant
+
+- Tenant isolation (separate DBs, configs, knowledge per customer)
+- Role-based access control (operator, admin, viewer)
+- Audit logging (who did what, when, with what cost)
+- SLA monitoring (task completion time guarantees)
+- Version scheme: `4.x.y`
+
+### 5.0 — Platform
+
+- Self-hosted SaaS deployment (Docker Compose / K8s)
+- Web-based launcher (replace desktop GUI with React/Next.js)
+- Federated fleet orchestration (multiple physical machines, single control plane)
+- Marketplace: skill store, model store, template store
+- Version scheme transition: `5.0.0` → `0.1.00` (semver with patch at 9.x)
 
 ---
 

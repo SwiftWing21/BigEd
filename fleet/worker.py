@@ -22,6 +22,9 @@ from config import load_config, is_offline, is_air_gap, AIR_GAP_SKILLS
 
 HW_STATE_FILE = FLEET_DIR / "hw_state.json"
 
+IDLE_THRESHOLD = 6  # polls with no task before entering idle mode (~30s at 5s poll)
+IDLE_SKILLS = ["skill_evolve", "skill_test", "code_quality", "benchmark"]
+
 
 def setup_logging(role):
     log_dir = FLEET_DIR / "logs"
@@ -185,6 +188,28 @@ def _cleanup_children():
             pass
 
 
+def _run_idle_evolution(agent_name, config):
+    """Run one idle skill evolution cycle."""
+    log = logging.getLogger(agent_name)
+    try:
+        skill = db.get_least_evolved_skill()
+        if not skill:
+            return
+        # Check budget before idle work
+        from skills._models import check_budget
+        budget = check_budget(skill, config)
+        if budget and budget["exceeded"]:
+            return  # respect daily budgets
+
+        log.info(f"Idle mode: evolving '{skill}'")
+        # Dispatch as low-priority self-assigned task
+        tid = db.post_task("skill_test", json.dumps({"skill": skill, "idle": True}),
+                          priority=1, assigned_to=agent_name)
+        db.log_idle_run(agent_name, skill)
+    except Exception as e:
+        log.debug(f"Idle evolution skipped: {e}")
+
+
 def main():
     # Set process group so parent can kill entire tree on shutdown
     if hasattr(os, 'setpgrp'):
@@ -223,6 +248,7 @@ def main():
     curriculum_idx = 0
     last_task_time = time.time()
     idle_timeout = config['fleet']['idle_timeout_secs']
+    idle_count = 0
 
     running = True
 
@@ -304,7 +330,13 @@ def main():
             pass
 
         task = db.claim_task(role, affinity_skills=affinity_skills)
+        if not task:
+            idle_count += 1
+            if idle_count >= IDLE_THRESHOLD and config.get("idle", {}).get("enabled", False):
+                _run_idle_evolution(role, config)
+                idle_count = 0
         if task:
+            idle_count = 0  # reset on task claim
             last_task_time = time.time()
             log.info(f"Task {task['id']} claimed: {task['type']}")
             try:
