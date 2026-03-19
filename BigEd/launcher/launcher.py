@@ -690,7 +690,7 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
 
     # ── Header ────────────────────────────────────────────────────────────────
     def _build_header(self):
-        hdr = ctk.CTkFrame(self, fg_color=BG3, height=50, corner_radius=0)
+        hdr = ctk.CTkFrame(self, fg_color=BG3, height=60, corner_radius=0)
         hdr.grid(row=0, column=0, columnspan=2, sticky="ew")
         hdr.grid_propagate(False)
         hdr.grid_columnconfigure(3, weight=1)
@@ -717,8 +717,8 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
 
         # Inline stats
         stats_frame = ctk.CTkFrame(hdr, fg_color="transparent")
-        stats_frame.grid(row=0, column=3, sticky="w", padx=(8, 0), pady=(8, 0))
-        kw = dict(font=("Consolas", 9), text_color=DIM)
+        stats_frame.grid(row=0, column=3, sticky="w", padx=(8, 0), pady=(10, 0))
+        kw = dict(font=("Consolas", 11), text_color=DIM)
         self._stat_cpu = ctk.CTkLabel(stats_frame, text="CPU —", **kw)
         self._stat_ram = ctk.CTkLabel(stats_frame, text="RAM —", **kw)
         self._stat_gpu = ctk.CTkLabel(stats_frame, text="GPU —", **kw)
@@ -729,8 +729,8 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
         self._stat_net.pack(side="left", padx=(0, 8))
 
         self._status_pills = ctk.CTkLabel(
-            hdr, text="● loading...", font=("Consolas", 9), text_color=DIM)
-        self._status_pills.grid(row=0, column=4, padx=8, pady=(8, 0), sticky="e")
+            hdr, text="● loading...", font=("Consolas", 11), text_color=DIM)
+        self._status_pills.grid(row=0, column=4, padx=8, pady=(10, 0), sticky="e")
 
         self._action_badge = ctk.CTkLabel(
             hdr, text="", font=("Segoe UI", 9, "bold"),

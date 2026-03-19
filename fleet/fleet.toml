@@ -10,7 +10,7 @@ offline_mode = false         # true = no internet; external API skills gracefull
 air_gap_mode = false         # true = max isolation (implies offline_mode); no sockets, no secrets, skill whitelist
 
 [models]
-local = "qwen3:1.7b"
+local = "qwen3:8b"
 complex = "qwen3:8b"
 complex_provider = "local"    # "claude" | "gemini" | "local"
 conductor_model = "qwen3:4b"  # CPU-pinned user chat model (num_gpu=0, ~2-3GB RAM, 0 VRAM)
