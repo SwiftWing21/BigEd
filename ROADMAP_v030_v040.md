@@ -14,7 +14,8 @@
 | 2. Autonomous Safety | v0.35 – v0.38 | Self-correction, operator comms, isolation | + review cycle, watchdog, HitL, sandbox tests; .secrets never in output |
 | 3. External Integration | v0.39 – v0.41 | Network, browser, vision | + network/browser/vision tests; no OOM on 12GB |
 | 4. Autonomous Continuity | v0.42 – v0.43 | Auto-boot, idle evolve, marathon ML | Zero-click start, stable multi-hour ML |
-| 5. Cross-Platform & v1.0 | PT-1 – PT-4, DT-1 – DT-4 | Anyone, anywhere, clear diagnostics | All tests on Win/Linux/macOS; FleetBridge 100%; zero debt |
+| 5. Elegance & Availability | v0.44 – v0.45 | Unified lifecycle, Omni-box, HA routing | Seamless updates, zero-downtime task execution |
+| 6. Cross-Platform & v1.0 | PT-1 – PT-4, DT-1 – DT-4 | Anyone, anywhere, clear diagnostics | All tests on Win/Linux/macOS; FleetBridge 100%; zero debt |
 
 ## Release Process
 
@@ -394,6 +395,22 @@ All parallel tracks complete. Zero TECH_DEBT. Cross-platform validated.
 
 ---
 
+## v0.44 — Seamless Lifecycle (Unified Updater)
+**Goal:** Deliver a polished, single-application experience by absorbing the updater into the launcher.
+- **Unified Bootloader:** Deprecate `Updater.exe` and `build.bat`. Integrate `git pull` and dependency syncing (`uv sync`) directly into `launcher.py`'s initial loading sequence.
+- **In-Place Restarts:** Implement `os.execv` to allow BigEd CC to transparently hot-reload itself after applying updates without requiring the user to manually relaunch the application.
+- **Streamlined Loading Screen:** Combine Ollama checks, update checks, and fleet startup into a single, elegant pre-flight splash screen.
+
+---
+
+## v0.45 — Omni-Box & High Availability (HA) Routing
+**Goal:** Maximize user interaction elegance and guarantee task execution despite API outages.
+- **Command Palette (Omni-Box):** Implement a global `Ctrl+K` Spotlight-style overlay. Features predictive auto-complete for skills (e.g., `/web_search`), direct agent pinging (`@researcher`), and one-click re-runs of recent tasks.
+- **Model Fallback Cascade:** Refactor `skills._models.call_model()` to support resilient fallback chains. If the primary model (e.g., Claude) fails due to rate limits or outages, gracefully fall back to Gemini, then Local Ollama.
+- **Graceful Degradation Warnings:** If a task completes via a fallback model, append a non-intrusive warning to the UI task status (e.g., "✓ done (fallback: local)").
+
+---
+
 ## Parallel Track: Platform (Cross-Platform Support)
 
 > These items run in parallel to version milestones. They don't bump version numbers — they are infrastructure improvements that land alongside regular releases.
@@ -425,11 +442,16 @@ Completed 2026-03-18.
 - **Installer abstraction:** `installer_cross.py` — platform-conditional install/uninstall (winreg on Windows, .desktop on Linux, /Applications on macOS), status check
 - **Updater:** `.bat` trampoline replacement deferred (exec self-replacement on Linux/macOS documented)
 
-### PT-4: Platform Testing
+### PT-4: Platform Testing [DONE]
 
-- Smoke test per platform in CI (headless, `--fast` mode)
-- Platform-specific troubleshooting matrix (documented in `OPERATIONS.md`)
-- Steam Deck (SteamOS/Arch) validation: CPU-only Ollama, Desktop Mode GUI
+Completed 2026-03-18.
+
+- `.github/workflows/ci.yml` — GitHub Actions CI matrix (Win/Linux/macOS × Python 3.11/3.12)
+- Smoke test per platform in `--fast` mode with in-memory DB
+- Skill import verification across all 54 skills
+- CLI command verification (status, detect-cli)
+- Python syntax check across entire codebase
+- Steam Deck validation: documented (CPU-only Ollama, Desktop Mode GUI)
 
 ---
 
