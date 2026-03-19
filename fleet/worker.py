@@ -358,6 +358,17 @@ def main():
                 pass
             try:
                 payload = json.loads(task['payload_json']) if task['payload_json'] else {}
+                # v0.01.01: Input-side guardrails — scan payload before LLM
+                try:
+                    from skills._watchdog import scan_input
+                    payload_text = task.get("payload_json", "")
+                    scan_result = scan_input(payload_text)
+                    if not scan_result["clean"]:
+                        log.warning(f"Input scan: {len(scan_result['findings'])} finding(s) in task {task['id']} payload")
+                        for f in scan_result["findings"]:
+                            log.warning(f"  [{f['type']}] {f['pattern']}")
+                except Exception:
+                    pass  # input scanning must never block task execution
                 result = run_skill(task['type'], payload, config, log)
                 # Evaluator-Optimizer: route high-stakes skills through review
                 if _should_review(task['type'], config, payload):
