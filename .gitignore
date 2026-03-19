@@ -89,6 +89,36 @@ docker-compose.yml
 # ── MCP context mirror (copies of root .md files for container access) ───────
 education-context/
 
+# ── Dev reference docs (moved to MCP server, not tracked in git) ──────────
+CLAUDE.C_REVIEW.md
+CLAUDE.CHATS.md
+GEMINI.md
+MACHINE_PROFILE.md
+CROSS_PLATFORM.md
+ROADMAP_v014_v020.md
+ROADMAP_v020_v030.md
+BigEd/architecture_comparison.md
+BigEd/build_reference.md
+BigEd/dev_environment.md
+BigEd/fleet_blueprints.md
+BigEd/fleet_commands.md
+BigEd/qa_token_blueprint.md
+BigEd/CONSOLE_UPGRADE_PLAN.md
+BigEd/SECURITY_COMPLIANCE_BLUEPRINT.md
+BigEd/research/
+
+# ── Fleet runtime state ──────────────────────────────────────────────────
+fleet/hw_state.json
+fleet/_graveyard/
+fleet/knowledge/evolution/
+fleet/knowledge/marathon/
+fleet/knowledge/swarm/
+fleet/knowledge/consensus/
+fleet/knowledge/datasets/
+fleet/knowledge/ml_results/
+fleet/knowledge/agent_cards.json
+fleet/data/
+
 # ── OS junk ───────────────────────────────────────────────────────────────────
 .DS_Store
 Thumbs.db
