@@ -2,30 +2,26 @@
 
 This document tracks known technical debt, brittle architectural patterns, and temporary hacks that need to be addressed to ensure long-term stability of the BigEd Fleet.
 
-> **Last reviewed:** v0.41 + CT/DT/GR tracks (2026-03-18)
+> **Last reviewed:** 0.12.00 (2026-03-19)
 
-Most tracked technical debt has been resolved. See Resolved section and open items below.
+All original technical debt resolved. Ongoing items from Gemini architecture audit tracked below.
 
 ---
 
 ## Emerging & Future-Proofing (v0.32 - v1.0)
 *These are architectural bottlenecks that pose a risk to the cross-platform (PT-1/PT-4) and scalability goals of v1.0.*
 
-### [PARTIAL] 4.1. The `launcher.py` God Object
-- **The Debt:** At >3,200 lines, `launcher.py` is mixing UI rendering, hardware NVML polling, direct DB connection handling, and Claude/Gemini API client logic.
-- **The Risk:** Makes cross-platform testing difficult and increases the risk of UI thread lockups.
-- **Path Out:** Extract API Consoles, Settings, and Hardware monitoring into separate files under a `BigEd/launcher/ui/` namespace.
-- **Progress (2026-03-18):** Phase 1: Consoles extracted to `ui/consoles.py` (625 lines, 5747→5122). Phase 2: Settings + Boot extraction in progress.
+### [DONE] 4.1. The `launcher.py` God Object
+- **Resolved in:** 2026-03-19
+- **What was fixed:** Three extraction phases: consoles.py (687 lines), settings.py (1286 lines), boot.py (303 lines). Orphaned HardwareDialog removed. launcher.py: 5747→~3600 lines (-37%). UI modules: 5 extracted files. _db_init moved to data_access.py. SSE client replaces polling.
 
 ### [DONE] 4.2. Aggressive UI Polling Loops
 - **Resolved in:** 2026-03-19
 - **What was fixed:** `ui/sse_client.py` SSE consumer integrated into launcher.py. SSE is primary data source for agent/task updates; polling reduced to 8s fallback when dashboard unavailable. `_handle_sse_status()` callback updates agents table reactively. `_fleet_api()` helper for REST calls.
 
 ### [DONE] 4.3. String-Based Process Control
-- **The Debt:** Using `wsl_bg("pkill -f 'worker.py'")` and similar grep/awk bash strings for state management.
-- **The Risk:** Brittle across operating systems (macOS `pkill` behaves differently; Windows native has no `pkill`). Can accidentally kill non-fleet processes.
-- **Path Out:** Centralize process lifecycle in `supervisor.py` and expose REST endpoints (e.g., `POST /api/workers/stop`). The GUI should only trigger API calls, not raw bash process commands.
-- **Progress (2026-03-19):** 6 REST process control endpoints in dashboard.py. Launcher.py now uses `_fleet_api()` for stop/health with wsl() fallback. Full migration complete.
+- **Resolved in:** 2026-03-19
+- **What was fixed:** 9 REST process control endpoints in process_control.py (Flask Blueprint). Launcher uses `_fleet_api()` for stop/health with wsl() fallback. Dashboard bearer token auth. Rate limiting + CSRF protection.
 
 ### [DONE] 4.4. Decentralized Data Access & Raw SQL
 - **Resolved in:** 2026-03-19
@@ -35,10 +31,9 @@ Most tracked technical debt has been resolved. See Resolved section and open ite
 - **Resolved in:** 2026-03-18
 - **What was fixed:** `NativeWindowsBridge` in fleet_bridge.py with bash→Windows cmd translation (_translate_cmd), BIGED_NATIVE_WINDOWS=1 env toggle, detect_cli() in config.py for auto-detection of best local CLI per platform.
 
-### [PARTIAL] 4.6. Regex-Based Configuration Mutation
-- **Partially resolved in:** 2026-03-18
-- **What was fixed:** All `FLEET_TOML.write_text(re.sub(...))` sites in **launcher.py** replaced with `tomlkit.parse()` → key assignment → `tomlkit.dumps()`. Preserves comments, formatting, and key ordering. `tomlkit` installed as dependency.
-- **Remaining (B4):** `hw_supervisor.py` still uses `re.search` (line ~121) and `re.sub` (line ~133) for reading/writing `local` model in fleet.toml. Should be migrated to `tomlkit` to match launcher.py.
+### [DONE] 4.6. Regex-Based Configuration Mutation
+- **Resolved in:** 2026-03-19
+- **What was fixed:** All regex TOML writes replaced with tomlkit across launcher.py AND hw_supervisor.py. Atomic writes via tempfile+os.replace. B4 (hw_supervisor regex) resolved. B7 (pgrep on Windows) resolved with psutil cross-platform detection.
 
 ### [DONE] 4.7. Bypassing Model Routing Layer
 - **Resolved in:** 2026-03-18
