@@ -1638,19 +1638,15 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
         agents     = status.get("agents", [])
         pending    = status.get("tasks", {}).get("Pending", 0)
 
+        # Update supervisor status labels — NEVER touch _system_running or button
+        # here. Only _start_system/_stop_system control the button state.
         sup_status = status.get("supervisor_status", "OFFLINE")
         if sup_status == "ONLINE":
             self._sup_status_lbl.configure(text="Task Sup: ONLINE", text_color=GREEN)
-            if not self._system_running and not self._system_intentional_stop:
-                self._system_running = True
-                self._btn_system_toggle.configure(text="■  Stop", fg_color="#3a1e1e", hover_color="#4a2a2a")
         elif sup_status == "HUNG":
             self._sup_status_lbl.configure(text="Task Sup: HUNG", text_color=ORANGE)
         else:
             self._sup_status_lbl.configure(text="Task Sup: OFFLINE", text_color=RED)
-            if self._system_running:
-                self._system_running = False
-                self._btn_system_toggle.configure(text="▶  Start", fg_color="#1e3a1e", hover_color="#2a4a2a")
 
         hw_status = status.get("hw_supervisor_status", "OFFLINE")
         if hw_status == "ONLINE":
