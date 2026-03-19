@@ -948,9 +948,10 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
 
         # ── LOGS ──────────────────────────────────────────────────────────────
         s = section("LOGS")
-        agents = ["supervisor", "hw_supervisor", "researcher", "security", "sales",
-                  "analyst", "archivist", "onboarding", "implementation", "planner"]
-        self._log_agent_var = ctk.StringVar(value="supervisor")
+        agents = ["all", "supervisor", "hw_supervisor", "researcher", "coder",
+                  "security", "sales", "analyst", "archivist", "onboarding",
+                  "implementation", "planner", "legal", "account_manager"]
+        self._log_agent_var = ctk.StringVar(value="all")
         menu = ctk.CTkOptionMenu(
             sb, values=agents, variable=self._log_agent_var,
             font=FONT_SM, fg_color=BG3, button_color=ACCENT,
@@ -1107,7 +1108,7 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
         log_frame.grid_columnconfigure(0, weight=1)
 
         self._log_label = ctk.CTkLabel(
-            log_frame, text="LOG — hw_supervisor", font=("Segoe UI", 9, "bold"),
+            log_frame, text="LOG — all", font=("Segoe UI", 9, "bold"),
             text_color=GOLD, anchor="w")
         self._log_label.grid(row=0, column=0, padx=8, pady=(4, 2), sticky="w")
 

@@ -144,6 +144,21 @@ def check_oom_risk(skill_name: str, config: dict) -> dict:
     vram_free = status.get("vram_free_gb", 0)
     vram_needed = estimate.get("vram_total_gb", 7.0)
 
+    # If the model is already loaded, it's already consuming VRAM — no additional needed
+    # Only extra_vram (vision models, etc.) would need additional space
+    try:
+        import urllib.request
+        with urllib.request.urlopen("http://localhost:11434/api/ps", timeout=3) as r:
+            import json as _json
+            ps = _json.loads(r.read())
+        loaded_names = [m["name"] for m in ps.get("models", [])]
+        current_model = config.get("models", {}).get("local", "qwen3:8b")
+        if current_model in loaded_names:
+            # Model already loaded — only need extra VRAM for heavy skills
+            vram_needed = estimate.get("vram_extra_gb", 0)
+    except Exception:
+        pass  # can't check — use conservative estimate
+
     # Compare free VRAM against needs
     headroom = vram_free - vram_needed
     if headroom < -1:

@@ -1,6 +1,6 @@
 [fleet]
 eco_mode = false
-idle_enabled = false        # set true to allow workers to run idle curriculum
+idle_enabled = true         # workers self-improve when no tasks pending
 idle_timeout_secs = 30
 training_check_interval_secs = 15   # reduced: catch training start faster
 max_workers = 10              # cap active workers at boot (hw_supervisor scales dynamically)
@@ -172,7 +172,7 @@ enabled = false  # set true after running: lead_client.py install-service
 
 # v0.42: Idle skill evolution — workers self-improve when no tasks pending
 [idle]
-enabled = false  # set true to allow workers to evolve skills during downtime
+enabled = true   # workers self-improve when no tasks pending
 threshold_polls = 6  # consecutive idle polls before entering idle mode (~30s at 5s/poll)
 skills = ["skill_evolve", "skill_test", "code_quality", "benchmark"]
 
