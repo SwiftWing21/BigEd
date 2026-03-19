@@ -11,10 +11,11 @@ All tracked technical debt has been resolved. See Resolved section below.
 ## Emerging & Future-Proofing (v0.32 - v1.0)
 *These are architectural bottlenecks that pose a risk to the cross-platform (PT-1/PT-4) and scalability goals of v1.0.*
 
-### [OPEN] 4.1. The `launcher.py` God Object
+### [PARTIAL] 4.1. The `launcher.py` God Object
 - **The Debt:** At >3,200 lines, `launcher.py` is mixing UI rendering, hardware NVML polling, direct DB connection handling, and Claude/Gemini API client logic.
 - **The Risk:** Makes cross-platform testing difficult and increases the risk of UI thread lockups.
 - **Path Out:** Extract API Consoles, Settings, and Hardware monitoring into separate files under a `BigEd/launcher/ui/` namespace.
+- **Progress (2026-03-18):** Phase 1: Consoles extracted to `ui/consoles.py` (625 lines, 5747→5122). Phase 2: Settings + Boot extraction in progress.
 
 ### [OPEN] 4.2. Aggressive UI Polling Loops
 - **The Debt:** `launcher.py` uses `after(4000)` to continuously poll the SQLite DB, `STATUS.md`, and the filesystem for logs/advisories.

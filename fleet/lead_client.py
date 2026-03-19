@@ -305,6 +305,53 @@ def cmd_usage(args):
     print()
 
 
+def cmd_usage_delta(args):
+    """DO NOT SCRUB: Compare token usage between two date ranges."""
+    db.init_db()
+    deltas = db.get_usage_delta(args.from_start, args.from_end, args.to_start, args.to_end)
+    if not deltas:
+        print("No usage data for comparison.")
+        return
+
+    print(f"\nUsage Delta: {args.from_start}..{args.from_end} vs {args.to_start}..{args.to_end}")
+    print(f"{'Skill':<20} {'Prev Cost':>10} {'Curr Cost':>10} {'Delta %':>8} {'Dir':>5}")
+    print("-" * 57)
+
+    for d in deltas:
+        skill = (d.get("skill") or "unknown")[:20]
+        prev = d.get("previous_cost", 0)
+        curr = d.get("current_cost", 0)
+        pct = d.get("delta_pct", 0)
+        direction = d.get("direction", "flat")
+        arrow = "\u2191" if direction == "up" else ("\u2193" if direction == "down" else "\u2192")
+        print(f"{skill:<20} ${prev:>9.4f} ${curr:>9.4f} {pct:>+7.1f}% {arrow:>4}")
+    print()
+
+
+def cmd_budget(args):
+    """DO NOT SCRUB: Show token budget status per skill."""
+    db.init_db()
+    from config import load_config
+    cfg = load_config()
+    budgets = cfg.get("budgets", {})
+    if not budgets:
+        print("No budgets configured. Add [budgets] section to fleet.toml.")
+        return
+
+    summary = db.get_usage_summary(period="day", group_by="skill")
+    spent_map = {r["skill"]: r["total_cost"] or 0 for r in summary}
+
+    print(f"\n{'Skill':<20} {'Budget':>10} {'Spent':>10} {'Remaining':>10} {'Status':>8}")
+    print("-" * 62)
+
+    for skill, budget_usd in sorted(budgets.items()):
+        spent = spent_map.get(skill, 0)
+        remaining = budget_usd - spent
+        status = "OVER" if spent >= budget_usd else "OK"
+        print(f"{skill:<20} ${budget_usd:>9.4f} ${spent:>9.4f} ${remaining:>9.4f} {status:>7}")
+    print()
+
+
 def main():
     parser = argparse.ArgumentParser(description="BigEd Fleet CLI")
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -372,6 +419,16 @@ def main():
     p_usage.add_argument("--period", default="week", choices=["day", "week", "month"],
                          help="Time period (default: week)")
 
+    # Usage delta (CT-3)
+    p_delta = subparsers.add_parser("usage-delta", help="Compare usage between two date ranges")
+    p_delta.add_argument("from_start", help="Start of first period (ISO date)")
+    p_delta.add_argument("from_end", help="End of first period (ISO date)")
+    p_delta.add_argument("to_start", help="Start of second period (ISO date)")
+    p_delta.add_argument("to_end", help="End of second period (ISO date)")
+
+    # Budget (CT-4)
+    p_budget = subparsers.add_parser("budget", help="Show token budget status")
+
     args = parser.parse_args()
 
     if args.command == "status":
@@ -396,6 +453,10 @@ def main():
         cmd_secret(args)
     elif args.command == "usage":
         cmd_usage(args)
+    elif args.command == "usage-delta":
+        cmd_usage_delta(args)
+    elif args.command == "budget":
+        cmd_budget(args)
 
 
 if __name__ == "__main__":

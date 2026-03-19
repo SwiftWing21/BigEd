@@ -6,7 +6,7 @@ v0.27: New endpoints (/api/thermal, /api/training, /api/modules, /api/data_stats
        Server-Sent Events for live updates, alert system.
 CT-2:  Cost intelligence endpoints (/api/usage, /api/usage/delta).
 
-25 endpoints total (19 data + 6 process control).
+27 endpoints total (21 data + 6 process control).
 
 Usage:
     python dashboard.py                # http://localhost:5555
@@ -660,6 +660,62 @@ def api_usage_delta():
         if not all([from_start, from_end, to_start, to_end]):
             return jsonify({"error": "Required params: from_start, from_end, to_start, to_end"}), 400
         return jsonify(db.get_usage_delta(from_start, from_end, to_start, to_end))
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/usage/budgets")
+def api_usage_budgets():
+    """CT-4: Token budget status — daily spend vs configured limits."""
+    try:
+        config = _load_config()
+        budgets = config.get("budgets", {})
+        if not budgets:
+            return jsonify({"budgets": [], "message": "No budgets configured"})
+
+        sys.path.insert(0, str(FLEET_DIR))
+        import db
+        summary = db.get_usage_summary(period="day", group_by="skill")
+        spent_map = {r["skill"]: r.get("total_cost", 0) or 0 for r in summary}
+
+        result = []
+        for skill, limit_usd in sorted(budgets.items()):
+            spent = spent_map.get(skill, 0)
+            result.append({
+                "skill": skill,
+                "budget_usd": limit_usd,
+                "spent_usd": round(spent, 6),
+                "remaining_usd": round(limit_usd - spent, 6),
+                "exceeded": spent >= limit_usd,
+                "pct_used": round(spent / limit_usd * 100, 1) if limit_usd > 0 else 0,
+            })
+        return jsonify(result)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/usage/regression")
+def api_usage_regression():
+    """CT-3: Flag skills with >20% token increase vs previous period."""
+    try:
+        sys.path.insert(0, str(FLEET_DIR))
+        import db
+        from datetime import datetime, timedelta
+
+        now = datetime.now()
+        # Compare last 7 days vs previous 7 days
+        to_end = now.strftime("%Y-%m-%d %H:%M:%S")
+        to_start = (now - timedelta(days=7)).strftime("%Y-%m-%d %H:%M:%S")
+        from_end = to_start
+        from_start = (now - timedelta(days=14)).strftime("%Y-%m-%d %H:%M:%S")
+
+        deltas = db.get_usage_delta(from_start, from_end, to_start, to_end)
+        regressions = [d for d in deltas if d.get("delta_pct", 0) > 20]
+        return jsonify({
+            "period": {"from": f"{from_start} to {from_end}", "to": f"{to_start} to {to_end}"},
+            "regressions": regressions,
+            "total_skills_checked": len(deltas),
+        })
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 

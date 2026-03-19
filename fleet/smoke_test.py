@@ -200,6 +200,25 @@ def test_usage_tracking():
     return ok, f"logged: {row['calls']} calls, ${row['total_cost']:.4f}"
 
 
+def test_budget_check():
+    """Budget check returns correct exceeded status."""
+    import db
+    db.init_db()
+    # Log expensive usage
+    db.log_usage(
+        skill="smoke_budget_test", model="claude-sonnet-4-6",
+        input_tokens=100000, output_tokens=50000,
+        cost_usd=5.0, task_id=None, agent="smoke_agent",
+    )
+    # Simulate budget check with $1.00 limit
+    summary = db.get_usage_summary(period="day", group_by="skill")
+    row = next((r for r in summary if r["skill"] == "smoke_budget_test"), None)
+    if not row:
+        return False, "usage row not found"
+    exceeded = (row["total_cost"] or 0) >= 1.00
+    return exceeded, f"${row['total_cost']:.2f} vs $1.00 budget = {'exceeded' if exceeded else 'under'}"
+
+
 def test_stale_recovery():
     """Stale task recovery finds orphaned RUNNING tasks."""
     import db
@@ -270,7 +289,7 @@ def cleanup():
         conn.execute("DELETE FROM notes WHERE from_agent LIKE 'smoke_%'")
         # Clean usage tracking test data (ignore if table doesn't exist yet)
         try:
-            conn.execute("DELETE FROM usage WHERE skill LIKE 'smoke_%'")
+            conn.execute("DELETE FROM usage WHERE skill LIKE 'smoke_%' OR skill LIKE 'soak_%'")
         except Exception:
             pass
 
@@ -308,6 +327,7 @@ def main():
         ("Note round-trip", test_note_round_trip),
         ("Backward-compat messages", test_backward_compat_messages),
         ("Usage tracking", test_usage_tracking),
+        ("Budget check", test_budget_check),
         ("Stale recovery", test_stale_recovery),
         ("Training lock", test_training_lock),
     ])

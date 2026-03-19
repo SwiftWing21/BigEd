@@ -34,6 +34,29 @@ def calculate_cost(usage, model_id: str) -> float:
     return round(cost, 6)
 
 
+def check_budget(skill_name: str, config: dict) -> dict | None:
+    """Check if a skill has a token budget and current usage. Returns budget info or None."""
+    budgets = config.get("budgets", {})
+    if not budgets or skill_name not in budgets:
+        return None
+    budget_usd = budgets[skill_name]
+    try:
+        import db
+        # Get this skill's usage for the current day
+        summary = db.get_usage_summary(period="day", group_by="skill")
+        current = next((r for r in summary if r.get("skill") == skill_name), None)
+        spent = current["total_cost"] if current else 0.0
+        return {
+            "skill": skill_name,
+            "budget_usd": budget_usd,
+            "spent_usd": round(spent, 6),
+            "remaining_usd": round(budget_usd - spent, 6),
+            "exceeded": spent >= budget_usd,
+        }
+    except Exception:
+        return None
+
+
 def call_complex(system: str, user: str, config: dict, max_tokens: int = 2048, cache_system: bool = False,
                  skill_name: str = "unknown", task_id=None, agent_name=None) -> str:
     """Route a complex inference call based on fleet.toml complex_provider."""
@@ -43,6 +66,17 @@ def call_complex(system: str, user: str, config: dict, max_tokens: int = 2048, c
     # Offline mode: force local provider (no external API calls)
     if config.get("fleet", {}).get("offline_mode", False):
         provider = "local"
+
+    # CT-4: Budget check (warn, don't block)
+    try:
+        budget = check_budget(skill_name, config)
+        if budget and budget["exceeded"]:
+            import sys
+            print(f"[BUDGET] Warning: {skill_name} exceeded daily budget "
+                  f"(${budget['spent_usd']:.4f} / ${budget['budget_usd']:.4f})",
+                  file=sys.stderr)
+    except Exception:
+        pass  # budget checking must never break skill execution
 
     if provider == "gemini":
         return _call_gemini(system, user, models, max_tokens)

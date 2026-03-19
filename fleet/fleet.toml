@@ -10,7 +10,7 @@ offline_mode = false         # true = no internet; external API skills gracefull
 air_gap_mode = false         # true = max isolation (implies offline_mode); no sockets, no secrets, skill whitelist
 
 [models]
-local = "qwen3:8b"
+local = "qwen3:1.7b"
 complex = "qwen3:8b"
 complex_provider = "local"    # "claude" | "gemini" | "local"
 conductor_model = "qwen3:4b"  # CPU-pinned user chat model (num_gpu=0, ~2-3GB RAM, 0 VRAM)
@@ -138,6 +138,18 @@ dependency_scan_enabled = true   # run pip-audit/pip-check during security_audit
 network_hardening_enabled = true # verify Ollama/dashboard bound to 127.0.0.1 during pen_test
 
 [walkthrough]
-completed = false              # set true after finish or Skip All
-skipped_steps = []             # list of step numbers skipped
-completed_at = ""              # ISO date when completed/skipped
+completed = true
+skipped_steps = []
+completed_at = "2026-03-18T22:44:31"
+
+# CT-4: Daily token budgets per skill (USD). Warn-only — tasks are never blocked.
+# Skills not listed here have no budget limit.
+[budgets]
+lead_research = 5.00
+code_review = 3.00
+web_search = 2.00
+code_write = 4.00
+security_audit = 3.00
+plan_workload = 2.00
+summarize = 1.50
+synthesize = 2.00

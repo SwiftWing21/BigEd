@@ -326,6 +326,15 @@ def main():
                 else:
                     db.complete_task(task['id'], json.dumps(result))
                     log.info(f"Task {task['id']} done")
+                # CT-4: Post-execution budget check
+                try:
+                    from skills._models import check_budget
+                    budget_info = check_budget(task['type'], config)
+                    if budget_info and budget_info["exceeded"]:
+                        log.warning(f"Budget exceeded for {task['type']}: "
+                                    f"${budget_info['spent_usd']:.4f} / ${budget_info['budget_usd']:.4f}")
+                except Exception:
+                    pass  # budget tracking must never break task execution
             except Exception as e:
                 err_str = str(e).lower()
                 # Overload / Network Drop detection

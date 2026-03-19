@@ -135,6 +135,23 @@
 | T14.2 Usage Delta | GET /api/usage/delta?from_start=...&to_end=... | Returns per-skill deltas with direction field |
 | T14.3 Usage Group | GET /api/usage?group=model | Groups by model instead of skill |
 
+## Suite 15: Token Budgets — CT-4 (4 tests)
+
+| Test | Action | Verify |
+|------|--------|--------|
+| T15.1 Budget Config | Read fleet.toml [budgets] | Section exists with per-skill USD limits |
+| T15.2 Budget Check | `check_budget("lead_research", config)` after logging usage | Returns exceeded=True when over limit |
+| T15.3 Budget CLI | `lead_client.py budget` | Prints table with Skill, Budget, Spent, Remaining, Status |
+| T15.4 Budget API | GET /api/usage/budgets | Returns JSON array with pct_used per skill |
+
+## Suite 16: Delta Comparison — CT-3 (3 tests)
+
+| Test | Action | Verify |
+|------|--------|--------|
+| T16.1 Delta CLI | `lead_client.py usage-delta 2026-01-01 2026-01-07 2026-01-08 2026-01-14` | Prints formatted delta table with direction arrows |
+| T16.2 Regression API | GET /api/usage/regression | Returns regressions array (skills >20% increase) |
+| T16.3 Delta Direction | Insert usage in two periods, call get_usage_delta() | Returns correct "up"/"down"/"flat" direction |
+
 ---
 
-## Total: 57 tests across 14 suites
+## Total: 64 tests across 16 suites

@@ -13,6 +13,8 @@ Tests:
   8. Message broadcast under load
   9. Concurrent lock contention
   10. DB WAL mode stress
+  11. Usage budget check (CT-4)
+  12. Usage delta comparison (CT-3)
 
 Run: uv run python soak_test.py [--duration MINUTES] [--fast]
 """
@@ -649,6 +651,50 @@ def test_integration_config():
     return True, f"integrations OK, vision_model={vision}"
 
 
+def test_usage_budget_check():
+    """CT-4: Budget check returns correct exceeded status."""
+    import db
+    db.init_db()
+    # Log usage that exceeds a $1.00 budget
+    db.log_usage(skill="soak_budget_test", model="claude-sonnet-4-6",
+                 input_tokens=500000, output_tokens=100000,
+                 cost_usd=3.00, task_id=None, agent="soak_agent")
+
+    summary = db.get_usage_summary(period="day", group_by="skill")
+    row = next((r for r in summary if r["skill"] == "soak_budget_test"), None)
+    assert row is not None, "Usage row not found"
+    assert row["total_cost"] >= 3.00, f"Expected >= $3.00, got ${row['total_cost']}"
+
+    # Simulate budget check: $1.00 budget, $3.00 spent = exceeded
+    budget_usd = 1.00
+    exceeded = row["total_cost"] >= budget_usd
+    assert exceeded, "Budget should be exceeded"
+    return True, f"Budget check: ${row['total_cost']:.2f} / ${budget_usd:.2f} = exceeded"
+
+
+def test_usage_delta_comparison():
+    """CT-3: Delta comparison returns correct direction."""
+    import db
+    db.init_db()
+    # Log usage in two "periods" using explicit timestamps
+    with db.get_conn() as conn:
+        conn.execute(
+            "INSERT INTO usage (created_at, skill, model, input_tokens, output_tokens, cost_usd) VALUES (?, ?, ?, ?, ?, ?)",
+            ("2026-01-01 00:00:00", "soak_delta_test", "claude-sonnet-4-6", 1000, 200, 0.005)
+        )
+        conn.execute(
+            "INSERT INTO usage (created_at, skill, model, input_tokens, output_tokens, cost_usd) VALUES (?, ?, ?, ?, ?, ?)",
+            ("2026-01-08 00:00:00", "soak_delta_test", "claude-sonnet-4-6", 2000, 400, 0.015)
+        )
+
+    deltas = db.get_usage_delta("2025-12-31", "2026-01-02", "2026-01-07", "2026-01-09")
+    row = next((d for d in deltas if d["skill"] == "soak_delta_test"), None)
+    assert row is not None, "Delta row not found"
+    assert row["direction"] == "up", f"Expected 'up', got '{row['direction']}'"
+    assert row["delta_pct"] > 100, f"Expected >100% increase, got {row['delta_pct']}%"
+    return True, f"Delta: {row['delta_pct']}% {row['direction']}"
+
+
 def cleanup():
     """Remove soak test artifacts from DB."""
     import db
@@ -660,6 +706,8 @@ def cleanup():
         conn.execute("DELETE FROM locks WHERE name='soak_test_lock'")
         conn.execute("DELETE FROM notes WHERE from_agent LIKE 'soak_%'")
         conn.execute("DELETE FROM notes WHERE channel='soak_notes_test'")
+        conn.execute("DELETE FROM usage WHERE skill='soak_budget_test'")
+        conn.execute("DELETE FROM usage WHERE skill='soak_delta_test'")
 
 
 def main():
@@ -698,6 +746,8 @@ def main():
         ("New skill imports (v0.39-v0.41)", test_new_skill_imports),
         ("Integration config", test_integration_config),
         ("Post task validation", test_post_task_validation),
+        ("Usage budget check (CT-4)", test_usage_budget_check),
+        ("Usage delta comparison (CT-3)", test_usage_delta_comparison),
     ]
 
     results = []

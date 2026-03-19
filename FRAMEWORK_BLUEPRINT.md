@@ -210,7 +210,7 @@ Status flow:  WAITING → PENDING → RUNNING → DONE/FAILED
 
 ## 4. Dashboard v2
 
-### Endpoints (25 total: 19 data + 6 process control)
+### Endpoints (27 total: 21 data + 6 process control)
 
 | Endpoint | Data Source | Purpose |
 |----------|-----------|---------|
@@ -232,6 +232,8 @@ Status flow:  WAITING → PENDING → RUNNING → DONE/FAILED
 | `/api/resolutions` | data/resolutions.jsonl | Resolution tracking entries |
 | `/api/usage` | fleet.db usage table | Token usage aggregates by skill/model/agent |
 | `/api/usage/delta` | fleet.db usage table | Compare usage between two date ranges |
+| `/api/usage/budgets` | fleet.db + fleet.toml | Per-skill budget status with pct_used |
+| `/api/usage/regression` | fleet.db | Auto-flag skills with >20% token increase |
 | `POST /api/fleet/start` | subprocess | Start fleet supervisor process |
 | `POST /api/fleet/stop` | os.kill SIGTERM | Graceful fleet shutdown via PID |
 | `/api/fleet/workers` | fleet.db + os.kill(0) | List workers with PID + alive check |
@@ -280,15 +282,15 @@ Negative results are logged — they narrow the search space.
 
 ## 6. Testing Framework
 
-### Smoke Test (11 checks, ~2s fast / ~10s full)
+### Smoke Test (12 checks, ~2s fast / ~10s full)
 
 ```
-1. Skill imports (50 modules)     7. Channel message routing
+1. Skill imports (54+ modules)    7. Channel message routing
 2. DB health (task lifecycle)     8. Note round-trip
 3. Config health (fleet.toml)     9. Backward-compat messages
 4. Ollama reachable*              10. Usage tracking (CT-1)
-5. Message round-trip             11. Stale recovery
-6. Broadcast round-trip
+5. Message round-trip             11. Budget check (CT-4)
+6. Broadcast round-trip           12. Stale recovery
 + Training lock, Thermal readings* (* = skipped in --fast)
 ```
 
@@ -745,6 +747,7 @@ Over time, `resolutions.jsonl` becomes a knowledge base:
 | — | DT-2/3 Issues | Report Issue button, resolutions.jsonl, /api/resolutions endpoint |
 | — | CM-1/2/3/4 Comms | Triple-layer channels (sup/agent/fleet/pool), notes scratchpad, CLI + dashboard |
 | — | CT-1/CT-2 Cost | Usage table, PRICING/calculate_cost, /api/usage + /api/usage/delta, CLI usage cmd |
+| — | CT-3/CT-4 Cost | Delta comparison CLI + regression endpoint, token budgets [budgets] config, budget enforcement |
 | — | DT-4 Stability | stability_report.py skill, resolutions.jsonl pattern detection, knowledge output |
 | — | Cross-Platform | FleetBridge abstraction, platform packaging, CI/CD matrix (parallel track) |
 | — | Diagnostics | Debug reports, issue submission, resolution tracking, stability analysis (parallel track) |

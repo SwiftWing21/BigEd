@@ -347,21 +347,27 @@ Completed 2026-03-18.
 - `lead_client.py usage` CLI command showing cost breakdown table with cache savings
 - Endpoint count: 17 → 19
 
-### CT-3: Delta Comparison
+### CT-3: Delta Comparison [DONE]
 
-- `compare_usage(period_a, period_b)` → per-skill delta report
-- Version tagging: link usage records to git commit / version string
-- Automated regression flag: >20% token increase on same skill = warning in dashboard
-- Weekly summary → `knowledge/reports/usage_report_<date>.md`
-- Delta format: `{metric, previous, current, delta_pct, direction}`
+Completed 2026-03-18.
 
-### CT-4: Optimization Loop
+- `db.get_usage_delta()` — per-skill delta report between two date ranges
+- `lead_client.py usage-delta` CLI — formatted table with direction arrows
+- `/api/usage/regression` endpoint — auto-flags >20% token increase vs prior week
+- Delta format: `{skill, previous_cost, current_cost, delta_pct, direction}`
+- Soak test: delta comparison with inserted date-ranged data
 
-- Skill-level token budgets in `fleet.toml [budgets]`
-- Budget enforcement: warn (not block) when skill exceeds budget
-- Cache effectiveness report: savings from ephemeral cache vs full cost
-- Prompt compression recommendations based on input_token trends
-- Model routing validation: flag Opus usage where Sonnet/Haiku would suffice
+### CT-4: Optimization Loop [DONE]
+
+Completed 2026-03-18.
+
+- `fleet.toml [budgets]` — per-skill daily USD budgets (warn-only, never blocks)
+- `check_budget()` in `_models.py` — checks daily spend vs configured limit
+- Budget warning in `call_complex()` — prints to stderr when exceeded
+- Worker post-execution budget check — logs warning after task completes
+- `lead_client.py budget` CLI — shows budget status table
+- `/api/usage/budgets` endpoint — budget status with pct_used
+- Soak test: budget exceeded detection
 
 ---
 
