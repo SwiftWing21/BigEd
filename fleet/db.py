@@ -237,8 +237,12 @@ def complete_task(task_id, result_json):
                 "UPDATE tasks SET status='DONE', result_json=? WHERE id=?",
                 (result_json, task_id)
             )
-            # Promote WAITING tasks whose dependencies are now all met
-            _promote_waiting_tasks(conn)
+            # Async DAG promotion (0.08.00) — prevents WAL thundering herd
+            try:
+                from dag_queue import enqueue_promotion
+                enqueue_promotion(task_id)
+            except ImportError:
+                _promote_waiting_tasks(conn)  # fallback to sync
     _retry_write(_do)
 
 
@@ -250,8 +254,12 @@ def fail_task(task_id, error):
                 "UPDATE tasks SET status='FAILED', error=? WHERE id=?",
                 (str(error), task_id)
             )
-            # Cascade-fail tasks waiting on this one
-            _cascade_fail_dependents(conn, task_id, str(error))
+            # Async cascade-fail (0.08.00) — prevents WAL thundering herd
+            try:
+                from dag_queue import enqueue_cascade_fail
+                enqueue_cascade_fail(task_id, str(error))
+            except ImportError:
+                _cascade_fail_dependents(conn, task_id, str(error))  # fallback to sync
     _retry_write(_do)
 
 
