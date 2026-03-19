@@ -1,0 +1,24 @@
+[workflow]
+name = "research_pipeline"
+description = "Research a topic, summarize findings, generate flashcards"
+priority = 7
+
+[[steps]]
+name = "search"
+skill = "web_search"
+[steps.payload]
+query = "$topic"
+
+[[steps]]
+name = "summarize"
+skill = "summarize"
+depends_on = ["search"]
+[steps.payload]
+description = "Summarize the search results"
+
+[[steps]]
+name = "flashcards"
+skill = "flashcard"
+depends_on = ["summarize"]
+[steps.payload]
+content = "Create flashcards from the summary"
