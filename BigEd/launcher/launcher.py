@@ -412,6 +412,8 @@ def parse_status():
 
 
 def read_log_tail(agent: str, n=60) -> str:
+    if agent == "all":
+        return _read_combined_logs(n)
     f = LOGS_DIR / f"{agent}.log"
     if not f.exists():
         return f"[no log: {agent}.log]"
@@ -420,6 +422,22 @@ def read_log_tail(agent: str, n=60) -> str:
         return "\n".join(lines[-n:])
     except Exception as e:
         return f"[read error: {e}]"
+
+
+def _read_combined_logs(n=80) -> str:
+    """Read recent lines from all log files, sorted by timestamp."""
+    all_lines = []
+    for f in LOGS_DIR.glob("*.log"):
+        try:
+            agent_name = f.stem
+            for line in f.read_text(encoding="utf-8", errors="ignore").splitlines()[-30:]:
+                # Prefix with agent name for identification
+                all_lines.append((line, f"[{agent_name}] {line}"))
+        except Exception:
+            continue
+    # Sort by the raw line (timestamps at start sort naturally)
+    all_lines.sort(key=lambda x: x[0])
+    return "\n".join(tagged for _, tagged in all_lines[-n:])
 
 
 def get_hw_stats(prev_net, prev_time):
@@ -581,7 +599,7 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
 
         self._set_icon()
         self._build_ui()
-        self._current_log_agent = "supervisor"
+        self._current_log_agent = "hw_supervisor"  # show hw_supervisor during boot
         self._refresh_status()
         self._schedule_refresh()
         self._schedule_hw()
@@ -1056,7 +1074,7 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
         log_frame.grid_columnconfigure(0, weight=1)
 
         self._log_label = ctk.CTkLabel(
-            log_frame, text="LOG — supervisor", font=("Segoe UI", 9, "bold"),
+            log_frame, text="LOG — hw_supervisor", font=("Segoe UI", 9, "bold"),
             text_color=GOLD, anchor="w")
         self._log_label.grid(row=0, column=0, padx=8, pady=(4, 2), sticky="w")
 

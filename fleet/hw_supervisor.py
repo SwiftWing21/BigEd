@@ -27,12 +27,14 @@ SCALING PATTERN (park + guard + recover):
 AI AGENTS: Do not implement model-downgrade logic in skills. This supervisor handles it.
 """
 import json
+import logging
 import os
 import sys
 import tempfile
 import time
 import urllib.request
 from collections import deque
+from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
 from gpu import detect_gpu, read_telemetry as _gpu_read_telemetry
@@ -48,6 +50,18 @@ except ImportError:
 FLEET_DIR = Path(__file__).parent
 FLEET_TOML = FLEET_DIR / "fleet.toml"
 HW_STATE_FILE = FLEET_DIR / "hw_state.json"
+
+# ── Logging setup — file + console ────────────────────────────────────────────
+(FLEET_DIR / "logs").mkdir(parents=True, exist_ok=True)
+_log_handler = RotatingFileHandler(
+    FLEET_DIR / "logs" / "hw_supervisor.log",
+    maxBytes=10 * 1024 * 1024, backupCount=5, encoding="utf-8",
+)
+_log_handler.setFormatter(logging.Formatter("%(asctime)s [HW_SUP] %(message)s"))
+log = logging.getLogger("hw_supervisor")
+log.setLevel(logging.INFO)
+log.addHandler(_log_handler)
+log.addHandler(logging.StreamHandler(sys.stdout))
 
 sys.path.insert(0, str(FLEET_DIR))
 
@@ -152,10 +166,10 @@ def set_local_model(target_model):
         with os.fdopen(tmp_fd, 'w', encoding='utf-8') as f:
             f.write(tomlkit.dumps(doc))
         os.replace(tmp_path, str(FLEET_TOML))
-        print(f"[HW_SUP] Model: {current} -> {target_model}")
+        log.info(f"Model: {current} -> {target_model}")
         return True
     except Exception as e:
-        print(f"[HW_SUP] set_local_model error: {e}")
+        log.info(f"set_local_model error: {e}")
         return False
 
 
@@ -167,7 +181,7 @@ def unload_all_models():
         with urllib.request.urlopen(req, timeout=5) as r:
             data = json.loads(r.read())
             for m in data.get("models", []):
-                print(f"[HW_SUP] Evicting {m['name']}")
+                log.info(f"Evicting {m['name']}")
                 body = json.dumps({"model": m["name"], "keep_alive": 0}).encode()
                 ureq = urllib.request.Request(
                     "http://localhost:11434/api/generate", data=body, method="POST",
@@ -191,7 +205,7 @@ def validate_configured_models(cfg):
     """Check that all configured models are actually installed. Log warnings for missing."""
     available = get_available_models(cfg.get("ollama_host", "http://localhost:11434"))
     if not available:
-        print("[HW_SUP] WARNING: No models found in Ollama (is it running?)")
+        log.warning(" No models found in Ollama (is it running?)")
         return False
 
     needed = set()
@@ -204,12 +218,12 @@ def validate_configured_models(cfg):
 
     missing = [m for m in sorted(needed) if m not in available]
     if missing:
-        print(f"[HW_SUP] WARNING: Missing models: {', '.join(missing)}")
-        print(f"[HW_SUP] Available: {', '.join(available)}")
-        print(f"[HW_SUP] Run: ollama pull {missing[0]}")
+        log.warning(f" Missing models: {', '.join(missing)}")
+        log.info(f"Available: {', '.join(available)}")
+        log.info(f"Run: ollama pull {missing[0]}")
         return False
 
-    print(f"[HW_SUP] All {len(needed)} configured models available")
+    log.info(f"All {len(needed)} configured models available")
     return True
 
 
@@ -219,7 +233,7 @@ def warmup_model(model_name):
         # Check if model exists before trying to warm up
         available = get_available_models()
         if model_name not in available:
-            print(f"[HW_SUP] Cannot warmup '{model_name}' — not installed. Run: ollama pull {model_name}")
+            log.info(f"Cannot warmup '{model_name}' — not installed. Run: ollama pull {model_name}")
             return False
         body = json.dumps({"model": model_name, "prompt": "", "keep_alive": "5m"}).encode()
         req = urllib.request.Request(
@@ -228,11 +242,11 @@ def warmup_model(model_name):
         with urllib.request.urlopen(req, timeout=45) as r:
             resp = json.loads(r.read())
             if "error" in resp:
-                print(f"[HW_SUP] Warmup error for '{model_name}': {resp['error']}")
+                log.info(f"Warmup error for '{model_name}': {resp['error']}")
                 return False
         return True
     except Exception as e:
-        print(f"[HW_SUP] Warmup failed for '{model_name}': {e}")
+        log.info(f"Warmup failed for '{model_name}': {e}")
         return False
 
 
@@ -258,7 +272,7 @@ def evict_models_for_training(host=None):
             try:
                 with urllib.request.urlopen(req, timeout=5) as resp:
                     resp.read()  # consume response
-                print(f"[HW_SUP] Pre-training eviction: {model_name}")
+                log.info(f"Pre-training eviction: {model_name}")
             except Exception:
                 pass  # best-effort eviction
     except Exception:
@@ -404,7 +418,7 @@ def ensure_conductor(host, conductor_model):
 # ── Model Transition ──────────────────────────────────────────────────────────
 
 def transition_model(target, current, cfg, emergency=False):
-    print(f"[HW_SUP] {'EMERGENCY ' if emergency else ''}Transition: {current} -> {target}")
+    log.info(f"{'EMERGENCY ' if emergency else ''}Transition: {current} -> {target}")
 
     if not emergency:
         write_state("transitioning", target)
@@ -419,11 +433,11 @@ def transition_model(target, current, cfg, emergency=False):
         unload_all_models()
         time.sleep(2)
 
-    print(f"[HW_SUP] Warming up {target}...")
+    log.info(f"Warming up {target}...")
     warmup_model(target)
 
     write_state("ready", target)
-    print("[HW_SUP] Transition complete.")
+    log.info("Transition complete.")
 
     if not emergency:
         time.sleep(cfg["cooldown_after_swap_secs"])
@@ -465,7 +479,7 @@ def check_training_active(cfg):
 
 def main():
     if not _HAS_GPU:
-        print("[HW_SUP] No NVIDIA GPU detected. Exiting.")
+        log.info("No NVIDIA GPU detected. Exiting.")
         return
 
     cfg = load_thermal_config()
@@ -490,10 +504,10 @@ def main():
     conductor_model = cfg["conductor_model"]
     air_gap = cfg["air_gap_mode"]
 
-    print(f"[HW_SUP] Started. Limits: {cfg['gpu_max_sustained_c']}°C sustained, "
+    log.info(f"Started. Limits: {cfg['gpu_max_sustained_c']}°C sustained, "
           f"{cfg['gpu_max_burst_c']}°C burst. Poll: {cfg['poll_interval_secs']}s")
     if conductor_model:
-        print(f"[HW_SUP] Conductor model: {conductor_model} (CPU)")
+        log.info(f"Conductor model: {conductor_model} (CPU)")
 
     # IMMEDIATE state write — launcher boot polls for this file.
     # Must happen BEFORE any model checks (which involve HTTP calls that can stall).
@@ -514,10 +528,10 @@ def main():
             ps_data = json.loads(r.read())
         loaded_models = [m["name"] for m in ps_data.get("models", [])]
         if loaded_models:
-            print(f"[HW_SUP] Pre-loaded: {', '.join(loaded_models)}")
+            log.info(f"Pre-loaded: {', '.join(loaded_models)}")
             for m in loaded_models:
                 if m not in known_models:
-                    print(f"[HW_SUP] Evicting unknown model: {m}")
+                    log.info(f"Evicting unknown model: {m}")
                     try:
                         body = json.dumps({"model": m, "keep_alive": 0}).encode()
                         req = urllib.request.Request(
@@ -527,7 +541,7 @@ def main():
                     except Exception:
                         pass
                 else:
-                    print(f"[HW_SUP] Keeping {m} (known tier model)")
+                    log.info(f"Keeping {m} (known tier model)")
     except Exception:
         pass
 
@@ -564,11 +578,11 @@ def main():
 
             # ── Training transition: evict GPU models on start (non-blocking) ──
             if is_training and not was_training:
-                print("[HW_SUP] Training detected — evicting GPU models for VRAM headroom")
+                log.info("Training detected — evicting GPU models for VRAM headroom")
                 import threading
                 threading.Thread(target=evict_models_for_training, args=(host,), daemon=True).start()
             elif was_training and not is_training:
-                print("[HW_SUP] Training ended — models will reload on next keepalive cycle")
+                log.info("Training ended — models will reload on next keepalive cycle")
             was_training = is_training
 
             gpu_temp = gpu["gpu_temp_c"]
@@ -614,7 +628,7 @@ def main():
                                             limit=3, channels=["sup"])
                     for m in msgs:
                         body = json.loads(m["body_json"])
-                        print(f"[HW_SUP] Sup: {m['from_agent']} -> {body.get('type', '?')}")
+                        log.info(f"Sup: {m['from_agent']} -> {body.get('type', '?')}")
                 except Exception:
                     pass
 
@@ -630,7 +644,7 @@ def main():
 
             # ── Thermal throttling ────────────────────────────────────
             if gpu_temp >= cfg["gpu_max_burst_c"] and not gpu_throttled:
-                print(f"[HW_SUP] GPU {gpu_temp}°C >= {cfg['gpu_max_burst_c']}°C burst limit — "
+                log.info(f"GPU {gpu_temp}°C >= {cfg['gpu_max_burst_c']}°C burst limit — "
                       "pausing GPU tasks, switching to CPU-only")
                 gpu_throttled = True
                 below_target_since = None
@@ -649,7 +663,7 @@ def main():
                     if below_target_since is None:
                         below_target_since = time.time()
                     elif time.time() - below_target_since >= cfg["cooldown_window_secs"]:
-                        print(f"[HW_SUP] GPU {gpu_temp}°C <= {cfg['cooldown_target_c']}°C for "
+                        log.info(f"GPU {gpu_temp}°C <= {cfg['cooldown_target_c']}°C for "
                               f"{cfg['cooldown_window_secs']}s — resuming GPU tasks")
                         gpu_throttled = False
                         below_target_since = None
@@ -714,17 +728,17 @@ def main():
                         # Check if we have VRAM headroom for this tier
                         if vram_pct < cfg["vram_high"]:
                             target_model = tier
-                            print(f"[HW_SUP] RECOVERY: no model loaded, "
+                            log.warning(f"RECOVERY: no model loaded, "
                                   f"recovering to {tier}")
                             break
                         else:
                             # Under pressure — use smallest available
                             target_model = tier
-                            print(f"[HW_SUP] RECOVERY (pressure): loading {tier}")
+                            log.warning(f"RECOVERY (pressure): loading {tier}")
                             break
                 if target_model == current_model and not loaded:
                     # Nothing available — stay parked, warn
-                    print(f"[HW_SUP] WARNING: no models loaded and none available")
+                    log.warning(f" no models loaded and none available")
 
             else:
                 # NORMAL: only scale DOWN on pressure, never UP
@@ -769,7 +783,7 @@ def main():
                                 for m in models_loaded
                             )
                             if not already_loaded and not air_gap:
-                                print(f"[HW_SUP] Vision request: loading {vision_model}")
+                                log.info(f"Vision request: loading {vision_model}")
                                 warmup_model(vision_model)
                 except Exception:
                     pass
@@ -777,7 +791,7 @@ def main():
                 write_state("ready", current_model, thermal, models_loaded, conductor_status)
 
         except Exception as e:
-            print(f"[HW_SUP] Poll error (non-fatal): {e}")
+            log.warning(f"Poll error (non-fatal): {e}")
             # Write error state so launcher knows we're alive but struggling
             try:
                 write_state("error", get_current_local_model())

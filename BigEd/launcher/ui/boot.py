@@ -41,6 +41,49 @@ def _launcher():
 # ─── Boot spinner characters ─────────────────────────────────────────────────
 _SPIN = "⣾⣽⣻⢿⡿⣟⣯⣷"
 
+# ─── Adaptive Boot Timing ────────────────────────────────────────────────────
+_BOOT_HISTORY_FILE = Path(__file__).parent / "data" / "boot_timing.json"
+
+def _load_boot_history() -> dict:
+    """Load historical boot stage timings."""
+    try:
+        if _BOOT_HISTORY_FILE.exists():
+            return json.loads(_BOOT_HISTORY_FILE.read_text(encoding="utf-8"))
+    except Exception:
+        pass
+    return {}
+
+def _save_boot_timing(stage: str, duration: float, model: str = ""):
+    """Record how long a boot stage took for adaptive timeouts."""
+    try:
+        _BOOT_HISTORY_FILE.parent.mkdir(parents=True, exist_ok=True)
+        history = _load_boot_history()
+        key = f"{stage}:{model}" if model else stage
+        if key not in history:
+            history[key] = {"times": [], "avg": 0}
+        times = history[key]["times"]
+        times.append(round(duration, 1))
+        # Keep last 10 measurements
+        if len(times) > 10:
+            times[:] = times[-10:]
+        history[key]["avg"] = round(sum(times) / len(times), 1)
+        _BOOT_HISTORY_FILE.write_text(json.dumps(history, indent=2), encoding="utf-8")
+    except Exception:
+        pass
+
+def _get_adaptive_timeout(stage: str, model: str = "", default: float = 40) -> float:
+    """Get timeout for a boot stage based on history.
+
+    First boot or model change: use generous default (120s).
+    Subsequent boots: avg + 60s headroom (minimum 30s).
+    """
+    history = _load_boot_history()
+    key = f"{stage}:{model}" if model else stage
+    if key not in history or not history[key].get("times"):
+        return 120  # first boot — very generous
+    avg = history[key]["avg"]
+    return max(30, avg + 60)  # avg + 60s headroom, minimum 30s
+
 
 # ─── Boot Manager Mixin ─────────────────────────────────────────────────────
 
@@ -215,6 +258,8 @@ class BootManagerMixin:
                 self.after(3000, self._hide_boot_progress)
                 return
         self.after(0, lambda: self._log_output("System boot complete."))
+        # Switch log view from hw_supervisor to combined after boot
+        self._current_log_agent = "all"
         self.after(5000, self._hide_boot_progress)
 
     # ── Individual boot stages ───────────────────────────────────────────
@@ -326,10 +371,12 @@ class BootManagerMixin:
             capture=True, timeout=15,
         )
 
-        # Poll for hw_state.json — hw_supervisor writes "starting" immediately
-        # on launch, then "ready" after model validation. Accept either.
-        # Total timeout: 40s (20 iterations × 2s)
-        for i in range(20):
+        # Adaptive timeout — uses historical boot times
+        timeout_secs = _get_adaptive_timeout("hw_supervisor")
+        max_polls = max(10, int(timeout_secs / 2))
+        start_time = time.time()
+
+        for i in range(max_polls):
             if self._boot_abort.is_set():
                 raise Exception("aborted")
             try:
@@ -337,14 +384,17 @@ class BootManagerMixin:
                     data = json.loads(hw_state.read_text(encoding="utf-8"))
                     updated = data.get("updated_at", 0)
                     age = time.time() - updated
-                    if age < 30:  # written within last 30s
+                    if age < 30:
                         status = data.get("status", "unknown")
                         if status in ("starting", "ready", "transitioning"):
-                            return f"{status}"
+                            elapsed = time.time() - start_time
+                            _save_boot_timing("hw_supervisor", elapsed)
+                            return f"{status} ({elapsed:.0f}s)"
             except Exception:
                 pass
             time.sleep(2)
-        raise Exception("hw_state not updating (40s)")
+        elapsed = time.time() - start_time
+        raise Exception(f"hw_state not updating ({elapsed:.0f}s)")
 
     def _boot_model(self, model, gpu=True):
         """Stage 2/5: Load a model into Ollama.
@@ -368,6 +418,9 @@ class BootManagerMixin:
         if model in loaded:
             return f"{model} (cached)"
 
+        timeout = _get_adaptive_timeout("model_load", model)
+        start_time = time.time()
+
         body = json.dumps({
             "model": model, "prompt": "", "keep_alive": "24h",
             **({"options": {"num_gpu": 0}} if not gpu else {}),
@@ -377,7 +430,7 @@ class BootManagerMixin:
             headers={"Content-Type": "application/json"}, method="POST",
         )
         try:
-            with urllib.request.urlopen(req, timeout=120) as r:
+            with urllib.request.urlopen(req, timeout=int(timeout)) as r:
                 resp_data = r.read()
                 # Check for error in response
                 try:
@@ -386,7 +439,9 @@ class BootManagerMixin:
                         raise Exception(f"{model}: {resp['error']}")
                 except json.JSONDecodeError:
                     pass  # streaming response, not JSON — that's fine
-            return model
+            elapsed = time.time() - start_time
+            _save_boot_timing("model_load", elapsed, model)
+            return f"{model} ({elapsed:.0f}s)"
         except urllib.error.URLError as e:
             raise Exception(f"{model}: {e}")
 
