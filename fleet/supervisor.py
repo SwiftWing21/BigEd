@@ -395,6 +395,14 @@ def main():
 
     db.init_db()
     db.register_agent("supervisor", "supervisor", os.getpid())
+
+    # Start async DAG processor (0.08.00)
+    try:
+        from dag_queue import start as start_dag_queue
+        start_dag_queue()
+    except ImportError:
+        pass
+
     config = load_config()
 
     # Air-gap mode: skip secrets loading entirely (no API keys in memory)
