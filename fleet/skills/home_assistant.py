@@ -17,6 +17,7 @@ Returns: {action, data, count}
 """
 import json
 import os
+import re
 import urllib.request
 from datetime import datetime
 from pathlib import Path
@@ -25,6 +26,13 @@ FLEET_DIR = Path(__file__).parent.parent
 KNOWLEDGE_DIR = FLEET_DIR / "knowledge"
 HA_DIR = KNOWLEDGE_DIR / "home_assistant"
 REQUIRES_NETWORK = True
+
+
+def _validate_entity_id(entity_id):
+    """Reject entity_ids that could inject path segments or query params."""
+    if not re.match(r'^[a-z_][a-z0-9_]*\.[a-z0-9_]+$', entity_id):
+        return False
+    return True
 
 
 def _ha_request(url, token, method="GET", body=None):
@@ -89,6 +97,8 @@ def run(payload, config):
             entity_id = payload.get("entity_id", "")
             if not entity_id:
                 return {"error": "entity_id required"}
+            if not _validate_entity_id(entity_id):
+                return {"error": f"Invalid entity_id format: {entity_id}"}
             state = _ha_request(f"{api}/states/{entity_id}", token)
             result = [state]
 
@@ -98,6 +108,10 @@ def run(payload, config):
             data = payload.get("data", {})
             if not domain or not service:
                 return {"error": "domain and service required"}
+            if not re.match(r'^[a-z_][a-z0-9_]*$', domain):
+                return {"error": f"Invalid domain format: {domain}"}
+            if not re.match(r'^[a-z_][a-z0-9_]*$', service):
+                return {"error": f"Invalid service format: {service}"}
             resp = _ha_request(
                 f"{api}/services/{domain}/{service}", token,
                 method="POST", body=data,

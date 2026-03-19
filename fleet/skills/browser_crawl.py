@@ -24,6 +24,7 @@ import json
 import os
 from datetime import datetime
 from pathlib import Path
+from urllib.parse import urlparse
 
 FLEET_DIR = Path(__file__).parent.parent
 KNOWLEDGE_DIR = FLEET_DIR / "knowledge"
@@ -31,6 +32,18 @@ BROWSER_DIR = KNOWLEDGE_DIR / "browser"
 REQUIRES_NETWORK = True
 
 _HAS_PLAYWRIGHT = None  # lazy check
+
+_BLOCKED_HOSTS = {'127.0.0.1', 'localhost', '169.254.169.254', '::1', '0.0.0.0', 'metadata.google.internal'}
+
+
+def _check_ssrf(url):
+    """Block requests to internal/metadata endpoints (SSRF protection)."""
+    parsed = urlparse(url)
+    if parsed.hostname in _BLOCKED_HOSTS:
+        return False, f"Blocked internal URL: {parsed.hostname}"
+    if parsed.hostname and parsed.hostname.startswith('10.'):
+        return False, "Blocked private network"
+    return True, ""
 
 
 def _check_playwright():
@@ -158,6 +171,10 @@ def run(payload, config):
     url = payload.get("url", "")
     if not url:
         return {"error": "url required"}
+
+    safe, ssrf_reason = _check_ssrf(url)
+    if not safe:
+        return {"error": ssrf_reason, "url": url}
 
     action = payload.get("action", "crawl")
     wait_sec = min(payload.get("wait_sec", 2), 10)

@@ -47,13 +47,22 @@ PERSPECTIVE_FOCUS = {
 from skills._models import call_complex
 
 
-def _pick_file(requested: str) -> Path | None:
+def _pick_file(requested: str, base_dir=None) -> Path | None:
     if requested:
-        # Try absolute first, then relative to fleet root
-        p = Path(requested)
-        if p.is_absolute() and p.exists():
+        if base_dir is None:
+            base_dir = FLEET_DIR
+        # Resolve and bounds-check: block path traversal
+        p = Path(requested).resolve()
+        if not p.is_absolute():
+            p = (base_dir / requested).resolve()
+        if not str(p).startswith(str(base_dir.resolve())):
+            return None  # BLOCK path traversal
+        if p.exists():
             return p
-        rel = FLEET_DIR / requested
+        # Also try relative to fleet root
+        rel = (base_dir / requested).resolve()
+        if not str(rel).startswith(str(base_dir.resolve())):
+            return None  # BLOCK path traversal
         if rel.exists():
             return rel
         return None

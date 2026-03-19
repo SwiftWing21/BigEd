@@ -6,6 +6,7 @@ a findings report that feeds into the security advisory workflow.
 Requires: nmap (sudo apt install nmap)
 """
 import json
+import re
 import subprocess
 import xml.etree.ElementTree as ET
 from datetime import datetime
@@ -20,6 +21,15 @@ PENDING_DIR = KNOWLEDGE_DIR / "security" / "pending"
 SKILL_NAME = "pen_test"
 DESCRIPTION = "Local network penetration testing — authorized scan with service discovery and security assessment"
 REQUIRES_NETWORK = True
+
+
+def _validate_target(target):
+    """Block shell injection via nmap target — allow only IPs, CIDR, ranges."""
+    if target == "auto":
+        return True
+    if not re.match(r'^[\d\./:a-fA-F\-]+$', target):
+        return False
+    return True
 
 
 def _detect_wsl_nat():
@@ -325,6 +335,9 @@ def run(payload, config):
 
     if target == "auto":
         target = _detect_network()
+
+    if not _validate_target(target):
+        return {"error": f"Invalid target format: {target}"}
 
     scan_id = datetime.now().strftime("%Y%m%d_%H%M%S")
     PENTEST_DIR.mkdir(parents=True, exist_ok=True)
