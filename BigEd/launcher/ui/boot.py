@@ -86,6 +86,7 @@ class BootManagerMixin:
         gpu_model, conductor_model = self._read_fleet_models()
         stages = [
             "Ollama server",
+            "Maintainer (CPU)",
             "HW Supervisor",
             f"GPU model  {gpu_model}",
             "Fleet supervisor",
@@ -169,24 +170,30 @@ class BootManagerMixin:
         threading.Thread(target=self._boot_sequence, daemon=True).start()
 
     def _boot_sequence(self):
-        """Staged boot — Ollama → HW sup → GPU model → supervisor → workers → conductor.
+        """Staged boot — 7 stages, smallest CPU model loaded FIRST.
+
+        Order: Ollama → Maintainer (CPU) → HW Supervisor → GPU model →
+               Fleet supervisor → Workers → Conductor
 
         Stability design:
+        - Maintainer (smallest CPU model) loads BEFORE hw_supervisor
+          so there's always a model available for the fleet
+        - hw_supervisor starts with a model already loaded (no empty state)
+        - GPU model loads AFTER hw_supervisor is monitoring
         - Each stage has explicit timeouts with generous margins
         - Model existence validated before load attempts
-        - hw_state.json cleared before hw_supervisor start (no stale detection)
-        - STATUS.md freshness check uses 60s window (supervisor writes every 30s)
         - Failures reset button to Start and clean up boot UI
         """
         gpu_model, conductor_model = self._read_fleet_models()
 
         stages = [
             (0, self._boot_ollama),
-            (1, self._boot_hw_supervisor),
-            (2, lambda: self._boot_model(gpu_model, gpu=True)),
-            (3, self._boot_supervisor),
-            (4, self._boot_workers),
-            (5, lambda: self._boot_model(conductor_model, gpu=False)),
+            (1, self._boot_maintainer),
+            (2, self._boot_hw_supervisor),
+            (3, lambda: self._boot_model(gpu_model, gpu=True)),
+            (4, self._boot_supervisor),
+            (5, self._boot_workers),
+            (6, lambda: self._boot_model(conductor_model, gpu=False)),
         ]
         for idx, fn in stages:
             if self._boot_abort.is_set():
@@ -244,6 +251,57 @@ class BootManagerMixin:
             except Exception:
                 time.sleep(2)
         raise Exception("Ollama timed out (30s)")
+
+    def _boot_maintainer(self):
+        """Stage 1: Load smallest available model on CPU-only.
+
+        This ensures hw_supervisor always has a model to guard when it starts.
+        The maintainer model is lightweight (~0.5GB RAM) and runs on CPU,
+        never touching GPU VRAM.
+        """
+        # Find smallest available model (prefer 0.6b → 1.7b → 4b)
+        preferred = ["qwen3:0.6b", "qwen3:1.7b", "qwen3:4b"]
+        target = None
+        for model in preferred:
+            if self._ollama_model_exists(model):
+                target = model
+                break
+
+        if not target:
+            # Fallback: use whatever is installed
+            try:
+                with urllib.request.urlopen("http://localhost:11434/api/tags", timeout=3) as r:
+                    data = json.loads(r.read())
+                models = [m["name"] for m in data.get("models", [])]
+                if models:
+                    # Pick smallest by name heuristic (lower param count first)
+                    target = sorted(models)[0]
+            except Exception:
+                pass
+
+        if not target:
+            raise Exception("No models installed")
+
+        # Check if already loaded
+        loaded = self._ollama_get_loaded()
+        if target in loaded:
+            return f"{target} (cached)"
+
+        # Load on CPU-only (num_gpu=0) — never touch GPU
+        body = json.dumps({
+            "model": target, "prompt": "", "keep_alive": "24h",
+            "options": {"num_gpu": 0},
+        }).encode()
+        req = urllib.request.Request(
+            "http://localhost:11434/api/generate", data=body,
+            headers={"Content-Type": "application/json"}, method="POST",
+        )
+        try:
+            with urllib.request.urlopen(req, timeout=60) as r:
+                r.read()
+            return f"{target} (CPU)"
+        except Exception as e:
+            raise Exception(f"Maintainer {target}: {e}")
 
     def _boot_hw_supervisor(self):
         """Stage 1: Start hw_supervisor, poll until hw_state.json is fresh.

@@ -3,19 +3,26 @@
 Hardware Supervisor — thermal-aware GPU/VRAM/power governor for 24/7 fleet operation.
 
 PURPOSE:
-Runs alongside the primary fleet supervisor (CPU-bound daemon). Monitors GPU temperature,
-VRAM pressure, power draw, and CPU thermals. Dynamically scales Ollama model tiers and
-worker concurrency to maintain sustained temps below 75°C (burst ceiling 78°C).
+Runs alongside the primary fleet supervisor as a MINIMAL CPU-ONLY daemon. Monitors GPU
+temperature, VRAM pressure, power draw, and CPU thermals. Manages Ollama model tiers
+for fleet workers. This is the ONLY process that should touch model loading/unloading.
 
-CAPABILITIES:
-- VRAM monitoring + 4-tier model scaling (8b → 4b → 1.7b → 0.6b)
-- GPU junction temperature tracking with sustained/burst limits
-- GPU power draw monitoring (watts vs TDP headroom)
-- CPU temperature monitoring via psutil
-- Ambient temperature estimation from cooldown curves
-- Training lock awareness (DB-based, respects exclusive_lock)
-- All thresholds config-driven from fleet.toml [thermal] section
-- Writes expanded hw_state.json for supervisor/worker/dashboard coordination
+CRITICAL DESIGN CONSTRAINTS:
+- hw_supervisor itself NEVER uses GPU — it is a pure monitoring/control process
+- It NEVER loads models for its own inference — only manages models for workers
+- It NEVER calls call_complex() or any LLM API — it is not an AI agent
+- It MUST survive GPU OOM, thermal shutdown, and Ollama crashes
+- It MUST be the LAST process killed on shutdown (after workers, before Ollama)
+- All operations have explicit timeouts — no unbounded waits
+- All exceptions are caught and logged — the main loop NEVER crashes
+- hw_state.json writes are atomic (tempfile + os.replace)
+
+SCALING PATTERN (park + guard + recover):
+- Parks on whatever model is configured in fleet.toml
+- Only scales DOWN under actual VRAM/thermal pressure
+- Never auto-scales UP (operator controls baseline via model-profile)
+- If no model is loaded (crash/eviction), recovers to smallest available
+- Steps down one tier at a time, never jumps
 
 AI AGENTS: Do not implement model-downgrade logic in skills. This supervisor handles it.
 """
@@ -649,38 +656,80 @@ def main():
                 else:
                     below_target_since = None
 
-            # ── VRAM-based model scaling (park + guard pattern) ─────────
-            # Philosophy: park on whatever model is loaded. Only scale DOWN
-            # under actual pressure. Never auto-scale UP (operator controls
-            # the baseline via fleet.toml or model-profile command).
+            # ── VRAM-based model scaling (park + guard + recover) ────────
+            #
+            # PHILOSOPHY:
+            #   Park on whatever model is configured in fleet.toml.
+            #   Only scale DOWN under actual VRAM/thermal pressure.
+            #   Never auto-scale UP — operator controls baseline.
+            #   ONE EXCEPTION: if no model is loaded at all (crashed/evicted),
+            #   recover by loading the smallest available model and step up
+            #   to the next available tier if VRAM allows.
+            #
+            # hw_supervisor itself is CPU-only — it never loads models for
+            # its own use. It only manages models for fleet workers.
+            #
+            tier_order = [cfg["tier_default"], cfg["tier_mid"],
+                          cfg["tier_low"], cfg["tier_crit"]]
             current_model = get_current_local_model()
             target_model = current_model
             emergency = False
 
+            # Check if ANY model is actually loaded in Ollama
+            loaded = []
+            try:
+                with urllib.request.urlopen(f"{host}/api/ps", timeout=3) as r:
+                    ps = json.loads(r.read())
+                loaded = [m["name"] for m in ps.get("models", [])
+                          if m.get("name") != conductor_model]  # exclude conductor
+            except Exception:
+                pass
+
             if gpu_throttled:
-                # Thermal emergency: drop to critical (CPU-only)
+                # THERMAL EMERGENCY: drop to critical (CPU-only)
                 target_model = cfg["tier_crit"]
                 if current_model != cfg["tier_crit"]:
                     emergency = True
+
             elif is_training:
-                # Training active: drop to low tier to free VRAM
+                # TRAINING: drop to low tier to free VRAM for PyTorch
                 if current_model not in (cfg["tier_crit"], cfg["tier_low"]):
                     target_model = cfg["tier_low"]
+
+            elif not loaded:
+                # RECOVERY: no worker model loaded — find the best available
+                # that fits in current VRAM. Start from smallest, step up.
+                available = get_available_models(host)
+                for tier in reversed(tier_order):  # smallest first
+                    if tier in available:
+                        # Check if we have VRAM headroom for this tier
+                        if vram_pct < cfg["vram_high"]:
+                            target_model = tier
+                            print(f"[HW_SUP] RECOVERY: no model loaded, "
+                                  f"recovering to {tier}")
+                            break
+                        else:
+                            # Under pressure — use smallest available
+                            target_model = tier
+                            print(f"[HW_SUP] RECOVERY (pressure): loading {tier}")
+                            break
+                if target_model == current_model and not loaded:
+                    # Nothing available — stay parked, warn
+                    print(f"[HW_SUP] WARNING: no models loaded and none available")
+
             else:
-                # Normal operation: only scale DOWN on pressure, never UP
+                # NORMAL: only scale DOWN on pressure, never UP
                 if vram_pct > cfg["vram_emergency"]:
                     target_model = cfg["tier_crit"]
                     emergency = True
                 elif vram_pct > cfg["vram_high"]:
-                    # Step down one tier from current, don't jump to a fixed tier
-                    tier_order = [cfg["tier_default"], cfg["tier_mid"],
-                                  cfg["tier_low"], cfg["tier_crit"]]
+                    # Step down one tier from current
                     try:
                         idx = tier_order.index(current_model)
                         if idx < len(tier_order) - 1:
                             target_model = tier_order[idx + 1]
                     except ValueError:
-                        target_model = cfg["tier_mid"]  # unknown model, go to mid
+                        target_model = cfg["tier_mid"]
                 # No auto-scale UP — stay parked on current model
 
             if target_model != current_model:
@@ -719,7 +768,14 @@ def main():
                 write_state("ready", current_model, thermal, models_loaded, conductor_status)
 
         except Exception as e:
-            print(f"[HW_SUP] Error: {e}")
+            print(f"[HW_SUP] Poll error (non-fatal): {e}")
+            # Write error state so launcher knows we're alive but struggling
+            try:
+                write_state("error", get_current_local_model())
+            except Exception:
+                pass
+            # Brief backoff on repeated errors
+            time.sleep(2)
 
 
 if __name__ == "__main__":
