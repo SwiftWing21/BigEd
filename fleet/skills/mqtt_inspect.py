@@ -43,6 +43,10 @@ def run(payload, config):
 
     if action == "listen":
         topics = payload.get("topics", ["#"])
+        # Block dangerous wildcard subscriptions
+        for topic in topics:
+            if topic == "#" or topic == "$SYS/#":
+                return json.dumps({"error": "Wildcard topic '#' blocked for security. Specify explicit topics."})
         duration = min(payload.get("duration_sec", 10), 60)  # cap at 60s
         messages = []
         connected = threading.Event()

@@ -32,6 +32,13 @@ _SECRET_PATTERNS = [
     re.compile(r'xoxb-[a-zA-Z0-9-]{10,}'),            # Slack bot tokens
     re.compile(r'AKIA[A-Z0-9]{16}'),                   # AWS access keys
     re.compile(r'tvly-[a-zA-Z0-9_-]{15,}'),           # Tavily API keys
+    re.compile(r'AZURE[a-zA-Z0-9_-]{20,}'),           # Azure
+    re.compile(r'ya29\.[a-zA-Z0-9_-]{30,}'),          # GCP OAuth
+    re.compile(r'-----BEGIN\s+(RSA\s+)?PRIVATE\s+KEY'), # Private keys
+    re.compile(r'mongodb(\+srv)?://[^\s]+'),           # DB connection URIs
+    re.compile(r'postgres(ql)?://[^\s]+'),             # PostgreSQL URIs
+    re.compile(r'mysql://[^\s]+'),                     # MySQL URIs
+    re.compile(r'redis://[^\s]+'),                     # Redis URIs
 ]
 
 # Also check env vars loaded from ~/.secrets
@@ -230,7 +237,8 @@ def scrub_knowledge_files(log_fn=print):
 
     redacted_count = 0
     try:
-        for ext in ("*.md", "*.json", "*.jsonl", "*.txt"):
+        for ext in ("*.md", "*.json", "*.jsonl", "*.txt", "*.yaml", "*.yml",
+                    "*.sh", "*.py", "*.log", "*.env", "*.cfg", "*.ini"):
             for fpath in knowledge_dir.rglob(ext):
                 try:
                     text = fpath.read_text(encoding="utf-8", errors="replace")

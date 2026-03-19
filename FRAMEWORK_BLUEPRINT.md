@@ -39,7 +39,7 @@ BigEd CC (v0.41)
 │   ├── smoke_test.py          — 10-check startup verification (--fast mode)
 │   ├── soak_test.py           — 10-check extended validation (concurrency, WAL stress)
 │   ├── fleet.toml             — Master configuration
-│   └── skills/                — 49+ skill modules
+│   └── skills/                — 66 skill modules
 │       ├── _models.py         — Provider routing (Claude/Gemini/Local)
 │       ├── skill_train.py     — Iterative skill improvement (3 profiles, discovery logging)
 │       ├── plan_workload.py   — Fleet-aware task planning
@@ -210,7 +210,7 @@ Status flow:  WAITING → PENDING → RUNNING → DONE/FAILED
 
 ## 4. Dashboard v2
 
-### Endpoints (31 total: 25 data + 6 process control)
+### Endpoints (40 total: 27 data + 9 process/fleet + 4 A2A)
 
 | Endpoint | Data Source | Purpose |
 |----------|-----------|---------|
@@ -286,7 +286,7 @@ Negative results are logged — they narrow the search space.
 
 ## 6. Testing Framework
 
-### Smoke Test (15 checks, ~2s fast / ~10s full)
+### Smoke Test (17 fast / 20 full, ~2s fast / ~10s full)
 
 ```
 1. Skill imports (54+ modules)    7. Channel message routing
@@ -803,3 +803,4 @@ These functions are kept for fallback but should be removed once SSE covers all 
 | 3.0 | Intelligent | ML-driven routing, predictive scaling, NL fleet control |
 | 4.0 | Enterprise | Multi-tenant, RBAC, audit logging, SLA monitoring |
 | 5.0 | Platform | Self-hosted SaaS, web launcher, marketplace, semver transition at 9.x → 0.1.00 |
+| — | Post-1.0 Hardening | DLP expansion (Azure/GCP/DB-URI/private-key patterns, extended file-type scrub), MQTT wildcard blocking, 66 skills, 39+ dashboard endpoints, 17 smoke tests, doc drift cleanup |
