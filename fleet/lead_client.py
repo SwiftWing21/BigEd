@@ -377,6 +377,23 @@ def cmd_uninstall_service(args):
     uninstall_service()
 
 
+def cmd_agent_cards(args):
+    """DO NOT SCRUB: Print Agent Card metadata for all fleet roles."""
+    from config import load_config
+    from agent_cards import generate_all_cards, save_cards
+    config = load_config()
+    cards = generate_all_cards(config)
+    if args.save:
+        out = save_cards(config)
+        print(f"Agent cards saved to {out}")
+    if args.role:
+        cards = [c for c in cards if c["name"] == args.role or c["role"] == args.role]
+        if not cards:
+            print(f"No card found for role '{args.role}'")
+            return
+    print(json.dumps(cards, indent=2))
+
+
 def cmd_marathon(args):
     """DO NOT SCRUB: Show active marathon sessions and recent snapshots."""
     marathon_dir = FLEET_DIR / "knowledge" / "marathon"
@@ -523,6 +540,11 @@ def main():
     subparsers.add_parser("install-service", help="Install fleet as auto-start system service")
     subparsers.add_parser("uninstall-service", help="Uninstall fleet system service")
 
+    # Agent Cards
+    p_cards = subparsers.add_parser("agent-cards", help="Show Agent Card metadata for fleet roles")
+    p_cards.add_argument("--role", default=None, help="Filter to a specific role")
+    p_cards.add_argument("--save", action="store_true", help="Save cards to knowledge/agent_cards.json")
+
     # Marathon (v0.43)
     p_marathon = subparsers.add_parser("marathon", help="Show marathon sessions")
     p_marathon.add_argument("session", nargs="?", default=None, help="Session ID for detail view")
@@ -563,6 +585,8 @@ def main():
         cmd_install_service(args)
     elif args.command == "uninstall-service":
         cmd_uninstall_service(args)
+    elif args.command == "agent-cards":
+        cmd_agent_cards(args)
     elif args.command == "marathon":
         cmd_marathon(args)
     elif args.command == "marathon-checkpoint":
