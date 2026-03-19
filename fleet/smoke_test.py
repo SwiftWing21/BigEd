@@ -134,8 +134,55 @@ def test_broadcast_roundtrip():
     return ok, f"a1={'yes' if got1 else 'no'} a2={'yes' if got2 else 'no'}"
 
 
+def test_channel_message_routing():
+    """8. Post to channel='agent', verify invisible from channels=['sup']."""
+    import db
+    db.init_db()
+    db.register_agent("smoke_ch_sender", "test", 0)
+    db.register_agent("smoke_ch_receiver", "test", 0)
+    body = json.dumps({"msg": "agent_only", "ts": time.time()})
+    db.post_message("smoke_ch_sender", "smoke_ch_receiver", body, channel="agent")
+    # Should be visible on agent channel
+    msgs_agent = db.get_messages("smoke_ch_receiver", unread_only=False, limit=5, channels=["agent"])
+    found_agent = any("agent_only" in m.get("body_json", "") for m in msgs_agent)
+    # Should NOT be visible on sup channel
+    msgs_sup = db.get_messages("smoke_ch_receiver", unread_only=False, limit=5, channels=["sup"])
+    found_sup = any("agent_only" in m.get("body_json", "") for m in msgs_sup)
+    ok = found_agent and not found_sup
+    return ok, f"agent={'yes' if found_agent else 'no'} sup={'yes' if found_sup else 'no'}"
+
+
+def test_note_round_trip():
+    """9. Post note, read back, verify content."""
+    import db
+    db.init_db()
+    ts = str(time.time())
+    body = json.dumps({"test": "note_smoke", "ts": ts})
+    nid = db.post_note("sup", "smoke_noter", body)
+    if not nid:
+        return False, "post_note returned None"
+    notes = db.get_notes("sup", limit=5)
+    found = any(ts in n.get("body_json", "") for n in notes)
+    # Verify count
+    count = db.get_note_count("sup")
+    return found and count > 0, f"note {nid} {'found' if found else 'missing'}, count={count}"
+
+
+def test_backward_compat_messages():
+    """10. Post with no channel arg defaults to 'fleet'."""
+    import db
+    db.init_db()
+    db.register_agent("smoke_bc_sender", "test", 0)
+    db.register_agent("smoke_bc_recv", "test", 0)
+    ts = str(time.time())
+    db.post_message("smoke_bc_sender", "smoke_bc_recv", json.dumps({"compat": ts}))
+    msgs = db.get_messages("smoke_bc_recv", unread_only=False, limit=5, channels=["fleet"])
+    found = any(ts in m.get("body_json", "") for m in msgs)
+    return found, f"default channel={'fleet' if found else 'missing'}"
+
+
 def test_stale_recovery():
-    """8. Stale task recovery finds orphaned RUNNING tasks."""
+    """Stale task recovery finds orphaned RUNNING tasks."""
     import db
     db.init_db()
     # Register a fake agent with old heartbeat
@@ -201,6 +248,7 @@ def cleanup():
         conn.execute("DELETE FROM tasks WHERE type LIKE 'smoke_%'")
         conn.execute("DELETE FROM messages WHERE from_agent LIKE 'smoke_%' OR to_agent LIKE 'smoke_%'")
         conn.execute("DELETE FROM locks WHERE holder LIKE 'smoke_%'")
+        conn.execute("DELETE FROM notes WHERE from_agent LIKE 'smoke_%'")
 
 
 def main():
@@ -232,6 +280,9 @@ def main():
     tests.extend([
         ("Message round-trip", test_message_roundtrip),
         ("Broadcast round-trip", test_broadcast_roundtrip),
+        ("Channel message routing", test_channel_message_routing),
+        ("Note round-trip", test_note_round_trip),
+        ("Backward-compat messages", test_backward_compat_messages),
         ("Stale recovery", test_stale_recovery),
         ("Training lock", test_training_lock),
     ])

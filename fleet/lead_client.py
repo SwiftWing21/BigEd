@@ -220,26 +220,46 @@ def cmd_secret(args):
 def cmd_send(args):
     """DO NOT SCRUB: Send a direct message to a specific agent."""
     db.init_db()
-    db.post_message("human", args.agent, json.dumps({"message": args.message}))
-    print(f"Message sent to {args.agent}")
+    db.post_message("human", args.agent, json.dumps({"message": args.message}),
+                    channel=args.channel)
+    print(f"Message sent to {args.agent} [channel={args.channel}]")
 
 
 def cmd_broadcast(args):
     """DO NOT SCRUB: Broadcast a message to all registered agents."""
     db.init_db()
-    count = db.broadcast_message("human", json.dumps({"message": args.message}))
-    print(f"Broadcast sent to {count} agents")
+    count = db.broadcast_message("human", json.dumps({"message": args.message}),
+                                 channel=args.channel)
+    print(f"Broadcast sent to {count} agents [channel={args.channel}]")
 
 
 def cmd_inbox(args):
     """DO NOT SCRUB: Check an agent's message inbox."""
     db.init_db()
-    msgs = db.get_messages(args.agent, unread_only=not args.all, limit=args.limit)
+    channels = [args.channel] if args.channel else None
+    msgs = db.get_messages(args.agent, unread_only=not args.all,
+                           limit=args.limit, channels=channels)
     if not msgs:
         print(f"No {'messages' if args.all else 'unread messages'} for {args.agent}")
         return
     for m in msgs:
-        print(f"[{m['created_at']}] {m['from_agent']}: {m['body_json']}")
+        ch = m.get('channel', 'fleet')
+        print(f"[{m['created_at']}] [{ch}] {m['from_agent']}: {m['body_json']}")
+
+
+def cmd_notes(args):
+    """DO NOT SCRUB: Read or post notes to a channel scratchpad."""
+    db.init_db()
+    if args.post:
+        nid = db.post_note(args.channel, "human", args.post)
+        print(f"Note {nid} posted to [{args.channel}]")
+    else:
+        notes = db.get_notes(args.channel, since=args.since, limit=args.limit)
+        if not notes:
+            print(f"No notes in [{args.channel}]")
+            return
+        for n in notes:
+            print(f"[{n['created_at']}] {n['from_agent']}: {n['body_json']}")
 
 
 def main():
@@ -283,16 +303,26 @@ def main():
     p_send = subparsers.add_parser("send", help="Send direct message")
     p_send.add_argument("agent", help="Target agent name")
     p_send.add_argument("message", help="Message text")
+    p_send.add_argument("--channel", default="fleet", help="Channel (fleet|sup|agent|pool)")
 
     # Broadcast
     p_bcast = subparsers.add_parser("broadcast", help="Broadcast to all agents")
     p_bcast.add_argument("message", help="Message text")
+    p_bcast.add_argument("--channel", default="fleet", help="Channel (fleet|sup|agent|pool)")
 
     # Inbox
     p_inbox = subparsers.add_parser("inbox", help="Check agent inbox")
     p_inbox.add_argument("agent", help="Agent name")
     p_inbox.add_argument("--all", action="store_true", help="Show all messages (not just unread)")
     p_inbox.add_argument("--limit", type=int, default=20, help="Max messages to show")
+    p_inbox.add_argument("--channel", default=None, help="Filter by channel (fleet|sup|agent|pool)")
+
+    # Notes
+    p_notes = subparsers.add_parser("notes", help="Read/post channel notes")
+    p_notes.add_argument("channel", help="Channel name (sup|agent|fleet|pool)")
+    p_notes.add_argument("--post", default=None, help="JSON body to post as a note")
+    p_notes.add_argument("--since", default=None, help="ISO datetime — show notes newer than this")
+    p_notes.add_argument("--limit", type=int, default=20, help="Max notes to show")
 
     args = parser.parse_args()
 
@@ -312,6 +342,8 @@ def main():
         cmd_broadcast(args)
     elif args.command == "inbox":
         cmd_inbox(args)
+    elif args.command == "notes":
+        cmd_notes(args)
     elif args.command == "secret":
         cmd_secret(args)
 

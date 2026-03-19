@@ -60,6 +60,7 @@ def _load_discussion_so_far(topic):
         rows = conn.execute("""
             SELECT from_agent, body_json FROM messages
             WHERE json_extract(body_json, '$.topic') = ?
+              AND channel IN ('agent', 'fleet')
             ORDER BY created_at ASC
         """, (topic,)).fetchall()
     contributions = []
@@ -109,7 +110,8 @@ Based on the above, provide your perspective as the {role_perspective}. Be speci
             "role_perspective": role_perspective,
             "contribution": contribution,
             "timestamp": datetime.now().isoformat(),
-        })
+        }),
+        channel="agent",
     )
 
     # Also save to a discussion log file

@@ -84,6 +84,7 @@ def _load_prior_discussion(topic: str) -> str:
         rows = conn.execute("""
             SELECT from_agent, body_json FROM messages
             WHERE json_extract(body_json, '$.topic') = ?
+              AND channel IN ('agent', 'fleet')
             ORDER BY created_at ASC
         """, (topic,)).fetchall()
     contributions = []
@@ -220,7 +221,8 @@ As the {perspective}, contribute your analysis:
             "role_perspective": perspective,
             "contribution": contribution,
             "timestamp": datetime.now().isoformat(),
-        })
+        }),
+        channel="agent",
     )
 
     # Append to discussion log

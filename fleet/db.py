@@ -431,18 +431,79 @@ def get_messages(agent_name, unread_only=True, limit=20, channels=None):
         return [dict(r) for r in rows]
 
 
-def broadcast_message(from_agent, body_json):
-    """Send a message to ALL registered agents."""
+def broadcast_message(from_agent, body_json, channel="fleet"):
+    """Send a message to agents appropriate for the channel.
+
+    channel="fleet": all agents (existing behavior)
+    channel="sup":   only supervisors (role='supervisor')
+    channel="agent" or "pool": only non-supervisors (role != 'supervisor')
+    """
     def _do():
         with get_conn() as conn:
-            agents = conn.execute("SELECT name FROM agents").fetchall()
+            if channel == CH_SUP:
+                agents = conn.execute(
+                    "SELECT name FROM agents WHERE role='supervisor'"
+                ).fetchall()
+            elif channel in (CH_AGENT, CH_POOL):
+                agents = conn.execute(
+                    "SELECT name FROM agents WHERE role != 'supervisor'"
+                ).fetchall()
+            else:
+                agents = conn.execute("SELECT name FROM agents").fetchall()
             for a in agents:
                 conn.execute("""
-                    INSERT INTO messages (from_agent, to_agent, body_json)
-                    VALUES (?, ?, ?)
-                """, (from_agent, a['name'], body_json))
+                    INSERT INTO messages (from_agent, to_agent, body_json, channel)
+                    VALUES (?, ?, ?, ?)
+                """, (from_agent, a['name'], body_json, channel))
             return len(agents)
     return _retry_write(_do)
+
+
+# ── Notes (persistent channel scratchpad) ─────────────────────────────────────
+
+def post_note(channel, from_agent, body_json):
+    """Append a note to a channel scratchpad. Returns note id."""
+    result = [None]
+    def _do():
+        with get_conn() as conn:
+            cur = conn.execute("""
+                INSERT INTO notes (channel, from_agent, body_json)
+                VALUES (?, ?, ?)
+            """, (channel, from_agent, body_json))
+            result[0] = cur.lastrowid
+    _retry_write(_do)
+    return result[0]
+
+
+def get_notes(channel, since=None, limit=50):
+    """Read notes from a channel. since: ISO datetime string, returns newer notes only."""
+    with get_conn() as conn:
+        if since:
+            rows = conn.execute("""
+                SELECT id, channel, from_agent, created_at, body_json
+                FROM notes WHERE channel=? AND created_at > ?
+                ORDER BY created_at ASC LIMIT ?
+            """, (channel, since, limit)).fetchall()
+        else:
+            rows = conn.execute("""
+                SELECT id, channel, from_agent, created_at, body_json
+                FROM notes WHERE channel=?
+                ORDER BY created_at DESC LIMIT ?
+            """, (channel, limit)).fetchall()
+        return [dict(r) for r in rows]
+
+
+def get_note_count(channel, since=None):
+    """Fast count of notes since timestamp. For lightweight polling."""
+    with get_conn() as conn:
+        if since:
+            return conn.execute(
+                "SELECT COUNT(*) as n FROM notes WHERE channel=? AND created_at > ?",
+                (channel, since)
+            ).fetchone()['n']
+        return conn.execute(
+            "SELECT COUNT(*) as n FROM notes WHERE channel=?", (channel,)
+        ).fetchone()['n']
 
 
 def recover_stale_tasks(timeout_secs=900):
@@ -495,8 +556,11 @@ def acquire_lock(name, holder, timeout_secs=7200):
                 # Stale — remove and acquire
                 conn.execute("DELETE FROM locks WHERE name=?", (name,))
             conn.execute(
-                "INSERT INTO locks (name, holder) VALUES (?, ?)", (name, holder))
-            return True
+                "INSERT OR IGNORE INTO locks (name, holder) VALUES (?, ?)",
+                (name, holder))
+            row2 = conn.execute(
+                "SELECT holder FROM locks WHERE name=?", (name,)).fetchone()
+            return row2 is not None and row2["holder"] == holder
     return _retry_write(_do)
 
 
@@ -546,8 +610,8 @@ def request_human_input(task_id, agent_name, question):
             conn.execute(
                 "UPDATE tasks SET status='WAITING_HUMAN' WHERE id=?", (task_id,))
             conn.execute("""
-                INSERT INTO messages (from_agent, to_agent, body_json)
-                VALUES (?, 'operator', ?)
+                INSERT INTO messages (from_agent, to_agent, body_json, channel)
+                VALUES (?, 'operator', ?, 'fleet')
             """, (agent_name, json.dumps({
                 "type": "human_input_request",
                 "task_id": task_id,
@@ -579,8 +643,8 @@ def respond_to_agent(task_id, response):
             # Notify agent
             if agent:
                 conn.execute("""
-                    INSERT INTO messages (from_agent, to_agent, body_json)
-                    VALUES ('operator', ?, ?)
+                    INSERT INTO messages (from_agent, to_agent, body_json, channel)
+                    VALUES ('operator', ?, ?, 'fleet')
                 """, (agent, json.dumps({
                     "type": "human_response",
                     "task_id": task_id,
@@ -630,8 +694,8 @@ def quarantine_agent(name, reason):
             conn.execute(
                 "UPDATE agents SET status='QUARANTINED' WHERE name=?", (name,))
             conn.execute("""
-                INSERT INTO messages (from_agent, to_agent, body_json)
-                VALUES ('watchdog', ?, ?)
+                INSERT INTO messages (from_agent, to_agent, body_json, channel)
+                VALUES ('watchdog', ?, ?, 'fleet')
             """, (name, json.dumps({"type": "quarantine", "reason": reason})))
     _retry_write(_do)
 

@@ -315,6 +315,7 @@ def main():
     (FLEET_DIR / "knowledge" / "reports").mkdir(parents=True, exist_ok=True)
 
     db.init_db()
+    db.register_agent("supervisor", "supervisor", os.getpid())
     config = load_config()
 
     # Air-gap mode: skip secrets loading entirely (no API keys in memory)
@@ -369,6 +370,7 @@ def main():
     last_stale_check = 0
     last_watchdog = 0
     last_watchdog_full = 0
+    last_sup_notes_ts = None  # ISO timestamp of last sup note read
     training_interval = config["fleet"]["training_check_interval_secs"]
     worker_next_start = {}
 
@@ -415,16 +417,54 @@ def main():
                 start_ollama(gpu=False)
                 training_active = True
                 # hw_supervisor will re-establish keepalive on next poll
+                try:
+                    db.post_note("sup", "supervisor", json.dumps({
+                        "type": "training_state",
+                        "title": "Training started — Ollama CPU-only",
+                        "tags": ["training"],
+                    }))
+                except Exception:
+                    pass
             elif not training_now and training_active:
                 log.info("Training finished — restoring Ollama mode")
                 stop_ollama()
                 start_ollama(gpu=not config["fleet"]["eco_mode"])
                 training_active = False
+                try:
+                    db.post_note("sup", "supervisor", json.dumps({
+                        "type": "training_state",
+                        "title": "Training finished — Ollama restored",
+                        "tags": ["training"],
+                    }))
+                except Exception:
+                    pass
 
         # Log hw_supervisor transitions
         hw_state = read_hw_state()
         if hw_state and hw_state.get("status") == "transitioning":
             log.info(f"HW supervisor transitioning to {hw_state.get('model')} — workers pausing claims")
+
+        # Sup-channel: read inbox + notes every 30s (aligned with status write)
+        if now - last_status >= 30:
+            try:
+                sup_msgs = db.get_messages("supervisor", unread_only=True,
+                                           limit=5, channels=["sup"])
+                for m in sup_msgs:
+                    try:
+                        body = json.loads(m["body_json"])
+                        log.info(f"Sup msg from {m['from_agent']}: {body.get('type', '?')}")
+                    except Exception:
+                        pass
+                sup_notes = db.get_notes("sup", since=last_sup_notes_ts, limit=10)
+                for n in sup_notes:
+                    try:
+                        body = json.loads(n["body_json"])
+                        log.info(f"Sup note [{n['from_agent']}]: {body.get('title', '?')}")
+                    except Exception:
+                        pass
+                    last_sup_notes_ts = n.get("created_at", last_sup_notes_ts)
+            except Exception as e:
+                log.debug(f"Sup channel read error: {e}")
 
         # Recover stale RUNNING tasks (crashed workers)
         if now - last_stale_check >= STALE_TASK_RECOVERY_INTERVAL:
@@ -432,6 +472,16 @@ def main():
             recovered = db.recover_stale_tasks(STALE_TASK_TIMEOUT)
             for t in recovered:
                 log.warning(f"Recovered stale task {t['id']} ({t['type']}) from {t['assigned_to']}")
+            if recovered:
+                try:
+                    db.post_note("sup", "supervisor", json.dumps({
+                        "type": "stale_recovery",
+                        "title": f"Recovered {len(recovered)} stale tasks",
+                        "tasks": [{"id": t["id"], "type": t["type"]} for t in recovered[:5]],
+                        "tags": ["recovery"],
+                    }))
+                except Exception:
+                    pass
 
         # Semantic watchdog — failure detection, stuck reviews, DLP
         if now - last_watchdog >= WATCHDOG_INTERVAL:

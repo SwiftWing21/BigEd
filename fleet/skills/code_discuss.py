@@ -86,6 +86,7 @@ def _load_discussion_so_far(topic):
         rows = conn.execute("""
             SELECT from_agent, body_json FROM messages
             WHERE json_extract(body_json, '$.topic') = ?
+              AND channel IN ('agent', 'fleet')
             ORDER BY created_at ASC
         """, (topic,)).fetchall()
     contributions = []
@@ -141,7 +142,8 @@ Build on prior contributions if any exist — don't repeat what was already said
             "role_perspective": role_perspective,
             "contribution": contribution,
             "timestamp": datetime.now().isoformat(),
-        })
+        }),
+        channel="agent",
     )
 
     # Save to discussion log

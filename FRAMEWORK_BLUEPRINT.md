@@ -172,9 +172,12 @@ Thermal flow: `hw_supervisor.py` reads GPU/CPU temps → writes `hw_state.json` 
 agents:   id, name(UNIQUE), role, status, current_task_id, last_heartbeat, pid
 tasks:    id, created_at, assigned_to, status, priority, type, payload_json, result_json, error, review_rounds,
           parent_id, depends_on
-messages: id, from_agent, to_agent, created_at, read_at, body_json
+messages: id, from_agent, to_agent, created_at, read_at, body_json, channel(DEFAULT 'fleet')
+notes:    id, channel, from_agent, created_at, body_json  — idx on (channel, created_at)
 locks:    name(PK), holder, acquired_at
 ```
+
+Channel constants: `CH_SUP` (supervisor-to-supervisor), `CH_AGENT` (agent-to-agent), `CH_FLEET` (cross-layer, default), `CH_POOL` (supervisor-to-pool).
 
 WAL mode, 30s busy timeout, retry writes with jittered backoff.
 
@@ -205,7 +208,7 @@ Status flow:  WAITING → PENDING → RUNNING → DONE/FAILED
 
 ## 4. Dashboard v2
 
-### Endpoints (14 total)
+### Endpoints (17 total)
 
 | Endpoint | Data Source | Purpose |
 |----------|-----------|---------|
@@ -221,8 +224,10 @@ Status flow:  WAITING → PENDING → RUNNING → DONE/FAILED
 | `/api/thermal` | hw_state.json | GPU/CPU temps, fan, power, VRAM |
 | `/api/training` | fleet.db + filesystem | Lock status, training logs |
 | `/api/modules` | manifest.json | Module status, profiles |
-| `/api/data_stats` | fleet.db + tools.db | Per-module data metrics |
+| `/api/data_stats` | fleet.db + tools.db | Per-module data metrics (incl. notes) |
+| `/api/comms` | fleet.db | Per-channel message/note counts + recent activity |
 | `/api/alerts` | in-memory | Active alerts |
+| `/api/resolutions` | data/resolutions.jsonl | Resolution tracking entries |
 | `/api/stream` | SSE | Live push updates (5s interval) |
 
 ### Alert System
@@ -269,22 +274,27 @@ Negative results are logged — they narrow the search space.
 ### Smoke Test (10 checks, ~2s fast / ~10s full)
 
 ```
-1. Skill imports (46+ modules)    6. Message round-trip
-2. DB health (task lifecycle)     7. Broadcast round-trip
-3. Config health (fleet.toml)     8. Stale recovery
-4. Ollama reachable*              9. Training lock
-5. RAG search*                    10. Thermal readings*
-                                  (* = skipped in --fast)
+1. Skill imports (49 modules)     6. Broadcast round-trip
+2. DB health (task lifecycle)     7. Channel message routing
+3. Config health (fleet.toml)     8. Note round-trip
+4. Ollama reachable*              9. Backward-compat messages
+5. Message round-trip             10. Stale recovery
++ Training lock, Thermal readings* (* = skipped in --fast)
 ```
 
-### Soak Test (10 checks, concurrent stress)
+### Soak Test (25 checks, concurrent stress)
 
 ```
-1. Task flood (100 tasks)         6. Broadcast under load (20 agents)
-2. Task claim/complete            7. Training lock lifecycle
-3. Concurrent claims (threads)    8. Deprecation lifecycle
-4. Lock contention                9. Module manifest validation
-5. Stale recovery under load      10. DB WAL stress (6 threads)
+Core:       Task flood, claim/complete, concurrent claims, lock contention
+Recovery:   Stale recovery under load, broadcast under load (20 agents)
+Lifecycle:  Training lock, deprecation, module manifest, DB WAL stress
+DAG:        Dependency chain, cascade fail
+Modes:      Offline skill rejection, air-gap whitelist
+Review:     Review status lifecycle, verdict parsing
+Safety:     Quarantine lifecycle, DLP scrubbing, WAITING_HUMAN lifecycle
+Comms:      Channel broadcast isolation, notes append+load
+Config:     Security config, new skill imports (v0.39-v0.41), integration config
+Validation: Post task validation
 ```
 
 ## 7. Configuration Reference (fleet.toml)

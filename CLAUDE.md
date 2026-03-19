@@ -19,3 +19,16 @@
 ## API
 - Throttle 20% of rate limits, 300ms min between requests, exponential backoff on 429s
 - Models: `claude-sonnet-4-6` default, `claude-haiku-4-5` high-volume, `claude-opus-4-6` complex
+
+## Claude Code Agent Teams
+- Enable: set `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1` in `settings.json` under `env`
+- **Lead = creator**: whichever session you ask to create the team becomes the lead. No special command — just prompt it (e.g., "Create an agent team to refactor these modules")
+- Lead spawns teammates, assigns tasks, and synthesizes results. Teammates are full independent Claude Code sessions with the same project context
+- Control entirely via natural language to the lead. `Shift+Down` to message individual teammates
+- **No same-file edits**: two teammates must not edit the same file simultaneously (overwrites). Structure tasks so each teammate owns distinct files
+- **No nested teams**: teammates can't spawn sub-teams. Only the lead manages the group
+- **Fixed leadership**: can't transfer lead or promote a teammate
+- **Cleanup**: always run "Clean up the team" from the lead, never from a teammate
+- `/resume` and `/rewind` do not restore in-process teammates
+- 3–5 teammates is a good default. Token usage scales linearly per teammate
+- Team config: `~/.claude/teams/{team-name}/config.json` | Tasks: `~/.claude/tasks/{team-name}/`

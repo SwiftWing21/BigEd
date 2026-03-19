@@ -53,7 +53,7 @@
 | T5.2 STATUS.md Missing | Delete STATUS.md mid-run | Graceful fallback, no crash, agents persist in GUI |
 | T5.3 hw_state.json Corrupt | Write bad JSON to hw_state | HW Sup → OFFLINE, no crash |
 | T5.4 Rapid Start/Stop | Click Start→Stop→Start fast | No zombies, correct final state |
-| T5.5 Existing Tests Pass | Run smoke + soak tests | 10/10 + 13/13, no regressions |
+| T5.5 Existing Tests Pass | Run smoke + soak tests | 10/10 + 25/25, no regressions |
 
 ## Suite 6: RAG Dev Environment (2 tests)
 
@@ -80,6 +80,35 @@
 | T8.3 Cascade Fail | Fail parent of chain | Downstream WAITING tasks → FAILED |
 | T8.4 Console Dispatch | Use Local Console in launcher | Result appears in chat within 60s |
 
+## Suite 9: Channel-Based Communication (5 tests)
+
+| Test | Action | Verify |
+|------|--------|--------|
+| T9.1 Channel Isolation | Send message on channel="agent" | Supervisors don't receive it, workers do |
+| T9.2 Sup Channel | hw_supervisor posts thermal note | supervisor reads it via get_notes("sup") |
+| T9.3 Note Round-Trip | `lead_client.py notes sup --post '{"test":true}'` | `lead_client.py notes sup` shows it |
+| T9.4 Broadcast Channel | `lead_client.py broadcast "test" --channel agent` | Only non-supervisor agents receive |
+| T9.5 Backward Compat | `lead_client.py send researcher "hello"` (no --channel) | Message defaults to channel="fleet" |
+
+## Suite 10: Review, Watchdog & HitL (6 tests)
+
+| Test | Action | Verify |
+|------|--------|--------|
+| T10.1 Review Gate | Dispatch `code_write` task | Task goes RUNNING→REVIEW→DONE (or REVIEW→PENDING on reject) |
+| T10.2 Quarantine | Trigger 3+ consecutive failures for an agent | Agent status → QUARANTINED, stops claiming tasks |
+| T10.3 Clear Quarantine | `db.clear_quarantine("agent_name")` | Agent resumes IDLE, claims tasks again |
+| T10.4 DLP Scrub | Insert `sk-ant-api03-xxx` in task result | Watchdog redacts it within 60s |
+| T10.5 HitL Request | Agent calls `request_human_input()` | Task → WAITING_HUMAN, Fleet Comm tab shows question |
+| T10.6 HitL Response | Reply via Fleet Comm tab | Task resumes PENDING, `_human_response` in payload |
+
+## Suite 11: Dashboard & API (3 tests)
+
+| Test | Action | Verify |
+|------|--------|--------|
+| T11.1 Comms Endpoint | GET /api/comms | Returns per-channel message/note counts for sup/agent/fleet/pool |
+| T11.2 Data Stats | GET /api/data_stats | Includes fleet.notes row count |
+| T11.3 Resolutions | GET /api/resolutions | Returns entries from data/resolutions.jsonl (or empty array) |
+
 ---
 
-## Total: 32 tests across 8 suites
+## Total: 46 tests across 11 suites
