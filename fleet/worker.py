@@ -88,6 +88,17 @@ SKILL_TIMEOUTS = {
 }
 DEFAULT_SKILL_TIMEOUT = 600
 
+# Validate skill name against actual skill files
+_valid_skills = None
+
+
+def _is_valid_skill(name):
+    global _valid_skills
+    if _valid_skills is None:
+        skills_dir = Path(__file__).parent / "skills"
+        _valid_skills = {f.stem for f in skills_dir.glob("*.py") if not f.name.startswith("_")}
+    return name in _valid_skills
+
 
 def _run_in_docker(skill_name, task, config):
     """Execute a skill inside a Docker container for isolation."""
@@ -164,6 +175,10 @@ def run_skill(skill_name, payload, config, log):
                 return docker_result
         except Exception as docker_err:
             log.warning(f"Docker sandbox failed for {skill_name}: {docker_err} — falling back to native")
+
+    # Validate skill name against whitelist before import
+    if not _is_valid_skill(skill_name):
+        raise ValueError(f"Unknown skill '{skill_name}' — not in skills/ directory")
 
     timeout = SKILL_TIMEOUTS.get(skill_name, DEFAULT_SKILL_TIMEOUT)
     result = [None]

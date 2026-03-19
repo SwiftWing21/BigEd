@@ -23,6 +23,7 @@ import json
 import os
 import re
 import sys
+import tempfile
 import time
 import urllib.request
 from collections import deque
@@ -108,7 +109,11 @@ def write_state(status, model, thermal=None, models_loaded=None, conductor_statu
             state["models_loaded"] = models_loaded  # list of {"name", "size_gb", "device"}
         if conductor_status is not None:
             state["conductor"] = conductor_status  # "loaded" | "unloaded" | "warming"
-        HW_STATE_FILE.write_text(json.dumps(state), encoding="utf-8")
+        # Atomic write: temp file then rename
+        tmp_fd, tmp_path = tempfile.mkstemp(dir=str(FLEET_DIR), suffix='.json')
+        with os.fdopen(tmp_fd, 'w', encoding='utf-8') as f:
+            json.dump(state, f)
+        os.replace(tmp_path, str(HW_STATE_FILE))
     except Exception:
         pass
 
