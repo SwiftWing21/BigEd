@@ -495,6 +495,10 @@ def main():
     if conductor_model:
         print(f"[HW_SUP] Conductor model: {conductor_model} (CPU)")
 
+    # IMMEDIATE state write — launcher boot polls for this file.
+    # Must happen BEFORE any model checks (which involve HTTP calls that can stall).
+    write_state("starting", get_current_local_model())
+
     # Validate all configured models exist before entering main loop
     validate_configured_models(cfg)
 

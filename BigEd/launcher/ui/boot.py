@@ -326,11 +326,10 @@ class BootManagerMixin:
             capture=True, timeout=15,
         )
 
-        # Give hw_supervisor time to boot (Python import + GPU init = ~3-5s)
-        time.sleep(4)
-
-        # Poll for fresh hw_state.json (25s total: 12 iterations × ~2s)
-        for _ in range(12):
+        # Poll for hw_state.json — hw_supervisor writes "starting" immediately
+        # on launch, then "ready" after model validation. Accept either.
+        # Total timeout: 40s (20 iterations × 2s)
+        for i in range(20):
             if self._boot_abort.is_set():
                 raise Exception("aborted")
             try:
@@ -338,13 +337,14 @@ class BootManagerMixin:
                     data = json.loads(hw_state.read_text(encoding="utf-8"))
                     updated = data.get("updated_at", 0)
                     age = time.time() - updated
-                    if age < 20:  # written within last 20s
+                    if age < 30:  # written within last 30s
                         status = data.get("status", "unknown")
-                        return f"{status}"
+                        if status in ("starting", "ready", "transitioning"):
+                            return f"{status}"
             except Exception:
                 pass
             time.sleep(2)
-        raise Exception("hw_state not updating (28s)")
+        raise Exception("hw_state not updating (40s)")
 
     def _boot_model(self, model, gpu=True):
         """Stage 2/5: Load a model into Ollama.
