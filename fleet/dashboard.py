@@ -850,6 +850,19 @@ from a2a import a2a_bp
 app.register_blueprint(a2a_bp)
 
 
+# ── Audit Log ──────────────────────────────────────────────────────────────
+
+@app.route("/api/audit")
+def api_audit():
+    from audit_log import read_events, get_audit_summary
+    if request.args.get("summary"):
+        return jsonify(get_audit_summary())
+    return jsonify(read_events(
+        last_n=int(request.args.get("limit", 50)),
+        event_type=request.args.get("type"),
+    ))
+
+
 # ── Server-Sent Events ──────────────────────────────────────────────────────
 
 @app.route("/api/stream")
