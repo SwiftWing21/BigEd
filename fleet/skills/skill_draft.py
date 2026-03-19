@@ -64,7 +64,7 @@ PERSPECTIVE_GUIDANCE = {
     ),
 }
 
-from skills.summarize import _ollama
+from skills._models import call_complex
 
 
 def _extract_code(raw: str) -> str:
@@ -123,7 +123,7 @@ Write the complete Python skill file. Include:
 
 Respond with ONLY the Python code in a ```python ... ``` block."""
 
-    raw = _ollama(prompt, config)
+    raw = call_complex("You are a skill developer for an AI agent fleet.", prompt, config)
     code = _extract_code(raw)
 
     # Add draft header warning

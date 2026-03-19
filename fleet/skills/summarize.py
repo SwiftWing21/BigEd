@@ -5,15 +5,7 @@ from pathlib import Path
 
 import httpx
 
-
-def _ollama(prompt, config):
-    resp = httpx.post(
-        f"{config['models']['ollama_host']}/api/generate",
-        json={"model": config["models"]["local"], "prompt": prompt, "stream": False},
-        timeout=300,
-    )
-    resp.raise_for_status()
-    return resp.json()["response"].strip()
+from skills._models import call_complex
 
 
 def run(payload, config):
@@ -39,8 +31,8 @@ def run(payload, config):
     if not text:
         return {"error": "No content to summarize"}
 
-    prompt = f"Summarize the following concisely in 3-5 bullet points:\n\n{text[:6000]}"
-    summary = _ollama(prompt, config)
+    system_prompt = "Summarize the following concisely in 3-5 bullet points."
+    summary = call_complex(system_prompt, text[:6000], config, skill_name="summarize")
 
     source_label = url or file_path or description
     slug = re.sub(r"[^a-z0-9]+", "_", source_label[:40].lower()).strip("_") or "summary"

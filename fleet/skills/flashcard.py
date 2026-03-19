@@ -15,7 +15,7 @@ def run(payload, config):
     source = random.choice(candidates)
     text = source.read_text()[:3000]
 
-    from skills.summarize import _ollama
+    from skills._models import call_complex
     prompt = f"""From this content, generate 3 Q&A flashcard pairs as a JSON array:
 [{{"q": "question", "a": "answer"}}, ...]
 
@@ -24,7 +24,7 @@ Content:
 
 Return only the JSON array."""
 
-    response = _ollama(prompt, config)
+    response = call_complex("You are a helpful assistant.", prompt, config)
 
     try:
         start, end = response.find("["), response.rfind("]") + 1

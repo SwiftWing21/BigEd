@@ -14,20 +14,10 @@ Returns:
 import sys
 from pathlib import Path
 
-import httpx
+from skills._models import call_complex
 
 FLEET_DIR = Path(__file__).parent.parent
 sys.path.insert(0, str(FLEET_DIR))
-
-
-def _ollama(prompt: str, config: dict) -> str:
-    resp = httpx.post(
-        f"{config['models']['ollama_host']}/api/generate",
-        json={"model": config["models"]["local"], "prompt": prompt, "stream": False},
-        timeout=120,
-    )
-    resp.raise_for_status()
-    return resp.json()["response"].strip()
 
 
 def run(payload, config):
@@ -57,16 +47,10 @@ def run(payload, config):
             f"**Source:** {c['source']} > {c['heading']}\n{c['text']}"
             for c in chunks[:6]
         )
-        prompt = f"""Answer the following question using ONLY the context provided below.
-If the context doesn't contain enough information, say so.
-Be concise and specific. Reference which source files your answer comes from.
-
-QUESTION: {query}
-
-CONTEXT:
-{context}
-
-ANSWER:"""
-        result["answer"] = _ollama(prompt, config)
+        system_prompt = ("Answer the following question using ONLY the context provided below. "
+                         "If the context doesn't contain enough information, say so. "
+                         "Be concise and specific. Reference which source files your answer comes from.")
+        user_prompt = f"QUESTION: {query}\n\nCONTEXT:\n{context}"
+        result["answer"] = call_complex(system_prompt, user_prompt, config, skill_name="rag_query")
 
     return result

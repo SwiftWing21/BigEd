@@ -11,7 +11,7 @@ import xml.etree.ElementTree as ET
 from datetime import datetime
 from pathlib import Path
 
-import httpx
+from skills._models import call_complex
 
 FLEET_DIR = Path(__file__).parent.parent
 KNOWLEDGE_DIR = FLEET_DIR / "knowledge"
@@ -22,19 +22,13 @@ DESCRIPTION = "Local network penetration testing — authorized scan with servic
 REQUIRES_NETWORK = True
 
 
-def _ollama(prompt, config):
-    resp = httpx.post(
-        f"{config['models']['ollama_host']}/api/generate",
-        json={"model": config["models"]["local"], "prompt": prompt, "stream": False},
-        timeout=300,
-    )
-    resp.raise_for_status()
-    return resp.json()["response"].strip()
-
-
 def _detect_wsl_nat():
     """Detect if running in WSL2 with NAT networking (172.x.x.x).
-    WSL2 NAT means scans will hit the virtual network, not the real LAN."""
+    WSL2 NAT means scans will hit the virtual network, not the real LAN.
+    Only relevant on Linux (WSL runs as a Linux kernel)."""
+    import sys
+    if sys.platform == "win32":
+        return False, ""
     try:
         result = subprocess.run(
             ["ip", "route", "show", "default"],
@@ -50,20 +44,47 @@ def _detect_wsl_nat():
     return False, ""
 
 
-def _get_local_network():
-    """Detect local network range from ip route."""
+def _detect_network():
+    """Detect local network range — cross-platform."""
+    import sys
+    # Try psutil first (cross-platform)
     try:
-        out = subprocess.run(
-            ["ip", "route"], capture_output=True, text=True, timeout=10
-        ).stdout
-        for line in out.splitlines():
-            # e.g. "192.168.1.0/24 dev eth0 ..."
-            parts = line.split()
-            if parts and "/" in parts[0] and not parts[0].startswith("default"):
-                return parts[0]
-    except Exception:
+        import psutil
+        for iface, addrs in psutil.net_if_addrs().items():
+            for addr in addrs:
+                if addr.family.name == "AF_INET" and not addr.address.startswith("127."):
+                    # Derive /24 subnet from IP
+                    parts = addr.address.rsplit(".", 1)
+                    return f"{parts[0]}.0/24"
+    except ImportError:
         pass
-    return "192.168.1.0/24"  # fallback
+
+    # Fallback: platform-specific
+    if sys.platform == "win32":
+        try:
+            r = subprocess.run(["ipconfig"], capture_output=True, text=True, timeout=5)
+            for line in r.stdout.splitlines():
+                if "IPv4" in line and ":" in line:
+                    ip = line.split(":")[-1].strip()
+                    if not ip.startswith("127."):
+                        parts = ip.rsplit(".", 1)
+                        return f"{parts[0]}.0/24"
+        except Exception:
+            pass
+    else:
+        try:
+            r = subprocess.run(["ip", "route", "show", "default"], capture_output=True, text=True, timeout=5)
+            if r.returncode == 0:
+                # Parse: "default via 192.168.1.1 dev eth0 ..."
+                parts = r.stdout.split()
+                if len(parts) >= 3:
+                    gateway = parts[2]
+                    base = gateway.rsplit(".", 1)[0]
+                    return f"{base}.0/24"
+        except Exception:
+            pass
+
+    return "192.168.1.0/24"  # safe default
 
 
 def _run_nmap(target, scan_type="quick"):
@@ -215,16 +236,51 @@ def _assess_findings(hosts):
 
 
 def _check_localhost_binding():
-    """Verify local services (Ollama, Dashboard) are bound to 127.0.0.1 only."""
+    """Verify local services (Ollama, Dashboard) are bound to 127.0.0.1 only.
+    Cross-platform: psutil > netstat -an (Windows) > ss/netstat (Linux)."""
+    import sys
     findings = []
-    # Ports to check: Ollama (11434), Dashboard (5555)
     ports_to_check = [
         (11434, "Ollama API"),
         (5555, "Fleet Dashboard"),
     ]
+
+    lines = ""
+
+    # Try psutil first — cross-platform, no subprocess needed
     try:
-        # Try ss (Linux) first, then netstat
-        for cmd in [["ss", "-tlnp"], ["netstat", "-tlnp"]]:
+        import psutil
+        for port, name in ports_to_check:
+            for conn in psutil.net_connections(kind="tcp"):
+                if conn.laddr.port == port and conn.status == "LISTEN":
+                    if conn.laddr.ip in ("0.0.0.0", "::"):
+                        findings.append({
+                            "severity": "HIGH",
+                            "type": "network_binding",
+                            "port": port,
+                            "detail": f"{name} (port {port}) bound to all interfaces ({conn.laddr.ip}) — accessible from LAN",
+                            "fix": f"Bind {name} to 127.0.0.1 only (--host 127.0.0.1)",
+                        })
+                    elif conn.laddr.ip == "127.0.0.1":
+                        findings.append({
+                            "severity": "INFO",
+                            "type": "network_binding",
+                            "port": port,
+                            "detail": f"{name} (port {port}) correctly bound to 127.0.0.1",
+                            "fix": "No action needed",
+                        })
+        return findings
+    except (ImportError, PermissionError):
+        pass
+
+    # Fallback: platform-specific commands
+    try:
+        if sys.platform == "win32":
+            cmds = [["netstat", "-an"]]
+        else:
+            cmds = [["ss", "-tlnp"], ["netstat", "-tlnp"]]
+
+        for cmd in cmds:
             try:
                 result = subprocess.run(cmd, capture_output=True, text=True, timeout=10)
                 if result.returncode == 0:
@@ -233,7 +289,6 @@ def _check_localhost_binding():
                         port_str = f":{port}"
                         for line in lines.splitlines():
                             if port_str in line:
-                                # Check if bound to 0.0.0.0 or :: (all interfaces)
                                 if f"0.0.0.0:{port}" in line or f":::{port}" in line or f"*:{port}" in line:
                                     findings.append({
                                         "severity": "HIGH",
@@ -269,7 +324,7 @@ def run(payload, config):
     include_hardening = config.get("security", {}).get("network_hardening_enabled", True)
 
     if target == "auto":
-        target = _get_local_network()
+        target = _detect_network()
 
     scan_id = datetime.now().strftime("%Y%m%d_%H%M%S")
     PENTEST_DIR.mkdir(parents=True, exist_ok=True)
@@ -327,10 +382,10 @@ def run(payload, config):
             "keep firmware current, disable UPnP, review guest VLAN isolation."
         )
 
-    prompt = f"""You are a security advisor reviewing a local network penetration test.
-The network includes Ubiquiti UniFi infrastructure (routers, APs, switches).
+    system = ("You are a security advisor reviewing a local network penetration test. "
+              "The network includes Ubiquiti UniFi infrastructure (routers, APs, switches).")
 
-Target: {target}
+    user = f"""Target: {target}
 Scan type: {scan_type}
 Hosts discovered: {len(hosts)}
 {unifi_note}
@@ -348,7 +403,7 @@ Write a concise post-pentest security report (max 8 bullet points):
 - Include 2-3 hardening recommendations for a home lab running local AI services on UniFi
 - End with a one-line overall risk rating: LOW / MEDIUM / HIGH"""
 
-    analysis = _ollama(prompt, config)
+    analysis = call_complex(system, user, config, skill_name="pen_test")
 
     # Build full report
     report = {

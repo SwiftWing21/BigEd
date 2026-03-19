@@ -4,23 +4,12 @@ contributes its perspective on a topic, and posts findings to the messages table
 Used to facilitate multi-agent "discussion" rounds before synthesis.
 """
 import json
-import os
 from datetime import datetime
 from pathlib import Path
 
-import httpx
+from skills._models import call_complex
 
 KNOWLEDGE_DIR = Path(__file__).parent.parent / "knowledge"
-
-
-def _ollama(prompt, config):
-    resp = httpx.post(
-        f"{config['models']['ollama_host']}/api/generate",
-        json={"model": config["models"]["local"], "prompt": prompt, "stream": False},
-        timeout=300,
-    )
-    resp.raise_for_status()
-    return resp.json()["response"].strip()
 
 
 BUSINESS_KEYWORDS = [
@@ -86,19 +75,18 @@ def run(payload, config):
     research_context = _load_research_context()
     prior_discussion = _load_discussion_so_far(topic)
 
-    prompt = f"""You are the {role_perspective} in a strategic business planning session.
+    system_prompt = f"""You are the {role_perspective} in a strategic business planning session.
+Based on the research context and prior discussion, provide your perspective as the {role_perspective}. Be specific, concise, and build on prior contributions if any exist. Focus on actionable insights relevant to your role. 4-6 bullet points max."""
 
-TOPIC: {topic}
+    user_prompt = f"""TOPIC: {topic}
 ROUND: {round_num}
 
 RESEARCH CONTEXT:
 {research_context[:4000]}
 
-{"PRIOR DISCUSSION:" + chr(10) + prior_discussion[:2000] if prior_discussion else "You are starting the discussion."}
+{"PRIOR DISCUSSION:" + chr(10) + prior_discussion[:2000] if prior_discussion else "You are starting the discussion."}"""
 
-Based on the above, provide your perspective as the {role_perspective}. Be specific, concise, and build on prior contributions if any exist. Focus on actionable insights relevant to your role. 4-6 bullet points max."""
-
-    contribution = _ollama(prompt, config)
+    contribution = call_complex(system_prompt, user_prompt, config, skill_name="discuss")
 
     # Post to messages table
     db.post_message(

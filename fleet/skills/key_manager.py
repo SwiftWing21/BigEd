@@ -15,7 +15,7 @@ import re
 import sys
 from pathlib import Path
 
-import httpx
+from skills._models import call_complex
 
 FLEET_DIR    = Path(__file__).parent.parent
 SKILLS_DIR   = FLEET_DIR / "skills"
@@ -23,15 +23,6 @@ REGISTRY_FILE = FLEET_DIR / "keys_registry.toml"
 SECRETS_FILE  = Path.home() / ".secrets"
 REQUIRES_NETWORK = True
 
-
-def _ollama(prompt, config):
-    resp = httpx.post(
-        f"{config['models']['ollama_host']}/api/generate",
-        json={"model": config["models"]["local"], "prompt": prompt, "stream": False},
-        timeout=300,
-    )
-    resp.raise_for_status()
-    return resp.json()["response"].strip()
 
 
 def _load_registry():
@@ -133,9 +124,9 @@ def _infer_purpose(key_name, config):
     skill_names = [f.stem for f in SKILLS_DIR.glob("*.py") if f.stem != "__init__"]
     existing_keys = list(registry.keys())
 
-    prompt = f"""You are a software architect reviewing an API key configuration for a local AI agent fleet.
+    system = "You are a software architect reviewing an API key configuration for a local AI agent fleet."
 
-Key name: {key_name}
+    user = f"""Key name: {key_name}
 
 Available skills in the fleet: {', '.join(skill_names)}
 Already registered keys: {', '.join(existing_keys)}
@@ -154,7 +145,7 @@ SKILLS: ...
 USAGE: ...
 TIER: ..."""
 
-    return _ollama(prompt, config)
+    return call_complex(system, user, config)
 
 
 def _suggest_wiring(key_name, target_skill, config):
@@ -167,9 +158,10 @@ def _suggest_wiring(key_name, target_skill, config):
         return f"Skill '{target_skill}' not found."
 
     content = skill_file.read_text(errors="ignore")[:3000]
-    prompt = f"""You are reviewing a Python skill file to suggest where to add a new API key.
 
-Key to add: {key_name}
+    system = "You are reviewing a Python skill file to suggest where to add a new API key."
+
+    user = f"""Key to add: {key_name}
 Skill file: {target_skill}.py
 
 File content (truncated):
@@ -180,7 +172,7 @@ Show the exact line(s) to add and where to insert them.
 Be specific: include the os.environ.get() call and how to use it in context.
 Keep it short — just the diff, no explanation."""
 
-    return _ollama(prompt, config)
+    return call_complex(system, user, config)
 
 
 def run(payload, config):

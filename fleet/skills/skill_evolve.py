@@ -18,23 +18,13 @@ import re
 from datetime import datetime
 from pathlib import Path
 
-import httpx
+from skills._models import call_complex
 
 FLEET_DIR = Path(__file__).parent.parent
 SKILLS_DIR = FLEET_DIR / "skills"
 REVIEWS_DIR = FLEET_DIR / "knowledge" / "code_reviews"
 FMA_REVIEWS_DIR = FLEET_DIR / "knowledge" / "fma_reviews"
 DRAFTS_DIR = FLEET_DIR / "knowledge" / "code_drafts"
-
-
-def _ollama(prompt: str, config: dict) -> str:
-    resp = httpx.post(
-        f"{config['models']['ollama_host']}/api/generate",
-        json={"model": config["models"]["local"], "prompt": prompt, "stream": False},
-        timeout=300,
-    )
-    resp.raise_for_status()
-    return resp.json()["response"].strip()
 
 
 def _find_reviews(skill_name: str) -> str:
@@ -85,7 +75,7 @@ def run(payload, config):
 
     focus_text = f"\nFOCUS YOUR CHANGES ON: {focus}" if focus else ""
 
-    prompt = f"""You are a {perspective} evolving an existing fleet skill.
+    system = f"""You are a {perspective} evolving an existing fleet skill.
 Your job is to improve the skill based on review findings while preserving its working interface.
 
 RULES:
@@ -94,9 +84,9 @@ RULES:
 - Apply the review findings as improvements
 - Don't change the module docstring payload schema unless adding new optional fields
 - Add improvements incrementally — don't rewrite from scratch
-{focus_text}
+{focus_text}"""
 
-CURRENT SKILL ({skill_name}, {source_lines} lines):
+    user = f"""CURRENT SKILL ({skill_name}, {source_lines} lines):
 ```python
 {source[:4000]}
 ```
@@ -106,7 +96,7 @@ CURRENT SKILL ({skill_name}, {source_lines} lines):
 Write the complete improved Python file. Explain your changes in a comment block at the top.
 Respond with ONLY the Python code in a ```python ... ``` block."""
 
-    raw = _ollama(prompt, config)
+    raw = call_complex(system, user, config, skill_name="skill_evolve")
     evolved = _extract_code(raw)
 
     # Save evolved version

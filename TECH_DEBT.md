@@ -33,10 +33,22 @@ All tracked technical debt has been resolved. See Resolved section below.
 - **The Risk:** Schema drift and migration nightmares.
 - **Path Out:** Implement a unified Data Access Layer (DAL) / schema registry, entirely decoupling the presentation layer from SQL execution.
 
-### [OPEN] 4.5. WSL Dependency & Bash Boot Scripts
-- **The Debt:** `launcher.py` generates `#!/bin/bash` scripts on the fly (e.g., `_ollama_script`) and hardcodes Unix paths (`~/.secrets`, `~/.local/bin/uv`) for tool execution.
-- **The Risk:** Blocks true cross-platform Native Windows support (PT-1/PT-4). Users *must* have WSL installed to run the backend on Windows.
-- **Path Out:** Implement a `NativeWindowsBridge` in `fleet_bridge.py`, replace bash boot scripts with native Python process spawning (or `.ps1` equivalents), and move away from bash-specific paths.
+### [DONE] 4.5. WSL Dependency & Bash Boot Scripts
+- **Resolved in:** 2026-03-18
+- **What was fixed:** `NativeWindowsBridge` in fleet_bridge.py with bash→Windows cmd translation (_translate_cmd), BIGED_NATIVE_WINDOWS=1 env toggle, detect_cli() in config.py for auto-detection of best local CLI per platform.
+
+### [OPEN] 4.6. Regex-Based Configuration Mutation
+- **The Debt:** `launcher.py` modifies `fleet.toml` (for walkthroughs, model switching, and review settings) using brittle regex (`re.sub`) instead of a proper TOML writing library.
+- **The Risk:** High risk of corrupting the config file, breaking syntax, or accidentally wiping out user comments and custom formatting.
+- **Path Out:** Integrate `tomlkit` (which preserves formatting/comments) for all write operations to `fleet.toml`.
+
+### [DONE] 4.7. Bypassing Model Routing Layer
+- **Resolved in:** 2026-03-18
+- **What was fixed:** Refactored 12 skills (summarize, discuss, code_discuss, rag_query, account_review, legal_draft, key_manager, security_audit, code_write_review, skill_evolve, review_discards, pen_test) to use `call_complex()` from `_models.py` instead of raw `_ollama()` httpx calls. All inference now routes through cost tracking (CT-1) and budget enforcement (CT-4).
+
+### [DONE] 4.8. OS-Specific Shell Commands in Skills
+- **Resolved in:** 2026-03-18
+- **What was fixed:** pen_test.py network detection rewritten with cross-platform support: psutil first (all platforms), ipconfig fallback (Windows), ip route fallback (Linux). Security audit OS-specific commands wrapped with platform branching.
 
 ---
 

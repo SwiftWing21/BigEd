@@ -13,7 +13,7 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
-import httpx
+from skills._models import call_complex
 
 FLEET_DIR = Path(__file__).parent.parent
 KNOWLEDGE_DIR = FLEET_DIR / "knowledge"
@@ -37,15 +37,6 @@ PERMISSION_CHECKS = [
     ("~/.ssh/id_ed25519", 0o600),
 ]
 
-
-def _ollama(prompt, config):
-    resp = httpx.post(
-        f"{config['models']['ollama_host']}/api/generate",
-        json={"model": config["models"]["local"], "prompt": prompt, "stream": False},
-        timeout=300,
-    )
-    resp.raise_for_status()
-    return resp.json()["response"].strip()
 
 
 def _check_permissions():
@@ -186,8 +177,9 @@ def _build_advisory(findings, scope_desc, config):
         for f in findings
     )
 
-    prompt = f"""You are a security advisor reviewing a local development environment.
-Scope: {scope_desc}
+    system = "You are a security advisor reviewing a local development environment."
+
+    user = f"""Scope: {scope_desc}
 
 Findings:
 {summary_text}
@@ -196,7 +188,7 @@ Write a concise security advisory (max 6 bullet points). Lead with HIGH severity
 For each finding: state the risk, the specific file/path, and the exact remediation step.
 Do NOT include boilerplate. Be direct and actionable."""
 
-    analysis = _ollama(prompt, config)
+    analysis = call_complex(system, user, config)
 
     advisory_id = hashlib.sha1(
         (scope_desc + datetime.now().isoformat()).encode()

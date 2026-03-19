@@ -14,7 +14,7 @@ import sqlite3
 from datetime import datetime
 from pathlib import Path
 
-import httpx
+from skills._models import call_complex
 
 FLEET_DIR     = Path(__file__).parent.parent
 KNOWLEDGE_DIR = FLEET_DIR / "knowledge"
@@ -52,15 +52,6 @@ def _read_accounts():
         return [{"error": str(e)}]
 
 
-def _ollama(prompt: str, config: dict) -> str:
-    resp = httpx.post(
-        f"{config['models']['ollama_host']}/api/generate",
-        json={"model": config["models"]["local"], "prompt": prompt, "stream": False},
-        timeout=300,
-    )
-    resp.raise_for_status()
-    return resp.json()["response"].strip()
-
 
 def run(payload, config):
     focus     = payload.get("focus", "all")
@@ -89,9 +80,9 @@ def run(payload, config):
             f"paid_tier_cost={upgrade_cost}"
         )
 
-    prompt = f"""You are a business operations analyst reviewing a small AI services company's SaaS account portfolio.
+    system = "You are a business operations analyst reviewing a small AI services company's SaaS account portfolio."
 
-CURRENT DATE: {datetime.now().strftime('%Y-%m-%d')}
+    user = f"""CURRENT DATE: {datetime.now().strftime('%Y-%m-%d')}
 TOTAL MONTHLY SPEND: ${total_cost:.2f}
 FREE ACCOUNTS: {len(free_accts)} | NEAR LIMIT (>{threshold}% usage): {len(near_limit)} | PAID: {len(paid_accts)}
 
@@ -122,7 +113,7 @@ Which free tiers are sufficient and why — don't upgrade these yet.
 Any services not yet in the portfolio that would benefit the AI implementation business.
 Focus on: client delivery quality, sales pipeline, compliance, reliability."""
 
-    report_text = _ollama(prompt, config)
+    report_text = call_complex(system, user, config)
 
     REPORTS_DIR.mkdir(parents=True, exist_ok=True)
     date_str = datetime.now().strftime("%Y%m%d_%H%M")

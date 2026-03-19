@@ -16,11 +16,10 @@ Payload:
   code_context:     optional code snippet or file path to focus on
 """
 import json
-import os
 from datetime import datetime
 from pathlib import Path
 
-import httpx
+from skills._models import call_complex
 
 FLEET_DIR = Path(__file__).parent.parent
 KNOWLEDGE_DIR = FLEET_DIR / "knowledge"
@@ -36,16 +35,6 @@ CODE_KEYWORDS = [
     "error", "bug", "refactor", "performance", "algorithm", "sql", "api",
     "skill", "worker", "fleet", "supervisor", "db.", "payload", "config",
 ]
-
-
-def _ollama(prompt, config):
-    resp = httpx.post(
-        f"{config['models']['ollama_host']}/api/generate",
-        json={"model": config["models"]["local"], "prompt": prompt, "stream": False},
-        timeout=300,
-    )
-    resp.raise_for_status()
-    return resp.json()["response"].strip()
 
 
 def _load_code_context(topic, code_context_hint):
@@ -116,21 +105,20 @@ def run(payload, config):
     code_context = _load_code_context(topic, code_context_hint)
     prior_discussion = _load_discussion_so_far(topic)
 
-    prompt = f"""You are the {role_perspective} in a technical code review session.
-
-TOPIC: {topic}
-ROUND: {round_num}
-
-{f"CODE CONTEXT:{chr(10)}{code_context[:3000]}" if code_context else ""}
-
-{"PRIOR DISCUSSION:" + chr(10) + prior_discussion[:2000] if prior_discussion else "You are opening the technical discussion."}
-
-As the {role_perspective}, provide your analysis of the topic above.
+    system_prompt = f"""You are the {role_perspective} in a technical code review session.
+As the {role_perspective}, provide your analysis of the topic.
 Be specific and technical. Reference actual code patterns or line-level details where relevant.
 Build on prior contributions if any exist — don't repeat what was already said.
 4-6 bullet points max."""
 
-    contribution = _ollama(prompt, config)
+    user_prompt = f"""TOPIC: {topic}
+ROUND: {round_num}
+
+{f"CODE CONTEXT:{chr(10)}{code_context[:3000]}" if code_context else ""}
+
+{"PRIOR DISCUSSION:" + chr(10) + prior_discussion[:2000] if prior_discussion else "You are opening the technical discussion."}"""
+
+    contribution = call_complex(system_prompt, user_prompt, config, skill_name="code_discuss")
 
     # Post to messages table
     db.post_message(

@@ -25,7 +25,7 @@ import os
 from datetime import datetime
 from pathlib import Path
 
-import httpx
+from skills._models import call_complex
 
 FLEET_DIR   = Path(__file__).parent.parent
 LEGAL_DIR   = FLEET_DIR / "knowledge" / "legal"
@@ -117,15 +117,6 @@ _DOC_SPECS = {
 }
 
 
-def _ollama(prompt: str, config: dict) -> str:
-    resp = httpx.post(
-        f"{config['models']['ollama_host']}/api/generate",
-        json={"model": config["models"]["local"], "prompt": prompt, "stream": False},
-        timeout=300,
-    )
-    resp.raise_for_status()
-    return resp.json()["response"].strip()
-
 
 def run(payload, config):
     doc_type     = payload.get("doc_type", "nda").lower()
@@ -142,9 +133,9 @@ def run(payload, config):
 
     spec = _DOC_SPECS[doc_type]
 
-    prompt = f"""You are a paralegal drafting business legal documents. Write a professional, complete draft.
+    system = "You are a paralegal drafting business legal documents. Write a professional, complete draft."
 
-DOCUMENT TYPE: {spec['title']}
+    user = f"""DOCUMENT TYPE: {spec['title']}
 PARTY 1 (Service Provider): {our_name}
 PARTY 2 (Client / Other Party): {client_name}
 GOVERNING LAW: {jurisdiction}
@@ -164,7 +155,7 @@ DRAFT — FOR ATTORNEY REVIEW ONLY — NOT LEGAL ADVICE
 
 Write the complete document now:"""
 
-    draft = _ollama(prompt, config)
+    draft = call_complex(system, user, config)
 
     LEGAL_DIR.mkdir(parents=True, exist_ok=True)
     safe_client = client_name.lower().replace(" ", "_")[:20]

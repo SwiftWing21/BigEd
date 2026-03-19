@@ -38,10 +38,10 @@ def run(payload, config):
         })
 
     # Summarize the first result
-    from skills.summarize import _ollama
+    from skills._models import call_complex
     p = papers[0]
     prompt = f"Paper: {p['title']}\n\nAbstract: {p['abstract']}\n\nKey takeaways in 3 bullets:"
-    papers[0]["summary"] = _ollama(prompt, config)
+    papers[0]["summary"] = call_complex("You are a helpful assistant.", prompt, config)
 
     slug = re.sub(r"[^a-z0-9]+", "_", p["title"][:40].lower()).strip("_")
     out_dir = Path(__file__).parent.parent / "knowledge" / "summaries"

@@ -16,7 +16,7 @@ import re
 from datetime import datetime
 from pathlib import Path
 
-import httpx
+from skills._models import call_complex
 
 FLEET_DIR = Path(__file__).parent.parent
 KNOWLEDGE_DIR = FLEET_DIR / "knowledge"
@@ -28,21 +28,6 @@ PERSPECTIVE_FOCUS = {
     "code critic / reviewer": "bugs, error handling, edge cases, security, input validation, code clarity",
     "performance optimizer":  "I/O patterns, timeouts, memory usage, unnecessary work, scaling concerns",
 }
-
-
-def _ollama(prompt: str, config: dict) -> str:
-    resp = httpx.post(
-        f"{config['models']['ollama_host']}/api/generate",
-        json={
-            "model": config["models"]["local"],
-            "prompt": prompt,
-            "stream": False,
-            "keep_alive": "24h",
-        },
-        timeout=300,
-    )
-    resp.raise_for_status()
-    return resp.json()["response"].strip()
 
 
 def _get_recent_changes(project_dir: Path) -> dict:
@@ -84,11 +69,9 @@ def run(payload, config):
 
     reviews = []
     for filename, code in files.items():
-        prompt = f"""You are a {perspective} reviewing auto-generated code for a local AI agent fleet.
+        system = f"You are a {perspective} reviewing auto-generated code for a local AI agent fleet. REVIEW FOCUS: {focus}"
 
-REVIEW FOCUS: {focus}
-
-FILE: {filename}
+        user = f"""FILE: {filename}
 ```python
 {code}
 ```
@@ -104,7 +87,7 @@ Produce a structured review:
 Be strict — this code was AI-generated and needs human-quality validation.
 Output the review in markdown format."""
 
-        review = _ollama(prompt, config)
+        review = call_complex(system, user, config, skill_name="code_write_review")
         reviews.append({"file": filename, "review": review})
 
     # Save review

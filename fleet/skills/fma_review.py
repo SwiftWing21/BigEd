@@ -51,7 +51,7 @@ ENHANCEMENT_CATEGORIES = [
     "Integration opportunities (Discord, OpenClaw, fleet skills)",
 ]
 
-from skills.summarize import _ollama
+from skills._models import call_complex
 
 
 def _pick_file(requested: str) -> tuple[Path, str] | tuple[None, str]:
@@ -144,7 +144,7 @@ For each: describe the enhancement, estimated complexity (low/med/high), and exp
 ## Top Priority
 The single most impactful change you'd make first, with a brief implementation sketch."""
 
-    review_text = _ollama(prompt, config)
+    review_text = call_complex("You are a code reviewer for the FMA launcher.", prompt, config)
 
     FMA_REVIEWS_DIR.mkdir(parents=True, exist_ok=True)
     date_str = datetime.now().strftime("%Y%m%d")
@@ -209,7 +209,7 @@ As the {perspective}, contribute your analysis:
 - Prioritize by impact vs effort
 - 4-6 bullet points max, be specific and technical"""
 
-    contribution = _ollama(prompt, config)
+    contribution = call_complex("You are a helpful assistant.", prompt, config)
 
     # Post to messages table
     db.post_message(

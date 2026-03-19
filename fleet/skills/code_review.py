@@ -45,7 +45,7 @@ PERSPECTIVE_FOCUS = {
     "performance optimizer":    "query efficiency, I/O patterns, timeouts, caching opportunities",
 }
 
-from skills.summarize import _ollama
+from skills._models import call_complex
 
 
 def _pick_file(requested: str) -> Path | None:
@@ -129,7 +129,7 @@ Limit to 8 most important findings.
 ## Top Recommendation
 The single most impactful change you would make first."""
 
-    review_text = _ollama(prompt, config)
+    review_text = call_complex("You are a code reviewer.", prompt, config)
 
     # Save report
     REVIEWS_DIR.mkdir(parents=True, exist_ok=True)

@@ -57,14 +57,14 @@ def _build_context(rows, recent_discards, best):
 
 
 def _ollama_review(context, config):
-    from skills.summarize import _ollama
-    prompt = (
-        "You are analyzing failed ML training experiments for a GPT model.\n\n"
-        + context
+    from skills._models import call_complex
+    system = "You are analyzing failed ML training experiments for a GPT model."
+    user = (
+        context
         + "\n\nWhat patterns do you see in the failures? "
         "What should be tried next? Be concise — 3-5 bullet points."
     )
-    return _ollama(prompt, config)
+    return call_complex(system, user, config, skill_name="review_discards")
 
 
 def _sonnet_review(context, trigger, config=None):
