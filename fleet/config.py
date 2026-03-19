@@ -39,3 +39,76 @@ def is_native_windows() -> bool:
     - AND we are NOT inside a WSL environment (WSL_DISTRO_NAME not set)
     """
     return sys.platform == "win32" and not os.environ.get("WSL_DISTRO_NAME")
+
+
+def detect_cli() -> dict:
+    """Auto-detect the best local CLI for network + hardware access.
+
+    Returns dict with:
+        platform: win32 | linux | darwin | wsl
+        shell: powershell | cmd | bash | zsh
+        network_tool: nmap | nmap.exe | None
+        hw_tool: pynvml | nvidia-smi | system_profiler | None
+        bridge: NativeWindowsBridge | WslBridge | DirectBridge
+        recommended: str — human-readable recommendation
+    """
+    import shutil
+
+    result = {
+        "platform": sys.platform,
+        "shell": None,
+        "network_tool": None,
+        "hw_tool": None,
+        "bridge": None,
+        "recommended": "",
+    }
+
+    # Detect WSL
+    if os.environ.get("WSL_DISTRO_NAME"):
+        result["platform"] = "wsl"
+        result["shell"] = "bash"
+        result["bridge"] = "DirectBridge"
+    elif sys.platform == "win32":
+        # Prefer PowerShell for richer network/hw access on Windows
+        if shutil.which("pwsh") or shutil.which("powershell"):
+            result["shell"] = "powershell"
+        else:
+            result["shell"] = "cmd"
+        # Check if WSL is available as fallback
+        has_wsl = shutil.which("wsl") is not None
+        native_env = os.environ.get("BIGED_NATIVE_WINDOWS", "").lower() in ("1", "true")
+        result["bridge"] = "NativeWindowsBridge" if native_env else ("WslBridge" if has_wsl else "NativeWindowsBridge")
+    elif sys.platform == "darwin":
+        result["shell"] = os.environ.get("SHELL", "/bin/zsh").rsplit("/", 1)[-1]
+        result["bridge"] = "DirectBridge"
+    else:  # linux
+        result["shell"] = os.environ.get("SHELL", "/bin/bash").rsplit("/", 1)[-1]
+        result["bridge"] = "DirectBridge"
+
+    # Network tool detection
+    for tool in ["nmap", "nmap.exe"]:
+        if shutil.which(tool):
+            result["network_tool"] = tool
+            break
+
+    # Hardware tool detection
+    try:
+        import pynvml
+        result["hw_tool"] = "pynvml"
+    except ImportError:
+        for tool in ["nvidia-smi", "system_profiler", "lspci"]:
+            if shutil.which(tool):
+                result["hw_tool"] = tool
+                break
+
+    # Build recommendation
+    if result["platform"] == "win32" and result["shell"] == "powershell":
+        result["recommended"] = "PowerShell — best native network/hw access on Windows"
+    elif result["platform"] == "wsl":
+        result["recommended"] = "WSL bash — full Linux toolchain (nmap, pgrep, ss)"
+    elif result["platform"] == "darwin":
+        result["recommended"] = f"{result['shell']} — native macOS (system_profiler for hw)"
+    else:
+        result["recommended"] = f"{result['shell']} — native Linux (full toolchain)"
+
+    return result

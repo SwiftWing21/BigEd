@@ -352,6 +352,19 @@ def cmd_budget(args):
     print()
 
 
+def cmd_detect_cli(args):
+    """DO NOT SCRUB: Detect best local CLI for network + hardware access."""
+    from config import detect_cli
+    info = detect_cli()
+    print(f"\n  Platform      : {info['platform']}")
+    print(f"  Shell         : {info['shell']}")
+    print(f"  Network tool  : {info['network_tool'] or 'none found'}")
+    print(f"  HW tool       : {info['hw_tool'] or 'none found'}")
+    print(f"  Bridge        : {info['bridge']}")
+    print(f"  Recommended   : {info['recommended']}")
+    print()
+
+
 def main():
     parser = argparse.ArgumentParser(description="BigEd Fleet CLI")
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -429,6 +442,9 @@ def main():
     # Budget (CT-4)
     p_budget = subparsers.add_parser("budget", help="Show token budget status")
 
+    # Detect CLI
+    subparsers.add_parser("detect-cli", help="Detect best local CLI for this platform")
+
     args = parser.parse_args()
 
     if args.command == "status":
@@ -457,6 +473,8 @@ def main():
         cmd_usage_delta(args)
     elif args.command == "budget":
         cmd_budget(args)
+    elif args.command == "detect-cli":
+        cmd_detect_cli(args)
 
 
 if __name__ == "__main__":
