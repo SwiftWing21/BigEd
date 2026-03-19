@@ -2,7 +2,7 @@
 
 > **Purpose:** Ongoing audit log for Sonnet to maintain S-tier or near-S-tier standards across all dimensions.
 > Run at each milestone (`0.XX.00`) and major patch (`0.XX.YY`). Grade each dimension, log findings, track resolution.
-> **Roadmap ref:** `ROADMAP.md` | **GitHub:** https://github.com/users/SwiftWing21/projects/2/views/1
+> **Roadmap ref:** `ROADMAP.md` | **GitHub:** see fleet.toml [github] for owner/repo
 
 ---
 

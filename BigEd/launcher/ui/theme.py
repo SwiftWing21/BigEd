@@ -24,3 +24,18 @@ MONO     = ("Consolas", 11)
 FONT     = ("Segoe UI", 11)
 FONT_SM  = ("Segoe UI", 10)
 FONT_H   = ("Segoe UI", 13, "bold")
+
+# ─── UI Scale ────────────────────────────────────────────────────────────────
+import customtkinter as ctk
+
+_scale: float = 1.0
+
+def apply_scale(factor: float):
+    """Clamp factor to [0.75, 1.5] and apply globally via CTK widget scaling."""
+    global _scale
+    _scale = max(0.75, min(1.5, factor))
+    ctk.set_widget_scaling(_scale)
+
+def scaled_font(name: str, size: int, *weight: str) -> tuple:
+    """Return a font tuple with size adjusted by current scale factor."""
+    return (name, int(size * _scale), *weight)

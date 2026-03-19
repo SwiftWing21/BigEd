@@ -52,7 +52,7 @@ restore = 0.60                # <60% → operator can scale up via model-profile
 
 [models.tiers]
 default = "qwen3:8b"
-mid = "qwen3:4b"
+mid = "qwen3:8b"
 low = "qwen3:1.7b"
 critical = "qwen3:0.6b"
 
@@ -183,3 +183,7 @@ skills = ["skill_evolve", "skill_test", "code_quality", "benchmark"]
 [integrity]
 enabled = true
 auto_manifest = true  # auto-create manifest if missing
+
+[github]
+owner = "SwiftWing21"
+repo = "BigEds_Agents"

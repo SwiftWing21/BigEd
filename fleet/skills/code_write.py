@@ -25,12 +25,15 @@ from pathlib import Path
 SKILL_NAME = "code_write"
 DESCRIPTION = "Code write skill — invokes aider-chat to create or edit files using local Ollama"
 
+from config import GITHUB_OWNER
+
 FLEET_DIR = Path(__file__).parent.parent
 KNOWLEDGE_DIR = FLEET_DIR / "knowledge"
 WRITES_DIR = KNOWLEDGE_DIR / "code_writes"
 WORKSPACE = WRITES_DIR / "workspace"
 
-AGENT_REPO = "git@github.com:SwiftWing21/biged-agent-vm.git"
+AGENT_VM_REPO = "biged-agent-vm"
+AGENT_REPO = f"git@github.com:{GITHUB_OWNER}/{AGENT_VM_REPO}.git"
 
 
 def _git_env() -> dict:
@@ -71,7 +74,7 @@ def _ensure_workspace(project_dir: Path):
         # Use HTTPS with PAT if available, otherwise SSH
         pat = os.environ.get("GITHUB_PAT", "")
         if pat:
-            remote = f"https://{pat}@github.com/SwiftWing21/biged-agent-vm.git"
+            remote = f"https://{pat}@github.com/{GITHUB_OWNER}/{AGENT_VM_REPO}.git"
         else:
             remote = AGENT_REPO
         subprocess.run(

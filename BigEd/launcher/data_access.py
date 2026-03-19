@@ -459,7 +459,7 @@ class FleetDB:
     def model_performance(db_path: str | Path) -> list[dict]:
         """Get per-model tok/s metrics from the usage table (last hour).
 
-        Returns list of dicts with keys: model, avg_tps, calls, avg_ms.
+        Returns list of dicts with keys: model, avg_tps, calls, avg_ms, avg_iq.
         """
         try:
             if not Path(db_path).exists():
@@ -467,14 +467,16 @@ class FleetDB:
             conn = FleetDB._connect(db_path)
             try:
                 rows = conn.execute("""
-                    SELECT model,
-                           ROUND(AVG(tokens_per_sec), 1) as avg_tps,
+                    SELECT u.model,
+                           ROUND(AVG(u.tokens_per_sec), 1) as avg_tps,
                            COUNT(*) as calls,
-                           ROUND(AVG(eval_duration_ms), 0) as avg_ms
-                    FROM usage
-                    WHERE created_at > datetime('now', '-1 hour')
-                      AND tokens_per_sec > 0
-                    GROUP BY model
+                           ROUND(AVG(u.eval_duration_ms), 0) as avg_ms,
+                           ROUND(AVG(t.intelligence_score), 3) as avg_iq
+                    FROM usage u
+                    LEFT JOIN tasks t ON u.task_id = t.id
+                    WHERE u.created_at > datetime('now', '-1 hour')
+                      AND u.tokens_per_sec > 0
+                    GROUP BY u.model
                     ORDER BY avg_tps DESC
                 """).fetchall()
                 return [dict(r) for r in rows]

@@ -23,6 +23,12 @@ def load_config():
     return cfg
 
 
+# GitHub owner/repo — configurable via fleet.toml [github]
+_cfg = load_config()
+GITHUB_OWNER = _cfg.get("github", {}).get("owner", "SwiftWing21")
+GITHUB_REPO = _cfg.get("github", {}).get("repo", "BigEds_Agents")
+
+
 def is_offline(config: dict) -> bool:
     return config.get("fleet", {}).get("offline_mode", False)
 

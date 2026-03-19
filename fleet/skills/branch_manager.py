@@ -25,11 +25,13 @@ import subprocess
 from datetime import datetime
 from pathlib import Path
 
+from config import GITHUB_OWNER, GITHUB_REPO
+
 FLEET_DIR = Path(__file__).parent.parent
 KNOWLEDGE_DIR = FLEET_DIR / "knowledge"
 WORKSPACE = KNOWLEDGE_DIR / "code_writes" / "workspace"
 
-AGENTS_REPO = "git@github.com:SwiftWing21/BigEds_Agents.git"
+AGENTS_REPO = f"git@github.com:{GITHUB_OWNER}/{GITHUB_REPO}.git"
 SKILL_NAME = "branch_manager"
 DESCRIPTION = "Branch manager — creates and manages product branches on BigEds_Agents repo."
 
@@ -94,7 +96,7 @@ def _ensure_agents_repo():
         agents_dir.mkdir(parents=True, exist_ok=True)
         pat = os.environ.get("GITHUB_PAT", "")
         if pat:
-            remote = f"https://{pat}@github.com/SwiftWing21/BigEds_Agents.git"
+            remote = f"https://{pat}@github.com/{GITHUB_OWNER}/{GITHUB_REPO}.git"
         else:
             remote = AGENTS_REPO
         code, out = _git(["clone", remote, str(agents_dir)], cwd=str(KNOWLEDGE_DIR))

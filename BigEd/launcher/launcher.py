@@ -103,8 +103,8 @@ def _find_fleet_dir():
             return candidate
         anchor = anchor.parent
         
-    # Hardcoded dev fallback for Max's machine if not found
-    dev_fallback = Path(os.environ.get("USERPROFILE", "C:/Users/max")) / "Projects" / "Education" / "fleet"
+    # Dev fallback: use USERPROFILE env var if available
+    dev_fallback = Path(os.environ.get("USERPROFILE", os.path.expanduser("~"))) / "Projects" / "Education" / "fleet"
     if dev_fallback.is_dir() and (dev_fallback / "fleet.toml").exists():
         return dev_fallback
 
@@ -237,6 +237,13 @@ def _save_settings(data: dict):
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     settings_file = DATA_DIR / "settings.json"
     settings_file.write_text(json.dumps(data, indent=2))
+
+
+# ─── Apply saved UI scale before any widgets are created ──────────────────────
+_saved_scale = _load_settings().get("ui_scale", 1.0)
+if _saved_scale != 1.0:
+    from ui.theme import apply_scale
+    apply_scale(_saved_scale)
 
 
 def _load_theme_preference() -> str:
@@ -606,10 +613,12 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
 
         # Restore saved window geometry
         self._geometry_file = Path(HERE) / "data" / "window_geometry.json"
+        self._saved_geo = None
         try:
             if self._geometry_file.exists():
                 geo = json.loads(self._geometry_file.read_text())
                 self.geometry(f"{geo['w']}x{geo['h']}+{geo['x']}+{geo['y']}")
+                self._saved_geo = geo
         except Exception:
             pass
 
@@ -627,7 +636,7 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
         self._system_running           = False
         self._system_intentional_stop  = False
         self._last_keepalive = 0.0  # epoch time of last keepalive ping
-        self._sidebar_visible = True
+        self._sidebar_visible = _load_settings().get("sidebar_visible", True)
         # Activity sparkline: per-agent rolling history (last 10 samples @ 1s each)
         self._agent_activity = {}  # role -> deque of booleans (True=BUSY)
         # Cached agent row widgets — prevents flicker from destroy/recreate cycle
@@ -645,6 +654,22 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
 
         self._set_icon()
         self._build_ui()
+        self._bind_shortcuts()
+
+        # ── Apply display preferences after UI is built ───────────────────
+        _disp_prefs = _load_settings()
+        if _disp_prefs.get("always_on_top", False):
+            self.attributes("-topmost", True)
+        if _disp_prefs.get("start_maximized", False) or (
+                self._saved_geo and self._saved_geo.get("maximized", False)):
+            self.state("zoomed")
+        if not self._sidebar_visible:
+            self._sidebar.grid_remove()
+            self._sidebar_btn.configure(text=">")
+        if _disp_prefs.get("compact_mode", False):
+            self._header.configure(height=44)
+            self._sidebar.configure(width=130)
+
         self._current_log_agent = "Dr. Ders"  # show Dr. Ders log during boot
         self._refresh_status()
         self._schedule_refresh()
@@ -693,13 +718,15 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
 
     def _shutdown_gui(self):
         """Stop all timers and background threads before destroy."""
-        # Save window geometry
+        # Save window geometry (gated by remember_position preference)
         try:
-            self._geometry_file.parent.mkdir(parents=True, exist_ok=True)
-            self._geometry_file.write_text(json.dumps({
-                "w": self.winfo_width(), "h": self.winfo_height(),
-                "x": self.winfo_x(), "y": self.winfo_y(),
-            }))
+            if _load_settings().get("remember_position", True):
+                self._geometry_file.parent.mkdir(parents=True, exist_ok=True)
+                self._geometry_file.write_text(json.dumps({
+                    "w": self.winfo_width(), "h": self.winfo_height(),
+                    "x": self.winfo_x(), "y": self.winfo_y(),
+                    "maximized": self.state() == "zoomed",
+                }))
         except Exception:
             pass
 
@@ -949,8 +976,9 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
         self._action_badge = ctk.CTkLabel(
             hdr, text="", font=("Segoe UI", 9, "bold"),
             text_color="#1a1a1a", fg_color=ORANGE,
-            corner_radius=8, width=0)
+            corner_radius=8, width=0, cursor="hand2")
         self._action_badge.grid(row=0, column=6, padx=(0, 4), pady=(8, 0))
+        self._action_badge.bind("<Button-1>", lambda e: self._navigate_to_comm())
 
         self._update_badge = ctk.CTkButton(
             hdr, text="", font=("Segoe UI", 9, "bold"),
@@ -1419,29 +1447,39 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
                           and a.get("role") != "supervisor"]
 
             # Query fleet.db for per-agent task counts + enhanced data
-            from data_access import FleetDB
-            db_path = FLEET_DIR / "fleet.db"
-            agent_task_counts = FleetDB.agent_task_counts(db_path)
-            agent_tok_speed = FleetDB.agent_token_speeds(db_path)
-            agent_names = [a.get("name", "") for a in all_agents]
-            agent_last_result = FleetDB.agent_last_results(db_path, agent_names)
-            n_waiting_human, agent_waiting = FleetDB.waiting_human_by_agent(db_path)
+            # Wrapped in try/except so DB schema mismatches don't kill card rendering
+            agent_task_counts = {}
+            agent_tok_speed = {}
+            agent_last_result = {}
+            n_waiting_human = 0
+            agent_waiting = set()
             agent_iq_score = {}      # name -> avg intelligence_score (float or None)
             try:
-                import sqlite3 as _sq
-                conn = _sq.connect(str(db_path), timeout=2)
-                conn.row_factory = _sq.Row
-                for row in conn.execute(
-                    "SELECT assigned_to, AVG(intelligence_score) as avg_iq "
-                    "FROM tasks WHERE intelligence_score IS NOT NULL "
-                    "AND created_at > datetime('now', '-24 hours') "
-                    "GROUP BY assigned_to"
-                ).fetchall():
-                    if row["assigned_to"]:
-                        agent_iq_score[row["assigned_to"]] = round(row["avg_iq"], 2)
-                conn.close()
-            except Exception:
-                pass
+                from data_access import FleetDB
+                db_path = FLEET_DIR / "fleet.db"
+                agent_task_counts = FleetDB.agent_task_counts(db_path)
+                agent_tok_speed = FleetDB.agent_token_speeds(db_path)
+                agent_names = [a.get("name", "") for a in all_agents]
+                agent_last_result = FleetDB.agent_last_results(db_path, agent_names)
+                n_waiting_human, agent_waiting = FleetDB.waiting_human_by_agent(db_path)
+                try:
+                    import sqlite3 as _sq
+                    conn = _sq.connect(str(db_path), timeout=2)
+                    conn.row_factory = _sq.Row
+                    for row in conn.execute(
+                        "SELECT assigned_to, AVG(intelligence_score) as avg_iq "
+                        "FROM tasks WHERE intelligence_score IS NOT NULL "
+                        "AND created_at > datetime('now', '-24 hours') "
+                        "GROUP BY assigned_to"
+                    ).fetchall():
+                        if row["assigned_to"]:
+                            agent_iq_score[row["assigned_to"]] = round(row["avg_iq"], 2)
+                    conn.close()
+                except Exception:
+                    pass
+            except Exception as _enrich_err:
+                import logging
+                logging.getLogger("launcher").warning("Fleet DB enrichment failed: %s", _enrich_err)
             n_unique_models = 0      # unique loaded Ollama models
 
             # Count unique loaded Ollama models from hw_state.json
@@ -1484,6 +1522,7 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
             # Update agent cards grid
             active_names = set()
             for i, ag in enumerate(all_agents):
+              try:
                 row_idx = i // 3
                 col_idx = i % 3
                 name = ag.get("name", "?")
@@ -1555,6 +1594,10 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
                         name_color, task_display, spark, spark_color,
                         count_text, ag, model_text, tps_text, last_result,
                         is_waiting, iq_text, iq_color)
+              except Exception as _card_err:
+                import logging
+                logging.getLogger("launcher").warning("Agent card render failed for %s: %s",
+                                                       ag.get("name", "?"), _card_err)
 
             # Hide stale cards
             for key, c in self._agent_cards.items():
@@ -1865,6 +1908,7 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
                 entry.grid(row=0, column=0, sticky="ew", padx=(0, 4))
 
                 tid = item["id"]
+                entry.bind("<Return>", lambda e, t=tid, v=reply_var: self._send_human_response(t, v.get()))
                 ctk.CTkButton(
                     reply_frame, text="Send", width=60, height=28,
                     fg_color=ACCENT, hover_color=ACCENT_H,
@@ -2055,7 +2099,7 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
             tps_val = r["avg_tps"] or 0
             calls_val = r["calls"] or 0
             avg_ms_val = int(r["avg_ms"] or 0)
-            iq_val = r["avg_iq"]
+            iq_val = r.get("avg_iq")
             tps_color = GREEN if tps_val == best_tps else TEXT
             if iq_val is not None:
                 iq_text = f"{iq_val:.2f}"
@@ -2564,6 +2608,42 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
                 fg_color=ORANGE, text_color="#1a1a1a")
         else:
             self._action_badge.configure(text="", fg_color="transparent")
+
+    def _navigate_to_comm(self):
+        """Switch to Fleet Comm tab and refresh (called from badge click)."""
+        try:
+            self._tabs.set("Fleet Comm")
+            self._refresh_comm()
+        except Exception:
+            pass
+
+    def _bind_shortcuts(self):
+        """Bind global keyboard shortcuts after UI is built."""
+        self.bind("<Control-k>", lambda e: self._open_omnibox())
+        self.bind("<F5>", lambda e: self._refresh_status())
+        self.bind("<r>", lambda e: self._on_r_refresh())
+        self.bind("<R>", lambda e: self._on_r_refresh())
+        self.bind("<Control-Key-1>", lambda e: self._tabs.set("Command Center"))
+        self.bind("<Control-Key-2>", lambda e: self._tabs.set("Fleet"))
+        self.bind("<Control-Key-3>", lambda e: self._tabs.set("Fleet Comm"))
+
+    def _open_omnibox(self):
+        """Open the Ctrl+K command palette."""
+        try:
+            from ui.omnibox import OmniBox
+            OmniBox(self)
+        except Exception as e:
+            self._log_output(f"Omnibox error: {e}")
+
+    def _on_r_refresh(self):
+        """Refresh on R key — skip if a text entry widget has focus."""
+        try:
+            focused = self.focus_get()
+            if focused and isinstance(focused, (ctk.CTkEntry, ctk.CTkTextbox, tk.Entry, tk.Text)):
+                return
+            self._refresh_status()
+        except Exception:
+            pass
 
     def _schedule_hw(self):
         try:

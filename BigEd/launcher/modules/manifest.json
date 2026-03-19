@@ -4,7 +4,7 @@
     {"name": "accounts", "file": "mod_accounts.py", "version": "0.22", "default_enabled": false, "deprecated": false},
     {"name": "onboarding", "file": "mod_onboarding.py", "version": "0.23", "default_enabled": false, "deprecated": false},
     {"name": "customers", "file": "mod_customers.py", "version": "0.23", "default_enabled": false, "deprecated": false},
-    {"name": "ingestion", "file": "mod_ingestion.py", "version": "0.23", "default_enabled": false, "deprecated": false},
-    {"name": "outputs", "file": "mod_outputs.py", "version": "0.23", "default_enabled": false, "deprecated": false}
+    {"name": "ingestion", "file": "mod_ingestion.py", "version": "0.23", "default_enabled": true, "deprecated": false},
+    {"name": "outputs", "file": "mod_outputs.py", "version": "0.23", "default_enabled": true, "deprecated": false}
   ]
 }

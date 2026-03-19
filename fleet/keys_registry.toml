@@ -91,7 +91,7 @@ skills      = ["code_write", "code_fork"]
 tier        = "free"
 required    = false
 env_var     = "GITHUB_PAT"
-signup_hint = "github.com/settings/tokens → Fine-grained: repo access to SwiftWing21/*"
+signup_hint = "github.com/settings/tokens → Fine-grained: repo access to your-org/*"
 
 [[key]]
 name        = "DISCORD_BOT_TOKEN"

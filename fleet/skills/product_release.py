@@ -16,6 +16,8 @@ import subprocess
 from datetime import datetime
 from pathlib import Path
 
+from config import GITHUB_OWNER, GITHUB_REPO
+
 FLEET_DIR = Path(__file__).parent.parent
 KNOWLEDGE_DIR = FLEET_DIR / "knowledge"
 RELEASES_DIR = KNOWLEDGE_DIR / "releases"
@@ -126,7 +128,7 @@ def run(payload, config):
         try:
             r = subprocess.run(
                 ["gh", "release", "create", tag,
-                 "--repo", "SwiftWing21/BigEds_Agents",
+                 "--repo", f"{GITHUB_OWNER}/{GITHUB_REPO}",
                  "--title", f"{product_name} v{version}",
                  "--notes", changelog[:3000]],
                 capture_output=True, text=True, timeout=30,
