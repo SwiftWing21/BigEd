@@ -1248,10 +1248,11 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
         """Initialize launcher database using DAL (single source of truth)."""
         try:
             from data_access import DataAccess
-            dal = DataAccess(self._db_path)
+            DATA_DIR.mkdir(parents=True, exist_ok=True)
+            dal = DataAccess(DB_PATH)
             dal.init_launcher_db()
         except Exception as e:
-            self._log_output(f"DB init error: {e}")
+            print(f"[DB] init error: {e}")
 
 
     # ── Fleet Comm tab ─────────────────────────────────────────────────────
