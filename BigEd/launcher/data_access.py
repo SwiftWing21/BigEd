@@ -171,3 +171,54 @@ class DataAccess:
         """Get column names for a table."""
         rows = self._conn().execute(f"PRAGMA table_info({table})").fetchall()
         return [r["name"] for r in rows]
+
+    def init_launcher_db(self):
+        """Initialize all launcher module tables. Single source of truth for tools.db schema."""
+        schemas = {
+            "agents": {
+                "name": "TEXT NOT NULL",
+                "role": "TEXT",
+                "display_name": "TEXT",
+                "theme": "TEXT DEFAULT 'default'",
+            },
+            "crm": {
+                "name": "TEXT NOT NULL",
+                "company": "TEXT",
+                "email": "TEXT",
+                "phone": "TEXT",
+                "source": "TEXT",
+                "status": "TEXT DEFAULT 'prospect'",
+                "notes": "TEXT",
+                "created_at": "TEXT DEFAULT (datetime('now'))",
+            },
+            "accounts": {
+                "name": "TEXT NOT NULL",
+                "type": "TEXT",
+                "provider": "TEXT",
+                "status": "TEXT DEFAULT 'active'",
+                "notes": "TEXT",
+                "renewal_date": "TEXT",
+                "monthly_cost": "REAL DEFAULT 0",
+                "contact": "TEXT",
+                "url": "TEXT",
+                "username": "TEXT",
+                "category": "TEXT",
+                "priority": "TEXT DEFAULT 'normal'",
+            },
+            "onboarding": {
+                "customer": "TEXT NOT NULL",
+                "step": "TEXT NOT NULL",
+                "done": "INTEGER DEFAULT 0",
+                "notes": "TEXT",
+            },
+            "customers": {
+                "name": "TEXT NOT NULL",
+                "fleet_id": "TEXT",
+                "status": "TEXT DEFAULT 'active'",
+                "deployed_at": "TEXT",
+                "profile": "TEXT DEFAULT 'research'",
+                "notes": "TEXT",
+            },
+        }
+        for table, columns in schemas.items():
+            self.ensure_table(table, columns)
