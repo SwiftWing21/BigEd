@@ -1,0 +1,49 @@
+[workflow]
+name = "skill_evolution_pipeline"
+description = "Multi-agent skill evolution — draft, test, review, evolve, deploy"
+priority = 3
+
+[[steps]]
+name = "draft"
+skill = "skill_draft"
+[steps.payload]
+skill_name = "$skill"
+description = "$description"
+
+[[steps]]
+name = "test"
+skill = "skill_test"
+depends_on = ["draft"]
+[steps.payload]
+skill = "$skill"
+
+[[steps]]
+name = "review"
+skill = "code_review"
+depends_on = ["test"]
+[steps.payload]
+file = "$skill"
+
+[[steps]]
+name = "security"
+skill = "security_review"
+depends_on = ["test"]
+[steps.payload]
+scope = "$skill"
+
+[[steps]]
+name = "evolve"
+skill = "skill_evolve"
+depends_on = ["review", "security"]
+[steps.condition]
+review = "approved"
+[steps.payload]
+skill = "$skill"
+
+[[steps]]
+name = "deploy"
+skill = "deploy_skill"
+depends_on = ["evolve"]
+[steps.payload]
+skill_name = "$skill"
+verify = true
