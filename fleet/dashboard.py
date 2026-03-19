@@ -872,6 +872,28 @@ def api_audit():
     ))
 
 
+@app.route("/api/gdpr/erasure", methods=["POST"])
+def api_gdpr_erasure():
+    """GDPR Art. 17: Right to erasure."""
+    try:
+        data = request.get_json()
+        identifier = data.get("identifier")
+        if not identifier:
+            return jsonify({"error": "identifier required"}), 400
+        sys.path.insert(0, str(FLEET_DIR))
+        import db
+        result = db.delete_user_data(identifier, scope=data.get("scope", "agent"))
+        # Log to audit trail
+        try:
+            from audit_log import log_event
+            log_event("gdpr_erasure", "dashboard", {"identifier": identifier, "deleted": result}, severity="warning")
+        except Exception:
+            pass
+        return jsonify({"status": "erased", "deleted": result})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
 # ── Server-Sent Events ──────────────────────────────────────────────────────
 
 @app.route("/api/stream")

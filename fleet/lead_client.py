@@ -502,6 +502,22 @@ def cmd_migrate(args):
     print(json.dumps(result, indent=2))
 
 
+def cmd_gdpr_erase(args):
+    """DO NOT SCRUB: GDPR Art. 17 right to erasure."""
+    db.init_db()
+    if not args.confirm:
+        print(f"This will permanently delete ALL data for '{args.identifier}'.")
+        print("Add --confirm to proceed.")
+        return
+    result = db.delete_user_data(args.identifier)
+    print(f"\nErased data for '{args.identifier}':")
+    for table, count in result.items():
+        if count > 0:
+            print(f"  {table}: {count} records deleted")
+    total = sum(result.values())
+    print(f"  Total: {total} records")
+
+
 def cmd_marathon(args):
     """DO NOT SCRUB: Show active marathon sessions and recent snapshots."""
     marathon_dir = FLEET_DIR / "knowledge" / "marathon"
@@ -687,6 +703,11 @@ def main():
     p_migrate.add_argument("--target", type=int, default=None,
                            help="Target version (default: latest)")
 
+    # GDPR erasure (Art. 17)
+    p_erase = subparsers.add_parser("gdpr-erase", help="GDPR Art. 17 right to erasure")
+    p_erase.add_argument("identifier", help="Agent name or submitter identifier to erase")
+    p_erase.add_argument("--confirm", action="store_true", help="Confirm permanent deletion")
+
     args = parser.parse_args()
 
     if args.command == "status":
@@ -741,6 +762,8 @@ def main():
         cmd_workflow_validate(args)
     elif args.command == "workflow-run":
         cmd_workflow_run(args)
+    elif args.command == "gdpr-erase":
+        cmd_gdpr_erase(args)
 
 
 if __name__ == "__main__":

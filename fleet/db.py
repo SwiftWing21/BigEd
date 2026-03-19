@@ -758,6 +758,53 @@ from idle_evolution import log_idle_run, get_idle_stats, get_least_evolved_skill
 
 # ── DAG Visualization ─────────────────────────────────────────────────────────
 
+def delete_user_data(identifier: str, scope: str = "agent") -> dict:
+    """GDPR Art. 17: Right to erasure — purge all data for an agent or task submitter.
+
+    Args:
+        identifier: agent name or submitter identifier
+        scope: "agent" (purge agent data) or "all" (purge everything matching identifier)
+    Returns:
+        dict with counts of deleted records per table
+    """
+    deleted = {}
+    def _do():
+        with get_conn() as conn:
+            # Tasks assigned to or created for this agent
+            r = conn.execute("DELETE FROM tasks WHERE assigned_to=?", (identifier,))
+            deleted["tasks"] = r.rowcount
+            # Messages from/to
+            r = conn.execute("DELETE FROM messages WHERE from_agent=? OR to_agent=?", (identifier, identifier))
+            deleted["messages"] = r.rowcount
+            # Notes from
+            r = conn.execute("DELETE FROM notes WHERE from_agent=?", (identifier,))
+            deleted["notes"] = r.rowcount
+            # Usage records
+            r = conn.execute("DELETE FROM usage WHERE agent=?", (identifier,))
+            deleted["usage"] = r.rowcount
+            # Idle runs
+            r = conn.execute("DELETE FROM idle_runs WHERE agent=?", (identifier,))
+            deleted["idle_runs"] = r.rowcount
+            # Agent record itself
+            r = conn.execute("DELETE FROM agents WHERE name=?", (identifier,))
+            deleted["agents"] = r.rowcount
+    _retry_write(_do)
+
+    # Also purge knowledge files mentioning this agent
+    knowledge_dir = Path(__file__).parent / "knowledge"
+    deleted["knowledge_files"] = 0
+    if knowledge_dir.exists():
+        for f in knowledge_dir.rglob("*"):
+            if f.is_file() and identifier in f.name:
+                try:
+                    f.unlink()
+                    deleted["knowledge_files"] += 1
+                except Exception:
+                    pass
+
+    return deleted
+
+
 def get_dag_graph(parent_id: int) -> dict:
     """Build a DAG graph structure for visualization."""
     with get_conn() as conn:
