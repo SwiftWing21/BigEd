@@ -21,6 +21,7 @@ import tkinter as tk
 import customtkinter as ctk
 from PIL import Image
 import psutil
+import tomlkit
 
 # GPU via pynvml (NVIDIA); graceful fallback if unavailable
 try:
@@ -1986,23 +1987,20 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
     def _toggle_claude_research(self):
         use_claude = self._claude_research_var.get()
         try:
-            text = FLEET_TOML.read_text(encoding="utf-8")
+            doc = tomlkit.parse(FLEET_TOML.read_text(encoding="utf-8"))
+            models = doc.setdefault("models", {})
             if use_claude:
                 # Read the configured Claude model (last saved via Claude console or model selector)
-                m = re.search(r'^claude_model\s*=\s*["\']([^"\']+)["\']', text, re.M)
-                claude_model = m.group(1) if m else "claude-sonnet-4-6"
+                claude_model = models.get("claude_model", "claude-sonnet-4-6")
                 provider  = "claude"
                 complex_v = claude_model
             else:
-                m = re.search(r'^local\s*=\s*["\']([^"\']+)["\']', text, re.M)
-                local_model = m.group(1) if m else "qwen3:8b"
+                local_model = models.get("local", "qwen3:8b")
                 provider  = "local"
                 complex_v = local_model
-            text = re.sub(r'^(complex_provider\s*=\s*)["\'][^"\']*["\']',
-                          f'\\g<1>"{provider}"', text, flags=re.M)
-            text = re.sub(r'^(complex\s*=\s*)["\'][^"\']*["\']',
-                          f'\\g<1>"{complex_v}"', text, flags=re.M)
-            FLEET_TOML.write_text(text, encoding="utf-8")
+            models["complex_provider"] = provider
+            models["complex"] = complex_v
+            FLEET_TOML.write_text(tomlkit.dumps(doc), encoding="utf-8")
             state = f"Claude ({complex_v})" if use_claude else f"local ({complex_v})"
             self._log_output(f"Research decisions → {state}  (fleet picks up on next task)")
         except Exception as e:
@@ -2983,7 +2981,7 @@ class ModelSelectorDialog(ctk.CTkToplevel):
         if not self._selected:
             return
         try:
-            text = FLEET_TOML.read_text(encoding="utf-8")
+            doc = tomlkit.parse(FLEET_TOML.read_text(encoding="utf-8"))
             provider = self._stack_var.get()
             # Map stack mode to the complex model string
             complex_models = {
@@ -2992,13 +2990,11 @@ class ModelSelectorDialog(ctk.CTkToplevel):
                 "local":  self._selected,
             }
             complex_val = complex_models.get(provider, "claude-sonnet-4-6")
-            text = re.sub(r'^(local\s*=\s*)["\'][^"\']*["\']',
-                          f'\\g<1>"{self._selected}"', text, flags=re.M)
-            text = re.sub(r'^(complex\s*=\s*)["\'][^"\']*["\']',
-                          f'\\g<1>"{complex_val}"', text, flags=re.M)
-            text = re.sub(r'^(complex_provider\s*=\s*)["\'][^"\']*["\']',
-                          f'\\g<1>"{provider}"', text, flags=re.M)
-            FLEET_TOML.write_text(text, encoding="utf-8")
+            models = doc.setdefault("models", {})
+            models["local"] = self._selected
+            models["complex"] = complex_val
+            models["complex_provider"] = provider
+            FLEET_TOML.write_text(tomlkit.dumps(doc), encoding="utf-8")
             self._status_lbl.configure(
                 text="✓ Saved — restart fleet to apply", text_color=GREEN)
             self._current = self._selected
@@ -3051,24 +3047,16 @@ class ReviewDialog(ctk.CTkToplevel):
 
     def _save(self):
         try:
-            text = FLEET_TOML.read_text(encoding="utf-8")
-            enabled = str(self._enabled_var.get()).lower()
-            provider = self._provider_var.get()
-            # Update or append [review] block
-            local_think = str(self._think_var.get()).lower()
-            block = (f"[review]\n"
-                     f"enabled = {enabled}\n"
-                     f"provider = \"{provider}\"\n"
-                     f"claude_model = \"{self._cfg['claude_model']}\"\n"
-                     f"gemini_model = \"{self._cfg['gemini_model']}\"\n"
-                     f"local_model = \"{self._local_model_var.get()}\"\n"
-                     f"local_ctx = {self._cfg['local_ctx']}\n"
-                     f"local_think = {local_think}\n")
-            if re.search(r'^\[review\]', text, re.M):
-                text = re.sub(r'\[review\].*?(?=\n\[|\Z)', block, text, flags=re.S)
-            else:
-                text = text.rstrip() + "\n\n" + block
-            FLEET_TOML.write_text(text, encoding="utf-8")
+            doc = tomlkit.parse(FLEET_TOML.read_text(encoding="utf-8"))
+            review = doc.setdefault("review", {})
+            review["enabled"] = self._enabled_var.get()
+            review["provider"] = self._provider_var.get()
+            review["claude_model"] = self._cfg["claude_model"]
+            review["gemini_model"] = self._cfg["gemini_model"]
+            review["local_model"] = self._local_model_var.get()
+            review["local_ctx"] = self._cfg["local_ctx"]
+            review["local_think"] = self._think_var.get()
+            FLEET_TOML.write_text(tomlkit.dumps(doc), encoding="utf-8")
             self._status.configure(text="Saved.", text_color=GREEN)
         except Exception as e:
             self._status.configure(text=f"Error: {e}", text_color=RED)
@@ -3359,24 +3347,13 @@ class WalkthroughDialog(ctk.CTkToplevel):
         """Write [walkthrough] completed = true to fleet.toml."""
         try:
             from datetime import datetime
-            text = FLEET_TOML.read_text(encoding="utf-8")
-            skipped_str = ", ".join(str(s) for s in self._skipped) if self._skipped else ""
+            doc = tomlkit.parse(FLEET_TOML.read_text(encoding="utf-8"))
             now = datetime.now().isoformat(timespec="seconds")
-            section = (
-                f"\n[walkthrough]\n"
-                f'completed = true\n'
-                f'skipped_steps = [{skipped_str}]\n'
-                f'completed_at = "{now}"\n'
-            )
-            if "[walkthrough]" in text:
-                # Replace existing section
-                import re
-                text = re.sub(
-                    r'\[walkthrough\].*?(?=\n\[|\Z)', section.strip() + "\n",
-                    text, flags=re.DOTALL)
-            else:
-                text += section
-            FLEET_TOML.write_text(text, encoding="utf-8")
+            wt = doc.setdefault("walkthrough", {})
+            wt["completed"] = True
+            wt["skipped_steps"] = list(self._skipped) if self._skipped else []
+            wt["completed_at"] = now
+            FLEET_TOML.write_text(tomlkit.dumps(doc), encoding="utf-8")
         except Exception:
             pass
 

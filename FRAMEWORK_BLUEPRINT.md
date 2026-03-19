@@ -762,6 +762,8 @@ Over time, `resolutions.jsonl` becomes a knowledge base:
 | — | Offline/Air-Gap | Network-aware skill dispatch, local-only fallback, air-gap whitelist, recovery backup |
 | v0.42 | Auto-Boot | Zero-click start (systemd/launchd/Task Scheduler), idle skill evolution |
 | v0.43 | Marathon ML | Multi-hour training with checkpoint/resume, context persistence |
+| — | PT-3 Packaging | package_linux.py (AppImage), package_macos.py (.app/DMG), installer_cross.py |
+| — | 4.6 tomlkit | Regex TOML writes → tomlkit (preserves comments/formatting) |
 | 1.0 | Production | Zero debt, full cross-platform, all parallel tracks complete |
 | 2.0 | Multi-Fleet | Federated supervisor mesh, remote dashboard, fleet cloning |
 | 3.0 | Intelligent | ML-driven routing, predictive scaling, NL fleet control |

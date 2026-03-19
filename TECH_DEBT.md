@@ -37,10 +37,9 @@ All tracked technical debt has been resolved. See Resolved section below.
 - **Resolved in:** 2026-03-18
 - **What was fixed:** `NativeWindowsBridge` in fleet_bridge.py with bash→Windows cmd translation (_translate_cmd), BIGED_NATIVE_WINDOWS=1 env toggle, detect_cli() in config.py for auto-detection of best local CLI per platform.
 
-### [OPEN] 4.6. Regex-Based Configuration Mutation
-- **The Debt:** `launcher.py` modifies `fleet.toml` (for walkthroughs, model switching, and review settings) using brittle regex (`re.sub`) instead of a proper TOML writing library.
-- **The Risk:** High risk of corrupting the config file, breaking syntax, or accidentally wiping out user comments and custom formatting.
-- **Path Out:** Integrate `tomlkit` (which preserves formatting/comments) for all write operations to `fleet.toml`.
+### [DONE] 4.6. Regex-Based Configuration Mutation
+- **Resolved in:** 2026-03-18
+- **What was fixed:** All `FLEET_TOML.write_text(re.sub(...))` sites in launcher.py replaced with `tomlkit.parse()` → key assignment → `tomlkit.dumps()`. Preserves comments, formatting, and key ordering. `tomlkit` installed as dependency.
 
 ### [DONE] 4.7. Bypassing Model Routing Layer
 - **Resolved in:** 2026-03-18

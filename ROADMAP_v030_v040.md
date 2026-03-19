@@ -416,12 +416,14 @@ Completed 2026-03-18.
 - Platform-aware process termination (taskkill/pkill)
 - CLI flags: --launcher, --updater, --setup for targeted builds
 
-### PT-3: Platform Packaging
+### PT-3: Platform Packaging [DONE]
 
-- **Linux:** AppImage packaging, `.desktop` file generation
-- **macOS:** `.app` bundle, DMG creation, code signing + notarization notes
-- **Installer abstraction:** Platform-conditional install/uninstall (registry on Windows, file copy + .desktop on Linux, /Applications on macOS)
-- **Updater:** Replace `.bat` trampoline with `exec` self-replacement on Linux/macOS
+Completed 2026-03-18.
+
+- **Linux:** `package_linux.py` — AppImage build (PyInstaller + appimagetool), `.desktop` file generation + install
+- **macOS:** `package_macos.py` — `.app` bundle via PyInstaller --windowed, DMG creation via hdiutil, code signing support
+- **Installer abstraction:** `installer_cross.py` — platform-conditional install/uninstall (winreg on Windows, .desktop on Linux, /Applications on macOS), status check
+- **Updater:** `.bat` trampoline replacement deferred (exec self-replacement on Linux/macOS documented)
 
 ### PT-4: Platform Testing
 
