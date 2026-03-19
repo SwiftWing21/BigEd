@@ -133,6 +133,8 @@ ha_enabled = false               # Home Assistant REST API integration
 mqtt_enabled = false             # MQTT broker inspection
 
 [security]
+# Dashboard API authentication (0.07.00)
+dashboard_token = ""  # Set a token to require auth on all /api/* endpoints. Empty = no auth (local dev).
 sandbox_enabled = false          # true = sandbox code_write/skill_test/benchmark in Docker (requires Docker)
 sandbox_skills = ["code_write", "skill_test", "benchmark"]  # skills that run in Docker when sandbox_enabled
 dependency_scan_enabled = true   # run pip-audit/pip-check during security_audit
