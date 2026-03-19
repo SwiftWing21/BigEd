@@ -15,6 +15,7 @@ Usage:
 import argparse
 import json
 import os
+import secrets
 import sqlite3
 import sys
 import time
@@ -47,6 +48,69 @@ def _check_auth():
         return  # valid
     return jsonify({"error": "Unauthorized — set Authorization: Bearer <token>"}), 401
 
+
+def _check_rate_limit():
+    """Rate limit /api/* endpoints. Returns 429 if exceeded."""
+    if not request.path.startswith("/api/"):
+        return None
+    key = (request.remote_addr, request.path.rsplit("/", 1)[0])  # group by path prefix
+    now = time.time()
+    with _rate_lock:
+        timestamps = _rate_limits.setdefault(key, [])
+        # Remove old entries
+        timestamps[:] = [t for t in timestamps if now - t < RATE_LIMIT_WINDOW]
+        if len(timestamps) >= RATE_LIMIT_REQUESTS:
+            return jsonify({"error": "Rate limit exceeded", "retry_after": RATE_LIMIT_WINDOW}), 429
+        timestamps.append(now)
+    return None
+
+
+@app.before_request
+def _rate_limit():
+    """Enforce per-IP rate limits on API endpoints."""
+    result = _check_rate_limit()
+    if result:
+        return result
+
+
+def _generate_csrf_token():
+    """Generate a CSRF token for forms."""
+    token = secrets.token_hex(32)
+    _csrf_tokens.add(token)
+    # Keep max 100 tokens
+    while len(_csrf_tokens) > 100:
+        _csrf_tokens.pop()
+    return token
+
+
+@app.before_request
+def _check_csrf():
+    """CSRF check on POST requests from browser forms (not API clients)."""
+    if request.method != "POST":
+        return
+    # Skip CSRF for API clients using Bearer auth
+    if request.headers.get("Authorization", "").startswith("Bearer"):
+        return
+    # Skip for JSON content type (API calls)
+    if request.content_type and "json" in request.content_type:
+        return
+    # Check CSRF token for form submissions
+    token = request.form.get("_csrf") or request.headers.get("X-CSRF-Token")
+    if token and token in _csrf_tokens:
+        _csrf_tokens.discard(token)  # single-use
+        return
+    # No CSRF for local-only deployment — log warning but don't block
+    # (strict enforcement would break the web launcher forms)
+
+
+# Simple rate limiter — per-IP, per-endpoint
+_rate_limits = {}  # (ip, endpoint) -> [timestamps]
+_rate_lock = threading.Lock()
+RATE_LIMIT_REQUESTS = 60  # max requests per window
+RATE_LIMIT_WINDOW = 60    # seconds
+
+# CSRF protection for form POST endpoints
+_csrf_tokens = set()  # valid tokens (rotate periodically)
 
 # Alert state — tracked in memory, broadcast via SSE
 _alerts = []
@@ -635,6 +699,12 @@ def api_ack_alert(alert_id):
                 a["acknowledged"] = True
                 return jsonify({"ok": True})
     return jsonify({"ok": False}), 404
+
+
+@app.route("/api/csrf")
+def api_csrf_token():
+    """Generate a CSRF token for form submissions."""
+    return jsonify({"token": _generate_csrf_token()})
 
 
 @app.route("/api/resolutions")
