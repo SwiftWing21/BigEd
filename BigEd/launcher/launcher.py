@@ -606,6 +606,9 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
         if _should_show_walkthrough():
             self.after(500, lambda: WalkthroughDialog(self))
 
+        # Auto-start fleet on launch — no button press needed
+        self.after(1000, self._start_system)
+
     def _on_close(self):
         """Ask whether to stop background processes before exiting."""
         dlg = ctk.CTkToplevel(self)

@@ -181,6 +181,20 @@ def run_skill(skill_name, payload, config, log):
     if not _is_valid_skill(skill_name):
         raise ValueError(f"Unknown skill '{skill_name}' — not in skills/ directory")
 
+    # OOM prevention check — warn or requeue if VRAM insufficient
+    try:
+        from skills.oom_prevent import check_oom_risk
+        oom = check_oom_risk(skill_name, config)
+        if not oom["safe"] and oom["risk"] in ("critical", "high"):
+            log.warning(f"OOM risk {oom['risk']} for {skill_name}: {oom['reason']}")
+            if oom["risk"] == "critical":
+                raise RuntimeError(f"OOM blocked: {oom['reason']}")
+    except (ImportError, RuntimeError) as e:
+        if "OOM blocked" in str(e):
+            raise
+    except Exception:
+        pass  # OOM check must never block
+
     timeout = SKILL_TIMEOUTS.get(skill_name, DEFAULT_SKILL_TIMEOUT)
     result = [None]
     exc = [None]
