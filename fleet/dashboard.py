@@ -436,6 +436,15 @@ def api_thermal():
     return jsonify(result)
 
 
+@app.route("/api/fleet/provider-health")
+def api_provider_health():
+    try:
+        from providers import get_provider_health
+        return jsonify(get_provider_health())
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
 @app.route("/api/training")
 def api_training():
     """Training lock status, active run info."""

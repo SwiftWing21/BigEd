@@ -469,6 +469,15 @@ def main():
                         for m in models_loaded
                     ) else "unloaded"
 
+            # Provider health probes every ~300s (60 polls)
+            if poll_count % 60 == 0 and not air_gap:
+                try:
+                    from providers import probe_provider_health
+                    for prov in ["claude", "gemini", "local"]:
+                        probe_provider_health(prov)
+                except Exception:
+                    pass
+
             # Sup inbox check every ~60s (12 polls at 5s)
             if _HAS_DB and poll_count % 12 == 0:
                 try:
