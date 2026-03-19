@@ -4,6 +4,11 @@
 - `fleet/` — 8-agent AI worker fleet (Ollama/qwen3:8b + Sonnet)
 - `BigEd/` — reference docs, command sheets, notes
 
+## Version Scheme
+- Pre-1.0: `v0.XX` (v0.31 through v0.48)
+- Post-1.0: `0.XX.YY` format (0.01.01 through current)
+- Roadmap: `ROADMAP_v030_v040.md` — add new items in chronological order using 0.XX.YY format
+
 ## Fleet Status
 - Smoke: 17/17 | Skills: 66 | Dashboard: 39+ endpoints
 - `launcher.py`: 3492 lines

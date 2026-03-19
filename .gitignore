@@ -80,6 +80,12 @@ BigEd/launcher/data/
 # ── Claude Code local settings (permissions, not project instructions) ────────
 .claude/
 
+# ── MCP server config (local dev, not source) ────────────────────────────────
+.mcp.json
+
+# ── Docker (local dev orchestration) ─────────────────────────────────────────
+docker-compose.yml
+
 # ── OS junk ───────────────────────────────────────────────────────────────────
 .DS_Store
 Thumbs.db

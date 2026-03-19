@@ -2,6 +2,11 @@
 
 This document tracks major architectural decisions, system stability improvements, and UI enhancements implemented for the BigEd fleet.
 
+## Version Scheme Note
+When adding roadmap items or version references, use the post-1.0 format: `0.XX.YY` (e.g., 0.16.00).
+Place new items chronologically after the last completed version in ROADMAP_v030_v040.md.
+Pre-1.0 versions (v0.31-v0.48) are historical and should not be modified.
+
 ## 1. Dual Supervisor Architecture & VRAM Management
 - **Hardware Supervisor (`hw_supervisor.py`)**: CPU-bound daemon that actively monitors GPU VRAM (target: 10GB safe limit on RTX 3080 Ti).
 - **Graceful Handoffs**: Communicates with the main task supervisor via `fleet/hw_state.json` (`transitioning`, `ready`) to pause task dispatch while Ollama models are being swapped or unloaded.
