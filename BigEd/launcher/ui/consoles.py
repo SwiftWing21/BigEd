@@ -36,6 +36,9 @@ FONT     = ("Segoe UI", 11)
 FONT_SM  = ("Segoe UI", 10)
 FONT_H   = ("Segoe UI", 13, "bold")
 
+# ─── Chat history persistence ─────────────────────────────────────────────────
+HISTORY_DIR = Path(__file__).parent.parent / "data" / "console_history"
+
 # ─── Lazy imports from launcher ──────────────────────────────────────────────
 # These are resolved at runtime to avoid circular imports. The consoles call
 # into the launcher module for fleet-level helpers that are shared with other
@@ -97,6 +100,15 @@ Keep responses concise. Lead with the most important insight or action.
         self._api_key = self._get_api_key()
         self._mcfg = L.load_model_cfg()
         self._build_ui()
+        # Restore persisted chat history (subclasses set _console_name before super().__init__)
+        if getattr(self, '_console_name', None):
+            self._history = self._load_history()
+            for msg in self._history:
+                role = msg.get("role", "user")
+                # Map "assistant" to console-specific role for display
+                if role == "assistant":
+                    role = self.ASSISTANT_ROLE
+                self._append(role, msg.get("content", ""))
         self._on_init()
 
     def _get_api_key(self):
@@ -104,6 +116,52 @@ Keep responses concise. Lead with the most important insight or action.
 
     def _on_init(self):
         raise NotImplementedError
+
+    # ── History persistence ────────────────────────────────────────────────────
+    def _history_path(self):
+        """Path for this console's history file."""
+        name = getattr(self, '_console_name', 'unknown')
+        HISTORY_DIR.mkdir(parents=True, exist_ok=True)
+        return HISTORY_DIR / f"{name}_history.jsonl"
+
+    def _save_history(self):
+        """Save chat history to disk."""
+        try:
+            path = self._history_path()
+            with open(path, "w", encoding="utf-8") as f:
+                for msg in self._history[-100:]:  # keep last 100 messages
+                    f.write(json.dumps(msg) + "\n")
+        except Exception:
+            pass
+
+    def _load_history(self):
+        """Load chat history from disk."""
+        try:
+            path = self._history_path()
+            if path.exists():
+                messages = []
+                for line in path.read_text(encoding="utf-8").splitlines():
+                    if line.strip():
+                        messages.append(json.loads(line))
+                return messages[-100:]
+        except Exception:
+            pass
+        return []
+
+    def _clear_history(self):
+        """Clear chat history from disk and memory."""
+        self._history = []
+        try:
+            path = self._history_path()
+            if path.exists():
+                path.unlink()
+        except Exception:
+            pass
+        # Clear the chat display
+        self._chat.configure(state="normal")
+        self._chat.delete("1.0", "end")
+        self._chat.configure(state="disabled")
+        self._append("system", "Chat history cleared.")
 
     def _get_model_display(self) -> str:
         raise NotImplementedError
@@ -183,11 +241,15 @@ Keep responses concise. Lead with the most important insight or action.
                      font=("Segoe UI", 13, "bold"), text_color=self.HEADER_TEXT_COLOR
                      ).grid(row=0, column=0, padx=14, pady=10, sticky="w")
         self._build_model_widget(hdr)
+        ctk.CTkButton(
+            hdr, text="🗑 Clear History", font=("Segoe UI", 9), width=100, height=26,
+            fg_color=BG3, hover_color=BG, command=self._clear_history
+        ).grid(row=0, column=2, padx=(0, 6))
         if self._get_key_env_name():
             ctk.CTkButton(
                 hdr, text="🔑 Set Key", font=("Segoe UI", 9), width=80, height=26,
                 fg_color=BG3, hover_color=BG, command=self._set_key_dialog
-            ).grid(row=0, column=2, padx=(0, 10))
+            ).grid(row=0, column=3, padx=(0, 10))
 
         # Chat history
         self._chat = ctk.CTkTextbox(
@@ -333,6 +395,7 @@ Keep responses concise. Lead with the most important insight or action.
     def _on_reply(self, reply: str):
         self._stop_thinking_animation()
         self._append(self.ASSISTANT_ROLE, reply)
+        self._save_history()
         self._send_btn.configure(state="normal")
 
         # Parse and execute any DISPATCH: lines
@@ -420,6 +483,10 @@ class ClaudeConsole(_ConsoleBase):
     ASSISTANT_ROLE = "claude"
     ROLE_PREFIXES = {"user": "You", "claude": "Claude", "system": "System"}
 
+    def __init__(self, parent):
+        self._console_name = "claude"
+        super().__init__(parent)
+
     def _get_api_key(self):
         L = _launcher()
         try:
@@ -492,6 +559,7 @@ class ClaudeConsole(_ConsoleBase):
 
     def _do_send(self, text: str):
         self._history.append({"role": "user", "content": text})
+        self._save_history()
         threading.Thread(target=self._call_api, daemon=True).start()
 
     def _call_api(self):
@@ -528,6 +596,7 @@ class GeminiConsole(_ConsoleBase):
     ROLE_PREFIXES = {"user": "You", "gemini": "Gemini", "system": "System"}
 
     def __init__(self, parent):
+        self._console_name = "gemini"
         self._chat_session = None
         super().__init__(parent)
 
@@ -592,6 +661,8 @@ class GeminiConsole(_ConsoleBase):
         return self._chat_session is not None
 
     def _do_send(self, text: str):
+        self._history.append({"role": "user", "content": text})
+        self._save_history()
         threading.Thread(target=self._call_api, args=(text,), daemon=True).start()
 
     def _call_api(self, text: str):
@@ -601,6 +672,7 @@ class GeminiConsole(_ConsoleBase):
             enriched = f"{context}\n\nUser: {text}" if context else text
             response = self._chat_session.send_message(enriched)
             reply = response.text
+            self._history.append({"role": "assistant", "content": reply})
             self.after(0, lambda: self._on_reply(reply))
         except Exception as e:
             self.after(0, lambda: self._on_reply(f"[API Error] {e}"))
@@ -619,6 +691,10 @@ class LocalConsole(_ConsoleBase):
     SEND_BTN_HOVER = "#8b6c2a"
     ASSISTANT_ROLE = "ollama"
     ROLE_PREFIXES = {"user": "You", "ollama": "Ollama", "system": "System"}
+
+    def __init__(self, parent):
+        self._console_name = "local"
+        super().__init__(parent)
 
     def _get_api_key(self):
         return "local"  # no key needed
@@ -661,6 +737,7 @@ class LocalConsole(_ConsoleBase):
 
     def _do_send(self, text: str):
         self._history.append({"role": "user", "content": text})
+        self._save_history()
         threading.Thread(target=self._call_ollama, daemon=True).start()
 
     def _call_ollama(self):
