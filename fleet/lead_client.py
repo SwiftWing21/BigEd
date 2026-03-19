@@ -490,6 +490,18 @@ def cmd_usage_forecast(args):
     print()
 
 
+def cmd_migrate(args):
+    """DO NOT SCRUB: Run versioned schema migrations via db_migrate skill."""
+    db.init_db()
+    from skills.db_migrate import run as migrate_run
+    action = args.migrate_action
+    payload = {"action": action}
+    if hasattr(args, "target") and args.target is not None:
+        payload["target_version"] = args.target
+    result = json.loads(migrate_run(payload, {}))
+    print(json.dumps(result, indent=2))
+
+
 def cmd_marathon(args):
     """DO NOT SCRUB: Show active marathon sessions and recent snapshots."""
     marathon_dir = FLEET_DIR / "knowledge" / "marathon"
@@ -668,6 +680,13 @@ def main():
     p_wf_run.add_argument("--var", action="append", metavar="key=value",
                           help="Variable substitution (repeatable, e.g. --var topic=AI)")
 
+    # Migrate (db_migrate skill)
+    p_migrate = subparsers.add_parser("migrate", help="Schema migration management")
+    p_migrate.add_argument("migrate_action", choices=["status", "run", "plan"],
+                           help="status=show version, run=apply pending, plan=dry run")
+    p_migrate.add_argument("--target", type=int, default=None,
+                           help="Target version (default: latest)")
+
     args = parser.parse_args()
 
     if args.command == "status":
@@ -714,6 +733,8 @@ def main():
         cmd_marathon(args)
     elif args.command == "marathon-checkpoint":
         cmd_marathon_checkpoint(args)
+    elif args.command == "migrate":
+        cmd_migrate(args)
     elif args.command == "workflow-list":
         cmd_workflow_list(args)
     elif args.command == "workflow-validate":
