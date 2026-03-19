@@ -7,6 +7,9 @@ Providers:
   claude  — Anthropic API (ANTHROPIC_API_KEY)
   gemini  — Google Gemini API (GEMINI_API_KEY)
   local   — Ollama local model (same as config['models']['local'])
+
+Note: Provider-specific imports (anthropic, etc.) are deferred to function
+bodies to avoid ImportError when optional dependencies are not installed.
 """
 import os
 import threading
@@ -224,7 +227,9 @@ def check_complex_batch(batch_id: str):
                     "text": item.result.message.content[0].text
                 })
             else:
-                results.append({"custom_id": item.custom_id, "error": "Request failed"})
+                err = item.result.error
+                detail = f"{err.type}: {err.message}" if err else "unknown"
+                results.append({"custom_id": item.custom_id, "error": f"Request failed: {detail}"})
         result["results"] = results
         
     return result

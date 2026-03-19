@@ -425,15 +425,15 @@ Completed 2026-03-19. Backend abstraction for non-Ollama model providers:
 
 ## Audit Coverage Check (per AUDIT_TRACKER.md)
 
-> Reviewed at v0.25.00.
+> Reviewed at v0.25.01.
 
-- **Criteria fully covered:** Architecture/SoC (A), Code Quality (A), Dynamic Abilities (S), Performance (A), Documentation (A), Data Processing+HITL (S), Usability/UX (A), Reliability/S1 (A), Observability/S2 (A), Security/S4 (A), Module/Plugin Support (A)
-- **Criteria partially covered:** Testing (A-, adversarial suite added but no per-skill unit tests)
-- **Criteria not addressed this cycle:** None — all S-tier milestones complete
+- **Criteria fully covered:** All 12 dimensions at A or S grade
+- **Criteria partially covered:** None
+- **Criteria not addressed this cycle:** None — all milestones and audit items complete
 
 **P1 issues remaining:** None
-**P2 issues remaining:** None — all resolved
-**P3 issues remaining:** P3-02 (deferred imports docs), P3-03 (per-skill unit tests), P3-04 (dashboard tests), P3-06 (get_optimal_model), P3-07 (batch error detail)
+**P2 issues remaining:** None
+**P3 issues remaining:** None — all resolved (P3-01 through P3-07)
 
 ---
 

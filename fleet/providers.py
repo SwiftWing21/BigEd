@@ -1,4 +1,10 @@
-"""Model provider routing with HA fallback cascade."""
+"""Model provider routing with HA fallback cascade.
+
+Note: Heavy dependencies (anthropic, google.generativeai) are imported inside
+function bodies intentionally — this avoids ImportError at module load when
+only a subset of providers are configured. Lighter stdlib imports (os, json)
+remain at the top level.
+"""
 import os
 import time
 import threading
@@ -264,18 +270,15 @@ SKILL_COMPLEXITY = {
 }
 
 
-def get_optimal_model(skill_name: str, config: dict) -> str:
-    """Return the optimal API model for a skill based on complexity classification."""
+def get_optimal_model(skill_name: str, config: dict = None) -> str:
+    """Return the optimal API model for a skill based on complexity tier.
+
+    Uses SKILL_COMPLEXITY to classify the skill, then COMPLEXITY_ROUTING
+    to pick the right model. Config is accepted for signature compat but
+    provider selection happens in call_complex(), not here.
+    """
     complexity = SKILL_COMPLEXITY.get(skill_name, "medium")
-    model = COMPLEXITY_ROUTING.get(complexity, "claude-sonnet-4-6")
-    # Override with config if specified
-    models = config.get("models", {})
-    if models.get("complex"):
-        # Only downgrade, never upgrade beyond config
-        config_model = models["complex"]
-        if complexity == "simple" and config_model != "claude-haiku-4-5":
-            return model  # use cheaper model for simple tasks
-    return model
+    return COMPLEXITY_ROUTING.get(complexity, "claude-sonnet-4-6")
 
 
 def get_local_model_for_skill(skill_name: str, config: dict) -> str:
