@@ -17,7 +17,8 @@
 | 5. Elegance & Availability | v0.44 – v0.45 | Unified lifecycle, Omni-box, HA routing | Seamless updates, zero-downtime task execution |
 | 6. User Sync & Admin Tools | v0.46 – v0.47 | GitHub pairing, restricted owner CRM | Seamless auth, private internal tooling |
 | 7. Codebase Simplification | v0.48         | Cautious bloat/dead code removal | AST scanning, graveyard quarantine, 100% soak pass |
-| 8. Cross-Platform & v1.0 | PT-1 – PT-4, DT-1 – DT-4 | Anyone, anywhere, clear diagnostics | All tests on Win/Linux/macOS; FleetBridge 100%; zero debt |
+| 8. Autonomy Expansion      | v0.49 – v0.50 | Git, MLOps, and Security skills | New skills tested, key rotation verified |
+| 9. Cross-Platform & v1.0 | PT-1 – PT-4, DT-1 – DT-4 | Anyone, anywhere, clear diagnostics | All tests on Win/Linux/macOS; FleetBridge 100%; zero debt |
 
 ## Release Process
 
@@ -480,6 +481,22 @@ Completed 2026-03-19.
 - **The "Graveyard" Quarantine Pattern:** Instead of immediate hard deletion, move suspected dead code (like old UI rendering methods or raw SQLite strings) into a `_graveyard/` namespace. If a dynamic module import or edge-case execution path fails during testing, the code can be instantly restored.
 - **Config & Dependency Audit:** Clean up `fleet.toml` fallback defaults and `requirements.txt` to remove packages (e.g., old bash utilities) that were only required by the pre-v0.30 architecture.
 - **Regression Gate:** The prune is only merged to `main` when the codebase passes 100% of the `--fast` smoke tests, the GUI headless smoke test, and an 8-hour marathon soak test to ensure no obscure conditional logic was severed.
+
+---
+
+## v0.49 — Git & MLOps Autonomy (Skill Expansion)
+**Goal:** Equip agents with native capabilities to manage repositories and generate training data.
+- **`git_manager` & `github_interact`:** New skills allowing agents to safely stage, commit, branch, and interact with GitHub Issues/PRs using the v0.46 OAuth integration.
+- **`dataset_synthesize`:** Allow the fleet to generate and curate high-quality synthetic JSONL datasets (e.g., TinyStories style) to feed the overnight `autoresearch` Marathon ML loop.
+- **`service_manager`:** Provide agents visibility into host OS services (systemd, schtasks) to verify or repair the v0.42 Auto-Boot mechanisms.
+
+---
+
+## v0.50 — Cryptographic & Security Self-Healing
+**Goal:** Address the "Data at Rest" and "Key Rotation" critical gaps identified in architecture research.
+- **`secret_rotate`:** Introduce an autonomous skill that responds to DLP alerts or time-based expiry by generating and applying new API keys seamlessly.
+- **`db_encrypt`:** A maintenance skill that can safely migrate plaintext SQLite data into SQLCipher encrypted stores during offline or idle windows.
+- **`db_migrate`:** A structured skill for agents to draft, test, and safely execute schema migrations (`ALTER TABLE`) without operator intervention.
 
 ---
 
