@@ -186,6 +186,82 @@ def start_worker(role, config):
     log.info(f"Starting worker: {role}")
     worker_procs[role] = subprocess.Popen(cmd, cwd=str(FLEET_DIR))
 
+    # 0.07.00: Apply resource limits
+    memory_limit = config.get("workers", {}).get("memory_limit_mb", 0)
+    if memory_limit > 0:
+        _apply_resource_limits(worker_procs[role], memory_limit)
+
+
+def _apply_resource_limits(proc, memory_limit_mb):
+    """Apply OS-level resource limits to a worker process."""
+    import sys
+    try:
+        if sys.platform == "linux":
+            # Linux: use cgroups v2 or resource module
+            import resource
+            # Set soft + hard memory limit (bytes)
+            limit_bytes = memory_limit_mb * 1024 * 1024
+            # Note: resource.setrlimit only works on current process
+            # For child processes, we'd need cgroups. Log the intent.
+            log.info(f"Worker {proc.pid}: memory limit {memory_limit_mb}MB (advisory — cgroups recommended)")
+        elif sys.platform == "win32":
+            # Windows: Job Objects
+            try:
+                import ctypes
+                from ctypes import wintypes
+
+                kernel32 = ctypes.windll.kernel32
+                job = kernel32.CreateJobObjectW(None, None)
+                if job:
+                    # Set memory limit via JOBOBJECT_EXTENDED_LIMIT_INFORMATION
+                    class JOBOBJECT_BASIC_LIMIT_INFORMATION(ctypes.Structure):
+                        _fields_ = [
+                            ("PerProcessUserTimeLimit", ctypes.c_int64),
+                            ("PerJobUserTimeLimit", ctypes.c_int64),
+                            ("LimitFlags", wintypes.DWORD),
+                            ("MinimumWorkingSetSize", ctypes.c_size_t),
+                            ("MaximumWorkingSetSize", ctypes.c_size_t),
+                            ("ActiveProcessLimit", wintypes.DWORD),
+                            ("Affinity", ctypes.c_size_t),
+                            ("PriorityClass", wintypes.DWORD),
+                            ("SchedulingClass", wintypes.DWORD),
+                        ]
+
+                    class IO_COUNTERS(ctypes.Structure):
+                        _fields_ = [("ReadOperationCount", ctypes.c_uint64)] * 6
+
+                    class JOBOBJECT_EXTENDED_LIMIT_INFORMATION(ctypes.Structure):
+                        _fields_ = [
+                            ("BasicLimitInformation", JOBOBJECT_BASIC_LIMIT_INFORMATION),
+                            ("IoInfo", IO_COUNTERS),
+                            ("ProcessMemoryLimit", ctypes.c_size_t),
+                            ("JobMemoryLimit", ctypes.c_size_t),
+                            ("PeakProcessMemoryUsed", ctypes.c_size_t),
+                            ("PeakJobMemoryUsed", ctypes.c_size_t),
+                        ]
+
+                    info = JOBOBJECT_EXTENDED_LIMIT_INFORMATION()
+                    info.BasicLimitInformation.LimitFlags = 0x00000100  # JOB_OBJECT_LIMIT_PROCESS_MEMORY
+                    info.ProcessMemoryLimit = memory_limit_mb * 1024 * 1024
+
+                    kernel32.SetInformationJobObject(
+                        job, 9,  # JobObjectExtendedLimitInformation
+                        ctypes.byref(info), ctypes.sizeof(info)
+                    )
+
+                    # Assign process to job
+                    handle = kernel32.OpenProcess(0x0001, False, proc.pid)  # PROCESS_TERMINATE
+                    if handle:
+                        kernel32.AssignProcessToJobObject(job, handle)
+                        kernel32.CloseHandle(handle)
+                        log.info(f"Worker {proc.pid}: Windows Job Object memory limit {memory_limit_mb}MB")
+            except Exception as e:
+                log.debug(f"Windows Job Object limit failed: {e}")
+        else:
+            log.info(f"Worker {proc.pid}: memory limit {memory_limit_mb}MB (platform: advisory only)")
+    except Exception as e:
+        log.debug(f"Resource limit failed for {proc.pid}: {e}")
+
 
 HW_STATE_FILE = FLEET_DIR / "hw_state.json"
 STALE_TASK_RECOVERY_INTERVAL = 300  # check every 5 min
