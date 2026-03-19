@@ -45,6 +45,10 @@ else:
 # Developer mode — show advanced features (default ON during alpha)
 # Set to False for production builds, or use env var BIGED_PRODUCTION=1
 DEV_MODE = os.environ.get("BIGED_PRODUCTION", "").lower() not in ("1", "true")
+# Production mode: frozen exe with _production_marker OR BIGED_PRODUCTION env var
+_PRODUCTION_MARKER = _DIST_DIR / "_production_marker" if getattr(sys, 'frozen', False) else None
+DEV_MODE = not (_PRODUCTION_MARKER and _PRODUCTION_MARKER.exists()) and \
+           os.environ.get("BIGED_PRODUCTION", "").lower() not in ("1", "true")
 
 
 def _get_fleet_python():
@@ -593,6 +597,15 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
         self.minsize(800, 720)
         self.configure(fg_color=BG)
 
+        # Restore saved window geometry
+        self._geometry_file = Path(HERE) / "data" / "window_geometry.json"
+        try:
+            if self._geometry_file.exists():
+                geo = json.loads(self._geometry_file.read_text())
+                self.geometry(f"{geo['w']}x{geo['h']}+{geo['x']}+{geo['y']}")
+        except Exception:
+            pass
+
         # Load agent name theme + custom names
         global _active_theme, _custom_names
         _active_theme = _load_theme_preference()
@@ -670,6 +683,16 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
 
         def _shutdown_gui():
             """Stop all timers and background threads before destroy."""
+            # Save window geometry for next launch
+            try:
+                self._geometry_file.parent.mkdir(parents=True, exist_ok=True)
+                self._geometry_file.write_text(json.dumps({
+                    "w": self.winfo_width(), "h": self.winfo_height(),
+                    "x": self.winfo_x(), "y": self.winfo_y(),
+                }))
+            except Exception:
+                pass
+
             # Signal all timers to stop
             self._boot_active = False
             self._system_running = False
@@ -1146,6 +1169,11 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
             out_frame, font=("Consolas", 10), fg_color=BG2,
             text_color="#c8c8c8", wrap="word", corner_radius=0)
         self._output_text.grid(row=1, column=0, sticky="nsew", padx=4, pady=(0, 4))
+
+        copy_btn = ctk.CTkButton(out_frame, text="\u2398", width=28, height=24,
+                                  font=("Segoe UI", 10), fg_color=BG3, hover_color=BG2,
+                                  command=self._copy_output)
+        copy_btn.place(relx=1.0, x=-4, y=4, anchor="ne")
 
     # ── Tab 1: Agents ─────────────────────────────────────────────────────────
     def _build_tab_agents(self, parent):
@@ -2741,6 +2769,16 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
                      padx=12, pady=6).pack()
         # Auto-dismiss after duration
         self.after(duration, lambda: toast.place_forget() if toast.winfo_exists() else None)
+    def _copy_output(self):
+        """Copy OUTPUT panel contents to clipboard."""
+        try:
+            text = self._output_text.get("1.0", "end").strip()
+            self.clipboard_clear()
+            self.clipboard_append(text)
+            # Brief visual feedback via button flash (no toast dependency)
+            self._log_output("Copied to clipboard.")
+        except Exception:
+            pass
 
     def _log_output(self, text: str):
         """Write to the task output box + ring buffer for debug reports."""
