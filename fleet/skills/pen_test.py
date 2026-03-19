@@ -194,6 +194,50 @@ def _assess_findings(hosts):
     return findings
 
 
+def _check_localhost_binding():
+    """Verify local services (Ollama, Dashboard) are bound to 127.0.0.1 only."""
+    findings = []
+    # Ports to check: Ollama (11434), Dashboard (5555)
+    ports_to_check = [
+        (11434, "Ollama API"),
+        (5555, "Fleet Dashboard"),
+    ]
+    try:
+        # Try ss (Linux) first, then netstat
+        for cmd in [["ss", "-tlnp"], ["netstat", "-tlnp"]]:
+            try:
+                result = subprocess.run(cmd, capture_output=True, text=True, timeout=10)
+                if result.returncode == 0:
+                    lines = result.stdout
+                    for port, name in ports_to_check:
+                        port_str = f":{port}"
+                        for line in lines.splitlines():
+                            if port_str in line:
+                                # Check if bound to 0.0.0.0 or :: (all interfaces)
+                                if f"0.0.0.0:{port}" in line or f":::{port}" in line or f"*:{port}" in line:
+                                    findings.append({
+                                        "severity": "HIGH",
+                                        "type": "network_binding",
+                                        "port": port,
+                                        "detail": f"{name} (port {port}) bound to all interfaces (0.0.0.0) — accessible from LAN",
+                                        "fix": f"Bind {name} to 127.0.0.1 only (--host 127.0.0.1)",
+                                    })
+                                elif f"127.0.0.1:{port}" in line:
+                                    findings.append({
+                                        "severity": "INFO",
+                                        "type": "network_binding",
+                                        "port": port,
+                                        "detail": f"{name} (port {port}) correctly bound to 127.0.0.1",
+                                        "fix": "No action needed",
+                                    })
+                    break  # found a working command
+            except (FileNotFoundError, subprocess.TimeoutExpired):
+                continue
+    except Exception:
+        pass
+    return findings
+
+
 def run(payload, config):
     import sys
     sys.path.insert(0, str(FLEET_DIR))
@@ -202,6 +246,7 @@ def run(payload, config):
     target = payload.get("target", "auto")
     scan_type = payload.get("scan_type", "service")  # quick | service | full
     label = payload.get("label", "local_network")
+    include_hardening = config.get("security", {}).get("network_hardening_enabled", True)
 
     if target == "auto":
         target = _get_local_network()
@@ -221,6 +266,10 @@ def run(payload, config):
     # Parse results
     hosts = _parse_nmap_xml(xml_output)
     findings = _assess_findings(hosts)
+
+    # Network hardening: verify localhost-only binding
+    if include_hardening:
+        findings.extend(_check_localhost_binding())
 
     # Build summary for Ollama analysis
     host_summary = "\n".join(

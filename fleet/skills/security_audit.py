@@ -8,6 +8,8 @@ import json
 import os
 import re
 import stat
+import subprocess
+import sys
 from datetime import datetime
 from pathlib import Path
 
@@ -126,6 +128,51 @@ def _check_gitignore(scan_dirs):
     return findings
 
 
+def _check_dependencies():
+    """Scan Python dependencies for known issues via pip check and outdated packages."""
+    findings = []
+    # pip check — detect broken deps
+    try:
+        result = subprocess.run(
+            [sys.executable, "-m", "pip", "check"],
+            capture_output=True, text=True, timeout=30,
+        )
+        if result.returncode != 0:
+            for line in result.stdout.strip().splitlines()[:5]:
+                findings.append({
+                    "severity": "MEDIUM",
+                    "type": "broken_dependency",
+                    "detail": line.strip(),
+                    "fix": "pip install --upgrade <package>",
+                })
+    except Exception:
+        pass
+    # Check for pip-audit if available
+    try:
+        result = subprocess.run(
+            [sys.executable, "-m", "pip_audit", "--format", "json", "--progress-spinner", "off"],
+            capture_output=True, text=True, timeout=120,
+        )
+        if result.returncode == 0 and result.stdout.strip():
+            try:
+                vulns = json.loads(result.stdout)
+                for v in vulns[:10]:  # cap at 10
+                    pkg = v.get("name", "?")
+                    ver = v.get("version", "?")
+                    vuln_id = v.get("id", "?")
+                    findings.append({
+                        "severity": "HIGH",
+                        "type": "vulnerable_dependency",
+                        "detail": f"{pkg}=={ver} has known vulnerability {vuln_id}",
+                        "fix": f"pip install --upgrade {pkg}",
+                    })
+            except json.JSONDecodeError:
+                pass
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        pass  # pip-audit not installed — that's fine
+    return findings
+
+
 def _build_advisory(findings, scope_desc, config):
     if not findings:
         return None
@@ -176,6 +223,7 @@ def run(payload, config):
     include_permission_check = payload.get("check_permissions", True)
     include_secret_scan = payload.get("check_secrets", True)
     include_gitignore = payload.get("check_gitignore", True)
+    include_dependency_scan = config.get("security", {}).get("dependency_scan_enabled", True)
 
     findings = []
 
@@ -187,6 +235,9 @@ def run(payload, config):
 
     if include_gitignore:
         findings.extend(_check_gitignore(scan_dirs))
+
+    if include_dependency_scan:
+        findings.extend(_check_dependencies())
 
     if not findings:
         return {"status": "clean", "scope": scope, "message": "No security issues found."}

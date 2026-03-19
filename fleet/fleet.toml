@@ -125,6 +125,12 @@ planner = ["plan_workload", "curriculum_update"]
 legal = ["legal_draft"]
 account_manager = ["account_review"]
 
+[security]
+sandbox_enabled = false          # true = sandbox code_write/skill_test/benchmark in Docker (requires Docker)
+sandbox_skills = ["code_write", "skill_test", "benchmark"]  # skills that run in Docker when sandbox_enabled
+dependency_scan_enabled = true   # run pip-audit/pip-check during security_audit
+network_hardening_enabled = true # verify Ollama/dashboard bound to 127.0.0.1 during pen_test
+
 [walkthrough]
 completed = false              # set true after finish or Skip All
 skipped_steps = []             # list of step numbers skipped

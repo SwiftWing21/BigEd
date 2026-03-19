@@ -1,4 +1,4 @@
-# BigEd CC v0.37 — Framework Blueprint
+# BigEd CC v0.38 — Framework Blueprint
 
 > **Production-ready modular AI agent platform.** Customer-deployable, 24/7 capable, with safe deprecation, thermal management, and iterative skill training.
 
@@ -7,7 +7,7 @@
 ## 1. Architecture Overview
 
 ```
-BigEd CC (v0.37)
+BigEd CC (v0.38)
 ├── Launcher (BigEd/launcher/)
 │   ├── launcher.py          — Core app shell (~4700 lines)
 │   │   ├── Header            — CPU/RAM/GPU/ETH stats (3s poll, hysteresis)
@@ -715,6 +715,7 @@ Over time, `resolutions.jsonl` becomes a knowledge base:
 | v0.35 | Evaluator-Optimizer | REVIEW status, adversarial review skill, high-stakes gate in worker, 3-provider review (Claude/Gemini/local) |
 | v0.36 | Semantic Watchdog | QUARANTINED status, failure streak detection, stuck review auto-pass, DLP secret scrubbing (DB + knowledge files) |
 | v0.37 | Human-in-the-Loop | WAITING_HUMAN status, Fleet Comm tab, operator response flow, security advisory approve/dismiss |
+| v0.38 | Security & Sandboxing | [security] config, Docker sandbox policy, pip-audit dependency scanning, 127.0.0.1 binding verification |
 | — | Cross-Platform | FleetBridge abstraction, platform packaging, CI/CD matrix (parallel track) |
 | — | Diagnostics | Debug reports, issue submission, resolution tracking (parallel track) |
 | — | Offline/Air-Gap | Network-aware skill dispatch, local-only fallback, air-gap whitelist, recovery backup |

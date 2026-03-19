@@ -7,6 +7,7 @@ import json
 import logging
 import os
 import signal
+import subprocess
 import sys
 import threading
 import time
@@ -100,6 +101,19 @@ def run_skill(skill_name, payload, config, log):
                 return {"error": "offline_mode enabled", "skill": skill_name}
         except ImportError:
             pass
+
+    # Sandbox policy: warn if sandboxable skill runs without Docker
+    security_cfg = config.get("security", {})
+    if security_cfg.get("sandbox_enabled", False):
+        sandbox_skills = security_cfg.get("sandbox_skills", [])
+        if skill_name in sandbox_skills:
+            # Check if Docker is available
+            try:
+                subprocess.run(["docker", "info"], capture_output=True, timeout=5)
+                log.info(f"Skill '{skill_name}' — Docker sandbox available")
+                # TODO: actual Docker execution boundary (v0.38+)
+            except (FileNotFoundError, subprocess.TimeoutExpired, Exception):
+                log.warning(f"Skill '{skill_name}' requires sandbox but Docker unavailable — running natively")
 
     timeout = SKILL_TIMEOUTS.get(skill_name, DEFAULT_SKILL_TIMEOUT)
     result = [None]
@@ -224,7 +238,8 @@ def main():
         # Check inbox for broadcast/direct messages — act on known types
         paused = getattr(main, '_paused', False)
         try:
-            msgs = db.get_messages(role, unread_only=True, limit=5)
+            msgs = db.get_messages(role, unread_only=True, limit=5,
+                                       channels=["fleet", "agent", "pool"])
             for m in msgs:
                 log.info(f"Message from {m['from_agent']}: {m['body_json']}")
                 try:

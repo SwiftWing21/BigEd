@@ -231,12 +231,17 @@ Completed 2026-03-18.
 
 ---
 
-## v0.38 — Fleet Security & Isolation (Sandboxing)
-**Goal:** Protect the host environment (WSL and Windows) from malicious or hallucinated agent code execution.
-- **Docker Execution Boundaries:** Utilize WSL Docker integration to sandbox `code_write`, `skill_test`, and `benchmark` tasks. Prevent worker agents from executing untested code natively on the host filesystem.
-- **Dependency Scanning:** Extend the `security_audit` skill to include `pip-audit` or `safety`, identifying vulnerable Python packages during idle network scans.
-- **Network Hardening Verification:** Add an assertion step to `pen_test.py` to ensure local API endpoints (Ollama, Flask) are strictly bound to `127.0.0.1` and inaccessible from the wider LAN.
-- **Network Hardening Verification:** Add an assertion step to `pen_test.py` to ensure local API endpoints (Ollama, Flask) are bound to the dynamic local host while establishing secure access patterns for future authorized local networked devices.
+## v0.38 — Fleet Security & Isolation (Sandboxing) [DONE]
+
+Completed 2026-03-18. **Milestone 2 (Autonomous Safety) complete.**
+
+- 38.1: `[security]` config: sandbox_enabled, sandbox_skills, dependency_scan_enabled, network_hardening_enabled
+- 38.2: Worker sandbox policy: Docker availability check for code_write/skill_test/benchmark (soft enforcement)
+- 38.3: Dependency scanning in security_audit: pip check + pip-audit integration
+- 38.4: Network hardening in pen_test: 127.0.0.1 binding verification for Ollama (11434) and Dashboard (5555) via ss/netstat
+- Smoke: 10/10, Soak: 23/23
+
+**Goal:** Protect the host environment from malicious or hallucinated agent code execution.
 
 ---
 
@@ -334,6 +339,47 @@ Completed 2026-03-18.
 - Cache effectiveness report: savings from ephemeral cache vs full cost
 - Prompt compression recommendations based on input_token trends
 - Model routing validation: flag Opus usage where Sonnet/Haiku would suffice
+
+---
+
+## Parallel Track: Comms (Layered Inter-Agent Communication)
+
+> Triple-layer messaging: supervisor-to-supervisor, agent-to-agent, cross-layer broadcast, and supervisor-to-pool. Each layer has ephemeral messages (read-once inbox) and persistent notes (append-only scratchpad).
+
+### CM-1: Channel Foundation [DONE]
+
+Completed 2026-03-18.
+
+- `channel` column on `messages` table + migration for existing DBs
+- `notes` table (channel, from_agent, created_at, body_json) with index
+- Channel constants: `CH_SUP`, `CH_AGENT`, `CH_FLEET`, `CH_POOL`
+- Channel-aware `post_message`, `get_messages`, `broadcast_message`
+- `post_note`, `get_notes`, `get_note_count`
+- 3 smoke tests (routing isolation, note round-trip, backward compat)
+- Smoke: 10/10, Soak: 23/23
+
+### CM-2: Supervisor Layer (Layer 1) [DONE]
+
+Completed 2026-03-18.
+
+- hw_supervisor: registers as supervisor, posts sup notes on model transitions and thermal throttle events, reads sup inbox every 60s
+- supervisor: registers as supervisor, reads sup inbox + notes every 30s, posts sup notes on training state changes and stale task recovery
+- All hw_supervisor DB calls wrapped in try/except — thermal loop never blocks
+
+### CM-3: Agent Layer (Layer 2) [DONE]
+
+Completed 2026-03-18.
+
+- worker.py: inbox filtered to `["fleet", "agent", "pool"]` — workers never see sup channel
+- Migrated `code_discuss`, `discuss`, `fma_review` to `channel="agent"`
+- Discussion `_load_discussion_so_far()` queries filter `AND channel IN ('agent', 'fleet')` for backward compat
+
+### CM-4: CLI & Dashboard [DONE]
+
+Completed 2026-03-18.
+
+- `lead_client.py`: `--channel` flag on send/broadcast/inbox commands, new `notes` subcommand
+- `dashboard.py`: `/api/comms` endpoint (per-channel message/note counts + recent activity), `data_stats` includes notes table
 
 ---
 

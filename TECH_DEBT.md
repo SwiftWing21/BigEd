@@ -2,7 +2,7 @@
 
 This document tracks known technical debt, brittle architectural patterns, and temporary hacks that need to be addressed to ensure long-term stability of the BigEd Fleet.
 
-> **Last reviewed:** v0.37 (2026-03-18)
+> **Last reviewed:** v0.38 (2026-03-18)
 
 ---
 

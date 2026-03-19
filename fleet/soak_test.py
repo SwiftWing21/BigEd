@@ -514,8 +514,79 @@ def test_waiting_human_lifecycle():
     return True, "WAITING_HUMAN request/respond/resume OK"
 
 
+def test_channel_broadcast_isolation():
+    """21. Broadcast to channel='agent', verify supervisors got 0 messages."""
+    import db
+    db.init_db()
+    # Register supervisors and workers
+    db.register_agent("soak_sup_1", "supervisor", 0)
+    db.register_agent("soak_sup_2", "supervisor", 0)
+    db.register_agent("soak_wk_1", "worker", 0)
+    db.register_agent("soak_wk_2", "worker", 0)
+    ts = str(time.time())
+    db.broadcast_message("soak_sender", json.dumps({"isolation": ts}), channel="agent")
+    # Workers should have received it
+    wk1 = db.get_messages("soak_wk_1", unread_only=True, limit=5, channels=["agent"])
+    wk2 = db.get_messages("soak_wk_2", unread_only=True, limit=5, channels=["agent"])
+    got_wk = sum(1 for m in wk1 + wk2 if ts in m.get("body_json", ""))
+    # Supervisors should NOT have received it
+    sup1 = db.get_messages("soak_sup_1", unread_only=True, limit=5, channels=["agent"])
+    sup2 = db.get_messages("soak_sup_2", unread_only=True, limit=5, channels=["agent"])
+    got_sup = sum(1 for m in sup1 + sup2 if ts in m.get("body_json", ""))
+    ok = got_wk == 2 and got_sup == 0
+    return ok, f"workers={got_wk}/2 supervisors={got_sup}/0"
+
+
+def test_notes_append_load():
+    """22. Post 100 notes, verify ordering + since/count filtering."""
+    import db
+    db.init_db()
+    channel = "soak_notes_test"
+    for i in range(100):
+        db.post_note(channel, "soak_noter", json.dumps({"i": i}))
+    # Verify total count
+    count = db.get_note_count(channel)
+    if count != 100:
+        return False, f"expected 100 notes, got {count}"
+    # Get all notes (default desc order without since)
+    all_notes = db.get_notes(channel, limit=100)
+    if len(all_notes) != 100:
+        return False, f"expected 100 returned, got {len(all_notes)}"
+    # Since filtering with a synthetic past timestamp
+    since_notes = db.get_notes(channel, since="2000-01-01T00:00:00", limit=100)
+    if len(since_notes) != 100:
+        return False, f"since past expected 100, got {len(since_notes)}"
+    # Since with future timestamp should return 0
+    future_notes = db.get_notes(channel, since="2099-01-01T00:00:00", limit=100)
+    if len(future_notes) != 0:
+        return False, f"since future expected 0, got {len(future_notes)}"
+    # Count matches
+    since_count = db.get_note_count(channel, since="2000-01-01T00:00:00")
+    ok = since_count == 100
+    return ok, f"total=100 since_past=100 since_future=0"
+
+
+def test_security_config():
+    """23. Security config: sandbox_skills, dependency_scan, network_hardening."""
+    from config import load_config
+    cfg = load_config()
+    sec = cfg.get("security", {})
+    if "sandbox_enabled" not in sec:
+        return False, "missing sandbox_enabled"
+    if "sandbox_skills" not in sec:
+        return False, "missing sandbox_skills"
+    if "dependency_scan_enabled" not in sec:
+        return False, "missing dependency_scan_enabled"
+    if "network_hardening_enabled" not in sec:
+        return False, "missing network_hardening_enabled"
+    skills = sec["sandbox_skills"]
+    if "code_write" not in skills:
+        return False, f"code_write not in sandbox_skills: {skills}"
+    return True, f"security config OK (sandbox={sec['sandbox_enabled']}, {len(skills)} sandboxed skills)"
+
+
 def test_post_task_validation():
-    """21. post_task rejects invalid JSON payloads."""
+    """24. post_task rejects invalid JSON payloads."""
     import db
     db.init_db()
     try:
@@ -544,6 +615,8 @@ def cleanup():
         conn.execute("DELETE FROM messages WHERE from_agent LIKE 'soak_%' OR to_agent LIKE 'soak_%'")
         conn.execute("DELETE FROM locks WHERE holder LIKE 'soak_%'")
         conn.execute("DELETE FROM locks WHERE name='soak_test_lock'")
+        conn.execute("DELETE FROM notes WHERE from_agent LIKE 'soak_%'")
+        conn.execute("DELETE FROM notes WHERE channel='soak_notes_test'")
 
 
 def main():
@@ -553,7 +626,7 @@ def main():
 
     os.environ["FLEET_TEST_DB"] = ":memory:"
 
-    print("Fleet Soak Test (v0.37)")
+    print("Fleet Soak Test (v0.38)")
     print("=" * 50)
 
     tests = [
@@ -576,6 +649,9 @@ def main():
         ("Quarantine lifecycle", test_quarantine_lifecycle),
         ("DLP scrubbing", test_dlp_scrubbing),
         ("WAITING_HUMAN lifecycle", test_waiting_human_lifecycle),
+        ("Channel broadcast isolation", test_channel_broadcast_isolation),
+        ("Notes append + load", test_notes_append_load),
+        ("Security config", test_security_config),
         ("Post task validation", test_post_task_validation),
     ]
 
