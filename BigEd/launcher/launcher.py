@@ -42,6 +42,25 @@ else:
     _SRC_DIR  = Path(__file__).parent
     _DIST_DIR = Path(__file__).parent / "dist"
 
+
+def _get_fleet_python():
+    """Get Python interpreter for launching fleet scripts.
+    When frozen, sys.executable is BigEdCC.exe — we need actual Python.
+    """
+    import shutil
+    if getattr(sys, 'frozen', False):
+        # Try to find Python on PATH
+        for name in ["python", "python3", "py"]:
+            found = shutil.which(name)
+            if found and "BigEdCC" not in found:
+                return found
+        # Try uv
+        uv = shutil.which("uv")
+        if uv:
+            return uv  # caller should use [uv, "run", "python", script]
+        return "python"  # hope it's on PATH
+    return sys.executable
+
 # ─── Paths ────────────────────────────────────────────────────────────────────
 # Dynamically compute project root by walking up until we find fleet/
 def _find_fleet_dir():
@@ -2261,7 +2280,7 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
                 if uv:
                     cmd = [uv, "run", "python", "worker.py", "--role", role]
                 else:
-                    cmd = [sys.executable, "worker.py", "--role", role]
+                    cmd = [_get_fleet_python(), "worker.py", "--role", role]
                 log_path = FLEET_DIR / "logs" / f"{role}.log"
                 log_path.parent.mkdir(parents=True, exist_ok=True)
                 with open(log_path, "a") as log_f:
@@ -2358,7 +2377,7 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
             if uv:
                 cmd = [uv, "run", "python", "supervisor.py"]
             else:
-                cmd = [sys.executable, "supervisor.py"]
+                cmd = [_get_fleet_python(), "supervisor.py"]
             log_path = FLEET_DIR / "logs" / "supervisor.log"
             with open(log_path, "a") as log_f:
                 proc = subprocess.Popen(
@@ -2455,7 +2474,7 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
                 if uv:
                     cmd = [uv, "run", "python", "dispatch_marathon.py"]
                 else:
-                    cmd = [sys.executable, "dispatch_marathon.py"]
+                    cmd = [_get_fleet_python(), "dispatch_marathon.py"]
                 log_path = FLEET_DIR / "logs" / "marathon.log"
                 log_path.parent.mkdir(parents=True, exist_ok=True)
                 with open(log_path, "a") as log_f:
@@ -2539,7 +2558,7 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
                 if uv:
                     cmd = [uv, "run", "python", "lead_client.py", "task", text, "--wait"]
                 else:
-                    cmd = [sys.executable, "lead_client.py", "task", text, "--wait"]
+                    cmd = [_get_fleet_python(), "lead_client.py", "task", text, "--wait"]
                 r = subprocess.run(
                     cmd, cwd=str(FLEET_DIR),
                     capture_output=True, text=True, timeout=300,
@@ -2564,7 +2583,7 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
             try:
                 import shutil
                 uv = shutil.which("uv")
-                base = uv if uv else sys.executable
+                base = uv if uv else _get_fleet_python()
                 cmd = [base] + (["run", "python"] if uv else [])
                 cmd += ["lead_client.py", "dispatch", skill, b64, "--b64", "--priority", "9"]
                 if assigned_to:
