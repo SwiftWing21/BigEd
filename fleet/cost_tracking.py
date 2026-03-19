@@ -1,6 +1,16 @@
 """Cost Intelligence (CT-1 through CT-4) — usage tracking, summaries, deltas."""
 
-from db import get_conn, _retry_write
+
+def _get_conn():
+    """Lazy import to avoid circular dependency with db.py."""
+    import db
+    return db.get_conn()
+
+
+def _retry_write(fn, retries=8):
+    """Lazy import to avoid circular dependency with db.py."""
+    import db
+    return db._retry_write(fn, retries)
 
 
 def log_usage(skill, model, input_tokens, output_tokens,
@@ -8,7 +18,7 @@ def log_usage(skill, model, input_tokens, output_tokens,
               cost_usd=0.0, task_id=None, agent=None):
     """Insert a usage record after each API call. Must never raise."""
     def _do():
-        with get_conn() as conn:
+        with _get_conn() as conn:
             conn.execute(
                 """INSERT INTO usage (skill, model, input_tokens, output_tokens,
                    cache_read_tokens, cache_create_tokens, cost_usd, task_id, agent)
@@ -34,7 +44,7 @@ def get_usage_summary(period="week", group_by="skill"):
     # Whitelist group_by to prevent SQL injection
     if group_by not in ("skill", "model", "agent"):
         group_by = "skill"
-    with get_conn() as conn:
+    with _get_conn() as conn:
         rows = conn.execute(f"""
             SELECT {group_by},
                    COUNT(*) as calls,
@@ -56,7 +66,7 @@ def get_usage_delta(from_start, from_end, to_start, to_end):
 
     Returns list of {skill, metric, previous, current, delta_pct, direction}.
     """
-    with get_conn() as conn:
+    with _get_conn() as conn:
         rows = conn.execute("""
             SELECT skill,
                    SUM(CASE WHEN created_at BETWEEN ? AND ? THEN input_tokens END) as prev_input,

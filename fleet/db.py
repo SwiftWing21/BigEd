@@ -19,12 +19,6 @@ def utc_to_local(utc_str: str | None) -> str:
 
 DB_PATH = Path(__file__).parent / "fleet.db"
 
-# ── Channel Constants ─────────────────────────────────────────────────────────
-CH_SUP   = "sup"    # Layer 1: supervisor-to-supervisor
-CH_AGENT = "agent"  # Layer 2: agent-to-agent
-CH_FLEET = "fleet"  # Layer 3: cross-layer (default)
-CH_POOL  = "pool"   # Layer 4: supervisor → agent pool
-
 SCHEMA = """
 PRAGMA journal_mode=WAL;
 PRAGMA synchronous=NORMAL;
@@ -127,6 +121,12 @@ def _retry_write(fn, retries=8):
                 raise
             time.sleep(0.2 * (2 ** attempt) + random.uniform(0, 0.1))
 
+
+# ── Channel Constants (extracted to comms.py) ─────────────────────────────────
+from comms import CH_SUP, CH_AGENT, CH_FLEET, CH_POOL
+
+# ── Messaging (extracted to comms.py) ────────────────────────────────────────
+from comms import post_message, get_messages, broadcast_message, post_note, get_notes, get_note_count
 
 VALID_TASK_STATUSES = {"PENDING", "RUNNING", "DONE", "FAILED", "WAITING", "REVIEW", "WAITING_HUMAN"}
 
@@ -416,121 +416,6 @@ def post_task(type_, payload_json, priority=5, assigned_to=None,
     return result[0]
 
 
-def post_message(from_agent, to_agent, body_json, channel="fleet"):
-    def _do():
-        with get_conn() as conn:
-            conn.execute("""
-                INSERT INTO messages (from_agent, to_agent, body_json, channel)
-                VALUES (?, ?, ?, ?)
-            """, (from_agent, to_agent, body_json, channel))
-    _retry_write(_do)
-
-
-def get_messages(agent_name, unread_only=True, limit=20, channels=None):
-    """Retrieve messages for an agent. Marks them read on fetch.
-
-    Args:
-        channels: optional list of channel strings to filter on.
-                  None = no filter (backward compat).
-    """
-    with get_conn() as conn:
-        where = "WHERE to_agent=?"
-        params = [agent_name]
-        if unread_only:
-            where += " AND read_at IS NULL"
-        if channels:
-            placeholders = ','.join('?' * len(channels))
-            where += f" AND channel IN ({placeholders})"
-            params.extend(channels)
-        rows = conn.execute(f"""
-            SELECT id, from_agent, to_agent, created_at, body_json, channel
-            FROM messages {where}
-            ORDER BY created_at DESC LIMIT ?
-        """, (*params, limit)).fetchall()
-        if rows:
-            ids = [r['id'] for r in rows]
-            conn.execute(
-                f"UPDATE messages SET read_at=datetime('now') WHERE id IN ({','.join('?' * len(ids))})",
-                ids
-            )
-        return [dict(r) for r in rows]
-
-
-def broadcast_message(from_agent, body_json, channel="fleet"):
-    """Send a message to agents appropriate for the channel.
-
-    channel="fleet": all agents (existing behavior)
-    channel="sup":   only supervisors (role='supervisor')
-    channel="agent" or "pool": only non-supervisors (role != 'supervisor')
-    """
-    def _do():
-        with get_conn() as conn:
-            if channel == CH_SUP:
-                agents = conn.execute(
-                    "SELECT name FROM agents WHERE role='supervisor'"
-                ).fetchall()
-            elif channel in (CH_AGENT, CH_POOL):
-                agents = conn.execute(
-                    "SELECT name FROM agents WHERE role != 'supervisor'"
-                ).fetchall()
-            else:
-                agents = conn.execute("SELECT name FROM agents").fetchall()
-            for a in agents:
-                conn.execute("""
-                    INSERT INTO messages (from_agent, to_agent, body_json, channel)
-                    VALUES (?, ?, ?, ?)
-                """, (from_agent, a['name'], body_json, channel))
-            return len(agents)
-    return _retry_write(_do)
-
-
-# ── Notes (persistent channel scratchpad) ─────────────────────────────────────
-
-def post_note(channel, from_agent, body_json):
-    """Append a note to a channel scratchpad. Returns note id."""
-    result = [None]
-    def _do():
-        with get_conn() as conn:
-            cur = conn.execute("""
-                INSERT INTO notes (channel, from_agent, body_json)
-                VALUES (?, ?, ?)
-            """, (channel, from_agent, body_json))
-            result[0] = cur.lastrowid
-    _retry_write(_do)
-    return result[0]
-
-
-def get_notes(channel, since=None, limit=50):
-    """Read notes from a channel. since: ISO datetime string, returns newer notes only."""
-    with get_conn() as conn:
-        if since:
-            rows = conn.execute("""
-                SELECT id, channel, from_agent, created_at, body_json
-                FROM notes WHERE channel=? AND created_at > ?
-                ORDER BY created_at ASC LIMIT ?
-            """, (channel, since, limit)).fetchall()
-        else:
-            rows = conn.execute("""
-                SELECT id, channel, from_agent, created_at, body_json
-                FROM notes WHERE channel=?
-                ORDER BY created_at DESC LIMIT ?
-            """, (channel, limit)).fetchall()
-        return [dict(r) for r in rows]
-
-
-def get_note_count(channel, since=None):
-    """Fast count of notes since timestamp. For lightweight polling."""
-    with get_conn() as conn:
-        if since:
-            return conn.execute(
-                "SELECT COUNT(*) as n FROM notes WHERE channel=? AND created_at > ?",
-                (channel, since)
-            ).fetchone()['n']
-        return conn.execute(
-            "SELECT COUNT(*) as n FROM notes WHERE channel=?", (channel,)
-        ).fetchone()['n']
-
-
 def recover_stale_tasks(timeout_secs=900):
     """Requeue RUNNING tasks whose assigned agent has gone stale (no heartbeat)."""
     recovered = []
@@ -787,53 +672,5 @@ def get_stuck_reviews(timeout_minutes=30):
 from cost_tracking import log_usage, get_usage_summary, get_usage_delta
 
 
-# ── Idle Evolution (v0.42.2) ──────────────────────────────────────────────────
-
-def log_idle_run(agent, skill, result=None, cost_usd=0.0):
-    """Record an idle evolution run."""
-    def _do():
-        with get_conn() as conn:
-            conn.execute(
-                "INSERT INTO idle_runs (agent, skill, result, cost_usd) VALUES (?, ?, ?, ?)",
-                (agent, skill, result, cost_usd)
-            )
-    _retry_write(_do)
-
-
-def get_idle_stats(period="week"):
-    """Get idle run statistics."""
-    period_map = {"day": "-1 day", "week": "-7 days", "month": "-30 days"}
-    since = period_map.get(period, "-7 days")
-    with get_conn() as conn:
-        rows = conn.execute("""
-            SELECT skill, COUNT(*) as runs, SUM(cost_usd) as total_cost
-            FROM idle_runs WHERE created_at >= datetime('now', ?)
-            GROUP BY skill ORDER BY runs DESC
-        """, (since,)).fetchall()
-        return [dict(r) for r in rows]
-
-
-def get_least_evolved_skill():
-    """Find the skill with the oldest (or no) idle evolution run."""
-    with get_conn() as conn:
-        # Get all skill types that have been dispatched at least once
-        active_skills = conn.execute(
-            "SELECT DISTINCT type FROM tasks WHERE status='DONE' ORDER BY type"
-        ).fetchall()
-        if not active_skills:
-            return None
-        skill_names = [r["type"] for r in active_skills]
-        # Find which has the oldest idle_run (or none at all)
-        for skill in skill_names:
-            row = conn.execute(
-                "SELECT MAX(created_at) as last_run FROM idle_runs WHERE skill=?",
-                (skill,)
-            ).fetchone()
-            if not row or not row["last_run"]:
-                return skill  # never evolved
-        # All have been evolved — return oldest
-        row = conn.execute("""
-            SELECT skill, MAX(created_at) as last_run
-            FROM idle_runs GROUP BY skill ORDER BY last_run ASC LIMIT 1
-        """).fetchone()
-        return row["skill"] if row else skill_names[0]
+# ── Idle Evolution (extracted to idle_evolution.py) ───────────────────────────
+from idle_evolution import log_idle_run, get_idle_stats, get_least_evolved_skill

@@ -362,11 +362,13 @@ When no tasks are pending, workers auto-discover improvement opportunities.
 - `fleet/providers.py` — HA fallback cascade, PRICING, calculate_cost (from _models.py)
 - `fleet/cost_tracking.py` — usage logging, summaries, deltas, budgets (from db.py)
 
-### FI-2: Medium Extractions
+### FI-2: Medium Extractions [DONE]
 
-- `fleet/idle_evolution.py` — idle detection, curriculum, idle_runs DB (from worker.py + db.py)
-- `fleet/comms.py` — channel constants, message/note CRUD, broadcast (from db.py)
-- `fleet/process_control.py` — REST lifecycle endpoints (from dashboard.py)
+Completed 2026-03-19.
+
+- `fleet/idle_evolution.py` — idle_runs DB functions (from db.py), re-exported via db module
+- `fleet/comms.py` — channel constants + message/note CRUD + broadcast (from db.py), re-exported
+- `fleet/process_control.py` — Flask Blueprint with all /api/fleet/* endpoints (from dashboard.py)
 
 ### FI-3: Complex Extractions
 
