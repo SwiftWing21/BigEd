@@ -144,6 +144,8 @@ def init_db():
             conn.execute("ALTER TABLE tasks ADD COLUMN review_rounds INTEGER DEFAULT 0")
         if "conditions" not in cols:
             conn.execute("ALTER TABLE tasks ADD COLUMN conditions TEXT")
+        if "classification" not in cols:
+            conn.execute("ALTER TABLE tasks ADD COLUMN classification TEXT DEFAULT 'internal'")
         # Migrate messages: add channel column if missing
         msg_cols = {r[1] for r in conn.execute("PRAGMA table_info(messages)").fetchall()}
         if "channel" not in msg_cols:
@@ -519,7 +521,8 @@ def reject_task(task_id, critique):
 
 
 def post_task(type_, payload_json, priority=5, assigned_to=None,
-              parent_id=None, depends_on=None, conditions=None):
+              parent_id=None, depends_on=None, conditions=None,
+              classification="internal"):
     """Post a task to the queue.
 
     Args:
@@ -533,6 +536,8 @@ def post_task(type_, payload_json, priority=5, assigned_to=None,
             The dependency's result_json must contain the substring for the
             waiting task to be promoted.  None means any completion suffices.
             Example: {"1": "approved", "2": None}
+        classification: data classification label (default "internal").
+            Common values: "public", "internal", "confidential", "restricted".
     """
     # Validate payload is valid JSON
     if payload_json:
@@ -557,10 +562,10 @@ def post_task(type_, payload_json, priority=5, assigned_to=None,
         with get_conn() as conn:
             cur = conn.execute("""
                 INSERT INTO tasks (type, payload_json, priority, assigned_to, status,
-                                   parent_id, depends_on, conditions)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                                   parent_id, depends_on, conditions, classification)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (type_, payload_json, priority, assigned_to, status,
-                  parent_id, deps_json, conds_json))
+                  parent_id, deps_json, conds_json, classification))
             result[0] = cur.lastrowid
     _retry_write(_do)
     return result[0]

@@ -892,6 +892,25 @@ def api_gdpr_erasure():
         return jsonify({"status": "erased", "deleted": result})
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+# ── Knowledge Integrity ─────────────────────────────────────────────────────
+
+@app.route("/api/integrity")
+def api_integrity():
+    try:
+        from integrity import verify_integrity
+        return jsonify(verify_integrity())
+    except Exception as e:
+        return jsonify({"error": _safe_error(e)}), 500
+
+
+@app.route("/api/integrity/refresh", methods=["POST"])
+def api_integrity_refresh():
+    try:
+        from integrity import save_manifest
+        path = save_manifest()
+        return jsonify({"status": "manifest_saved", "path": str(path)})
+    except Exception as e:
+        return jsonify({"error": _safe_error(e)}), 500
 
 
 # ── Server-Sent Events ──────────────────────────────────────────────────────
