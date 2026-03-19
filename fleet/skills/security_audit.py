@@ -8,15 +8,10 @@ import json
 import os
 import re
 import stat
-import subprocess
-import sys
 from datetime import datetime
 from pathlib import Path
 
 from skills._models import call_complex
-
-SKILL_NAME = "security_audit"
-DESCRIPTION = "Security audit skill — scans targets for issues, generates an advisory,"
 
 FLEET_DIR = Path(__file__).parent.parent
 KNOWLEDGE_DIR = FLEET_DIR / "knowledge"
@@ -40,6 +35,15 @@ PERMISSION_CHECKS = [
     ("~/.ssh/id_ed25519", 0o600),
 ]
 
+
+def _ollama(prompt, config):
+    resp = httpx.post(
+        f"{config['models']['ollama_host']}/api/generate",
+        json={"model": config["models"]["local"], "prompt": prompt, "stream": False},
+        timeout=300,
+    )
+    resp.raise_for_status()
+    return resp.json()["response"].strip()
 
 
 def _check_permissions():
@@ -122,51 +126,6 @@ def _check_gitignore(scan_dirs):
     return findings
 
 
-def _check_dependencies():
-    """Scan Python dependencies for known issues via pip check and outdated packages."""
-    findings = []
-    # pip check — detect broken deps
-    try:
-        result = subprocess.run(
-            [sys.executable, "-m", "pip", "check"],
-            capture_output=True, text=True, timeout=30,
-        )
-        if result.returncode != 0:
-            for line in result.stdout.strip().splitlines()[:5]:
-                findings.append({
-                    "severity": "MEDIUM",
-                    "type": "broken_dependency",
-                    "detail": line.strip(),
-                    "fix": "pip install --upgrade <package>",
-                })
-    except Exception:
-        pass
-    # Check for pip-audit if available
-    try:
-        result = subprocess.run(
-            [sys.executable, "-m", "pip_audit", "--format", "json", "--progress-spinner", "off"],
-            capture_output=True, text=True, timeout=120,
-        )
-        if result.returncode == 0 and result.stdout.strip():
-            try:
-                vulns = json.loads(result.stdout)
-                for v in vulns[:10]:  # cap at 10
-                    pkg = v.get("name", "?")
-                    ver = v.get("version", "?")
-                    vuln_id = v.get("id", "?")
-                    findings.append({
-                        "severity": "HIGH",
-                        "type": "vulnerable_dependency",
-                        "detail": f"{pkg}=={ver} has known vulnerability {vuln_id}",
-                        "fix": f"pip install --upgrade {pkg}",
-                    })
-            except json.JSONDecodeError:
-                pass
-    except (FileNotFoundError, subprocess.TimeoutExpired):
-        pass  # pip-audit not installed — that's fine
-    return findings
-
-
 def _build_advisory(findings, scope_desc, config):
     if not findings:
         return None
@@ -180,9 +139,8 @@ def _build_advisory(findings, scope_desc, config):
         for f in findings
     )
 
-    system = "You are a security advisor reviewing a local development environment."
-
-    user = f"""Scope: {scope_desc}
+    prompt = f"""You are a security advisor reviewing a local development environment.
+Scope: {scope_desc}
 
 Findings:
 {summary_text}
@@ -191,7 +149,7 @@ Write a concise security advisory (max 6 bullet points). Lead with HIGH severity
 For each finding: state the risk, the specific file/path, and the exact remediation step.
 Do NOT include boilerplate. Be direct and actionable."""
 
-    analysis = call_complex(system, user, config)
+    analysis = call_complex("You are a security auditor.", prompt, config, skill_name="security_audit")
 
     advisory_id = hashlib.sha1(
         (scope_desc + datetime.now().isoformat()).encode()
@@ -218,7 +176,6 @@ def run(payload, config):
     include_permission_check = payload.get("check_permissions", True)
     include_secret_scan = payload.get("check_secrets", True)
     include_gitignore = payload.get("check_gitignore", True)
-    include_dependency_scan = config.get("security", {}).get("dependency_scan_enabled", True)
 
     findings = []
 
@@ -230,9 +187,6 @@ def run(payload, config):
 
     if include_gitignore:
         findings.extend(_check_gitignore(scan_dirs))
-
-    if include_dependency_scan:
-        findings.extend(_check_dependencies())
 
     if not findings:
         return {"status": "clean", "scope": scope, "message": "No security issues found."}
