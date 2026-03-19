@@ -8,7 +8,6 @@ Provides a BootManager mixin that is mixed into BigEdCC:
 - _boot_sequence and individual stage methods (_boot_ollama, etc.)
 """
 import json
-import re
 import subprocess
 import tempfile
 import threading
@@ -44,24 +43,42 @@ _SPIN = "⣾⣽⣻⢿⡿⣟⣯⣷"
 
 
 # ─── Boot Manager Mixin ─────────────────────────────────────────────────────
-# These are intended to be called as methods of BigEdCC (self = app instance).
-# They are injected into BigEdCC at module level in launcher.py.
 
 class BootManagerMixin:
     """Mixin providing staged boot sequence and system start/stop for BigEdCC."""
 
     # ── Fleet model names ────────────────────────────────────────────────
     def _read_fleet_models(self):
-        """Read GPU + conductor model names from fleet.toml."""
+        """Read GPU + conductor model names from fleet.toml using tomlkit."""
         L = _launcher()
         try:
-            text = L.FLEET_TOML.read_text(encoding="utf-8")
-            gpu_m = re.search(r'^local\s*=\s*["\']([^"\']+)["\']', text, re.M)
-            cond_m = re.search(r'^conductor_model\s*=\s*["\']([^"\']+)["\']', text, re.M)
-            return (gpu_m.group(1) if gpu_m else "qwen3:8b",
-                    cond_m.group(1) if cond_m else "qwen3:4b")
+            import tomllib
+            with open(L.FLEET_TOML, "rb") as f:
+                cfg = tomllib.load(f)
+            models = cfg.get("models", {})
+            return (models.get("local", "qwen3:8b"),
+                    models.get("conductor_model", "qwen3:4b"))
         except Exception:
             return "qwen3:8b", "qwen3:4b"
+
+    # ── Ollama model helpers ─────────────────────────────────────────────
+    def _ollama_model_exists(self, model_name):
+        """Check if a model is installed in Ollama."""
+        try:
+            with urllib.request.urlopen("http://localhost:11434/api/tags", timeout=3) as r:
+                data = json.loads(r.read())
+            return any(m["name"] == model_name for m in data.get("models", []))
+        except Exception:
+            return False
+
+    def _ollama_get_loaded(self):
+        """Get list of currently loaded models."""
+        try:
+            with urllib.request.urlopen("http://localhost:11434/api/ps", timeout=3) as r:
+                data = json.loads(r.read())
+            return [m["name"] for m in data.get("models", [])]
+        except Exception:
+            return []
 
     # ── Boot progress UI ─────────────────────────────────────────────────
     def _show_boot_progress(self):
@@ -152,8 +169,17 @@ class BootManagerMixin:
         threading.Thread(target=self._boot_sequence, daemon=True).start()
 
     def _boot_sequence(self):
-        """Staged boot — Ollama → HW sup → GPU model → supervisor → workers → conductor."""
+        """Staged boot — Ollama → HW sup → GPU model → supervisor → workers → conductor.
+
+        Stability design:
+        - Each stage has explicit timeouts with generous margins
+        - Model existence validated before load attempts
+        - hw_state.json cleared before hw_supervisor start (no stale detection)
+        - STATUS.md freshness check uses 60s window (supervisor writes every 30s)
+        - Failures reset button to Start and clean up boot UI
+        """
         gpu_model, conductor_model = self._read_fleet_models()
+
         stages = [
             (0, self._boot_ollama),
             (1, self._boot_hw_supervisor),
@@ -172,27 +198,31 @@ class BootManagerMixin:
                 detail = fn()
                 self.after(0, lambda i=idx, d=detail: self._boot_update(i, "done", d or ""))
             except Exception as e:
-                msg = str(e)[:40]
+                msg = str(e)[:60]
                 self.after(0, lambda i=idx, m=msg: self._boot_update(i, "error", m))
                 self.after(0, lambda m=msg: self._log_output(f"Boot failed at stage: {m}"))
                 # Reset system state so button shows Start again
                 self._system_running = False
                 self.after(0, lambda: self._btn_system_toggle.configure(
                     text="▶  Start", fg_color="#1e3a1e", hover_color="#2a4a2a"))
-                self.after(0, self._hide_boot_progress)
+                self.after(3000, self._hide_boot_progress)
                 return
         self.after(0, lambda: self._log_output("System boot complete."))
         self.after(5000, self._hide_boot_progress)
 
     # ── Individual boot stages ───────────────────────────────────────────
+
     def _boot_ollama(self):
-        """Start Ollama server, poll until responsive."""
+        """Stage 0: Start Ollama server, poll until responsive."""
+        # Check if already running
         try:
             urllib.request.urlopen("http://localhost:11434/api/tags", timeout=2)
             return "already up"
         except Exception:
             pass
+
         # Write and execute start script via WSL
+        L = _launcher()
         tmp = Path(tempfile.gettempdir()) / "fleet_ollama_start.sh"
         tmp.write_text(self._ollama_script(), encoding="utf-8", newline="\n")
         drive = tmp.drive.rstrip(":").lower()
@@ -203,6 +233,8 @@ class BootManagerMixin:
             capture_output=True, text=True, timeout=60,
             creationflags=subprocess.CREATE_NO_WINDOW,
         )
+
+        # Poll with generous timeout (30s)
         for _ in range(15):
             if self._boot_abort.is_set():
                 raise Exception("aborted")
@@ -211,38 +243,73 @@ class BootManagerMixin:
                 return "started"
             except Exception:
                 time.sleep(2)
-        raise Exception("Ollama timed out")
+        raise Exception("Ollama timed out (30s)")
 
     def _boot_hw_supervisor(self):
-        """Start hw_supervisor, poll until hw_state.json is fresh."""
+        """Stage 1: Start hw_supervisor, poll until hw_state.json is fresh.
+
+        Stability: delete stale hw_state.json first, give hw_supervisor
+        5s to boot Python + detect GPU before first poll.
+        """
         L = _launcher()
         hw_state = L.FLEET_DIR / "hw_state.json"
+
         # Delete stale hw_state.json so we only detect fresh writes
         try:
             if hw_state.exists():
                 hw_state.unlink()
         except Exception:
             pass
+
+        # Kill any existing instance, then start fresh
         L.wsl(
             "pkill -f hw_supervisor.py 2>/dev/null; sleep 1; "
             "nohup ~/.local/bin/uv run python hw_supervisor.py >> logs/hw_supervisor.log 2>&1 &",
             capture=True, timeout=15,
         )
-        for _ in range(10):
+
+        # Give hw_supervisor time to boot (Python import + GPU init = ~3-5s)
+        time.sleep(4)
+
+        # Poll for fresh hw_state.json (25s total: 12 iterations × ~2s)
+        for _ in range(12):
             if self._boot_abort.is_set():
                 raise Exception("aborted")
-            time.sleep(2)
             try:
                 if hw_state.exists():
                     data = json.loads(hw_state.read_text(encoding="utf-8"))
-                    if time.time() - data.get("updated_at", 0) < 15:
-                        return "monitoring"
+                    updated = data.get("updated_at", 0)
+                    age = time.time() - updated
+                    if age < 20:  # written within last 20s
+                        status = data.get("status", "unknown")
+                        return f"{status}"
             except Exception:
                 pass
-        raise Exception("hw_state not updating")
+            time.sleep(2)
+        raise Exception("hw_state not updating (28s)")
 
     def _boot_model(self, model, gpu=True):
-        """Load a model into Ollama. gpu=True for GPU, False for CPU-only."""
+        """Stage 2/5: Load a model into Ollama.
+
+        Stability: validate model exists before attempting load.
+        Shorter timeout for missing models.
+        """
+        # Check model exists first
+        if not self._ollama_model_exists(model):
+            # Try to find what IS available
+            try:
+                with urllib.request.urlopen("http://localhost:11434/api/tags", timeout=3) as r:
+                    data = json.loads(r.read())
+                available = [m["name"] for m in data.get("models", [])]
+            except Exception:
+                available = []
+            raise Exception(f"'{model}' not installed. Have: {available}")
+
+        # Check if already loaded
+        loaded = self._ollama_get_loaded()
+        if model in loaded:
+            return f"{model} (cached)"
+
         body = json.dumps({
             "model": model, "prompt": "", "keep_alive": "24h",
             **({"options": {"num_gpu": 0}} if not gpu else {}),
@@ -253,43 +320,74 @@ class BootManagerMixin:
         )
         try:
             with urllib.request.urlopen(req, timeout=120) as r:
-                r.read()
+                resp_data = r.read()
+                # Check for error in response
+                try:
+                    resp = json.loads(resp_data)
+                    if "error" in resp:
+                        raise Exception(f"{model}: {resp['error']}")
+                except json.JSONDecodeError:
+                    pass  # streaming response, not JSON — that's fine
             return model
-        except Exception as e:
+        except urllib.error.URLError as e:
             raise Exception(f"{model}: {e}")
 
     def _boot_supervisor(self):
-        """Start supervisor.py, poll until STATUS.md is fresh."""
+        """Stage 3: Start supervisor.py, poll until STATUS.md is fresh.
+
+        Stability: supervisor writes STATUS.md every 30s, so we use a 60s
+        freshness window and poll for up to 45s.
+        """
         L = _launcher()
+
+        # Delete stale STATUS.md too
+        try:
+            if L.STATUS_MD.exists():
+                L.STATUS_MD.unlink()
+        except Exception:
+            pass
+
         L.wsl(
             "pkill -f supervisor.py 2>/dev/null; sleep 1; "
             "mkdir -p logs knowledge/summaries knowledge/reports && "
             "nohup ~/.local/bin/uv run python supervisor.py >> logs/supervisor.log 2>&1 &",
             capture=True, timeout=15,
         )
-        for _ in range(15):
+
+        # Poll for fresh STATUS.md (45s total: 22 iterations × 2s)
+        for _ in range(22):
             if self._boot_abort.is_set():
                 raise Exception("aborted")
             time.sleep(2)
             try:
-                if L.STATUS_MD.exists() and (time.time() - L.STATUS_MD.stat().st_mtime < 45):
-                    return "ONLINE"
+                if L.STATUS_MD.exists():
+                    age = time.time() - L.STATUS_MD.stat().st_mtime
+                    if age < 60:  # written within last 60s
+                        return "ONLINE"
             except Exception:
                 pass
-        raise Exception("STATUS.md stale")
+        raise Exception("STATUS.md stale (45s)")
 
     def _boot_workers(self):
-        """Poll until agents appear in STATUS.md."""
+        """Stage 4: Poll until agents appear in STATUS.md.
+
+        Stability: workers register within ~5s of supervisor start.
+        Poll for up to 40s.
+        """
         L = _launcher()
         for _ in range(20):
             if self._boot_abort.is_set():
                 raise Exception("aborted")
             time.sleep(2)
-            status = L.parse_status()
-            agents = [a for a in status.get("agents", []) if a.get("status") != "OFFLINE"]
-            if agents:
-                return f"{len(agents)} online"
-        raise Exception("no workers")
+            try:
+                status = L.parse_status()
+                agents = [a for a in status.get("agents", [])
+                          if a.get("status") not in ("OFFLINE", None)]
+                if agents:
+                    return f"{len(agents)} online"
+            except Exception:
+                pass
+        raise Exception("no workers (40s)")
 
     def _stop_system(self):
         L = _launcher()
