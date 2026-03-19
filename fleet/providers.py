@@ -68,6 +68,41 @@ PRICING = {
     "qwen3:0.6b": {"input": 0.0, "output": 0.0, "cache_read": 0.0, "cache_create": 0.0},
 }
 
+# Task complexity tiers
+COMPLEXITY_ROUTING = {
+    "simple": "claude-haiku-4-5",     # classification, yes/no, simple extraction
+    "medium": "claude-sonnet-4-6",    # generation, analysis, code review (default)
+    "complex": "claude-opus-4-6",     # multi-step reasoning, architecture decisions
+}
+
+# Skills pre-classified by complexity
+SKILL_COMPLEXITY = {
+    # Simple (use Haiku)
+    "flashcard": "simple", "rag_query": "simple", "summarize": "simple",
+    "ingest": "simple", "rag_index": "simple",
+    # Medium (use Sonnet — default)
+    "web_search": "medium", "code_review": "medium", "discuss": "medium",
+    "code_discuss": "medium", "security_audit": "medium", "analyze_results": "medium",
+    # Complex (use Opus)
+    "plan_workload": "complex", "lead_research": "complex", "skill_evolve": "complex",
+    "code_write": "complex", "legal_draft": "complex",
+}
+
+
+def get_optimal_model(skill_name: str, config: dict) -> str:
+    """Return the optimal model for a skill based on complexity classification."""
+    complexity = SKILL_COMPLEXITY.get(skill_name, "medium")
+    model = COMPLEXITY_ROUTING.get(complexity, "claude-sonnet-4-6")
+    # Override with config if specified
+    models = config.get("models", {})
+    if models.get("complex"):
+        # Only downgrade, never upgrade beyond config
+        config_model = models["complex"]
+        if complexity == "simple" and config_model != "claude-haiku-4-5":
+            return model  # use cheaper model for simple tasks
+    return model
+
+
 # v0.45: HA fallback cascade — if primary fails, try next provider
 FALLBACK_CHAIN = ["claude", "gemini", "local"]
 

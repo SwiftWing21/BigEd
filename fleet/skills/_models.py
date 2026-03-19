@@ -14,6 +14,7 @@ from providers import (
     PRICING, FALLBACK_CHAIN, calculate_cost,
     _call_claude, _call_gemini, _call_local,
     _circuit_is_open, _circuit_record_failure, _circuit_record_success,
+    get_optimal_model,
 )
 
 
@@ -68,6 +69,14 @@ def call_complex(system: str, user: str, config: dict, max_tokens: int = 2048, c
                 time.sleep(5)  # 5-second delay as soft throttle
     except Exception:
         pass  # budget checking must never break skill execution
+
+    # Cost-aware routing: use cheaper model for simple skills
+    try:
+        optimal = get_optimal_model(skill_name, config)
+        if optimal != models.get("complex", "claude-sonnet-4-6"):
+            models = {**models, "complex": optimal}  # override for this call
+    except Exception:
+        pass
 
     # v0.45: Build fallback chain starting from configured provider
     # Offline mode: no cascade, local-only
