@@ -1135,11 +1135,11 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
     # ── Tab 1: Agents ─────────────────────────────────────────────────────────
     def _build_tab_agents(self, parent):
         parent.grid_columnconfigure(0, weight=1)
-        parent.grid_rowconfigure(1, weight=1)
+        parent.grid_rowconfigure(2, weight=1)
 
         # Header row
         hdr = ctk.CTkFrame(parent, fg_color="transparent")
-        hdr.grid(row=0, column=0, sticky="ew", pady=(4, 6))
+        hdr.grid(row=0, column=0, sticky="ew", padx=8, pady=(4, 2))
         hdr.grid_columnconfigure(1, weight=1)
         ctk.CTkLabel(hdr, text="Fleet workers — internal team & customer instances",
                      font=FONT_SM, text_color=DIM).grid(row=0, column=0, sticky="w")
@@ -1148,27 +1148,45 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
                       command=self._agents_add_dialog
                       ).grid(row=0, column=2, sticky="e")
 
-        # Scrollable agent list
-        self._agents_scroll = ctk.CTkScrollableFrame(
-            parent, fg_color=BG2, corner_radius=4)
-        self._agents_scroll.grid(row=1, column=0, sticky="nsew")
-        self._agents_scroll.grid_columnconfigure((0, 1, 2, 3, 4), weight=1)
+        # ── Task counter cards row ────────────────────────────────────────────
+        counter_frame = ctk.CTkFrame(parent, fg_color=BG, corner_radius=0)
+        counter_frame.grid(row=1, column=0, sticky="ew", padx=8, pady=(4, 4))
+        counter_frame.grid_columnconfigure((0, 1, 2, 3, 4), weight=1)
 
-        # Column headers
-        for col, (txt, anchor) in enumerate([
-            ("Name", "w"), ("Role", "w"), ("Type", "center"),
-            ("Status", "center"), ("", "center"),
-        ]):
-            ctk.CTkLabel(self._agents_scroll, text=txt, font=("Segoe UI", 9, "bold"),
-                         text_color=DIM, anchor=anchor
-                         ).grid(row=0, column=col, padx=6, pady=(2, 4), sticky="ew")
+        counters = [
+            ("TOTAL", "#4fc3f7", "total"),
+            ("IDLE",  "#66bb6a", "idle"),
+            ("BUSY",  "#ff9800", "busy"),
+            ("PENDING", "#ffd54f", "pending"),
+            ("DONE",  DIM, "done"),
+        ]
+        self._task_counters = {}
+        for i, (label, color, key) in enumerate(counters):
+            card = ctk.CTkFrame(counter_frame, fg_color=BG2, corner_radius=6, height=60)
+            card.grid(row=0, column=i, padx=3, pady=2, sticky="nsew")
+            card.grid_propagate(False)
+            ctk.CTkLabel(card, text=label, font=("Segoe UI", 9),
+                         text_color=DIM).place(x=10, y=6)
+            val_lbl = ctk.CTkLabel(card, text="0", font=("Segoe UI", 20, "bold"),
+                                   text_color=color)
+            val_lbl.place(x=10, y=24)
+            self._task_counters[key] = val_lbl
 
-        self._agents_tab_cache = {}  # name -> {name_lbl, role_lbl, type_lbl, status_lbl, edit_btn}
+        # ── Agent grid (scrollable cards) ─────────────────────────────────────
+        self._agent_grid_frame = ctk.CTkScrollableFrame(
+            parent, fg_color=BG, corner_radius=0)
+        self._agent_grid_frame.grid(row=2, column=0, sticky="nsew", padx=8, pady=4)
+        self._agent_grid_frame.grid_columnconfigure((0, 1, 2), weight=1)
+
+        self._agent_cards = {}   # name -> dict of card widgets
+        self._agents_tab_cache = {}  # kept for DB-based instance list
         self._agents_tab_refresh()
 
     def _agents_tab_refresh(self):
+        """Refresh the Agents tab grid — merges live STATUS.md agents with DB instances."""
         status = parse_status()
         agents = status.get("agents", [])
+        tasks = status.get("tasks", {})
 
         def _fetch(con):
             rows = con.execute("SELECT name, role, type, customer, notes FROM agents").fetchall()
@@ -1179,57 +1197,138 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
             seen = {a["name"] for a in agents}
             all_agents = list(agents) + [a for a in stored if a["name"] not in seen]
 
+            # Query fleet.db for per-agent task counts
+            agent_task_counts = {}
+            try:
+                db_path = FLEET_DIR / "fleet.db"
+                if db_path.exists():
+                    conn = sqlite3.connect(str(db_path), timeout=2)
+                    conn.row_factory = sqlite3.Row
+                    for row in conn.execute(
+                        "SELECT assigned_to, COUNT(*) as n FROM tasks WHERE status='DONE' GROUP BY assigned_to"
+                    ).fetchall():
+                        if row["assigned_to"]:
+                            agent_task_counts[row["assigned_to"]] = row["n"]
+                    conn.close()
+            except Exception:
+                pass
+
+            # Update task counter cards
+            n_total = len(all_agents)
+            n_idle = sum(1 for a in all_agents if a.get("status") == "IDLE")
+            n_busy = sum(1 for a in all_agents if a.get("status") == "BUSY")
+            n_pending = tasks.get("Pending", 0)
+            n_done = tasks.get("Done", 0)
+            if hasattr(self, '_task_counters'):
+                self._task_counters["total"].configure(text=str(n_total))
+                self._task_counters["idle"].configure(text=str(n_idle))
+                self._task_counters["busy"].configure(text=str(n_busy))
+                self._task_counters["pending"].configure(text=str(n_pending))
+                self._task_counters["done"].configure(text=str(n_done))
+
+            # Update agent cards grid
             active_names = set()
             for i, ag in enumerate(all_agents):
-                row = i + 1
-                bg = BG3 if i % 2 == 0 else BG2
-                name = ag.get("name", "—")
-                role = ag.get("role", "—")
-                ag_type = ag.get("type", "Internal")
-                st = ag.get("status", "—")
-                st_color = GREEN if st == "IDLE" else ORANGE if st == "BUSY" else RED
+                row_idx = i // 3
+                col_idx = i % 3
+                name = ag.get("name", "?")
+                role = ag.get("role", "?")
+                st = ag.get("status", "OFFLINE")
+                task = ag.get("task", "")
+                task_display = task if task and task != "—" else ""
                 active_names.add(name)
 
-                if name in self._agents_tab_cache:
-                    cached = self._agents_tab_cache[name]
-                    cached["name_lbl"].configure(text=name, fg_color=bg)
-                    cached["role_lbl"].configure(text=role, fg_color=bg)
-                    cached["type_lbl"].configure(text=ag_type, fg_color=bg,
-                                                 text_color=GOLD if ag_type != "Internal" else DIM)
-                    cached["status_lbl"].configure(text=st, fg_color=bg, text_color=st_color)
-                    cached["edit_btn"].configure(fg_color=bg,
-                                                 command=lambda a=ag: self._agents_edit_dialog(a))
-                    # Re-grid at correct row position
-                    for col, key in enumerate(["name_lbl", "role_lbl", "type_lbl", "status_lbl"]):
-                        cached[key].grid(row=row, column=col, padx=6, pady=2, sticky="ew")
-                    cached["edit_btn"].grid(row=row, column=4, padx=4, pady=2)
+                # Compute display values
+                display_name = themed_name(name)
+                dot_color = GREEN if st in ("IDLE", "BUSY") else RED
+                if st == "BUSY":
+                    status_text, status_color = "ACTIVE", GREEN
+                elif st == "IDLE":
+                    status_text, status_color = "IDLE", "#4fc3f7"
                 else:
-                    widgets = {}
-                    for col, (key, txt, anchor, color) in enumerate([
-                        ("name_lbl", name, "w", TEXT),
-                        ("role_lbl", role, "w", DIM),
-                        ("type_lbl", ag_type, "center", GOLD if ag_type != "Internal" else DIM),
-                        ("status_lbl", st, "center", st_color),
-                    ]):
-                        lbl = ctk.CTkLabel(self._agents_scroll, text=txt, font=FONT_SM,
-                                           text_color=color, anchor=anchor, fg_color=bg)
-                        lbl.grid(row=row, column=col, padx=6, pady=2, sticky="ew")
-                        widgets[key] = lbl
+                    status_text, status_color = "OFFLINE", RED
+                name_color = TEXT if st != "OFFLINE" else DIM
+                spark, spark_color = self._spark_text(name)
+                count = agent_task_counts.get(name, 0)
+                count_text = f"{count} task{'s' if count != 1 else ''}"
 
-                    widgets["edit_btn"] = ctk.CTkButton(
-                        self._agents_scroll, text="✎", font=FONT_SM,
-                        width=28, height=22, fg_color=bg, hover_color=BG3,
-                        command=lambda a=ag: self._agents_edit_dialog(a))
-                    widgets["edit_btn"].grid(row=row, column=4, padx=4, pady=2)
-                    self._agents_tab_cache[name] = widgets
+                if name in self._agent_cards:
+                    # Update existing card
+                    c = self._agent_cards[name]
+                    c["card"].grid(row=row_idx, column=col_idx, padx=4, pady=4, sticky="nsew")
+                    c["dot"].configure(text_color=dot_color)
+                    c["name_lbl"].configure(text=display_name, text_color=name_color)
+                    c["status_lbl"].configure(text=status_text, text_color=status_color)
+                    c["task_lbl"].configure(text=task_display, text_color=GOLD)
+                    c["spark_lbl"].configure(text=spark, text_color=spark_color)
+                    c["count_lbl"].configure(text=count_text)
+                    c["edit_btn"].configure(command=lambda a=ag: self._agents_edit_dialog(a))
+                else:
+                    # Create new agent card
+                    self._agent_cards[name] = self._create_agent_card(
+                        self._agent_grid_frame, row_idx, col_idx,
+                        display_name, status_text, status_color, dot_color,
+                        name_color, task_display, spark, spark_color,
+                        count_text, ag)
 
-            # Hide stale rows
-            for key, cached in self._agents_tab_cache.items():
+            # Hide stale cards
+            for key, c in self._agent_cards.items():
                 if key not in active_names:
-                    for w in cached.values():
-                        w.grid_remove()
+                    c["card"].grid_remove()
 
         self._db_query_bg(_fetch, _render)
+
+    def _create_agent_card(self, parent, row, col, display_name,
+                           status_text, status_color, dot_color, name_color,
+                           task_display, spark, spark_color, count_text, agent_data):
+        """Create a single agent dashboard card and return widget dict."""
+        card = ctk.CTkFrame(parent, fg_color=BG2, corner_radius=8, height=100)
+        card.grid(row=row, column=col, padx=4, pady=4, sticky="nsew")
+        card.grid_propagate(False)
+
+        # Status dot
+        dot = ctk.CTkLabel(card, text="\u25cf", font=("Consolas", 14),
+                           text_color=dot_color)
+        dot.place(x=8, y=8)
+
+        # Agent name
+        name_lbl = ctk.CTkLabel(card, text=display_name,
+                                font=("Segoe UI", 11, "bold"), text_color=name_color)
+        name_lbl.place(x=26, y=6)
+
+        # Status label (top-right)
+        status_lbl = ctk.CTkLabel(card, text=status_text,
+                                  font=("Consolas", 9), text_color=status_color)
+        status_lbl.place(relx=1.0, x=-8, y=8, anchor="ne")
+
+        # Current task
+        task_lbl = ctk.CTkLabel(card, text=task_display,
+                                font=("Consolas", 9), text_color=GOLD)
+        task_lbl.place(x=26, y=30)
+
+        # Activity sparkline
+        spark_lbl = ctk.CTkLabel(card, text=spark,
+                                 font=("Consolas", 10), text_color=spark_color)
+        spark_lbl.place(x=8, y=54)
+
+        # Task count (bottom-right)
+        count_lbl = ctk.CTkLabel(card, text=count_text,
+                                 font=("Consolas", 8), text_color=DIM)
+        count_lbl.place(relx=1.0, x=-8, y=76, anchor="ne")
+
+        # Edit button (bottom-left)
+        edit_btn = ctk.CTkButton(
+            card, text="\u270e", font=FONT_SM, width=24, height=18,
+            fg_color=BG3, hover_color=BG,
+            command=lambda a=agent_data: self._agents_edit_dialog(a))
+        edit_btn.place(relx=1.0, x=-8, y=54, anchor="ne")
+
+        return {
+            "card": card, "dot": dot, "name_lbl": name_lbl,
+            "status_lbl": status_lbl, "task_lbl": task_lbl,
+            "spark_lbl": spark_lbl, "count_lbl": count_lbl,
+            "edit_btn": edit_btn,
+        }
 
     def _agents_add_dialog(self):
         self._agents_edit_dialog({})
@@ -1801,6 +1900,18 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
         for role_key, cached in self._agent_rows.items():
             if role_key not in active_roles:
                 cached["frame"].grid_remove()
+
+        # Also update Agents tab dashboard counter cards (if built)
+        if hasattr(self, '_task_counters') and self._task_counters:
+            t = status.get("tasks", {})
+            n_total = len(rows)
+            n_idle = sum(1 for a in rows if a.get("status") == "IDLE")
+            n_busy = sum(1 for a in rows if a.get("status") == "BUSY")
+            self._task_counters["total"].configure(text=str(n_total))
+            self._task_counters["idle"].configure(text=str(n_idle))
+            self._task_counters["busy"].configure(text=str(n_busy))
+            self._task_counters["pending"].configure(text=str(t.get("Pending", 0)))
+            self._task_counters["done"].configure(text=str(t.get("Done", 0)))
 
     def _refresh_log(self):
         agent = self._log_agent_var.get()
