@@ -286,7 +286,7 @@ Negative results are logged — they narrow the search space.
 
 ## 6. Testing Framework
 
-### Smoke Test (12 checks, ~2s fast / ~10s full)
+### Smoke Test (15 checks, ~2s fast / ~10s full)
 
 ```
 1. Skill imports (54+ modules)    7. Channel message routing

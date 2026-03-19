@@ -1,8 +1,15 @@
-# Education Project
+# Education Project — v0.47 (approaching 1.0)
 
 ## Structure
 - `fleet/` — 8-agent AI worker fleet (Ollama/qwen3:8b + Sonnet)
 - `BigEd/` — reference docs, command sheets, notes
+
+## Fleet Status
+- Smoke: 15/15 | Skills: 55 | Dashboard: 31 endpoints
+- `launcher.py`: 3492 lines
+- All TECH_DEBT resolved (4.1–4.8)
+- All parallel tracks complete: PT (perf tuning), DT (debug tools), CT (cost tracking), CM (comms), GR (GitHub roadmap)
+- New capabilities: HA fallback, omni-box search, SSE reactive UI, token budgets, GitHub sync, auto-boot, idle evolution, marathon ML
 
 ## Machine (RTX 3080 Ti, 12GB VRAM)
 - VRAM safe: 10GB. Sweet spot: DEPTH=6, ~26M params, 6.9GB
@@ -12,9 +19,10 @@
 - Arch history/VRAM opts: `GEMINI.md`
 
 ## Fleet
-- Dual-supervisor: `supervisor.py` (task distribution) + `hw_supervisor.py` (VRAM monitor, auto-scales models under pressure)
+- Dual-supervisor: `supervisor.py` (task distribution, auto-boot, idle evolution) + `hw_supervisor.py` (VRAM monitor, auto-scales models under pressure, HA fallback)
 - Config: `fleet/CLAUDE.md` | Status: `uv run python lead_client.py status`
 - Commands: `BigEd/fleet_commands.md` | Eco mode default: CPU-only, ~40% CPU, 0 VRAM
+- Process control: REST API for fleet lifecycle
 
 ## API
 - Throttle 20% of rate limits, 300ms min between requests, exponential backoff on 429s

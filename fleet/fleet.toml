@@ -90,8 +90,9 @@ crm = false             # bolt-on: contact/lead management
 onboarding = false      # bolt-on: customer onboarding checklists
 customers = false       # bolt-on: deployment tracking
 accounts = false        # bolt-on: service account monitoring
-ingestion = true        # file/folder import to RAG
-outputs = true          # knowledge browser
+ingestion = false       # file/folder import to RAG — enable via walkthrough
+outputs = false         # knowledge browser — enable via walkthrough
+owner_core = false      # bolt-on: owner dashboard — enable via walkthrough
 
 [launcher.profiles.minimal]
 modules = ["ingestion", "outputs"]
