@@ -720,6 +720,19 @@ def api_usage_regression():
         return jsonify({"error": str(e)}), 500
 
 
+# ── Agent Cards ───────────────────────────────────────────────────────────────
+
+@app.route("/api/fleet/agent-cards")
+def api_agent_cards():
+    """Agent Card metadata for all roles."""
+    try:
+        from agent_cards import generate_all_cards
+        config = _load_config()
+        return jsonify(generate_all_cards(config))
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
 # ── Process Control (extracted to process_control.py) ─────────────────────────
 from process_control import fleet_bp
 app.register_blueprint(fleet_bp)
