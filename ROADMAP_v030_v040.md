@@ -208,46 +208,91 @@ Compliance implementation completed, policy enforcement integration, compliance 
 
 `model_manager.py` skill: check installed vs needed, pull missing, detect hardware, recommend profiles. `model_profiles.toml` with 6 presets. CLI: `model-check`, `model-install`, `model-profile`. Startup validation in hw_supervisor. Model version tracking with digest comparison and update detection.
 
+### 0.16.00 — Boot Stability + Native Windows Migration [DONE]
+
+Completed 2026-03-19. 15+ boot fixes: stale hw_state.json, ghost model eviction, hw_supervisor native launch, frozen .exe subprocess loop (sys.executable→_get_python), WSL→psutil migration (all pkill/pgrep eliminated), NativeWindowsBridge as default, adaptive boot timeouts, live boot timers, park+guard hw_supervisor pattern, dynamic worker cap (max_workers=10 + RAM-based scaling).
+
+### 0.17.00 — Swarm Tier 1: Coordinated Evolution [DONE]
+
+Completed 2026-03-19. `evolution_coordinator.py` skill + `skill_evolution_pipeline.toml` workflow (6-stage DAG: draft→test→review→security→evolve→deploy). Cross-skill learning triggers. Evolution leaderboard tracking.
+
+### 0.18.00 — Swarm Tier 2: Autonomous Research Loops [DONE]
+
+Completed 2026-03-19. `research_loop.py` skill + `research_cycle.toml` workflow. Knowledge gap detection (scans coverage), auto research→summarize→train cycle, per-skill quality scoring from task history.
+
+### 0.19.00 — Swarm Tier 3: Swarm Intelligence [DONE]
+
+Completed 2026-03-19. `swarm_intelligence.py` skill. Agent specialization discovery (>80% success rate analysis), adaptive affinity recommendations, LLM task decomposition into sub-tasks, per-agent fitness reports.
+
+### 0.20.00 — Additional Skills + GUI Overhaul [DONE]
+
+Completed 2026-03-19. OOM prevention skill, refactor_verify skill, model_manager skill. Agents tab overhaul (task counter cards, 3-column agent grid with sparklines). Combined "all" log view. Idle evolution enabled. 72 skills total.
+
 ---
 
 ## Phase 3: Planned
 
-### 0.16.00 — Multi-Backend Model Support
+### 0.21.00 — S1: Reliability (99.99% uptime)
 
-**Goal:** Support local model providers beyond Ollama — llamafile, vLLM, LM Studio, any OpenAI-compatible server.
+- Fix 8 MEDIUM audit issues (SSE race condition, connection leaks in dashboard)
+- Add `_alive` flag to all timer chains (prevent TclError after destroy)
+- Escalating worker crash backoff (15s → 30s → 60s → cap at 300s)
+- Auto-restart supervisor on crash (systemd/launchd watchdog integration)
+- DB connection pool with health monitoring
+- Graceful degradation cascade (Ollama dies → queue tasks → auto-restart → resume)
 
-- **Backend abstraction in providers.py:** Unified interface for Ollama, llama.cpp, vLLM, LM Studio
-- **OpenAI-compatible API routing:** All local backends expose `/v1/chat/completions` — single adapter
-- **fleet.toml [models] expansion:** `backend` field (ollama/llamacpp/vllm/lmstudio/openai_compat), per-backend host config
-- **Model registry:** `[models.registry]` maps logical names to backend-specific identifiers + download URLs
-- **HuggingFace search:** `lead_client.py model-search "codellama"` — find GGUF models by name
-- **Auto-backend detection:** `model-install codellama:13b` detects best available backend and pulls/downloads
-- **llamafile single-binary support:** Download .llamafile -> serve as self-contained binary, zero install
-- **Model installer UI:** Launcher module or walkthrough step for browsing + installing models
+### 0.22.00 — S2: Observability
+
+- Unified `/api/health` endpoint (aggregate all subsystem status in one call)
+- Uptime tracking with historical chart in dashboard
+- Per-agent performance dashboard (tasks/hour, success rate, avg latency)
+- Alert escalation pipeline (watchdog → audit log → operator notification)
+- Structured JSON logging (replace text format across all fleet processes)
+
+### 0.23.00 — S3: Auto-Intelligence
+
+- Auto-trigger evolution pipeline on idle (not just skill_test)
+- Auto-trigger research cycle when knowledge gaps detected
+- Apply swarm specializations to affinity routing automatically
+- Quality scoring on every task output (stored in usage table)
+- Distributed tracing (trace_id across full task lifecycle)
+
+### 0.24.00 — S4: Security Defaults
+
+- Enable SQLCipher encryption by default on fresh installs
+- TLS by default (auto-generate self-signed cert on first dashboard start)
+- RBAC roles (operator/admin/viewer) with per-role API access
+- API call attribution logging (who called what endpoint)
+- Formal adversarial testing suite (automated red team)
+
+### 0.25.00 — Multi-Backend Model Support
+
+- Backend abstraction in providers.py (Ollama, llama.cpp, vLLM, LM Studio)
+- OpenAI-compatible API routing (`/v1/chat/completions` adapter)
+- Model registry in fleet.toml mapping logical names to backend identifiers
+- HuggingFace model search + auto-download
+- llamafile single-binary support
 
 ### 2.0 — Multi-Fleet & Remote Orchestration
 
 - Fleet-to-fleet communication (federated supervisor mesh)
-- Remote dashboard access (auth + TLS)
-- Fleet cloning (deploy identical fleet to new machine via config export)
+- Remote dashboard access (auth + TLS + public URL)
+- Fleet cloning (deploy identical fleet via config export)
 - Plugin marketplace (community skills via git repos)
-- Version scheme: `2.x.y`
 
 ### 3.0 — Intelligent Orchestration
 
-- ML-driven task routing (learn which agent handles which skill best)
+- ML-driven task routing (learn optimal agent→skill mapping from history)
 - Predictive scaling (anticipate load from task patterns)
 - Natural language fleet control ("scale up coders, pause research")
 - Auto-generated SOPs from fleet behavior patterns
-- Version scheme: `3.x.y`
 
 ### 4.0 — Enterprise & Multi-Tenant
 
 - Tenant isolation (separate DBs, configs, knowledge per customer)
-- Role-based access control (operator, admin, viewer)
-- Audit logging (who did what, when, with what cost)
+- Role-based access control (RBAC with granular permissions)
+- Full audit logging (who did what, when, with what cost)
 - SLA monitoring (task completion time guarantees)
-- Version scheme: `4.x.y`
 
 ### 5.0 — Platform
 
