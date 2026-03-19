@@ -1,4 +1,4 @@
-# BigEd CC v0.41 — Framework Blueprint
+# BigEd CC v0.41 — Framework Blueprint (All Milestones Complete)
 
 > **Production-ready modular AI agent platform.** Customer-deployable, 24/7 capable, with safe deprecation, thermal management, and iterative skill training.
 
@@ -719,6 +719,10 @@ Over time, `resolutions.jsonl` becomes a knowledge base:
 | v0.39 | Network & IoT | UniFi controller, Home Assistant, MQTT inspection skills |
 | v0.40 | Browser Skills | Playwright browser_crawl with JS rendering, httpx fallback |
 | v0.41 | Vision & Multi-Modal | Local vision via Ollama (llava/minicpm-v/qwen-vl), VRAM rotation in hw_supervisor |
+| — | PT-1 FleetBridge | FleetBridge ABC, WslBridge/DirectBridge, replaced wsl()/wsl_bg() |
+| — | PT-2 Build | Cross-platform build.py replacing build.bat |
+| — | DT-1 Debug Reports | generate_debug_report(), log ring buffer, global exception handler |
+| — | DT-2/3 Issues | Report Issue button, resolutions.jsonl, /api/resolutions endpoint |
 | — | Cross-Platform | FleetBridge abstraction, platform packaging, CI/CD matrix (parallel track) |
 | — | Diagnostics | Debug reports, issue submission, resolution tracking (parallel track) |
 | — | Offline/Air-Gap | Network-aware skill dispatch, local-only fallback, air-gap whitelist, recovery backup |

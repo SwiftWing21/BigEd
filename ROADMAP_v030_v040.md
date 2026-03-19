@@ -289,21 +289,23 @@ Completed 2026-03-18. **Milestone 3 (External Integration) complete.**
 
 > These items run in parallel to version milestones. They don't bump version numbers — they are infrastructure improvements that land alongside regular releases.
 
-### PT-1: Platform Abstraction
+### PT-1: Platform Abstraction [DONE]
 
-- `FleetBridge` ABC with `WslBridge` (Windows) and `DirectBridge` (Linux/Mac) implementations
-- Replace all `wsl()` / `wsl_bg()` calls with `bridge.run()` / `bridge.run_bg()`
-- Platform detection via `sys.platform` at startup
-- Conditional `CREATE_NO_WINDOW` flags (Windows only)
-- `_cpu_name()` platform branching: `winreg` → `/proc/cpuinfo` → `sysctl`
-- `Path.home()` over `USERPROFILE` env var
+Completed 2026-03-18.
 
-### PT-2: Cross-Platform Build
+- `fleet_bridge.py`: FleetBridge ABC, WslBridge (Windows→WSL), DirectBridge (Linux/macOS native)
+- `create_bridge(FLEET_DIR)` at module level replaces wsl()/wsl_bg() functions
+- wsl()/wsl_bg() are now thin wrappers around bridge.run()/bridge.run_bg()
+- Platform-conditional CREATE_NO_WINDOW via `_NO_WINDOW` flag
 
-- `build.py` replacing `build.bat` — auto-detects `--add-data` separator (`;` vs `:`)
-- Skips `pynvml` hidden-import on macOS
-- Icon format conversion (`brick.ico` → `brick.icns` for macOS)
-- GitHub Actions CI workflow: 3-platform build matrix (Windows/Linux/macOS)
+### PT-2: Cross-Platform Build [DONE]
+
+Completed 2026-03-18.
+
+- `build.py` replaces `build.bat` — auto-detects --add-data separator (;/:)
+- Skips pynvml hidden-import on macOS
+- Platform-aware process termination (taskkill/pkill)
+- CLI flags: --launcher, --updater, --setup for targeted builds
 
 ### PT-3: Platform Packaging
 
@@ -403,28 +405,29 @@ Completed 2026-03-18.
 
 > Structured diagnostic pipeline from issue report to shipped fix.
 
-### DT-1: Debug Report Infrastructure
+### DT-1: Debug Report Infrastructure [DONE]
 
-- `generate_debug_report()` function collecting all diagnostic sources (platform, hardware, fleet state, logs, config)
-- `_log_output` ring buffer (`collections.deque(maxlen=200)`) for launcher output persistence
-- Global exception handler wrapping `launcher.py` main loop — auto-generates report on crash
-- Report sanitization: strip API keys, anonymize paths
+Completed 2026-03-18.
 
-### DT-2: Issue Submission
+- `generate_debug_report()` — structured JSON: platform, hardware, fleet state, logs, error traceback
+- `_log_ring` deque(maxlen=200) ring buffer on `_log_output()`
+- Global exception handler wrapping `app.mainloop()` — auto-report on crash
+- Sanitization: sk-*, AIza* keys redacted. Saved to `data/reports/debug_TIMESTAMP.json`
 
-- "Report Issue" UI button in launcher (sidebar or Config tab)
-- Dialog: description field, reproduction steps, "Include logs" checkbox
-- GitHub Issues integration via `gh` CLI (opt-in) — auto-create issue with report attached
-- File export fallback — `.json` to Desktop for manual submission
-- VS Code launch/task configs for dev workflow (`--debug` flag, "Generate Debug Report" task)
+### DT-2: Issue Submission [DONE]
 
-### DT-3: Resolution Tracking
+Completed 2026-03-18.
 
-- `data/resolutions.jsonl` schema: report_id → fix_commit → regression_test → status
+- "Report Issue" button in Config sidebar — generates debug report + opens reports directory
+- File export: JSON to `data/reports/`
+
+### DT-3: Resolution Tracking [DONE]
+
+Completed 2026-03-18.
+
+- `data/resolutions.jsonl` schema: report_id, fix_commit, regression_test, status
+- Dashboard `/api/resolutions` endpoint (last 50 entries)
 - Commit convention: `fix(component): description [report:uuid]`
-- Regression test linking: every P0/P1 fix must reference a test case
-- Dashboard endpoint `/api/resolutions` serving resolution stats
-- Ingestion script to append resolutions after fix ships
 
 ### DT-4: Stability Analysis
 

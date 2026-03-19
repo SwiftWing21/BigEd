@@ -252,34 +252,20 @@ def _shell_safe(s: str) -> str:
     return re.sub(r'[^a-zA-Z0-9_.\-:]', '', s)
 
 
-# ─── WSL helpers ──────────────────────────────────────────────────────────────
+# ─── Fleet Bridge (cross-platform command execution) ─────────────────────────
+from fleet_bridge import create_bridge
+
+_bridge = create_bridge(FLEET_DIR)
+
+
 def wsl(cmd: str, capture=False, timeout=60):
-    """Run a bash command in WSL Ubuntu."""
-    # Convert Windows FLEET_DIR to WSL /mnt/ path dynamically
-    _wsl_fleet = str(FLEET_DIR).replace("\\", "/")
-    if len(_wsl_fleet) > 1 and _wsl_fleet[1] == ":":  # C:/... → /mnt/c/...
-        _wsl_fleet = f"/mnt/{_wsl_fleet[0].lower()}{_wsl_fleet[2:]}"
-    full = f'source ~/.secrets 2>/dev/null; cd "{_wsl_fleet}" || exit 1; {cmd}'
-    args = ["wsl", "-d", "Ubuntu", "/bin/bash", "-lc", full]
-    if capture:
-        r = subprocess.run(args, capture_output=True, text=True, timeout=timeout,
-                           creationflags=subprocess.CREATE_NO_WINDOW)
-        return r.stdout.strip(), r.stderr.strip()
-    else:
-        subprocess.Popen(args, creationflags=subprocess.CREATE_NO_WINDOW)
-        return "", ""
+    """Run a command in the fleet environment (WSL on Windows, native on Linux/macOS)."""
+    return _bridge.run(cmd, capture=capture, timeout=timeout)
 
 
 def wsl_bg(cmd: str, callback=None, timeout=60):
-    """Run WSL command in a thread; call callback(stdout, stderr) when done."""
-    def _run():
-        try:
-            out, err = wsl(cmd, capture=True, timeout=timeout)
-        except Exception as e:
-            out, err = "", str(e)
-        if callback:
-            callback(out, err)
-    threading.Thread(target=_run, daemon=True).start()
+    """Run fleet command in a background thread; call callback(stdout, stderr) when done."""
+    _bridge.run_bg(cmd, callback=callback, timeout=timeout)
 
 
 # ─── Central model config ─────────────────────────────────────────────────────
@@ -833,6 +819,8 @@ class BigEdCC(ctk.CTk):
             tip="Open the unified settings panel")
         btn(s, "📋 Setup Walkthrough", lambda: WalkthroughDialog(self),
             tip="Re-run the first-time setup walkthrough")
+        btn(s, "🐛 Report Issue", self._open_report_issue,
+            tip="Generate a debug report and export for issue submission")
 
         # ── CONSOLES ─────────────────────────────────────────────────────────
         s = section("CONSOLES", default_open=False)
@@ -2582,11 +2570,27 @@ class BigEdCC(ctk.CTk):
         wsl_bg(cmd, lambda o, e: self.after(0, lambda: self._log_output(o or e)))
 
     def _log_output(self, text: str):
-        """Write to the task output box."""
+        """Write to the task output box + ring buffer for debug reports."""
         self._output_text.configure(state="normal")
         self._output_text.insert("end", text.strip() + "\n")
         self._output_text.see("end")
         self._output_text.configure(state="disabled")
+        # Ring buffer for debug reports (last 200 lines)
+        if not hasattr(self, "_log_ring"):
+            from collections import deque
+            self._log_ring = deque(maxlen=200)
+        self._log_ring.append(text.strip())
+
+    def _open_report_issue(self):
+        """Generate debug report and offer to save/export."""
+        try:
+            path = generate_debug_report(app=self)
+            self._log_output(f"Debug report saved: {path}")
+            # Offer to open the report location
+            import webbrowser
+            webbrowser.open(str(path.parent))
+        except Exception as e:
+            self._log_output(f"Report generation failed: {e}")
 
     def _open_settings(self):
         SettingsDialog(self)
@@ -5604,7 +5608,101 @@ def _should_show_walkthrough() -> bool:
         return True
 
 
+# ─── Debug Reports ───────────────────────────────────────────────────────────
+
+def generate_debug_report(app=None, error=None, traceback_str=None):
+    """Generate a structured debug report with system state.
+
+    Returns path to saved report file.
+    """
+    import traceback as tb_mod
+    from datetime import datetime
+
+    report = {
+        "timestamp": datetime.now().isoformat(),
+        "platform": {
+            "os": sys.platform,
+            "python": sys.version,
+            "platform": platform.platform(),
+        },
+        "hardware": {},
+        "fleet": {},
+        "error": {},
+        "logs": [],
+    }
+
+    # Hardware
+    try:
+        report["hardware"]["cpu_percent"] = psutil.cpu_percent()
+        report["hardware"]["ram_percent"] = psutil.virtual_memory().percent
+        if _GPU_OK:
+            mem = pynvml.nvmlDeviceGetMemoryInfo(_GPU_HANDLE)
+            temp = pynvml.nvmlDeviceGetTemperature(_GPU_HANDLE, pynvml.NVML_TEMPERATURE_GPU)
+            report["hardware"]["gpu_temp_c"] = temp
+            report["hardware"]["vram_used_gb"] = round(mem.used / 1e9, 2)
+            report["hardware"]["vram_total_gb"] = round(mem.total / 1e9, 2)
+    except Exception:
+        pass
+
+    # Fleet state
+    try:
+        if FLEET_DIR.exists():
+            report["fleet"]["fleet_dir"] = str(FLEET_DIR)
+            if (FLEET_DIR / "fleet.toml").exists():
+                import tomllib
+                with open(FLEET_DIR / "fleet.toml", "rb") as f:
+                    cfg = tomllib.load(f)
+                report["fleet"]["eco_mode"] = cfg.get("fleet", {}).get("eco_mode")
+                report["fleet"]["offline_mode"] = cfg.get("fleet", {}).get("offline_mode")
+                report["fleet"]["profile"] = cfg.get("launcher", {}).get("profile")
+            if HW_STATE_JSON.exists():
+                report["fleet"]["hw_state"] = json.loads(
+                    HW_STATE_JSON.read_text(encoding="utf-8"))
+    except Exception:
+        pass
+
+    # Error
+    if error:
+        report["error"]["message"] = str(error)
+    if traceback_str:
+        report["error"]["traceback"] = traceback_str
+    elif error:
+        report["error"]["traceback"] = tb_mod.format_exc()
+
+    # Logs from ring buffer
+    if app and hasattr(app, "_log_ring"):
+        report["logs"] = list(app._log_ring)
+
+    # Sanitize — remove API keys from report
+    report_str = json.dumps(report, indent=2, default=str)
+    import re
+    report_str = re.sub(r'(sk-[a-zA-Z0-9_-]{10})[a-zA-Z0-9_-]+', r'\1...REDACTED', report_str)
+    report_str = re.sub(r'(AIza[a-zA-Z0-9_-]{10})[a-zA-Z0-9_-]+', r'\1...REDACTED', report_str)
+
+    # Save
+    reports_dir = DATA_DIR / "reports"
+    reports_dir.mkdir(parents=True, exist_ok=True)
+    ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+    report_path = reports_dir / f"debug_{ts}.json"
+    report_path.write_text(report_str, encoding="utf-8")
+    return report_path
+
+
 # ─── Entry point ──────────────────────────────────────────────────────────────
 if __name__ == "__main__":
-    app = BigEdCC()
-    app.mainloop()
+    try:
+        app = BigEdCC()
+        app.mainloop()
+    except Exception as e:
+        import traceback
+        tb_str = traceback.format_exc()
+        try:
+            path = generate_debug_report(
+                app=locals().get("app"),
+                error=e,
+                traceback_str=tb_str,
+            )
+            print(f"Crash report saved to: {path}")
+        except Exception:
+            pass
+        raise

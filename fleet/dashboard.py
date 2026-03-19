@@ -513,7 +513,7 @@ def api_data_stats():
     # Fleet DB tables
     try:
         conn = get_conn()
-        for table in ["tasks", "agents", "messages", "locks"]:
+        for table in ["tasks", "agents", "messages", "locks", "notes"]:
             try:
                 count = conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
                 stats[f"fleet.{table}"] = {"count": count}
@@ -554,6 +554,43 @@ def api_data_stats():
     return jsonify(stats)
 
 
+@app.route("/api/comms")
+def api_comms():
+    """Per-channel message/note counts + recent activity."""
+    channels = ["sup", "agent", "fleet", "pool"]
+    result = {}
+    try:
+        conn = get_conn()
+        for ch in channels:
+            msg_count = conn.execute(
+                "SELECT COUNT(*) FROM messages WHERE channel=?", (ch,)
+            ).fetchone()[0]
+            msg_unread = conn.execute(
+                "SELECT COUNT(*) FROM messages WHERE channel=? AND read_at IS NULL", (ch,)
+            ).fetchone()[0]
+            note_count = 0
+            try:
+                note_count = conn.execute(
+                    "SELECT COUNT(*) FROM notes WHERE channel=?", (ch,)
+                ).fetchone()[0]
+            except Exception:
+                pass
+            recent = [dict(r) for r in conn.execute("""
+                SELECT from_agent, body_json, created_at FROM messages
+                WHERE channel=? ORDER BY created_at DESC LIMIT 3
+            """, (ch,)).fetchall()]
+            result[ch] = {
+                "messages": msg_count,
+                "unread": msg_unread,
+                "notes": note_count,
+                "recent": recent,
+            }
+        conn.close()
+    except Exception as e:
+        result["error"] = str(e)
+    return jsonify(result)
+
+
 @app.route("/api/alerts")
 def api_alerts():
     """Return current alerts."""
@@ -570,6 +607,26 @@ def api_ack_alert(alert_id):
                 a["acknowledged"] = True
                 return jsonify({"ok": True})
     return jsonify({"ok": False}), 404
+
+
+@app.route("/api/resolutions")
+def api_resolutions():
+    """Resolution tracking — read data/resolutions.jsonl."""
+    resolutions_file = FLEET_DIR / "data" / "resolutions.jsonl"
+    if not resolutions_file.exists():
+        return jsonify([])
+    try:
+        entries = []
+        for line in resolutions_file.read_text().splitlines():
+            line = line.strip()
+            if line:
+                try:
+                    entries.append(json.loads(line))
+                except json.JSONDecodeError:
+                    pass
+        return jsonify(entries[-50:])
+    except Exception:
+        return jsonify([])
 
 
 # ── Server-Sent Events ──────────────────────────────────────────────────────
