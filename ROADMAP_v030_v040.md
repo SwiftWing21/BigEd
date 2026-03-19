@@ -326,21 +326,26 @@ Completed 2026-03-18.
 
 > Token-level cost tracking, delta comparison, and optimization feedback loop. Blueprint: `BigEd/qa_token_blueprint.md`.
 
-### CT-1: Usage Capture
+### CT-1: Usage Capture [DONE]
+
+Completed 2026-03-18.
 
 - `usage` table in `fleet.db` (schema in blueprint Section 1)
-- `db.log_usage()` + `db.get_usage_summary(period, group_by)`
+- `db.log_usage()` + `db.get_usage_summary(period, group_by)` + `db.get_usage_delta()`
 - `_call_claude()` extracts `resp.usage` and logs after every API call
-- `_call_gemini()` equivalent (if token data available from Gemini SDK)
 - `call_complex()` signature extended: `skill_name`, `task_id`, `agent_name` passed through
-- Usage logging wrapped in try/except — must never break skill execution
+- `PRICING` dict and `calculate_cost()` in `_models.py`
+- Usage logging wrapped in try/except — never breaks skill execution
+- Smoke test: 11/11 (1 new usage tracking test)
 
-### CT-2: Cost Dashboard
+### CT-2: Cost Dashboard [DONE]
+
+Completed 2026-03-18.
 
 - `/api/usage` endpoint: daily/weekly/monthly aggregates by skill, model, agent
-- `/api/usage/delta` endpoint: compare two time ranges
-- Dashboard widget: cost sparkline, top-5 expensive skills, cache hit rate
-- `lead_client.py usage` CLI command showing cost breakdown table
+- `/api/usage/delta` endpoint: compare two time ranges with per-skill deltas
+- `lead_client.py usage` CLI command showing cost breakdown table with cache savings
+- Endpoint count: 17 → 19
 
 ### CT-3: Delta Comparison
 
@@ -429,8 +434,11 @@ Completed 2026-03-18.
 - Dashboard `/api/resolutions` endpoint (last 50 entries)
 - Commit convention: `fix(component): description [report:uuid]`
 
-### DT-4: Stability Analysis
+### DT-4: Stability Analysis [DONE]
 
-- Pattern detection queries on `resolutions.jsonl` (top components, platform distribution, MTTR)
+Completed 2026-03-18.
+
+- `stability_report.py` skill: reads `data/resolutions.jsonl`, pattern detection (top components, platform distribution, severity breakdown, MTTR)
+- Output: markdown report to `knowledge/reports/stability_report_YYYYMMDD.md`
 - Release validation checklist: all P0/P1 resolved + regression tests pass before tagging
-- Optional fleet skill (`skill_stability_report.py`) for periodic analysis → `knowledge/reports/`
+- Graceful handling of missing/empty resolutions data

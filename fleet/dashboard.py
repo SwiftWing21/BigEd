@@ -4,6 +4,9 @@ Fleet Dashboard v2 — localhost web UI for activity tracking, metrics, and live
 
 v0.27: New endpoints (/api/thermal, /api/training, /api/modules, /api/data_stats),
        Server-Sent Events for live updates, alert system.
+CT-2:  Cost intelligence endpoints (/api/usage, /api/usage/delta).
+
+19 endpoints total.
 
 Usage:
     python dashboard.py                # http://localhost:5555
@@ -627,6 +630,38 @@ def api_resolutions():
         return jsonify(entries[-50:])
     except Exception:
         return jsonify([])
+
+
+# ── CT-2: Cost Intelligence endpoints ─────────────────────────────────────
+
+@app.route("/api/usage")
+def api_usage():
+    """CT-2: Token usage aggregates by skill/model/agent."""
+    try:
+        sys.path.insert(0, str(FLEET_DIR))
+        import db
+        period = request.args.get("period", "week")
+        group = request.args.get("group", "skill")
+        return jsonify(db.get_usage_summary(period, group))
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/usage/delta")
+def api_usage_delta():
+    """CT-2: Compare usage between two date ranges."""
+    try:
+        sys.path.insert(0, str(FLEET_DIR))
+        import db
+        from_start = request.args.get("from_start", "")
+        from_end = request.args.get("from_end", "")
+        to_start = request.args.get("to_start", "")
+        to_end = request.args.get("to_end", "")
+        if not all([from_start, from_end, to_start, to_end]):
+            return jsonify({"error": "Required params: from_start, from_end, to_start, to_end"}), 400
+        return jsonify(db.get_usage_delta(from_start, from_end, to_start, to_end))
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 
 # ── Server-Sent Events ──────────────────────────────────────────────────────

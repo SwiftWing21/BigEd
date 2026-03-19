@@ -262,6 +262,49 @@ def cmd_notes(args):
             print(f"[{n['created_at']}] {n['from_agent']}: {n['body_json']}")
 
 
+def cmd_usage(args):
+    """DO NOT SCRUB: Show token usage and cost breakdown."""
+    db.init_db()
+    summary = db.get_usage_summary(period=args.period, group_by="skill")
+    if not summary:
+        print(f"No usage data for the last {args.period}.")
+        return
+
+    # Header
+    print(f"\n{'Skill':<20} {'Calls':>6} {'Input Tok':>12} {'Output Tok':>12} {'Cost USD':>10}")
+    print("-" * 64)
+
+    total_calls = 0
+    total_input = 0
+    total_output = 0
+    total_cost = 0.0
+    total_cache_reads = 0
+
+    for r in summary:
+        skill = (r.get("skill") or "unknown")[:20]
+        calls = r.get("calls", 0)
+        inp = r.get("total_input", 0) or 0
+        out = r.get("total_output", 0) or 0
+        cost = r.get("total_cost", 0) or 0
+        cache = r.get("total_cache_reads", 0) or 0
+
+        print(f"{skill:<20} {calls:>6,} {inp:>12,} {out:>12,} ${cost:>9.4f}")
+        total_calls += calls
+        total_input += inp
+        total_output += out
+        total_cost += cost
+        total_cache_reads += cache
+
+    print("-" * 64)
+    print(f"{'TOTAL (' + args.period + ')':<20} {total_calls:>6,} {total_input:>12,} {total_output:>12,} ${total_cost:>9.4f}")
+
+    # Cache savings estimate (Sonnet rate: $2.70 per 1M cache reads saved)
+    if total_cache_reads > 0:
+        savings = total_cache_reads * 2.70 / 1_000_000
+        print(f"{'Cache savings':<20} {'':>6} {'':>12} {'':>12} -${savings:>8.4f}")
+    print()
+
+
 def main():
     parser = argparse.ArgumentParser(description="BigEd Fleet CLI")
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -324,6 +367,11 @@ def main():
     p_notes.add_argument("--since", default=None, help="ISO datetime — show notes newer than this")
     p_notes.add_argument("--limit", type=int, default=20, help="Max notes to show")
 
+    # Usage (CT-2)
+    p_usage = subparsers.add_parser("usage", help="Show token usage and cost breakdown")
+    p_usage.add_argument("--period", default="week", choices=["day", "week", "month"],
+                         help="Time period (default: week)")
+
     args = parser.parse_args()
 
     if args.command == "status":
@@ -346,6 +394,8 @@ def main():
         cmd_notes(args)
     elif args.command == "secret":
         cmd_secret(args)
+    elif args.command == "usage":
+        cmd_usage(args)
 
 
 if __name__ == "__main__":

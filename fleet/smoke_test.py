@@ -181,6 +181,25 @@ def test_backward_compat_messages():
     return found, f"default channel={'fleet' if found else 'missing'}"
 
 
+def test_usage_tracking():
+    """Usage table round-trip: log + summarize."""
+    import db
+    db.init_db()
+    db.log_usage(
+        skill="smoke_usage_test", model="claude-sonnet-4-6",
+        input_tokens=1000, output_tokens=200,
+        cache_read_tokens=500, cache_create_tokens=0,
+        cost_usd=0.006, task_id=None, agent="smoke_agent",
+    )
+    summary = db.get_usage_summary(period="day", group_by="skill")
+    found = any(r["skill"] == "smoke_usage_test" for r in summary)
+    if not found:
+        return False, "usage row not found in summary"
+    row = next(r for r in summary if r["skill"] == "smoke_usage_test")
+    ok = row["total_input"] >= 1000 and row["total_cost"] >= 0.006
+    return ok, f"logged: {row['calls']} calls, ${row['total_cost']:.4f}"
+
+
 def test_stale_recovery():
     """Stale task recovery finds orphaned RUNNING tasks."""
     import db
@@ -249,6 +268,11 @@ def cleanup():
         conn.execute("DELETE FROM messages WHERE from_agent LIKE 'smoke_%' OR to_agent LIKE 'smoke_%'")
         conn.execute("DELETE FROM locks WHERE holder LIKE 'smoke_%'")
         conn.execute("DELETE FROM notes WHERE from_agent LIKE 'smoke_%'")
+        # Clean usage tracking test data (ignore if table doesn't exist yet)
+        try:
+            conn.execute("DELETE FROM usage WHERE skill LIKE 'smoke_%'")
+        except Exception:
+            pass
 
 
 def main():
@@ -283,6 +307,7 @@ def main():
         ("Channel message routing", test_channel_message_routing),
         ("Note round-trip", test_note_round_trip),
         ("Backward-compat messages", test_backward_compat_messages),
+        ("Usage tracking", test_usage_tracking),
         ("Stale recovery", test_stale_recovery),
         ("Training lock", test_training_lock),
     ])

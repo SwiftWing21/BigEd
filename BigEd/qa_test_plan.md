@@ -109,6 +109,32 @@
 | T11.2 Data Stats | GET /api/data_stats | Includes fleet.notes row count |
 | T11.3 Resolutions | GET /api/resolutions | Returns entries from data/resolutions.jsonl (or empty array) |
 
+## Suite 12: Token Usage Tracking — CT-1/CT-2 (5 tests)
+
+| Test | Action | Verify |
+|------|--------|--------|
+| T12.1 Usage Table | `db.init_db()` on fresh DB | `usage` table exists with correct columns |
+| T12.2 Log Usage | `db.log_usage(skill="test", model="claude-sonnet-4-6", ...)` | Row appears in usage table with correct values |
+| T12.3 Usage Summary | Log 3 rows, call `db.get_usage_summary("day", "skill")` | Returns aggregated row with correct totals |
+| T12.4 Usage Delta | Log rows in two date ranges, call `db.get_usage_delta(...)` | Returns per-skill delta with correct direction |
+| T12.5 CLI Usage | `lead_client.py usage --period day` | Prints formatted table with totals and cache savings |
+
+## Suite 13: Stability Analysis — DT-4 (3 tests)
+
+| Test | Action | Verify |
+|------|--------|--------|
+| T13.1 Empty Resolutions | Run stability_report with no resolutions.jsonl | Returns graceful "no data" result, no crash |
+| T13.2 Pattern Detection | Create sample resolutions.jsonl, run skill | Report shows top components, severity breakdown, MTTR |
+| T13.3 Report Output | Run stability_report with data | Markdown file created in knowledge/reports/ |
+
+## Suite 14: Cost Dashboard API (3 tests)
+
+| Test | Action | Verify |
+|------|--------|--------|
+| T14.1 Usage Endpoint | GET /api/usage?period=week&group=skill | Returns JSON array with usage aggregates |
+| T14.2 Usage Delta | GET /api/usage/delta?from_start=...&to_end=... | Returns per-skill deltas with direction field |
+| T14.3 Usage Group | GET /api/usage?group=model | Groups by model instead of skill |
+
 ---
 
-## Total: 46 tests across 11 suites
+## Total: 57 tests across 14 suites

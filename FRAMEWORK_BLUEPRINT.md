@@ -175,6 +175,8 @@ tasks:    id, created_at, assigned_to, status, priority, type, payload_json, res
 messages: id, from_agent, to_agent, created_at, read_at, body_json, channel(DEFAULT 'fleet')
 notes:    id, channel, from_agent, created_at, body_json  — idx on (channel, created_at)
 locks:    name(PK), holder, acquired_at
+usage:    id, created_at, skill, model, input_tokens, output_tokens, cache_read_tokens, cache_create_tokens,
+          cost_usd(REAL), task_id, agent  — idx on (skill), (created_at)
 ```
 
 Channel constants: `CH_SUP` (supervisor-to-supervisor), `CH_AGENT` (agent-to-agent), `CH_FLEET` (cross-layer, default), `CH_POOL` (supervisor-to-pool).
@@ -208,7 +210,7 @@ Status flow:  WAITING → PENDING → RUNNING → DONE/FAILED
 
 ## 4. Dashboard v2
 
-### Endpoints (17 total)
+### Endpoints (19 total)
 
 | Endpoint | Data Source | Purpose |
 |----------|-----------|---------|
@@ -228,6 +230,8 @@ Status flow:  WAITING → PENDING → RUNNING → DONE/FAILED
 | `/api/comms` | fleet.db | Per-channel message/note counts + recent activity |
 | `/api/alerts` | in-memory | Active alerts |
 | `/api/resolutions` | data/resolutions.jsonl | Resolution tracking entries |
+| `/api/usage` | fleet.db usage table | Token usage aggregates by skill/model/agent |
+| `/api/usage/delta` | fleet.db usage table | Compare usage between two date ranges |
 | `/api/stream` | SSE | Live push updates (5s interval) |
 
 ### Alert System
@@ -271,14 +275,15 @@ Negative results are logged — they narrow the search space.
 
 ## 6. Testing Framework
 
-### Smoke Test (10 checks, ~2s fast / ~10s full)
+### Smoke Test (11 checks, ~2s fast / ~10s full)
 
 ```
-1. Skill imports (49 modules)     6. Broadcast round-trip
-2. DB health (task lifecycle)     7. Channel message routing
-3. Config health (fleet.toml)     8. Note round-trip
-4. Ollama reachable*              9. Backward-compat messages
-5. Message round-trip             10. Stale recovery
+1. Skill imports (50 modules)     7. Channel message routing
+2. DB health (task lifecycle)     8. Note round-trip
+3. Config health (fleet.toml)     9. Backward-compat messages
+4. Ollama reachable*              10. Usage tracking (CT-1)
+5. Message round-trip             11. Stale recovery
+6. Broadcast round-trip
 + Training lock, Thermal readings* (* = skipped in --fast)
 ```
 
@@ -733,6 +738,9 @@ Over time, `resolutions.jsonl` becomes a knowledge base:
 | — | PT-2 Build | Cross-platform build.py replacing build.bat |
 | — | DT-1 Debug Reports | generate_debug_report(), log ring buffer, global exception handler |
 | — | DT-2/3 Issues | Report Issue button, resolutions.jsonl, /api/resolutions endpoint |
+| — | CM-1/2/3/4 Comms | Triple-layer channels (sup/agent/fleet/pool), notes scratchpad, CLI + dashboard |
+| — | CT-1/CT-2 Cost | Usage table, PRICING/calculate_cost, /api/usage + /api/usage/delta, CLI usage cmd |
+| — | DT-4 Stability | stability_report.py skill, resolutions.jsonl pattern detection, knowledge output |
 | — | Cross-Platform | FleetBridge abstraction, platform packaging, CI/CD matrix (parallel track) |
-| — | Diagnostics | Debug reports, issue submission, resolution tracking (parallel track) |
+| — | Diagnostics | Debug reports, issue submission, resolution tracking, stability analysis (parallel track) |
 | — | Offline/Air-Gap | Network-aware skill dispatch, local-only fallback, air-gap whitelist, recovery backup |

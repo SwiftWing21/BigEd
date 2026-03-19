@@ -11,8 +11,31 @@ Providers:
 import os
 import time
 
+# CT-1: Model pricing per million tokens (as of 2025)
+PRICING = {
+    "claude-haiku-4-5": {"input": 0.80, "output": 4.00, "cache_read": 0.08, "cache_create": 1.00},
+    "claude-sonnet-4-6": {"input": 3.00, "output": 15.00, "cache_read": 0.30, "cache_create": 3.75},
+    "claude-opus-4-6": {"input": 15.00, "output": 75.00, "cache_read": 1.50, "cache_create": 18.75},
+}
 
-def call_complex(system: str, user: str, config: dict, max_tokens: int = 2048, cache_system: bool = False) -> str:
+
+def calculate_cost(usage, model_id: str) -> float:
+    """Calculate USD cost from usage object and model pricing."""
+    rates = PRICING.get(model_id, PRICING["claude-sonnet-4-6"])
+    cache_read = getattr(usage, "cache_read_input_tokens", 0) or 0
+    cache_create = getattr(usage, "cache_creation_input_tokens", 0) or 0
+    fresh_input = usage.input_tokens - cache_read - cache_create
+    cost = (
+        fresh_input * rates["input"] / 1_000_000
+        + usage.output_tokens * rates["output"] / 1_000_000
+        + cache_read * rates["cache_read"] / 1_000_000
+        + cache_create * rates["cache_create"] / 1_000_000
+    )
+    return round(cost, 6)
+
+
+def call_complex(system: str, user: str, config: dict, max_tokens: int = 2048, cache_system: bool = False,
+                 skill_name: str = "unknown", task_id=None, agent_name=None) -> str:
     """Route a complex inference call based on fleet.toml complex_provider."""
     models = config.get("models", {})
     provider = models.get("complex_provider", "claude")
@@ -26,10 +49,12 @@ def call_complex(system: str, user: str, config: dict, max_tokens: int = 2048, c
     elif provider == "local":
         return _call_local(system, user, models, max_tokens)
     else:  # default: claude
-        return _call_claude(system, user, models, max_tokens, cache_system)
+        return _call_claude(system, user, models, max_tokens, cache_system,
+                            skill_name=skill_name, task_id=task_id, agent_name=agent_name)
 
 
-def _call_claude(system: str, user: str, models: dict, max_tokens: int, cache_system: bool = False) -> str:
+def _call_claude(system: str, user: str, models: dict, max_tokens: int, cache_system: bool = False,
+                  skill_name: str = "unknown", task_id=None, agent_name=None) -> str:
     import anthropic
     client = anthropic.Anthropic(api_key=os.environ.get("ANTHROPIC_API_KEY"))
     
@@ -49,6 +74,21 @@ def _call_claude(system: str, user: str, models: dict, max_tokens: int, cache_sy
                 system=system_param,
                 messages=[{"role": "user", "content": user}],
             )
+            # CT-1: Capture usage
+            try:
+                import db
+                model_id = models.get("complex", "claude-sonnet-4-6")
+                db.log_usage(
+                    skill=skill_name, model=model_id,
+                    input_tokens=resp.usage.input_tokens,
+                    output_tokens=resp.usage.output_tokens,
+                    cache_read_tokens=getattr(resp.usage, "cache_read_input_tokens", 0) or 0,
+                    cache_create_tokens=getattr(resp.usage, "cache_creation_input_tokens", 0) or 0,
+                    cost_usd=calculate_cost(resp.usage, model_id),
+                    task_id=task_id, agent=agent_name,
+                )
+            except Exception:
+                pass  # Usage logging must never break skill execution
             return resp.content[0].text
         except anthropic.RateLimitError:
             if attempt == max_retries - 1:
