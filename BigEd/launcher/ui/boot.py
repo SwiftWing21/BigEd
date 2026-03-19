@@ -8,6 +8,7 @@ Provides a BootManager mixin that is mixed into BigEdCC:
 - _boot_sequence and individual stage methods (_boot_ollama, etc.)
 """
 import json
+import os
 import subprocess
 import tempfile
 import threading
@@ -403,11 +404,30 @@ class BootManagerMixin:
         except Exception:
             pass
 
-        # Kill any existing instance, then start fresh
-        L.wsl(
-            "pkill -f hw_supervisor.py 2>/dev/null; sleep 1; "
-            "nohup ~/.local/bin/uv run python hw_supervisor.py >> logs/hw_supervisor.log 2>&1 &",
-            capture=True, timeout=15,
+        # Launch hw_supervisor NATIVELY on Windows (no WSL needed)
+        # It only uses pynvml + psutil + urllib — all cross-platform
+        import sys
+        hw_sup_path = L.FLEET_DIR / "hw_supervisor.py"
+        # Kill any existing hw_supervisor process
+        try:
+            import psutil
+            for proc in psutil.process_iter(['pid', 'cmdline']):
+                try:
+                    cmdline = proc.info.get('cmdline') or []
+                    if any('hw_supervisor.py' in arg for arg in cmdline) and proc.pid != os.getpid():
+                        proc.kill()
+                except (psutil.NoSuchProcess, psutil.AccessDenied):
+                    pass
+        except Exception:
+            pass
+        time.sleep(1)
+        # Start fresh — native Windows Python, no WSL
+        subprocess.Popen(
+            [sys.executable, str(hw_sup_path)],
+            cwd=str(L.FLEET_DIR),
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0),
         )
 
         # Adaptive timeout — uses historical boot times
