@@ -714,6 +714,36 @@ Over time, `resolutions.jsonl` becomes a knowledge base:
 | `CROSS_PLATFORM.md` | Platform matrix, FleetBridge spec, Windows-specific code inventory, migration plan |
 | `MACHINE_PROFILE.md` | Hardware specs and VRAM limits for this dev machine |
 | `fleet/CLAUDE.md` | Worker roles, skill outputs, messaging bridges |
+| Section 14 (this doc) | Architectural Pattern 6: Reactive Streaming IPC — SSE event flow, fallback strategy, deprecated file-polling |
+
+---
+
+## 14. Architectural Pattern 6: Reactive Streaming IPC
+
+### 14.1 SSE Event Flow
+
+The launcher consumes the dashboard's `/api/stream` SSE endpoint as its primary data source, replacing legacy file-polling.
+
+| Source | Legacy (deprecated) | SSE (current) |
+|--------|-------------------|---------------|
+| Agent status | `parse_status()` reads `STATUS.md` every 4s | `_handle_sse_status()` callback on push |
+| Task counts | `get_fleet_status()` SQL query every 4s | Included in SSE status event |
+| Thermal data | `hw_state.json` file read every 3s | Future: thermal SSE event type |
+| Ollama status | HTTP GET `/api/tags` every 8s | Future: ollama SSE event type |
+
+### 14.2 Fallback Strategy
+
+SSE is primary. If dashboard is unavailable:
+- `_sse_active = False` triggers automatic fallback
+- Legacy file-polling resumes at 8s interval (slower than original 4s)
+- No user intervention needed — seamless degradation
+
+### 14.3 Deprecated Functions (removal candidates)
+
+These functions are kept for fallback but should be removed once SSE covers all data:
+- `parse_status()` — reads STATUS.md (replaced by SSE status events)
+- `write_status_md()` in supervisor.py — writes STATUS.md (only needed for fallback)
+- `_schedule_refresh()` file-reading branches — replaced by `_handle_sse_status()`
 
 ---
 
