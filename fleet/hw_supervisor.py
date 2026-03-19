@@ -21,7 +21,6 @@ AI AGENTS: Do not implement model-downgrade logic in skills. This supervisor han
 """
 import json
 import os
-import re
 import sys
 import tempfile
 import time
@@ -121,28 +120,35 @@ def write_state(status, model, thermal=None, models_loaded=None, conductor_statu
 # ── Fleet TOML Model Management ──────────────────────────────────────────────
 
 def get_current_local_model():
+    """Read current local model from fleet.toml using tomlkit."""
     try:
-        text = FLEET_TOML.read_text(encoding="utf-8")
-        m = re.search(r'^local\s*=\s*["\']([^"\']+)["\']', text, re.M)
-        return m.group(1) if m else "qwen3:8b"
+        import tomlkit
+        doc = tomlkit.parse(FLEET_TOML.read_text(encoding="utf-8"))
+        return doc.get("models", {}).get("local", "qwen3:8b")
     except Exception:
         return "qwen3:8b"
 
 
 def set_local_model(target_model):
+    """Atomically update local model in fleet.toml using tomlkit."""
     try:
+        import tomlkit
+        import tempfile
         text = FLEET_TOML.read_text(encoding="utf-8")
-        current = get_current_local_model()
+        doc = tomlkit.parse(text)
+        current = doc.get("models", {}).get("local", "qwen3:8b")
         if current == target_model:
             return False
-        text = re.sub(
-            r'^(local\s*=\s*)["\'][^"\']*["\']',
-            f'\\g<1>"{target_model}"', text, flags=re.M)
-        FLEET_TOML.write_text(text, encoding="utf-8")
+        doc.setdefault("models", {})["local"] = target_model
+        # Atomic write
+        tmp_fd, tmp_path = tempfile.mkstemp(dir=str(FLEET_TOML.parent), suffix='.toml')
+        with os.fdopen(tmp_fd, 'w', encoding='utf-8') as f:
+            f.write(tomlkit.dumps(doc))
+        os.replace(tmp_path, str(FLEET_TOML))
         print(f"[HW_SUP] Model: {current} -> {target_model}")
         return True
     except Exception as e:
-        print(f"[HW_SUP] Config write error: {e}")
+        print(f"[HW_SUP] set_local_model error: {e}")
         return False
 
 
@@ -371,9 +377,9 @@ def transition_model(target, current, cfg, emergency=False):
 # ── Training Lock ─────────────────────────────────────────────────────────────
 
 def check_training_active(cfg):
-    """Check if training is running via DB lock or process detection."""
+    """Check if training is running via DB lock or cross-platform process detection."""
     # DB lock (preferred)
-    if cfg["training_exclusive_lock"]:
+    if cfg.get("training_exclusive_lock", True):
         try:
             import db
             lock = db.check_lock("training")
@@ -381,10 +387,22 @@ def check_training_active(cfg):
                 return True
         except Exception:
             pass
-    # Fallback: process detection (bracket trick avoids self-match)
+    # Cross-platform process detection
     try:
-        return os.system("pgrep -f '[t]rain\\.py' > /dev/null 2>&1") == 0
-    except Exception:
+        import psutil
+        for proc in psutil.process_iter(['name', 'cmdline']):
+            try:
+                cmdline = proc.info.get('cmdline') or []
+                if any('train.py' in arg for arg in cmdline):
+                    return True
+            except (psutil.NoSuchProcess, psutil.AccessDenied):
+                continue
+        return False
+    except ImportError:
+        # Fallback: pgrep on Linux/macOS only
+        import sys
+        if sys.platform != "win32":
+            return os.system("pgrep -f '[t]rain\\.py' > /dev/null 2>&1") == 0
         return False
 
 
@@ -436,7 +454,22 @@ def main():
 
             cpu_temp = read_cpu_thermal()
             is_training = check_training_active(cfg)
-            is_marathon = os.system("pgrep -f dispatch_marathon.py > /dev/null 2>&1") == 0
+            # Cross-platform marathon detection
+            is_marathon = False
+            try:
+                import psutil
+                for proc in psutil.process_iter(['cmdline']):
+                    try:
+                        cmdline = proc.info.get('cmdline') or []
+                        if any('dispatch_marathon.py' in arg for arg in cmdline):
+                            is_marathon = True
+                            break
+                    except (psutil.NoSuchProcess, psutil.AccessDenied):
+                        continue
+            except ImportError:
+                import sys
+                if sys.platform != "win32":
+                    is_marathon = os.system("pgrep -f dispatch_marathon.py > /dev/null 2>&1") == 0
 
             # ── Training transition: evict GPU models on start (non-blocking) ──
             if is_training and not was_training:

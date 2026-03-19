@@ -1,7 +1,6 @@
 """Marathon ML (v0.43) — training detection, checkpoint monitoring, VRAM eviction."""
 import json
 import logging
-import subprocess
 import urllib.request
 from pathlib import Path
 
@@ -10,10 +9,23 @@ log = logging.getLogger("supervisor")
 
 
 def is_training_running():
+    """Cross-platform training detection."""
     try:
-        r = subprocess.run(["pgrep", "-f", "[t]rain\\.py"], capture_output=True, text=True)
-        return r.returncode == 0
-    except Exception:
+        import psutil
+        for proc in psutil.process_iter(['cmdline']):
+            try:
+                cmdline = proc.info.get('cmdline') or []
+                if any('train.py' in arg for arg in cmdline):
+                    return True
+            except (psutil.NoSuchProcess, psutil.AccessDenied):
+                continue
+        return False
+    except ImportError:
+        import sys
+        if sys.platform != "win32":
+            import subprocess
+            r = subprocess.run(["pgrep", "-f", "[t]rain\\.py"], capture_output=True, text=True)
+            return r.returncode == 0
         return False
 
 
