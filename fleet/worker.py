@@ -24,6 +24,7 @@ HW_STATE_FILE = FLEET_DIR / "hw_state.json"
 
 IDLE_THRESHOLD = 6  # polls with no task before entering idle mode (~30s at 5s poll)
 IDLE_SKILLS = ["skill_evolve", "skill_test", "code_quality", "benchmark"]
+MAX_CALLS_PER_SESSION = 500  # per-agent capability budget (OWASP LLM08)
 
 
 def setup_logging(role):
@@ -311,6 +312,8 @@ def main():
     last_task_time = time.time()
     idle_timeout = config['fleet']['idle_timeout_secs']
     idle_count = 0
+    session_calls = 0
+    max_calls = config.get("workers", {}).get("max_calls_per_session", MAX_CALLS_PER_SESSION)
 
     # v0.43: Log session boundary on worker start
     try:
@@ -413,6 +416,11 @@ def main():
         if task:
             idle_count = 0  # reset on task claim
             last_task_time = time.time()
+            session_calls += 1
+            if session_calls > max_calls:
+                log.warning(f"Capability budget exhausted ({max_calls} calls) — pausing 60s")
+                time.sleep(60)
+                session_calls = 0  # reset after cooldown
             log.info(f"Task {task['id']} claimed: {task['type']}")
             try:
                 db.heartbeat(role, status='BUSY', current_task_id=task['id'])
@@ -426,9 +434,13 @@ def main():
                     payload_text = task.get("payload_json", "")
                     scan_result = scan_input(payload_text)
                     if not scan_result["clean"]:
-                        log.warning(f"Input scan: {len(scan_result['findings'])} finding(s) in task {task['id']} payload")
                         for f in scan_result["findings"]:
                             log.warning(f"  [{f['type']}] {f['pattern']}")
+                        # Block on injection attempts (OWASP LLM01)
+                        if any(f["type"] == "injection" for f in scan_result["findings"]):
+                            log.error(f"BLOCKED: Prompt injection detected in task {task['id']}")
+                            db.fail_task(task['id'], "Blocked: prompt injection detected in payload")
+                            continue  # skip to next task
                 except Exception:
                     pass  # input scanning must never block task execution
                 result = run_skill(task['type'], payload, config, log)
