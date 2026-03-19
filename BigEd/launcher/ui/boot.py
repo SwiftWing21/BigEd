@@ -58,6 +58,35 @@ def _kill_ollama():
             continue
     return False
 
+# ─── Frozen-exe Python resolver ────────────────────────────────────────────────
+
+def _get_python():
+    """Get the correct Python interpreter path.
+    When running as frozen .exe, sys.executable is BigEdCC.exe — NOT Python.
+    We need the actual Python interpreter for subprocess launches.
+    """
+    import shutil
+    if getattr(sys, 'frozen', False):
+        # Frozen .exe — find system Python
+        py = shutil.which("python") or shutil.which("python3")
+        if py:
+            return py
+        # Try common locations
+        for candidate in [
+            Path(sys._MEIPASS).parent / "python.exe",  # PyInstaller temp
+            Path.home() / "AppData" / "Local" / "Programs" / "Python" / "Python312" / "python.exe",
+            Path("C:/Python312/python.exe"),
+        ]:
+            if candidate.exists():
+                return str(candidate)
+        # Last resort: try uv
+        uv = shutil.which("uv")
+        if uv:
+            return f"{uv} run python"
+        return sys.executable  # fallback (will break but at least we tried)
+    return sys.executable  # not frozen — sys.executable IS Python
+
+
 # ─── Theme constants (copied from launcher.py — boot module is standalone) ────
 BG       = "#1a1a1a"
 BG2      = "#242424"
@@ -461,7 +490,7 @@ class BootManagerMixin:
         time.sleep(1)
         # Start fresh — native Windows Python, no WSL
         subprocess.Popen(
-            [sys.executable, str(hw_sup_path)],
+            [_get_python(), str(hw_sup_path)],
             cwd=str(L.FLEET_DIR),
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
@@ -567,7 +596,7 @@ class BootManagerMixin:
 
         # Launch supervisor natively (like hw_supervisor)
         subprocess.Popen(
-            [sys.executable, str(L.FLEET_DIR / "supervisor.py")],
+            [_get_python(), str(L.FLEET_DIR / "supervisor.py")],
             cwd=str(L.FLEET_DIR),
             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
             creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0),
