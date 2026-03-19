@@ -746,6 +746,10 @@ def api_agent_cards():
 from process_control import fleet_bp
 app.register_blueprint(fleet_bp)
 
+# ── A2A Protocol (Agent-to-Agent interoperability) ────────────────────────────
+from a2a import a2a_bp
+app.register_blueprint(a2a_bp)
+
 
 # ── Server-Sent Events ──────────────────────────────────────────────────────
 
