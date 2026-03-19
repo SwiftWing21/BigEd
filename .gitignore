@@ -86,6 +86,9 @@ BigEd/launcher/data/
 # ── Docker (local dev orchestration) ─────────────────────────────────────────
 docker-compose.yml
 
+# ── MCP context mirror (copies of root .md files for container access) ───────
+education-context/
+
 # ── OS junk ───────────────────────────────────────────────────────────────────
 .DS_Store
 Thumbs.db

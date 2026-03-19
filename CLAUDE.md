@@ -3,6 +3,7 @@
 ## Structure
 - `fleet/` — 8-agent AI worker fleet (Ollama/qwen3:8b + Sonnet)
 - `BigEd/` — reference docs, command sheets, notes
+- `education-context/` — root-level project docs mirrored for MCP/container access (read-only copies of *.md from project root)
 
 ## Version Scheme
 - Pre-1.0: `v0.XX` (v0.31 through v0.48)
@@ -32,6 +33,13 @@
 ## API
 - Throttle 20% of rate limits, 300ms min between requests, exponential backoff on 429s
 - Models: `claude-sonnet-4-6` default, `claude-haiku-4-5` high-volume, `claude-opus-4-6` complex
+
+## MCP Servers
+- **Playwright** (containerized): `docker-compose up -d` — browser automation via `http://localhost:8931`
+  - Config: `.mcp.json` (HTTP transport) | Container: `playwright-mcp`
+  - `education-context/` mounted read-only at `/workspace/education-context/` inside container
+  - Includes Chromium, Firefox, WebKit. Restarts automatically with Docker Desktop.
+  - To refresh context files: copy root *.md → `education-context/` (container sees changes live via bind mount)
 
 ## Claude Code Agent Teams
 - Enable: set `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1` in `settings.json` under `env`
