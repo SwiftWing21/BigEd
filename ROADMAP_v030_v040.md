@@ -9,17 +9,41 @@
 
 | Era | Format | Example | Notes |
 |-----|--------|---------|-------|
-| Pre-1.0 | `v0.XX` | v0.31, v0.48 | Feature versions, sequential |
+| Pre-1.0 | `v0.XX` | v0.31, v0.48 | Feature versions — historical, frozen |
 | 1.0 | `1.0` | 1.0 | Production release tag |
-| Post-1.0 | `0.XX.YY` | 0.01.01, 0.15.00 | MAJOR.MINOR.PATCH |
+| Post-1.0 (dev) | `0.XX.00` | 0.15.00, 0.20.00 | Major infrastructure work |
+| **Alpha** | `0.XX.YY` | 0.21.01, 0.21.02 | **Current era** — see below |
 | Future | `X.0` | 2.0, 5.0 | Major platform milestones |
 
-- **Pre-1.0 (v0.31 through v0.48):** Each `v0.XX` was a feature version building toward production. These are historical and should not be modified.
-- **1.0:** The production release tag. All milestones, parallel tracks, and tech debt resolved.
-- **Post-1.0 (0.XX.YY):** Semantic versioning. `0.XX` is the feature number, `.YY` is the patch level.
-- **Future (2.0-5.0):** Major platform evolution milestones.
+### Alpha Versioning (current)
 
-> **Note for AI assistants (Claude/Gemini):** When adding new roadmap items, use the `0.XX.YY` format and place them in chronological order after the last completed version. Pre-1.0 versions are frozen history.
+BigEd CC is now an **alpha working product** — agents run unattended, fleet boots natively, swarm intelligence active. The versioning reflects two parallel work streams:
+
+**`0.XX.00` — Milestones (S-Tier infrastructure)**
+Major system capabilities. Each `0.XX` is a milestone from the S-Tier plan:
+- 0.21 = Reliability, 0.22 = Observability, 0.23 = Auto-Intelligence, 0.24 = Security, 0.25 = Multi-Backend
+
+**`0.XX.YY` — Patches (UX, agent quality, polish)**
+Between milestones, `.YY` patches focus on end-user experience:
+- **Reduce clicks** — streamline user flows, fewer steps to common actions
+- **Agent enhancements** — fill skill gaps, improve output quality, tune idle behavior
+- **Console flows** — retention between builds/updates, session persistence
+- **GUI polish** — layout refinements, information density, responsiveness
+- **Bug fixes** — stability issues discovered during alpha use
+
+Example progression:
+```
+0.21.00  — S1 Reliability milestone (audit fixes, crash backoff, self-heal)
+0.21.01  — UX: one-click task dispatch from agent cards
+0.21.02  — Agent: improve idle evolution skill selection
+0.21.03  — Console: preserve chat history across rebuilds
+0.22.00  — S2 Observability milestone (health endpoint, alerts)
+0.22.01  — UX: dashboard auto-open on boot complete
+0.22.02  — Agent: quality scoring on task outputs
+...
+```
+
+> **Note for AI assistants (Claude/Gemini):** Use `0.XX.00` for milestone features and `0.XX.YY` (YY > 0) for UX/agent/polish patches. Place chronologically after the last version. Pre-1.0 versions are frozen history.
 
 ---
 
