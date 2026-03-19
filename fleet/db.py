@@ -746,3 +746,26 @@ from cost_tracking import log_usage, get_usage_summary, get_usage_delta
 
 # ── Idle Evolution (extracted to idle_evolution.py) ───────────────────────────
 from idle_evolution import log_idle_run, get_idle_stats, get_least_evolved_skill
+
+
+# ── DAG Visualization ─────────────────────────────────────────────────────────
+
+def get_dag_graph(parent_id: int) -> dict:
+    """Build a DAG graph structure for visualization."""
+    with get_conn() as conn:
+        tasks = conn.execute(
+            "SELECT id, type, status, depends_on, parent_id, result_json FROM tasks "
+            "WHERE parent_id=? OR id=?",
+            (parent_id, parent_id)
+        ).fetchall()
+        nodes = []
+        edges = []
+        for t in tasks:
+            nodes.append({
+                "id": t["id"], "type": t["type"], "status": t["status"],
+                "has_result": bool(t["result_json"]),
+            })
+            deps = json.loads(t["depends_on"]) if t["depends_on"] else []
+            for dep in deps:
+                edges.append({"from": dep, "to": t["id"]})
+        return {"nodes": nodes, "edges": edges, "parent_id": parent_id}

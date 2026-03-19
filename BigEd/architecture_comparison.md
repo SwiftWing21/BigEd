@@ -14,31 +14,31 @@
 | Safety | Evaluator + watchdog + HITL + DLP | **Ahead** on integration, missing input-side guards |
 | Desktop GUI | CustomTkinter + Flask dashboard | **Unique** — no comparable open-source exists |
 
-## Tier 1 — High Impact (0.01.01)
+## Tier 1 — High Impact (0.01.01) [ALL DONE]
 
-1. Circuit breaker for provider fallback (providers.py)
-2. Input-side guardrails (scan payloads before LLM)
-3. Configurable budget enforcement modes (warn/throttle/block)
-4. DAG validation (cycle detection in post_task_chain)
-5. Add Gemini pricing to PRICING dict
+1. Circuit breaker for provider fallback ✓
+2. Input-side guardrails (PII + secret scan) ✓
+3. Configurable budget enforcement modes ✓
+4. DAG validation (cycle detection) ✓
+5. Gemini pricing in PRICING dict ✓
 
-## Tier 2 — Medium Impact (0.01.02+)
+## Tier 2 — Medium Impact (0.01.02) [ALL DONE]
 
-6. Conditional DAG edges (branch on task results)
-7. Agent Card metadata (JSON capability descriptors)
-8. Cost-aware task routing (complexity → model selection)
-9. Provider health probes in hw_supervisor
-10. PII detection alongside secret scrubbing
-11. Embedded charts in launcher/dashboard
-12. Message schema versioning
-13. Pipeline checkpointing
-14. Weekly/monthly budget periods
+6. Conditional DAG edges ✓
+7. Agent Card metadata ✓
+8. Cost-aware task routing ✓
+9. Provider health probes ✓
+10. PII detection (part of #2) ✓
+11. Embedded charts — 0.01.03
+12. Message schema versioning ✓
+13. Pipeline checkpointing ✓
+14. Weekly/monthly budget periods ✓
 
-## Tier 3 — Future (backlog)
+## Tier 3 — 0.01.03 through 0.03.00
 
-15. Declarative workflow definition (TOML/DSL)
-16. A2A protocol compatibility
-17. NeMo Guardrails integration
-18. Web-accessible launcher variant
-19. DAG visualization endpoint
-20. Cost forecasting
+15. Declarative workflow DSL — 0.02.00
+16. A2A protocol compatibility — 0.03.00
+17. NeMo Guardrails integration — 0.03.00
+18. Web-accessible launcher — 0.02.00
+19. DAG visualization endpoint — 0.01.03
+20. Cost forecasting — 0.01.03

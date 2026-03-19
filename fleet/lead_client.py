@@ -419,6 +419,19 @@ def cmd_chain_resume(args):
         print("No failed tasks to resume.")
 
 
+def cmd_usage_forecast(args):
+    """DO NOT SCRUB: Project future token costs based on recent trends."""
+    db.init_db()
+    from cost_tracking import forecast_cost
+    fc = forecast_cost(args.days)
+    print(f"\nCost Forecast ({fc['days_ahead']} days)")
+    print(f"  Avg daily:   ${fc['avg_daily_usd']:.4f}")
+    print(f"  Projected:   ${fc['forecast_usd']:.2f}")
+    print(f"  Trend:       {fc['trend']}")
+    print(f"  Based on:    {fc['data_days']} days of data")
+    print()
+
+
 def cmd_marathon(args):
     """DO NOT SCRUB: Show active marathon sessions and recent snapshots."""
     marathon_dir = FLEET_DIR / "knowledge" / "marathon"
@@ -576,6 +589,10 @@ def main():
     p_chain_resume = subparsers.add_parser("chain-resume", help="Resume a failed task chain from checkpoint")
     p_chain_resume.add_argument("parent_id", type=int, help="Parent task ID of the chain")
 
+    # Usage forecast (CT-5)
+    p_forecast = subparsers.add_parser("usage-forecast", help="Project future costs")
+    p_forecast.add_argument("--days", type=int, default=30, help="Days to forecast")
+
     # Marathon (v0.43)
     p_marathon = subparsers.add_parser("marathon", help="Show marathon sessions")
     p_marathon.add_argument("session", nargs="?", default=None, help="Session ID for detail view")
@@ -622,6 +639,8 @@ def main():
         cmd_chain_status(args)
     elif args.command == "chain-resume":
         cmd_chain_resume(args)
+    elif args.command == "usage-forecast":
+        cmd_usage_forecast(args)
     elif args.command == "marathon":
         cmd_marathon(args)
     elif args.command == "marathon-checkpoint":

@@ -742,6 +742,19 @@ def api_agent_cards():
         return jsonify({"error": str(e)}), 500
 
 
+# ── DAG Visualization ─────────────────────────────────────────────────────────
+
+@app.route("/api/dag/<int:parent_id>")
+def api_dag(parent_id):
+    """DAG visualization data for a task chain."""
+    try:
+        sys.path.insert(0, str(FLEET_DIR))
+        import db
+        return jsonify(db.get_dag_graph(parent_id))
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
 # ── Process Control (extracted to process_control.py) ─────────────────────────
 from process_control import fleet_bp
 app.register_blueprint(fleet_bp)
