@@ -174,6 +174,50 @@ def _call_gemini(system: str, user: str, models: dict, max_tokens: int) -> str:
     return resp.text
 
 
+_provider_health = {}  # provider -> {"healthy": bool, "last_check": float, "latency_ms": float}
+
+
+def probe_provider_health(provider: str) -> dict:
+    """Lightweight health check for a provider. Returns {healthy, latency_ms}."""
+    start = time.time()
+    try:
+        if provider == "claude":
+            import anthropic
+            client = anthropic.Anthropic(api_key=os.environ.get("ANTHROPIC_API_KEY", ""))
+            # Minimal request — just check auth works
+            client.messages.create(
+                model="claude-haiku-4-5", max_tokens=1,
+                messages=[{"role": "user", "content": "hi"}],
+            )
+        elif provider == "gemini":
+            import urllib.request as _ur
+            req = _ur.Request(
+                "https://generativelanguage.googleapis.com/v1beta/models?key=" +
+                os.environ.get("GEMINI_API_KEY", ""),
+                method="GET"
+            )
+            with _ur.urlopen(req, timeout=5):
+                pass
+        elif provider == "local":
+            import urllib.request as _ur
+            with _ur.urlopen("http://localhost:11434/api/tags", timeout=3):
+                pass
+
+        latency = (time.time() - start) * 1000
+        result = {"healthy": True, "latency_ms": round(latency, 1)}
+    except Exception as e:
+        latency = (time.time() - start) * 1000
+        result = {"healthy": False, "latency_ms": round(latency, 1), "error": str(e)[:100]}
+
+    _provider_health[provider] = {**result, "last_check": time.time()}
+    return result
+
+
+def get_provider_health() -> dict:
+    """Return cached health status for all providers."""
+    return dict(_provider_health)
+
+
 def _call_local(system: str, user: str, models: dict, max_tokens: int) -> str:
     import urllib.request
     import json
