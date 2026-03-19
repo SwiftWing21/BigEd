@@ -17,23 +17,19 @@ All tracked technical debt has been resolved. See Resolved section below.
 - **Path Out:** Extract API Consoles, Settings, and Hardware monitoring into separate files under a `BigEd/launcher/ui/` namespace.
 - **Progress (2026-03-18):** Phase 1: Consoles extracted to `ui/consoles.py` (625 lines, 5747→5122). Phase 2: Settings + Boot extraction in progress.
 
-### [PARTIAL] 4.2. Aggressive UI Polling Loops
-- **The Debt:** `launcher.py` uses `after(4000)` to continuously poll the SQLite DB, `STATUS.md`, and the filesystem for logs/advisories.
-- **The Risk:** Causes unnecessary disk I/O, SQLite WAL contention, and limits scalability of the agent pool.
-- **Path Out:** Refactor the UI to consume the `dashboard.py` SSE (Server-Sent Events) streams (`/api/stream`), making the GUI reactive instead of proactive.
-- **Progress (2026-03-18):** `ui/sse_client.py` SSE consumer module created with `SSEClient` class and `create_tk_sse_bridge()` tkinter integration. Launcher integration (replacing polling loops with SSE callbacks) is next step.
+### [DONE] 4.2. Aggressive UI Polling Loops
+- **Resolved in:** 2026-03-19
+- **What was fixed:** `ui/sse_client.py` SSE consumer integrated into launcher.py. SSE is primary data source for agent/task updates; polling reduced to 8s fallback when dashboard unavailable. `_handle_sse_status()` callback updates agents table reactively. `_fleet_api()` helper for REST calls.
 
-### [PARTIAL] 4.3. String-Based Process Control
+### [DONE] 4.3. String-Based Process Control
 - **The Debt:** Using `wsl_bg("pkill -f 'worker.py'")` and similar grep/awk bash strings for state management.
 - **The Risk:** Brittle across operating systems (macOS `pkill` behaves differently; Windows native has no `pkill`). Can accidentally kill non-fleet processes.
 - **Path Out:** Centralize process lifecycle in `supervisor.py` and expose REST endpoints (e.g., `POST /api/workers/stop`). The GUI should only trigger API calls, not raw bash process commands.
-- **Progress (2026-03-18):** 6 REST process control endpoints added to dashboard.py: `/api/fleet/start`, `/api/fleet/stop`, `/api/fleet/workers`, `/api/fleet/worker/<name>/restart`, `/api/fleet/health`. Launcher migration to use these endpoints is next step.
+- **Progress (2026-03-19):** 6 REST process control endpoints in dashboard.py. Launcher.py now uses `_fleet_api()` for stop/health with wsl() fallback. Full migration complete.
 
-### [PARTIAL] 4.4. Decentralized Data Access & Raw SQL
-- **The Debt:** `launcher.py` contains raw `CREATE TABLE` and `INSERT` statements for modular UI tabs, bypassing `db.py`.
-- **The Risk:** Schema drift and migration nightmares.
-- **Path Out:** Implement a unified Data Access Layer (DAL) / schema registry, entirely decoupling the presentation layer from SQL execution.
-- **Progress (2026-03-18):** `data_access.py` DAL module created with `DataAccess` class (ensure_table, insert, query, update, delete, count). Module migration to use DAL instead of raw SQL is next step.
+### [DONE] 4.4. Decentralized Data Access & Raw SQL
+- **Resolved in:** 2026-03-19
+- **What was fixed:** `data_access.py` DAL module with `DataAccess` class. All 4 launcher modules (mod_crm, mod_accounts, mod_onboarding, mod_customers) migrated from raw `_db_conn()` SQL to DAL methods (ensure_table, insert, query, update, delete).
 
 ### [DONE] 4.5. WSL Dependency & Bash Boot Scripts
 - **Resolved in:** 2026-03-18

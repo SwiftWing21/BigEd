@@ -15,7 +15,9 @@
 | 3. External Integration | v0.39 – v0.41 | Network, browser, vision | + network/browser/vision tests; no OOM on 12GB |
 | 4. Autonomous Continuity | v0.42 – v0.43 | Auto-boot, idle evolve, marathon ML | Zero-click start, stable multi-hour ML |
 | 5. Elegance & Availability | v0.44 – v0.45 | Unified lifecycle, Omni-box, HA routing | Seamless updates, zero-downtime task execution |
-| 6. Cross-Platform & v1.0 | PT-1 – PT-4, DT-1 – DT-4 | Anyone, anywhere, clear diagnostics | All tests on Win/Linux/macOS; FleetBridge 100%; zero debt |
+| 6. User Sync & Admin Tools | v0.46 – v0.47 | GitHub pairing, restricted owner CRM | Seamless auth, private internal tooling |
+| 7. Codebase Simplification | v0.48         | Cautious bloat/dead code removal | AST scanning, graveyard quarantine, 100% soak pass |
+| 8. Cross-Platform & v1.0 | PT-1 – PT-4, DT-1 – DT-4 | Anyone, anywhere, clear diagnostics | All tests on Win/Linux/macOS; FleetBridge 100%; zero debt |
 
 ## Release Process
 
@@ -408,6 +410,31 @@ All parallel tracks complete. Zero TECH_DEBT. Cross-platform validated.
 - **Command Palette (Omni-Box):** Implement a global `Ctrl+K` Spotlight-style overlay. Features predictive auto-complete for skills (e.g., `/web_search`), direct agent pinging (`@researcher`), and one-click re-runs of recent tasks.
 - **Model Fallback Cascade:** Refactor `skills._models.call_model()` to support resilient fallback chains. If the primary model (e.g., Claude) fails due to rate limits or outages, gracefully fall back to Gemini, then Local Ollama.
 - **Graceful Degradation Warnings:** If a task completes via a fallback model, append a non-intrusive warning to the UI task status (e.g., "✓ done (fallback: local)").
+
+---
+
+## v0.46 — Frictionless GitHub Sync & Zero-Bloat Baseline
+**Goal:** Provide a seamless way for users to link their private repositories, while defaulting all non-core modules to off.
+- **Zero-Bloat Baseline:** Update `fleet.toml` defaults so absolutely zero modules (no ingestion, no outputs) are enabled until the user actively opts in during the Setup Walkthrough.
+- **GitHub Device Authorization Flow:** Build an OAuth App integration for the Walkthrough. Users are given an 8-character code to authorize BigEd CC via their browser, completely eliminating the need to manually generate or paste Personal Access Tokens (PATs).
+- **Agent Git Autonomy:** With the OAuth token securely stored in `~/.secrets`, agents can autonomously provision private user repos, push code, and back up fleet state.
+
+---
+
+## v0.47 — Restricted Owner Core (Shadow Module)
+**Goal:** Create a secure, isolated environment for the software owner to manage customer fleets and internal business operations.
+- **Shadow Module Architecture:** Develop `mod_owner_core.py` (containing the internal CRM, global key manager, and remote fleet diagnostics) in a private repository/submodule.
+- **Execution Gating:** The module loader strictly requires a verified `BIGED_OWNER_KEY` in `~/.secrets` to mount the tab.
+- **Build Exclusion:** Update the `build.py` (PT-2) compiler logic to explicitly exclude `mod_owner_core.py` from public `dist/` artifacts, ensuring normal users cannot reverse-engineer the owner logic.
+
+---
+
+## v0.48 — Cautious Codebase Pruning (Bloat Cleanup)
+**Goal:** Safely eliminate dead code, deprecated methods, and orphaned imports left behind by aggressive tech debt resolutions (e.g., `launcher.py` extraction, WSL bash removal) without breaking dynamic UI or agent calls.
+- **AST-Based Dead Code Detection:** Utilize Abstract Syntax Tree (AST) scanning tools (like `vulture` or `ruff`) to mathematically identify unused variables, classes, and functions, rather than relying on brittle text searches.
+- **The "Graveyard" Quarantine Pattern:** Instead of immediate hard deletion, move suspected dead code (like old UI rendering methods or raw SQLite strings) into a `_graveyard/` namespace. If a dynamic module import or edge-case execution path fails during testing, the code can be instantly restored.
+- **Config & Dependency Audit:** Clean up `fleet.toml` fallback defaults and `requirements.txt` to remove packages (e.g., old bash utilities) that were only required by the pre-v0.30 architecture.
+- **Regression Gate:** The prune is only merged to `main` when the codebase passes 100% of the `--fast` smoke tests, the GUI headless smoke test, and an 8-hour marathon soak test to ensure no obscure conditional logic was severed.
 
 ---
 

@@ -589,6 +589,19 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
         threading.Thread(target=self._check_for_updates, daemon=True).start()
         self.protocol("WM_DELETE_WINDOW", self._on_close)
 
+        # v0.45: SSE for reactive updates (falls back to polling if dashboard unavailable)
+        try:
+            from ui.sse_client import create_tk_sse_bridge
+            self._sse = create_tk_sse_bridge(self)
+            self._sse.on("status", self._handle_sse_status)
+            self._sse.on("connected", lambda d: setattr(self, '_sse_active', True))
+            self._sse.on("disconnected", lambda d: setattr(self, '_sse_active', False))
+            self._sse_active = False
+            self._sse.start()
+        except Exception:
+            self._sse = None
+            self._sse_active = False
+
         # First-run walkthrough — show after UI is fully built
         if _should_show_walkthrough():
             self.after(500, lambda: WalkthroughDialog(self))
@@ -615,6 +628,12 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
             for mod in getattr(self, "_modules", {}).values():
                 try:
                     mod.on_close()
+                except Exception:
+                    pass
+            # v0.45: Stop SSE client on exit
+            if getattr(self, '_sse', None):
+                try:
+                    self._sse.stop()
                 except Exception:
                     pass
 
@@ -1869,9 +1888,50 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
         self._stat_gpu.configure(text=gpu_s, text_color=_hysteresis("gpu", gpu_pct) if _GPU_OK else DIM)
         self._stat_net.configure(text=net_s, text_color=DIM)
 
-    def _schedule_refresh(self):
-        """Unified refresh every 4s — pills + agents + log/advisory (threaded I/O)."""
+    def _handle_sse_status(self, data):
+        """Handle SSE status push — update agents and task counts without polling."""
         try:
+            agents = data.get("data", {}).get("agents", [])
+            tasks = data.get("data", {}).get("tasks", {})
+            # Update the agents display
+            if hasattr(self, '_update_agents_table'):
+                self._update_agents_table({"agents": agents, "tasks": tasks})
+        except Exception:
+            pass
+
+    def _schedule_refresh(self):
+        """Unified refresh every 4s — pills + agents + log/advisory (threaded I/O).
+        When SSE is active, agent/task polling is skipped (SSE handles it);
+        only module refreshes and log tailing run, at a slower 8s interval.
+        """
+        try:
+            # If SSE is active, skip file-based polling for agent/task data
+            if getattr(self, '_sse_active', False):
+                # SSE handles agent/task updates — only do module refreshes here
+                self._refresh_counter = getattr(self, '_refresh_counter', 0) + 1
+                # Log tail + action badge in background thread
+                def _bg_io_sse():
+                    try:
+                        self.after(0, self._refresh_log)
+                        self.after(0, self._update_action_badge)
+                    except Exception:
+                        pass
+                threading.Thread(target=_bg_io_sse, daemon=True).start()
+                # Refresh modules at reduced frequency
+                active_tab = self._tabs.get()
+                if active_tab == "Fleet Comm" and self._refresh_counter % 3 == 0:
+                    self._refresh_comm()
+                for name, mod in self._modules.items():
+                    if getattr(mod, "LABEL", name.title()) == active_tab:
+                        try:
+                            mod.on_refresh()
+                        except Exception:
+                            pass
+                        break
+                self.after(8000, self._schedule_refresh)  # slower poll when SSE active
+                return
+
+            # Fallback: full file-based polling when SSE is not connected
             status = parse_status()
             self._update_pills(status)
             self._update_agents_table(status)
@@ -2164,6 +2224,27 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
             "|| echo 'Ollama not running'",
             lambda o, e: self.after(0, lambda: self._log_output(o or e)))
 
+    # ── REST API helpers (v0.45: TECH_DEBT 4.3) ─────────────────────────────
+    def _fleet_api(self, endpoint, method="GET", json_data=None):
+        """Call fleet dashboard REST API. Returns dict or None on failure."""
+        port = 5555  # from fleet.toml dashboard.port
+        url = f"http://localhost:{port}{endpoint}"
+        try:
+            if method == "POST":
+                data = json.dumps(json_data or {}).encode()
+                req = urllib.request.Request(url, data=data, method="POST",
+                                            headers={"Content-Type": "application/json"})
+            else:
+                req = urllib.request.Request(url)
+            with urllib.request.urlopen(req, timeout=5) as resp:
+                return json.loads(resp.read())
+        except Exception:
+            return None
+
+    def _check_fleet_health(self):
+        """Quick health check via REST API."""
+        return self._fleet_api("/api/fleet/health")
+
     # ── Fleet commands ────────────────────────────────────────────────────────
     def _recover_agent(self, role: str):
         """Restart a single crashed worker."""
@@ -2184,7 +2265,30 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
     #   _read_fleet_models, _show_boot_progress, _boot_spin, _boot_update,
     #   _hide_boot_progress, _start_system, _boot_sequence, _boot_ollama,
     #   _boot_hw_supervisor, _boot_model, _boot_supervisor, _boot_workers,
-    #   _stop_system
+    #   _stop_system (overridden below to try REST API first)
+
+    def _stop_system(self):
+        """v0.45: Try REST API for clean shutdown first, fall back to wsl pkill."""
+        # Try REST API first (clean shutdown)
+        result = self._fleet_api("/api/fleet/stop", method="POST")
+        if result and result.get("status") == "stopping":
+            self._log_output("Fleet stop signal sent via API")
+            # Still do the UI state updates from the mixin
+            self._system_intentional_stop = True
+            self._system_running = False
+            self._boot_abort.set()
+            if self._boot_active:
+                self._hide_boot_progress()
+            self._btn_system_toggle.configure(
+                text="▶  Start", fg_color="#1e3a1e", hover_color="#2a4a2a")
+            # Also stop Ollama via wsl (API doesn't cover Ollama)
+            wsl_bg(
+                "sleep 2; pkill -f ollama 2>/dev/null; echo 'Ollama stopped'",
+                lambda o, e: self.after(0, lambda: self._log_output(o or e or "System stopped")),
+            )
+        else:
+            # Fallback to wsl pkill (BootManagerMixin._stop_system)
+            super()._stop_system()
 
     def _toggle_idle(self):
         if self._idle_enabled:
@@ -2227,8 +2331,14 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
 
     def _stop_fleet(self):
         self._log_output("Stopping fleet...")
-        wsl_bg("pkill -f supervisor.py && echo stopped",
-               lambda o, e: self.after(0, lambda: self._log_output("Fleet stopped." if o else f"Error: {e}")))
+        # v0.45: Try REST API first (clean shutdown)
+        result = self._fleet_api("/api/fleet/stop", method="POST")
+        if result and result.get("status") == "stopping":
+            self._log_output("Fleet stop signal sent via API")
+        else:
+            # Fallback to wsl pkill
+            wsl_bg("pkill -f supervisor.py && echo stopped",
+                   lambda o, e: self.after(0, lambda: self._log_output("Fleet stopped." if o else f"Error: {e}")))
 
     def _show_status_tab(self):
         self._log_output(STATUS_MD.read_text() if STATUS_MD.exists()

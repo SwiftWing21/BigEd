@@ -18,6 +18,9 @@ PRICING = {
     "claude-opus-4-6": {"input": 15.00, "output": 75.00, "cache_read": 1.50, "cache_create": 18.75},
 }
 
+# v0.45: HA fallback cascade — if primary fails, try next provider
+FALLBACK_CHAIN = ["claude", "gemini", "local"]
+
 
 def calculate_cost(usage, model_id: str) -> float:
     """Calculate USD cost from usage object and model pricing."""
@@ -59,7 +62,7 @@ def check_budget(skill_name: str, config: dict) -> dict | None:
 
 def call_complex(system: str, user: str, config: dict, max_tokens: int = 2048, cache_system: bool = False,
                  skill_name: str = "unknown", task_id=None, agent_name=None) -> str:
-    """Route a complex inference call based on fleet.toml complex_provider."""
+    """Route a complex inference call with HA fallback cascade."""
     models = config.get("models", {})
     provider = models.get("complex_provider", "claude")
 
@@ -78,13 +81,46 @@ def call_complex(system: str, user: str, config: dict, max_tokens: int = 2048, c
     except Exception:
         pass  # budget checking must never break skill execution
 
-    if provider == "gemini":
-        return _call_gemini(system, user, models, max_tokens)
-    elif provider == "local":
-        return _call_local(system, user, models, max_tokens)
-    else:  # default: claude
-        return _call_claude(system, user, models, max_tokens, cache_system,
-                            skill_name=skill_name, task_id=task_id, agent_name=agent_name)
+    # v0.45: Build fallback chain starting from configured provider
+    # Offline mode: no cascade, local-only
+    if provider == "local" and config.get("fleet", {}).get("offline_mode", False):
+        chain = ["local"]
+    else:
+        chain = [provider]
+        for p in FALLBACK_CHAIN:
+            if p not in chain:
+                chain.append(p)
+
+    last_error = None
+    fallback_used = None
+
+    for i, prov in enumerate(chain):
+        try:
+            if prov == "gemini":
+                result = _call_gemini(system, user, models, max_tokens)
+            elif prov == "local":
+                result = _call_local(system, user, models, max_tokens)
+            else:  # claude
+                result = _call_claude(system, user, models, max_tokens, cache_system,
+                                      skill_name=skill_name, task_id=task_id, agent_name=agent_name)
+
+            if i > 0:
+                fallback_used = prov
+                import sys
+                print(f"[HA] {skill_name}: primary '{provider}' failed, completed via '{prov}'",
+                      file=sys.stderr)
+            return result
+
+        except Exception as e:
+            last_error = e
+            if i < len(chain) - 1:
+                import sys
+                print(f"[HA] {skill_name}: '{prov}' failed ({type(e).__name__}), trying next...",
+                      file=sys.stderr)
+            continue
+
+    # All providers failed
+    raise last_error
 
 
 def _call_claude(system: str, user: str, models: dict, max_tokens: int, cache_system: bool = False,

@@ -5,6 +5,7 @@ Tracks API services, usage vs free-tier limits, upgrade priorities, and costs.
 """
 import json
 import customtkinter as ctk
+from data_access import DataAccess
 
 BG = BG2 = BG3 = ACCENT = ACCENT_H = GOLD = TEXT = DIM = GREEN = ORANGE = RED = ""
 FONT_SM = ("Segoe UI", 10)
@@ -41,6 +42,14 @@ class Module:
         self.app = app
         self._init_theme()
         self._rows = []
+        self._dal_inst = None
+
+    @property
+    def _dal(self):
+        if self._dal_inst is None:
+            import launcher
+            self._dal_inst = DataAccess(launcher.DB_PATH)
+        return self._dal_inst
 
     def _init_theme(self):
         global BG, BG2, BG3, ACCENT, ACCENT_H, GOLD, TEXT, DIM, GREEN, ORANGE, RED, FONT_SM
@@ -57,9 +66,6 @@ class Module:
         ORANGE = launcher.ORANGE
         RED = launcher.RED
         FONT_SM = launcher.FONT_SM
-
-    def _db_conn(self):
-        return self.app._db_conn()
 
     def _db_query_bg(self, query_fn, callback):
         self.app._db_query_bg(query_fn, callback)
@@ -96,11 +102,10 @@ class Module:
         self.on_refresh()
 
     def on_refresh(self):
-        def _fetch(con):
-            rows = con.execute(
+        def _fetch(_con):
+            return self._dal.raw_query(
                 "SELECT * FROM accounts ORDER BY upgrade_priority DESC, category, service"
-            ).fetchall()
-            return [dict(r) for r in rows]
+            )
 
         def _render(records):
             for w in self._rows:
@@ -168,10 +173,7 @@ class Module:
         pass
 
     def export_data(self) -> list[dict]:
-        con = self._db_conn()
-        rows = con.execute("SELECT * FROM accounts").fetchall()
-        con.close()
-        return [dict(r) for r in rows]
+        return self._dal.query("accounts")
 
     def validate_record(self, data: dict) -> tuple[bool, str]:
         if not data.get("service"):
@@ -261,30 +263,30 @@ class Module:
             svc = entries["Service"].get().strip()
             if not svc:
                 return
-            con = self._db_conn()
-            con.execute("DELETE FROM accounts WHERE service=?", (rec.get("service", ""),))
-            con.execute(
-                "INSERT INTO accounts"
-                " (service, category, tier, monthly_cost, free_limit, usage_pct,"
-                "  reset_date, account_email, notes, upgrade_priority, upgrade_reason, signup_url)"
-                " VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
-                (svc, entries["Category"].get(), tier_var.get(), cost,
-                 entries["Free Limit"].get(), int(usage_var.get()),
-                 entries["Reset Date"].get(), entries["Account Email"].get(),
-                 entries["Notes"].get(), int(pri_var.get()),
-                 entries["Upgrade Reason"].get(), entries["Signup URL"].get()))
-            con.commit()
-            con.close()
+            old_service = rec.get("service", "")
+            if old_service:
+                self._dal.delete("accounts", where={"service": old_service})
+            self._dal.insert("accounts", {
+                "service": svc,
+                "category": entries["Category"].get(),
+                "tier": tier_var.get(),
+                "monthly_cost": cost,
+                "free_limit": entries["Free Limit"].get(),
+                "usage_pct": int(usage_var.get()),
+                "reset_date": entries["Reset Date"].get(),
+                "account_email": entries["Account Email"].get(),
+                "notes": entries["Notes"].get(),
+                "upgrade_priority": int(pri_var.get()),
+                "upgrade_reason": entries["Upgrade Reason"].get(),
+                "signup_url": entries["Signup URL"].get(),
+            })
             self.on_refresh()
             win.destroy()
 
         def _delete():
             svc = rec.get("service", "")
             if svc:
-                con = self._db_conn()
-                con.execute("DELETE FROM accounts WHERE service=?", (svc,))
-                con.commit()
-                con.close()
+                self._dal.delete("accounts", where={"service": svc})
             self.on_refresh()
             win.destroy()
 

@@ -6,10 +6,10 @@ Manages companies, contacts, lead stages, prospecting dispatch, and lead import.
 import base64
 import json
 import re
-import sqlite3
 from pathlib import Path
 
 import customtkinter as ctk
+from data_access import DataAccess
 
 # These are set by the module loader from the app's theme
 BG = BG2 = BG3 = ACCENT = ACCENT_H = GOLD = TEXT = DIM = GREEN = ORANGE = RED = ""
@@ -50,6 +50,14 @@ class Module:
         self._init_theme()
         self._rows = []
         self._search_var = None
+        self._dal_inst = None
+
+    @property
+    def _dal(self):
+        if self._dal_inst is None:
+            import launcher
+            self._dal_inst = DataAccess(launcher.DB_PATH)
+        return self._dal_inst
 
     def _init_theme(self):
         global BG, BG2, BG3, ACCENT, ACCENT_H, GOLD, TEXT, DIM, GREEN, ORANGE, RED, FONT_SM
@@ -71,9 +79,6 @@ class Module:
             "Lead": DIM, "Prospect": ORANGE, "Active": GREEN,
             "Churned": RED, "Partner": GOLD,
         }
-
-    def _db_conn(self):
-        return self.app._db_conn()
 
     def _db_query_bg(self, query_fn, callback):
         self.app._db_query_bg(query_fn, callback)
@@ -120,10 +125,8 @@ class Module:
     def on_refresh(self):
         query = self._search_var.get().lower() if self._search_var else ""
 
-        def _fetch(con):
-            rows = con.execute(
-                "SELECT company, industry, contact, email, phone, stage, notes FROM crm").fetchall()
-            return [dict(r) for r in rows]
+        def _fetch(_con):
+            return self._dal.query("crm")
 
         def _render(records):
             for w in self._rows:
@@ -168,10 +171,7 @@ class Module:
 
     def export_data(self) -> list[dict]:
         """Export all CRM records for data portability."""
-        con = self._db_conn()
-        rows = con.execute("SELECT * FROM crm").fetchall()
-        con.close()
-        return [dict(r) for r in rows]
+        return self._dal.query("crm")
 
     def validate_record(self, data: dict) -> tuple[bool, str]:
         """Validate a record against the data contract."""
@@ -221,17 +221,19 @@ class Module:
             if not valid:
                 self.app._log_output(f"CRM validation: {msg}")
                 return
-            con = self._db_conn()
-            con.execute("DELETE FROM crm WHERE company=?", (rec.get("company", ""),))
+            old_company = rec.get("company", "")
+            if old_company:
+                self._dal.delete("crm", where={"company": old_company})
             if new.get("company"):
-                con.execute(
-                    "INSERT INTO crm (company, industry, contact, email, phone, stage, notes)"
-                    " VALUES (?,?,?,?,?,?,?)",
-                    (new.get("company", ""), new.get("industry", ""), new.get("contact", ""),
-                     new.get("email", ""), new.get("phone", ""),
-                     new.get("stage", "Lead"), new.get("notes", "")))
-            con.commit()
-            con.close()
+                self._dal.insert("crm", {
+                    "company": new.get("company", ""),
+                    "industry": new.get("industry", ""),
+                    "contact": new.get("contact", ""),
+                    "email": new.get("email", ""),
+                    "phone": new.get("phone", ""),
+                    "stage": new.get("stage", "Lead"),
+                    "notes": new.get("notes", ""),
+                })
             self.on_refresh()
             win.destroy()
 
@@ -344,7 +346,6 @@ class Module:
             selected = [(v, lead) for v, lead in check_vars if v.get()]
             if not selected:
                 return
-            con = self._db_conn()
             imported = 0
             for _, lead in selected:
                 title = lead.get("title", "").strip()
@@ -355,15 +356,14 @@ class Module:
                 if not title:
                     continue
                 try:
-                    con.execute(
+                    # INSERT OR IGNORE needs raw SQL — DAL insert doesn't support OR IGNORE
+                    self._dal.execute(
                         "INSERT OR IGNORE INTO crm (company, industry, stage, notes)"
                         " VALUES (?,?,?,?)",
                         (title, sector, "Lead", notes))
                     imported += 1
                 except Exception:
                     pass
-            con.commit()
-            con.close()
             self.on_refresh()
             self.app._log_output(f"Imported {imported} leads into CRM.")
             win.destroy()

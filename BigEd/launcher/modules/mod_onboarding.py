@@ -5,6 +5,7 @@ Per-customer checklist with categories: Setup, Config, Training, Go-Live.
 Cross-module: reads customers from CRM if available.
 """
 import customtkinter as ctk
+from data_access import DataAccess
 
 BG = BG2 = BG3 = ACCENT = ACCENT_H = GOLD = TEXT = DIM = GREEN = ORANGE = RED = ""
 FONT_SM = ("Segoe UI", 10)
@@ -43,6 +44,14 @@ class Module:
         self._progress = None
         self._scroll = None
         self._menu = None
+        self._dal_inst = None
+
+    @property
+    def _dal(self):
+        if self._dal_inst is None:
+            import launcher
+            self._dal_inst = DataAccess(launcher.DB_PATH)
+        return self._dal_inst
 
     def _init_theme(self):
         global BG, BG2, BG3, ACCENT, ACCENT_H, GOLD, TEXT, DIM, GREEN, ORANGE, RED, FONT_SM
@@ -52,9 +61,6 @@ class Module:
         GOLD = launcher.GOLD; TEXT = launcher.TEXT; DIM = launcher.DIM
         GREEN = launcher.GREEN; ORANGE = launcher.ORANGE; RED = launcher.RED
         FONT_SM = launcher.FONT_SM
-
-    def _db_conn(self):
-        return self.app._db_conn()
 
     def _db_query_bg(self, query_fn, callback):
         self.app._db_query_bg(query_fn, callback)
@@ -70,10 +76,9 @@ class Module:
         ctk.CTkLabel(top, text="Customer:", font=FONT_SM,
                      text_color=DIM).grid(row=0, column=0, padx=(0, 8))
 
-        con = self._db_conn()
-        custs = [r[0] for r in con.execute(
-            "SELECT DISTINCT customer FROM onboarding ORDER BY customer").fetchall()]
-        con.close()
+        rows = self._dal.raw_query(
+            "SELECT DISTINCT customer FROM onboarding ORDER BY customer")
+        custs = [r["customer"] for r in rows]
         customers = custs or ["(no customers)"]
         self._customer_var = ctk.StringVar(value=customers[0])
         self._menu = ctk.CTkOptionMenu(
@@ -104,13 +109,13 @@ class Module:
     def on_refresh(self):
         customer = self._customer_var.get() if self._customer_var else ""
 
-        def _fetch(con):
-            rows = con.execute(
+        def _fetch(_con):
+            rows = self._dal.raw_query(
                 "SELECT category, step, done FROM onboarding WHERE customer=? ORDER BY id",
-                (customer,)).fetchall()
+                (customer,))
             steps = {}
-            for cat, step, done in rows:
-                steps.setdefault(cat, {})[step] = bool(done)
+            for r in rows:
+                steps.setdefault(r["category"], {})[r["step"]] = bool(r["done"])
             return steps
 
         def _render(steps):
@@ -142,12 +147,8 @@ class Module:
                 var = ctk.BooleanVar(value=checked)
 
                 def _on_toggle(v=var, c=customer, ca=cat, s=step):
-                    con = self._db_conn()
-                    con.execute(
-                        "UPDATE onboarding SET done=? WHERE customer=? AND category=? AND step=?",
-                        (int(v.get()), c, ca, s))
-                    con.commit()
-                    con.close()
+                    self._dal.update("onboarding", {"done": int(v.get())},
+                                     where={"customer": c, "category": ca, "step": s})
                     self.on_refresh()
 
                 cb = ctk.CTkCheckBox(
@@ -172,10 +173,7 @@ class Module:
         pass
 
     def export_data(self) -> list[dict]:
-        con = self._db_conn()
-        rows = con.execute("SELECT * FROM onboarding").fetchall()
-        con.close()
-        return [dict(r) for r in rows]
+        return self._dal.query("onboarding")
 
     def _add_customer(self):
         win = ctk.CTkToplevel(self.app)
@@ -193,19 +191,17 @@ class Module:
             name = entry.get().strip()
             if not name:
                 return
-            con = self._db_conn()
-            exists = con.execute(
-                "SELECT 1 FROM onboarding WHERE customer=?", (name,)).fetchone()
-            if not exists:
-                con.executemany(
-                    "INSERT OR IGNORE INTO onboarding (customer, category, step, done)"
-                    " VALUES (?,?,?,0)",
-                    [(name, cat, step)
-                     for cat, items in self._DEFAULT_STEPS for step in items])
-            custs = [r[0] for r in con.execute(
-                "SELECT DISTINCT customer FROM onboarding ORDER BY customer").fetchall()]
-            con.commit()
-            con.close()
+            existing = self._dal.query("onboarding", where={"customer": name}, limit=1)
+            if not existing:
+                for cat, items in self._DEFAULT_STEPS:
+                    for step in items:
+                        self._dal.insert("onboarding", {
+                            "customer": name, "category": cat,
+                            "step": step, "done": 0,
+                        })
+            rows = self._dal.raw_query(
+                "SELECT DISTINCT customer FROM onboarding ORDER BY customer")
+            custs = [r["customer"] for r in rows]
             self._menu.configure(values=custs)
             self._customer_var.set(name)
             self.on_refresh()

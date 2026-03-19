@@ -5,6 +5,7 @@ Tracks connected customer deployments, fleet versions, air-gap status, ping heal
 Cross-module: Onboarding completion feeds into customer status.
 """
 import customtkinter as ctk
+from data_access import DataAccess
 
 BG = BG2 = BG3 = ACCENT = ACCENT_H = GOLD = TEXT = DIM = GREEN = ORANGE = RED = ""
 FONT_SM = ("Segoe UI", 10)
@@ -39,6 +40,14 @@ class Module:
         self._init_theme()
         self._rows = []
         self._scroll = None
+        self._dal_inst = None
+
+    @property
+    def _dal(self):
+        if self._dal_inst is None:
+            import launcher
+            self._dal_inst = DataAccess(launcher.DB_PATH)
+        return self._dal_inst
 
     def _init_theme(self):
         global BG, BG2, BG3, ACCENT, ACCENT_H, GOLD, TEXT, DIM, GREEN, ORANGE, RED, FONT_SM
@@ -50,9 +59,6 @@ class Module:
         FONT_SM = launcher.FONT_SM
         self.STATUS_COLORS = {"Online": GREEN, "Degraded": ORANGE,
                               "Offline": RED, "Unknown": DIM}
-
-    def _db_conn(self):
-        return self.app._db_conn()
 
     def _db_query_bg(self, query_fn, callback):
         self.app._db_query_bg(query_fn, callback)
@@ -89,11 +95,8 @@ class Module:
         self.on_refresh()
 
     def on_refresh(self):
-        def _fetch(con):
-            rows = con.execute(
-                "SELECT name, fleet_version, contact, notes, air_gapped, status, last_ping"
-                " FROM customers").fetchall()
-            return [dict(r) for r in rows]
+        def _fetch(_con):
+            return self._dal.query("customers")
 
         def _render(records):
             for w in self._rows:
@@ -141,10 +144,7 @@ class Module:
         pass
 
     def export_data(self) -> list[dict]:
-        con = self._db_conn()
-        rows = con.execute("SELECT * FROM customers").fetchall()
-        con.close()
-        return [dict(r) for r in rows]
+        return self._dal.query("customers")
 
     def _add_dialog(self):
         self._edit_dialog({})
@@ -183,19 +183,19 @@ class Module:
 
         def _save():
             new = {k.lower().replace(" ", "_"): v.get() for k, v in entries.items()}
-            con = self._db_conn()
-            con.execute("DELETE FROM customers WHERE name=?", (rec.get("name", ""),))
+            old_name = rec.get("name", "")
+            if old_name:
+                self._dal.delete("customers", where={"name": old_name})
             if new.get("name"):
-                con.execute(
-                    "INSERT INTO customers"
-                    " (name, fleet_version, contact, notes, air_gapped, status, last_ping)"
-                    " VALUES (?,?,?,?,?,?,?)",
-                    (new.get("name", ""), new.get("fleet_version", ""),
-                     new.get("contact", ""), new.get("notes", ""),
-                     int(airgap_var.get()),
-                     rec.get("status", "Unknown"), rec.get("last_ping", "-")))
-            con.commit()
-            con.close()
+                self._dal.insert("customers", {
+                    "name": new.get("name", ""),
+                    "fleet_version": new.get("fleet_version", ""),
+                    "contact": new.get("contact", ""),
+                    "notes": new.get("notes", ""),
+                    "air_gapped": int(airgap_var.get()),
+                    "status": rec.get("status", "Unknown"),
+                    "last_ping": rec.get("last_ping", "-"),
+                })
             self.on_refresh()
             win.destroy()
 
