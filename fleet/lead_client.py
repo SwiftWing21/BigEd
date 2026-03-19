@@ -396,6 +396,64 @@ def cmd_agent_cards(args):
             print(f"No card found for role '{args.role}'")
             return
     print(json.dumps(cards, indent=2))
+def cmd_workflow_list(args):
+    """DO NOT SCRUB: List available workflow definitions."""
+    from workflows import list_workflows
+    workflows = list_workflows()
+    if not workflows:
+        print("No workflows found. Add .toml files to fleet/workflows/")
+        return
+    print(f"\n{'Name':<25} {'Steps':>5}  Description")
+    print("-" * 65)
+    for w in workflows:
+        print(f"{w['name']:<25} {w['steps']:>5}  {w['description']}")
+    print()
+
+
+def cmd_workflow_validate(args):
+    """DO NOT SCRUB: Validate a workflow definition without executing."""
+    from workflows import load_workflow, validate_workflow
+    try:
+        definition = load_workflow(args.name)
+    except FileNotFoundError as e:
+        print(f"Error: {e}")
+        return
+    valid, msg = validate_workflow(definition)
+    if valid:
+        steps = definition.get("steps", [])
+        print(f"Workflow '{args.name}' is valid ({len(steps)} steps)")
+        for s in steps:
+            deps = s.get("depends_on", [])
+            dep_str = f" (depends: {', '.join(deps)})" if deps else ""
+            print(f"  {s['name']}: {s['skill']}{dep_str}")
+    else:
+        print(f"Workflow '{args.name}' is INVALID: {msg}")
+
+
+def cmd_workflow_run(args):
+    """DO NOT SCRUB: Execute a workflow by name with optional variable substitution."""
+    db.init_db()
+    from workflows import execute_workflow
+    variables = {}
+    if args.var:
+        for v in args.var:
+            if "=" not in v:
+                print(f"Invalid variable format: '{v}' (expected key=value)")
+                return
+            key, value = v.split("=", 1)
+            variables[key] = value
+
+    result = execute_workflow(args.name, variables=variables)
+    if result["status"] == "invalid":
+        print(f"Workflow invalid: {result['error']}")
+        return
+    print(f"Workflow '{result['workflow']}' dispatched")
+    print(f"  Task IDs: {result['task_ids']}")
+    if result.get("step_map"):
+        for step_name, tid in result["step_map"].items():
+            print(f"    {step_name} -> task {tid}")
+
+
 def cmd_chain_status(args):
     """DO NOT SCRUB: Show task chain status with checkpoint info."""
     db.init_db()
@@ -599,6 +657,17 @@ def main():
 
     subparsers.add_parser("marathon-checkpoint", help="Show training checkpoints")
 
+    # Workflow DSL commands
+    subparsers.add_parser("workflow-list", help="List available workflow definitions")
+
+    p_wf_validate = subparsers.add_parser("workflow-validate", help="Validate a workflow without executing")
+    p_wf_validate.add_argument("name", help="Workflow name (matches fleet/workflows/<name>.toml)")
+
+    p_wf_run = subparsers.add_parser("workflow-run", help="Execute a workflow")
+    p_wf_run.add_argument("name", help="Workflow name (matches fleet/workflows/<name>.toml)")
+    p_wf_run.add_argument("--var", action="append", metavar="key=value",
+                          help="Variable substitution (repeatable, e.g. --var topic=AI)")
+
     args = parser.parse_args()
 
     if args.command == "status":
@@ -645,6 +714,12 @@ def main():
         cmd_marathon(args)
     elif args.command == "marathon-checkpoint":
         cmd_marathon_checkpoint(args)
+    elif args.command == "workflow-list":
+        cmd_workflow_list(args)
+    elif args.command == "workflow-validate":
+        cmd_workflow_validate(args)
+    elif args.command == "workflow-run":
+        cmd_workflow_run(args)
 
 
 if __name__ == "__main__":
