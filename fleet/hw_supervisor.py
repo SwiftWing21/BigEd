@@ -376,9 +376,9 @@ def check_training_active(cfg):
                 return True
         except Exception:
             pass
-    # Fallback: process detection
+    # Fallback: process detection (bracket trick avoids self-match)
     try:
-        return os.system("pgrep -f train.py > /dev/null 2>&1") == 0
+        return os.system("pgrep -f '[t]rain\\.py' > /dev/null 2>&1") == 0
     except Exception:
         return False
 
@@ -433,10 +433,11 @@ def main():
             is_training = check_training_active(cfg)
             is_marathon = os.system("pgrep -f dispatch_marathon.py > /dev/null 2>&1") == 0
 
-            # ── Training transition: evict GPU models on start ────────
+            # ── Training transition: evict GPU models on start (non-blocking) ──
             if is_training and not was_training:
                 print("[HW_SUP] Training detected — evicting GPU models for VRAM headroom")
-                evict_models_for_training(host)
+                import threading
+                threading.Thread(target=evict_models_for_training, args=(host,), daemon=True).start()
             elif was_training and not is_training:
                 print("[HW_SUP] Training ended — models will reload on next keepalive cycle")
             was_training = is_training

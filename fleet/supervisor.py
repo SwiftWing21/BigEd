@@ -67,8 +67,8 @@ training_active = False
 
 def is_training_running():
     try:
-        out = subprocess.run(["ps", "aux"], capture_output=True, text=True).stdout
-        return "train.py" in out
+        r = subprocess.run(["pgrep", "-f", "[t]rain\\.py"], capture_output=True, text=True)
+        return r.returncode == 0
     except Exception:
         return False
 
@@ -439,7 +439,8 @@ def main():
             training_now = is_training_running()
             if training_now and not training_active:
                 log.info("train.py detected — evicting GPU models, switching Ollama to CPU-only")
-                _evict_gpu_models(config)
+                _evict_gpu_models(config)  # best-effort, has internal timeouts
+                time.sleep(2)  # brief pause for eviction to complete
                 stop_ollama()
                 start_ollama(gpu=False)
                 training_active = True
