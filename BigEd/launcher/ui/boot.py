@@ -10,13 +10,53 @@ Provides a BootManager mixin that is mixed into BigEdCC:
 import json
 import os
 import subprocess
-import tempfile
+import sys
 import threading
 import time
 import urllib.request
 from pathlib import Path
 
 import customtkinter as ctk
+
+
+# ─── Cross-platform process management (psutil) ──────────────────────────────
+
+def _kill_fleet_processes(targets=None):
+    """Kill fleet processes by name using psutil (cross-platform).
+
+    targets: list of script names to kill, e.g. ["supervisor.py", "worker.py"]
+    If None, kills all fleet processes.
+    """
+    if targets is None:
+        targets = ["supervisor.py", "hw_supervisor.py", "worker.py",
+                    "dispatch_marathon.py", "train.py", "nmap"]
+    import psutil
+    killed = []
+    for proc in psutil.process_iter(['pid', 'name', 'cmdline']):
+        try:
+            cmdline = proc.info.get('cmdline') or []
+            cmd_str = ' '.join(cmdline)
+            for target in targets:
+                if target in cmd_str and proc.pid != os.getpid():
+                    proc.kill()
+                    killed.append(f"{target}(pid={proc.pid})")
+                    break
+        except (psutil.NoSuchProcess, psutil.AccessDenied):
+            continue
+    return killed
+
+
+def _kill_ollama():
+    """Kill Ollama process using psutil."""
+    import psutil
+    for proc in psutil.process_iter(['pid', 'name']):
+        try:
+            if proc.info.get('name', '').lower().startswith('ollama'):
+                proc.kill()
+                return True
+        except (psutil.NoSuchProcess, psutil.AccessDenied):
+            continue
+    return False
 
 # ─── Theme constants (copied from launcher.py — boot module is standalone) ────
 BG       = "#1a1a1a"
@@ -305,7 +345,8 @@ class BootManagerMixin:
     # ── Individual boot stages ───────────────────────────────────────────
 
     def _boot_ollama(self):
-        """Stage 0: Start Ollama server, poll until responsive."""
+        """Stage 0: Start Ollama server natively, poll until responsive."""
+        import shutil
         # Check if already running
         try:
             urllib.request.urlopen("http://localhost:11434/api/tags", timeout=2)
@@ -313,17 +354,25 @@ class BootManagerMixin:
         except Exception:
             pass
 
-        # Write and execute start script via WSL
+        # Find and launch ollama natively
+        ollama_exe = shutil.which("ollama")
+        if not ollama_exe:
+            raise Exception("ollama not found on PATH")
+
+        # Set eco mode env if needed
         L = _launcher()
-        tmp = Path(tempfile.gettempdir()) / "fleet_ollama_start.sh"
-        tmp.write_text(self._ollama_script(), encoding="utf-8", newline="\n")
-        drive = tmp.drive.rstrip(":").lower()
-        rest = str(tmp).replace("\\", "/")[2:]
-        wsl_path = f"/mnt/{drive}{rest}"
-        subprocess.run(
-            ["wsl", "-d", "Ubuntu", "/bin/bash", wsl_path],
-            capture_output=True, text=True, timeout=60,
-            creationflags=subprocess.CREATE_NO_WINDOW,
+        env = os.environ.copy()
+        try:
+            if self._is_eco_mode():
+                env["CUDA_VISIBLE_DEVICES"] = "-1"
+        except Exception:
+            pass
+
+        subprocess.Popen(
+            [ollama_exe, "serve"],
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            env=env,
+            creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0),
         )
 
         # Poll with generous timeout (30s)
@@ -406,20 +455,9 @@ class BootManagerMixin:
 
         # Launch hw_supervisor NATIVELY on Windows (no WSL needed)
         # It only uses pynvml + psutil + urllib — all cross-platform
-        import sys
         hw_sup_path = L.FLEET_DIR / "hw_supervisor.py"
         # Kill any existing hw_supervisor process
-        try:
-            import psutil
-            for proc in psutil.process_iter(['pid', 'cmdline']):
-                try:
-                    cmdline = proc.info.get('cmdline') or []
-                    if any('hw_supervisor.py' in arg for arg in cmdline) and proc.pid != os.getpid():
-                        proc.kill()
-                except (psutil.NoSuchProcess, psutil.AccessDenied):
-                    pass
-        except Exception:
-            pass
+        _kill_fleet_processes(["hw_supervisor.py"])
         time.sleep(1)
         # Start fresh — native Windows Python, no WSL
         subprocess.Popen(
@@ -519,11 +557,20 @@ class BootManagerMixin:
         except Exception:
             pass
 
-        L.wsl(
-            "pkill -f supervisor.py 2>/dev/null; sleep 1; "
-            "mkdir -p logs knowledge/summaries knowledge/reports && "
-            "nohup ~/.local/bin/uv run python supervisor.py >> logs/supervisor.log 2>&1 &",
-            capture=True, timeout=15,
+        # Kill any existing supervisor process natively
+        _kill_fleet_processes(["supervisor.py"])
+        time.sleep(1)
+
+        # Ensure required directories exist
+        for d in ["logs", "knowledge/summaries", "knowledge/reports"]:
+            (L.FLEET_DIR / d).mkdir(parents=True, exist_ok=True)
+
+        # Launch supervisor natively (like hw_supervisor)
+        subprocess.Popen(
+            [sys.executable, str(L.FLEET_DIR / "supervisor.py")],
+            cwd=str(L.FLEET_DIR),
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0),
         )
 
         # Poll for fresh STATUS.md (45s total: 22 iterations × 2s)
@@ -562,7 +609,6 @@ class BootManagerMixin:
         raise Exception("no workers (40s)")
 
     def _stop_system(self):
-        L = _launcher()
         self._system_intentional_stop = True
         self._system_running = False
         self._boot_abort.set()  # abort staged boot if in progress
@@ -570,16 +616,11 @@ class BootManagerMixin:
             self._hide_boot_progress()
         self._btn_system_toggle.configure(
             text="▶  Start", fg_color="#1e3a1e", hover_color="#2a4a2a")
-        self._log_output("Stopping fleet + Ollama...")
-        stop_cmd = (
-            "pkill -f supervisor.py 2>/dev/null; "
-            "pkill -f hw_supervisor.py 2>/dev/null; "
-            "pkill -f 'worker.py' 2>/dev/null; "
-            "pkill -f 'dispatch_marathon.py' 2>/dev/null; "
-            "pkill -f 'train\\.py' 2>/dev/null; "
-            "pkill -f 'nmap' 2>/dev/null; "
-            "sleep 1; "
-            "pkill -f ollama 2>/dev/null; "
-            "echo 'System stopped'"
-        )
-        L.wsl_bg(stop_cmd, lambda o, e: self.after(0, lambda: self._log_output(o or e or "System stopped")))
+        self._log_output("Stopping fleet...")
+        # Kill all fleet processes natively
+        killed = _kill_fleet_processes()
+        if killed:
+            self._log_output(f"Killed: {', '.join(killed)}")
+        time.sleep(1)
+        _kill_ollama()
+        self._log_output("System stopped")

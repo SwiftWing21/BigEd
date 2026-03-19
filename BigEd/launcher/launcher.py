@@ -1,6 +1,6 @@
 """
 BigEd CC — GUI launcher for the Education agent fleet.
-Dark mode, brick theme. Runs WSL commands via wsl.exe.
+Dark mode, brick theme. Native Windows process management via psutil.
 """
 import base64
 import hashlib
@@ -558,7 +558,7 @@ class Tooltip:
 
 
 # ─── Boot sequence (extracted to ui/boot.py — TECH_DEBT 4.1) ─────────────────
-from ui.boot import BootManagerMixin
+from ui.boot import BootManagerMixin, _kill_fleet_processes, _kill_ollama
 
 # ─── Main App ─────────────────────────────────────────────────────────────────
 class BigEdCC(BootManagerMixin, ctk.CTk):
@@ -669,16 +669,11 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
             dlg.destroy()
             self._log_output("Shutting down fleet...")
             _shutdown_gui()
-            # Stop fleet via wsl — synchronous with timeout, then destroy
+            # Stop fleet processes natively via psutil
             try:
-                wsl(
-                    "pkill -f supervisor.py 2>/dev/null; "
-                    "pkill -f hw_supervisor.py 2>/dev/null; "
-                    "pkill -f 'worker.py' 2>/dev/null; "
-                    "pkill -f 'dispatch_marathon.py' 2>/dev/null; "
-                    "sleep 1; pkill -f ollama 2>/dev/null",
-                    capture=True, timeout=8,
-                )
+                _kill_fleet_processes()
+                time.sleep(1)
+                _kill_ollama()
             except Exception:
                 pass  # best effort — app is closing
             self.destroy()
@@ -1511,11 +1506,10 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
             adv_path = Path(path)
             if adv_path.exists():
                 self._log_output(f"Dispatching security_apply for {adv_path.name}")
-                wsl_bg(
-                    f'uv run python lead_client.py dispatch --skill security_apply '
-                    f'--b64 "$(echo \'{{"advisory_file": "{adv_path.name}"}}\' | base64)"',
-                    lambda o, e: self.after(0, lambda: self._log_output(o or e or "Dispatched"))
-                )
+                payload = json.dumps({"advisory_file": adv_path.name})
+                b64 = base64.b64encode(payload.encode()).decode()
+                self._dispatch_raw("security_apply", payload, "security",
+                                   None)
         except Exception as e:
             self._log_output(f"Approve error: {e}")
 
@@ -1591,14 +1585,17 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
         self._refresh_status()
         if STATUS_MD.exists():
             self._log_output(STATUS_MD.read_text())
-        wsl_bg(
-            "pgrep -x ollama > /dev/null "
-            "&& echo 'Ollama running' "
-            "&& curl -s http://localhost:11434/api/tags | python3 -c "
-            "\"import sys,json; d=json.load(sys.stdin); "
-            "print('Models:', ', '.join(m['name'] for m in d.get('models',[])))\" "
-            "|| echo 'Ollama not running'",
-            lambda o, e: self.after(0, lambda: self._log_output(o or e)))
+        # Check Ollama status natively via HTTP API
+        def _check_ollama():
+            try:
+                with urllib.request.urlopen("http://localhost:11434/api/tags", timeout=3) as r:
+                    data = json.loads(r.read())
+                models = [m["name"] for m in data.get("models", [])]
+                msg = f"Ollama running\nModels: {', '.join(models)}"
+            except Exception:
+                msg = "Ollama not running"
+            self.after(0, lambda: self._log_output(msg))
+        threading.Thread(target=_check_ollama, daemon=True).start()
 
     def _open_dashboard(self):
         """Open Fleet Dashboard in the default browser."""
@@ -2049,8 +2046,8 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
 
     def _is_training_active(self) -> bool:
         try:
-            out, _ = wsl("pgrep -f 'train\\.py' > /dev/null && echo yes || echo no", capture=True)
-            return out.strip() == "yes"
+            return any('train.py' in ' '.join(p.info.get('cmdline') or [])
+                       for p in psutil.process_iter(['cmdline']))
         except Exception:
             return False
 
@@ -2141,11 +2138,12 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
 
     # ── Ollama helpers ────────────────────────────────────────────────────────
     def _ollama_script(self) -> str:
-        """Build the ollama-start bash script content."""
+        """Build the ollama-start bash script content (WSL fallback only)."""
         prefix = "CUDA_VISIBLE_DEVICES=-1 " if self._is_eco_mode() else ""
         return (
             "#!/bin/bash\n"
-            "pgrep -x ollama > /dev/null && echo 'Ollama already running' && exit 0\n"
+            "curl -sf http://localhost:11434/api/tags > /dev/null"
+            " && echo 'Ollama already running' && exit 0\n"
             f"nohup {prefix}ollama serve >> /tmp/ollama.log 2>&1 &\n"
             "disown\n"
             "for i in $(seq 1 15); do\n"
@@ -2156,23 +2154,53 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
             "echo 'Ollama start timed out - check /tmp/ollama.log'\n"
         )
 
+    def _is_ollama_running(self) -> bool:
+        """Check if Ollama is running via HTTP API (cross-platform)."""
+        try:
+            urllib.request.urlopen("http://localhost:11434/api/tags", timeout=2)
+            return True
+        except Exception:
+            return False
+
     def _run_ollama_start(self, callback=None):
-        """Write start script to a temp file and execute via WSL — avoids arg quoting issues."""
-        tmp = Path(tempfile.gettempdir()) / "fleet_ollama_start.sh"
-        tmp.write_text(self._ollama_script(), encoding="utf-8", newline="\n")
-        drive = tmp.drive.rstrip(":").lower()
-        rest = str(tmp).replace("\\", "/")[2:]
-        wsl_path = f"/mnt/{drive}{rest}"
-        args = ["wsl", "-d", "Ubuntu", "/bin/bash", wsl_path]
+        """Start Ollama natively on Windows, poll until responsive."""
+        import shutil
         def _run():
             try:
-                r = subprocess.run(args, capture_output=True, text=True, timeout=60,
-                                   creationflags=subprocess.CREATE_NO_WINDOW)
-                out, err = r.stdout.strip(), r.stderr.strip()
+                # Already running?
+                if self._is_ollama_running():
+                    if callback:
+                        callback("Ollama already running", "")
+                    return
+                # Find ollama executable
+                ollama_exe = shutil.which("ollama")
+                if not ollama_exe:
+                    if callback:
+                        callback("", "ollama not found on PATH")
+                    return
+                # Set eco mode env if needed
+                env = os.environ.copy()
+                if self._is_eco_mode():
+                    env["CUDA_VISIBLE_DEVICES"] = "-1"
+                # Launch ollama serve as background process
+                subprocess.Popen(
+                    [ollama_exe, "serve"],
+                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                    env=env,
+                    creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0),
+                )
+                # Poll until responsive (30s)
+                for _ in range(15):
+                    if self._is_ollama_running():
+                        if callback:
+                            callback("Ollama started OK", "")
+                        return
+                    time.sleep(2)
+                if callback:
+                    callback("", "Ollama start timed out")
             except Exception as e:
-                out, err = "", str(e)
-            if callback:
-                callback(out, err)
+                if callback:
+                    callback("", str(e))
         threading.Thread(target=_run, daemon=True).start()
 
     def _start_ollama(self):
@@ -2183,18 +2211,23 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
 
     def _stop_ollama(self):
         self._log_output("Stopping Ollama...")
-        wsl_bg("pkill -x ollama && echo 'Ollama stopped' || echo 'Ollama not running'",
-               lambda o, e: self.after(0, lambda: self._log_output(o or e)))
+        def _bg():
+            result = _kill_ollama()
+            msg = "Ollama stopped" if result else "Ollama not running"
+            self.after(0, lambda: self._log_output(msg))
+        threading.Thread(target=_bg, daemon=True).start()
 
     def _ollama_status(self):
-        wsl_bg(
-            "pgrep -x ollama > /dev/null "
-            "&& echo 'Ollama running' "
-            "&& curl -s http://localhost:11434/api/tags | python3 -c "
-            "\"import sys,json; d=json.load(sys.stdin); "
-            "print('Models:', ', '.join(m['name'] for m in d.get('models',[])))\" "
-            "|| echo 'Ollama not running'",
-            lambda o, e: self.after(0, lambda: self._log_output(o or e)))
+        def _bg():
+            try:
+                with urllib.request.urlopen("http://localhost:11434/api/tags", timeout=3) as r:
+                    data = json.loads(r.read())
+                models = [m["name"] for m in data.get("models", [])]
+                msg = f"Ollama running\nModels: {', '.join(models)}"
+            except Exception:
+                msg = "Ollama not running"
+            self.after(0, lambda: self._log_output(msg))
+        threading.Thread(target=_bg, daemon=True).start()
 
     # ── REST API helpers (v0.45: TECH_DEBT 4.3) ─────────────────────────────
     def _fleet_api(self, endpoint, method="GET", json_data=None):
@@ -2221,10 +2254,26 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
     def _recover_agent(self, role: str):
         """Restart a single crashed worker."""
         self._log_output(f"Recovering {role}...")
-        cmd = (f"~/.local/bin/uv run python worker.py --role {role} "
-               f">> logs/{role}.log 2>&1 &")
-        wsl_bg(cmd, lambda o, e: self.after(0, lambda: self._log_output(
-            f"↺ {role} restarted" if not e else f"↺ {role} error: {e}")))
+        def _bg():
+            try:
+                import shutil
+                uv = shutil.which("uv")
+                if uv:
+                    cmd = [uv, "run", "python", "worker.py", "--role", role]
+                else:
+                    cmd = [sys.executable, "worker.py", "--role", role]
+                log_path = FLEET_DIR / "logs" / f"{role}.log"
+                log_path.parent.mkdir(parents=True, exist_ok=True)
+                with open(log_path, "a") as log_f:
+                    subprocess.Popen(
+                        cmd, cwd=str(FLEET_DIR),
+                        stdout=log_f, stderr=subprocess.STDOUT,
+                        creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0),
+                    )
+                self.after(0, lambda: self._log_output(f"↺ {role} restarted"))
+            except Exception as e:
+                self.after(0, lambda: self._log_output(f"↺ {role} error: {e}"))
+        threading.Thread(target=_bg, daemon=True).start()
 
     def _toggle_system(self):
         if self._system_running:
@@ -2240,7 +2289,7 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
     #   _stop_system (overridden below to try REST API first)
 
     def _stop_system(self):
-        """v0.45: Try REST API for clean shutdown first, fall back to wsl pkill."""
+        """v0.45: Try REST API for clean shutdown first, fall back to psutil kill."""
         # Try REST API first (clean shutdown)
         result = self._fleet_api("/api/fleet/stop", method="POST")
         if result and result.get("status") == "stopping":
@@ -2253,13 +2302,14 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
                 self._hide_boot_progress()
             self._btn_system_toggle.configure(
                 text="▶  Start", fg_color="#1e3a1e", hover_color="#2a4a2a")
-            # Also stop Ollama via wsl (API doesn't cover Ollama)
-            wsl_bg(
-                "sleep 2; pkill -f ollama 2>/dev/null; echo 'Ollama stopped'",
-                lambda o, e: self.after(0, lambda: self._log_output(o or e or "System stopped")),
-            )
+            # Also stop Ollama natively (API doesn't cover Ollama)
+            def _stop_ollama_bg():
+                time.sleep(2)
+                _kill_ollama()
+                self.after(0, lambda: self._log_output("System stopped"))
+            threading.Thread(target=_stop_ollama_bg, daemon=True).start()
         else:
-            # Fallback to wsl pkill (BootManagerMixin._stop_system)
+            # Fallback to psutil kill (BootManagerMixin._stop_system)
             super()._stop_system()
 
     def _toggle_idle(self):
@@ -2275,31 +2325,52 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
                 text="⛔ Disable Idle", fg_color="#3a1e1e", hover_color="#4a2a2a")
 
     def _ensure_ollama_and_run(self, fleet_cmd: str, callback):
-        """Start Ollama via temp script, then run fleet_cmd."""
+        """Start Ollama natively, then run fleet_cmd via bridge."""
         def _after_ollama(out, err):
             self.after(0, lambda: self._log_output(out or err or "Ollama check done"))
-            wsl_bg(fleet_cmd, lambda o, e: self.after(0, lambda: callback(o, e)), timeout=60)
+            if _HAS_BRIDGE and _bridge:
+                _bridge.run_bg(fleet_cmd, lambda o, e: self.after(0, lambda: callback(o, e)), timeout=60)
+            elif callback:
+                callback("", "fleet_bridge not available")
         self._run_ollama_start(_after_ollama)
 
     def _recover_all(self):
         """Kill everything, restart via staged boot."""
         self._log_output("Recovering fleet (full staged restart)...")
-        wsl_bg(
-            "pkill -f supervisor.py 2>/dev/null; pkill -f hw_supervisor.py 2>/dev/null; "
-            "pkill -f 'worker.py' 2>/dev/null; sleep 1",
-            lambda o, e: self.after(0, self._start_system),
-        )
+        def _bg():
+            _kill_fleet_processes()
+            time.sleep(1)
+            self.after(0, self._start_system)
+        threading.Thread(target=_bg, daemon=True).start()
 
     def _start_fleet(self):
         self._log_output("Starting fleet...")
-        fleet_cmd = (
-            "pkill -f supervisor.py 2>/dev/null; sleep 1; "
-            "mkdir -p logs knowledge/summaries knowledge/reports && "
-            "nohup ~/.local/bin/uv run python supervisor.py "
-            ">> logs/supervisor.log 2>&1 & echo \"PID: $!\""
-        )
-        self._ensure_ollama_and_run(
-            fleet_cmd, lambda o, e: self._log_output(f"Fleet started. {o}"))
+        def _bg():
+            # Kill existing supervisor
+            _kill_fleet_processes(["supervisor.py"])
+            time.sleep(1)
+            # Ensure directories
+            for d in ["logs", "knowledge/summaries", "knowledge/reports"]:
+                (FLEET_DIR / d).mkdir(parents=True, exist_ok=True)
+            # Start supervisor natively
+            import shutil
+            uv = shutil.which("uv")
+            if uv:
+                cmd = [uv, "run", "python", "supervisor.py"]
+            else:
+                cmd = [sys.executable, "supervisor.py"]
+            log_path = FLEET_DIR / "logs" / "supervisor.log"
+            with open(log_path, "a") as log_f:
+                proc = subprocess.Popen(
+                    cmd, cwd=str(FLEET_DIR),
+                    stdout=log_f, stderr=subprocess.STDOUT,
+                    creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0),
+                )
+            self.after(0, lambda: self._log_output(f"Fleet started. PID: {proc.pid}"))
+        def _after_ollama(out, err):
+            self.after(0, lambda: self._log_output(out or err or "Ollama check done"))
+            threading.Thread(target=_bg, daemon=True).start()
+        self._run_ollama_start(_after_ollama)
 
     def _stop_fleet(self):
         self._log_output("Stopping fleet...")
@@ -2308,9 +2379,12 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
         if result and result.get("status") == "stopping":
             self._log_output("Fleet stop signal sent via API")
         else:
-            # Fallback to wsl pkill
-            wsl_bg("pkill -f supervisor.py && echo stopped",
-                   lambda o, e: self.after(0, lambda: self._log_output("Fleet stopped." if o else f"Error: {e}")))
+            # Fallback to psutil kill
+            def _bg():
+                killed = _kill_fleet_processes(["supervisor.py"])
+                msg = "Fleet stopped." if killed else "Fleet not running."
+                self.after(0, lambda: self._log_output(msg))
+            threading.Thread(target=_bg, daemon=True).start()
 
     def _show_status_tab(self):
         self._log_output(STATUS_MD.read_text() if STATUS_MD.exists()
@@ -2358,34 +2432,66 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
         self._log_output(text)
 
     def _start_marathon(self):
-        # Check if already running first
-        def _after_check(out, err):
-            pid = out.strip()
-            if pid:
+        # Check if already running first via psutil
+        def _bg():
+            marathon_pid = None
+            for proc in psutil.process_iter(['pid', 'cmdline']):
+                try:
+                    cmdline = proc.info.get('cmdline') or []
+                    if 'dispatch_marathon.py' in ' '.join(cmdline):
+                        marathon_pid = proc.info['pid']
+                        break
+                except (psutil.NoSuchProcess, psutil.AccessDenied):
+                    continue
+            if marathon_pid:
                 self.after(0, lambda: self._log_output(
-                    f"Marathon already running (PID {pid}).\n"
+                    f"Marathon already running (PID {marathon_pid}).\n"
                     f"Use '📋 Marathon Log' to see progress, or '⏹ Stop Marathon' first."))
                 return
-            # Not running — launch it
-            cmd = ("nohup ~/.local/bin/uv run python dispatch_marathon.py "
-                   ">> logs/marathon.log 2>&1 & echo \"PID: $!\"")
-            wsl_bg(cmd, lambda o, e: self.after(0, lambda: self._log_output(
-                f"Marathon launched (PID: {o.strip()}).\n"
-                f"Phases: wait-for-idle → 8 discussion rounds (40 min apart) "
-                f"→ lead research → synthesis.\n"
-                f"Use '📋 Marathon Log' to monitor progress.")))
-
-        wsl_bg("pgrep -f dispatch_marathon.py | head -1", _after_check)
+            # Not running — launch it natively
+            try:
+                import shutil
+                uv = shutil.which("uv")
+                if uv:
+                    cmd = [uv, "run", "python", "dispatch_marathon.py"]
+                else:
+                    cmd = [sys.executable, "dispatch_marathon.py"]
+                log_path = FLEET_DIR / "logs" / "marathon.log"
+                log_path.parent.mkdir(parents=True, exist_ok=True)
+                with open(log_path, "a") as log_f:
+                    proc = subprocess.Popen(
+                        cmd, cwd=str(FLEET_DIR),
+                        stdout=log_f, stderr=subprocess.STDOUT,
+                        creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0),
+                    )
+                self.after(0, lambda: self._log_output(
+                    f"Marathon launched (PID: {proc.pid}).\n"
+                    f"Phases: wait-for-idle → 8 discussion rounds (40 min apart) "
+                    f"→ lead research → synthesis.\n"
+                    f"Use '📋 Marathon Log' to monitor progress."))
+            except Exception as e:
+                self.after(0, lambda: self._log_output(f"Marathon launch error: {e}"))
+        threading.Thread(target=_bg, daemon=True).start()
 
     def _show_marathon_log(self):
-        """Tail the marathon log and show it in the output panel."""
-        def _show(out, err):
-            if not out.strip():
-                self.after(0, lambda: self._log_output("marathon.log is empty or not found.\n"
-                                 "Start marathon first, or check fleet/logs/marathon.log."))
+        """Tail the marathon log and show it in the output panel (native file read)."""
+        def _bg():
+            log_path = FLEET_DIR / "logs" / "marathon.log"
+            try:
+                if not log_path.exists():
+                    raise FileNotFoundError
+                text = log_path.read_text(encoding="utf-8", errors="ignore")
+                lines = text.strip().splitlines()[-80:]  # last 80 lines
+            except Exception:
+                self.after(0, lambda: self._log_output(
+                    "marathon.log is empty or not found.\n"
+                    "Start marathon first, or check fleet/logs/marathon.log."))
                 return
-            # Extract key status lines + last 20 lines
-            lines = out.strip().splitlines()
+            if not lines:
+                self.after(0, lambda: self._log_output(
+                    "marathon.log is empty or not found.\n"
+                    "Start marathon first, or check fleet/logs/marathon.log."))
+                return
             key = [l for l in lines if any(
                 kw in l for kw in ("Phase", "round", "Round", "Task", "Waiting",
                                    "Sleeping", "synthesis", "Marathon", "=====",
@@ -2397,18 +2503,17 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
                 f"{'=' * 40}\nMARATHON LOG\n{'=' * 40}\n"
                 + (f"[Key events]\n{summary}\n\n{sep}\n" if summary else "")
                 + f"[Last 20 lines]\n{tail}"))
-
-        wsl_bg("tail -80 logs/marathon.log 2>/dev/null || echo ''", _show)
+        threading.Thread(target=_bg, daemon=True).start()
 
     def _stop_marathon(self):
-        def _done(out, err):
-            self.after(0, lambda: self._log_output(out.strip() or err.strip() or "Marathon process not found."))
-        wsl_bg(
-            "pid=$(pgrep -f dispatch_marathon.py) && "
-            "kill $pid && echo \"Stopped marathon PID $pid\" || "
-            "echo 'No marathon process found'",
-            _done,
-        )
+        def _bg():
+            killed = _kill_fleet_processes(["dispatch_marathon.py"])
+            if killed:
+                msg = f"Stopped marathon: {', '.join(killed)}"
+            else:
+                msg = "No marathon process found"
+            self.after(0, lambda: self._log_output(msg))
+        threading.Thread(target=_bg, daemon=True).start()
 
     def _enable_idle(self):
         self._dispatch_raw("summarize", '{"description":"idle enabled confirmation"}',
@@ -2425,30 +2530,55 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
             return
         self._task_entry.delete("1.0", "end")
         self._task_status.configure(text="⏳ dispatching...", text_color=ORANGE)
-
-        b64_text = base64.b64encode(text.encode()).decode()
-        cmd = (f'~/.local/bin/uv run python lead_client.py task '
-               f'"$(echo {b64_text} | base64 -d)" --wait')
         self._log_output(f"→ {text}")
 
-        def _done(out, err):
+        def _bg():
+            try:
+                import shutil
+                uv = shutil.which("uv")
+                if uv:
+                    cmd = [uv, "run", "python", "lead_client.py", "task", text, "--wait"]
+                else:
+                    cmd = [sys.executable, "lead_client.py", "task", text, "--wait"]
+                r = subprocess.run(
+                    cmd, cwd=str(FLEET_DIR),
+                    capture_output=True, text=True, timeout=300,
+                    creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0),
+                )
+                out, err = r.stdout.strip(), r.stderr.strip()
+            except Exception as e:
+                out, err = "", str(e)
             def _update():
                 result = out or err or "(no output)"
                 self._log_output(f"← {result[:1200]}")
                 self._task_status.configure(text="✓ done", text_color=GREEN)
                 self.after(3000, lambda: self._task_status.configure(text=""))
             self.after(0, _update)
-
-        wsl_bg(cmd, _done, timeout=300)
+        threading.Thread(target=_bg, daemon=True).start()
 
     def _dispatch_raw(self, skill: str, payload_json: str, assigned_to=None, msg=None):
         if msg:
             self._log_output(msg)
-        safe_skill = _shell_safe(skill)
         b64 = base64.b64encode(payload_json.encode()).decode()
-        assign_flag = f" --assigned-to {_shell_safe(assigned_to)}" if assigned_to else ""
-        cmd = f"~/.local/bin/uv run python lead_client.py dispatch {safe_skill} {b64} --b64 --priority 9{assign_flag}"
-        wsl_bg(cmd, lambda o, e: self.after(0, lambda: self._log_output(o or e)))
+        def _bg():
+            try:
+                import shutil
+                uv = shutil.which("uv")
+                base = uv if uv else sys.executable
+                cmd = [base] + (["run", "python"] if uv else [])
+                cmd += ["lead_client.py", "dispatch", skill, b64, "--b64", "--priority", "9"]
+                if assigned_to:
+                    cmd += ["--assigned-to", assigned_to]
+                r = subprocess.run(
+                    cmd, cwd=str(FLEET_DIR),
+                    capture_output=True, text=True, timeout=60,
+                    creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0),
+                )
+                out, err = r.stdout.strip(), r.stderr.strip()
+            except Exception as e:
+                out, err = "", str(e)
+            self.after(0, lambda: self._log_output(out or err))
+        threading.Thread(target=_bg, daemon=True).start()
 
     def _log_output(self, text: str):
         """Write to the task output box + ring buffer for debug reports."""
