@@ -215,13 +215,16 @@ def create_bridge(fleet_dir: Path) -> FleetBridge:
     """Create the appropriate bridge for the current platform.
 
     Bridge selection order:
-    1. BIGED_NATIVE_WINDOWS=1 env var → NativeWindowsBridge  (Windows, no WSL)
-    2. sys.platform == "win32"        → WslBridge             (Windows + WSL)
+    1. BIGED_USE_WSL=1 env var        → WslBridge             (force WSL on Windows)
+    2. sys.platform == "win32"        → NativeWindowsBridge    (Windows native — DEFAULT)
     3. Everything else                → DirectBridge           (Linux / macOS)
+
+    Changed in 0.15: Windows defaults to NativeWindowsBridge (was WslBridge).
+    Fleet code is cross-platform now. Set BIGED_USE_WSL=1 to force WSL if needed.
     """
-    if os.environ.get("BIGED_NATIVE_WINDOWS", "").lower() in ("1", "true"):
-        return NativeWindowsBridge(fleet_dir)
     if sys.platform == "win32":
-        return WslBridge(fleet_dir)
+        if os.environ.get("BIGED_USE_WSL", "").lower() in ("1", "true"):
+            return WslBridge(fleet_dir)
+        return NativeWindowsBridge(fleet_dir)
     else:
         return DirectBridge(fleet_dir)

@@ -74,10 +74,11 @@ def detect_cli() -> dict:
             result["shell"] = "powershell"
         else:
             result["shell"] = "cmd"
-        # Check if WSL is available as fallback
-        has_wsl = shutil.which("wsl") is not None
-        native_env = os.environ.get("BIGED_NATIVE_WINDOWS", "").lower() in ("1", "true")
-        result["bridge"] = "NativeWindowsBridge" if native_env else ("WslBridge" if has_wsl else "NativeWindowsBridge")
+        # Windows defaults to native — WSL is opt-in via BIGED_USE_WSL=1
+        if os.environ.get("BIGED_USE_WSL", "").lower() in ("1", "true"):
+            result["bridge"] = "WslBridge"
+        else:
+            result["bridge"] = "NativeWindowsBridge"
     elif sys.platform == "darwin":
         result["shell"] = os.environ.get("SHELL", "/bin/zsh").rsplit("/", 1)[-1]
         result["bridge"] = "DirectBridge"
