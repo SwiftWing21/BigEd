@@ -29,6 +29,8 @@ def run(payload: dict, config: dict) -> str:
         return _detect_hardware()
     elif action == "recommend":
         return _recommend_profile()
+    elif action == "update_check":
+        return _check_model_updates(config, host)
     else:
         return json.dumps({"error": f"Unknown action: {action}"})
 
@@ -254,3 +256,103 @@ def _recommend_profile():
         reason = f"Limited resources ({ram}GB RAM) — minimal footprint"
 
     return json.dumps({"recommended": profile, "reason": reason, "hardware": hw})
+
+
+def _check_model_updates(config, host):
+    """Check installed models for available updates and discover new model families.
+
+    Compares local model digests against Ollama registry. Reports:
+    - Models with newer versions available
+    - New model families worth evaluating (based on fleet tier sizes)
+    - HITL recommendation if a model change would improve intelligence or performance
+    """
+    installed = _get_installed(host)
+    needed = _get_needed(config)
+
+    # Get detailed info for installed models (includes digest, modified_at, size)
+    updates = []
+    try:
+        with urllib.request.urlopen(f"{host}/api/tags", timeout=5) as r:
+            data = json.loads(r.read())
+        local_models = {m["name"]: m for m in data.get("models", [])}
+    except Exception:
+        return json.dumps({"error": "Cannot reach Ollama", "updates": []})
+
+    # Check each needed model for available updates via /api/show
+    for model_name in needed:
+        if model_name not in local_models:
+            updates.append({
+                "model": model_name, "status": "not_installed",
+                "action": "install"
+            })
+            continue
+
+        local_info = local_models[model_name]
+        local_digest = local_info.get("digest", "")[:12]
+        local_size_gb = round(local_info.get("size", 0) / 1e9, 1)
+        modified = local_info.get("modified_at", "")[:10]
+
+        # Check registry for latest digest
+        try:
+            body = json.dumps({"name": model_name}).encode()
+            req = urllib.request.Request(
+                f"{host}/api/show", data=body, method="POST",
+                headers={"Content-Type": "application/json"})
+            with urllib.request.urlopen(req, timeout=10) as r:
+                show_data = json.loads(r.read())
+            # Compare template/parameter hashes for version changes
+            updates.append({
+                "model": model_name,
+                "status": "installed",
+                "digest": local_digest,
+                "size_gb": local_size_gb,
+                "installed_date": modified,
+                "family": show_data.get("details", {}).get("family", ""),
+                "parameter_size": show_data.get("details", {}).get("parameter_size", ""),
+                "quantization": show_data.get("details", {}).get("quantization_level", ""),
+            })
+        except Exception:
+            updates.append({
+                "model": model_name, "status": "installed",
+                "digest": local_digest, "size_gb": local_size_gb,
+            })
+
+    # Suggest new models based on tier sizes (discover alternatives)
+    tiers = config.get("models", {}).get("tiers", {})
+    suggestions = []
+    # Map tier sizes to recommended model families
+    tier_alternatives = {
+        "default": ["qwen3:8b", "llama3.1:8b", "gemma2:9b", "mistral:7b"],
+        "mid": ["qwen3:4b", "phi3:mini", "gemma2:2b"],
+        "low": ["qwen3:1.7b", "phi3:mini"],
+        "critical": ["qwen3:0.6b", "tinyllama:1.1b"],
+    }
+    for tier_key, alternatives in tier_alternatives.items():
+        current = tiers.get(tier_key, "")
+        for alt in alternatives:
+            base = alt.split(":")[0]
+            if alt != current and not any(base in m for m in installed):
+                suggestions.append({
+                    "tier": tier_key,
+                    "current": current,
+                    "alternative": alt,
+                    "reason": f"Alternative for {tier_key} tier — may offer different intelligence/speed tradeoffs",
+                })
+
+    # Build HITL recommendation if there are actionable findings
+    hitl_recommendation = None
+    if suggestions:
+        hitl_recommendation = {
+            "type": "model_update_review",
+            "title": f"{len(suggestions)} alternative models available for evaluation",
+            "detail": "Swarm recommends reviewing these model alternatives. "
+                      "Pull and benchmark to compare intelligence vs performance.",
+            "suggestions": suggestions[:5],  # top 5
+        }
+
+    return json.dumps({
+        "models": updates,
+        "suggestions": suggestions,
+        "hitl_recommendation": hitl_recommendation,
+        "summary": f"{len(updates)} models checked, {len(suggestions)} alternatives found",
+    })

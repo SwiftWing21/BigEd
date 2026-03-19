@@ -254,7 +254,39 @@ Completed 2026-03-19. OOM prevention skill, refactor_verify skill, model_manager
 
 ---
 
-## Phase 3: Planned
+## Phase 3: Alpha (Current)
+
+### 0.21.01 — Dr. Ders + Token Tracking + HITL UX + Swarm Dashboard [DONE]
+
+Completed 2026-03-19. Major session — 18 files, 1400+ lines added:
+
+**Dr. Ders rename:** hw_supervisor renamed to "Dr. Ders" across all UI, logs, docs, DB registration. File stays `hw_supervisor.py` to avoid import churn.
+
+**Token speed tracking:** Ollama `eval_count`/`eval_duration` captured per call → `tokens_per_sec` in usage table. `get_model_speed_stats()` returns avg/p50/p95 per model. Model performance panel in status tab shows live tok/s comparison.
+
+**Per-skill model routing:** Simple skills → qwen3:4b (fast), medium/complex → qwen3:8b (quality). `LOCAL_COMPLEXITY_ROUTING` in providers.py, configurable via fleet.toml `[models.tiers]`. 30+ skills classified.
+
+**HITL inline actions:** Action panel below agents in status tab — view/respond to agent requests, view/dismiss security advisories. No more hunting through files. CLI: `lead_client.py hitl`, `lead_client.py advisories`.
+
+**Enhanced swarm dashboard:** Agent cards now show model label, tok/s, last result preview, WAITING_HUMAN badge. Counter cards added: WAITING + MODELS counts.
+
+**Memory watchdog (3-tier):** Dr. Ders self-monitors RSS (gc on growth), supervisor cross-monitors all workers + Dr. Ders (restart at 600MB RSS), RSS stats in hw_state.json.
+
+**VRAM-aware training:** Only evicts Ollama for stable/flat_out profiles. Micro/balanced training coexists with Ollama on GPU.
+
+**Bug fixes:** diagnostics.py `status` column bug (log spam), smoke_test `claim_task` reliability.
+
+**Docs:** CLAUDE.md model tier strategy (Haiku/Sonnet/Opus + local routing).
+
+Smoke: 22/22. 73 skills.
+
+### 0.21.02 — Model Update Checker + Intelligence Metrics [PLANNED]
+
+- `model_manager.py update_check` action: compare installed digests against registry, discover new model families, generate HITL recommendation for model changes
+- Intelligence scoring metric: quality score per task output alongside tok/s (intelligence > performance)
+- HITL process for model preference changes: when swarm identifies intelligence/performance gains, route recommendation through HITL for operator approval before fleet.toml changes
+- `intelligence_score` column in usage table (LLM-evaluated output quality 0-100)
+- Model comparison benchmarks: auto-run standardized prompts on alternative models, compare intelligence vs speed
 
 ### 0.21.00 — S1: Reliability (99.99% uptime)
 
