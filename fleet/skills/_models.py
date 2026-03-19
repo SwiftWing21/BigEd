@@ -82,6 +82,25 @@ def call_complex(system: str, user: str, config: dict, max_tokens: int = 2048, c
     except Exception:
         pass
 
+    # OWASP LLM04: Pre-execution cost estimation
+    try:
+        estimated_input_tokens = len(system.split()) + len(user.split())  # rough word→token estimate (* 1.3)
+        estimated_input_tokens = int(estimated_input_tokens * 1.3)
+        from providers import PRICING
+        model_id = models.get("complex", "claude-sonnet-4-6")
+        rates = PRICING.get(model_id, PRICING.get("claude-sonnet-4-6", {}))
+        estimated_cost = estimated_input_tokens * rates.get("input", 3.0) / 1_000_000
+        # Check against budget
+        budget = check_budget(skill_name, config)
+        if budget and budget.get("enforcement") == "block":
+            remaining = budget.get("remaining_usd", 999)
+            if estimated_cost > remaining:
+                import sys
+                print(f"[COST] Rejected: estimated ${estimated_cost:.4f} exceeds remaining budget ${remaining:.4f}", file=sys.stderr)
+                return f"[COST BLOCKED] Estimated cost ${estimated_cost:.4f} exceeds remaining budget"
+    except Exception:
+        pass  # cost estimation must never block
+
     # v0.45: Build fallback chain starting from configured provider
     # Offline mode: no cascade, local-only
     if provider == "local" and config.get("fleet", {}).get("offline_mode", False):
