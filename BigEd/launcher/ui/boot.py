@@ -144,6 +144,7 @@ class BootManagerMixin:
     def _start_system(self):
         self._system_intentional_stop = False
         self._system_running = True
+        self._ever_seen_roles.clear()  # clear stale agents from previous sessions
         self._btn_system_toggle.configure(
             text="■  Stop", fg_color="#3a1e1e", hover_color="#4a2a2a")
         self._show_boot_progress()
@@ -174,6 +175,11 @@ class BootManagerMixin:
                 msg = str(e)[:40]
                 self.after(0, lambda i=idx, m=msg: self._boot_update(i, "error", m))
                 self.after(0, lambda m=msg: self._log_output(f"Boot failed at stage: {m}"))
+                # Reset system state so button shows Start again
+                self._system_running = False
+                self.after(0, lambda: self._btn_system_toggle.configure(
+                    text="▶  Start", fg_color="#1e3a1e", hover_color="#2a4a2a"))
+                self.after(0, self._hide_boot_progress)
                 return
         self.after(0, lambda: self._log_output("System boot complete."))
         self.after(5000, self._hide_boot_progress)

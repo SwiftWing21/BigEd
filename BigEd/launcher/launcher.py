@@ -1666,8 +1666,10 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
         self._record_agent_activity(agents)
 
         # Dynamic roles — show only agents that have been seen (empty at cold start)
+        # Only track agents when fleet is actually running to avoid stale ghost rows
         seen = {a["name"]: a for a in agents}
-        self._ever_seen_roles.update(seen.keys())
+        if self._system_running:
+            self._ever_seen_roles.update(seen.keys())
         rows = []
         for role_key in sorted(self._ever_seen_roles):
             if role_key in seen:
