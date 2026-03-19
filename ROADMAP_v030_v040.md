@@ -492,11 +492,45 @@ Completed 2026-03-19.
 
 ---
 
-## 0.06.00 — Cryptographic & Security Self-Healing
+## 0.06.00 — Cryptographic & Security Self-Healing (planned)
 **Goal:** Address the "Data at Rest" and "Key Rotation" critical gaps identified in architecture research.
 - **`secret_rotate`:** Introduce an autonomous skill that responds to DLP alerts or time-based expiry by generating and applying new API keys seamlessly.
 - **`db_encrypt`:** A maintenance skill that can safely migrate plaintext SQLite data into SQLCipher encrypted stores during offline or idle windows.
 - **`db_migrate`:** A structured skill for agents to draft, test, and safely execute schema migrations (`ALTER TABLE`) without operator intervention.
+
+---
+
+## 0.07.00 — Security Hardening (Gemini 3rd Pass P0+P1)
+
+**Goal:** Close the critical security gaps identified in architecture research Section 8.
+
+- **Dashboard auth:** Flask bearer token middleware — all /api/* endpoints require `Authorization: Bearer <token>` header. Token stored in fleet.toml `[security] dashboard_token`.
+- **Review enabled by default:** Change `[review] enabled = true` in fleet.toml — free safety improvement.
+- **Docker sandbox execution:** Real container boundary for code_write, pen_test, skill_test, benchmark. `subprocess.run(["docker", "run", ...])` with volume mounts for input/output only.
+- **Worker resource limits:** cgroups (Linux) / Job Objects (Windows) per worker process. Configurable in fleet.toml `[workers] memory_limit_mb, cpu_limit_percent`.
+- **Cross-platform isolation:** Docker as strict prereq for native Linux/macOS deployment. Documented in OPERATIONS.md.
+
+---
+
+## 0.08.00 — Architecture Polish (Gemini 3rd Pass P2)
+
+**Goal:** Resolve documentation gaps and architectural asymmetries.
+
+- **SSE Pattern 6:** Formalize reactive streaming IPC in FRAMEWORK_BLUEPRINT. Deprecate legacy file-polling (`parse_status`, `STATUS.md` reads).
+- **ML Bridge skill:** `ml_bridge.py` connecting autoresearch results.tsv → fleet.db usage/knowledge tables. Dashboard renders ML progress natively.
+- **Async DAG manager:** Extract `_promote_waiting_tasks` + `_cascade_fail_dependents` into async queue to prevent SQLite WAL thundering herd on massive fan-in completions.
+- **Move _db_init():** Extract launcher.py `_db_init()` schema creation to `data_access.py` — single source of truth for tools.db schema.
+- **Rate limiting + CSRF:** Flask-Limiter on dashboard endpoints. CSRF tokens on state-changing POSTs.
+
+---
+
+## 0.09.00 — Audit & Observability (Gemini 3rd Pass P3)
+
+**Goal:** Production-grade logging and transport security.
+
+- **Centralized audit log:** JSON+HMAC structured event log aggregating supervisor, watchdog, DLP, cost tracking events into single tamper-evident trail.
+- **Log rotation:** Python RotatingFileHandler (10MB per file, 5 backups) for all fleet logs.
+- **TLS for dashboard:** Self-signed cert generation + HTTPS serving. Optional Let's Encrypt for remote access.
 
 ---
 
