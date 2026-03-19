@@ -552,6 +552,7 @@ Completed 2026-03-19.
 - **model_profiles.toml:** Predefined configs (dev_cpu, dev_gpu, dev_gpu_light, dev_cpu_light, minimal, production)
 - **CLI:** `model-check`, `model-install`, `model-profile list|apply|recommend`
 - **Startup validation:** hw_supervisor validates all configured models exist, warns + suggests pull commands
+- **Model version tracking:** Record installed model digests in `data/model_versions.json`. On startup, compare against Ollama registry digests to detect available updates. `lead_client.py model-updates` shows outdated models. `model-install --upgrade` pulls latest versions. Dashboard `/api/fleet/model-updates` exposes update availability.
 
 ---
 
