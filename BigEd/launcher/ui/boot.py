@@ -360,6 +360,7 @@ class BootManagerMixin:
                 msg = str(e)[:60]
                 self.after(0, lambda i=idx, m=msg: self._boot_update(i, "error", m))
                 self.after(0, lambda m=msg: self._log_output(f"Boot failed at stage: {m}"))
+                self.after(0, lambda m=msg: self._show_toast(f"✗ Boot failed: {m}", RED, duration=8000))
                 # Reset system state so button shows Start again
                 self._system_running = False
                 self.after(0, lambda: self._btn_system_toggle.configure(
@@ -367,6 +368,7 @@ class BootManagerMixin:
                 self.after(3000, self._hide_boot_progress)
                 return
         self.after(0, lambda: self._log_output("System boot complete."))
+        self.after(0, lambda: self._show_toast("Fleet online — all systems go", GREEN))
         # Switch log view from hw_supervisor to combined after boot
         self._current_log_agent = "all"
         self.after(5000, self._hide_boot_progress)

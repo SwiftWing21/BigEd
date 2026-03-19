@@ -2684,6 +2684,11 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
                 self._log_output(f"← {result[:1200]}")
                 self._task_status.configure(text="✓ done", text_color=GREEN)
                 self.after(3000, lambda: self._task_status.configure(text=""))
+                # Toast notification for task completion
+                if r.returncode == 0:
+                    self._show_toast(f"✓ Task done: {text[:40]}", GREEN)
+                else:
+                    self._show_toast(f"✗ Task failed: {text[:40]}", RED, duration=8000)
             self.after(0, _update)
         threading.Thread(target=_bg, daemon=True).start()
 
@@ -2710,6 +2715,17 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
                 out, err = "", str(e)
             self.after(0, lambda: self._log_output(out or err))
         threading.Thread(target=_bg, daemon=True).start()
+
+    def _show_toast(self, message, color=None, duration=5000):
+        """Show a non-intrusive toast notification in the top-right corner."""
+        if color is None:
+            color = GREEN
+        toast = ctk.CTkFrame(self, fg_color=color, corner_radius=8, height=36)
+        toast.place(relx=1.0, x=-20, y=60, anchor="ne")
+        ctk.CTkLabel(toast, text=message, font=("Segoe UI", 10), text_color="#ffffff",
+                     padx=12, pady=6).pack()
+        # Auto-dismiss after duration
+        self.after(duration, lambda: toast.place_forget() if toast.winfo_exists() else None)
 
     def _log_output(self, text: str):
         """Write to the task output box + ring buffer for debug reports."""
