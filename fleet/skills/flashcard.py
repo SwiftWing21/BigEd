@@ -1,4 +1,7 @@
 """Generate Q&A flashcards from existing knowledge summaries."""
+SKILL_NAME = "flashcard"
+DESCRIPTION = "Generate Q&A flashcards from existing knowledge summaries."
+
 import json
 import random
 from pathlib import Path

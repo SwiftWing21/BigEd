@@ -23,6 +23,9 @@ from pathlib import Path
 FLEET_DIR = Path(__file__).parent.parent
 KNOWLEDGE_DIR = FLEET_DIR / "knowledge"
 NETWORK_DIR = KNOWLEDGE_DIR / "network"
+SKILL_NAME = "unifi_manage"
+DESCRIPTION = "UniFi network management — query UniFi Controller API for clients, devices, aler"
+
 REQUIRES_NETWORK = True
 
 

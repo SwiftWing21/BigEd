@@ -12,6 +12,9 @@ Returns: {files_indexed, total_chunks, ...}
 import sys
 from pathlib import Path
 
+SKILL_NAME = "rag_index"
+DESCRIPTION = "RAG index skill — rebuilds or incrementally updates the RAG search index."
+
 FLEET_DIR = Path(__file__).parent.parent
 sys.path.insert(0, str(FLEET_DIR))
 

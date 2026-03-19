@@ -1,4 +1,7 @@
 """Analyze autoresearch results.tsv and write a report."""
+SKILL_NAME = "analyze_results"
+DESCRIPTION = "Analyze autoresearch results.tsv and write a report."
+
 import csv
 from datetime import date
 from pathlib import Path

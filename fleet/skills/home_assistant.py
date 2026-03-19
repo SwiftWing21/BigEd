@@ -25,6 +25,9 @@ from pathlib import Path
 FLEET_DIR = Path(__file__).parent.parent
 KNOWLEDGE_DIR = FLEET_DIR / "knowledge"
 HA_DIR = KNOWLEDGE_DIR / "home_assistant"
+SKILL_NAME = "home_assistant"
+DESCRIPTION = "Home Assistant management — query HA REST API for entities, automations, backups"
+
 REQUIRES_NETWORK = True
 
 

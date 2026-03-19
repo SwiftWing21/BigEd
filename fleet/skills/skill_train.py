@@ -27,6 +27,9 @@ import shutil
 from datetime import datetime
 from pathlib import Path
 
+SKILL_NAME = "skill_train"
+DESCRIPTION = "Skill trainer v2 — autoresearch-style iterative improvement loop for fleet skill"
+
 FLEET_DIR = Path(__file__).parent.parent
 SKILLS_DIR = FLEET_DIR / "skills"
 RESULTS_DIR = FLEET_DIR / "knowledge" / "skill_training"

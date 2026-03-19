@@ -22,6 +22,9 @@ import json
 from datetime import datetime
 from pathlib import Path
 
+SKILL_NAME = "fma_review"
+DESCRIPTION = "FMA review skill — coder agents review BigEd CC files and discuss"
+
 FLEET_DIR = Path(__file__).parent.parent
 KNOWLEDGE_DIR = FLEET_DIR / "knowledge"
 FMA_REVIEWS_DIR = KNOWLEDGE_DIR / "fma_reviews"

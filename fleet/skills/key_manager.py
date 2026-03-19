@@ -19,6 +19,9 @@ FLEET_DIR    = Path(__file__).parent.parent
 SKILLS_DIR   = FLEET_DIR / "skills"
 REGISTRY_FILE = FLEET_DIR / "keys_registry.toml"
 SECRETS_FILE  = Path.home() / ".secrets"
+SKILL_NAME = "key_manager"
+DESCRIPTION = "Key manager skill — scans skill files for API key usage, cross-references"
+
 REQUIRES_NETWORK = True
 
 

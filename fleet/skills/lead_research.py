@@ -24,6 +24,9 @@ INDUSTRIES = {
 }
 
 KNOWLEDGE_DIR = Path(__file__).parent.parent / "knowledge"
+SKILL_NAME = "lead_research"
+DESCRIPTION = "Local business lead research — finds potential clients in target zip codes."
+
 REQUIRES_NETWORK = True
 
 

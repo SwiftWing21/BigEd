@@ -21,6 +21,9 @@ import httpx
 KNOWLEDGE_DIR = Path(__file__).parent.parent / "knowledge"
 VIDEOS_DIR    = KNOWLEDGE_DIR / "marketing" / "videos"
 REPLICATE_API = "https://api.replicate.com/v1"
+SKILL_NAME = "generate_video"
+DESCRIPTION = "Short video generation — Replicate REST API (no replicate package needed, just h"
+
 REQUIRES_NETWORK = True
 
 # Owner/name slugs — Replicate resolves to latest version automatically

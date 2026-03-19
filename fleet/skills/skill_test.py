@@ -17,6 +17,9 @@ import traceback
 from datetime import datetime
 from pathlib import Path
 
+SKILL_NAME = "skill_test"
+DESCRIPTION = "Skill test — runs a drafted skill in a sandbox with a test payload,"
+
 FLEET_DIR = Path(__file__).parent.parent
 DRAFTS_DIR = FLEET_DIR / "knowledge" / "code_drafts"
 

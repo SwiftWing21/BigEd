@@ -26,6 +26,9 @@ from pathlib import Path
 FLEET_DIR = Path(__file__).parent.parent
 KNOWLEDGE_DIR = FLEET_DIR / "knowledge"
 MQTT_DIR = KNOWLEDGE_DIR / "mqtt"
+SKILL_NAME = "mqtt_inspect"
+DESCRIPTION = "MQTT topic inspector — connect to broker, subscribe, capture messages."
+
 REQUIRES_NETWORK = True
 
 

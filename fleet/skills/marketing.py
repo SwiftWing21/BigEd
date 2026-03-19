@@ -27,6 +27,9 @@ from pathlib import Path
 FLEET_DIR     = Path(__file__).parent.parent
 KNOWLEDGE_DIR = FLEET_DIR / "knowledge"
 MARKETING_DIR = KNOWLEDGE_DIR / "marketing"
+SKILL_NAME = "marketing"
+DESCRIPTION = "Marketing campaign skill — orchestrates copy + image + optional video."
+
 REQUIRES_NETWORK = True
 
 sys.path.insert(0, str(Path(__file__).parent))

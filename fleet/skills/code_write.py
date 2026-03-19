@@ -22,6 +22,9 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
+SKILL_NAME = "code_write"
+DESCRIPTION = "Code write skill — invokes aider-chat to create or edit files using local Ollama"
+
 FLEET_DIR = Path(__file__).parent.parent
 KNOWLEDGE_DIR = FLEET_DIR / "knowledge"
 WRITES_DIR = KNOWLEDGE_DIR / "code_writes"

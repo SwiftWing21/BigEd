@@ -9,6 +9,9 @@ import stat
 from datetime import datetime
 from pathlib import Path
 
+SKILL_NAME = "security_apply"
+DESCRIPTION = "Security apply skill — executes approved fixes from a pending advisory."
+
 FLEET_DIR = Path(__file__).parent.parent
 PENDING_DIR = FLEET_DIR / "knowledge" / "security" / "pending"
 APPLIED_DIR = FLEET_DIR / "knowledge" / "security" / "applied"

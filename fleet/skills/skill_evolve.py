@@ -20,6 +20,9 @@ from pathlib import Path
 
 from skills._models import call_complex
 
+SKILL_NAME = "skill_evolve"
+DESCRIPTION = "Skill evolve — takes an existing skill + its review findings and generates"
+
 FLEET_DIR = Path(__file__).parent.parent
 SKILLS_DIR = FLEET_DIR / "skills"
 REVIEWS_DIR = FLEET_DIR / "knowledge" / "code_reviews"

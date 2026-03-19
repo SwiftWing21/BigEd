@@ -3,6 +3,9 @@ Synthesize all agent discussion contributions + research into a final document.
 Used to produce business pitch, agent prep docs, or strategic reports.
 Uses Sonnet for synthesis quality — this is a high-value, infrequent call.
 """
+SKILL_NAME = "synthesize"
+DESCRIPTION = "Synthesize all agent discussion contributions + research into a final document."
+
 import json
 from datetime import date
 from pathlib import Path

@@ -33,6 +33,9 @@ import re
 from datetime import datetime
 from pathlib import Path
 
+SKILL_NAME = "code_quality"
+DESCRIPTION = "Code quality skill — static analysis for Python best practices and style."
+
 FLEET_DIR = Path(__file__).parent.parent
 SKILLS_DIR = FLEET_DIR / "skills"
 KNOWLEDGE_DIR = FLEET_DIR / "knowledge"

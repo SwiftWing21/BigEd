@@ -35,6 +35,9 @@ import zipfile
 from datetime import datetime
 from pathlib import Path
 
+SKILL_NAME = "ingest"
+DESCRIPTION = "File/folder ingest skill — imports documents into the fleet RAG index."
+
 FLEET_DIR = Path(__file__).parent.parent
 KNOWLEDGE_DIR = FLEET_DIR / "knowledge"
 INGEST_LOG_DIR = KNOWLEDGE_DIR / "ingests"

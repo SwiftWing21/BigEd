@@ -18,6 +18,9 @@ import re
 from datetime import datetime
 from pathlib import Path
 
+SKILL_NAME = "code_review"
+DESCRIPTION = "Code review skill — reads an actual fleet Python file and produces a structured "
+
 FLEET_DIR      = Path(__file__).parent.parent
 KNOWLEDGE_DIR  = FLEET_DIR / "knowledge"
 REVIEWS_DIR    = KNOWLEDGE_DIR / "code_reviews"

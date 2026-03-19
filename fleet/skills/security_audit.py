@@ -15,6 +15,9 @@ from pathlib import Path
 
 from skills._models import call_complex
 
+SKILL_NAME = "security_audit"
+DESCRIPTION = "Security audit skill — scans targets for issues, generates an advisory,"
+
 FLEET_DIR = Path(__file__).parent.parent
 KNOWLEDGE_DIR = FLEET_DIR / "knowledge"
 SECURITY_DIR = KNOWLEDGE_DIR / "security"

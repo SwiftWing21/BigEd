@@ -7,6 +7,9 @@ import json
 from datetime import datetime
 from pathlib import Path
 
+SKILL_NAME = "generate_asset"
+DESCRIPTION = "Designer skill — generates visual assets with PIL."
+
 FLEET_DIR   = Path(__file__).parent.parent
 DESIGN_DIR  = FLEET_DIR / "knowledge" / "design"
 SD_QUEUE    = DESIGN_DIR / "sd_prompt_queue.jsonl"

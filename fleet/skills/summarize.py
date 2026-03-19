@@ -1,4 +1,7 @@
 """Summarize text from a URL, file path, or raw description."""
+SKILL_NAME = "summarize"
+DESCRIPTION = "Summarize text from a URL, file path, or raw description."
+
 import re
 from datetime import date
 from pathlib import Path

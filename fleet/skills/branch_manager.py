@@ -30,6 +30,9 @@ KNOWLEDGE_DIR = FLEET_DIR / "knowledge"
 WORKSPACE = KNOWLEDGE_DIR / "code_writes" / "workspace"
 
 AGENTS_REPO = "git@github.com:SwiftWing21/BigEds_Agents.git"
+SKILL_NAME = "branch_manager"
+DESCRIPTION = "Branch manager — creates and manages product branches on BigEds_Agents repo."
+
 REQUIRES_NETWORK = True
 
 # Core skills every product variant needs

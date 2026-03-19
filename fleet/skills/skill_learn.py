@@ -22,6 +22,9 @@ from collections import Counter
 from datetime import datetime
 from pathlib import Path
 
+SKILL_NAME = "skill_learn"
+DESCRIPTION = "Skill learn — analyzes task failure patterns, discussion gaps, and fleet"
+
 FLEET_DIR = Path(__file__).parent.parent
 KNOWLEDGE_DIR = FLEET_DIR / "knowledge"
 REPORTS_DIR = KNOWLEDGE_DIR / "reports"

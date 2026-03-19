@@ -15,6 +15,9 @@ import re
 from datetime import datetime
 from pathlib import Path
 
+SKILL_NAME = "plan_workload"
+DESCRIPTION = "Workload planner — surveys fleet state and queues a batch of tasks."
+
 FLEET_DIR = Path(__file__).parent.parent
 KNOWLEDGE_DIR = FLEET_DIR / "knowledge"
 

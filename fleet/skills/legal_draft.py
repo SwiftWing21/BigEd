@@ -27,6 +27,9 @@ from pathlib import Path
 
 from skills._models import call_complex
 
+SKILL_NAME = "legal_draft"
+DESCRIPTION = "Legal document drafting skill — generates business legal document drafts using t"
+
 FLEET_DIR   = Path(__file__).parent.parent
 LEGAL_DIR   = FLEET_DIR / "knowledge" / "legal"
 

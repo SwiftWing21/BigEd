@@ -29,6 +29,9 @@ from urllib.parse import urlparse
 FLEET_DIR = Path(__file__).parent.parent
 KNOWLEDGE_DIR = FLEET_DIR / "knowledge"
 BROWSER_DIR = KNOWLEDGE_DIR / "browser"
+SKILL_NAME = "browser_crawl"
+DESCRIPTION = "Browser crawl — full DOM rendering via Playwright (headless Chromium)."
+
 REQUIRES_NETWORK = True
 
 _HAS_PLAYWRIGHT = None  # lazy check

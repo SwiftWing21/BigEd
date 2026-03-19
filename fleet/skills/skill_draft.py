@@ -21,6 +21,9 @@ import re
 from datetime import datetime
 from pathlib import Path
 
+SKILL_NAME = "skill_draft"
+DESCRIPTION = "Skill draft generator — writes a new fleet skill file based on a description."
+
 FLEET_DIR   = Path(__file__).parent.parent
 DRAFTS_DIR  = FLEET_DIR / "knowledge" / "code_drafts"
 

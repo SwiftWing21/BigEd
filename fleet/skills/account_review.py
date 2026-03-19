@@ -15,6 +15,9 @@ from pathlib import Path
 
 from skills._models import call_complex
 
+SKILL_NAME = "account_review"
+DESCRIPTION = "Account review skill — analyzes all tracked service accounts, usage vs free tier"
+
 FLEET_DIR     = Path(__file__).parent.parent
 KNOWLEDGE_DIR = FLEET_DIR / "knowledge"
 REPORTS_DIR   = KNOWLEDGE_DIR / "reports"

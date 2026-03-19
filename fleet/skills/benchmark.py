@@ -16,6 +16,9 @@ import time
 from datetime import datetime
 from pathlib import Path
 
+SKILL_NAME = "benchmark"
+DESCRIPTION = "Benchmark skill — runs a skill N times with varied payloads, measures latency,"
+
 FLEET_DIR = Path(__file__).parent.parent
 REPORTS_DIR = FLEET_DIR / "knowledge" / "reports"
 

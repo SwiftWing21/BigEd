@@ -20,6 +20,9 @@ import re
 import sys
 from pathlib import Path
 
+SKILL_NAME = "curriculum_update"
+DESCRIPTION = "Curriculum update — analyzes completed work, skill gaps, and review findings"
+
 FLEET_DIR = Path(__file__).parent.parent
 CURRICULA_DIR = FLEET_DIR / "idle_curricula"
 KNOWLEDGE_DIR = FLEET_DIR / "knowledge"

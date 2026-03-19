@@ -19,6 +19,9 @@ from pathlib import Path
 FLEET_DIR = Path(__file__).parent.parent
 KNOWLEDGE_DIR = FLEET_DIR / "knowledge"
 RELEASES_DIR = KNOWLEDGE_DIR / "releases"
+SKILL_NAME = "product_release"
+DESCRIPTION = "Product release — tags a product branch, generates a changelog from commits"
+
 REQUIRES_NETWORK = True
 
 

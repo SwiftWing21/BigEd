@@ -18,6 +18,9 @@ from pathlib import Path
 
 from skills._models import call_complex
 
+SKILL_NAME = "code_write_review"
+DESCRIPTION = "Code write review — reviews aider-generated code and produces an approval/reject"
+
 FLEET_DIR = Path(__file__).parent.parent
 KNOWLEDGE_DIR = FLEET_DIR / "knowledge"
 WRITES_DIR = KNOWLEDGE_DIR / "code_writes"

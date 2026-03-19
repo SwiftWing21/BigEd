@@ -3,6 +3,9 @@ Structured discussion skill — agent reads accumulated research/messages,
 contributes its perspective on a topic, and posts findings to the messages table.
 Used to facilitate multi-agent "discussion" rounds before synthesis.
 """
+SKILL_NAME = "discuss"
+DESCRIPTION = "Structured discussion skill — agent reads accumulated research/messages,"
+
 import json
 from datetime import datetime
 from pathlib import Path

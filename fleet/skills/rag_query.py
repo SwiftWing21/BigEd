@@ -16,6 +16,9 @@ from pathlib import Path
 
 from skills._models import call_complex
 
+SKILL_NAME = "rag_query"
+DESCRIPTION = "RAG query skill — searches indexed .md files and returns relevant context,"
+
 FLEET_DIR = Path(__file__).parent.parent
 sys.path.insert(0, str(FLEET_DIR))
 
