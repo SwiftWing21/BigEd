@@ -275,8 +275,8 @@ def read_hw_state():
     try:
         if HW_STATE_FILE.exists():
             return json.loads(HW_STATE_FILE.read_text(encoding="utf-8"))
-    except Exception:
-        pass
+    except Exception as e:
+        log.debug(f"[read_hw_state] failed to read hw_state.json: {e}")
     return None
 
 
@@ -330,8 +330,8 @@ def write_status_md():
                         row = conn.execute("SELECT type FROM tasks WHERE id=?", (tid,)).fetchone()
                         if row:
                             task_lookup[a["name"]] = row["type"]
-        except Exception:
-            pass
+        except Exception as e:
+            log.debug(f"[write_status_md] task type lookup failed: {e}")
 
         lines = [
             f"# Fleet Status — {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
@@ -400,8 +400,8 @@ def main():
     try:
         from dag_queue import start as start_dag_queue
         start_dag_queue()
-    except ImportError:
-        pass
+    except ImportError as e:
+        log.debug(f"[main] DAG queue not available (optional): {e}")
 
     config = load_config()
 
@@ -427,7 +427,8 @@ def main():
     try:
         urllib.request.urlopen("http://localhost:11434/api/tags", timeout=2)
         log.info("Ollama already running — skipping start")
-    except Exception:
+    except Exception as e:
+        log.debug(f"[main] Ollama not reachable ({e}), starting fresh")
         start_ollama(gpu=not config["fleet"]["eco_mode"])
 
     # Initial keepalive — pre-load worker model into VRAM (hw_supervisor takes over after boot)
@@ -512,8 +513,8 @@ def main():
                         "title": "Training started — Ollama CPU-only",
                         "tags": ["training"],
                     }))
-                except Exception:
-                    pass
+                except Exception as e:
+                    log.warning(f"[training] failed to post training-started note: {e}")
                 # v0.43: Log marathon training start
                 try:
                     checkpoint_info = _check_training_checkpoints()
@@ -524,8 +525,8 @@ def main():
                         "next_step": "Monitor checkpoints",
                         "notes": f"Checkpoints: {checkpoint_info}" if checkpoint_info else "No checkpoints yet",
                     }), priority=2)
-                except Exception:
-                    pass
+                except Exception as e:
+                    log.warning(f"[training] failed to post marathon_log (start): {e}")
             elif not training_now and training_active:
                 log.info("Training finished — restoring Ollama mode")
                 stop_ollama()
@@ -537,8 +538,8 @@ def main():
                         "title": "Training finished — Ollama restored",
                         "tags": ["training"],
                     }))
-                except Exception:
-                    pass
+                except Exception as e:
+                    log.warning(f"[training] failed to post training-finished note: {e}")
                 # v0.43: Log marathon training end
                 try:
                     checkpoint_info = _check_training_checkpoints()
@@ -549,8 +550,8 @@ def main():
                                            f"Final checkpoints: {checkpoint_info['count']}" if checkpoint_info else "No checkpoints"],
                         "next_step": "Evaluate training results",
                     }), priority=2)
-                except Exception:
-                    pass
+                except Exception as e:
+                    log.warning(f"[training] failed to post marathon_log (end): {e}")
 
         # Log hw_supervisor transitions
         hw_state = read_hw_state()
@@ -566,15 +567,15 @@ def main():
                     try:
                         body = json.loads(m["body_json"])
                         log.info(f"Sup msg from {m['from_agent']}: {body.get('type', '?')}")
-                    except Exception:
-                        pass
+                    except Exception as e:
+                        log.debug(f"[sup-channel] failed to parse sup message: {e}")
                 sup_notes = db.get_notes("sup", since=last_sup_notes_ts, limit=10)
                 for n in sup_notes:
                     try:
                         body = json.loads(n["body_json"])
                         log.info(f"Sup note [{n['from_agent']}]: {body.get('title', '?')}")
-                    except Exception:
-                        pass
+                    except Exception as e:
+                        log.debug(f"[sup-channel] failed to parse sup note: {e}")
                     last_sup_notes_ts = n.get("created_at", last_sup_notes_ts)
             except Exception as e:
                 log.debug(f"Sup channel read error: {e}")
@@ -593,8 +594,8 @@ def main():
                         "tasks": [{"id": t["id"], "type": t["type"]} for t in recovered[:5]],
                         "tags": ["recovery"],
                     }))
-                except Exception:
-                    pass
+                except Exception as e:
+                    log.warning(f"[stale-recovery] failed to post recovery note: {e}")
 
         # Semantic watchdog — failure detection, stuck reviews, DLP
         if now - last_watchdog >= WATCHDOG_INTERVAL:
