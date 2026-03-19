@@ -4,9 +4,20 @@ import time
 
 # CT-1: Model pricing per million tokens (as of 2025)
 PRICING = {
+    # Claude models
     "claude-haiku-4-5": {"input": 0.80, "output": 4.00, "cache_read": 0.08, "cache_create": 1.00},
     "claude-sonnet-4-6": {"input": 3.00, "output": 15.00, "cache_read": 0.30, "cache_create": 3.75},
     "claude-opus-4-6": {"input": 15.00, "output": 75.00, "cache_read": 1.50, "cache_create": 18.75},
+    # Gemini models (per million tokens, 2025-2026 pricing)
+    "gemini-2.0-flash": {"input": 0.10, "output": 0.40, "cache_read": 0.025, "cache_create": 0.025},
+    "gemini-2.0-flash-lite": {"input": 0.0, "output": 0.0, "cache_read": 0.0, "cache_create": 0.0},  # free tier
+    "gemini-2.5-pro": {"input": 1.25, "output": 10.00, "cache_read": 0.31, "cache_create": 4.50},
+    "gemini-2.5-flash": {"input": 0.15, "output": 0.60, "cache_read": 0.0375, "cache_create": 0.0375},
+    # Local models (Ollama — zero API cost, but track for comparison)
+    "qwen3:8b": {"input": 0.0, "output": 0.0, "cache_read": 0.0, "cache_create": 0.0},
+    "qwen3:4b": {"input": 0.0, "output": 0.0, "cache_read": 0.0, "cache_create": 0.0},
+    "qwen3:1.7b": {"input": 0.0, "output": 0.0, "cache_read": 0.0, "cache_create": 0.0},
+    "qwen3:0.6b": {"input": 0.0, "output": 0.0, "cache_read": 0.0, "cache_create": 0.0},
 }
 
 # v0.45: HA fallback cascade — if primary fails, try next provider
@@ -24,6 +35,16 @@ def calculate_cost(usage, model_id: str) -> float:
         + usage.output_tokens * rates["output"] / 1_000_000
         + cache_read * rates["cache_read"] / 1_000_000
         + cache_create * rates["cache_create"] / 1_000_000
+    )
+    return round(cost, 6)
+
+
+def calculate_cost_simple(input_tokens: int, output_tokens: int, model_id: str) -> float:
+    """Simple cost calculation from raw token counts (no usage object needed)."""
+    rates = PRICING.get(model_id, PRICING.get("gemini-2.0-flash", {"input": 0, "output": 0}))
+    cost = (
+        input_tokens * rates["input"] / 1_000_000
+        + output_tokens * rates["output"] / 1_000_000
     )
     return round(cost, 6)
 
@@ -74,14 +95,34 @@ def _call_claude(system: str, user: str, models: dict, max_tokens: int, cache_sy
 def _call_gemini(system: str, user: str, models: dict, max_tokens: int) -> str:
     import google.generativeai as genai
     genai.configure(api_key=os.environ.get("GEMINI_API_KEY"))
+    model_name = models.get("complex", "gemini-2.0-flash")
     model = genai.GenerativeModel(
-        model_name=models.get("complex", "gemini-2.0-flash"),
+        model_name=model_name,
         system_instruction=system,
     )
     resp = model.generate_content(
         user,
         generation_config={"max_output_tokens": max_tokens},
     )
+    # Track Gemini usage (best-effort)
+    try:
+        usage = resp.usage_metadata
+        if usage:
+            import db
+            db.log_usage(
+                skill="unknown",  # caller should pass skill_name in future
+                model=model_name,
+                input_tokens=getattr(usage, "prompt_token_count", 0) or 0,
+                output_tokens=getattr(usage, "candidates_token_count", 0) or 0,
+                cache_read_tokens=getattr(usage, "cached_content_token_count", 0) or 0,
+                cache_create_tokens=0,
+                cost_usd=calculate_cost_simple(
+                    getattr(usage, "prompt_token_count", 0) or 0,
+                    getattr(usage, "candidates_token_count", 0) or 0,
+                    model_name),
+            )
+    except Exception:
+        pass
     return resp.text
 
 
