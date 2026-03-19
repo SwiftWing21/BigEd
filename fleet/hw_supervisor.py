@@ -498,19 +498,22 @@ def main():
     # Validate all configured models exist before entering main loop
     validate_configured_models(cfg)
 
-    # Check for ghost/rogue loaded models from previous sessions
-    loaded = get_available_models(host)  # this gets tags, need /api/ps for loaded
+    # Check loaded models — keep anything from our tier system, evict unknowns
+    known_models = {
+        cfg["tier_default"], cfg["tier_mid"], cfg["tier_low"], cfg["tier_crit"],
+        get_current_local_model(),
+    }
+    if conductor_model:
+        known_models.add(conductor_model)
     try:
         with urllib.request.urlopen(f"{host}/api/ps", timeout=3) as r:
             ps_data = json.loads(r.read())
         loaded_models = [m["name"] for m in ps_data.get("models", [])]
         if loaded_models:
-            print(f"[HW_SUP] Found {len(loaded_models)} pre-loaded model(s): {', '.join(loaded_models)}")
-            # Evict any that shouldn't be loaded (from crashed previous sessions)
-            current_local = get_current_local_model()
+            print(f"[HW_SUP] Pre-loaded: {', '.join(loaded_models)}")
             for m in loaded_models:
-                if m != current_local and m != conductor_model:
-                    print(f"[HW_SUP] Evicting ghost model: {m}")
+                if m not in known_models:
+                    print(f"[HW_SUP] Evicting unknown model: {m}")
                     try:
                         body = json.dumps({"model": m, "keep_alive": 0}).encode()
                         req = urllib.request.Request(
@@ -519,6 +522,8 @@ def main():
                         urllib.request.urlopen(req, timeout=5)
                     except Exception:
                         pass
+                else:
+                    print(f"[HW_SUP] Keeping {m} (known tier model)")
     except Exception:
         pass
 
