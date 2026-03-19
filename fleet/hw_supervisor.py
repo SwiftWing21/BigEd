@@ -170,15 +170,63 @@ def unload_all_models():
         pass
 
 
-def warmup_model(model_name):
+def get_available_models(host="http://localhost:11434"):
+    """Get list of models actually installed in Ollama."""
     try:
+        with urllib.request.urlopen(f"{host}/api/tags", timeout=5) as r:
+            data = json.loads(r.read())
+        return [m["name"] for m in data.get("models", [])]
+    except Exception:
+        return []
+
+
+def validate_configured_models(cfg):
+    """Check that all configured models are actually installed. Log warnings for missing."""
+    available = get_available_models(cfg.get("ollama_host", "http://localhost:11434"))
+    if not available:
+        print("[HW_SUP] WARNING: No models found in Ollama (is it running?)")
+        return False
+
+    needed = set()
+    needed.add(cfg.get("tier_default", "qwen3:8b"))
+    needed.add(cfg.get("tier_mid", "qwen3:4b"))
+    needed.add(cfg.get("tier_low", "qwen3:1.7b"))
+    needed.add(cfg.get("tier_crit", "qwen3:0.6b"))
+    if cfg.get("conductor_model"):
+        needed.add(cfg["conductor_model"])
+
+    missing = [m for m in sorted(needed) if m not in available]
+    if missing:
+        print(f"[HW_SUP] WARNING: Missing models: {', '.join(missing)}")
+        print(f"[HW_SUP] Available: {', '.join(available)}")
+        print(f"[HW_SUP] Run: ollama pull {missing[0]}")
+        return False
+
+    print(f"[HW_SUP] All {len(needed)} configured models available")
+    return True
+
+
+def warmup_model(model_name):
+    """Load a model into VRAM. Validates model exists first."""
+    try:
+        # Check if model exists before trying to warm up
+        available = get_available_models()
+        if model_name not in available:
+            print(f"[HW_SUP] Cannot warmup '{model_name}' — not installed. Run: ollama pull {model_name}")
+            return False
         body = json.dumps({"model": model_name, "prompt": "", "keep_alive": "5m"}).encode()
         req = urllib.request.Request(
             "http://localhost:11434/api/generate", data=body, method="POST",
             headers={"Content-Type": "application/json"})
-        urllib.request.urlopen(req, timeout=45)
-    except Exception:
-        pass
+        with urllib.request.urlopen(req, timeout=45) as r:
+            resp = json.loads(r.read())
+            if "error" in resp:
+                print(f"[HW_SUP] Warmup error for '{model_name}': {resp['error']}")
+                return False
+        return True
+    except Exception as e:
+        print(f"[HW_SUP] Warmup failed for '{model_name}': {e}")
+        return False
 
 
 def evict_models_for_training(host=None):
@@ -439,6 +487,33 @@ def main():
           f"{cfg['gpu_max_burst_c']}°C burst. Poll: {cfg['poll_interval_secs']}s")
     if conductor_model:
         print(f"[HW_SUP] Conductor model: {conductor_model} (CPU)")
+
+    # Validate all configured models exist before entering main loop
+    validate_configured_models(cfg)
+
+    # Check for ghost/rogue loaded models from previous sessions
+    loaded = get_available_models(host)  # this gets tags, need /api/ps for loaded
+    try:
+        with urllib.request.urlopen(f"{host}/api/ps", timeout=3) as r:
+            ps_data = json.loads(r.read())
+        loaded_models = [m["name"] for m in ps_data.get("models", [])]
+        if loaded_models:
+            print(f"[HW_SUP] Found {len(loaded_models)} pre-loaded model(s): {', '.join(loaded_models)}")
+            # Evict any that shouldn't be loaded (from crashed previous sessions)
+            current_local = get_current_local_model()
+            for m in loaded_models:
+                if m != current_local and m != conductor_model:
+                    print(f"[HW_SUP] Evicting ghost model: {m}")
+                    try:
+                        body = json.dumps({"model": m, "keep_alive": 0}).encode()
+                        req = urllib.request.Request(
+                            f"{host}/api/generate", data=body, method="POST",
+                            headers={"Content-Type": "application/json"})
+                        urllib.request.urlopen(req, timeout=5)
+                    except Exception:
+                        pass
+    except Exception:
+        pass
 
     write_state("ready", get_current_local_model())
 
