@@ -297,15 +297,17 @@ Completed 2026-03-19. Three major features:
 Smoke: 22/22. Skills: 74.
 
 ### 0.21.04 — UX Polish + Fleet Tab Refinement [PLANNED]
-
-- Fleet tab (renamed from Agents): refine card layout, fix clipped labels
-- Dr. Ders header integration: compact GPU/model/temp always visible
+- **Goal:** Refine the Fleet tab and status displays post-swarm dashboard overhaul
+- **Grading Alignment:** Usability/UX → A- to A | Est: S (~3-5k tokens)
+- Fleet tab: refine card layout, fix clipped labels, intelligence score on cards
 - Model Performance panel: add intelligence score column alongside tok/s
 - Action panel: improve card density, add timestamps, keyboard shortcuts
 - Fleet Comm tab: modernize to match new swarm dashboard aesthetic
 
 ### 0.21.00 — S1: Reliability (99.99% uptime)
-
+- **Goal:** Close all P2-06/07/08 reliability gaps, achieve zero unhandled crashes
+- **Grading Alignment:** Reliability/S1 → B+ to A | Dynamic Abilities → A to S | Est: L (~20-40k tokens)
+- **Blockers:** P2-06 (SSE race), P2-07 (connection leaks), P2-08 (timer _alive)
 - Fix 8 MEDIUM audit issues (SSE race condition, connection leaks in dashboard)
 - Add `_alive` flag to all timer chains (prevent TclError after destroy)
 - Escalating worker crash backoff (15s → 30s → 60s → cap at 300s)
@@ -314,23 +316,28 @@ Smoke: 22/22. Skills: 74.
 - Graceful degradation cascade (Ollama dies → queue tasks → auto-restart → resume)
 
 ### 0.22.00 — S2: Observability
-
+- **Goal:** Unified health monitoring, structured logging, per-agent metrics
+- **Grading Alignment:** Observability/S2 → B to A | Architecture/SoC → A (via P2-03/04/05) | Est: L (~20-40k tokens)
+- **Dependencies:** P2-03 (theme.py), P2-04 (REST helpers), P2-05 (data_access)
 - Unified `/api/health` endpoint (aggregate all subsystem status in one call)
 - Uptime tracking with historical chart in dashboard
 - Per-agent performance dashboard (tasks/hour, success rate, avg latency)
 - Alert escalation pipeline (watchdog → audit log → operator notification)
 - Structured JSON logging (replace text format across all fleet processes)
+- Extract `ui/theme.py` (P2-03), complete TECH_DEBT 4.3 (P2-04) and 4.4 (P2-05)
 
 ### 0.23.00 — S3: Auto-Intelligence
-
+- **Goal:** Fleet self-improves without operator intervention
+- **Grading Alignment:** Data Processing+HITL → A to S | Dynamic Abilities → A to S | Est: M (~8-15k tokens)
 - Auto-trigger evolution pipeline on idle (not just skill_test)
 - Auto-trigger research cycle when knowledge gaps detected
 - Apply swarm specializations to affinity routing automatically
-- Quality scoring on every task output (stored in usage table)
+- Tier 2 LLM intelligence scoring (deep quality eval on sampled tasks)
 - Distributed tracing (trace_id across full task lifecycle)
 
 ### 0.24.00 — S4: Security Defaults
-
+- **Goal:** Production-hardened security out of the box
+- **Grading Alignment:** Security → B+ to S | Est: L (~20-40k tokens)
 - Enable SQLCipher encryption by default on fresh installs
 - TLS by default (auto-generate self-signed cert on first dashboard start)
 - RBAC roles (operator/admin/viewer) with per-role API access
@@ -338,7 +345,8 @@ Smoke: 22/22. Skills: 74.
 - Formal adversarial testing suite (automated red team)
 
 ### 0.25.00 — Multi-Backend Model Support
-
+- **Goal:** Support non-Ollama local model backends
+- **Grading Alignment:** Module/Plugin Support → B+ to A | Dynamic Abilities → S | Est: L (~20-40k tokens)
 - Backend abstraction in providers.py (Ollama, llama.cpp, vLLM, LM Studio)
 - OpenAI-compatible API routing (`/v1/chat/completions` adapter)
 - Model registry in fleet.toml mapping logical names to backend identifiers
@@ -373,6 +381,19 @@ Smoke: 22/22. Skills: 74.
 - Federated fleet orchestration (multiple physical machines, single control plane)
 - Marketplace: skill store, model store, template store
 - Version scheme transition: `5.0.0` -> semver
+
+---
+
+## Audit Coverage Check (per AUDIT_TRACKER.md)
+
+> Reviewed at v0.21.03.
+
+- **Criteria fully covered:** Architecture/SoC (A), Code Quality (A), Dynamic Abilities (A), Performance (A), Documentation (A), Data Processing+HITL (A)
+- **Criteria partially covered:** Testing (A-, no per-skill unit tests), Security (B+, SQLCipher/TLS/RBAC planned), Usability/UX (A-, Fleet tab needs polish), Module/Plugin Support (B+, no manifest)
+- **Criteria not addressed this cycle:** Observability/S2 (B, planned 0.22.00), Reliability/S1 (B+, planned 0.21.00)
+
+**P1 issues remaining:** P1-01 (double budget query), P1-02 (health probe cost), P1-03 (throttle blocks thread)
+**P2 issues remaining:** P2-01 through P2-09 (all tracked, targets assigned)
 
 ---
 
