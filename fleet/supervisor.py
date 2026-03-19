@@ -605,6 +605,28 @@ def main():
                 if now - last_watchdog_full >= WATCHDOG_FULL_INTERVAL:
                     last_watchdog_full = now
                     alerts = run_full_cycle(log.info)
+                    # 0.14: Knowledge integrity check on full cycle
+                    try:
+                        from integrity import verify_integrity, save_manifest
+                        result = verify_integrity()
+                        if result.get("status") == "tampered":
+                            log.warning(f"INTEGRITY: {len(result.get('modified',[]))} modified, "
+                                       f"{len(result.get('missing',[]))} missing files")
+                            try:
+                                from audit_log import log_event
+                                log_event("integrity_alert", "supervisor",
+                                         {"modified": result.get("modified", [])[:5],
+                                          "missing": result.get("missing", [])[:5]},
+                                         severity="warning")
+                            except Exception:
+                                pass
+                        elif result.get("status") == "no_manifest":
+                            save_manifest()
+                            log.info("INTEGRITY: Initial manifest created")
+                    except ImportError:
+                        pass
+                    except Exception as e:
+                        log.debug(f"Integrity check error: {e}")
                 else:
                     alerts = run_cycle(log.info)
                 for a in alerts:

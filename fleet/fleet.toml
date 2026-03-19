@@ -172,3 +172,8 @@ enabled = false  # set true after running: lead_client.py install-service
 enabled = false  # set true to allow workers to evolve skills during downtime
 threshold_polls = 6  # consecutive idle polls before entering idle mode (~30s at 5s/poll)
 skills = ["skill_evolve", "skill_test", "code_quality", "benchmark"]
+
+# 0.14: Knowledge integrity verification
+[integrity]
+enabled = true
+auto_manifest = true  # auto-create manifest if missing
