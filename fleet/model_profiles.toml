@@ -1,0 +1,62 @@
+# Model profiles — predefined configurations for different hardware
+# Apply with: lead_client.py model-profile apply <name>
+
+[dev_cpu]
+description = "CPU-only dev mode — quality models, no GPU needed"
+local = "qwen3:4b"
+conductor_model = "qwen3:4b"
+[dev_cpu.tiers]
+default = "qwen3:4b"
+mid = "qwen3:1.7b"
+low = "qwen3:0.6b"
+critical = "qwen3:0.6b"
+
+[dev_gpu]
+description = "GPU dev mode — RTX 3060+ with 8GB+ VRAM"
+local = "qwen3:8b"
+conductor_model = "qwen3:4b"
+[dev_gpu.tiers]
+default = "qwen3:8b"
+mid = "qwen3:4b"
+low = "qwen3:1.7b"
+critical = "qwen3:0.6b"
+
+[dev_gpu_light]
+description = "Light GPU mode — GPUs with 6-8GB VRAM"
+local = "qwen3:4b"
+conductor_model = "qwen3:1.7b"
+[dev_gpu_light.tiers]
+default = "qwen3:4b"
+mid = "qwen3:1.7b"
+low = "qwen3:0.6b"
+critical = "qwen3:0.6b"
+
+[dev_cpu_light]
+description = "Light CPU mode — 8-16GB RAM systems"
+local = "qwen3:1.7b"
+conductor_model = "qwen3:0.6b"
+[dev_cpu_light.tiers]
+default = "qwen3:1.7b"
+mid = "qwen3:0.6b"
+low = "qwen3:0.6b"
+critical = "qwen3:0.6b"
+
+[minimal]
+description = "Minimal footprint — low-resource systems"
+local = "qwen3:0.6b"
+conductor_model = "qwen3:0.6b"
+[minimal.tiers]
+default = "qwen3:0.6b"
+mid = "qwen3:0.6b"
+low = "qwen3:0.6b"
+critical = "qwen3:0.6b"
+
+[production]
+description = "Full production — all tiers active"
+local = "qwen3:8b"
+conductor_model = "qwen3:4b"
+[production.tiers]
+default = "qwen3:8b"
+mid = "qwen3:4b"
+low = "qwen3:1.7b"
+critical = "qwen3:0.6b"

@@ -557,6 +557,56 @@ def cmd_marathon(args):
     print()
 
 
+def cmd_model_check(args):
+    """DO NOT SCRUB: Check installed vs needed models."""
+    from config import load_config
+    from skills.model_manager import _check_models
+    cfg = load_config()
+    host = cfg.get("models", {}).get("ollama_host", "http://localhost:11434")
+    result = json.loads(_check_models(cfg, host))
+    print(f"\nInstalled: {', '.join(result['installed']) or 'none'}")
+    print(f"Needed:    {', '.join(result['needed'])}")
+    if result['missing']:
+        print(f"MISSING:   {', '.join(result['missing'])}")
+        print(f"\nRun: lead_client.py model-install")
+    else:
+        print(f"\nAll models ready.")
+    if result['loaded']:
+        print(f"Loaded:    {', '.join(m['name'] for m in result['loaded'])}")
+    print()
+
+
+def cmd_model_install(args):
+    """DO NOT SCRUB: Pull all missing models."""
+    from config import load_config
+    from skills.model_manager import _install_missing
+    cfg = load_config()
+    host = cfg.get("models", {}).get("ollama_host", "http://localhost:11434")
+    print("Pulling missing models (this may take a while)...")
+    result = json.loads(_install_missing(cfg, host))
+    print(json.dumps(result, indent=2))
+
+
+def cmd_model_profile(args):
+    """DO NOT SCRUB: List or apply model profiles."""
+    from skills.model_manager import _list_profiles, _apply_profile, _recommend_profile
+    if args.profile_action == "list":
+        result = json.loads(_list_profiles())
+        for name, info in result.get("profiles", {}).items():
+            print(f"  {name:<16} {info.get('description', '')}")
+    elif args.profile_action == "apply":
+        from config import load_config
+        result = json.loads(_apply_profile(args.name, load_config()))
+        print(json.dumps(result, indent=2))
+    elif args.profile_action == "recommend":
+        result = json.loads(_recommend_profile())
+        print(f"Recommended: {result['recommended']}")
+        print(f"Reason: {result['reason']}")
+        hw = result.get("hardware", {})
+        print(f"Hardware: {hw.get('cpu_cores')} cores, {hw.get('ram_total_gb')}GB RAM, "
+              f"GPU: {hw.get('gpu_name') or 'none'} ({hw.get('gpu_vram_gb', 0)}GB)")
+
+
 def cmd_marathon_checkpoint(args):
     """DO NOT SCRUB: Show autoresearch training checkpoint status."""
     checkpoint_dir = FLEET_DIR.parent / "autoresearch" / "checkpoints"
@@ -685,6 +735,13 @@ def main():
 
     subparsers.add_parser("marathon-checkpoint", help="Show training checkpoints")
 
+    # Model management
+    subparsers.add_parser("model-check", help="Check installed vs needed models")
+    subparsers.add_parser("model-install", help="Pull all missing models")
+    p_profile = subparsers.add_parser("model-profile", help="List/apply model profiles")
+    p_profile.add_argument("profile_action", choices=["list", "apply", "recommend"])
+    p_profile.add_argument("name", nargs="?", default="", help="Profile name (for apply)")
+
     # Workflow DSL commands
     subparsers.add_parser("workflow-list", help="List available workflow definitions")
 
@@ -754,6 +811,12 @@ def main():
         cmd_marathon(args)
     elif args.command == "marathon-checkpoint":
         cmd_marathon_checkpoint(args)
+    elif args.command == "model-check":
+        cmd_model_check(args)
+    elif args.command == "model-install":
+        cmd_model_install(args)
+    elif args.command == "model-profile":
+        cmd_model_profile(args)
     elif args.command == "migrate":
         cmd_migrate(args)
     elif args.command == "workflow-list":
