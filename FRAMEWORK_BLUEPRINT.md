@@ -1,4 +1,4 @@
-# BigEd CC v0.38 — Framework Blueprint
+# BigEd CC v0.41 — Framework Blueprint
 
 > **Production-ready modular AI agent platform.** Customer-deployable, 24/7 capable, with safe deprecation, thermal management, and iterative skill training.
 
@@ -7,7 +7,7 @@
 ## 1. Architecture Overview
 
 ```
-BigEd CC (v0.38)
+BigEd CC (v0.41)
 ├── Launcher (BigEd/launcher/)
 │   ├── launcher.py          — Core app shell (~4700 lines)
 │   │   ├── Header            — CPU/RAM/GPU/ETH stats (3s poll, hysteresis)
@@ -39,7 +39,7 @@ BigEd CC (v0.38)
 │   ├── smoke_test.py          — 10-check startup verification (--fast mode)
 │   ├── soak_test.py           — 10-check extended validation (concurrency, WAL stress)
 │   ├── fleet.toml             — Master configuration
-│   └── skills/                — 46+ skill modules
+│   └── skills/                — 49+ skill modules
 │       ├── _models.py         — Provider routing (Claude/Gemini/Local)
 │       ├── skill_train.py     — Iterative skill improvement (3 profiles, discovery logging)
 │       ├── plan_workload.py   — Fleet-aware task planning
@@ -716,6 +716,9 @@ Over time, `resolutions.jsonl` becomes a knowledge base:
 | v0.36 | Semantic Watchdog | QUARANTINED status, failure streak detection, stuck review auto-pass, DLP secret scrubbing (DB + knowledge files) |
 | v0.37 | Human-in-the-Loop | WAITING_HUMAN status, Fleet Comm tab, operator response flow, security advisory approve/dismiss |
 | v0.38 | Security & Sandboxing | [security] config, Docker sandbox policy, pip-audit dependency scanning, 127.0.0.1 binding verification |
+| v0.39 | Network & IoT | UniFi controller, Home Assistant, MQTT inspection skills |
+| v0.40 | Browser Skills | Playwright browser_crawl with JS rendering, httpx fallback |
+| v0.41 | Vision & Multi-Modal | Local vision via Ollama (llava/minicpm-v/qwen-vl), VRAM rotation in hw_supervisor |
 | — | Cross-Platform | FleetBridge abstraction, platform packaging, CI/CD matrix (parallel track) |
 | — | Diagnostics | Debug reports, issue submission, resolution tracking (parallel track) |
 | — | Offline/Air-Gap | Network-aware skill dispatch, local-only fallback, air-gap whitelist, recovery backup |

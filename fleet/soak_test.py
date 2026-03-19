@@ -606,6 +606,49 @@ def test_post_task_validation():
     return True, "validation + clamping works"
 
 
+def test_new_skill_imports():
+    """25. All v0.39-v0.41 skills import without errors."""
+    import importlib
+    new_skills = [
+        "unifi_manage", "home_assistant", "mqtt_inspect",
+        "browser_crawl", "vision_analyze",
+    ]
+    failures = []
+    for name in new_skills:
+        try:
+            importlib.import_module(f"skills.{name}")
+        except Exception as e:
+            failures.append(f"{name}: {e}")
+    if failures:
+        return False, f"{len(failures)} failed: {'; '.join(failures)}"
+    # Verify REQUIRES_NETWORK flags
+    for name in ["unifi_manage", "home_assistant", "mqtt_inspect", "browser_crawl"]:
+        mod = importlib.import_module(f"skills.{name}")
+        if not getattr(mod, "REQUIRES_NETWORK", False):
+            return False, f"{name} missing REQUIRES_NETWORK = True"
+    # vision_analyze should NOT require network (Ollama is local)
+    mod = importlib.import_module("skills.vision_analyze")
+    if getattr(mod, "REQUIRES_NETWORK", False):
+        return False, "vision_analyze should not require network"
+    return True, f"{len(new_skills)} new skills imported, network flags correct"
+
+
+def test_integration_config():
+    """26. Integration config: unifi, HA, MQTT flags present."""
+    from config import load_config
+    cfg = load_config()
+    integ = cfg.get("integrations", {})
+    expected = ["unifi_enabled", "ha_enabled", "mqtt_enabled"]
+    missing = [k for k in expected if k not in integ]
+    if missing:
+        return False, f"missing keys: {missing}"
+    # Vision model should be in models config
+    vision = cfg.get("models", {}).get("vision_model", "")
+    if not vision:
+        return False, "vision_model not in [models]"
+    return True, f"integrations OK, vision_model={vision}"
+
+
 def cleanup():
     """Remove soak test artifacts from DB."""
     import db
@@ -652,6 +695,8 @@ def main():
         ("Channel broadcast isolation", test_channel_broadcast_isolation),
         ("Notes append + load", test_notes_append_load),
         ("Security config", test_security_config),
+        ("New skill imports (v0.39-v0.41)", test_new_skill_imports),
+        ("Integration config", test_integration_config),
         ("Post task validation", test_post_task_validation),
     ]
 

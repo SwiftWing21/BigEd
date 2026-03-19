@@ -364,6 +364,16 @@ def main():
     cfg = load_thermal_config()
     ambient = AmbientEstimator()
 
+    # Register with DB for sup-channel communication
+    _HAS_DB = False
+    try:
+        import db as _db
+        _db.init_db()
+        _db.register_agent("hw_supervisor", "supervisor", os.getpid())
+        _HAS_DB = True
+    except Exception:
+        pass
+
     # Thermal throttle state
     gpu_throttled = False
     below_target_since = None
@@ -420,6 +430,17 @@ def main():
                         for m in models_loaded
                     ) else "unloaded"
 
+            # Sup inbox check every ~60s (12 polls at 5s)
+            if _HAS_DB and poll_count % 12 == 0:
+                try:
+                    msgs = _db.get_messages("hw_supervisor", unread_only=True,
+                                            limit=3, channels=["sup"])
+                    for m in msgs:
+                        body = json.loads(m["body_json"])
+                        print(f"[HW_SUP] Sup: {m['from_agent']} -> {body.get('type', '?')}")
+                except Exception:
+                    pass
+
             # Build thermal snapshot
             thermal = {
                 **gpu,
@@ -436,6 +457,15 @@ def main():
                       "pausing GPU tasks, switching to CPU-only")
                 gpu_throttled = True
                 below_target_since = None
+                if _HAS_DB:
+                    try:
+                        _db.post_note("sup", "hw_supervisor", json.dumps({
+                            "type": "thermal_alert",
+                            "title": f"GPU throttled at {gpu_temp}°C",
+                            "tags": ["thermal", "gpu"],
+                        }))
+                    except Exception:
+                        pass
 
             elif gpu_throttled:
                 if gpu_temp <= cfg["cooldown_target_c"]:
@@ -446,6 +476,15 @@ def main():
                               f"{cfg['cooldown_window_secs']}s — resuming GPU tasks")
                         gpu_throttled = False
                         below_target_since = None
+                        if _HAS_DB:
+                            try:
+                                _db.post_note("sup", "hw_supervisor", json.dumps({
+                                    "type": "thermal_alert",
+                                    "title": f"GPU resumed at {gpu_temp}°C",
+                                    "tags": ["thermal", "gpu"],
+                                }))
+                            except Exception:
+                                pass
                 else:
                     below_target_since = None
 
@@ -477,7 +516,37 @@ def main():
 
             if target_model != current_model:
                 transition_model(target_model, current_model, cfg, emergency)
+                # Post sup note about model transition
+                if _HAS_DB:
+                    try:
+                        _db.post_note("sup", "hw_supervisor", json.dumps({
+                            "type": "model_transition",
+                            "title": f"Model: {current_model} -> {target_model}",
+                            "content": f"{'Emergency ' if emergency else ''}VRAM {vram_pct:.0%}",
+                            "tags": ["model", "vram"],
+                        }))
+                    except Exception:
+                        pass
             else:
+                # ── Vision model rotation ──────────────────────────────
+                # Check if a vision task has requested model loading
+                try:
+                    if HW_STATE_FILE.exists():
+                        _hw = json.loads(HW_STATE_FILE.read_text(encoding="utf-8"))
+                        vr = _hw.get("vision_request")
+                        if vr and not gpu_throttled and not is_training:
+                            vision_model = vr.get("model", "llava")
+                            # Check if vision model is already loaded
+                            already_loaded = any(
+                                m["name"].split(":")[0] == vision_model.split(":")[0]
+                                for m in models_loaded
+                            )
+                            if not already_loaded and not air_gap:
+                                print(f"[HW_SUP] Vision request: loading {vision_model}")
+                                warmup_model(vision_model)
+                except Exception:
+                    pass
+
                 write_state("ready", current_model, thermal, models_loaded, conductor_status)
 
         except Exception as e:

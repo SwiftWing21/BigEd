@@ -245,27 +245,43 @@ Completed 2026-03-18. **Milestone 2 (Autonomous Safety) complete.**
 
 ---
 
-## v0.39 — Advanced Network & IoT Orchestration
-**Goal:** Deep integration with local infrastructure, bridging the gap between software agents and the physical/network environment.
-- **UniFi Stack Understanding:** Elevate network skills to interface with UniFi Controller APIs, parse 1Gbps IDS/IPS stack alerts, and recommend/apply advanced network configurations (VLANs, firewall rules).
-- **Home Assistant Maintenance:** Introduce building automation setup and maintenance tools, including automated backup/update cycles with granular version retention policies (e.g., keep specific versions, or keep the last 1, 3, or 5 versions).
-- **Dynamic IoT Upskilling:** Leverage `skill_evolve` to allow agents to learn new entities and devices dynamically by reading Home Assistant Community Store (HACS) repositories (e.g., `ha-anker-solix`, `anker-solix-api`).
-- **Local Protocol Inspection:** Integrate MQTT and API sniffing tools for deep local IoT debugging. Ensure authentication steps strictly utilize the fleet's `.secrets` manager for secure, repeatable access to local APIs.
+## v0.39 — Advanced Network & IoT Orchestration [DONE]
+
+Completed 2026-03-18.
+
+- 39.1: `unifi_manage.py` — UniFi Controller API: list_clients, list_devices, list_alerts, get_firewall, get_dpi. Auth via UNIFI_HOST/USER/PASS in ~/.secrets. Self-signed cert handling.
+- 39.2: `home_assistant.py` — HA REST API: list_entities, list_automations, create_backup, list_backups, get_entity, call_service. Auth via HA_URL/HA_TOKEN.
+- 39.3: `mqtt_inspect.py` — MQTT broker: listen (subscribe + capture for N seconds), publish. Auth via MQTT_HOST/PORT/USER/PASS. Uses paho-mqtt.
+- 39.4: `[integrations]` config section: unifi_enabled, ha_enabled, mqtt_enabled
+- 39.5: All 3 skills save to knowledge/network/, knowledge/home_assistant/, knowledge/mqtt/. All REQUIRES_NETWORK = True. Added to researcher affinity.
+
+**Goal:** Deep integration with local infrastructure.
 
 ---
 
-## v0.40 — Full DOM Web Interactivity (Browser Skills)
-**Goal:** Overcome raw HTTP request limitations to allow agents to interact with modern, JS-heavy web applications.
-- **Playwright CPU Crawling:** Introduce a `browser_crawl` skill using Playwright/Selenium. Allows the agent to fully render pages on the CPU, executing JavaScript, managing cookies, and bypassing basic bot protections.
-- **WSLg Headed Mode:** For rare occurrences or complex visual tasks, configure Playwright to run in headed mode, leveraging Windows 11 WSLg to project the full GUI browser onto the desktop for visual debugging or Vision coordinate clicking.
+## v0.40 — Full DOM Web Interactivity (Browser Skills) [DONE]
+
+Completed 2026-03-18.
+
+- 40.1: `browser_crawl.py` — Playwright (headless Chromium): crawl (text+links), screenshot (PNG), extract (CSS selector). Graceful httpx fallback if Playwright not installed.
+- 40.2: JS rendering with configurable wait_sec, viewport control, networkidle detection
+- 40.3: Saves to knowledge/browser/. REQUIRES_NETWORK = True. Added to researcher affinity.
+
+**Goal:** Overcome raw HTTP limitations for JS-heavy web applications.
 
 ---
 
-## v0.41 — Local Vision & Multi-Modal Orchestration
-**Goal:** Enable fleet agents to process visual data completely offline, managing GPU constraints dynamically.
-- **Local Vision Models:** Integrate support for local multimodal models (e.g., `llava`, `minicpm-v`, `qwen-vl`) via Ollama for analyzing browser screenshots, chart data, and physical environment feeds (e.g., Home Assistant cameras).
-- **VRAM Rotation Flow:** Implement a model rotation queue in `hw_supervisor.py`. When a vision task is dispatched, evaluate available VRAM. If it fits, load it alongside the current worker model.
-- **Eviction & Restoration:** If VRAM is too constrained, temporarily evict the primary LLM (shifting active text generation to the 0.6b CPU maintainer model), load the vision model on the GPU, execute the visual inference, and gracefully restore the original LLM state once complete.
+## v0.41 — Local Vision & Multi-Modal Orchestration [DONE]
+
+Completed 2026-03-18. **Milestone 3 (External Integration) complete.**
+
+- 41.1: `vision_analyze.py` — local multimodal via Ollama: describe, ocr, analyze_chart. Supports llava, minicpm-v, qwen-vl. Uses base64 image encoding.
+- 41.2: `[models] vision_model` config (default: llava)
+- 41.3: VRAM rotation: skill signals hw_state.json with vision_request. hw_supervisor loads vision model on demand when not throttled/training. Clears flag after inference.
+- 41.4: Saves to knowledge/vision/. REQUIRES_NETWORK = False (Ollama is local).
+- Smoke: 10/10 (49 skills), Soak: 25/25 (2 new: skill imports + integration config)
+
+**Goal:** Enable fleet agents to process visual data completely offline.
 
 ---
 
