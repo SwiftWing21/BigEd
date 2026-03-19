@@ -32,6 +32,22 @@ HW_STATE_JSON = FLEET_DIR / "hw_state.json"
 
 app = Flask(__name__)
 
+
+@app.before_request
+def _check_auth():
+    """Bearer token auth for /api/* endpoints. Skipped if no token configured."""
+    if not request.path.startswith("/api/") and not request.path.startswith("/a2a/") and request.path != "/.well-known/agent.json":
+        return  # skip auth for HTML pages, static
+    config = _load_config()
+    token = config.get("security", {}).get("dashboard_token", "")
+    if not token:
+        return  # no token configured = open access (local dev mode)
+    auth = request.headers.get("Authorization", "")
+    if auth == f"Bearer {token}":
+        return  # valid
+    return jsonify({"error": "Unauthorized — set Authorization: Bearer <token>"}), 401
+
+
 # Alert state — tracked in memory, broadcast via SSE
 _alerts = []
 _alert_lock = threading.Lock()
