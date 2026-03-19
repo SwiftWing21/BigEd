@@ -105,6 +105,41 @@ def _redact_secrets(text):
     return result
 
 
+# ── PII patterns for input-side guardrails ────────────────────────────────────
+
+_PII_PATTERNS = [
+    re.compile(r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b'),  # email
+    re.compile(r'\b\d{3}[-.]?\d{2}[-.]?\d{4}\b'),  # SSN
+    re.compile(r'\b(?:\d{4}[-\s]?){3}\d{4}\b'),  # credit card
+    re.compile(r'\b\+?1?[-.\s]?\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}\b'),  # US phone
+]
+
+
+def scan_input(text: str) -> dict:
+    """Scan input text for secrets and PII before it reaches the LLM.
+
+    Returns:
+        {"clean": bool, "findings": [{"type": "secret"|"pii", "pattern": str}]}
+    """
+    findings = []
+
+    # Check for API key secrets
+    if _contains_secret(text):
+        findings.append({"type": "secret", "pattern": "API key pattern detected"})
+
+    # Check for base64-encoded secrets
+    has_b64, match = _check_base64_secrets(text)
+    if has_b64:
+        findings.append({"type": "secret", "pattern": "Base64-encoded secret detected"})
+
+    # Check for PII
+    for pattern in _PII_PATTERNS:
+        if pattern.search(text):
+            findings.append({"type": "pii", "pattern": pattern.pattern[:40] + "..."})
+
+    return {"clean": len(findings) == 0, "findings": findings}
+
+
 # ── Watchdog checks ──────────────────────────────────────────────────────────
 
 def check_failure_streaks(log_fn=print):
