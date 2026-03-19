@@ -921,22 +921,27 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
         self._stat_gpu.pack(side="left", padx=(0, 8))
         self._stat_net.pack(side="left", padx=(0, 8))
 
+        # Dr. Ders status (always-on hw monitor)
+        self._dr_ders_hdr = ctk.CTkLabel(
+            hdr, text="Dr.Ders —", font=("Consolas", 10), text_color=DIM)
+        self._dr_ders_hdr.grid(row=0, column=4, padx=(4, 2), pady=(10, 0), sticky="e")
+
         self._status_pills = ctk.CTkLabel(
             hdr, text="● loading...", font=("Consolas", 11), text_color=DIM)
-        self._status_pills.grid(row=0, column=4, padx=8, pady=(10, 0), sticky="e")
+        self._status_pills.grid(row=0, column=5, padx=8, pady=(10, 0), sticky="e")
 
         self._action_badge = ctk.CTkLabel(
             hdr, text="", font=("Segoe UI", 9, "bold"),
             text_color="#1a1a1a", fg_color=ORANGE,
             corner_radius=8, width=0)
-        self._action_badge.grid(row=0, column=5, padx=(0, 4), pady=(8, 0))
+        self._action_badge.grid(row=0, column=6, padx=(0, 4), pady=(8, 0))
 
         self._update_badge = ctk.CTkButton(
             hdr, text="", font=("Segoe UI", 9, "bold"),
             text_color=TEXT, fg_color="transparent",
             hover_color="#2a4a2a", corner_radius=8, width=0,
             command=self._launch_auto_update)
-        self._update_badge.grid(row=0, column=6, padx=(0, 4), pady=(8, 0))
+        self._update_badge.grid(row=0, column=7, padx=(0, 4), pady=(8, 0))
 
         # Offline / Air-Gap mode badge
         mode = _fleet_mode()
@@ -2268,6 +2273,34 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
             self._hw_sup_status_lbl.configure(text="Dr. Ders: HUNG", text_color=ORANGE)
         else:
             self._hw_sup_status_lbl.configure(text="Dr. Ders: OFFLINE", text_color=RED)
+
+        # Dr. Ders header — compact GPU/model/thermal from hw_state.json
+        try:
+            if HW_STATE_JSON.exists():
+                _hw = json.loads(HW_STATE_JSON.read_text(encoding="utf-8"))
+                _model = (_hw.get("model") or "—").split(":")[0]
+                _thermal = _hw.get("thermal", {})
+                _temp = _thermal.get("gpu_temp_c", 0)
+                _vram_pct = _thermal.get("vram_pct", 0)
+                _vram_gb = _thermal.get("vram_used_gb", 0)
+                _mem = _hw.get("memory", {})
+                _rss = _mem.get("hw_sup_rss_mb", 0)
+                # Build compact string
+                parts = []
+                if _model != "—":
+                    parts.append(_model)
+                if _temp:
+                    tc = GREEN if _temp < 70 else ORANGE if _temp < 80 else RED
+                    parts.append(f"{_temp}°C")
+                if _vram_gb:
+                    parts.append(f"{_vram_gb:.1f}GB")
+                hdr_text = f"Dr.Ders {' | '.join(parts)}" if parts else "Dr.Ders —"
+                hdr_color = GREEN if hw_status == "ONLINE" else ORANGE if hw_status in ("TRANSIT", "HUNG") else RED
+                self._dr_ders_hdr.configure(text=hdr_text, text_color=hdr_color)
+            else:
+                self._dr_ders_hdr.configure(text="Dr.Ders —", text_color=DIM)
+        except Exception:
+            pass
 
         # Record activity for sparklines
         self._record_agent_activity(agents)
