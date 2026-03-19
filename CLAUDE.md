@@ -5,11 +5,59 @@
 - Dev reference docs are stored on the MCP server, NOT in this repo
 - Project agent .md files (CLAUDE.md, fleet/CLAUDE.md) stay in-repo as instructions
 
+
+## Roadmap & Blueprint Standards
+
+All future blueprints, roadmaps, and implementation plans must:
+
+1. **Reference grading logic from `audit_tracker.md`**
+   - Before writing any roadmap item, read `audit_tracker.md` and extract the 
+     relevant grading criteria, weights, and thresholds that apply to that item.
+   - Each roadmap item must include a `Grading Alignment` field showing which 
+     audit criteria it satisfies and what score impact it carries.
+   - If a roadmap item does not map to any grading criteria, flag it explicitly 
+     as `[UNGRADED]` so it can be triaged.
+
+2. **Roadmap item format**
+   Use this structure for every item:
+```
+   ### [Item Title]
+   - **Goal:** What this accomplishes
+   - **Grading Alignment:** <criterion from audit_tracker.md> → impact: +X pts / weight: Y%
+   - **Dependencies:** List any items this blocks or is blocked by
+   - **Est. Tokens:** ~Xk (see scale below)
+   - **Status:** [ ] Not started / [ ] In progress / [ ] Done
+```
+
+3. **Token estimation scale (lightweight)**
+   Use this rough heuristic per item — no deep analysis needed:
+
+   | Complexity | Description                              | Est. Tokens |
+   |------------|------------------------------------------|-------------|
+   | XS         | Config change, minor copy, 1-file edit   | ~1–2k       |
+   | S          | Single component or small feature        | ~3–5k       |
+   | M          | Multi-file feature, new module           | ~8–15k      |
+   | L          | Cross-cutting concern, refactor, new API | ~20–40k     |
+   | XL         | Architecture change, major integration   | ~50k+       |
+
+   Label each item with its size tier and token range. No need for exact counts.
+
+4. **Audit drift check**
+   At the end of every roadmap, include a brief section:
+```
+   ## Audit Coverage Check
+   - Criteria fully covered: [list]
+   - Criteria partially covered: [list]
+   - Criteria not addressed this cycle: [list]
+```
+
+Always re-read `audit_tracker.md` if it has been updated before generating a new roadmap.
+
 ## Version Scheme
 - Alpha: `0.XX.00` milestones + `0.XX.YY` patches
 - Milestones: S-Tier infrastructure (reliability, observability, intelligence, security)
 - Patches: UX polish, agent quality, console flows, bug fixes
-- Roadmap: `ROADMAP_v030_v040.md`
+- Roadmap: `ROADMAP.md`
 
 ## Structure
 - `fleet/` — 72-skill AI worker fleet (Ollama + Claude/Gemini)

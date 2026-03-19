@@ -280,13 +280,29 @@ Completed 2026-03-19. Major session — 18 files, 1400+ lines added:
 
 Smoke: 22/22. 73 skills.
 
-### 0.21.02 — Model Update Checker + Intelligence Metrics [PLANNED]
+### 0.21.02 — Gemini Safety + Native Key Manager [DONE]
 
-- `model_manager.py update_check` action: compare installed digests against registry, discover new model families, generate HITL recommendation for model changes
-- Intelligence scoring metric: quality score per task output alongside tok/s (intelligence > performance)
-- HITL process for model preference changes: when swarm identifies intelligence/performance gains, route recommendation through HITL for operator approval before fleet.toml changes
-- `intelligence_score` column in usage table (LLM-evaluated output quality 0-100)
-- Model comparison benchmarks: auto-run standardized prompts on alternative models, compare intelligence vs speed
+Completed 2026-03-19. Gemini `finishReason` safety handling (raises on SAFETY block). KeyManagerDialog migrated from WSL to native Windows (direct ~/.secrets read/write). model_manager.py `update_check` action.
+
+### 0.21.03 — Intelligence Scoring + HITL Model Recommendations + Gemini ToS [DONE]
+
+Completed 2026-03-19. Three major features:
+
+**Intelligence scoring (intelligence > performance):** `intelligence.py` — hybrid Tier 1 mechanical scoring (0.0-1.0) per task output. Checks content presence, length, structure, error-free, skill-specific format. `intelligence_score` column on tasks table, scored after every `complete_task()`. `get_skill_quality_stats()` for per-skill quality aggregation. Tier 2 LLM scoring placeholder.
+
+**HITL model preference flow:** `model_recommend.py` (skill #74) — auto-analyzes fleet model performance every 6h. `MODEL_QUALITY` reference table (8 model families). Compares installed models against config, finds upgrades. Creates HITL request for operator approval before changing fleet.toml. Supervisor auto-dispatches.
+
+**Gemini ToS compliance:** `provider` column in usage table. Thread-local `get_last_provider()`. `dataset_synthesize.py` dual exclusion filter (DB + thread-local). Gemini-sourced content excluded from training data.
+
+Smoke: 22/22. Skills: 74.
+
+### 0.21.04 — UX Polish + Fleet Tab Refinement [PLANNED]
+
+- Fleet tab (renamed from Agents): refine card layout, fix clipped labels
+- Dr. Ders header integration: compact GPU/model/temp always visible
+- Model Performance panel: add intelligence score column alongside tok/s
+- Action panel: improve card density, add timestamps, keyboard shortcuts
+- Fleet Comm tab: modernize to match new swarm dashboard aesthetic
 
 ### 0.21.00 — S1: Reliability (99.99% uptime)
 
