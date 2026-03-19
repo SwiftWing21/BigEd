@@ -352,6 +352,30 @@ When no tasks are pending, workers auto-discover improvement opportunities.
 
 ## Long-Range Roadmap: 1.0 → 5.0
 
+## Feature Isolation Refactor (FI-1 through FI-3)
+
+> Restructure fleet code so each feature is self-contained. Enables agents to work on complete vertical slices without cross-file conflicts.
+
+### FI-1: Easy Extractions [DONE]
+
+- `fleet/services.py` — auto-boot install/uninstall (from lead_client.py)
+- `fleet/providers.py` — HA fallback cascade, PRICING, calculate_cost (from _models.py)
+- `fleet/cost_tracking.py` — usage logging, summaries, deltas, budgets (from db.py)
+
+### FI-2: Medium Extractions
+
+- `fleet/idle_evolution.py` — idle detection, curriculum, idle_runs DB (from worker.py + db.py)
+- `fleet/comms.py` — channel constants, message/note CRUD, broadcast (from db.py)
+- `fleet/process_control.py` — REST lifecycle endpoints (from dashboard.py)
+
+### FI-3: Complex Extractions
+
+- `fleet/marathon.py` — training detection, checkpoints, session logging (from supervisor.py + hw_supervisor.py)
+- `fleet/diagnostics.py` — quarantine, failure streaks, watchdog (from db.py + _watchdog.py)
+- `fleet/resource_mgmt.py` — VRAM eviction, thermal scaling, model tiers (from hw_supervisor.py)
+
+---
+
 ### 1.0 — Production Release (Milestone 5)
 
 All parallel tracks complete. Zero TECH_DEBT. Cross-platform validated.
