@@ -33,13 +33,16 @@ def _load_secrets():
             key, _, val = line.partition("=")
             os.environ.setdefault(key.strip(), val.strip())
 
+(FLEET_DIR / "logs").mkdir(parents=True, exist_ok=True)
+from logging.handlers import RotatingFileHandler
+_sup_handler = RotatingFileHandler(
+    FLEET_DIR / "logs" / "supervisor.log",
+    maxBytes=10 * 1024 * 1024, backupCount=5, encoding="utf-8",
+)
+_sup_handler.setFormatter(logging.Formatter("%(asctime)s [SUPERVISOR] %(message)s"))
 logging.basicConfig(
     level=logging.INFO,
-    format="%(asctime)s [SUPERVISOR] %(message)s",
-    handlers=[
-        logging.FileHandler(FLEET_DIR / "logs" / "supervisor.log"),
-        logging.StreamHandler(sys.stdout),
-    ],
+    handlers=[_sup_handler, logging.StreamHandler(sys.stdout)],
 )
 log = logging.getLogger("supervisor")
 
@@ -173,18 +176,22 @@ def stop_dashboard():
 
 
 def start_worker(role, config):
-    nice = config["workers"]["nice_level"]
-    cpu_limit = config["workers"]["cpu_limit_percent"]
-    cmd = ["nice", f"-n{nice}", PYTHON, str(FLEET_DIR / "worker.py"), "--role", role]
+    cmd = [PYTHON, str(FLEET_DIR / "worker.py"), "--role", role]
 
-    # Wrap with cpulimit if available
-    if subprocess.run(["which", "cpulimit"], capture_output=True).returncode == 0:
-        cmd = ["cpulimit", f"--limit={cpu_limit}", "--"] + cmd
-    else:
-        log.warning("cpulimit not found — install with: sudo apt install cpulimit")
+    # Unix-only: nice + cpulimit for resource control
+    if sys.platform != "win32":
+        import shutil
+        nice = config["workers"].get("nice_level", 10)
+        cpu_limit = config["workers"].get("cpu_limit_percent", 80)
+        cmd = ["nice", f"-n{nice}"] + cmd
+        if shutil.which("cpulimit"):
+            cmd = ["cpulimit", f"--limit={cpu_limit}", "--"] + cmd
 
     log.info(f"Starting worker: {role}")
-    worker_procs[role] = subprocess.Popen(cmd, cwd=str(FLEET_DIR))
+    worker_procs[role] = subprocess.Popen(
+        cmd, cwd=str(FLEET_DIR),
+        creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0),
+    )
 
     # 0.07.00: Apply resource limits
     memory_limit = config.get("workers", {}).get("memory_limit_mb", 0)

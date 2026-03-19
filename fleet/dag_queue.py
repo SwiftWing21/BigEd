@@ -14,11 +14,15 @@ _thread = None
 
 def enqueue_promotion(task_id: int):
     """Enqueue a task completion for async DAG promotion."""
+    if not _running:
+        start()  # auto-start on first use
     _dag_queue.put(("promote", task_id))
 
 
 def enqueue_cascade_fail(task_id: int, error: str):
     """Enqueue a task failure for async cascade processing."""
+    if not _running:
+        start()
     _dag_queue.put(("cascade_fail", task_id, error))
 
 

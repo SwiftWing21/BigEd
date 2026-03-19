@@ -636,10 +636,11 @@ def main():
             conductor_status = "none"
             if not air_gap:
                 models_loaded = get_loaded_models(host)
-                # Keepalive ping every ~240s
+                # Keepalive ping every ~240s — skip during training/throttling
                 if poll_count % KEEPALIVE_EVERY_N_POLLS == 0:
-                    current_local = get_current_local_model()
-                    ping_keepalive(host, current_local)
+                    if not is_training and not gpu_throttled:
+                        current_local = get_current_local_model()
+                        ping_keepalive(host, current_local)
                 # Conductor check every ~60s (12 polls)
                 if conductor_model and poll_count % 12 == 0:
                     conductor_status = ensure_conductor(host, conductor_model)
