@@ -1245,83 +1245,13 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
         threading.Thread(target=_run, daemon=True).start()
 
     def _db_init(self):
-        con = self._db_conn()
-        con.executescript("""
-            CREATE TABLE IF NOT EXISTS agents (
-                id       INTEGER PRIMARY KEY AUTOINCREMENT,
-                name     TEXT UNIQUE NOT NULL,
-                role     TEXT,
-                type     TEXT DEFAULT 'Internal',
-                customer TEXT,
-                notes    TEXT
-            );
-            CREATE TABLE IF NOT EXISTS crm (
-                id       INTEGER PRIMARY KEY AUTOINCREMENT,
-                company  TEXT UNIQUE NOT NULL,
-                industry TEXT,
-                contact  TEXT,
-                email    TEXT,
-                phone    TEXT,
-                stage    TEXT DEFAULT 'Lead',
-                notes    TEXT
-            );
-            CREATE TABLE IF NOT EXISTS onboarding (
-                id       INTEGER PRIMARY KEY AUTOINCREMENT,
-                customer TEXT NOT NULL,
-                category TEXT NOT NULL,
-                step     TEXT NOT NULL,
-                done     INTEGER DEFAULT 0,
-                UNIQUE(customer, category, step)
-            );
-            CREATE TABLE IF NOT EXISTS customers (
-                id            INTEGER PRIMARY KEY AUTOINCREMENT,
-                name          TEXT UNIQUE NOT NULL,
-                fleet_version TEXT,
-                contact       TEXT,
-                notes         TEXT,
-                air_gapped    INTEGER DEFAULT 0,
-                status        TEXT DEFAULT 'Unknown',
-                last_ping     TEXT DEFAULT '—'
-            );
-            CREATE TABLE IF NOT EXISTS accounts (
-                id               INTEGER PRIMARY KEY AUTOINCREMENT,
-                service          TEXT UNIQUE NOT NULL,
-                category         TEXT,
-                tier             TEXT DEFAULT 'free',
-                monthly_cost     REAL DEFAULT 0.0,
-                free_limit       TEXT DEFAULT '',
-                usage_pct        INTEGER DEFAULT 0,
-                reset_date       TEXT DEFAULT '',
-                account_email    TEXT DEFAULT '',
-                notes            TEXT DEFAULT '',
-                upgrade_priority INTEGER DEFAULT 0,
-                upgrade_reason   TEXT DEFAULT '',
-                signup_url       TEXT DEFAULT ''
-            );
-        """)
-        # Seed default services if table is empty
-        row = con.execute("SELECT COUNT(*) FROM accounts").fetchone()
-        count = row[0] if row else 0
-        if count == 0:
-            _SEED = [
-                # (service, category, tier, free_limit, signup_url)
-                ("Anthropic API",  "AI / LLM",       "free",  "Free $5 credit",          "https://console.anthropic.com"),
-                ("Google Gemini",  "AI / LLM",       "free",  "60 req/min Flash free",   "https://aistudio.google.com"),
-                ("Stability AI",   "AI / Image",     "free",  "25 credits/day",          "https://platform.stability.ai"),
-                ("Replicate",      "AI / Video+Img", "free",  "Pay-as-you-go, no limit", "https://replicate.com"),
-                ("Brave Search",   "Search",         "free",  "2,000 queries/mo",        "https://api.search.brave.com"),
-                ("Tavily Search",  "Search",         "free",  "1,000 searches/mo",       "https://tavily.com"),
-                ("Jina AI",        "Search / Embed", "free",  "1M tokens/mo",            "https://jina.ai"),
-                ("HuggingFace",    "AI / Models",    "free",  "Unlimited public models", "https://huggingface.co"),
-                ("GitHub",         "Dev",            "free",  "2,000 Actions min/mo",    "https://github.com"),
-                ("Ollama",         "AI / Local",     "local", "Unlimited (local)",       "https://ollama.com"),
-            ]
-            for s in _SEED:
-                con.execute(
-                    "INSERT OR IGNORE INTO accounts (service, category, tier, free_limit, signup_url)"
-                    " VALUES (?,?,?,?,?)", s)
-        con.commit()
-        con.close()
+        """Initialize launcher database using DAL (single source of truth)."""
+        try:
+            from data_access import DataAccess
+            dal = DataAccess(self._db_path)
+            dal.init_launcher_db()
+        except Exception as e:
+            self._log_output(f"DB init error: {e}")
 
 
     # ── Fleet Comm tab ─────────────────────────────────────────────────────
