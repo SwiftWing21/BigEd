@@ -79,11 +79,20 @@ dependencies = [
     { name = "httpx" },
 ]
 
+[package.optional-dependencies]
+gpu = [
+    { name = "nvidia-ml-py" },
+    { name = "pyamdgpuinfo", marker = "sys_platform == 'linux'" },
+]
+
 [package.metadata]
 requires-dist = [
     { name = "anthropic", specifier = ">=0.40.0" },
     { name = "httpx", specifier = ">=0.27.0" },
+    { name = "nvidia-ml-py", marker = "extra == 'gpu'", specifier = ">=12.0.0" },
+    { name = "pyamdgpuinfo", marker = "sys_platform == 'linux' and extra == 'gpu'", specifier = ">=2.1.0" },
 ]
+provides-extras = ["gpu"]
 
 [[package]]
 name = "h11"
@@ -214,6 +223,30 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/d2/73/a009f41c5eed71c49bec53036c4b33555afcdee70682a18c6f66e396c039/jiter-0.13.0-graalpy312-graalpy250_312_native-macosx_11_0_arm64.whl", hash = "sha256:ff732bd0a0e778f43d5009840f20b935e79087b4dc65bd36f1cd0f9b04b8ff7f", size = 303808, upload-time = "2026-02-02T12:37:52.092Z" },
     { url = "https://files.pythonhosted.org/packages/c4/10/528b439290763bff3d939268085d03382471b442f212dca4ff5f12802d43/jiter-0.13.0-graalpy312-graalpy250_312_native-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:ab44b178f7981fcaea7e0a5df20e773c663d06ffda0198f1a524e91b2fde7e59", size = 337384, upload-time = "2026-02-02T12:37:53.582Z" },
     { url = "https://files.pythonhosted.org/packages/67/8a/a342b2f0251f3dac4ca17618265d93bf244a2a4d089126e81e4c1056ac50/jiter-0.13.0-graalpy312-graalpy250_312_native-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:7bb00b6d26db67a05fe3e12c76edc75f32077fb51deed13822dc648fa373bc19", size = 343768, upload-time = "2026-02-02T12:37:55.055Z" },
+]
+
+[[package]]
+name = "nvidia-ml-py"
+version = "13.590.48"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/af/a0/f4fc18cf72f06821a9a665085435b901449986855519d5b3843532db35e9/nvidia_ml_py-13.590.48.tar.gz", hash = "sha256:8184d1be52914ac7f0991cd1c0d946c65dc88a840c754cd12c274b77b88760dd", size = 49732, upload-time = "2026-01-22T01:14:56.456Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/fd/72/fb2af0d259a651affdce65fd6a495f0e07a685a0136baf585c5065204ee7/nvidia_ml_py-13.590.48-py3-none-any.whl", hash = "sha256:fd43d30ee9cd0b7940f5f9f9220b68d42722975e3992b6c21d14144c48760e43", size = 50680, upload-time = "2026-01-22T01:14:55.281Z" },
+]
+
+[[package]]
+name = "pyamdgpuinfo"
+version = "2.1.7"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/80/15/2ff925c0776c7a2aaab3d03b0e477d1a24b0637600b7e2e928cbcc25034f/pyamdgpuinfo-2.1.7.tar.gz", hash = "sha256:95b4f5618c3271f95edef8e10ddaf89a13a0d1edbb03bdd05d8f4a930aa125b0", size = 21905, upload-time = "2025-04-05T22:49:23.691Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/96/0d/a606063e423996a071977d35de833ccc76620ab7beb7d1614f0e70ca4d0e/pyamdgpuinfo-2.1.7-cp311-cp311-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:2a714e58f3eb706dc8583fc1247240c2de2522b622973661b36d859bd708957e", size = 366095, upload-time = "2025-04-05T22:52:52.219Z" },
+    { url = "https://files.pythonhosted.org/packages/50/b1/fc2b686f244df1d365289ac9ea5acc4e410517832a8e12311b100bcb0233/pyamdgpuinfo-2.1.7-cp311-cp311-musllinux_1_2_x86_64.whl", hash = "sha256:d3e00838479a77c9e5c532e38e08957e9cbcbfbae2819ef7bad767acf7a151c4", size = 371645, upload-time = "2025-04-05T22:52:53.799Z" },
+    { url = "https://files.pythonhosted.org/packages/fc/b7/ba5551480e397c6e86805cc381dd6dc36b15411a806c00c35b661d8dd77e/pyamdgpuinfo-2.1.7-cp312-cp312-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:74e7db2f58f74d0c9a66709fe7a16410ccc442bcbb204a1e593bfd575a6184f5", size = 359647, upload-time = "2025-04-05T22:52:55.259Z" },
+    { url = "https://files.pythonhosted.org/packages/6f/d2/b79935c955fa593b88544708980bd1a4d39f4294860c8e048175e1a65910/pyamdgpuinfo-2.1.7-cp312-cp312-musllinux_1_2_x86_64.whl", hash = "sha256:d067afe60abd4ea87914391bcf0710c8e867a2bdade7df2291287ff95d0caccb", size = 368720, upload-time = "2025-04-05T22:52:56.713Z" },
+    { url = "https://files.pythonhosted.org/packages/ac/0f/ebe07dd55023e7f08a3357d821c299df21bdd143f4307c62259c14b8a090/pyamdgpuinfo-2.1.7-cp313-cp313-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:86aa72b64d9a483e5a05aea8424f88145b1d5494a3239402a347a016d77149a7", size = 360138, upload-time = "2025-04-05T22:52:58.279Z" },
+    { url = "https://files.pythonhosted.org/packages/f8/9d/9006c0cd671b1b204fd6c0c248871c07af024a73e51f52eaf3750cfd286e/pyamdgpuinfo-2.1.7-cp313-cp313-musllinux_1_2_x86_64.whl", hash = "sha256:943b7d7e3a143dda0ea4d198c9ff4d4e4a55ef32f4b2643de9eb4b2d5f14f6e4", size = 364592, upload-time = "2025-04-05T22:52:59.785Z" },
+    { url = "https://files.pythonhosted.org/packages/23/54/85d1cd69f58984f7f4405ce7afdbf886f525c4dfc514112c33d2b84ddaa8/pyamdgpuinfo-2.1.7-pp311-pypy311_pp73-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:32826c0386c8266f02d88bd12eeb9c4aad73d2673014d9673f6d6ecda22dc9e9", size = 116470, upload-time = "2025-04-05T22:53:04.368Z" },
 ]
 
 [[package]]

@@ -6,3 +6,9 @@ dependencies = [
     "httpx>=0.27.0",
     "anthropic>=0.40.0",
 ]
+
+[project.optional-dependencies]
+gpu = [
+    "nvidia-ml-py>=12.0.0",
+    "pyamdgpuinfo>=2.1.0; sys_platform == 'linux'",
+]

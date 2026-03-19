@@ -74,3 +74,8 @@ Both share the Windows PATH. Verified tool access:
   - Added launch configurations for `smoke_test.py`, `worker.py`, and `lead_client.py`.
   - Created `lint`, `format`, and `build` tasks in `tasks.json`.
   - Updated `smoke_test.py` with `--fast` mode. Skips Ollama/RAG/Thermal and explicitly sets `FLEET_TEST_DB=:memory:` for true DB test isolation, accelerating the local dev loop.
+
+### Strategic Planning
+- **Architectural Upgrades:** Outlined the architecture for Task Dependency Graphs (DAG), Evaluator-Optimizer loops, Semantic Watchdogs, and Human-in-the-Loop messaging. 
+- Drafted `ROADMAP_v030_v040.md` to map out the transition from a flat task queue to a graph-based swarm.
+- **Technical Debt:** Drafted `TECH_DEBT.md` to catalog brittle architectural patterns (e.g., WSL bash RPC hacks, bash-based `.secrets` management) and ensure they are addressed systematically rather than accumulating.

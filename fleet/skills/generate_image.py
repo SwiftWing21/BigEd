@@ -20,6 +20,7 @@ import httpx
 KNOWLEDGE_DIR = Path(__file__).parent.parent / "knowledge"
 IMAGES_DIR    = KNOWLEDGE_DIR / "marketing" / "images"
 API_BASE      = "https://api.stability.ai/v2beta/stable-image/generate"
+REQUIRES_NETWORK = True
 
 
 def run(payload, config):

@@ -7,6 +7,7 @@ from pathlib import Path
 import httpx
 
 NS = {"atom": "http://www.w3.org/2005/Atom"}
+REQUIRES_NETWORK = True
 
 
 def run(payload, config):

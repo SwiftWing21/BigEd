@@ -15,6 +15,7 @@ import httpx
 
 HEADERS = {"User-Agent": "fleet-agent/1.0"}
 WATERFALL_LOG = Path(__file__).parent.parent / "knowledge" / "search_waterfall.jsonl"
+REQUIRES_NETWORK = True
 
 
 def _log_provider(query, provider, success):

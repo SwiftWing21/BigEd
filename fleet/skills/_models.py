@@ -17,6 +17,10 @@ def call_complex(system: str, user: str, config: dict, max_tokens: int = 2048, c
     models = config.get("models", {})
     provider = models.get("complex_provider", "claude")
 
+    # Offline mode: force local provider (no external API calls)
+    if config.get("fleet", {}).get("offline_mode", False):
+        provider = "local"
+
     if provider == "gemini":
         return _call_gemini(system, user, models, max_tokens)
     elif provider == "local":

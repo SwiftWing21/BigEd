@@ -16,7 +16,7 @@ FLEET_DIR = Path(__file__).parent
 sys.path.insert(0, str(FLEET_DIR))
 
 import db
-from config import load_config
+from config import load_config, is_offline, is_air_gap
 
 
 def _load_secrets():
@@ -194,10 +194,11 @@ def start_worker(role, config):
     worker_procs[role] = subprocess.Popen(cmd, cwd=str(FLEET_DIR))
 
 
-OLLAMA_KEEPALIVE_INTERVAL = 240  # ping every 4 min (under the 5 min Ollama default)
 HW_STATE_FILE = FLEET_DIR / "hw_state.json"
 STALE_TASK_RECOVERY_INTERVAL = 300  # check every 5 min
 STALE_TASK_TIMEOUT = 900  # 15 min with no heartbeat = stale
+WATCHDOG_INTERVAL = 60  # semantic watchdog every 60s
+WATCHDOG_FULL_INTERVAL = 600  # full scan (knowledge files) every 10min
 
 
 def read_hw_state():
@@ -250,16 +251,30 @@ def _warmup_conductor(config):
 def write_status_md():
     try:
         status = db.get_fleet_status()
+        # Build task type lookup from current assignments
+        task_lookup = {}
+        try:
+            with db.get_conn() as conn:
+                for a in status["agents"]:
+                    tid = a.get("current_task_id")
+                    if tid:
+                        row = conn.execute("SELECT type FROM tasks WHERE id=?", (tid,)).fetchone()
+                        if row:
+                            task_lookup[a["name"]] = row["type"]
+        except Exception:
+            pass
+
         lines = [
             f"# Fleet Status — {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
             "",
             "## Agents",
-            "| Name | Role | Status | Last Heartbeat |",
-            "|------|------|--------|----------------|",
+            "| Name | Role | Status | Task | Last Heartbeat |",
+            "|------|------|--------|------|----------------|",
         ]
         for a in status["agents"]:
             hb = db.utc_to_local(a.get("last_heartbeat"))
-            lines.append(f"| {a['name']} | {a['role']} | {a['status']} | {hb} |")
+            task_type = task_lookup.get(a["name"], "—")
+            lines.append(f"| {a['name']} | {a['role']} | {a['status']} | {task_type} | {hb} |")
         t = status["tasks"]
         lines += [
             "",
@@ -295,8 +310,6 @@ def shutdown(sig, frame):
 def main():
     global training_active, config
 
-    _load_secrets()
-
     (FLEET_DIR / "logs").mkdir(parents=True, exist_ok=True)
     (FLEET_DIR / "knowledge" / "summaries").mkdir(parents=True, exist_ok=True)
     (FLEET_DIR / "knowledge" / "reports").mkdir(parents=True, exist_ok=True)
@@ -304,32 +317,58 @@ def main():
     db.init_db()
     config = load_config()
 
+    # Air-gap mode: skip secrets loading entirely (no API keys in memory)
+    if not is_air_gap(config):
+        _load_secrets()
+    else:
+        log.info("AIR-GAP mode — secrets loading disabled")
+
+    offline = is_offline(config)
+    air_gap = is_air_gap(config)
+    if air_gap:
+        log.info("AIR-GAP mode enabled — dashboard, Discord, OpenClaw disabled")
+    elif offline:
+        log.info("OFFLINE mode enabled — Discord, OpenClaw disabled")
+
     ROLES = _build_roles(config)
 
     signal.signal(signal.SIGINT, shutdown)
     signal.signal(signal.SIGTERM, shutdown)
 
-    # Start Ollama — always CPU in eco mode
-    start_ollama(gpu=not config["fleet"]["eco_mode"])
-    _ping_ollama_keepalive(config)  # pre-load model into VRAM, keep indefinitely
-    _warmup_conductor(config)       # pre-load conductor model on CPU
+    # Start Ollama — skip if already running (launcher may have pre-started it)
+    try:
+        urllib.request.urlopen("http://localhost:11434/api/tags", timeout=2)
+        log.info("Ollama already running — skipping start")
+    except Exception:
+        start_ollama(gpu=not config["fleet"]["eco_mode"])
+
+    # Initial keepalive — pre-load worker model into VRAM (hw_supervisor takes over after boot)
+    if not air_gap:
+        _ping_ollama_keepalive(config)
 
     # Start workers with stagger
     for role in ROLES:
         start_worker(role, config)
         time.sleep(1)
 
-    # Start services
-    start_discord_bot(config)
-    start_openclaw(config)
-    start_dashboard(config)
+    # Start services — skip network services when offline/air-gapped
+    if not offline:
+        start_discord_bot(config)
+        start_openclaw(config)
+    if not air_gap:
+        start_dashboard(config)
 
-    log.info(f"Fleet up — {len(ROLES)} workers, eco={config['fleet']['eco_mode']}")
+    # NOTE: Conductor model warmup + ongoing keepalive handled by hw_supervisor.
+    # hw_supervisor checks conductor every ~60s and keepalive every ~240s.
+
+    mode_label = " [AIR-GAP]" if air_gap else " [OFFLINE]" if offline else ""
+    log.info(f"Fleet up — {len(ROLES)} workers, eco={config['fleet']['eco_mode']}{mode_label}")
 
     last_status = 0
     last_training_check = 0
-    last_keepalive = 0
     last_stale_check = 0
+    last_watchdog = 0
+    last_watchdog_full = 0
     training_interval = config["fleet"]["training_check_interval_secs"]
     worker_next_start = {}
 
@@ -350,21 +389,21 @@ def main():
                 start_worker(role, config)
                 worker_next_start.pop(role, None)
 
-        # Restart messaging bridges if they died
-        if discord_proc and discord_proc.poll() is not None:
-            log.warning(f"Discord bot died (exit={discord_proc.returncode}) — restarting")
-            start_discord_bot(config)
-        if openclaw_proc and openclaw_proc.poll() is not None:
-            log.warning(f"OpenClaw died (exit={openclaw_proc.returncode}) — restarting")
-            start_openclaw(config)
-        if dashboard_proc and dashboard_proc.poll() is not None:
-            log.warning(f"Dashboard died (exit={dashboard_proc.returncode}) — restarting")
-            start_dashboard(config)
+        # Restart messaging bridges if they died (skip when offline/air-gapped)
+        if not offline:
+            if discord_proc and discord_proc.poll() is not None:
+                log.warning(f"Discord bot died (exit={discord_proc.returncode}) — restarting")
+                start_discord_bot(config)
+            if openclaw_proc and openclaw_proc.poll() is not None:
+                log.warning(f"OpenClaw died (exit={openclaw_proc.returncode}) — restarting")
+                start_openclaw(config)
+        if not air_gap:
+            if dashboard_proc and dashboard_proc.poll() is not None:
+                log.warning(f"Dashboard died (exit={dashboard_proc.returncode}) — restarting")
+                start_dashboard(config)
 
-        # Keep model loaded in VRAM unconditionally
-        if now - last_keepalive >= OLLAMA_KEEPALIVE_INTERVAL:
-            _ping_ollama_keepalive(config)
-            last_keepalive = now
+        # Model keepalive now handled by hw_supervisor (every ~240s via hw_state.json)
+        # Supervisor only reads hw_state for transition awareness
 
         # Training detection — toggle Ollama GPU mode
         if now - last_training_check >= training_interval:
@@ -374,13 +413,12 @@ def main():
                 log.info("train.py detected — switching Ollama to CPU-only")
                 stop_ollama()
                 start_ollama(gpu=False)
-                _ping_ollama_keepalive(config)
                 training_active = True
+                # hw_supervisor will re-establish keepalive on next poll
             elif not training_now and training_active:
                 log.info("Training finished — restoring Ollama mode")
                 stop_ollama()
                 start_ollama(gpu=not config["fleet"]["eco_mode"])
-                _ping_ollama_keepalive(config)
                 training_active = False
 
         # Log hw_supervisor transitions
@@ -394,6 +432,21 @@ def main():
             recovered = db.recover_stale_tasks(STALE_TASK_TIMEOUT)
             for t in recovered:
                 log.warning(f"Recovered stale task {t['id']} ({t['type']}) from {t['assigned_to']}")
+
+        # Semantic watchdog — failure detection, stuck reviews, DLP
+        if now - last_watchdog >= WATCHDOG_INTERVAL:
+            last_watchdog = now
+            try:
+                from skills._watchdog import run_cycle, run_full_cycle
+                if now - last_watchdog_full >= WATCHDOG_FULL_INTERVAL:
+                    last_watchdog_full = now
+                    alerts = run_full_cycle(log.info)
+                else:
+                    alerts = run_cycle(log.info)
+                for a in alerts:
+                    log.warning(f"Watchdog alert: {a['message']}")
+            except Exception as e:
+                log.warning(f"Watchdog error: {e}")
 
         # Write status snapshot
         if now - last_status >= 30:

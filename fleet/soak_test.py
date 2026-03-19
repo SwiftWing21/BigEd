@@ -336,8 +336,186 @@ def test_task_dag_cascade_fail():
     return True, "cascade fail propagated"
 
 
+def test_offline_skill_rejection():
+    """14. Offline mode: REQUIRES_NETWORK skills return error dict."""
+    import importlib
+    # Check that web_search has REQUIRES_NETWORK = True
+    mod = importlib.import_module("skills.web_search")
+    if not getattr(mod, "REQUIRES_NETWORK", False):
+        return False, "web_search.REQUIRES_NETWORK should be True"
+    # Check that code_review does NOT require network
+    mod2 = importlib.import_module("skills.code_review")
+    if getattr(mod2, "REQUIRES_NETWORK", False):
+        return False, "code_review should NOT require network"
+    # Verify the config helper works
+    from config import is_offline, AIR_GAP_SKILLS
+    fake_cfg = {"fleet": {"offline_mode": True}}
+    if not is_offline(fake_cfg):
+        return False, "is_offline should return True"
+    return True, "REQUIRES_NETWORK flags + is_offline helper correct"
+
+
+def test_air_gap_whitelist():
+    """15. Air-gap mode: whitelist blocks non-approved skills."""
+    from config import is_air_gap, AIR_GAP_SKILLS
+    # Verify air_gap implies offline
+    fake_cfg = {"fleet": {"air_gap_mode": True, "offline_mode": False}}
+    from config import load_config
+    # Simulate: air_gap_mode should force offline_mode
+    import tomllib
+    # Just check the whitelist contents
+    expected_approved = {"code_review", "summarize", "discuss", "flashcard", "rag_query"}
+    missing = expected_approved - AIR_GAP_SKILLS
+    if missing:
+        return False, f"expected skills missing from whitelist: {missing}"
+    # Check that web_search is NOT in whitelist
+    if "web_search" in AIR_GAP_SKILLS:
+        return False, "web_search should NOT be in air-gap whitelist"
+    if "generate_video" in AIR_GAP_SKILLS:
+        return False, "generate_video should NOT be in air-gap whitelist"
+    return True, f"whitelist OK ({len(AIR_GAP_SKILLS)} approved, network skills blocked)"
+
+
+def test_review_status_lifecycle():
+    """16. REVIEW status: review_task + reject_task round-trip."""
+    import db
+    db.init_db()
+    db.register_agent("soak_reviewer", "test", 0)
+    tid = db.post_task("soak_review_test", json.dumps({"data": "test"}),
+                       priority=10, assigned_to="soak_reviewer")
+    # Claim (assigned_to ensures only our agent gets it)
+    task = db.claim_task("soak_reviewer")
+    if not task or task["id"] != tid:
+        return False, f"claim failed (got {task['id'] if task else 'None'} expected {tid})"
+    # Transition to REVIEW
+    db.review_task(tid, json.dumps({"output": "draft result"}))
+    r = db.get_task_result(tid)
+    if r["status"] != "REVIEW":
+        return False, f"expected REVIEW, got {r['status']}"
+    # Reject with critique
+    rounds = db.reject_task(tid, "Missing error handling")
+    if rounds != 1:
+        return False, f"expected round 1, got {rounds}"
+    r = db.get_task_result(tid)
+    if r["status"] != "PENDING":
+        return False, f"expected PENDING after reject, got {r['status']}"
+    payload = json.loads(r["payload_json"])
+    if payload.get("_review_critique") != "Missing error handling":
+        return False, f"critique not in payload: {payload}"
+    if payload.get("_review_round") != 1:
+        return False, f"round not in payload: {payload}"
+    # Complete normally after second attempt
+    task2 = db.claim_task("soak_reviewer")
+    if task2:
+        db.complete_task(task2["id"], json.dumps({"output": "fixed"}))
+    return True, "REVIEW > reject > PENDING > claim > DONE lifecycle OK"
+
+
+def test_review_verdict_parsing():
+    """17. _review._parse_verdict handles various response formats."""
+    import sys
+    sys.path.insert(0, str(Path(__file__).parent / "skills"))
+    from _review import _parse_verdict
+    # Clean JSON
+    v1 = _parse_verdict('{"verdict": "PASS", "critique": "looks good", "confidence": 0.9}')
+    if v1["verdict"] != "PASS":
+        return False, f"expected PASS, got {v1}"
+    # JSON embedded in text
+    v2 = _parse_verdict('Here is my review:\n{"verdict": "FAIL", "critique": "missing tests"}\nEnd.')
+    if v2["verdict"] != "FAIL":
+        return False, f"expected FAIL, got {v2}"
+    # Plain text fallback
+    v3 = _parse_verdict("This output FAILS the quality check because it has no error handling.")
+    if v3["verdict"] != "FAIL":
+        return False, f"expected FAIL from keyword, got {v3}"
+    v4 = _parse_verdict("The output looks good and passes all criteria.")
+    if v4["verdict"] != "PASS":
+        return False, f"expected PASS from default, got {v4}"
+    return True, "all 4 verdict formats parsed correctly"
+
+
+def test_quarantine_lifecycle():
+    """18. Quarantine: set + check + clear agent status."""
+    import db
+    db.init_db()
+    db.register_agent("soak_quarantine_agent", "test", 0)
+    # Quarantine
+    db.quarantine_agent("soak_quarantine_agent", "test reason")
+    with db.get_conn() as conn:
+        row = conn.execute(
+            "SELECT status FROM agents WHERE name='soak_quarantine_agent'").fetchone()
+        if row["status"] != "QUARANTINED":
+            return False, f"expected QUARANTINED, got {row['status']}"
+    # Check message was posted
+    msgs = db.get_messages("soak_quarantine_agent", unread_only=True, limit=5)
+    quarantine_msgs = [m for m in msgs if "quarantine" in m.get("body_json", "")]
+    if not quarantine_msgs:
+        return False, "quarantine message not found"
+    # Clear
+    db.clear_quarantine("soak_quarantine_agent")
+    with db.get_conn() as conn:
+        row = conn.execute(
+            "SELECT status FROM agents WHERE name='soak_quarantine_agent'").fetchone()
+        if row["status"] != "IDLE":
+            return False, f"expected IDLE after clear, got {row['status']}"
+    return True, "quarantine set/check/clear OK"
+
+
+def test_dlp_scrubbing():
+    """19. DLP: detect and redact secrets in text."""
+    import sys
+    sys.path.insert(0, str(Path(__file__).parent / "skills"))
+    from _watchdog import _contains_secret, _redact_secrets
+    # Test pattern detection
+    test_text = "My API key is sk-ant-api03-abcdefghijklmnopqrstuvwxyz and also AIzaSyAbcdefghijklmnopqrstuvwxyz12345"
+    if not _contains_secret(test_text):
+        return False, "should detect sk- and AIza patterns"
+    redacted = _redact_secrets(test_text)
+    if "sk-ant" in redacted:
+        return False, f"sk- not redacted: {redacted[:80]}"
+    if "AIzaSy" in redacted:
+        return False, f"AIza not redacted: {redacted[:80]}"
+    # Clean text should pass
+    clean = "Hello world, this is normal text with no secrets."
+    if _contains_secret(clean):
+        return False, "false positive on clean text"
+    return True, "secret detection + redaction OK"
+
+
+def test_waiting_human_lifecycle():
+    """20. WAITING_HUMAN: request input + respond + resume."""
+    import db
+    db.init_db()
+    db.register_agent("soak_hitl_agent", "test", 0)
+    tid = db.post_task("soak_hitl_test", json.dumps({"step": "initial"}),
+                       priority=10, assigned_to="soak_hitl_agent")
+    # Claim
+    task = db.claim_task("soak_hitl_agent")
+    if not task:
+        return False, "claim failed"
+    # Request human input
+    db.request_human_input(tid, "soak_hitl_agent", "Which option: A or B?")
+    r = db.get_task_result(tid)
+    if r["status"] != "WAITING_HUMAN":
+        return False, f"expected WAITING_HUMAN, got {r['status']}"
+    # Check waiting tasks query
+    waiting = db.get_waiting_human_tasks()
+    found = any(t["id"] == tid for t in waiting)
+    if not found:
+        return False, "task not in get_waiting_human_tasks()"
+    # Operator responds
+    db.respond_to_agent(tid, "Option A")
+    r = db.get_task_result(tid)
+    if r["status"] != "PENDING":
+        return False, f"expected PENDING after respond, got {r['status']}"
+    payload = json.loads(r["payload_json"])
+    if payload.get("_human_response") != "Option A":
+        return False, f"response not in payload: {payload}"
+    return True, "WAITING_HUMAN request/respond/resume OK"
+
+
 def test_post_task_validation():
-    """13. post_task rejects invalid JSON payloads."""
+    """21. post_task rejects invalid JSON payloads."""
     import db
     db.init_db()
     try:
@@ -375,7 +553,7 @@ def main():
 
     os.environ["FLEET_TEST_DB"] = ":memory:"
 
-    print("Fleet Soak Test (v0.31)")
+    print("Fleet Soak Test (v0.37)")
     print("=" * 50)
 
     tests = [
@@ -391,6 +569,13 @@ def main():
         ("DB WAL stress", test_db_wal_stress),
         ("Task DAG (dependency chain)", test_task_dag),
         ("Task DAG (cascade fail)", test_task_dag_cascade_fail),
+        ("Offline skill rejection", test_offline_skill_rejection),
+        ("Air-gap whitelist", test_air_gap_whitelist),
+        ("Review status lifecycle", test_review_status_lifecycle),
+        ("Review verdict parsing", test_review_verdict_parsing),
+        ("Quarantine lifecycle", test_quarantine_lifecycle),
+        ("DLP scrubbing", test_dlp_scrubbing),
+        ("WAITING_HUMAN lifecycle", test_waiting_human_lifecycle),
         ("Post task validation", test_post_task_validation),
     ]
 

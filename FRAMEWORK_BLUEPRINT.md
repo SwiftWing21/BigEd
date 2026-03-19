@@ -1,4 +1,4 @@
-# BigEd CC v0.31 — Framework Blueprint
+# BigEd CC v0.37 — Framework Blueprint
 
 > **Production-ready modular AI agent platform.** Customer-deployable, 24/7 capable, with safe deprecation, thermal management, and iterative skill training.
 
@@ -7,12 +7,12 @@
 ## 1. Architecture Overview
 
 ```
-BigEd CC (v0.31)
+BigEd CC (v0.37)
 ├── Launcher (BigEd/launcher/)
 │   ├── launcher.py          — Core app shell (~4700 lines)
 │   │   ├── Header            — CPU/RAM/GPU/ETH stats (3s poll, hysteresis)
 │   │   ├── Sidebar           — Fleet/Security/Research/Config/Consoles
-│   │   ├── Core Tabs          — Command Center, Agents (always on)
+│   │   ├── Core Tabs          — Command Center, Agents, Fleet Comm (always on)
 │   │   ├── Module Tabs        — Loaded via modules/ system
 │   │   ├── Taskbar            — Dispatch entry → fleet queue
 │   │   └── Consoles           — Claude (API), Gemini (API), Local (Ollama)
@@ -34,7 +34,7 @@ BigEd CC (v0.31)
 │   ├── db.py                  — SQLite data layer (WAL mode) — tasks, agents, messages, locks
 │   ├── lead_client.py         — CLI entry point (status, task, broadcast, inbox)
 │   ├── rag.py                 — FTS5/BM25 RAG engine
-│   ├── config.py              — TOML config loader
+│   ├── config.py              — TOML config loader + is_offline/is_air_gap/AIR_GAP_SKILLS
 │   ├── dashboard.py           — Flask web dashboard v2 (SSE, alerts, 14 endpoints)
 │   ├── smoke_test.py          — 10-check startup verification (--fast mode)
 │   ├── soak_test.py           — 10-check extended validation (concurrency, WAL stress)
@@ -170,7 +170,7 @@ Thermal flow: `hw_supervisor.py` reads GPU/CPU temps → writes `hw_state.json` 
 
 ```sql
 agents:   id, name(UNIQUE), role, status, current_task_id, last_heartbeat, pid
-tasks:    id, created_at, assigned_to, status, priority, type, payload_json, result_json, error,
+tasks:    id, created_at, assigned_to, status, priority, type, payload_json, result_json, error, review_rounds,
           parent_id, depends_on
 messages: id, from_agent, to_agent, created_at, read_at, body_json
 locks:    name(PK), holder, acquired_at
@@ -184,6 +184,8 @@ Tasks support dependencies via `depends_on` (JSON array of task IDs) and `parent
 
 ```
 Status flow:  WAITING → PENDING → RUNNING → DONE/FAILED
+              RUNNING → REVIEW → DONE (pass) or REVIEW → PENDING (reject, retry with critique)
+              RUNNING → WAITING_HUMAN → PENDING (operator responds, _human_response in payload)
                                               ↓
                                     _promote_waiting_tasks()
                                     _cascade_fail_dependents()
@@ -289,7 +291,7 @@ Negative results are logged — they narrow the search space.
 
 | Section | Key Fields |
 |---------|-----------|
-| `[fleet]` | eco_mode, idle_enabled, max_workers, discord_bot_enabled |
+| `[fleet]` | eco_mode, idle_enabled, max_workers, discord_bot_enabled, offline_mode, air_gap_mode |
 | `[models]` | local, complex, conductor_model, ollama_host |
 | `[models.tiers]` | default, mid, low, critical |
 | `[review]` | enabled, provider, claude_model, gemini_model |
@@ -303,35 +305,159 @@ Negative results are logged — they narrow the search space.
 | `[workers]` | nice_level, cpu_limit_percent, coder_count |
 | `[affinity]` | role → skill mapping |
 
-## 8. Portability
+## 8. Offline & Air-Gap Modes
 
-### Dynamic Path Resolution
+### 8.1 Network Dependency Map
+
+| Category | Components |
+|----------|-----------|
+| LOCAL (always works) | Ollama (localhost:11434), fleet.db, dashboard (localhost:5555), all filesystem ops |
+| EXTERNAL API | Claude, Gemini, Brave/Tavily/Jina/DDG search, arXiv, Stability AI, Replicate |
+| EXTERNAL SERVICE | Discord bot, GitHub (PAT/SSH for code_write, branch_manager) |
+| TELEMETRY | None — zero phone-home code exists |
+
+### 8.2 Offline Mode (`fleet.toml: offline_mode = true`)
+
+Run without internet. All local capabilities work. External API skills gracefully degrade.
+
+| Component | Behavior |
+|-----------|----------|
+| `_models.py` | Forces `complex_provider = "local"` (skip Claude/Gemini) |
+| `supervisor.py` | Skips Discord bot + OpenClaw launch |
+| `worker.py` | Skills with `REQUIRES_NETWORK = True` auto-rejected with clear error |
+| Dashboard | Still serves on localhost |
+| Ollama | Works normally (all local) |
+| Launcher | Orange "OFFLINE" badge in header; Claude/Gemini console buttons disabled |
+
+**Skill metadata:** Each skill declares `REQUIRES_NETWORK = True` if it needs internet. Worker checks this before dispatch.
+
+### 8.3 Air-Gap Mode (`fleet.toml: air_gap_mode = true`)
+
+Maximum isolation. No network interfaces used. Implies `offline_mode = true`.
+
+| Component | Additional restriction |
+|-----------|----------------------|
+| Dashboard | Disabled entirely (no listening sockets) |
+| Ollama keepalive | HTTP health checks skipped |
+| `_load_secrets()` | Disabled (no API keys in memory) |
+| Skills | Deny-by-default whitelist (`config.AIR_GAP_SKILLS`) |
+| Launcher | Red "AIR-GAP" badge; Dashboard button disabled; API consoles disabled |
+
+**Air-gap approved skills:** code_review, code_discuss, code_index, code_quality, summarize, discuss, flashcard, analyze_results, rag_index, rag_query, benchmark, ingest, security_review, security_audit.
+
+### 8.4 Recovery & Backup
+
+**Critical non-tracked files:**
+
+| File | Loss impact | Recovery |
+|------|-----------|----------|
+| `fleet/fleet.db` | Task queue, agent state | Fleet restarts clean |
+| `fleet/rag.db` | Document index, embeddings | Re-ingest documents |
+| `BigEd/launcher/data/tools.db` | CRM/launcher data | Manual re-entry |
+| `fleet/knowledge/` | Research, leads, reviews | Regenerable by re-running tasks |
+
+**Backup:** `bash scripts/backup.sh` — copies all non-tracked runtime data to `~/BigEd-backups/<timestamp>/`. Keeps last 10. Run before milestone merges and schema migrations.
+
+---
+
+## 9. Portability & Cross-Platform Architecture
+
+### 9.1 Platform Communication Layer
+
+Fleet code (`fleet/`) is fully cross-platform. The WSL layer is a Windows-only bridge — on Linux/Mac, fleet runs natively in the same OS as the launcher.
+
+**FleetBridge abstraction** replaces the current `wsl()`/`wsl_bg()` functions:
+
+```python
+class FleetBridge(ABC):
+    @abstractmethod
+    def run(self, cmd: str, capture=False, timeout=60) -> str: ...
+    @abstractmethod
+    def run_bg(self, cmd: str, callback=None, timeout=60): ...
+    @abstractmethod
+    def fleet_path(self) -> Path: ...
+
+class WslBridge(FleetBridge):
+    """Windows: shells commands into WSL Ubuntu."""
+    # Converts FLEET_DIR to /mnt/c/... path
+    # Uses subprocess with CREATE_NO_WINDOW
+
+class DirectBridge(FleetBridge):
+    """Linux/Mac: runs fleet commands natively."""
+    # No path conversion needed
+    # Standard subprocess.run()
+```
+
+Detection at startup:
+```python
+import sys
+if sys.platform == "win32":
+    bridge = WslBridge(fleet_dir)
+else:
+    bridge = DirectBridge(fleet_dir)
+```
+
+See `CROSS_PLATFORM.md` for full specification and current Windows-specific code inventory.
+
+### 9.2 Dynamic Path Resolution
 
 `launcher.py` computes `FLEET_DIR` dynamically at startup:
 1. Check `BIGED_FLEET_DIR` environment variable (explicit override)
 2. Walk up from `_SRC_DIR` (max 6 levels), looking for a directory containing `fleet/fleet.toml`
 3. Fallback: `_SRC_DIR.parent.parent / "fleet"` (original relative assumption)
 
-WSL paths are converted dynamically from Windows `FLEET_DIR` (e.g. `C:\Users\...\fleet` → `/mnt/c/Users/.../fleet`).
+**Cross-platform rules:**
+- Use `Path.home()` over `os.environ.get("USERPROFILE")` — works on all platforms
+- WSL path conversion (`C:\...` → `/mnt/c/...`) only on Windows via `WslBridge`
+- On Linux/Mac, `FLEET_DIR` is a native path — no conversion needed
+- No hardcoded absolute paths exist in the codebase
 
-No hardcoded absolute paths exist in the codebase.
+### 9.3 Process Management
+
+| Operation | Windows | Linux | macOS | Cross-Platform |
+|-----------|---------|-------|-------|---------------|
+| Kill process | `taskkill /F /PID` | `kill -9` / `pkill` | `kill -9` / `pkill` | `psutil.Process.kill()` |
+| Background process | `CREATE_NO_WINDOW` flag | Standard fork | Standard fork | `subprocess` with platform flags |
+| Process list | `tasklist` | `ps aux` / `pgrep` | `ps aux` / `pgrep` | `psutil.process_iter()` |
+| Self-swap (updater) | `.bat` trampoline | `exec` replacement | `exec` replacement | Platform-conditional |
+
+**Preferred approach:** Use `psutil` for all process management — it provides a unified API across platforms. Reserve platform-specific subprocess flags (`CREATE_NO_WINDOW`) for cases where `psutil` doesn't cover the need.
+
+### 9.4 GPU Detection
+
+| Data Point | Windows | Linux | macOS | Cross-Platform |
+|-----------|---------|-------|-------|---------------|
+| GPU name/VRAM/temp | `pynvml` | `pynvml` | N/A (no NVIDIA) | `pynvml` (NVIDIA only) |
+| CPU name | `winreg` (HKLM) | `/proc/cpuinfo` | `sysctl -n machdep.cpu.brand_string` | `platform.processor()` fallback |
+| CPU/RAM usage | `psutil` | `psutil` | `psutil` | `psutil` (cross-platform) |
+| AMD GPU | N/A currently | `rocm-smi` | N/A | Future: `pyamdgpuinfo` |
+| Apple Silicon | N/A | N/A | `Metal` framework | Future consideration |
+
+Current `_cpu_name()` in `launcher.py:3944` uses `winreg` — needs platform branching:
+```python
+def _cpu_name():
+    if sys.platform == "win32":
+        import winreg
+        # existing registry read
+    elif sys.platform == "linux":
+        # parse /proc/cpuinfo
+    elif sys.platform == "darwin":
+        # subprocess: sysctl -n machdep.cpu.brand_string
+    else:
+        return platform.processor() or "Unknown"
+```
+
+### 9.5 Secrets Management
+
+Already cross-platform. `lead_client.py secret` stores keys in `~/.secrets` via `Path.home()`. No platform-specific code involved. Works identically on Windows, Linux, and macOS.
 
 ### Known Technical Debt
 
-See `TECH_DEBT.md` for full tracking. As of v0.30:
+See `TECH_DEBT.md` for full tracking. Cross-platform items added as of v0.31.
 
-**Resolved:**
-- WSL RPC — all `python -c` hacks replaced with `lead_client.py dispatch` CLI
-- Secrets management — atomic Python writes via `lead_client.py secret` (no more bash grep/echo)
-- Main thread DB blocking — `_db_query_bg()` pattern for all refresh methods
-- Hardcoded paths — dynamic `_find_fleet_dir()` with env var override
-- Monolith — 6 modules extracted, launcher reduced from 5,800 to 3,500 lines
+## 10. Deployment & Packaging
 
-**Open:** None — all tracked tech debt resolved as of v0.31.
-
-## 9. Deployment
-
-### Package Contents
+### 10.1 Shared Package Structure
 
 ```
 BigEdCC/
@@ -342,23 +468,226 @@ BigEdCC/
 └── README.md                   — Deployment guide
 ```
 
-### Customer Configuration Steps
+### 10.2 Windows (Current — Production)
 
+- **Packaging:** PyInstaller `.exe` (one-file, windowed) via `build.bat`
+- **Installer:** `installer.py` → `Setup.exe` — writes `winreg` entries for Add/Remove Programs
+- **Uninstaller:** `uninstaller.py` → `Uninstaller.exe` — removes registry keys, cleanup `.bat` trampoline
+- **Updater:** `updater.py` → `Updater.exe` — git pull + rebuild, self-swap via `.bat` trampoline
+- **Prerequisites:** Python 3.11+, WSL2 (fleet runs inside WSL), Ollama, Git
+- **Fleet communication:** `wsl()` / `wsl_bg()` subprocess calls into WSL Ubuntu
+
+Customer configuration:
 1. Choose deployment profile: `fleet.toml → [launcher] profile = "consulting"`
 2. Enable/disable modules: `[launcher.tabs]` section
 3. Set model tier: `[models] local = "qwen3:8b"` (adjust for hardware)
 4. Configure thermal limits: `[thermal]` section (RTX 3080 Ti defaults)
 5. Set API keys: `~/.secrets` (Claude, Gemini, search APIs)
-6. Start: `python supervisor.py` + `python launcher.py`
+6. Start: `python supervisor.py` (WSL) + `python launcher.py` (Windows)
 
-### Hardware Requirements
+### 10.3 Linux (Planned)
 
-| Component | Minimum | Recommended |
-|-----------|---------|-------------|
-| GPU | None (CPU mode) | RTX 3060+ (8GB+ VRAM) |
-| RAM | 8GB | 16GB+ (conductor model uses ~3GB) |
-| CPU | 4 cores | 8+ cores (workers + Ollama) |
-| Storage | 10GB | 50GB+ (knowledge base growth) |
+- **Packaging:** AppImage (recommended) — single portable binary, no install required
+- **Desktop integration:** `.desktop` file in `~/.local/share/applications/`
+- **Dependencies:** `python3-tk` (system package for GUI), Ollama, Git
+- **Fleet communication:** `DirectBridge` — native subprocess, no WSL layer
+- **Install/uninstall:** Standard file copy + `.desktop` file. No registry equivalent needed
+- **Notes:** Fleet runs natively — no WSL bridge overhead. Same filesystem, same Python runtime
+
+### 10.4 macOS (Planned)
+
+- **Packaging:** `.app` bundle via `py2app` or PyInstaller `--windowed`
+- **Distribution:** DMG disk image for drag-and-drop install
+- **Code signing:** Required for Gatekeeper — `codesign` + optional notarization via `xcrun notarytool`
+- **Dependencies:** Python 3.11+ (Homebrew), Ollama, Git. `tkinter` may need `brew install python-tk`
+- **Fleet communication:** `DirectBridge` — same as Linux
+- **Notes:** No NVIDIA GPU support (Apple Silicon uses Metal). CPU-only Ollama or Apple Silicon–optimized models
+
+### 10.5 Hardware Requirements
+
+| Component | Minimum | Recommended (NVIDIA) | AMD GPU | Apple Silicon |
+|-----------|---------|---------------------|---------|---------------|
+| GPU | None (CPU mode) | RTX 3060+ (8GB+ VRAM) | RX 7600+ (ROCm) | M1+ (Metal, unified memory) |
+| RAM | 8GB | 16GB+ | 16GB+ | 16GB+ (shared with GPU) |
+| CPU | 4 cores | 8+ cores | 8+ cores | M1+ (4P+4E minimum) |
+| Storage | 10GB | 50GB+ | 50GB+ | 50GB+ |
+| OS | Win10+/Ubuntu 22.04+/macOS 13+ | Win11/Ubuntu 24.04 | Linux (ROCm support) | macOS 14+ |
+
+**Steam Deck (SteamOS/Arch Linux):** Supported via Linux path. AMD APU (RDNA2, 16GB unified). CPU-only Ollama recommended — limited VRAM headroom for GPU inference alongside game workloads. Desktop Mode required for GUI.
+
+---
+
+## 11. Diagnostics & Issue Pipeline
+
+### 11.1 Debug Report Format
+
+A single structured diagnostic snapshot capturing system state at the moment of an issue. Generated on-demand (user clicks "Report Issue") or automatically on unhandled exception.
+
+```
+reports/debug/
+├── debug_20260318_143000.json    — structured report
+└── debug_20260318_143000.log     — raw log tail bundle
+```
+
+Report structure:
+```json
+{
+  "report_id": "uuid",
+  "timestamp": "ISO-8601",
+  "version": "0.31",
+  "platform": { "os": "win32/linux/darwin", "python": "3.11.x", "arch": "x86_64" },
+  "hardware": {
+    "gpu": { "name": "RTX 3080 Ti", "vram_total_gb": 12, "vram_used_gb": 8.2, "temp_c": 72 },
+    "cpu": { "name": "...", "cores": 8, "usage_pct": 45 },
+    "ram": { "total_gb": 32, "used_gb": 18 }
+  },
+  "fleet_state": {
+    "agents": [{"name": "researcher", "status": "IDLE", "last_heartbeat": "..."}],
+    "tasks": {"pending": 0, "running": 1, "done": 52, "failed": 3},
+    "ollama": {"running": true, "models_loaded": ["qwen3:8b"]},
+    "thermal_state": "ok|throttled|burst"
+  },
+  "error": {
+    "type": "exception|hang|wrong_result|ui_issue|custom",
+    "message": "...",
+    "traceback": "...",
+    "component": "launcher|fleet|worker|skill|module",
+    "trigger": "user action or automated context"
+  },
+  "logs": {
+    "supervisor_tail": "last 50 lines",
+    "active_worker_tail": "last 50 lines of relevant worker",
+    "launcher_output": "last 100 lines from _log_output buffer"
+  },
+  "user_description": "free text from reporter",
+  "config_snapshot": {
+    "profile": "research",
+    "model_tier": "qwen3:8b",
+    "thermal_limits": { "sustained": 75, "burst": 78 }
+  },
+  "reproduction_steps": []
+}
+```
+
+### 11.2 Report Generation
+
+Two trigger paths:
+- **Manual:** User clicks "Report Issue" button (launcher sidebar or Config tab). Opens dialog with description field, optional reproduction steps, "Include logs" checkbox. Calls `generate_debug_report()` which snapshots all sources.
+- **Automatic:** Global exception handler wraps `launcher.py` main loop. On unhandled exception, auto-generates report with traceback populated, saves to `reports/debug/`, shows notification.
+
+Data sources:
+
+| Field | Source | Method |
+|-------|--------|--------|
+| platform | `sys.platform`, `platform.python_version()`, `platform.machine()` | Direct |
+| hardware | `psutil` (CPU/RAM), `pynvml` (GPU) | Same as header stats |
+| fleet_state | `STATUS.md` parse or `fleet.db` query | Existing `parse_status()` |
+| thermal | `hw_state.json` | Existing file read |
+| logs | `fleet/logs/*.log` | `read_log_tail()` (launcher.py:399) |
+| launcher output | `_log_output` ring buffer | New: `collections.deque(maxlen=200)` |
+| config | `fleet.toml` | Existing `config.load_config()` |
+| ollama state | HTTP GET `/api/tags` | Existing `_schedule_ollama_watch()` |
+
+### 11.3 VS Code Dev Integration
+
+For development use in VS Code:
+- **Launch config** (`.vscode/launch.json`): Debug profile running `launcher.py` with `--debug` flag
+- `--debug` enables: verbose logging to `fleet/logs/launcher_debug.log`, exception breakpoints, report auto-generation on crash
+- **VS Code task** (`.vscode/tasks.json`): "Generate Debug Report" task running `python -m biged.debug_report`
+- **Problem matcher**: Parse debug report JSON for errors, surface in VS Code Problems panel
+- Reports saved to `reports/debug/` — viewable as JSON, structured for diff-ability
+
+### 11.4 End-User Issue Submission
+
+For production end users (non-developers):
+- "Report Issue" button in launcher UI generates the debug report
+- Report is sanitized: API keys stripped from config snapshot, paths anonymized (`C:\Users\max\...` → `~\...`)
+- Two submission paths:
+  - **GitHub Issues (automated):** If `gh` CLI is available and user opts in, create issue with report attached. Template: title from error type, body from report summary, label `bug` or `user-report`
+  - **File export (manual):** Save `.json` report to Desktop. User can email or attach to issue manually
+- Report includes `report_id` UUID for tracking through fix lifecycle (see S11)
+
+### 11.5 _log_output Persistence
+
+Currently `_log_output()` writes only to the GUI text widget — lost on close.
+
+Fix:
+- Add a ring buffer (`collections.deque(maxlen=200)`) mirroring every `_log_output()` call
+- Debug report reads from this buffer for the `logs.launcher_output` field
+- Optionally persist to `data/launcher_output.log` (rotate at 1MB)
+
+---
+
+## 12. Resolution Tracking
+
+### 12.1 Issue-to-Fix Lifecycle
+
+```
+REPORTED → TRIAGED → REPRODUCING → FIX_IN_PROGRESS → FIX_VERIFIED → SHIPPED
+```
+
+| Stage | Who | What happens |
+|-------|-----|-------------|
+| REPORTED | User/auto | Debug report generated with `report_id` |
+| TRIAGED | Dev | Report reviewed, severity assigned (P0-P3), component tagged |
+| REPRODUCING | Dev | Reproduction confirmed using report's config/platform/steps |
+| FIX_IN_PROGRESS | Dev | Branch created, linked to `report_id` in commit message |
+| FIX_VERIFIED | Dev/CI | Fix verified against original report conditions (platform, config) |
+| SHIPPED | Release | Version bumped, `report_id` referenced in changelog |
+
+### 12.2 Resolution Database
+
+A lightweight JSON-lines file mapping reports to fixes:
+
+```
+data/resolutions.jsonl
+```
+
+Each line:
+```json
+{
+  "report_id": "uuid-from-debug-report",
+  "issue_ref": "GH#42 or internal",
+  "severity": "P0|P1|P2|P3",
+  "component": "launcher|fleet|worker|skill|module",
+  "platform": ["win32", "linux", "darwin"],
+  "root_cause": "one-line description",
+  "fix_commit": "abc1234",
+  "fix_version": "0.33",
+  "regression_test": "soak_test.py::test_name or manual steps",
+  "status": "shipped|pending|wontfix",
+  "resolved_at": "ISO-8601"
+}
+```
+
+### 12.3 Regression Prevention
+
+- **Commit convention:** `fix(component): description [report:uuid]` — links fix to original report
+- **Regression test requirement:** Every P0/P1 fix must add or reference a test case (smoke or soak)
+- **Resolution ingestion:** After a fix ships, append to `resolutions.jsonl` with report_id, fix_commit, and regression_test
+- **Stability dashboard:** Dashboard endpoint `/api/resolutions` serves resolution stats: fixes per component, mean time to resolve, open vs shipped, platform distribution
+- **Release validation:** Before tagging a release, check that all P0/P1 resolutions for the target version have `status: shipped` and their regression tests pass
+
+### 12.4 Pattern Detection
+
+Over time, `resolutions.jsonl` becomes a knowledge base:
+- Query: "Most common failure components?" → group by component
+- Query: "Which platforms have the most issues?" → group by platform
+- Query: "Average time from REPORTED to SHIPPED?" → timestamp math
+- Fleet skill (`skill_stability_report.py`): Periodically analyze `resolutions.jsonl` and produce a stability report in `knowledge/reports/`
+
+---
+
+## 13. Companion Documents
+
+| Document | Purpose |
+|----------|---------|
+| `OPERATIONS.md` | Skill/module authoring, deployment steps, ops runbook, troubleshooting, issue reporting |
+| `ROADMAP_v030_v040.md` | Future work phases (v0.32 → v0.40) + parallel tracks (Platform, Diagnostics) |
+| `TECH_DEBT.md` | Technical debt tracking (cross-platform + diagnostics items open) |
+| `CROSS_PLATFORM.md` | Platform matrix, FleetBridge spec, Windows-specific code inventory, migration plan |
+| `MACHINE_PROFILE.md` | Hardware specs and VRAM limits for this dev machine |
+| `fleet/CLAUDE.md` | Worker roles, skill outputs, messaging bridges |
 
 ---
 
@@ -380,3 +709,12 @@ BigEdCC/
 | v0.29 | Testing | Soak test, module integration tests, deprecation tests |
 | v0.30 | Production | Framework blueprint, portable paths, tech debt review, customer-deployable |
 | v0.31 | Task Graph | DAG dependencies, cascade fail, input/output validation, zero tech debt |
+| v0.32 | UI Resilience | Timer guards, agents tab cache+configure, module refresh integration, timeout notification |
+| v0.33 | Flow Verification | Offline/air-gap modes, model heartbeat consolidation (hw_supervisor), backup script, milestones, enhanced Ollama status |
+| v0.34 | Walkthrough | 6-step first-run walkthrough with skip/skip-all, re-trigger from Config, fleet.toml persistence |
+| v0.35 | Evaluator-Optimizer | REVIEW status, adversarial review skill, high-stakes gate in worker, 3-provider review (Claude/Gemini/local) |
+| v0.36 | Semantic Watchdog | QUARANTINED status, failure streak detection, stuck review auto-pass, DLP secret scrubbing (DB + knowledge files) |
+| v0.37 | Human-in-the-Loop | WAITING_HUMAN status, Fleet Comm tab, operator response flow, security advisory approve/dismiss |
+| — | Cross-Platform | FleetBridge abstraction, platform packaging, CI/CD matrix (parallel track) |
+| — | Diagnostics | Debug reports, issue submission, resolution tracking (parallel track) |
+| — | Offline/Air-Gap | Network-aware skill dispatch, local-only fallback, air-gap whitelist, recovery backup |

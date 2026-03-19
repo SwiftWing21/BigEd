@@ -28,13 +28,9 @@ import urllib.request
 from collections import deque
 from pathlib import Path
 
-try:
-    import pynvml
-    pynvml.nvmlInit()
-    _GPU_HANDLE = pynvml.nvmlDeviceGetHandleByIndex(0)
-    _HAS_GPU = True
-except Exception:
-    _HAS_GPU = False
+from gpu import detect_gpu, read_telemetry as _gpu_read_telemetry
+
+_gpu_backend, _HAS_GPU = detect_gpu()
 
 try:
     import psutil
@@ -52,7 +48,7 @@ sys.path.insert(0, str(FLEET_DIR))
 # ── Config ────────────────────────────────────────────────────────────────────
 
 def load_thermal_config():
-    """Load [thermal], [thermal.vram], [models.tiers], [training] from fleet.toml."""
+    """Load [thermal], [thermal.vram], [models.tiers], [models], [training], [fleet] from fleet.toml."""
     defaults = {
         "gpu_max_sustained_c": 75, "gpu_max_burst_c": 78,
         "cpu_max_sustained_c": 80, "cooldown_target_c": 72,
@@ -63,6 +59,9 @@ def load_thermal_config():
         "tier_default": "qwen3:8b", "tier_mid": "qwen3:4b",
         "tier_low": "qwen3:1.7b", "tier_crit": "qwen3:0.6b",
         "training_exclusive_lock": True,
+        "ollama_host": "http://localhost:11434",
+        "conductor_model": "",
+        "air_gap_mode": False,
     }
     try:
         import tomllib
@@ -70,19 +69,24 @@ def load_thermal_config():
             data = tomllib.load(f)
         t = data.get("thermal", {})
         v = t.get("vram", {})
-        m = data.get("models", {}).get("tiers", {})
+        mt = data.get("models", {}).get("tiers", {})
+        m = data.get("models", {})
         tr = data.get("training", {})
+        fl = data.get("fleet", {})
         return {
             **defaults,
             **{k: t[k] for k in t if k != "vram" and k in defaults},
             "vram_emergency": v.get("emergency", defaults["vram_emergency"]),
             "vram_high": v.get("high", defaults["vram_high"]),
             "vram_restore": v.get("restore", defaults["vram_restore"]),
-            "tier_default": m.get("default", defaults["tier_default"]),
-            "tier_mid": m.get("mid", defaults["tier_mid"]),
-            "tier_low": m.get("low", defaults["tier_low"]),
-            "tier_crit": m.get("critical", defaults["tier_crit"]),
+            "tier_default": mt.get("default", defaults["tier_default"]),
+            "tier_mid": mt.get("mid", defaults["tier_mid"]),
+            "tier_low": mt.get("low", defaults["tier_low"]),
+            "tier_crit": mt.get("critical", defaults["tier_crit"]),
             "training_exclusive_lock": tr.get("exclusive_lock", True),
+            "ollama_host": m.get("ollama_host", defaults["ollama_host"]),
+            "conductor_model": m.get("conductor_model", ""),
+            "air_gap_mode": fl.get("air_gap_mode", False),
         }
     except Exception:
         return defaults
@@ -90,8 +94,8 @@ def load_thermal_config():
 
 # ── State ─────────────────────────────────────────────────────────────────────
 
-def write_state(status, model, thermal=None):
-    """Write expanded hw_state.json for supervisor/worker/dashboard."""
+def write_state(status, model, thermal=None, models_loaded=None, conductor_status=None):
+    """Write expanded hw_state.json for supervisor/worker/dashboard/launcher."""
     try:
         state = {
             "status": status,
@@ -100,6 +104,10 @@ def write_state(status, model, thermal=None):
         }
         if thermal:
             state["thermal"] = thermal
+        if models_loaded is not None:
+            state["models_loaded"] = models_loaded  # list of {"name", "size_gb", "device"}
+        if conductor_status is not None:
+            state["conductor"] = conductor_status  # "loaded" | "unloaded" | "warming"
         HW_STATE_FILE.write_text(json.dumps(state), encoding="utf-8")
     except Exception:
         pass
@@ -168,29 +176,7 @@ def read_gpu_thermal():
     """Read GPU temp (°C), power (W), fan (%), VRAM usage (fraction)."""
     if not _HAS_GPU:
         return None
-    try:
-        temp = pynvml.nvmlDeviceGetTemperature(_GPU_HANDLE, pynvml.NVML_TEMPERATURE_GPU)
-        mem = pynvml.nvmlDeviceGetMemoryInfo(_GPU_HANDLE)
-        vram_pct = mem.used / mem.total
-        try:
-            power_mw = pynvml.nvmlDeviceGetPowerUsage(_GPU_HANDLE)
-            power_w = power_mw / 1000.0
-        except Exception:
-            power_w = 0.0
-        try:
-            fan_pct = pynvml.nvmlDeviceGetFanSpeed(_GPU_HANDLE)
-        except Exception:
-            fan_pct = -1
-        return {
-            "gpu_temp_c": temp,
-            "gpu_power_w": round(power_w, 1),
-            "gpu_fan_pct": fan_pct,
-            "vram_used_gb": round(mem.used / (1024**3), 2),
-            "vram_total_gb": round(mem.total / (1024**3), 2),
-            "vram_pct": round(vram_pct, 3),
-        }
-    except Exception:
-        return None
+    return _gpu_read_telemetry(_gpu_backend)
 
 
 def read_cpu_thermal():
@@ -260,6 +246,66 @@ class AmbientEstimator:
         return (recent[0][1] - recent[-1][1]) / dt
 
 
+# ── Model Heartbeat (keepalive + conductor + inventory) ──────────────────
+
+KEEPALIVE_EVERY_N_POLLS = 48  # ~240s at 5s poll interval
+
+
+def get_loaded_models(host):
+    """Query Ollama /api/ps for currently loaded models. Returns list of dicts."""
+    try:
+        req = urllib.request.Request(f"{host}/api/ps", method="GET")
+        with urllib.request.urlopen(req, timeout=5) as r:
+            data = json.loads(r.read())
+            result = []
+            for m in data.get("models", []):
+                size_gb = m.get("size_vram", m.get("size", 0)) / (1024**3)
+                result.append({
+                    "name": m["name"],
+                    "size_gb": round(size_gb, 2),
+                })
+            return result
+    except Exception:
+        return []
+
+
+def ping_keepalive(host, model, keep_alive="24h"):
+    """Send keepalive ping to keep model loaded in VRAM."""
+    try:
+        body = json.dumps({"model": model, "keep_alive": keep_alive}).encode()
+        req = urllib.request.Request(
+            f"{host}/api/generate", data=body, method="POST",
+            headers={"Content-Type": "application/json"})
+        urllib.request.urlopen(req, timeout=10)
+    except Exception:
+        pass
+
+
+def ensure_conductor(host, conductor_model):
+    """Verify conductor model is loaded on CPU (num_gpu=0). Load if missing."""
+    if not conductor_model:
+        return "none"
+    loaded = get_loaded_models(host)
+    loaded_names = [m["name"] for m in loaded]
+    # Check if conductor is already loaded (match with or without tag)
+    for name in loaded_names:
+        if name.split(":")[0] == conductor_model.split(":")[0]:
+            return "loaded"
+    # Not loaded — warm it up on CPU
+    try:
+        body = json.dumps({
+            "model": conductor_model, "keep_alive": "24h",
+            "options": {"num_gpu": 0},
+        }).encode()
+        req = urllib.request.Request(
+            f"{host}/api/generate", data=body, method="POST",
+            headers={"Content-Type": "application/json"})
+        urllib.request.urlopen(req, timeout=30)
+        return "loaded"
+    except Exception:
+        return "unloaded"
+
+
 # ── Model Transition ──────────────────────────────────────────────────────────
 
 def transition_model(target, current, cfg, emergency=False):
@@ -322,13 +368,22 @@ def main():
     gpu_throttled = False
     below_target_since = None
 
+    host = cfg["ollama_host"]
+    conductor_model = cfg["conductor_model"]
+    air_gap = cfg["air_gap_mode"]
+
     print(f"[HW_SUP] Started. Limits: {cfg['gpu_max_sustained_c']}°C sustained, "
           f"{cfg['gpu_max_burst_c']}°C burst. Poll: {cfg['poll_interval_secs']}s")
+    if conductor_model:
+        print(f"[HW_SUP] Conductor model: {conductor_model} (CPU)")
 
     write_state("ready", get_current_local_model())
 
+    poll_count = 0
+
     while True:
         time.sleep(cfg["poll_interval_secs"])
+        poll_count += 1
         try:
             gpu = read_gpu_thermal()
             if not gpu:
@@ -345,6 +400,25 @@ def main():
             is_loaded = vram_pct > 0.3 or gpu["gpu_power_w"] > 50
             if cfg["ambient_estimation"]:
                 ambient.update(gpu_temp, is_loaded)
+
+            # ── Model heartbeat (keepalive + conductor) ───────────────
+            models_loaded = []
+            conductor_status = "none"
+            if not air_gap:
+                models_loaded = get_loaded_models(host)
+                # Keepalive ping every ~240s
+                if poll_count % KEEPALIVE_EVERY_N_POLLS == 0:
+                    current_local = get_current_local_model()
+                    ping_keepalive(host, current_local)
+                # Conductor check every ~60s (12 polls)
+                if conductor_model and poll_count % 12 == 0:
+                    conductor_status = ensure_conductor(host, conductor_model)
+                elif conductor_model:
+                    # Between checks, report based on loaded list
+                    conductor_status = "loaded" if any(
+                        m["name"].split(":")[0] == conductor_model.split(":")[0]
+                        for m in models_loaded
+                    ) else "unloaded"
 
             # Build thermal snapshot
             thermal = {
@@ -404,7 +478,7 @@ def main():
             if target_model != current_model:
                 transition_model(target_model, current_model, cfg, emergency)
             else:
-                write_state("ready", current_model, thermal)
+                write_state("ready", current_model, thermal, models_loaded, conductor_status)
 
         except Exception as e:
             print(f"[HW_SUP] Error: {e}")

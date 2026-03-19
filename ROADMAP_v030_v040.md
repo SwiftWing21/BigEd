@@ -1,6 +1,41 @@
-# BigEd CC Roadmap: v0.31 → v0.40
+# BigEd CC Roadmap: v0.31 → v1.0
 
-> **Goal of v0.40:** Advanced fleet orchestration, semantic guardrails, and dynamic task decomposition. Moving from a flat task queue to a graph-based, highly reliable swarm.
+> **Goal of v1.0:** Autonomous, cross-platform, verifiably safe agent fleet. From flat task queue to graph-based, self-correcting, deploy-anywhere swarm.
+
+---
+
+## Program Milestones
+
+| Milestone | Versions | Theme | Gate |
+|-----------|----------|-------|------|
+| 1. Verification & Onboarding | v0.33 – v0.34 | Prove it works, make it approachable | Smoke 10/10, Soak 13/13, GUI smoke, no P0 debt |
+| 2. Autonomous Safety | v0.35 – v0.38 | Self-correction, operator comms, isolation | + review cycle, watchdog, HitL, sandbox tests; .secrets never in output |
+| 3. External Integration | v0.39 – v0.41 | Network, browser, vision | + network/browser/vision tests; no OOM on 12GB |
+| 4. Cross-Platform & v1.0 | PT-1 – PT-4, DT-1 – DT-4 | Anyone, anywhere, clear diagnostics | All tests on Win/Linux/macOS; FleetBridge 100%; zero debt |
+
+## Release Process
+
+**Branching (documented — not yet active):**
+- Current: all work on `main`, `dev` branch used as periodic backup snapshot.
+- Future: daily work on `dev`, merge to `main` only at milestones via `git merge --no-ff dev`.
+- To activate: move daily work to `dev`, apply stability gate before each `dev → main` merge.
+
+**Stability Gate Checklist (every milestone merge to main):**
+```
+## Release Gate: v0.XX
+- [ ] Smoke tests: 10/10
+- [ ] Soak tests: 13/13
+- [ ] GUI smoke test: pass (v0.33+)
+- [ ] TECH_DEBT.md: reviewed, no P0
+- [ ] FRAMEWORK_BLUEPRINT.md: version row added
+- [ ] ROADMAP: version marked DONE with date
+- [ ] git status: clean
+- [ ] Backup run: bash scripts/backup.sh
+```
+
+**Backup:** `bash scripts/backup.sh` — copies fleet.db, rag.db, tools.db, knowledge/ to `~/BigEd-backups/`. Keeps last 10. Run before every milestone merge and schema migration.
+
+---
 
 ## v0.31 — Task Graph & Decomposition (DAG) [DONE]
 
@@ -15,83 +50,30 @@ Completed 2026-03-18. See `db.py` for implementation.
 
 ---
 
-## v0.32 — UI Resilience & Clean Refresh
+## v0.32 — UI Resilience & Clean Refresh [DONE]
 
-**Goal:** Eliminate visual flicker, protect timer chains from silent death, and ensure all data flows complete the round-trip to the UI.
+Completed 2026-03-18. All changes in `launcher.py`.
 
-### 32.1 Resilient Timer Callbacks
-
-**Problem:** All three timer chains (`_schedule_refresh` 4s, `_schedule_hw` 3s, `_schedule_ollama_watch` 8s) have unprotected main-thread calls. A single exception in any callback silently kills the timer — no recovery, no log, no indication to the user.
-
-**Fix:** Wrap each timer body in a standardized guard:
-```python
-def _schedule_refresh(self):
-    try:
-        self._update_pills(parse_status())
-        self._update_agents_table(parse_status())
-        # ... bg thread for I/O ...
-    except Exception as e:
-        self._log_output(f"Refresh error: {e}")
-    finally:
-        self.after(4000, self._schedule_refresh)
-```
-
-Apply to:
-- `_schedule_refresh()` (~line 1515) — pills + agents + log + advisory
-- `_schedule_hw()` (~line 1475) — CPU/RAM/GPU/ETH stats
-- `_schedule_ollama_watch()` (~line 1630) — Ollama status polling
-
-**Files:** `launcher.py`
-
-### 32.2 Eliminate Agents Tab Flicker (Cache + Configure)
-
-**Problem:** `_agents_tab_refresh()` calls `.destroy()` on ALL child widgets every refresh cycle, then recreates them from scratch. This causes visible flicker on the Agents tab.
-
-**Note:** `_update_agents_table()` in the Command Center tab already does this correctly — it caches widget refs and calls `.configure()` to update text/colors in place. The Agents tab uses the older pattern.
-
-**Fix:** Mirror the Command Center pattern:
-- Pre-create a dict `self._agent_row_cache = {}` mapping agent name to widget tuple
-- On refresh: `.configure()` existing rows, create new ones, `.grid_remove()` stale ones
-- Never `.destroy()` during periodic refresh — only on tab close
-
-**Files:** `launcher.py` (`_agents_tab_refresh`)
-
-### 32.3 Module Refresh Integration
-
-**Problem:** Modules implement `on_refresh()` but it's never called by the launcher's timer system. Module data goes stale unless the user manually switches tabs.
-
-**Fix:** In `_schedule_refresh()`, call `on_refresh()` for the currently visible module tab:
-```python
-# Only refresh the active module to avoid unnecessary DB work
-active_tab = self._tabview.get()
-for name, mod in self._modules.items():
-    if getattr(mod, "LABEL", name.title()) == active_tab:
-        try:
-            mod.on_refresh()
-        except Exception:
-            pass
-        break
-```
-
-**Files:** `launcher.py` (`_schedule_refresh`)
-
-### 32.4 Dispatch Result Feedback (Timeout Notification)
-
-**Problem:** `_poll_task_result()` in the console has a 60s timeout. If the task doesn't complete in time, the polling thread exits silently — user gets no feedback.
-
-**Fix:** Add a timeout notification at the end of the polling loop:
-```python
-# After while loop exhausts
-self.after(0, lambda: self._append(
-    "system", f"Task {task_id} ({skill}) — still running after {timeout}s. "
-    "Check fleet status for updates."))
-```
-
-**Files:** `launcher.py` (`_poll_task_result`)
+- 32.1: All 3 timer chains (`_schedule_refresh`, `_schedule_hw`, `_schedule_ollama_watch`) wrapped in try/except/finally — exceptions logged via `_log_output`, reschedule always fires
+- 32.2: `_agents_tab_refresh` converted from destroy/recreate to cache+configure pattern (`self._agents_tab_cache` dict), matching `_update_agents_table` — eliminates flicker
+- 32.3: `self._tabs` ref stored; `_schedule_refresh` now calls `on_refresh()` for the active module tab only
+- 32.4: `_poll_task_result` posts timeout notification when polling exhausts without DONE/FAILED
 
 ---
 
-## v0.33 — End-to-End Flow Verification
+## v0.33 — End-to-End Flow Verification + Offline/Air-Gap + Model Heartbeat [DONE]
+
+Completed 2026-03-18.
+
+- 33.0: **Offline mode** (`offline_mode = true` in fleet.toml): external API skills gracefully rejected, local Ollama works, Discord/OpenClaw skipped, launcher shows OFFLINE badge
+- 33.0: **Air-gap mode** (`air_gap_mode = true`): max isolation, deny-by-default skill whitelist (14 approved), dashboard disabled, secrets not loaded, launcher shows AIR-GAP badge
+- 33.0: **Model heartbeat consolidation**: hw_supervisor now owns keepalive (every ~240s), conductor health (every ~60s), loaded model inventory. supervisor.py reduced to process lifecycle only.
+- 33.0: **hw_state.json expanded**: `models_loaded` list + `conductor` status. Launcher reads for `+chat`/`-chat` in Ollama status bar.
+- 33.0: **Enhanced Ollama status**: model name, CPU/GPU(queued_tasks), VRAM, conductor status
+- 33.0: **Recovery**: `scripts/backup.sh` for fleet.db, rag.db, tools.db, knowledge/
+- 33.0: **Milestones**: program milestones (v0.33→v1.0), stability gate checklist, release process
+- 33.0: **Git branching**: `dev` branch as backup snapshot, full strategy documented
+- Smoke: 10/10, Soak: 15/15 (2 new offline/air-gap tests)
 
 **Goal:** Systematic verification that every user-facing flow completes its round-trip, with automated smoke tests for the GUI layer.
 
@@ -138,7 +120,15 @@ Manual test protocol (documented, not automated):
 
 ---
 
-## v0.34 — New User Walkthrough (First-Run Experience)
+## v0.34 — New User Walkthrough (First-Run Experience) [DONE]
+
+Completed 2026-03-18.
+
+- 34.1: `WalkthroughDialog` class — 6-step modal overlay with progress bar, skip/skip-all, "don't show again"
+- 34.2: Steps: Welcome, API Keys (opens Key Manager), Fleet Profile, Ollama Setup, First Task examples, Console Tour
+- 34.3: Persistence: writes `[walkthrough] completed = true` to fleet.toml with skipped_steps and timestamp
+- 34.4: Re-trigger: "Setup Walkthrough" button in Config sidebar section
+- 34.5: Auto-trigger on first launch (500ms delay after UI build) when `[walkthrough] completed = false`
 
 **Goal:** Guide new users through initial setup on first launch, with the ability to skip individual steps or the entire walkthrough.
 
@@ -187,22 +177,195 @@ completed_at = ""          # ISO date when walkthrough was completed/skipped
 
 ---
 
-## v0.35 — The Evaluator-Optimizer Loop (Guard Rails)
+## v0.35 — The Evaluator-Optimizer Loop (Guard Rails) [DONE]
+
+Completed 2026-03-18.
+
+- 35.1: `REVIEW` status added to task lifecycle (RUNNING -> REVIEW -> DONE or REVIEW -> PENDING for retry)
+- 35.2: `db.review_task()` and `db.reject_task()` functions with `review_rounds` column tracking
+- 35.3: `skills/_review.py` — adversarial reviewer supporting 3 providers (Claude API, Gemini, local Ollama with /think)
+- 35.4: `worker.py` — review gate in dispatch loop: checks `[review] enabled`, `HIGH_STAKES_SKILLS`, max rounds
+- 35.5: HIGH_STAKES_SKILLS: code_write, code_write_review, legal_draft, security_audit, security_apply, pen_test, skill_draft, skill_evolve, branch_manager, product_release
+- 35.6: Review failure auto-passes (don't block work on infra errors), max 2 rounds default (configurable)
+- 35.7: Critique appended to payload as `_review_critique` + `_review_round` for worker context on retry
+- Soak: 17/17 (2 new review tests: lifecycle + verdict parsing)
+
 **Goal:** Prevent sub-par or hallucinated outputs from being finalized without adversarial review.
-- Introduce `REVIEW` state to the task lifecycle.
-- High-stakes skills (like `legal_draft`, `security_audit`, `coder` outputs) transition to `REVIEW` instead of `DONE`.
-- An independent agent (or Claude/Gemini API directly) acts as the adversarial reviewer. If it fails, status → `RUNNING` with the critique appended for the original worker to fix.
 
 ---
 
-## v0.36 — Semantic Watchdog (Checker Agent)
+## v0.36 — Semantic Watchdog (Checker Agent) [DONE]
+
+Completed 2026-03-18.
+
+- 36.1: `QUARANTINED` agent status — worker checks and pauses if quarantined, operator clears via `db.clear_quarantine()`
+- 36.2: `_watchdog.py` — semantic health monitor called by supervisor every 60s
+  - Failure streak detection: 3+ consecutive failures → auto-quarantine agent
+  - Stuck review detection: tasks in REVIEW >30min → auto-pass
+  - DLP secret scrubbing: scans task results + knowledge/ files for leaked API keys (sk-*, AIza*, ghp_*, etc), redacts in-place
+- 36.3: DB functions: `quarantine_agent()`, `clear_quarantine()`, `get_failure_streaks()`, `get_stuck_reviews()`
+- 36.4: Supervisor integration: `run_cycle()` every 60s, `run_full_cycle()` (includes knowledge scan) every 10min
+- 36.5: Secret patterns: Anthropic, Google, GitHub, Slack, AWS, Tavily + env-var exact-match detection
+- Smoke: 10/10, Soak: 19/19 (2 new: quarantine lifecycle, DLP scrubbing)
+
 **Goal:** Move beyond mechanical process restarts to semantic health monitoring.
-- A lightweight background skill that monitors the `tasks` table for hallucination loops or excessive error rates (N failures in a row).
-- If an anomaly is detected, it proactively changes the worker's status to `QUARANTINED` and sends an alert to the dashboard.
 
 ---
 
-## v0.37 — Unified Human-in-the-Loop (HitL)
+## v0.37 — Unified Human-in-the-Loop (HitL) [DONE]
+
+Completed 2026-03-18.
+
+- 37.1: `WAITING_HUMAN` task status — agents can pause mid-task and ask operator a question
+- 37.2: DB functions: `request_human_input()`, `respond_to_agent()`, `get_waiting_human_tasks()`
+- 37.3: Operator response appended to payload as `_human_response` — task resumes to PENDING for re-claim
+- 37.4: Worker handles `human_response` message type
+- 37.5: **Fleet Comm tab** — always-on core tab showing:
+  - Pending WAITING_HUMAN tasks with question, reply field, Send button
+  - Security advisories from `knowledge/security/pending/` with Approve/Dismiss buttons
+  - Auto-refreshes when active tab (every 3rd cycle)
+- 37.6: Security remediation: Approve dispatches `security_apply`, Dismiss moves to `dismissed/` subfolder
+- Soak: 20/20 (1 new: WAITING_HUMAN lifecycle)
+
 **Goal:** Allow agents to dynamically request human input mid-task.
-- Upgrade the `messages` table and UI to support direct Agent <-> Human threads via a new "Fleet Comm" tab.
-- Agents can pause execution, post a message ("Found 3 leads, which one should I draft the proposal for?"), enter a `WAITING_HUMAN` state, and resume once the operator replies.
+
+---
+
+## v0.38 — Fleet Security & Isolation (Sandboxing)
+**Goal:** Protect the host environment (WSL and Windows) from malicious or hallucinated agent code execution.
+- **Docker Execution Boundaries:** Utilize WSL Docker integration to sandbox `code_write`, `skill_test`, and `benchmark` tasks. Prevent worker agents from executing untested code natively on the host filesystem.
+- **Dependency Scanning:** Extend the `security_audit` skill to include `pip-audit` or `safety`, identifying vulnerable Python packages during idle network scans.
+- **Network Hardening Verification:** Add an assertion step to `pen_test.py` to ensure local API endpoints (Ollama, Flask) are strictly bound to `127.0.0.1` and inaccessible from the wider LAN.
+- **Network Hardening Verification:** Add an assertion step to `pen_test.py` to ensure local API endpoints (Ollama, Flask) are bound to the dynamic local host while establishing secure access patterns for future authorized local networked devices.
+
+---
+
+## v0.39 — Advanced Network & IoT Orchestration
+**Goal:** Deep integration with local infrastructure, bridging the gap between software agents and the physical/network environment.
+- **UniFi Stack Understanding:** Elevate network skills to interface with UniFi Controller APIs, parse 1Gbps IDS/IPS stack alerts, and recommend/apply advanced network configurations (VLANs, firewall rules).
+- **Home Assistant Maintenance:** Introduce building automation setup and maintenance tools, including automated backup/update cycles with granular version retention policies (e.g., keep specific versions, or keep the last 1, 3, or 5 versions).
+- **Dynamic IoT Upskilling:** Leverage `skill_evolve` to allow agents to learn new entities and devices dynamically by reading Home Assistant Community Store (HACS) repositories (e.g., `ha-anker-solix`, `anker-solix-api`).
+- **Local Protocol Inspection:** Integrate MQTT and API sniffing tools for deep local IoT debugging. Ensure authentication steps strictly utilize the fleet's `.secrets` manager for secure, repeatable access to local APIs.
+
+---
+
+## v0.40 — Full DOM Web Interactivity (Browser Skills)
+**Goal:** Overcome raw HTTP request limitations to allow agents to interact with modern, JS-heavy web applications.
+- **Playwright CPU Crawling:** Introduce a `browser_crawl` skill using Playwright/Selenium. Allows the agent to fully render pages on the CPU, executing JavaScript, managing cookies, and bypassing basic bot protections.
+- **WSLg Headed Mode:** For rare occurrences or complex visual tasks, configure Playwright to run in headed mode, leveraging Windows 11 WSLg to project the full GUI browser onto the desktop for visual debugging or Vision coordinate clicking.
+
+---
+
+## v0.41 — Local Vision & Multi-Modal Orchestration
+**Goal:** Enable fleet agents to process visual data completely offline, managing GPU constraints dynamically.
+- **Local Vision Models:** Integrate support for local multimodal models (e.g., `llava`, `minicpm-v`, `qwen-vl`) via Ollama for analyzing browser screenshots, chart data, and physical environment feeds (e.g., Home Assistant cameras).
+- **VRAM Rotation Flow:** Implement a model rotation queue in `hw_supervisor.py`. When a vision task is dispatched, evaluate available VRAM. If it fits, load it alongside the current worker model.
+- **Eviction & Restoration:** If VRAM is too constrained, temporarily evict the primary LLM (shifting active text generation to the 0.6b CPU maintainer model), load the vision model on the GPU, execute the visual inference, and gracefully restore the original LLM state once complete.
+
+---
+
+## Parallel Track: Platform (Cross-Platform Support)
+
+> These items run in parallel to version milestones. They don't bump version numbers — they are infrastructure improvements that land alongside regular releases.
+
+### PT-1: Platform Abstraction
+
+- `FleetBridge` ABC with `WslBridge` (Windows) and `DirectBridge` (Linux/Mac) implementations
+- Replace all `wsl()` / `wsl_bg()` calls with `bridge.run()` / `bridge.run_bg()`
+- Platform detection via `sys.platform` at startup
+- Conditional `CREATE_NO_WINDOW` flags (Windows only)
+- `_cpu_name()` platform branching: `winreg` → `/proc/cpuinfo` → `sysctl`
+- `Path.home()` over `USERPROFILE` env var
+
+### PT-2: Cross-Platform Build
+
+- `build.py` replacing `build.bat` — auto-detects `--add-data` separator (`;` vs `:`)
+- Skips `pynvml` hidden-import on macOS
+- Icon format conversion (`brick.ico` → `brick.icns` for macOS)
+- GitHub Actions CI workflow: 3-platform build matrix (Windows/Linux/macOS)
+
+### PT-3: Platform Packaging
+
+- **Linux:** AppImage packaging, `.desktop` file generation
+- **macOS:** `.app` bundle, DMG creation, code signing + notarization notes
+- **Installer abstraction:** Platform-conditional install/uninstall (registry on Windows, file copy + .desktop on Linux, /Applications on macOS)
+- **Updater:** Replace `.bat` trampoline with `exec` self-replacement on Linux/macOS
+
+### PT-4: Platform Testing
+
+- Smoke test per platform in CI (headless, `--fast` mode)
+- Platform-specific troubleshooting matrix (documented in `OPERATIONS.md`)
+- Steam Deck (SteamOS/Arch) validation: CPU-only Ollama, Desktop Mode GUI
+
+---
+
+## Parallel Track: Cost Intelligence (Token Usage & Optimization)
+
+> Token-level cost tracking, delta comparison, and optimization feedback loop. Blueprint: `BigEd/qa_token_blueprint.md`.
+
+### CT-1: Usage Capture
+
+- `usage` table in `fleet.db` (schema in blueprint Section 1)
+- `db.log_usage()` + `db.get_usage_summary(period, group_by)`
+- `_call_claude()` extracts `resp.usage` and logs after every API call
+- `_call_gemini()` equivalent (if token data available from Gemini SDK)
+- `call_complex()` signature extended: `skill_name`, `task_id`, `agent_name` passed through
+- Usage logging wrapped in try/except — must never break skill execution
+
+### CT-2: Cost Dashboard
+
+- `/api/usage` endpoint: daily/weekly/monthly aggregates by skill, model, agent
+- `/api/usage/delta` endpoint: compare two time ranges
+- Dashboard widget: cost sparkline, top-5 expensive skills, cache hit rate
+- `lead_client.py usage` CLI command showing cost breakdown table
+
+### CT-3: Delta Comparison
+
+- `compare_usage(period_a, period_b)` → per-skill delta report
+- Version tagging: link usage records to git commit / version string
+- Automated regression flag: >20% token increase on same skill = warning in dashboard
+- Weekly summary → `knowledge/reports/usage_report_<date>.md`
+- Delta format: `{metric, previous, current, delta_pct, direction}`
+
+### CT-4: Optimization Loop
+
+- Skill-level token budgets in `fleet.toml [budgets]`
+- Budget enforcement: warn (not block) when skill exceeds budget
+- Cache effectiveness report: savings from ephemeral cache vs full cost
+- Prompt compression recommendations based on input_token trends
+- Model routing validation: flag Opus usage where Sonnet/Haiku would suffice
+
+---
+
+## Parallel Track: Diagnostics (Debug Report & Issue Resolution)
+
+> Structured diagnostic pipeline from issue report to shipped fix.
+
+### DT-1: Debug Report Infrastructure
+
+- `generate_debug_report()` function collecting all diagnostic sources (platform, hardware, fleet state, logs, config)
+- `_log_output` ring buffer (`collections.deque(maxlen=200)`) for launcher output persistence
+- Global exception handler wrapping `launcher.py` main loop — auto-generates report on crash
+- Report sanitization: strip API keys, anonymize paths
+
+### DT-2: Issue Submission
+
+- "Report Issue" UI button in launcher (sidebar or Config tab)
+- Dialog: description field, reproduction steps, "Include logs" checkbox
+- GitHub Issues integration via `gh` CLI (opt-in) — auto-create issue with report attached
+- File export fallback — `.json` to Desktop for manual submission
+- VS Code launch/task configs for dev workflow (`--debug` flag, "Generate Debug Report" task)
+
+### DT-3: Resolution Tracking
+
+- `data/resolutions.jsonl` schema: report_id → fix_commit → regression_test → status
+- Commit convention: `fix(component): description [report:uuid]`
+- Regression test linking: every P0/P1 fix must reference a test case
+- Dashboard endpoint `/api/resolutions` serving resolution stats
+- Ingestion script to append resolutions after fix ships
+
+### DT-4: Stability Analysis
+
+- Pattern detection queries on `resolutions.jsonl` (top components, platform distribution, MTTR)
+- Release validation checklist: all P0/P1 resolved + regression tests pass before tagging
+- Optional fleet skill (`skill_stability_report.py`) for periodic analysis → `knowledge/reports/`

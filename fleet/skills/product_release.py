@@ -20,6 +20,7 @@ from pathlib import Path
 FLEET_DIR = Path(__file__).parent.parent
 KNOWLEDGE_DIR = FLEET_DIR / "knowledge"
 RELEASES_DIR = KNOWLEDGE_DIR / "releases"
+REQUIRES_NETWORK = True
 
 
 def _git(args, cwd):

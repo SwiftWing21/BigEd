@@ -17,7 +17,7 @@ FLEET_DIR = Path(__file__).parent
 sys.path.insert(0, str(FLEET_DIR))
 
 import db
-from config import load_config
+from config import load_config, is_offline, is_air_gap, AIR_GAP_SKILLS
 
 HW_STATE_FILE = FLEET_DIR / "hw_state.json"
 
@@ -86,6 +86,21 @@ DEFAULT_SKILL_TIMEOUT = 600
 
 
 def run_skill(skill_name, payload, config, log):
+    # Air-gap mode: deny-by-default whitelist
+    if is_air_gap(config) and skill_name not in AIR_GAP_SKILLS:
+        log.warning(f"Skill '{skill_name}' blocked by air-gap mode")
+        raise PermissionError(f"Skill '{skill_name}' not in air-gap whitelist")
+
+    # Offline mode: check REQUIRES_NETWORK on the skill module
+    if is_offline(config):
+        try:
+            mod_check = importlib.import_module(f"skills.{skill_name}")
+            if getattr(mod_check, "REQUIRES_NETWORK", False):
+                log.warning(f"Skill '{skill_name}' requires network — rejected (offline_mode)")
+                return {"error": "offline_mode enabled", "skill": skill_name}
+        except ImportError:
+            pass
+
     timeout = SKILL_TIMEOUTS.get(skill_name, DEFAULT_SKILL_TIMEOUT)
     result = [None]
     exc = [None]
@@ -107,6 +122,44 @@ def run_skill(skill_name, payload, config, log):
         log.error(f"Skill '{skill_name}' error: {exc[0]}")
         raise exc[0]
     return result[0]
+
+
+def _should_review(skill_name, config, payload):
+    """Check if this skill output should go through adversarial review."""
+    review_cfg = config.get("review", {})
+    if not review_cfg.get("enabled", False):
+        return False
+    # Don't review internal/review skills
+    if skill_name.startswith("_"):
+        return False
+    # Check if we've already exceeded max review rounds
+    max_rounds = review_cfg.get("max_rounds", 2)
+    if payload.get("_review_round", 0) >= max_rounds:
+        return False
+    # Check if skill is high-stakes
+    try:
+        from skills._review import HIGH_STAKES_SKILLS
+        return skill_name in HIGH_STAKES_SKILLS
+    except ImportError:
+        return False
+
+
+def _run_review(skill_name, task_payload, result, config, log):
+    """Run the adversarial review on a skill output."""
+    try:
+        from skills._review import run as review_run
+        review_payload = {
+            "skill_name": skill_name,
+            "task_payload": task_payload,
+            "result": result,
+        }
+        verdict = review_run(review_payload, config)
+        log.info(f"Review verdict for '{skill_name}': {verdict.get('verdict')} "
+                 f"(confidence={verdict.get('confidence', '?')})")
+        return verdict
+    except Exception as e:
+        log.warning(f"Review failed for '{skill_name}': {e} — auto-passing")
+        return {"verdict": "PASS", "critique": f"Review error: {e}", "confidence": 0.0}
 
 
 def main():
@@ -191,6 +244,9 @@ def main():
                     log.info(f"PING from {m['from_agent']} — responding")
                     db.post_message(role, m['from_agent'],
                                     json.dumps({"type": "pong", "status": "alive", "role": role}))
+                elif msg_type == "human_response":
+                    tid = body.get("task_id")
+                    log.info(f"Human response received for task {tid}")
                 elif msg_type == "config_reload":
                     log.info("Reloading config")
                     config = load_config()
@@ -201,6 +257,19 @@ def main():
             db.heartbeat(role, status='PAUSED')
             time.sleep(5)
             continue
+
+        # Check if quarantined by watchdog
+        try:
+            from db import get_conn
+            with get_conn() as _conn:
+                _row = _conn.execute(
+                    "SELECT status FROM agents WHERE name=?", (role,)).fetchone()
+                if _row and _row["status"] == "QUARANTINED":
+                    log.warning("Agent quarantined by watchdog — pausing claims")
+                    time.sleep(10)
+                    continue
+        except Exception:
+            pass
 
         task = db.claim_task(role, affinity_skills=affinity_skills)
         if task:
@@ -213,8 +282,18 @@ def main():
             try:
                 payload = json.loads(task['payload_json']) if task['payload_json'] else {}
                 result = run_skill(task['type'], payload, config, log)
-                db.complete_task(task['id'], json.dumps(result))
-                log.info(f"Task {task['id']} done")
+                # Evaluator-Optimizer: route high-stakes skills through review
+                if _should_review(task['type'], config, payload):
+                    verdict = _run_review(task['type'], payload, result, config, log)
+                    if verdict.get("verdict") == "FAIL":
+                        rounds = db.reject_task(task['id'], verdict.get("critique", ""))
+                        log.info(f"Task {task['id']} REVIEW FAIL (round {rounds}): {verdict.get('critique', '')[:100]}")
+                    else:
+                        db.complete_task(task['id'], json.dumps(result))
+                        log.info(f"Task {task['id']} REVIEW PASS → done")
+                else:
+                    db.complete_task(task['id'], json.dumps(result))
+                    log.info(f"Task {task['id']} done")
             except Exception as e:
                 err_str = str(e).lower()
                 # Overload / Network Drop detection

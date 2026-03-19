@@ -19,6 +19,12 @@ def utc_to_local(utc_str: str | None) -> str:
 
 DB_PATH = Path(__file__).parent / "fleet.db"
 
+# ── Channel Constants ─────────────────────────────────────────────────────────
+CH_SUP   = "sup"    # Layer 1: supervisor-to-supervisor
+CH_AGENT = "agent"  # Layer 2: agent-to-agent
+CH_FLEET = "fleet"  # Layer 3: cross-layer (default)
+CH_POOL  = "pool"   # Layer 4: supervisor → agent pool
+
 SCHEMA = """
 PRAGMA journal_mode=WAL;
 PRAGMA synchronous=NORMAL;
@@ -54,8 +60,19 @@ CREATE TABLE IF NOT EXISTS messages (
     to_agent   TEXT NOT NULL,
     created_at TEXT DEFAULT (datetime('now')),
     read_at    TEXT,
-    body_json  TEXT
+    body_json  TEXT,
+    channel    TEXT DEFAULT 'fleet'
 );
+
+CREATE TABLE IF NOT EXISTS notes (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    channel    TEXT NOT NULL,
+    from_agent TEXT NOT NULL,
+    created_at TEXT DEFAULT (datetime('now')),
+    body_json  TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_notes_channel_created
+    ON notes (channel, created_at);
 
 CREATE TABLE IF NOT EXISTS locks (
     name        TEXT PRIMARY KEY,
@@ -86,7 +103,7 @@ def _retry_write(fn, retries=8):
             time.sleep(0.2 * (2 ** attempt) + random.uniform(0, 0.1))
 
 
-VALID_TASK_STATUSES = {"PENDING", "RUNNING", "DONE", "FAILED", "WAITING"}
+VALID_TASK_STATUSES = {"PENDING", "RUNNING", "DONE", "FAILED", "WAITING", "REVIEW", "WAITING_HUMAN"}
 
 
 def init_db():
@@ -98,6 +115,14 @@ def init_db():
             conn.execute("ALTER TABLE tasks ADD COLUMN parent_id INTEGER")
         if "depends_on" not in cols:
             conn.execute("ALTER TABLE tasks ADD COLUMN depends_on TEXT")
+        if "review_rounds" not in cols:
+            conn.execute("ALTER TABLE tasks ADD COLUMN review_rounds INTEGER DEFAULT 0")
+        # Migrate messages: add channel column if missing
+        msg_cols = {r[1] for r in conn.execute("PRAGMA table_info(messages)").fetchall()}
+        if "channel" not in msg_cols:
+            conn.execute("ALTER TABLE messages ADD COLUMN channel TEXT DEFAULT 'fleet'")
+        conn.execute("""CREATE INDEX IF NOT EXISTS idx_messages_inbox
+            ON messages (to_agent, channel, read_at)""")
 
 
 def register_agent(name, role, pid):
@@ -279,6 +304,52 @@ def requeue_task(task_id):
     _retry_write(_do)
 
 
+def review_task(task_id, result_json):
+    """Transition task to REVIEW status — output awaits adversarial review."""
+    if result_json and not isinstance(result_json, str):
+        result_json = json.dumps(result_json)
+    def _do():
+        with get_conn() as conn:
+            conn.execute(
+                "UPDATE tasks SET status='REVIEW', result_json=? WHERE id=?",
+                (result_json, task_id)
+            )
+    _retry_write(_do)
+
+
+def reject_task(task_id, critique):
+    """Review rejected — requeue with critique appended to payload for retry.
+
+    Increments review_rounds. Returns the new review_rounds count.
+    """
+    result = [0]
+    def _do():
+        with get_conn() as conn:
+            row = conn.execute(
+                "SELECT payload_json, review_rounds FROM tasks WHERE id=?",
+                (task_id,)
+            ).fetchone()
+            if not row:
+                return
+            rounds = (row["review_rounds"] or 0) + 1
+            result[0] = rounds
+            # Append critique to payload so the worker can see it on retry
+            try:
+                payload = json.loads(row["payload_json"]) if row["payload_json"] else {}
+            except (json.JSONDecodeError, TypeError):
+                payload = {}
+            payload["_review_critique"] = critique
+            payload["_review_round"] = rounds
+            conn.execute("""
+                UPDATE tasks SET status='PENDING', assigned_to=NULL,
+                    result_json=NULL, error=NULL,
+                    payload_json=?, review_rounds=?
+                WHERE id=?
+            """, (json.dumps(payload), rounds, task_id))
+    _retry_write(_do)
+    return result[0]
+
+
 def post_task(type_, payload_json, priority=5, assigned_to=None,
               parent_id=None, depends_on=None):
     """Post a task to the queue.
@@ -320,27 +391,37 @@ def post_task(type_, payload_json, priority=5, assigned_to=None,
     return result[0]
 
 
-def post_message(from_agent, to_agent, body_json):
+def post_message(from_agent, to_agent, body_json, channel="fleet"):
     def _do():
         with get_conn() as conn:
             conn.execute("""
-                INSERT INTO messages (from_agent, to_agent, body_json)
-                VALUES (?, ?, ?)
-            """, (from_agent, to_agent, body_json))
+                INSERT INTO messages (from_agent, to_agent, body_json, channel)
+                VALUES (?, ?, ?, ?)
+            """, (from_agent, to_agent, body_json, channel))
     _retry_write(_do)
 
 
-def get_messages(agent_name, unread_only=True, limit=20):
-    """Retrieve messages for an agent. Marks them read on fetch."""
+def get_messages(agent_name, unread_only=True, limit=20, channels=None):
+    """Retrieve messages for an agent. Marks them read on fetch.
+
+    Args:
+        channels: optional list of channel strings to filter on.
+                  None = no filter (backward compat).
+    """
     with get_conn() as conn:
         where = "WHERE to_agent=?"
+        params = [agent_name]
         if unread_only:
             where += " AND read_at IS NULL"
+        if channels:
+            placeholders = ','.join('?' * len(channels))
+            where += f" AND channel IN ({placeholders})"
+            params.extend(channels)
         rows = conn.execute(f"""
-            SELECT id, from_agent, to_agent, created_at, body_json
+            SELECT id, from_agent, to_agent, created_at, body_json, channel
             FROM messages {where}
             ORDER BY created_at DESC LIMIT ?
-        """, (agent_name, limit)).fetchall()
+        """, (*params, limit)).fetchall()
         if rows:
             ids = [r['id'] for r in rows]
             conn.execute(
@@ -451,6 +532,164 @@ def get_fleet_status():
             s: conn.execute(
                 "SELECT COUNT(*) as n FROM tasks WHERE status=?", (s,)
             ).fetchone()['n']
-            for s in ('PENDING', 'RUNNING', 'DONE', 'FAILED', 'WAITING')
+            for s in ('PENDING', 'RUNNING', 'DONE', 'FAILED', 'WAITING', 'REVIEW', 'WAITING_HUMAN')
         }
         return {'agents': [dict(a) for a in agents], 'tasks': counts}
+
+
+# ── Human-in-the-Loop Functions ───────────────────────────────────────────────
+
+def request_human_input(task_id, agent_name, question):
+    """Agent pauses task and requests operator input. Sets status to WAITING_HUMAN."""
+    def _do():
+        with get_conn() as conn:
+            conn.execute(
+                "UPDATE tasks SET status='WAITING_HUMAN' WHERE id=?", (task_id,))
+            conn.execute("""
+                INSERT INTO messages (from_agent, to_agent, body_json)
+                VALUES (?, 'operator', ?)
+            """, (agent_name, json.dumps({
+                "type": "human_input_request",
+                "task_id": task_id,
+                "question": question,
+            })))
+    _retry_write(_do)
+
+
+def respond_to_agent(task_id, response):
+    """Operator responds to agent question. Resumes task to RUNNING."""
+    def _do():
+        with get_conn() as conn:
+            row = conn.execute(
+                "SELECT assigned_to, payload_json FROM tasks WHERE id=?",
+                (task_id,)).fetchone()
+            if not row:
+                return
+            agent = row["assigned_to"]
+            # Append response to payload
+            try:
+                payload = json.loads(row["payload_json"]) if row["payload_json"] else {}
+            except (json.JSONDecodeError, TypeError):
+                payload = {}
+            payload["_human_response"] = response
+            conn.execute("""
+                UPDATE tasks SET status='PENDING', payload_json=?
+                WHERE id=? AND status='WAITING_HUMAN'
+            """, (json.dumps(payload), task_id))
+            # Notify agent
+            if agent:
+                conn.execute("""
+                    INSERT INTO messages (from_agent, to_agent, body_json)
+                    VALUES ('operator', ?, ?)
+                """, (agent, json.dumps({
+                    "type": "human_response",
+                    "task_id": task_id,
+                    "response": response,
+                })))
+    _retry_write(_do)
+
+
+def get_waiting_human_tasks():
+    """Get all tasks awaiting human input, with the agent's question."""
+    with get_conn() as conn:
+        tasks = conn.execute("""
+            SELECT t.id, t.type, t.assigned_to, t.created_at, t.payload_json
+            FROM tasks t
+            WHERE t.status = 'WAITING_HUMAN'
+            ORDER BY t.created_at ASC
+        """).fetchall()
+        result = []
+        for t in tasks:
+            task_dict = dict(t)
+            # Find the question from the agent's message
+            msg = conn.execute("""
+                SELECT body_json FROM messages
+                WHERE from_agent = ? AND to_agent = 'operator'
+                AND body_json LIKE '%human_input_request%'
+                AND body_json LIKE ?
+                ORDER BY id DESC LIMIT 1
+            """, (t["assigned_to"] or "", f'%"task_id": {t["id"]}%')).fetchone()
+            if msg:
+                try:
+                    body = json.loads(msg["body_json"])
+                    task_dict["question"] = body.get("question", "")
+                except Exception:
+                    task_dict["question"] = ""
+            else:
+                task_dict["question"] = ""
+            result.append(task_dict)
+        return result
+
+
+# ── Watchdog Functions ───────────────────────────────────────────────────────
+
+def quarantine_agent(name, reason):
+    """Set agent status to QUARANTINED with reason stored in messages."""
+    def _do():
+        with get_conn() as conn:
+            conn.execute(
+                "UPDATE agents SET status='QUARANTINED' WHERE name=?", (name,))
+            conn.execute("""
+                INSERT INTO messages (from_agent, to_agent, body_json)
+                VALUES ('watchdog', ?, ?)
+            """, (name, json.dumps({"type": "quarantine", "reason": reason})))
+    _retry_write(_do)
+
+
+def clear_quarantine(name):
+    """Remove quarantine status — agent returns to IDLE."""
+    def _do():
+        with get_conn() as conn:
+            conn.execute(
+                "UPDATE agents SET status='IDLE' WHERE name=? AND status='QUARANTINED'",
+                (name,))
+    _retry_write(_do)
+
+
+def get_failure_streaks(threshold=3):
+    """Find agents with N+ consecutive recent task failures.
+
+    Returns list of {agent, consecutive_failures, last_error}.
+    """
+    with get_conn() as conn:
+        # Get agents with recent failures
+        rows = conn.execute("""
+            SELECT assigned_to as agent,
+                   COUNT(*) as fail_count,
+                   MAX(error) as last_error
+            FROM (
+                SELECT assigned_to, error,
+                       ROW_NUMBER() OVER (PARTITION BY assigned_to ORDER BY id DESC) as rn
+                FROM tasks
+                WHERE assigned_to IS NOT NULL AND status IN ('FAILED', 'DONE')
+            )
+            WHERE rn <= ? AND status = 'FAILED'
+            GROUP BY assigned_to
+            HAVING fail_count >= ?
+        """, (threshold + 2, threshold)).fetchall()
+        # Fallback: simpler query if window functions cause issues
+        if not rows:
+            rows = conn.execute("""
+                SELECT assigned_to as agent, COUNT(*) as fail_count,
+                       MAX(error) as last_error
+                FROM (
+                    SELECT * FROM tasks
+                    WHERE assigned_to IS NOT NULL AND status = 'FAILED'
+                    ORDER BY id DESC LIMIT ?
+                )
+                GROUP BY assigned_to
+                HAVING fail_count >= ?
+            """, (threshold * 20, threshold)).fetchall()
+        return [dict(r) for r in rows]
+
+
+def get_stuck_reviews(timeout_minutes=30):
+    """Find tasks stuck in REVIEW status for too long."""
+    with get_conn() as conn:
+        rows = conn.execute("""
+            SELECT id, type, assigned_to
+            FROM tasks
+            WHERE status = 'REVIEW'
+              AND (julianday('now') - julianday(created_at)) * 1440 > ?
+        """, (timeout_minutes,)).fetchall()
+        return [dict(r) for r in rows]

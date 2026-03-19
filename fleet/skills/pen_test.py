@@ -17,6 +17,7 @@ FLEET_DIR = Path(__file__).parent.parent
 KNOWLEDGE_DIR = FLEET_DIR / "knowledge"
 PENTEST_DIR = KNOWLEDGE_DIR / "security" / "pen_tests"
 PENDING_DIR = KNOWLEDGE_DIR / "security" / "pending"
+REQUIRES_NETWORK = True
 
 
 def _ollama(prompt, config):

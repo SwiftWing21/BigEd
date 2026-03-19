@@ -165,7 +165,14 @@ class RAGIndex:
         with self._get_conn() as conn:
             conn.execute("DELETE FROM files")
             conn.execute("DELETE FROM chunks_meta")
-            conn.execute("DELETE FROM chunks")
+            conn.execute("DROP TABLE IF EXISTS chunks")
+            conn.execute("""
+                CREATE VIRTUAL TABLE chunks USING fts5(
+                    text, heading, source,
+                    content='',
+                    tokenize='porter unicode61'
+                )
+            """)
 
             for path in files:
                 rel = self._relative_path(path)
@@ -253,7 +260,6 @@ class RAGIndex:
                     (rel, current_hash, datetime.utcnow().isoformat(), len(chunks)),
                 )
 
-        total = conn.execute("SELECT COUNT(*) FROM chunks_meta").fetchone()[0] if True else 0
         with self._get_conn() as conn:
             total = conn.execute("SELECT COUNT(*) FROM chunks_meta").fetchone()[0]
 
@@ -263,14 +269,15 @@ class RAGIndex:
         }
 
     def _remove_file(self, conn, rel: str):
-        """Remove all chunks for a file."""
-        rowids = [
-            r[0] for r in conn.execute(
-                "SELECT rowid FROM chunks_meta WHERE source=?", (rel,)
-            ).fetchall()
-        ]
-        for rid in rowids:
-            conn.execute("DELETE FROM chunks WHERE rowid=?", (rid,))
+        """Remove all chunks for a file (contentless FTS5 requires special delete)."""
+        rows = conn.execute(
+            "SELECT rowid, text, heading, source FROM chunks_meta WHERE source=?", (rel,)
+        ).fetchall()
+        for r in rows:
+            conn.execute(
+                "INSERT INTO chunks(chunks, rowid, text, heading, source) VALUES('delete', ?, ?, ?, ?)",
+                (r[0], r[1], r[2], r[3]),
+            )
         conn.execute("DELETE FROM chunks_meta WHERE source=?", (rel,))
         conn.execute("DELETE FROM files WHERE path=?", (rel,))
 

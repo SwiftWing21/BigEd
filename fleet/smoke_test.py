@@ -64,14 +64,20 @@ def test_db_health():
 
 
 def test_config():
-    """3. Config loads with required keys."""
-    from config import load_config
+    """3. Config loads with required keys + offline/air-gap flags."""
+    from config import load_config, is_offline, is_air_gap
     cfg = load_config()
     required = ["fleet", "models", "workers"]
     missing = [k for k in required if k not in cfg]
     if missing:
         return False, f"missing sections: {missing}"
-    return True, f"fleet.toml OK ({len(cfg)} sections)"
+    # Verify offline/air-gap flags are present and callable
+    offline = is_offline(cfg)
+    air_gap = is_air_gap(cfg)
+    if air_gap and not offline:
+        return False, "air_gap_mode should imply offline_mode"
+    detail = f"fleet.toml OK ({len(cfg)} sections, offline={offline}, air_gap={air_gap})"
+    return True, detail
 
 
 def test_ollama_reachable():
@@ -175,13 +181,14 @@ def test_training_lock():
 def test_thermal_readings():
     """10. GPU thermal readings available (if GPU present)."""
     try:
-        import pynvml
-        pynvml.nvmlInit()
-        handle = pynvml.nvmlDeviceGetHandleByIndex(0)
-        temp = pynvml.nvmlDeviceGetTemperature(handle, pynvml.NVML_TEMPERATURE_GPU)
-        mem = pynvml.nvmlDeviceGetMemoryInfo(handle)
-        vram_gb = round(mem.used / (1024**3), 1)
-        return True, f"GPU {temp}°C, VRAM {vram_gb}GB used"
+        from gpu import detect_gpu, read_telemetry
+        backend, has_gpu = detect_gpu()
+        if not has_gpu:
+            return False, "no GPU detected"
+        data = read_telemetry(backend)
+        if not data:
+            return False, "read_telemetry returned None"
+        return True, f"GPU {data['gpu_temp_c']}°C, VRAM {data['vram_used_gb']}GB used ({type(backend).__name__})"
     except Exception as e:
         return False, f"no GPU thermal data: {e}"
 

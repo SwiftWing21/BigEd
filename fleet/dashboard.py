@@ -1166,6 +1166,15 @@ def index():
 # ── Entry ────────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
+    # Refuse to start in air-gap mode (no listening sockets)
+    try:
+        from config import is_air_gap, load_config
+        if is_air_gap(load_config()):
+            print("Dashboard disabled — air-gap mode active")
+            sys.exit(0)
+    except Exception:
+        pass
+
     parser = argparse.ArgumentParser()
     parser.add_argument("--port", type=int, default=5555)
     parser.add_argument("--host", default="127.0.0.1")

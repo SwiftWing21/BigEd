@@ -21,6 +21,7 @@ import httpx
 KNOWLEDGE_DIR = Path(__file__).parent.parent / "knowledge"
 VIDEOS_DIR    = KNOWLEDGE_DIR / "marketing" / "videos"
 REPLICATE_API = "https://api.replicate.com/v1"
+REQUIRES_NETWORK = True
 
 # Owner/name slugs — Replicate resolves to latest version automatically
 _MODEL_SLUGS = {

@@ -24,6 +24,7 @@ INDUSTRIES = {
 }
 
 KNOWLEDGE_DIR = Path(__file__).parent.parent / "knowledge"
+REQUIRES_NETWORK = True
 
 
 def _search(query, config):

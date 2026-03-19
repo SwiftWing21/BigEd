@@ -30,6 +30,7 @@ KNOWLEDGE_DIR = FLEET_DIR / "knowledge"
 WORKSPACE = KNOWLEDGE_DIR / "code_writes" / "workspace"
 
 AGENTS_REPO = "git@github.com:SwiftWing21/BigEds_Agents.git"
+REQUIRES_NETWORK = True
 
 # Core skills every product variant needs
 CORE_SKILLS = [
