@@ -92,11 +92,12 @@ def task_send():
             try:
                 existing = json.loads(db.get_task_result(task_id).get("payload_json", "{}"))
                 existing["_a2a_callback"] = callback_url
-                db.get_conn().execute(
-                    "UPDATE tasks SET payload_json=? WHERE id=?",
-                    (json.dumps(existing), task_id)
-                )
-                db.get_conn().commit()
+                with db.get_conn() as conn:
+                    conn.execute(
+                        "UPDATE tasks SET payload_json=? WHERE id=?",
+                        (json.dumps(existing), task_id)
+                    )
+                    # commit happens automatically with context manager
             except Exception:
                 pass
 

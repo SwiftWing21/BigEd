@@ -107,15 +107,15 @@ def forecast_cost(days_ahead: int = 30) -> dict:
 
     Uses last 14 days average daily cost to project forward.
     """
-    conn = _get_conn()
-    # Get daily totals for last 14 days
-    rows = conn.execute("""
-        SELECT date(created_at) as day, SUM(cost_usd) as daily_cost
-        FROM usage
-        WHERE created_at >= datetime('now', '-14 days')
-        GROUP BY date(created_at)
-        ORDER BY day
-    """).fetchall()
+    with _get_conn() as conn:
+        # Get daily totals for last 14 days
+        rows = conn.execute("""
+            SELECT date(created_at) as day, SUM(cost_usd) as daily_cost
+            FROM usage
+            WHERE created_at >= datetime('now', '-14 days')
+            GROUP BY date(created_at)
+            ORDER BY day
+        """).fetchall()
 
     if not rows:
         return {"forecast_usd": 0, "avg_daily_usd": 0, "data_days": 0, "days_ahead": days_ahead}
@@ -143,54 +143,54 @@ def forecast_cost(days_ahead: int = 30) -> dict:
 
 def get_daily_cost_series(days: int = 30) -> list:
     """Get daily cost time series for chart rendering."""
-    conn = _get_conn()
-    rows = conn.execute("""
-        SELECT date(created_at) as day,
-               SUM(cost_usd) as total_cost,
-               SUM(input_tokens) as total_input,
-               SUM(output_tokens) as total_output,
-               COUNT(*) as call_count
-        FROM usage
-        WHERE created_at >= datetime('now', ?)
-        GROUP BY date(created_at)
-        ORDER BY day
-    """, (f"-{days} days",)).fetchall()
-    return [dict(r) for r in rows]
+    with _get_conn() as conn:
+        rows = conn.execute("""
+            SELECT date(created_at) as day,
+                   SUM(cost_usd) as total_cost,
+                   SUM(input_tokens) as total_input,
+                   SUM(output_tokens) as total_output,
+                   COUNT(*) as call_count
+            FROM usage
+            WHERE created_at >= datetime('now', ?)
+            GROUP BY date(created_at)
+            ORDER BY day
+        """, (f"-{days} days",)).fetchall()
+        return [dict(r) for r in rows]
 
 
 def get_skill_cost_breakdown(period: str = "week") -> list:
     """Get cost breakdown by skill for pie/bar chart."""
     period_map = {"day": "-1 day", "week": "-7 days", "month": "-30 days"}
     since = period_map.get(period, "-7 days")
-    conn = _get_conn()
-    rows = conn.execute("""
-        SELECT skill,
-               SUM(cost_usd) as total_cost,
-               COUNT(*) as calls,
-               SUM(input_tokens + output_tokens) as total_tokens
-        FROM usage
-        WHERE created_at >= datetime('now', ?)
-        GROUP BY skill
-        ORDER BY total_cost DESC
-        LIMIT 10
-    """, (since,)).fetchall()
-    return [dict(r) for r in rows]
+    with _get_conn() as conn:
+        rows = conn.execute("""
+            SELECT skill,
+                   SUM(cost_usd) as total_cost,
+                   COUNT(*) as calls,
+                   SUM(input_tokens + output_tokens) as total_tokens
+            FROM usage
+            WHERE created_at >= datetime('now', ?)
+            GROUP BY skill
+            ORDER BY total_cost DESC
+            LIMIT 10
+        """, (since,)).fetchall()
+        return [dict(r) for r in rows]
 
 
 def get_model_usage_breakdown(period: str = "week") -> list:
     """Get usage breakdown by model for chart rendering."""
     period_map = {"day": "-1 day", "week": "-7 days", "month": "-30 days"}
     since = period_map.get(period, "-7 days")
-    conn = _get_conn()
-    rows = conn.execute("""
-        SELECT model,
-               SUM(cost_usd) as total_cost,
-               COUNT(*) as calls,
-               SUM(cache_read_tokens) as cache_hits,
-               SUM(input_tokens) as total_input
-        FROM usage
-        WHERE created_at >= datetime('now', ?)
-        GROUP BY model
-        ORDER BY total_cost DESC
-    """, (since,)).fetchall()
-    return [dict(r) for r in rows]
+    with _get_conn() as conn:
+        rows = conn.execute("""
+            SELECT model,
+                   SUM(cost_usd) as total_cost,
+                   COUNT(*) as calls,
+                   SUM(cache_read_tokens) as cache_hits,
+                   SUM(input_tokens) as total_input
+            FROM usage
+            WHERE created_at >= datetime('now', ?)
+            GROUP BY model
+            ORDER BY total_cost DESC
+        """, (since,)).fetchall()
+        return [dict(r) for r in rows]

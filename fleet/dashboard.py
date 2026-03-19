@@ -15,6 +15,7 @@ Usage:
 import argparse
 import json
 import os
+import re
 import secrets
 import sqlite3
 import sys
@@ -32,6 +33,14 @@ KNOWLEDGE_DIR = FLEET_DIR / "knowledge"
 HW_STATE_JSON = FLEET_DIR / "hw_state.json"
 
 app = Flask(__name__)
+
+
+def _safe_error(e):
+    """Sanitize error messages by stripping file paths."""
+    msg = str(e)
+    msg = re.sub(r'[A-Z]:\\[^\s"\']+', '[path]', msg)
+    msg = re.sub(r'/[^\s"\']+/[^\s"\']+', '[path]', msg)
+    return msg
 
 
 @app.before_request
@@ -470,7 +479,7 @@ def api_rag():
         conn.close()
         return jsonify({"files": files, "chunks": chunks, "sources": sources})
     except Exception as e:
-        return jsonify({"error": str(e), "files": 0, "chunks": 0, "sources": []})
+        return jsonify({"error": _safe_error(e), "files": 0, "chunks": 0, "sources": []})
 
 
 # ── v0.27 New API endpoints ──────────────────────────────────────────────────
@@ -522,7 +531,7 @@ def api_provider_health():
         from providers import get_provider_health
         return jsonify(get_provider_health())
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        return jsonify({"error": _safe_error(e)}), 500
 
 
 @app.route("/api/training")
@@ -679,7 +688,7 @@ def api_comms():
             }
         conn.close()
     except Exception as e:
-        result["error"] = str(e)
+        result["error"] = _safe_error(e)
     return jsonify(result)
 
 
@@ -739,7 +748,7 @@ def api_usage():
         group = request.args.get("group", "skill")
         return jsonify(db.get_usage_summary(period, group))
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        return jsonify({"error": _safe_error(e)}), 500
 
 
 @app.route("/api/usage/delta")
@@ -756,7 +765,7 @@ def api_usage_delta():
             return jsonify({"error": "Required params: from_start, from_end, to_start, to_end"}), 400
         return jsonify(db.get_usage_delta(from_start, from_end, to_start, to_end))
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        return jsonify({"error": _safe_error(e)}), 500
 
 
 @app.route("/api/usage/budgets")
@@ -786,7 +795,7 @@ def api_usage_budgets():
             })
         return jsonify(result)
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        return jsonify({"error": _safe_error(e)}), 500
 
 
 @app.route("/api/usage/regression")
@@ -812,7 +821,7 @@ def api_usage_regression():
             "total_skills_checked": len(deltas),
         })
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        return jsonify({"error": _safe_error(e)}), 500
 
 
 # ── Agent Cards ───────────────────────────────────────────────────────────────
@@ -825,7 +834,7 @@ def api_agent_cards():
         config = _load_config()
         return jsonify(generate_all_cards(config))
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        return jsonify({"error": _safe_error(e)}), 500
 
 
 # ── DAG Visualization ─────────────────────────────────────────────────────────
@@ -838,7 +847,7 @@ def api_dag(parent_id):
         import db
         return jsonify(db.get_dag_graph(parent_id))
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        return jsonify({"error": _safe_error(e)}), 500
 
 
 # ── Process Control (extracted to process_control.py) ─────────────────────────
