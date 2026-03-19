@@ -31,21 +31,23 @@ local_think = true             # prepend /think to prompt (enables CoT on suppor
 mode = "eco"  # "eco" = CPU-only Ollama, "full" = GPU
 
 [thermal]
-gpu_max_sustained_c = 75      # sustained temp ceiling — reduce workers above this
-gpu_max_burst_c = 78          # hard ceiling — pause GPU tasks above this
-cpu_max_sustained_c = 80      # CPU package temp ceiling
-cooldown_target_c = 72        # resume GPU tasks when below this for cooldown_window
-cooldown_window_secs = 60     # consecutive seconds below target to resume
+# Softened thresholds — only react to actual danger, not normal load
+gpu_max_sustained_c = 82      # sustained temp ceiling — only intervene at real heat
+gpu_max_burst_c = 85          # hard ceiling — pause GPU tasks (RTX 3080 Ti throttles at 93)
+cpu_max_sustained_c = 85      # CPU package temp ceiling
+cooldown_target_c = 75        # resume GPU tasks when below this for cooldown_window
+cooldown_window_secs = 120    # 2 minutes below target before resuming (prevent bouncing)
 poll_interval_secs = 5        # hw_supervisor main loop interval
-grace_period_secs = 15        # worker drain time before model swap
-cooldown_after_swap_secs = 30 # prevent rapid model bouncing
+grace_period_secs = 20        # worker drain time before model swap (longer = safer)
+cooldown_after_swap_secs = 60 # prevent rapid model bouncing (1 min)
 ambient_estimation = true     # track cooldown rate to estimate ambient temp
 
 [thermal.vram]
-# Thresholds for dynamic model tier selection (fraction 0.0-1.0)
-emergency = 0.90              # >90% → emergency eviction
-high = 0.75                   # >75% → scale to mid tier
-restore = 0.60                # <60% → restore default model
+# Relaxed thresholds — only swap models when genuinely out of room
+# RTX 3080 Ti has 12GB. qwen3:8b uses ~6.9GB = 57%. Normal headroom.
+emergency = 0.92              # >92% → emergency eviction (only ~1GB free)
+high = 0.85                   # >85% → consider scaling down (only ~1.8GB free)
+restore = 0.60                # <60% → operator can scale up via model-profile
 
 [models.tiers]
 default = "qwen3:8b"
