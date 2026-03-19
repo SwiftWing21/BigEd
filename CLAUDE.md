@@ -5,9 +5,9 @@
 - `BigEd/` — reference docs, command sheets, notes
 
 ## Fleet Status
-- Smoke: 15/15 | Skills: 55 | Dashboard: 31 endpoints
+- Smoke: 17/17 | Skills: 66 | Dashboard: 39+ endpoints
 - `launcher.py`: 3492 lines
-- All TECH_DEBT resolved (4.1–4.8)
+- TECH_DEBT nearly clear (4.6 partial: hw_supervisor.py regex TOML remains)
 - All parallel tracks complete: PT (perf tuning), DT (debug tools), CT (cost tracking), CM (comms), GR (GitHub roadmap)
 - New capabilities: HA fallback, omni-box search, SSE reactive UI, token budgets, GitHub sync, auto-boot, idle evolution, marathon ML
 

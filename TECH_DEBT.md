@@ -4,7 +4,7 @@ This document tracks known technical debt, brittle architectural patterns, and t
 
 > **Last reviewed:** v0.41 + CT/DT/GR tracks (2026-03-18)
 
-All tracked technical debt has been resolved. See Resolved section below.
+Most tracked technical debt has been resolved. See Resolved section and open items below.
 
 ---
 
@@ -35,9 +35,10 @@ All tracked technical debt has been resolved. See Resolved section below.
 - **Resolved in:** 2026-03-18
 - **What was fixed:** `NativeWindowsBridge` in fleet_bridge.py with bash→Windows cmd translation (_translate_cmd), BIGED_NATIVE_WINDOWS=1 env toggle, detect_cli() in config.py for auto-detection of best local CLI per platform.
 
-### [DONE] 4.6. Regex-Based Configuration Mutation
-- **Resolved in:** 2026-03-18
-- **What was fixed:** All `FLEET_TOML.write_text(re.sub(...))` sites in launcher.py replaced with `tomlkit.parse()` → key assignment → `tomlkit.dumps()`. Preserves comments, formatting, and key ordering. `tomlkit` installed as dependency.
+### [PARTIAL] 4.6. Regex-Based Configuration Mutation
+- **Partially resolved in:** 2026-03-18
+- **What was fixed:** All `FLEET_TOML.write_text(re.sub(...))` sites in **launcher.py** replaced with `tomlkit.parse()` → key assignment → `tomlkit.dumps()`. Preserves comments, formatting, and key ordering. `tomlkit` installed as dependency.
+- **Remaining (B4):** `hw_supervisor.py` still uses `re.search` (line ~121) and `re.sub` (line ~133) for reading/writing `local` model in fleet.toml. Should be migrated to `tomlkit` to match launcher.py.
 
 ### [DONE] 4.7. Bypassing Model Routing Layer
 - **Resolved in:** 2026-03-18
