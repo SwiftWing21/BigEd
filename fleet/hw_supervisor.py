@@ -649,31 +649,39 @@ def main():
                 else:
                     below_target_since = None
 
-            # ── VRAM-based model scaling ──────────────────────────────
-            baseline = cfg["tier_mid"] if is_marathon else cfg["tier_default"]
+            # ── VRAM-based model scaling (park + guard pattern) ─────────
+            # Philosophy: park on whatever model is loaded. Only scale DOWN
+            # under actual pressure. Never auto-scale UP (operator controls
+            # the baseline via fleet.toml or model-profile command).
             current_model = get_current_local_model()
             target_model = current_model
             emergency = False
 
             if gpu_throttled:
-                # Thermal override: use critical tier (CPU-only)
+                # Thermal emergency: drop to critical (CPU-only)
                 target_model = cfg["tier_crit"]
                 if current_model != cfg["tier_crit"]:
                     emergency = True
             elif is_training:
+                # Training active: drop to low tier to free VRAM
+                if current_model not in (cfg["tier_crit"], cfg["tier_low"]):
+                    target_model = cfg["tier_low"]
+            else:
+                # Normal operation: only scale DOWN on pressure, never UP
                 if vram_pct > cfg["vram_emergency"]:
                     target_model = cfg["tier_crit"]
                     emergency = True
-                elif current_model not in (cfg["tier_crit"], cfg["tier_low"]):
-                    target_model = cfg["tier_low"]
-            else:
-                if vram_pct > cfg["vram_emergency"]:
-                    target_model = cfg["tier_low"]
-                    emergency = True
                 elif vram_pct > cfg["vram_high"]:
-                    target_model = cfg["tier_mid"]
-                elif vram_pct < cfg["vram_restore"]:
-                    target_model = baseline
+                    # Step down one tier from current, don't jump to a fixed tier
+                    tier_order = [cfg["tier_default"], cfg["tier_mid"],
+                                  cfg["tier_low"], cfg["tier_crit"]]
+                    try:
+                        idx = tier_order.index(current_model)
+                        if idx < len(tier_order) - 1:
+                            target_model = tier_order[idx + 1]
+                    except ValueError:
+                        target_model = cfg["tier_mid"]  # unknown model, go to mid
+                # No auto-scale UP — stay parked on current model
 
             if target_model != current_model:
                 transition_model(target_model, current_model, cfg, emergency)
