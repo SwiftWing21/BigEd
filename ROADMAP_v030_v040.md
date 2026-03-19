@@ -442,3 +442,39 @@ Completed 2026-03-18.
 - Output: markdown report to `knowledge/reports/stability_report_YYYYMMDD.md`
 - Release validation checklist: all P0/P1 resolved + regression tests pass before tagging
 - Graceful handling of missing/empty resolutions data
+
+---
+
+## Parallel Track: Hardening (Gemini RAG Recommendations)
+
+> Sourced from fleet Gemini analysis: `knowledge/reports/gemini_configuration_bug_resolutions.md`
+
+### GR-1: Pre-Flight VRAM Eviction [DONE]
+
+Completed 2026-03-18.
+
+- `supervisor.py`: `_evict_gpu_models()` sends `keep_alive=0` to all loaded Ollama models before training starts
+- `hw_supervisor.py`: `_evict_models_for_training()` mirror for hardware-level coordination
+- Prevents CUDA OOM when PyTorch training competes with Ollama for 12GB VRAM
+
+### GR-2: WSL2 Subnet Detection [DONE]
+
+Completed 2026-03-18.
+
+- `pen_test.py`: `_detect_wsl_nat()` checks for 172.x.x.x gateway indicating WSL2 NAT
+- Warning injected into scan results when NAT detected, with `.wslconfig` fix instructions
+
+### GR-3: Zombie Process Cleanup [DONE]
+
+Completed 2026-03-18.
+
+- `worker.py`: Process group (`os.setpgrp()`) on startup, `_cleanup_children()` on shutdown
+- Signal handlers (SIGTERM/SIGINT) kill entire process group including child processes (Playwright, nmap)
+
+### GR-4: Base64 Secret Detection [DONE]
+
+Completed 2026-03-18.
+
+- `_watchdog.py`: `_check_base64_secrets()` decodes base64 strings and checks against SECRET_PATTERNS
+- Catches LLM-encoded API keys that bypass plain-text DLP scanning
+- Integrated into existing task result + knowledge file scan flow

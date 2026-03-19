@@ -248,6 +248,32 @@ def _warmup_conductor(config):
         log.warning(f"Conductor warmup failed: {e}")
 
 
+def _evict_gpu_models(config):
+    """Pre-flight VRAM eviction: unload all GPU models before training starts.
+    Sends keep_alive=0 to each loaded model so PyTorch gets clean VRAM."""
+    host = config.get("models", {}).get("ollama_host", "http://localhost:11434")
+    try:
+        with urllib.request.urlopen(f"{host}/api/ps", timeout=3) as r:
+            data = json.loads(r.read())
+        for model in data.get("models", []):
+            name = model.get("name", "")
+            if not name:
+                continue
+            body = json.dumps({"model": name, "keep_alive": 0}).encode()
+            req = urllib.request.Request(
+                f"{host}/api/generate", data=body,
+                headers={"Content-Type": "application/json"}, method="POST",
+            )
+            try:
+                with urllib.request.urlopen(req, timeout=5) as resp:
+                    resp.read()
+                log.info(f"Evicted model '{name}' from VRAM")
+            except Exception:
+                pass
+    except Exception as e:
+        log.warning(f"VRAM eviction best-effort failed: {e}")
+
+
 def write_status_md():
     try:
         status = db.get_fleet_status()
@@ -412,7 +438,8 @@ def main():
             last_training_check = now
             training_now = is_training_running()
             if training_now and not training_active:
-                log.info("train.py detected — switching Ollama to CPU-only")
+                log.info("train.py detected — evicting GPU models, switching Ollama to CPU-only")
+                _evict_gpu_models(config)
                 stop_ollama()
                 start_ollama(gpu=False)
                 training_active = True

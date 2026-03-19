@@ -30,6 +30,24 @@ def _ollama(prompt, config):
     return resp.json()["response"].strip()
 
 
+def _detect_wsl_nat():
+    """Detect if running in WSL2 with NAT networking (172.x.x.x).
+    WSL2 NAT means scans will hit the virtual network, not the real LAN."""
+    try:
+        result = subprocess.run(
+            ["ip", "route", "show", "default"],
+            capture_output=True, text=True, timeout=5
+        )
+        if result.returncode == 0:
+            # WSL2 NAT typically has 172.x.x.x gateway
+            output = result.stdout.strip()
+            if "172." in output:
+                return True, output
+    except Exception:
+        pass
+    return False, ""
+
+
 def _get_local_network():
     """Detect local network range from ip route."""
     try:
@@ -253,6 +271,16 @@ def run(payload, config):
 
     scan_id = datetime.now().strftime("%Y%m%d_%H%M%S")
     PENTEST_DIR.mkdir(parents=True, exist_ok=True)
+    warnings = []
+
+    # WSL2 NAT detection — warn operator before scanning
+    is_wsl_nat, route_info = _detect_wsl_nat()
+    if is_wsl_nat:
+        warnings.append(
+            "WSL2 NAT detected — scans will target the virtual network (172.x.x.x), "
+            "not your physical LAN. To fix: add networkingMode=mirrored to "
+            "%USERPROFILE%\\.wslconfig and restart WSL."
+        )
 
     # Run nmap
     xml_output, nmap_error = _run_nmap(target, scan_type)
@@ -430,7 +458,7 @@ Write a concise post-pentest security report (max 8 bullet points):
         })
     )
 
-    return {
+    result = {
         "scan_id": scan_id,
         "target": target,
         "hosts_discovered": len(hosts),
@@ -438,3 +466,6 @@ Write a concise post-pentest security report (max 8 bullet points):
         "report_file": str(md_file),
         "advisory_created": len(high) > 0,
     }
+    if warnings:
+        result["warnings"] = warnings
+    return result

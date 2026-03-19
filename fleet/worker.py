@@ -176,7 +176,23 @@ def _run_review(skill_name, task_payload, result, config, log):
         return {"verdict": "PASS", "critique": f"Review error: {e}", "confidence": 0.0}
 
 
+def _cleanup_children():
+    """Kill any child processes (Playwright browsers, nmap, etc.)."""
+    if hasattr(os, 'killpg'):
+        try:
+            os.killpg(os.getpgrp(), signal.SIGTERM)
+        except (OSError, ProcessLookupError):
+            pass
+
+
 def main():
+    # Set process group so parent can kill entire tree on shutdown
+    if hasattr(os, 'setpgrp'):
+        try:
+            os.setpgrp()
+        except OSError:
+            pass  # not fatal if it fails (e.g. Windows without WSL)
+
     parser = argparse.ArgumentParser()
     parser.add_argument("--role", required=True)
     args = parser.parse_args()
@@ -212,8 +228,9 @@ def main():
 
     def shutdown(sig, frame):
         nonlocal running
-        log.info("Shutdown signal received")
+        log.info("Shutdown signal received — cleaning up child processes")
         running = False
+        _cleanup_children()
 
     signal.signal(signal.SIGTERM, shutdown)
     signal.signal(signal.SIGINT, shutdown)

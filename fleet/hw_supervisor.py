@@ -170,6 +170,35 @@ def warmup_model(model_name):
         pass
 
 
+def evict_models_for_training(host=None):
+    """Pre-flight VRAM eviction: unload GPU models before training starts.
+    Sends keep_alive=0 to Ollama to free VRAM for PyTorch."""
+    try:
+        if host is None:
+            host = "http://localhost:11434"
+        # Get currently loaded models
+        with urllib.request.urlopen(f"{host}/api/ps", timeout=3) as r:
+            data = json.loads(r.read())
+        for model in data.get("models", []):
+            model_name = model.get("name", "")
+            if not model_name:
+                continue
+            # Send keep_alive=0 to evict from VRAM
+            body = json.dumps({"model": model_name, "keep_alive": 0}).encode()
+            req = urllib.request.Request(
+                f"{host}/api/generate", data=body,
+                headers={"Content-Type": "application/json"}, method="POST",
+            )
+            try:
+                with urllib.request.urlopen(req, timeout=5) as resp:
+                    resp.read()  # consume response
+                print(f"[HW_SUP] Pre-training eviction: {model_name}")
+            except Exception:
+                pass  # best-effort eviction
+    except Exception:
+        pass  # eviction is best-effort, never block training
+
+
 # ── Thermal Readings ──────────────────────────────────────────────────────────
 
 def read_gpu_thermal():
@@ -377,6 +406,7 @@ def main():
     # Thermal throttle state
     gpu_throttled = False
     below_target_since = None
+    was_training = False  # track training transitions for VRAM eviction
 
     host = cfg["ollama_host"]
     conductor_model = cfg["conductor_model"]
@@ -402,6 +432,14 @@ def main():
             cpu_temp = read_cpu_thermal()
             is_training = check_training_active(cfg)
             is_marathon = os.system("pgrep -f dispatch_marathon.py > /dev/null 2>&1") == 0
+
+            # ── Training transition: evict GPU models on start ────────
+            if is_training and not was_training:
+                print("[HW_SUP] Training detected — evicting GPU models for VRAM headroom")
+                evict_models_for_training(host)
+            elif was_training and not is_training:
+                print("[HW_SUP] Training ended — models will reload on next keepalive cycle")
+            was_training = is_training
 
             gpu_temp = gpu["gpu_temp_c"]
             vram_pct = gpu["vram_pct"]

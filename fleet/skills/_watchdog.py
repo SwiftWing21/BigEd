@@ -10,6 +10,7 @@ Checks:
 
 Writes alerts via db.post_message to 'supervisor' for dashboard pickup.
 """
+import base64
 import json
 import os
 import re
@@ -51,6 +52,21 @@ def _load_secret_values():
     return _SECRETS_CACHE
 
 
+def _check_base64_secrets(text):
+    """Detect base64-encoded API keys that LLMs sometimes produce."""
+    # Find base64-looking strings (20+ chars, valid base64 alphabet)
+    b64_pattern = re.compile(r'[A-Za-z0-9+/]{20,}={0,2}')
+    for match in b64_pattern.finditer(text):
+        try:
+            decoded = base64.b64decode(match.group()).decode('utf-8', errors='ignore')
+            # Check if decoded content matches any known secret pattern
+            if any(p.search(decoded) for p in _SECRET_PATTERNS):
+                return True, match.group()
+        except Exception:
+            continue
+    return False, None
+
+
 def _contains_secret(text):
     """Check if text contains any secret patterns or known secret values."""
     if not text or len(text) < 10:
@@ -63,6 +79,10 @@ def _contains_secret(text):
     for secret in _load_secret_values():
         if secret in text:
             return True
+    # Base64-encoded secret detection
+    found, _ = _check_base64_secrets(text)
+    if found:
+        return True
     return False
 
 
@@ -76,6 +96,12 @@ def _redact_secrets(text):
     for secret in _load_secret_values():
         if secret in result:
             result = result.replace(secret, "[REDACTED]")
+    # Redact base64-encoded secrets
+    while True:
+        found, b64_match = _check_base64_secrets(result)
+        if not found:
+            break
+        result = result.replace(b64_match, "[REDACTED]")
     return result
 
 
