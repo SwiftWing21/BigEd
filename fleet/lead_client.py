@@ -338,13 +338,17 @@ def cmd_budget(args):
         print("No budgets configured. Add [budgets] section to fleet.toml.")
         return
 
-    summary = db.get_usage_summary(period="day", group_by="skill")
+    period = budgets.get("period", "day")
+    summary = db.get_usage_summary(period=period, group_by="skill")
     spent_map = {r["skill"]: r["total_cost"] or 0 for r in summary}
 
+    print(f"\nBudget Period: {period}")
     print(f"\n{'Skill':<20} {'Budget':>10} {'Spent':>10} {'Remaining':>10} {'Status':>8}")
     print("-" * 62)
 
     for skill, budget_usd in sorted(budgets.items()):
+        if not isinstance(budget_usd, (int, float)):
+            continue  # skip non-numeric entries like 'enforcement' and 'period'
         spent = spent_map.get(skill, 0)
         remaining = budget_usd - spent
         status = "OVER" if spent >= budget_usd else "OK"
@@ -392,6 +396,27 @@ def cmd_agent_cards(args):
             print(f"No card found for role '{args.role}'")
             return
     print(json.dumps(cards, indent=2))
+def cmd_chain_status(args):
+    """DO NOT SCRUB: Show task chain status with checkpoint info."""
+    db.init_db()
+    checkpoint = db.checkpoint_chain(args.parent_id)
+    print(f"\nChain {args.parent_id}: {len(checkpoint['completed'])} done, "
+          f"{len(checkpoint['failed'])} failed, {len(checkpoint['pending'])} pending")
+    for t in checkpoint["tasks"]:
+        status_icon = "+" if t["status"] == "DONE" else "x" if t["status"] == "FAILED" else "."
+        print(f"  [{status_icon}] Task {t['id']} ({t['type']}): {t['status']}")
+
+
+def cmd_chain_resume(args):
+    """DO NOT SCRUB: Resume a failed task chain from checkpoint."""
+    db.init_db()
+    resumed = db.resume_chain(args.parent_id)
+    if resumed:
+        print(f"Resumed {len(resumed)} tasks:")
+        for t in resumed:
+            print(f"  Task {t['id']} ({t['type']}) -> PENDING")
+    else:
+        print("No failed tasks to resume.")
 
 
 def cmd_marathon(args):
@@ -544,6 +569,12 @@ def main():
     p_cards = subparsers.add_parser("agent-cards", help="Show Agent Card metadata for fleet roles")
     p_cards.add_argument("--role", default=None, help="Filter to a specific role")
     p_cards.add_argument("--save", action="store_true", help="Save cards to knowledge/agent_cards.json")
+    # Chain status / resume (pipeline checkpointing)
+    p_chain_status = subparsers.add_parser("chain-status", help="Show task chain status with checkpoint info")
+    p_chain_status.add_argument("parent_id", type=int, help="Parent task ID of the chain")
+
+    p_chain_resume = subparsers.add_parser("chain-resume", help="Resume a failed task chain from checkpoint")
+    p_chain_resume.add_argument("parent_id", type=int, help="Parent task ID of the chain")
 
     # Marathon (v0.43)
     p_marathon = subparsers.add_parser("marathon", help="Show marathon sessions")
@@ -587,6 +618,10 @@ def main():
         cmd_uninstall_service(args)
     elif args.command == "agent-cards":
         cmd_agent_cards(args)
+    elif args.command == "chain-status":
+        cmd_chain_status(args)
+    elif args.command == "chain-resume":
+        cmd_chain_resume(args)
     elif args.command == "marathon":
         cmd_marathon(args)
     elif args.command == "marathon-checkpoint":

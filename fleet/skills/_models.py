@@ -22,13 +22,15 @@ def check_budget(skill_name: str, config: dict) -> dict | None:
     """Check if a skill has a token budget and current usage. Returns budget info with enforcement mode."""
     budgets = config.get("budgets", {})
     enforcement = budgets.get("enforcement", "warn")  # warn | throttle | block
+    period = budgets.get("period", "day")  # day | week | month
     if not budgets or skill_name not in budgets:
         return None
     budget_usd = budgets[skill_name]
+    if not isinstance(budget_usd, (int, float)):
+        return None  # skip non-numeric entries like 'enforcement' and 'period'
     try:
         import db
-        # Get this skill's usage for the current day
-        summary = db.get_usage_summary(period="day", group_by="skill")
+        summary = db.get_usage_summary(period=period, group_by="skill")
         current = next((r for r in summary if r.get("skill") == skill_name), None)
         spent = current["total_cost"] if current else 0.0
         return {
@@ -38,6 +40,7 @@ def check_budget(skill_name: str, config: dict) -> dict | None:
             "remaining_usd": round(budget_usd - spent, 6),
             "exceeded": spent >= budget_usd,
             "enforcement": enforcement,
+            "period": period,
         }
     except Exception:
         return None
@@ -59,11 +62,12 @@ def call_complex(system: str, user: str, config: dict, max_tokens: int = 2048, c
         if budget and budget["exceeded"]:
             mode = budget.get("enforcement", "warn")
             import sys
-            print(f"[BUDGET] {mode.upper()}: {skill_name} exceeded daily budget "
+            budget_period = budget.get("period", "day")
+            print(f"[BUDGET] {mode.upper()}: {skill_name} exceeded {budget_period} budget "
                   f"(${budget['spent_usd']:.4f} / ${budget['budget_usd']:.4f})",
                   file=sys.stderr)
             if mode == "block":
-                return f"[BUDGET BLOCKED] {skill_name} exceeded daily budget. Try again tomorrow."
+                return f"[BUDGET BLOCKED] {skill_name} exceeded {budget_period} budget."
             elif mode == "throttle":
                 import time
                 time.sleep(5)  # 5-second delay as soft throttle

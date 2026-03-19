@@ -143,10 +143,12 @@ completed = true
 skipped_steps = []
 completed_at = "2026-03-18T22:44:31"
 
-# CT-4: Daily token budgets per skill (USD).
+# CT-4: Token budgets per skill (USD).
 # Skills not listed here have no budget limit.
+# Budget period: "day", "week", or "month"
 # Budget enforcement: "warn" (log only), "throttle" (5s delay), "block" (reject task)
 [budgets]
+period = "day"
 enforcement = "warn"
 lead_research = 5.00
 code_review = 3.00

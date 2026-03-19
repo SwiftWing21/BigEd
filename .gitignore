@@ -64,6 +64,9 @@ fleet/knowledge/code_index.jsonl
 fleet/knowledge/search_waterfall.jsonl
 fleet/knowledge/discard_tracker.json
 
+# ── Launcher — architecture research (local reference, not source) ────────────
+BigEd/launcher/ARCHITECTURE_RESEARCH.md
+
 # ── Launcher — build artifacts ────────────────────────────────────────────────
 BigEd/launcher/dist/
 BigEd/launcher/build/

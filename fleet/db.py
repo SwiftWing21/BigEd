@@ -413,6 +413,46 @@ def post_task_chain(tasks, priority=5):
     return task_ids
 
 
+def checkpoint_chain(parent_id: int) -> dict:
+    """Save checkpoint of a task chain's progress. Returns checkpoint data."""
+    with get_conn() as conn:
+        tasks = conn.execute(
+            "SELECT id, type, status, result_json, depends_on FROM tasks WHERE parent_id=? OR id=?",
+            (parent_id, parent_id)
+        ).fetchall()
+        checkpoint = {
+            "parent_id": parent_id,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "tasks": [dict(t) for t in tasks],
+            "completed": [t["id"] for t in tasks if t["status"] == "DONE"],
+            "failed": [t["id"] for t in tasks if t["status"] == "FAILED"],
+            "pending": [t["id"] for t in tasks if t["status"] in ("PENDING", "WAITING", "RUNNING")],
+        }
+        return checkpoint
+
+
+def resume_chain(parent_id: int) -> list:
+    """Resume a failed chain from the last checkpoint. Requeues failed tasks."""
+    resumed = []
+    def _do():
+        with get_conn() as conn:
+            # Find failed tasks in this chain
+            failed = conn.execute(
+                "SELECT id, type FROM tasks WHERE (parent_id=? OR id=?) AND status='FAILED'",
+                (parent_id, parent_id)
+            ).fetchall()
+            for t in failed:
+                conn.execute(
+                    "UPDATE tasks SET status='PENDING', error=NULL, assigned_to=NULL WHERE id=?",
+                    (t["id"],)
+                )
+                resumed.append({"id": t["id"], "type": t["type"]})
+            # Also re-promote any WAITING tasks whose deps are now DONE
+            _promote_waiting_tasks(conn)
+    _retry_write(_do)
+    return resumed
+
+
 def requeue_task(task_id):
     """Put a task back into the PENDING queue (e.g. on temporary overload)."""
     def _do():
