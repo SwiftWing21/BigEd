@@ -1,5 +1,31 @@
 """Layered Inter-Agent Communication (CM-1 through CM-4)."""
 
+import json
+
+MESSAGE_SCHEMA_VERSION = "1.0"
+
+
+def _wrap_message(body_json: str) -> str:
+    """Add schema version to message body for forward compatibility."""
+    try:
+        body = json.loads(body_json) if isinstance(body_json, str) else body_json
+        if isinstance(body, dict) and "_schema_version" not in body:
+            body["_schema_version"] = MESSAGE_SCHEMA_VERSION
+            return json.dumps(body)
+    except Exception:
+        pass
+    return body_json if isinstance(body_json, str) else json.dumps(body_json)
+
+
+def check_message_version(body_json: str) -> tuple:
+    """Check message schema version. Returns (version, is_current)."""
+    try:
+        body = json.loads(body_json) if isinstance(body_json, str) else body_json
+        version = body.get("_schema_version", "0.0")
+        return version, version == MESSAGE_SCHEMA_VERSION
+    except Exception:
+        return "unknown", False
+
 
 def _get_conn():
     """Lazy import to avoid circular dependency with db.py."""
@@ -21,6 +47,7 @@ CH_POOL  = "pool"   # Layer 4: supervisor → agent pool
 
 
 def post_message(from_agent, to_agent, body_json, channel="fleet"):
+    body_json = _wrap_message(body_json)
     def _do():
         with _get_conn() as conn:
             conn.execute("""
@@ -67,6 +94,7 @@ def broadcast_message(from_agent, body_json, channel="fleet"):
     channel="sup":   only supervisors (role='supervisor')
     channel="agent" or "pool": only non-supervisors (role != 'supervisor')
     """
+    body_json = _wrap_message(body_json)
     def _do():
         with _get_conn() as conn:
             if channel == CH_SUP:
@@ -92,6 +120,7 @@ def broadcast_message(from_agent, body_json, channel="fleet"):
 
 def post_note(channel, from_agent, body_json):
     """Append a note to a channel scratchpad. Returns note id."""
+    body_json = _wrap_message(body_json)
     result = [None]
     def _do():
         with _get_conn() as conn:
