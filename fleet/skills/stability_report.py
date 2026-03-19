@@ -30,10 +30,18 @@ def run(payload: dict, config: dict) -> str:
     report_md = _format_report(analysis, resolutions)
 
     # Save report
-    REPORTS_DIR.mkdir(parents=True, exist_ok=True)
     date_str = datetime.now().strftime("%Y%m%d")
     report_path = REPORTS_DIR / f"stability_report_{date_str}.md"
-    report_path.write_text(report_md, encoding="utf-8")
+    try:
+        REPORTS_DIR.mkdir(parents=True, exist_ok=True)
+        report_path.write_text(report_md, encoding="utf-8")
+    except Exception as e:
+        return json.dumps({
+            "status": "error",
+            "error": f"Report write failed: {e}",
+            "total_resolutions": len(resolutions),
+            **analysis,
+        })
 
     return json.dumps({
         "status": "ok",

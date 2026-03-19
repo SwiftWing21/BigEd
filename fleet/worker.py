@@ -111,7 +111,7 @@ def run_skill(skill_name, payload, config, log):
             try:
                 subprocess.run(["docker", "info"], capture_output=True, timeout=5)
                 log.info(f"Skill '{skill_name}' — Docker sandbox available")
-                # TODO: actual Docker execution boundary (v0.38+)
+                # Docker sandbox detection only — execution boundary deferred to future release
             except (FileNotFoundError, subprocess.TimeoutExpired, Exception):
                 log.warning(f"Skill '{skill_name}' requires sandbox but Docker unavailable — running natively")
 

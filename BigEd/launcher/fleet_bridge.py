@@ -162,6 +162,9 @@ class NativeWindowsBridge(FleetBridge):
         # Strip /dev/null redirects (not valid on Windows)
         c = re.sub(r"\s*2>/dev/null", "", c)
         c = re.sub(r"\s*>/dev/null", "", c)
+        # Strip bash log file redirects (>> file.log 2>&1)
+        c = re.sub(r"\s*>>?\s*\S+\.log\s*2>&1", "", c)
+        c = re.sub(r"\s*2>&1", "", c)
         return c.strip()
 
     def _prepare_cmd(self, cmd: str) -> str:

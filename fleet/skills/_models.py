@@ -24,7 +24,7 @@ def calculate_cost(usage, model_id: str) -> float:
     rates = PRICING.get(model_id, PRICING["claude-sonnet-4-6"])
     cache_read = getattr(usage, "cache_read_input_tokens", 0) or 0
     cache_create = getattr(usage, "cache_creation_input_tokens", 0) or 0
-    fresh_input = usage.input_tokens - cache_read - cache_create
+    fresh_input = max(0, usage.input_tokens - cache_read - cache_create)
     cost = (
         fresh_input * rates["input"] / 1_000_000
         + usage.output_tokens * rates["output"] / 1_000_000

@@ -562,7 +562,6 @@ def acquire_lock(name, holder, timeout_secs=7200):
                     return True  # already held by us
                 # Check if stale (exceeded timeout)
                 try:
-                    from datetime import datetime, timezone
                     acquired = datetime.fromisoformat(row["acquired_at"]).replace(tzinfo=timezone.utc)
                     age = (datetime.now(timezone.utc) - acquired).total_seconds()
                     if age < timeout_secs:

@@ -17,6 +17,8 @@ FLEET_DIR = Path(__file__).parent.parent
 KNOWLEDGE_DIR = FLEET_DIR / "knowledge"
 PENTEST_DIR = KNOWLEDGE_DIR / "security" / "pen_tests"
 PENDING_DIR = KNOWLEDGE_DIR / "security" / "pending"
+SKILL_NAME = "pen_test"
+DESCRIPTION = "Local network penetration testing — authorized scan with service discovery and security assessment"
 REQUIRES_NETWORK = True
 
 
