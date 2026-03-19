@@ -253,18 +253,29 @@ def _shell_safe(s: str) -> str:
 
 
 # ─── Fleet Bridge (cross-platform command execution) ─────────────────────────
-from fleet_bridge import create_bridge
+try:
+    from fleet_bridge import create_bridge
+    _HAS_BRIDGE = True
+except ImportError:
+    _HAS_BRIDGE = False
+    create_bridge = None
 
-_bridge = create_bridge(FLEET_DIR)
+_bridge = create_bridge(FLEET_DIR) if _HAS_BRIDGE else None
 
 
 def wsl(cmd: str, capture=False, timeout=60):
     """Run a command in the fleet environment (WSL on Windows, native on Linux/macOS)."""
+    if not _HAS_BRIDGE or _bridge is None:
+        return "" if capture else None
     return _bridge.run(cmd, capture=capture, timeout=timeout)
 
 
 def wsl_bg(cmd: str, callback=None, timeout=60):
     """Run fleet command in a background thread; call callback(stdout, stderr) when done."""
+    if not _HAS_BRIDGE or _bridge is None:
+        if callback:
+            callback("", "fleet_bridge not available")
+        return
     _bridge.run_bg(cmd, callback=callback, timeout=timeout)
 
 
@@ -469,6 +480,18 @@ def count_pending_advisories() -> int:
         return 0
     return len(list(PENDING_DIR.glob("advisory_*.md")))
 
+
+def count_waiting_human() -> int:
+    try:
+        db_path = FLEET_DIR / "fleet.db"
+        if db_path.exists():
+            conn = sqlite3.connect(str(db_path), timeout=2)
+            row = conn.execute("SELECT COUNT(*) FROM tasks WHERE status = 'WAITING_HUMAN'").fetchone()
+            conn.close()
+            return row[0] if row else 0
+    except Exception:
+        pass
+    return 0
 
 # ─── Tooltip ──────────────────────────────────────────────────────────────────
 class Tooltip:
@@ -685,11 +708,11 @@ class BigEdCC(ctk.CTk):
             hdr, text="● loading...", font=("Consolas", 9), text_color=DIM)
         self._status_pills.grid(row=0, column=4, padx=8, pady=(8, 0), sticky="e")
 
-        self._advisory_badge = ctk.CTkLabel(
+        self._action_badge = ctk.CTkLabel(
             hdr, text="", font=("Segoe UI", 9, "bold"),
             text_color="#1a1a1a", fg_color=ORANGE,
             corner_radius=8, width=0)
-        self._advisory_badge.grid(row=0, column=5, padx=(0, 4), pady=(8, 0))
+        self._action_badge.grid(row=0, column=5, padx=(0, 4), pady=(8, 0))
 
         self._update_badge = ctk.CTkButton(
             hdr, text="", font=("Segoe UI", 9, "bold"),
@@ -1253,7 +1276,8 @@ class BigEdCC(ctk.CTk):
             );
         """)
         # Seed default services if table is empty
-        count = con.execute("SELECT COUNT(*) FROM accounts").fetchone()[0]
+        row = con.execute("SELECT COUNT(*) FROM accounts").fetchone()
+        count = row[0] if row else 0
         if count == 0:
             _SEED = [
                 # (service, category, tier, free_limit, signup_url)
@@ -1310,33 +1334,35 @@ class BigEdCC(ctk.CTk):
                 db_path = FLEET_DIR / "fleet.db"
                 if db_path.exists():
                     conn = sqlite3.connect(str(db_path), timeout=5)
-                    conn.row_factory = sqlite3.Row
-                    # Fetch WAITING_HUMAN tasks
-                    rows = conn.execute("""
-                        SELECT t.id, t.type, t.assigned_to, t.created_at
-                        FROM tasks t WHERE t.status = 'WAITING_HUMAN'
-                        ORDER BY t.created_at ASC
-                    """).fetchall()
-                    for r in rows:
-                        item = dict(r)
-                        # Find the question
-                        msg = conn.execute("""
-                            SELECT body_json FROM messages
-                            WHERE to_agent = 'operator'
-                            AND body_json LIKE '%human_input_request%'
-                            AND body_json LIKE ?
-                            ORDER BY id DESC LIMIT 1
-                        """, (f'%"task_id": {r["id"]}%',)).fetchone()
-                        if msg:
-                            try:
-                                body = json.loads(msg["body_json"])
-                                item["question"] = body.get("question", "")
-                            except Exception:
-                                item["question"] = ""
-                        else:
-                            item["question"] = "(no question)"
-                        waiting.append(item)
-                    conn.close()
+                    try:
+                        conn.row_factory = sqlite3.Row
+                        # Fetch WAITING_HUMAN tasks
+                        rows = conn.execute("""
+                            SELECT t.id, t.type, t.assigned_to, t.created_at
+                            FROM tasks t WHERE t.status = 'WAITING_HUMAN'
+                            ORDER BY t.created_at ASC
+                        """).fetchall()
+                        for r in rows:
+                            item = dict(r)
+                            # Find the question
+                            msg = conn.execute("""
+                                SELECT body_json FROM messages
+                                WHERE to_agent = 'operator'
+                                AND body_json LIKE '%human_input_request%'
+                                AND body_json LIKE ?
+                                ORDER BY id DESC LIMIT 1
+                            """, (f'%"task_id": {r["id"]}%',)).fetchone()
+                            if msg:
+                                try:
+                                    body = json.loads(msg["body_json"])
+                                    item["question"] = body.get("question", "")
+                                except Exception:
+                                    item["question"] = ""
+                            else:
+                                item["question"] = "(no question)"
+                            waiting.append(item)
+                    finally:
+                        conn.close()
             except Exception:
                 pass
             # Security advisories
@@ -1448,32 +1474,34 @@ class BigEdCC(ctk.CTk):
             try:
                 db_path = FLEET_DIR / "fleet.db"
                 conn = sqlite3.connect(str(db_path), timeout=5)
-                conn.row_factory = sqlite3.Row
-                row = conn.execute(
-                    "SELECT assigned_to, payload_json FROM tasks WHERE id=?",
-                    (task_id,)).fetchone()
-                if row:
-                    agent = row["assigned_to"]
-                    try:
-                        payload = json.loads(row["payload_json"]) if row["payload_json"] else {}
-                    except Exception:
-                        payload = {}
-                    payload["_human_response"] = response
-                    conn.execute("""
-                        UPDATE tasks SET status='PENDING', payload_json=?
-                        WHERE id=? AND status='WAITING_HUMAN'
-                    """, (json.dumps(payload), task_id))
-                    if agent:
+                try:
+                    conn.row_factory = sqlite3.Row
+                    row = conn.execute(
+                        "SELECT assigned_to, payload_json FROM tasks WHERE id=?",
+                        (task_id,)).fetchone()
+                    if row:
+                        agent = row["assigned_to"]
+                        try:
+                            payload = json.loads(row["payload_json"]) if row["payload_json"] else {}
+                        except Exception:
+                            payload = {}
+                        payload["_human_response"] = response
                         conn.execute("""
-                            INSERT INTO messages (from_agent, to_agent, body_json)
-                            VALUES ('operator', ?, ?)
-                        """, (agent, json.dumps({
-                            "type": "human_response",
-                            "task_id": task_id,
-                            "response": response,
-                        })))
-                    conn.commit()
-                conn.close()
+                            UPDATE tasks SET status='PENDING', payload_json=?
+                            WHERE id=? AND status='WAITING_HUMAN'
+                        """, (json.dumps(payload), task_id))
+                        if agent:
+                            conn.execute("""
+                                INSERT INTO messages (from_agent, to_agent, body_json)
+                                VALUES ('operator', ?, ?)
+                            """, (agent, json.dumps({
+                                "type": "human_response",
+                                "task_id": task_id,
+                                "response": response,
+                            })))
+                        conn.commit()
+                finally:
+                    conn.close()
                 self.after(0, lambda: (
                     self._log_output(f"Response sent to task #{task_id}"),
                     self._refresh_comm()
@@ -1560,7 +1588,7 @@ class BigEdCC(ctk.CTk):
         self._update_pills(status)
         self._update_agents_table(status)
         self._refresh_log()
-        self._update_advisory_badge()
+        self._update_action_badge()
 
     def _check_status(self):
         """Refresh UI + show Ollama status + dump STATUS.md in one pass."""
@@ -1773,14 +1801,20 @@ class BigEdCC(ctk.CTk):
         self._log_text.configure(state="disabled")
         self._log_label.configure(text=f"LOG — {agent}")
 
-    def _update_advisory_badge(self):
-        n = count_pending_advisories()
-        if n > 0:
-            self._advisory_badge.configure(
-                text=f"  ⚠ {n} advisory{'s' if n > 1 else ''}  ",
+    def _update_action_badge(self):
+        adv_count = count_pending_advisories()
+        hitl_count = count_waiting_human()
+        total = adv_count + hitl_count
+        
+        if total > 0:
+            msgs = []
+            if hitl_count: msgs.append(f"{hitl_count} agent msg")
+            if adv_count: msgs.append(f"{adv_count} advisory")
+            self._action_badge.configure(
+                text=f"  ⚠ {' | '.join(msgs)}  ",
                 fg_color=ORANGE, text_color="#1a1a1a")
         else:
-            self._advisory_badge.configure(text="", fg_color="transparent")
+            self._action_badge.configure(text="", fg_color="transparent")
 
     def _schedule_hw(self):
         try:
@@ -1841,11 +1875,11 @@ class BigEdCC(ctk.CTk):
             self._refresh_counter = getattr(self, '_refresh_counter', 0) + 1
             if self._refresh_counter % 2 == 0:
                 self._agents_tab_refresh()
-            # Log tail + advisory badge in background thread to avoid blocking main thread
+            # Log tail + action badge in background thread to avoid blocking main thread
             def _bg_io():
                 try:
                     self.after(0, self._refresh_log)
-                    self.after(0, self._update_advisory_badge)
+                    self.after(0, self._update_action_badge)
                 except Exception:
                     pass
             threading.Thread(target=_bg_io, daemon=True).start()
@@ -2381,8 +2415,11 @@ class BigEdCC(ctk.CTk):
             "pkill -f supervisor.py 2>/dev/null; "
             "pkill -f hw_supervisor.py 2>/dev/null; "
             "pkill -f 'worker.py' 2>/dev/null; "
+            "pkill -f 'dispatch_marathon.py' 2>/dev/null; "
+            "pkill -f 'train\\.py' 2>/dev/null; "
+            "pkill -f 'nmap' 2>/dev/null; "
             "sleep 1; "
-            "pkill -x ollama 2>/dev/null; "
+            "pkill -f ollama 2>/dev/null; "
             "echo 'System stopped'"
         )
         wsl_bg(stop_cmd, lambda o, e: self.after(0, lambda: self._log_output(o or e or "System stopped")))
@@ -4521,7 +4558,8 @@ class HardwareDialog(ctk.CTkToplevel):
                 lines.append(f"  Power       : {power:.1f}W"
                               + (f" / {plimit:.0f}W limit" if plimit else ""))
                 lines.append(f"  Driver      : {driver}")
-                lines.append(f"  CUDA CC     : {cc[0]}.{cc[1]}")
+                if len(cc) >= 2:
+                    lines.append(f"  CUDA CC     : {cc[0]}.{cc[1]}")
             except Exception as e:
                 lines.append(f"  Error: {e}")
         else:
