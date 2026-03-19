@@ -121,12 +121,24 @@ _PII_PATTERNS = [
     re.compile(r'\b\+?1?[-.\s]?\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}\b'),  # US phone
 ]
 
+# OWASP LLM01: Prompt injection patterns
+_INJECTION_PATTERNS = [
+    re.compile(r'ignore\s+(all\s+)?(previous|prior|above)\s+(instructions|prompts|rules)', re.I),
+    re.compile(r'you\s+are\s+now\s+(a|an|the)\s+', re.I),
+    re.compile(r'(DAN|STAN|DUDE)\s+mode', re.I),
+    re.compile(r'pretend\s+(you\s+are|to\s+be)\s+', re.I),
+    re.compile(r'disregard\s+(all|any|your)\s+(previous|prior|safety)', re.I),
+    re.compile(r'override\s+(your|the|all)\s+(rules|instructions|guidelines)', re.I),
+    re.compile(r'jailbreak', re.I),
+    re.compile(r'\]\s*\}\s*\{\s*"role"\s*:\s*"system"', re.I),  # JSON role injection
+]
+
 
 def scan_input(text: str) -> dict:
     """Scan input text for secrets and PII before it reaches the LLM.
 
     Returns:
-        {"clean": bool, "findings": [{"type": "secret"|"pii", "pattern": str}]}
+        {"clean": bool, "findings": [{"type": "secret"|"pii"|"injection", "pattern": str}]}
     """
     findings = []
 
@@ -143,6 +155,12 @@ def scan_input(text: str) -> dict:
     for pattern in _PII_PATTERNS:
         if pattern.search(text):
             findings.append({"type": "pii", "pattern": pattern.pattern[:40] + "..."})
+
+    # Check for prompt injection
+    for pattern in _INJECTION_PATTERNS:
+        if pattern.search(text):
+            findings.append({"type": "injection", "pattern": "Prompt injection attempt detected"})
+            break  # one is enough
 
     return {"clean": len(findings) == 0, "findings": findings}
 
