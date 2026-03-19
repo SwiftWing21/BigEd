@@ -113,6 +113,8 @@ def main():
     parser.add_argument("--launcher", action="store_true", help="Build launcher only")
     parser.add_argument("--updater", action="store_true", help="Build updater only")
     parser.add_argument("--setup", action="store_true", help="Build setup only")
+    parser.add_argument("--production", action="store_true",
+                        help="Production build — set BIGED_PRODUCTION=1 env in exe")
     args = parser.parse_args()
 
     build_all = not (args.launcher or args.updater or args.setup)
@@ -139,8 +141,14 @@ def main():
     if build_all or args.setup:
         build_setup()
 
-    print("\n== Done ==")
+    # Production marker — launcher reads this to hide dev features
     dist = HERE / "dist"
+    if args.production and dist.exists():
+        marker = dist / "_production_marker"
+        marker.write_text("1")
+        print(f"Production marker written: {marker}")
+
+    print("\n== Done ==")
     if dist.exists():
         for f in sorted(dist.iterdir()):
             print(f"  {f.name}")
