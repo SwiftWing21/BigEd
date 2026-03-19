@@ -545,7 +545,45 @@ def main():
     except Exception:
         pass
 
-    write_state("ready", get_current_local_model())
+    # ── Startup checkpoint verification ──────────────────────────────────
+    # hw_supervisor must confirm these checks before reporting "ready".
+    # This ensures the launcher boot stage gets a reliable signal.
+    startup_checks = {
+        "gpu_readable": False,      # can we read GPU thermal data?
+        "ollama_reachable": False,   # is Ollama API responding?
+        "model_state_known": False,  # do we know what model is loaded?
+    }
+    for attempt in range(5):
+        if not startup_checks["gpu_readable"]:
+            gpu_test = read_gpu_thermal()
+            if gpu_test:
+                startup_checks["gpu_readable"] = True
+                log.info(f"Checkpoint: GPU readable ({gpu_test['gpu_temp_c']}°C)")
+        if not startup_checks["ollama_reachable"]:
+            try:
+                with urllib.request.urlopen(f"{host}/api/tags", timeout=3):
+                    startup_checks["ollama_reachable"] = True
+                    log.info("Checkpoint: Ollama reachable")
+            except Exception:
+                pass
+        if not startup_checks["model_state_known"]:
+            models = get_available_models(host)
+            if models:
+                startup_checks["model_state_known"] = True
+                log.info(f"Checkpoint: Model state known ({len(models)} available)")
+        if all(startup_checks.values()):
+            break
+        time.sleep(1)
+
+    passed = sum(startup_checks.values())
+    total = len(startup_checks)
+    if passed == total:
+        log.info(f"All {total} startup checks passed — entering main loop")
+        write_state("ready", get_current_local_model())
+    else:
+        failed = [k for k, v in startup_checks.items() if not v]
+        log.warning(f"Startup checks: {passed}/{total} passed. Failed: {failed}")
+        write_state("degraded", get_current_local_model())
 
     poll_count = 0
 

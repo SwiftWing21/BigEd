@@ -123,45 +123,64 @@ class BootManagerMixin:
         except Exception:
             return []
 
-    # ── Boot progress UI ─────────────────────────────────────────────────
+    # ── Boot progress UI with live timers ────────────────────────────────
     def _show_boot_progress(self):
-        """Create boot progress line items in the agents panel."""
+        """Create boot progress line items with live elapsed timers."""
         gpu_model, conductor_model = self._read_fleet_models()
-        stages = [
-            "Ollama server",
-            "Maintainer (CPU)",
-            "HW Supervisor",
-            f"GPU model  {gpu_model}",
-            "Fleet supervisor",
-            "Workers",
-            f"Conductor  {conductor_model}",
+        # Stage definitions with timing keys for history lookup
+        self._boot_stage_defs = [
+            ("Ollama server",         "ollama",        ""),
+            ("Maintainer (CPU)",      "model_load",    "qwen3:0.6b"),
+            ("HW Supervisor",         "hw_supervisor", ""),
+            (f"GPU model  {gpu_model}","model_load",   gpu_model),
+            ("Fleet supervisor",       "supervisor",    ""),
+            ("Workers",                "workers",       ""),
+            (f"Conductor  {conductor_model}", "model_load", conductor_model),
         ]
         self._boot_active = True
         self._boot_abort.clear()
         self._boot_widgets = []
 
-        for i, name in enumerate(stages):
+        for i, (name, timing_key, timing_model) in enumerate(self._boot_stage_defs):
             row = ctk.CTkFrame(self._agents_frame_inner, fg_color="transparent")
             row.grid(row=i, column=0, sticky="ew", padx=4, pady=1)
             row.grid_columnconfigure(1, weight=1)
+
             dot = ctk.CTkLabel(row, text="○", font=("Consolas", 11),
                                text_color=DIM, width=14)
             dot.grid(row=0, column=0, padx=(2, 3))
+
             lbl = ctk.CTkLabel(row, text=name, font=("Consolas", 10),
-                               text_color=DIM, anchor="w", width=180)
+                               text_color=DIM, anchor="w", width=160)
             lbl.grid(row=0, column=1, sticky="w")
+
+            # Live timer label (shows elapsed / expected)
+            timer = ctk.CTkLabel(row, text="", font=("Consolas", 9),
+                                 text_color=DIM, anchor="e", width=70)
+            timer.grid(row=0, column=2, sticky="e")
+
+            # Status label (done detail or error)
             st = ctk.CTkLabel(row, text="", font=("Consolas", 9),
-                              text_color=DIM, anchor="e", width=80)
-            st.grid(row=0, column=2, sticky="e", padx=(0, 4))
+                              text_color=DIM, anchor="e", width=90)
+            st.grid(row=0, column=3, sticky="e", padx=(0, 4))
+
+            # Get expected time from history
+            expected = _get_adaptive_timeout(timing_key, timing_model, default=30)
+            history = _load_boot_history()
+            hkey = f"{timing_key}:{timing_model}" if timing_model else timing_key
+            avg = history.get(hkey, {}).get("avg", 0)
+
             self._boot_widgets.append({
-                "frame": row, "dot": dot, "label": lbl, "status": st, "_state": "waiting",
+                "frame": row, "dot": dot, "label": lbl, "timer": timer,
+                "status": st, "_state": "waiting",
+                "_start_time": 0, "_expected": avg,
             })
 
         self._boot_spin_idx = 0
         self._boot_spin()
 
     def _boot_spin(self):
-        """Animate spinner for active boot stages."""
+        """Animate spinner + update live timers for active stages."""
         if not self._boot_active:
             return
         self._boot_spin_idx = (self._boot_spin_idx + 1) % len(_SPIN)
@@ -169,7 +188,21 @@ class BootManagerMixin:
         for w in self._boot_widgets:
             if w["_state"] == "active":
                 w["dot"].configure(text=char)
-        self.after(120, self._boot_spin)
+                # Update live timer
+                elapsed = time.time() - w["_start_time"]
+                expected = w["_expected"]
+                if expected > 0:
+                    timer_text = f"{elapsed:.0f}s / ~{expected:.0f}s"
+                    # Color: green if under expected, orange if close, red if over
+                    if elapsed < expected * 0.8:
+                        w["timer"].configure(text=timer_text, text_color=GREEN)
+                    elif elapsed < expected * 1.2:
+                        w["timer"].configure(text=timer_text, text_color=ORANGE)
+                    else:
+                        w["timer"].configure(text=timer_text, text_color=RED)
+                else:
+                    w["timer"].configure(text=f"{elapsed:.0f}s", text_color=DIM)
+        self.after(250, self._boot_spin)  # update 4x/sec for smooth timer
 
     def _boot_update(self, idx, state, detail=""):
         """Update boot stage visual state. Must be called from main thread."""
@@ -180,18 +213,24 @@ class BootManagerMixin:
         if state == "waiting":
             w["dot"].configure(text="○", text_color=DIM)
             w["label"].configure(text_color=DIM)
+            w["timer"].configure(text="", text_color=DIM)
             w["status"].configure(text="", text_color=DIM)
         elif state == "active":
+            w["_start_time"] = time.time()
             w["dot"].configure(text_color=ACCENT)
             w["label"].configure(text_color=TEXT)
             w["status"].configure(text="starting...", text_color=ACCENT)
         elif state == "done":
+            elapsed = time.time() - w["_start_time"] if w["_start_time"] else 0
             w["dot"].configure(text="●", text_color=GREEN)
             w["label"].configure(text_color=TEXT)
+            w["timer"].configure(text=f"{elapsed:.1f}s", text_color=GREEN)
             w["status"].configure(text=detail or "ONLINE", text_color=GREEN)
         elif state == "error":
+            elapsed = time.time() - w["_start_time"] if w["_start_time"] else 0
             w["dot"].configure(text="✗", text_color=RED)
             w["label"].configure(text_color=RED)
+            w["timer"].configure(text=f"{elapsed:.1f}s", text_color=RED)
             w["status"].configure(text=detail or "FAILED", text_color=RED)
 
     def _hide_boot_progress(self):
@@ -386,7 +425,7 @@ class BootManagerMixin:
                     age = time.time() - updated
                     if age < 30:
                         status = data.get("status", "unknown")
-                        if status in ("starting", "ready", "transitioning"):
+                        if status in ("starting", "ready", "transitioning", "degraded"):
                             elapsed = time.time() - start_time
                             _save_boot_timing("hw_supervisor", elapsed)
                             return f"{status} ({elapsed:.0f}s)"
