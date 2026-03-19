@@ -13,6 +13,7 @@ import os
 from providers import (
     PRICING, FALLBACK_CHAIN, calculate_cost,
     _call_claude, _call_gemini, _call_local,
+    _circuit_is_open, _circuit_record_failure, _circuit_record_success,
 )
 
 
@@ -74,6 +75,15 @@ def call_complex(system: str, user: str, config: dict, max_tokens: int = 2048, c
     fallback_used = None
 
     for i, prov in enumerate(chain):
+        # Circuit breaker: skip providers with open circuits
+        if _circuit_is_open(prov):
+            if i < len(chain) - 1:
+                import sys
+                print(f"[CIRCUIT] {skill_name}: skipping '{prov}' (circuit open), trying next...",
+                      file=sys.stderr)
+                continue
+            # Last provider — try anyway (better than giving up)
+
         try:
             if prov == "gemini":
                 result = _call_gemini(system, user, models, max_tokens)
@@ -83,6 +93,8 @@ def call_complex(system: str, user: str, config: dict, max_tokens: int = 2048, c
                 result = _call_claude(system, user, models, max_tokens, cache_system,
                                       skill_name=skill_name, task_id=task_id, agent_name=agent_name)
 
+            _circuit_record_success(prov)
+
             if i > 0:
                 fallback_used = prov
                 import sys
@@ -91,6 +103,7 @@ def call_complex(system: str, user: str, config: dict, max_tokens: int = 2048, c
             return result
 
         except Exception as e:
+            _circuit_record_failure(prov)
             last_error = e
             if i < len(chain) - 1:
                 import sys

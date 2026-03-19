@@ -1,6 +1,54 @@
 """Model provider routing with HA fallback cascade."""
 import os
 import time
+import threading
+
+# Circuit breaker state per provider
+_circuit_state = {}  # provider -> {"failures": int, "last_failure": float, "open_until": float}
+_circuit_lock = threading.Lock()
+
+CIRCUIT_FAILURE_THRESHOLD = 3
+CIRCUIT_COOLDOWN_SECS = 60
+CIRCUIT_WINDOW_SECS = 300  # 5 minutes
+
+
+def _circuit_is_open(provider: str) -> bool:
+    """Check if a provider's circuit breaker is open (should be skipped)."""
+    with _circuit_lock:
+        state = _circuit_state.get(provider)
+        if not state:
+            return False
+        if time.time() < state.get("open_until", 0):
+            return True  # still in cooldown
+        # Cooldown expired — reset to half-open (allow retry)
+        if state.get("open_until", 0) > 0:
+            state["failures"] = 0
+            state["open_until"] = 0
+        return False
+
+
+def _circuit_record_failure(provider: str):
+    """Record a failure for a provider. Opens circuit after threshold."""
+    with _circuit_lock:
+        now = time.time()
+        state = _circuit_state.setdefault(provider, {"failures": 0, "last_failure": 0, "open_until": 0})
+        # Reset if last failure was outside window
+        if now - state["last_failure"] > CIRCUIT_WINDOW_SECS:
+            state["failures"] = 0
+        state["failures"] += 1
+        state["last_failure"] = now
+        if state["failures"] >= CIRCUIT_FAILURE_THRESHOLD:
+            state["open_until"] = now + CIRCUIT_COOLDOWN_SECS
+            import sys
+            print(f"[CIRCUIT] Provider '{provider}' circuit OPEN — {CIRCUIT_FAILURE_THRESHOLD} failures in {CIRCUIT_WINDOW_SECS}s, cooling down {CIRCUIT_COOLDOWN_SECS}s", file=sys.stderr)
+
+
+def _circuit_record_success(provider: str):
+    """Record a success — reset failure count."""
+    with _circuit_lock:
+        if provider in _circuit_state:
+            _circuit_state[provider]["failures"] = 0
+            _circuit_state[provider]["open_until"] = 0
 
 # CT-1: Model pricing per million tokens (as of 2025)
 PRICING = {
