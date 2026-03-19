@@ -142,6 +142,8 @@ def init_db():
             conn.execute("ALTER TABLE tasks ADD COLUMN depends_on TEXT")
         if "review_rounds" not in cols:
             conn.execute("ALTER TABLE tasks ADD COLUMN review_rounds INTEGER DEFAULT 0")
+        if "conditions" not in cols:
+            conn.execute("ALTER TABLE tasks ADD COLUMN conditions TEXT")
         # Migrate messages: add channel column if missing
         msg_cols = {r[1] for r in conn.execute("PRAGMA table_info(messages)").fetchall()}
         if "channel" not in msg_cols:
@@ -254,25 +256,57 @@ def fail_task(task_id, error):
 
 
 def _promote_waiting_tasks(conn):
-    """Check all WAITING tasks and promote to PENDING if dependencies are met."""
+    """Check all WAITING tasks and promote to PENDING if dependencies are met.
+
+    Supports conditional edges: if a task has a `conditions` JSON dict mapping
+    dep_task_id (str) -> substring, the dep's result_json must contain that
+    substring for the condition to pass.  A None/missing condition means any
+    completion suffices.
+    """
     waiting = conn.execute(
-        "SELECT id, depends_on FROM tasks WHERE status='WAITING' AND depends_on IS NOT NULL"
+        "SELECT id, depends_on, conditions FROM tasks WHERE status='WAITING' AND depends_on IS NOT NULL"
     ).fetchall()
     for row in waiting:
         try:
             dep_ids = json.loads(row["depends_on"])
         except (json.JSONDecodeError, TypeError):
             continue
+
+        conditions = {}
+        try:
+            if row["conditions"]:
+                conditions = json.loads(row["conditions"])
+        except (json.JSONDecodeError, TypeError, IndexError):
+            pass
+
         if not dep_ids:
             conn.execute("UPDATE tasks SET status='PENDING' WHERE id=?", (row["id"],))
             continue
+
         # Check if all dependencies are DONE
         placeholders = ",".join("?" * len(dep_ids))
-        done_count = conn.execute(
-            f"SELECT COUNT(*) as n FROM tasks WHERE id IN ({placeholders}) AND status='DONE'",
+        done_tasks = conn.execute(
+            f"SELECT id, result_json FROM tasks WHERE id IN ({placeholders}) AND status='DONE'",
             dep_ids
-        ).fetchone()["n"]
-        if done_count == len(dep_ids):
+        ).fetchall()
+
+        if len(done_tasks) != len(dep_ids):
+            continue  # not all deps done yet
+
+        # Check conditions on each completed dependency
+        all_met = True
+        for dt in done_tasks:
+            cond = conditions.get(str(dt["id"]))
+            if cond and dt["result_json"]:
+                if cond not in dt["result_json"]:
+                    all_met = False
+                    break
+            elif cond and not dt["result_json"]:
+                # Condition specified but dep has no result — condition not met
+                all_met = False
+                break
+
+        if all_met:
             conn.execute("UPDATE tasks SET status='PENDING' WHERE id=?", (row["id"],))
 
 
@@ -437,7 +471,7 @@ def reject_task(task_id, critique):
 
 
 def post_task(type_, payload_json, priority=5, assigned_to=None,
-              parent_id=None, depends_on=None):
+              parent_id=None, depends_on=None, conditions=None):
     """Post a task to the queue.
 
     Args:
@@ -447,6 +481,10 @@ def post_task(type_, payload_json, priority=5, assigned_to=None,
         assigned_to: optional agent name to assign to
         parent_id: optional parent task ID (for sub-tasks)
         depends_on: optional list of task IDs that must complete first
+        conditions: optional dict mapping dep_task_id (str) -> substring.
+            The dependency's result_json must contain the substring for the
+            waiting task to be promoted.  None means any completion suffices.
+            Example: {"1": "approved", "2": None}
     """
     # Validate payload is valid JSON
     if payload_json:
@@ -458,20 +496,23 @@ def post_task(type_, payload_json, priority=5, assigned_to=None,
     priority = max(1, min(10, int(priority)))
     # Determine initial status
     deps_json = None
+    conds_json = None
     status = "PENDING"
     if depends_on:
         deps_json = json.dumps(depends_on) if isinstance(depends_on, list) else depends_on
         status = "WAITING"
+    if conditions:
+        conds_json = json.dumps(conditions) if isinstance(conditions, dict) else conditions
 
     result = [None]
     def _do():
         with get_conn() as conn:
             cur = conn.execute("""
                 INSERT INTO tasks (type, payload_json, priority, assigned_to, status,
-                                   parent_id, depends_on)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
+                                   parent_id, depends_on, conditions)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             """, (type_, payload_json, priority, assigned_to, status,
-                  parent_id, deps_json))
+                  parent_id, deps_json, conds_json))
             result[0] = cur.lastrowid
     _retry_write(_do)
     return result[0]

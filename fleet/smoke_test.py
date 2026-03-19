@@ -324,6 +324,54 @@ def test_dag_validation():
     return valid, f"chain of {len(tids)}: {msg}"
 
 
+def test_conditional_dag():
+    """Conditional DAG edges: task promotes only when condition substring matches."""
+    import db
+    db.init_db()
+    # Task A: will complete with "approved" in result
+    tid_a = db.post_task("smoke_cond_a", json.dumps({"step": "a"}), priority=1)
+    # Task B: will complete with "rejected" in result
+    tid_b = db.post_task("smoke_cond_b", json.dumps({"step": "b"}), priority=1)
+    # Task C: depends on A (must contain "approved") and B (any completion)
+    tid_c = db.post_task(
+        "smoke_cond_c", json.dumps({"step": "c"}), priority=1,
+        depends_on=[tid_a, tid_b],
+        conditions={str(tid_a): "approved", str(tid_b): None},
+    )
+    # Verify C starts as WAITING
+    task_c = db.get_task_result(tid_c)
+    if task_c["status"] != "WAITING":
+        return False, f"expected WAITING, got {task_c['status']}"
+
+    # Complete A with matching condition
+    db.complete_task(tid_a, json.dumps({"verdict": "approved"}))
+    # C should still be WAITING (B not done yet)
+    task_c = db.get_task_result(tid_c)
+    if task_c["status"] != "WAITING":
+        return False, f"expected WAITING after A done, got {task_c['status']}"
+
+    # Complete B — now both deps done, condition on A met, B is unconditional
+    db.complete_task(tid_b, json.dumps({"verdict": "rejected"}))
+    task_c = db.get_task_result(tid_c)
+    if task_c["status"] != "PENDING":
+        return False, f"expected PENDING after conditions met, got {task_c['status']}"
+
+    # --- Negative case: condition NOT met ---
+    tid_x = db.post_task("smoke_cond_x", json.dumps({"step": "x"}), priority=1)
+    tid_y = db.post_task(
+        "smoke_cond_y", json.dumps({"step": "y"}), priority=1,
+        depends_on=[tid_x],
+        conditions={str(tid_x): "approved"},
+    )
+    # Complete X with result that does NOT contain "approved"
+    db.complete_task(tid_x, json.dumps({"verdict": "denied"}))
+    task_y = db.get_task_result(tid_y)
+    if task_y["status"] != "WAITING":
+        return False, f"expected WAITING (condition not met), got {task_y['status']}"
+
+    return True, f"positive={tid_c} promoted, negative={tid_y} blocked"
+
+
 def test_thermal_readings():
     """10. GPU thermal readings available (if GPU present)."""
     try:
@@ -399,6 +447,7 @@ def main():
         ("HA fallback", test_ha_fallback),
         ("DAL round-trip", test_dal_roundtrip),
         ("DAG validation", test_dag_validation),
+        ("Conditional DAG", test_conditional_dag),
     ])
 
     if not args.fast:
