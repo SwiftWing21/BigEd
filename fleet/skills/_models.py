@@ -17,8 +17,9 @@ from providers import (
 
 
 def check_budget(skill_name: str, config: dict) -> dict | None:
-    """Check if a skill has a token budget and current usage. Returns budget info or None."""
+    """Check if a skill has a token budget and current usage. Returns budget info with enforcement mode."""
     budgets = config.get("budgets", {})
+    enforcement = budgets.get("enforcement", "warn")  # warn | throttle | block
     if not budgets or skill_name not in budgets:
         return None
     budget_usd = budgets[skill_name]
@@ -34,6 +35,7 @@ def check_budget(skill_name: str, config: dict) -> dict | None:
             "spent_usd": round(spent, 6),
             "remaining_usd": round(budget_usd - spent, 6),
             "exceeded": spent >= budget_usd,
+            "enforcement": enforcement,
         }
     except Exception:
         return None
@@ -49,14 +51,20 @@ def call_complex(system: str, user: str, config: dict, max_tokens: int = 2048, c
     if config.get("fleet", {}).get("offline_mode", False):
         provider = "local"
 
-    # CT-4: Budget check (warn, don't block)
+    # CT-4: Budget check with configurable enforcement
     try:
         budget = check_budget(skill_name, config)
         if budget and budget["exceeded"]:
+            mode = budget.get("enforcement", "warn")
             import sys
-            print(f"[BUDGET] Warning: {skill_name} exceeded daily budget "
+            print(f"[BUDGET] {mode.upper()}: {skill_name} exceeded daily budget "
                   f"(${budget['spent_usd']:.4f} / ${budget['budget_usd']:.4f})",
                   file=sys.stderr)
+            if mode == "block":
+                return f"[BUDGET BLOCKED] {skill_name} exceeded daily budget. Try again tomorrow."
+            elif mode == "throttle":
+                import time
+                time.sleep(5)  # 5-second delay as soft throttle
     except Exception:
         pass  # budget checking must never break skill execution
 
