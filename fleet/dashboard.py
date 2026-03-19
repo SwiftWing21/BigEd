@@ -466,6 +466,7 @@ def api_rag():
     rag_db = FLEET_DIR / "rag.db"
     if not rag_db.exists():
         return jsonify({"files": 0, "chunks": 0, "sources": []})
+    conn = None
     try:
         conn = sqlite3.connect(rag_db, timeout=5)
         conn.row_factory = sqlite3.Row
@@ -476,10 +477,12 @@ def api_rag():
                 "SELECT path, chunks, indexed FROM files ORDER BY indexed DESC LIMIT 30"
             ).fetchall()
         ]
-        conn.close()
         return jsonify({"files": files, "chunks": chunks, "sources": sources})
     except Exception as e:
         return jsonify({"error": _safe_error(e), "files": 0, "chunks": 0, "sources": []})
+    finally:
+        if conn:
+            conn.close()
 
 
 # ── v0.27 New API endpoints ──────────────────────────────────────────────────
@@ -612,6 +615,7 @@ def api_data_stats():
     stats = {}
 
     # Fleet DB tables
+    conn = None
     try:
         conn = get_conn()
         for table in ["tasks", "agents", "messages", "locks", "notes"]:
@@ -620,13 +624,16 @@ def api_data_stats():
                 stats[f"fleet.{table}"] = {"count": count}
             except Exception:
                 pass
-        conn.close()
     except Exception:
         pass
+    finally:
+        if conn:
+            conn.close()
 
     # Tools DB (launcher data)
     tools_db = Path(__file__).parent.parent / "BigEd" / "launcher" / "data" / "tools.db"
     if tools_db.exists():
+        conn = None
         try:
             conn = sqlite3.connect(str(tools_db), timeout=5)
             conn.row_factory = sqlite3.Row
@@ -636,9 +643,11 @@ def api_data_stats():
                     stats[f"tools.{table}"] = {"count": count}
                 except Exception:
                     pass
-            conn.close()
         except Exception:
             pass
+        finally:
+            if conn:
+                conn.close()
 
     # Knowledge directory sizes
     if KNOWLEDGE_DIR.exists():
@@ -660,6 +669,7 @@ def api_comms():
     """Per-channel message/note counts + recent activity."""
     channels = ["sup", "agent", "fleet", "pool"]
     result = {}
+    conn = None
     try:
         conn = get_conn()
         for ch in channels:
@@ -686,9 +696,11 @@ def api_comms():
                 "notes": note_count,
                 "recent": recent,
             }
-        conn.close()
     except Exception as e:
         result["error"] = _safe_error(e)
+    finally:
+        if conn:
+            conn.close()
     return jsonify(result)
 
 

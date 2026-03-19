@@ -25,22 +25,25 @@ class SSEClient:
         self._url = url
         self._reconnect_delay = reconnect_delay
         self._callbacks: dict[str, list[Callable]] = {}
+        self._lock = threading.Lock()
         self._running = False
         self._thread = None
         self._connected = False
 
     def on(self, event_type: str, callback: Callable):
         """Register a callback for an event type (e.g., 'status', 'alert')."""
-        self._callbacks.setdefault(event_type, []).append(callback)
+        with self._lock:
+            self._callbacks.setdefault(event_type, []).append(callback)
 
     def off(self, event_type: str, callback: Callable = None):
         """Unregister a callback. If callback is None, removes all for that type."""
-        if callback is None:
-            self._callbacks.pop(event_type, None)
-        elif event_type in self._callbacks:
-            self._callbacks[event_type] = [
-                cb for cb in self._callbacks[event_type] if cb != callback
-            ]
+        with self._lock:
+            if callback is None:
+                self._callbacks.pop(event_type, None)
+            elif event_type in self._callbacks:
+                self._callbacks[event_type] = [
+                    cb for cb in self._callbacks[event_type] if cb != callback
+                ]
 
     @property
     def connected(self) -> bool:
@@ -123,13 +126,15 @@ class SSEClient:
 
     def _dispatch(self, event_type: str, data: dict):
         """Dispatch event to registered callbacks."""
-        for cb in self._callbacks.get(event_type, []):
+        with self._lock:
+            cbs = list(self._callbacks.get(event_type, []))
+            cbs_star = list(self._callbacks.get("*", []))
+        for cb in cbs:
             try:
                 cb(data)
             except Exception:
                 pass  # callbacks must not crash the SSE reader
-        # Also dispatch to wildcard listeners
-        for cb in self._callbacks.get("*", []):
+        for cb in cbs_star:
             try:
                 cb(event_type, data)
             except Exception:

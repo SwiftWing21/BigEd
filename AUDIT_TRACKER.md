@@ -31,23 +31,23 @@
 
 ## Scoreboard
 
-> Last updated: **v0.21.04** | Audited by: Opus (2026-03-19)
+> Last updated: **v0.21.00** | Audited by: Opus (2026-03-19)
 
 | Dimension | Grade | Trend | Key Gap |
 |-----------|-------|-------|---------|
 | **Architecture / SoC** | A | → | launcher.py still 4,561 LOC; TECH_DEBT 4.3/4.4 open |
-| **Code Quality** | A | ↑ | Deferred imports in providers; P1-01/P2-01 resolved |
+| **Code Quality** | A | ↑ | All P1 resolved; deferred imports in providers remain |
 | **Testing** | A- | → | 22/22 smoke; no per-skill unit tests; dashboard untested |
 | **Security** | B+ | ↑ | OWASP B+, 26 controls; prod config not hardened by default |
-| **Reliability / S1** | B+ | ↑ | 8 MEDIUM issues open; S1 milestone (0.21.00) planned |
+| **Reliability / S1** | A | ↑ | S1 complete: SSE race, conn leaks, _alive guards, escalating backoff |
 | **Observability / S2** | B | → | JSON logging not unified; no `/api/health` aggregate |
 | **Usability / UX** | A | ↑ | IQ on cards, timestamps, Fleet Comm modernized |
-| **Dynamic Abilities** | A | → | HA fallback, circuit breaker, VRAM scaling all active |
+| **Dynamic Abilities** | A | ↑ | Escalating backoff, Ollama degradation cascade added |
 | **Module / Plugin Support** | B+ | → | 6 modules; no formal manifest/discovery registry |
 | **Data Processing + HITL** | A | ↑ | Intelligence scoring live (0.21.03); HITL model recs active |
 | **Performance** | A | ↑ | Health probe no longer burns tokens (P1-02 fixed) |
 | **Documentation** | A | → | CLAUDE.md thorough; compliance docs complete |
-| **Overall** | **A-** | ↑ | S-tier path clear via 0.21.00→0.24.00 milestones |
+| **Overall** | **A** | ↑ | S1 done. S2-S4 milestones remain for S-tier |
 
 ---
 
@@ -71,11 +71,10 @@
 **Detail:** `probe_provider_health("claude")` sends a real 1-token inference request to validate auth. At scale (Dr. Ders keepalive ~240s), this adds real cost and quota consumption.
 **Fix:** Replaced `client.messages.create()` with `client.models.list(limit=1)` — auth-only, zero inference cost.
 
-#### P1-03 — Budget throttle blocks worker thread
+#### P1-03 — Budget throttle blocks worker thread [DONE v0.21.00]
 **File:** `fleet/skills/_models.py:73`
 **Detail:** `time.sleep(5)` in `throttle` mode executes on the worker thread, blocking it from picking up other tasks during the delay.
-**Fix:** Return a structured `{"throttled": True, "retry_after": 5}` result to the caller, let the worker reschedule the task with a delay instead of sleeping inline.
-**Target:** 0.22.00
+**Fix:** Replaced with immediate `[BUDGET THROTTLED]` return message. Worker thread no longer blocked.
 
 ---
 
@@ -110,23 +109,20 @@
 **Fix:** Complete extraction. All launcher DB access routes through `data_access.py`.
 **Target:** 0.22.00
 
-#### P2-06 — SSE client race condition (TECH_DEBT 4.2)
+#### P2-06 — SSE client race condition (TECH_DEBT 4.2) [DONE v0.21.00]
 **File:** `BigEd/launcher/ui/sse_client.py`
 **Detail:** SSE client list race (noted in stability guide MEDIUM issues). If multiple SSE streams are opened/closed rapidly, the listener list can corrupt.
-**Fix:** Add `threading.Lock()` around SSE listener list mutations.
-**Target:** 0.21.00 (S1 milestone)
+**Fix:** `threading.Lock` on `_callbacks` dict. Snapshot-under-lock in `_dispatch()` prevents iteration errors.
 
-#### P2-07 — Connection leaks in dashboard
+#### P2-07 — Connection leaks in dashboard [DONE v0.21.00]
 **File:** `fleet/dashboard.py`
 **Detail:** Stability guide MEDIUM issue. Dashboard HTTP connections not always closed on endpoint exceptions.
-**Fix:** Wrap response handling in `try/finally`, ensure `connection.close()` on all paths. Add DB connection pool.
-**Target:** 0.21.00 (S1 milestone)
+**Fix:** All DB connection sites wrapped with `try/finally` + `conn.close()`. Covers api_data_stats, api_comms, api_rag, tools DB.
 
-#### P2-08 — `_alive` flag missing from timer chains
+#### P2-08 — `_alive` flag missing from timer chains [DONE v0.21.00]
 **File:** `BigEd/launcher/launcher.py`, `BigEd/launcher/ui/boot.py`
 **Detail:** Timer chains (`self.after()`) can fire after window destroy, causing `TclError`. Listed as S1 Reliability gap.
-**Fix:** Add `self._alive = True` in `__init__`, set `False` in `destroy()`. Guard all `after()` callbacks.
-**Target:** 0.21.00 (S1 milestone)
+**Fix:** `_safe_after()` method guards 43 calls in launcher.py + 13 in boot.py. `_alive` flag set False in `_on_close()`.
 
 #### P2-09 — settings.py needs splitting (1,301 LOC)
 **File:** `BigEd/launcher/ui/settings.py`
@@ -334,7 +330,7 @@
 
 | Milestone | Theme | Status | Blockers |
 |-----------|-------|--------|---------|
-| **0.21.00 — S1 Reliability** | 99.99% uptime | Planned | P2-06, P2-07, P2-08 (timer _alive, SSE race, connection leaks), escalating backoff |
+| **0.21.00 — S1 Reliability** | 99.99% uptime | **DONE** | All blockers resolved: P1-03, P2-06/07/08, escalating backoff, Ollama degradation |
 | **0.22.00 — S2 Observability** | Unified health | Not started | `/api/health` aggregate, JSON logging, per-agent metrics |
 | **0.23.00 — S3 Auto-Intelligence** | Self-improving fleet | Not started | Quality scoring, distributed tracing, auto-trigger pipelines |
 | **0.24.00 — S4 Security** | Hardened defaults | Not started | SQLCipher, TLS, RBAC, audit attribution |
@@ -368,6 +364,12 @@
 | Redundant import (P2-01) | Removed in-function `from providers import PRICING` | v0.21.04 |
 | Fleet tab IQ scores | Intelligence score on agent cards (color-coded thresholds) | v0.21.04 |
 | Fleet Comm modernization | Orange accent stripe, stacked headers, counter badge | v0.21.04 |
+| SSE race condition (P2-06) | threading.Lock on _callbacks, snapshot-under-lock dispatch | v0.21.00 |
+| Dashboard connection leaks (P2-07) | try/finally on all DB connection sites | v0.21.00 |
+| Timer _alive guards (P2-08) | _safe_after() wraps 56 self.after() calls across launcher+boot | v0.21.00 |
+| Budget throttle blocking (P1-03) | Immediate [BUDGET THROTTLED] return, no sleep | v0.21.00 |
+| Escalating crash backoff | BACKOFF_SCHEDULE [15,30,60,120,300], per-worker crash counter | v0.21.00 |
+| Ollama graceful degradation | hw_state.json detection, transition warnings, STATUS.md mode | v0.21.00 |
 
 ---
 

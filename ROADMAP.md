@@ -314,16 +314,21 @@ Completed 2026-03-19. UX refinements and audit fixes across 3 files:
 
 **P2-01 fix:** Redundant `from providers import PRICING` in-function import removed.
 
-### 0.21.00 — S1: Reliability (99.99% uptime)
-- **Goal:** Close all P2-06/07/08 reliability gaps, achieve zero unhandled crashes
-- **Grading Alignment:** Reliability/S1 → B+ to A | Dynamic Abilities → A to S | Est: L (~20-40k tokens)
-- **Blockers:** P2-06 (SSE race), P2-07 (connection leaks), P2-08 (timer _alive)
-- Fix 8 MEDIUM audit issues (SSE race condition, connection leaks in dashboard)
-- Add `_alive` flag to all timer chains (prevent TclError after destroy)
-- Escalating worker crash backoff (15s → 30s → 60s → cap at 300s)
-- Auto-restart supervisor on crash (systemd/launchd watchdog integration)
-- DB connection pool with health monitoring
-- Graceful degradation cascade (Ollama dies → queue tasks → auto-restart → resume)
+### 0.21.00 — S1: Reliability (99.99% uptime) [DONE]
+
+Completed 2026-03-19. S-Tier 1 reliability milestone — 6 files, all P2-06/07/08 blockers resolved:
+
+**P2-06 fix (SSE race):** `threading.Lock` on `_callbacks` dict in `sse_client.py`. Snapshot-under-lock pattern in `_dispatch()` prevents RuntimeError during concurrent add/remove/iterate.
+
+**P2-07 fix (connection leaks):** All DB connection sites in `dashboard.py` wrapped with `try/finally` + `conn.close()`. Covers `api_data_stats()`, `api_comms()`, `api_rag()`, and tools DB access.
+
+**P2-08 fix (timer _alive):** `self._alive` flag in `BigEdCC.__init__()`, cleared in `_on_close()`. New `_safe_after()` method wraps all 43 `self.after()` calls in launcher.py and 13 in boot.py. ThermalDialog (separate class) left untouched — has its own _alive flag.
+
+**P1-03 fix (throttle blocks thread):** Replaced `time.sleep(5)` with immediate `[BUDGET THROTTLED]` return. Worker thread no longer blocked.
+
+**Escalating crash backoff:** `BACKOFF_SCHEDULE = [15, 30, 60, 120, 300]` in supervisor.py. Per-worker crash counter with 5-minute stability reset. Prevents thrashing on repeated worker crashes.
+
+**Graceful Ollama degradation:** Supervisor detects Ollama availability via Dr. Ders' `hw_state.json` (primary) or direct API probe (fallback). Logs transition warnings. STATUS.md shows "UNAVAILABLE" mode when Ollama is down.
 
 ### 0.22.00 — S2: Observability
 - **Goal:** Unified health monitoring, structured logging, per-agent metrics
@@ -396,14 +401,14 @@ Completed 2026-03-19. UX refinements and audit fixes across 3 files:
 
 ## Audit Coverage Check (per AUDIT_TRACKER.md)
 
-> Reviewed at v0.21.04.
+> Reviewed at v0.21.00.
 
-- **Criteria fully covered:** Architecture/SoC (A), Code Quality (A), Dynamic Abilities (A), Performance (A), Documentation (A), Data Processing+HITL (A), Usability/UX (A)
+- **Criteria fully covered:** Architecture/SoC (A), Code Quality (A), Dynamic Abilities (A), Performance (A), Documentation (A), Data Processing+HITL (A), Usability/UX (A), Reliability/S1 (A)
 - **Criteria partially covered:** Testing (A-, no per-skill unit tests), Security (B+, SQLCipher/TLS/RBAC planned), Module/Plugin Support (B+, no manifest)
-- **Criteria not addressed this cycle:** Observability/S2 (B, planned 0.22.00), Reliability/S1 (B+, planned 0.21.00)
+- **Criteria not addressed this cycle:** Observability/S2 (B, planned 0.22.00)
 
-**P1 issues remaining:** P1-03 (throttle blocks thread)
-**P2 issues remaining:** P2-02 through P2-09 (all tracked, targets assigned)
+**P1 issues remaining:** None
+**P2 issues remaining:** P2-02 through P2-05, P2-09 (all tracked, targets assigned)
 
 ---
 

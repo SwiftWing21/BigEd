@@ -69,6 +69,7 @@ dashboard_proc = None
 worker_procs = {}
 training_active = False
 ollama_evicted_for_training = False
+ollama_available = True
 
 
 def start_ollama(gpu=False):
@@ -361,7 +362,7 @@ def write_status_md():
             "",
             "## GPU",
             f"- Training detected: {training_active}",
-            f"- Ollama mode: {'CPU-only (training evicted models)' if ollama_evicted_for_training else 'GPU + training coexist' if training_active else 'eco CPU' if config['fleet']['eco_mode'] else 'GPU'}",
+            f"- Ollama mode: {'UNAVAILABLE' if not ollama_available else 'CPU-only (training evicted models)' if ollama_evicted_for_training else 'GPU + training coexist' if training_active else 'eco CPU' if config['fleet']['eco_mode'] else 'GPU'}",
         ]
         # Marathon training status
         checkpoint_info = _check_training_checkpoints()
@@ -481,7 +482,7 @@ def _memory_watchdog(worker_procs_dict, config):
 
 
 def main():
-    global training_active, config, ollama_evicted_for_training
+    global training_active, config, ollama_evicted_for_training, ollama_available
 
     (FLEET_DIR / "logs").mkdir(parents=True, exist_ok=True)
     (FLEET_DIR / "knowledge" / "summaries").mkdir(parents=True, exist_ok=True)
@@ -562,6 +563,9 @@ def main():
     last_sup_notes_ts = None  # ISO timestamp of last sup note read
     training_interval = config["fleet"]["training_check_interval_secs"]
     worker_next_start = {}
+    worker_crash_count = {}
+    worker_last_crash = {}
+    BACKOFF_SCHEDULE = [15, 30, 60, 120, 300]  # escalating, capped at 300s
     # Dynamic worker scaling — deferred roles that weren't started at boot
     deferred_roles = ALL_ROLES[max_workers:] if len(ALL_ROLES) > max_workers else []
     last_scale_check = 0
@@ -587,17 +591,25 @@ def main():
             except Exception as e:
                 log.debug(f"Scale check error: {e}")
 
-        # Restart dead workers with cool-down backoff
+        # Restart dead workers with escalating backoff
         for role in list(worker_procs.keys()):
             proc = worker_procs.get(role)
             if proc and proc.poll() is not None:
-                log.warning(f"Worker '{role}' died (exit={proc.returncode}) — entering 15s cool-down")
                 worker_procs[role] = None
-                worker_next_start[role] = now + 15
-                
+                # Reset crash count if worker was stable for 5+ minutes
+                last = worker_last_crash.get(role, 0)
+                if now - last > 300:
+                    worker_crash_count[role] = 0
+                count = worker_crash_count.get(role, 0)
+                backoff = BACKOFF_SCHEDULE[min(count, len(BACKOFF_SCHEDULE) - 1)]
+                worker_crash_count[role] = count + 1
+                worker_last_crash[role] = now
+                log.warning(f"Worker '{role}' died (exit={proc.returncode}) — backoff {backoff}s (crash #{count+1})")
+                worker_next_start[role] = now + backoff
+
         for role, next_time in list(worker_next_start.items()):
             if worker_procs.get(role) is None and now >= next_time:
-                log.info(f"Cool-down complete. Respawning worker '{role}'")
+                log.info(f"Backoff complete. Respawning worker '{role}' (crash count: {worker_crash_count.get(role, 0)})")
                 start_worker(role, config)
                 worker_next_start.pop(role, None)
 
@@ -693,10 +705,38 @@ def main():
                 except Exception as e:
                     log.warning(f"[training] failed to post marathon_log (end): {e}")
 
-        # Log Dr. Ders transitions
+        # Log Dr. Ders transitions + Ollama degradation awareness
         hw_state = read_hw_state()
         if hw_state and hw_state.get("status") == "transitioning":
             log.info(f"Dr. Ders transitioning to {hw_state.get('model')} — workers pausing claims")
+
+        # Graceful Ollama degradation — detect via hw_state or direct probe
+        try:
+            was_available = ollama_available
+            if hw_state:
+                # Dr. Ders tracks model state; empty models_loaded = Ollama down or no models
+                models = hw_state.get("models_loaded")
+                hw_status = hw_state.get("status", "")
+                # Ollama is unavailable if Dr. Ders reports degraded with no models
+                if hw_status == "degraded" and (models is None or len(models) == 0):
+                    ollama_available = False
+                else:
+                    ollama_available = True
+            else:
+                # No hw_state — probe Ollama directly (lightweight /api/tags)
+                try:
+                    urllib.request.urlopen("http://localhost:11434/api/tags", timeout=2)
+                    ollama_available = True
+                except Exception:
+                    ollama_available = False
+
+            # Log transitions
+            if was_available and not ollama_available:
+                log.warning("Ollama unavailable — local model tasks will queue until recovery")
+            elif not was_available and ollama_available:
+                log.info("Ollama recovered — local model tasks can resume")
+        except Exception as e:
+            log.debug(f"Ollama degradation check error: {e}")
 
         # Sup-channel: read inbox + notes every 30s (aligned with status write)
         if now - last_status >= 30:

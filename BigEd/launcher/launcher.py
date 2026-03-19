@@ -633,6 +633,8 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
         _active_theme = _load_theme_preference()
         _custom_names = _load_custom_names()
 
+        self._alive = True  # cleared on close; guards _safe_after() timer callbacks
+
         self._net_prev    = None
         self._net_time    = None
         self._ollama_up   = None   # None = unknown, True/False after first check
@@ -681,10 +683,10 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
 
         # First-run walkthrough — show after UI is fully built
         if _should_show_walkthrough():
-            self.after(500, lambda: WalkthroughDialog(self))
+            self._safe_after(500, lambda: WalkthroughDialog(self))
 
         # Auto-start fleet on launch — no button press needed
-        self.after(1000, self._start_system)
+        self._safe_after(1000, self._start_system)
 
     _CLOSE_PREFS_FILE = DATA_DIR / "close_preferences.json"
 
@@ -751,8 +753,14 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
         self._shutdown_gui()
         self.destroy()
 
+    def _safe_after(self, ms, func):
+        """Schedule callback only if window is still alive."""
+        if self._alive:
+            self.after(ms, func)
+
     def _on_close(self):
         """Smart close dialog with remember-choice + countdown."""
+        self._alive = False
         prefs = self._load_close_prefs()
         remembered = prefs.get("action")  # "stop" or "keep" or None
 
@@ -818,7 +826,7 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
                     self._do_just_close()
                 return
             countdown_var.set(f"{action_text} in {remaining}s...")
-            self.after(1000, lambda: _tick(remaining - 1))
+            self._safe_after(1000, lambda: _tick(remaining - 1))
 
         _tick(5)
 
@@ -1997,7 +2005,7 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
         # Run async
         def _bg():
             data = _fetch()
-            self.after(0, lambda: _render(data))
+            self._safe_after(0, lambda: _render(data))
         threading.Thread(target=_bg, daemon=True).start()
 
     def _send_human_response(self, task_id, response):
@@ -2036,12 +2044,12 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
                         conn.commit()
                 finally:
                     conn.close()
-                self.after(0, lambda: (
+                self._safe_after(0, lambda: (
                     self._log_output(f"Response sent to task #{task_id}"),
                     self._refresh_comm()
                 ))
             except Exception as e:
-                self.after(0, lambda: self._log_output(f"Send error: {e}"))
+                self._safe_after(0, lambda: self._log_output(f"Send error: {e}"))
         threading.Thread(target=_bg, daemon=True).start()
 
     def _approve_advisory(self, path):
@@ -2285,7 +2293,7 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
                 msg = f"Ollama running\nModels: {', '.join(models)}"
             except Exception:
                 msg = "Ollama not running"
-            self.after(0, lambda: self._log_output(msg))
+            self._safe_after(0, lambda: self._log_output(msg))
         threading.Thread(target=_check_ollama, daemon=True).start()
 
     def _open_dashboard(self):
@@ -2649,7 +2657,7 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
 
         def _bg():
             data = _fetch()
-            self.after(0, lambda: _render(data))
+            self._safe_after(0, lambda: _render(data))
         threading.Thread(target=_bg, daemon=True).start()
 
     def _respond_to_agent(self, task_id, question):
@@ -2756,14 +2764,14 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
                         self._net_prev, self._net_time)
                     self._net_prev = new_prev
                     self._net_time = now
-                    self.after(0, lambda: self._apply_hw(cpu_s, ram_s, gpu_s, net_s))
+                    self._safe_after(0, lambda: self._apply_hw(cpu_s, ram_s, gpu_s, net_s))
                 except Exception:
                     pass
             threading.Thread(target=_sample, daemon=True).start()
         except Exception as e:
             self._log_output(f"HW stats error: {e}")
         finally:
-            self.after(3000, self._schedule_hw)
+            self._safe_after(3000, self._schedule_hw)
 
     def _apply_hw(self, cpu_s, ram_s, gpu_s, net_s):
         def _target_color(pct_str, warn=70, crit=90):
@@ -2824,9 +2832,9 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
                 # Log tail + action badge in background thread
                 def _bg_io_sse():
                     try:
-                        self.after(0, self._refresh_log)
-                        self.after(0, self._update_action_badge)
-                        self.after(0, self._refresh_model_perf)
+                        self._safe_after(0, self._refresh_log)
+                        self._safe_after(0, self._update_action_badge)
+                        self._safe_after(0, self._refresh_model_perf)
                     except Exception:
                         pass
                 threading.Thread(target=_bg_io_sse, daemon=True).start()
@@ -2854,8 +2862,8 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
                 # Log tail + action badge in background thread to avoid blocking main thread
                 def _bg_io():
                     try:
-                        self.after(0, self._refresh_log)
-                        self.after(0, self._update_action_badge)
+                        self._safe_after(0, self._refresh_log)
+                        self._safe_after(0, self._update_action_badge)
                     except Exception:
                         pass
                 threading.Thread(target=_bg_io, daemon=True).start()
@@ -2873,7 +2881,7 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
         except Exception as e:
             self._log_output(f"Refresh error: {e}")
         finally:
-            self.after(next_interval, self._schedule_refresh)
+            self._safe_after(next_interval, self._schedule_refresh)
 
     def _switch_log(self, agent):
         self._refresh_log()
@@ -3021,14 +3029,14 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
                             if model and model != "up":
                                 self._send_keepalive(model)
                                 self._last_keepalive = now
-                    self.after(0, lambda: self._apply_ollama_status(up, detail, loaded))
+                    self._safe_after(0, lambda: self._apply_ollama_status(up, detail, loaded))
                 except Exception:
                     pass
             threading.Thread(target=_check, daemon=True).start()
         except Exception as e:
             self._log_output(f"Ollama watch error: {e}")
         finally:
-            self.after(8000, self._schedule_ollama_watch)
+            self._safe_after(8000, self._schedule_ollama_watch)
 
     def _apply_ollama_status(self, up: bool, detail: str, loaded: bool = True):
         if up and loaded:
@@ -3065,7 +3073,7 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
     def _on_ollama_recovered(self, out: str, err: str):
         self._log_output(f"Ollama restarted: {out or err}")
         # Give workers time to detect the new Ollama instance, then recover offline ones
-        self.after(4000, self._recover_offline_agents)
+        self._safe_after(4000, self._recover_offline_agents)
 
     def _recover_offline_agents(self):
         """Restart any agents currently showing as OFFLINE."""
@@ -3149,7 +3157,7 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
     def _start_ollama(self):
         self._log_output("Starting Ollama...")
         self._run_ollama_start(
-            lambda o, e: self.after(0, lambda: self._log_output(o or e or "Ollama start attempted"))
+            lambda o, e: self._safe_after(0, lambda: self._log_output(o or e or "Ollama start attempted"))
         )
 
     def _stop_ollama(self):
@@ -3157,7 +3165,7 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
         def _bg():
             result = _kill_ollama()
             msg = "Ollama stopped" if result else "Ollama not running"
-            self.after(0, lambda: self._log_output(msg))
+            self._safe_after(0, lambda: self._log_output(msg))
         threading.Thread(target=_bg, daemon=True).start()
 
     def _ollama_status(self):
@@ -3169,7 +3177,7 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
                 msg = f"Ollama running\nModels: {', '.join(models)}"
             except Exception:
                 msg = "Ollama not running"
-            self.after(0, lambda: self._log_output(msg))
+            self._safe_after(0, lambda: self._log_output(msg))
         threading.Thread(target=_bg, daemon=True).start()
 
     # ── REST API helpers (v0.45: TECH_DEBT 4.3) ─────────────────────────────
@@ -3213,9 +3221,9 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
                         stdout=log_f, stderr=subprocess.STDOUT,
                         creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0),
                     )
-                self.after(0, lambda: self._log_output(f"↺ {role} restarted"))
+                self._safe_after(0, lambda: self._log_output(f"↺ {role} restarted"))
             except Exception as e:
-                self.after(0, lambda: self._log_output(f"↺ {role} error: {e}"))
+                self._safe_after(0, lambda: self._log_output(f"↺ {role} error: {e}"))
         threading.Thread(target=_bg, daemon=True).start()
 
     def _toggle_system(self):
@@ -3249,7 +3257,7 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
             def _stop_ollama_bg():
                 time.sleep(2)
                 _kill_ollama()
-                self.after(0, lambda: self._log_output("System stopped"))
+                self._safe_after(0, lambda: self._log_output("System stopped"))
             threading.Thread(target=_stop_ollama_bg, daemon=True).start()
         else:
             # Fallback to psutil kill (BootManagerMixin._stop_system)
@@ -3270,9 +3278,9 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
     def _ensure_ollama_and_run(self, fleet_cmd: str, callback):
         """Start Ollama natively, then run fleet_cmd via bridge."""
         def _after_ollama(out, err):
-            self.after(0, lambda: self._log_output(out or err or "Ollama check done"))
+            self._safe_after(0, lambda: self._log_output(out or err or "Ollama check done"))
             if _HAS_BRIDGE and _bridge:
-                _bridge.run_bg(fleet_cmd, lambda o, e: self.after(0, lambda: callback(o, e)), timeout=60)
+                _bridge.run_bg(fleet_cmd, lambda o, e: self._safe_after(0, lambda: callback(o, e)), timeout=60)
             elif callback:
                 callback("", "fleet_bridge not available")
         self._run_ollama_start(_after_ollama)
@@ -3283,7 +3291,7 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
         def _bg():
             _kill_fleet_processes()
             time.sleep(1)
-            self.after(0, self._start_system)
+            self._safe_after(0, self._start_system)
         threading.Thread(target=_bg, daemon=True).start()
 
     def _start_fleet(self):
@@ -3309,9 +3317,9 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
                     stdout=log_f, stderr=subprocess.STDOUT,
                     creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0),
                 )
-            self.after(0, lambda: self._log_output(f"Fleet started. PID: {proc.pid}"))
+            self._safe_after(0, lambda: self._log_output(f"Fleet started. PID: {proc.pid}"))
         def _after_ollama(out, err):
-            self.after(0, lambda: self._log_output(out or err or "Ollama check done"))
+            self._safe_after(0, lambda: self._log_output(out or err or "Ollama check done"))
             threading.Thread(target=_bg, daemon=True).start()
         self._run_ollama_start(_after_ollama)
 
@@ -3326,7 +3334,7 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
             def _bg():
                 killed = _kill_fleet_processes(["supervisor.py"])
                 msg = "Fleet stopped." if killed else "Fleet not running."
-                self.after(0, lambda: self._log_output(msg))
+                self._safe_after(0, lambda: self._log_output(msg))
             threading.Thread(target=_bg, daemon=True).start()
 
     def _show_status_tab(self):
@@ -3387,7 +3395,7 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
                 except (psutil.NoSuchProcess, psutil.AccessDenied):
                     continue
             if marathon_pid:
-                self.after(0, lambda: self._log_output(
+                self._safe_after(0, lambda: self._log_output(
                     f"Marathon already running (PID {marathon_pid}).\n"
                     f"Use '📋 Marathon Log' to see progress, or '⏹ Stop Marathon' first."))
                 return
@@ -3407,13 +3415,13 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
                         stdout=log_f, stderr=subprocess.STDOUT,
                         creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0),
                     )
-                self.after(0, lambda: self._log_output(
+                self._safe_after(0, lambda: self._log_output(
                     f"Marathon launched (PID: {proc.pid}).\n"
                     f"Phases: wait-for-idle → 8 discussion rounds (40 min apart) "
                     f"→ lead research → synthesis.\n"
                     f"Use '📋 Marathon Log' to monitor progress."))
             except Exception as e:
-                self.after(0, lambda: self._log_output(f"Marathon launch error: {e}"))
+                self._safe_after(0, lambda: self._log_output(f"Marathon launch error: {e}"))
         threading.Thread(target=_bg, daemon=True).start()
 
     def _show_marathon_log(self):
@@ -3426,12 +3434,12 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
                 text = log_path.read_text(encoding="utf-8", errors="ignore")
                 lines = text.strip().splitlines()[-80:]  # last 80 lines
             except Exception:
-                self.after(0, lambda: self._log_output(
+                self._safe_after(0, lambda: self._log_output(
                     "marathon.log is empty or not found.\n"
                     "Start marathon first, or check fleet/logs/marathon.log."))
                 return
             if not lines:
-                self.after(0, lambda: self._log_output(
+                self._safe_after(0, lambda: self._log_output(
                     "marathon.log is empty or not found.\n"
                     "Start marathon first, or check fleet/logs/marathon.log."))
                 return
@@ -3442,7 +3450,7 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
             summary = "\n".join(key[-10:]) if key else ""
             tail    = "\n".join(lines[-20:])
             sep     = "─" * 40
-            self.after(0, lambda: self._log_output(
+            self._safe_after(0, lambda: self._log_output(
                 f"{'=' * 40}\nMARATHON LOG\n{'=' * 40}\n"
                 + (f"[Key events]\n{summary}\n\n{sep}\n" if summary else "")
                 + f"[Last 20 lines]\n{tail}"))
@@ -3455,7 +3463,7 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
                 msg = f"Stopped marathon: {', '.join(killed)}"
             else:
                 msg = "No marathon process found"
-            self.after(0, lambda: self._log_output(msg))
+            self._safe_after(0, lambda: self._log_output(msg))
         threading.Thread(target=_bg, daemon=True).start()
 
     def _enable_idle(self):
@@ -3495,13 +3503,13 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
                 result = out or err or "(no output)"
                 self._log_output(f"← {result[:1200]}")
                 self._task_status.configure(text="✓ done", text_color=GREEN)
-                self.after(3000, lambda: self._task_status.configure(text=""))
+                self._safe_after(3000, lambda: self._task_status.configure(text=""))
                 # Toast notification for task completion
                 if r.returncode == 0:
                     self._show_toast(f"✓ Task done: {text[:40]}", GREEN)
                 else:
                     self._show_toast(f"✗ Task failed: {text[:40]}", RED, duration=8000)
-            self.after(0, _update)
+            self._safe_after(0, _update)
         threading.Thread(target=_bg, daemon=True).start()
 
     def _dispatch_raw(self, skill: str, payload_json: str, assigned_to=None, msg=None):
@@ -3525,7 +3533,7 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
                 out, err = r.stdout.strip(), r.stderr.strip()
             except Exception as e:
                 out, err = "", str(e)
-            self.after(0, lambda: self._log_output(out or err))
+            self._safe_after(0, lambda: self._log_output(out or err))
         threading.Thread(target=_bg, daemon=True).start()
 
     def _show_toast(self, message, color=None, duration=5000):
@@ -3537,7 +3545,7 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
         ctk.CTkLabel(toast, text=message, font=("Segoe UI", 10), text_color="#ffffff",
                      padx=12, pady=6).pack()
         # Auto-dismiss after duration
-        self.after(duration, lambda: toast.place_forget() if toast.winfo_exists() else None)
+        self._safe_after(duration, lambda: toast.place_forget() if toast.winfo_exists() else None)
     def _copy_output(self):
         """Copy OUTPUT panel contents to clipboard."""
         try:
@@ -3628,7 +3636,7 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
                 return False, "Up to date"
 
             msg = f"{behind} commits behind"
-            self.after(0, lambda: self._show_update_banner(msg))
+            self._safe_after(0, lambda: self._show_update_banner(msg))
             return True, msg
         except Exception as e:
             return False, f"Update check failed: {e}"

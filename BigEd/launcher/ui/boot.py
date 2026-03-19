@@ -272,7 +272,7 @@ class BootManagerMixin:
                         w["timer"].configure(text=timer_text, text_color=RED)
                 else:
                     w["timer"].configure(text=f"{elapsed:.0f}s", text_color=DIM)
-        self.after(250, self._boot_spin)  # update 4x/sec for smooth timer
+        self._safe_after(250, self._boot_spin)  # update 4x/sec for smooth timer
 
     def _boot_update(self, idx, state, detail=""):
         """Update boot stage visual state. Must be called from main thread."""
@@ -349,29 +349,29 @@ class BootManagerMixin:
         ]
         for idx, fn in stages:
             if self._boot_abort.is_set():
-                self.after(0, lambda: self._log_output("Boot aborted."))
-                self.after(0, self._hide_boot_progress)
+                self._safe_after(0, lambda: self._log_output("Boot aborted."))
+                self._safe_after(0, self._hide_boot_progress)
                 return
-            self.after(0, lambda i=idx: self._boot_update(i, "active"))
+            self._safe_after(0, lambda i=idx: self._boot_update(i, "active"))
             try:
                 detail = fn()
-                self.after(0, lambda i=idx, d=detail: self._boot_update(i, "done", d or ""))
+                self._safe_after(0, lambda i=idx, d=detail: self._boot_update(i, "done", d or ""))
             except Exception as e:
                 msg = str(e)[:60]
-                self.after(0, lambda i=idx, m=msg: self._boot_update(i, "error", m))
-                self.after(0, lambda m=msg: self._log_output(f"Boot failed at stage: {m}"))
-                self.after(0, lambda m=msg: self._show_toast(f"✗ Boot failed: {m}", RED, duration=8000))
+                self._safe_after(0, lambda i=idx, m=msg: self._boot_update(i, "error", m))
+                self._safe_after(0, lambda m=msg: self._log_output(f"Boot failed at stage: {m}"))
+                self._safe_after(0, lambda m=msg: self._show_toast(f"✗ Boot failed: {m}", RED, duration=8000))
                 # Reset system state so button shows Start again
                 self._system_running = False
-                self.after(0, lambda: self._btn_system_toggle.configure(
+                self._safe_after(0, lambda: self._btn_system_toggle.configure(
                     text="▶  Start", fg_color="#1e3a1e", hover_color="#2a4a2a"))
-                self.after(3000, self._hide_boot_progress)
+                self._safe_after(3000, self._hide_boot_progress)
                 return
-        self.after(0, lambda: self._log_output("System boot complete."))
-        self.after(0, lambda: self._show_toast("Fleet online — all systems go", GREEN))
+        self._safe_after(0, lambda: self._log_output("System boot complete."))
+        self._safe_after(0, lambda: self._show_toast("Fleet online — all systems go", GREEN))
         # Switch log view from Dr. Ders to combined after boot
         self._current_log_agent = "all"
-        self.after(5000, self._hide_boot_progress)
+        self._safe_after(5000, self._hide_boot_progress)
 
     # ── Individual boot stages ───────────────────────────────────────────
 
