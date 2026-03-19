@@ -42,6 +42,10 @@ else:
     _SRC_DIR  = Path(__file__).parent
     _DIST_DIR = Path(__file__).parent / "dist"
 
+# Developer mode — show advanced features (default ON during alpha)
+# Set to False for production builds, or use env var BIGED_PRODUCTION=1
+DEV_MODE = os.environ.get("BIGED_PRODUCTION", "").lower() not in ("1", "true")
+
 
 def _get_fleet_python():
     """Get Python interpreter for launching fleet scripts.
@@ -908,20 +912,22 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
         s["widgets"].append(self._claude_research_cb)
 
         # ── IDLE MODE ─────────────────────────────────────────────────────────
-        s = section("IDLE MODE", default_open=False)
-        self._idle_enabled = False
-        self._btn_idle_toggle = btn(s, "✅ Enable Idle", self._toggle_idle,
-                                    "#1e2e1e", "#2a3e2a",
-                                    tip="Allow workers to run background curriculum tasks when idle")
+        if DEV_MODE:
+            s = section("IDLE MODE", default_open=False)
+            self._idle_enabled = False
+            self._btn_idle_toggle = btn(s, "✅ Enable Idle", self._toggle_idle,
+                                        "#1e2e1e", "#2a3e2a",
+                                        tip="Allow workers to run background curriculum tasks when idle")
 
         # ── SETTINGS (single entry point) ──────────────────────────────────
         s = section("CONFIG")
         btn(s, "⚙  Settings",       self._open_settings,
             tip="Open the unified settings panel")
-        btn(s, "📋 Setup Walkthrough", lambda: WalkthroughDialog(self),
-            tip="Re-run the first-time setup walkthrough")
-        btn(s, "🐛 Report Issue", self._open_report_issue,
-            tip="Generate a debug report and export for issue submission")
+        if DEV_MODE:
+            btn(s, "📋 Setup Walkthrough", lambda: WalkthroughDialog(self),
+                tip="Re-run the first-time setup walkthrough")
+            btn(s, "🐛 Report Issue", self._open_report_issue,
+                tip="Generate a debug report and export for issue submission")
 
         # ── CONSOLES ─────────────────────────────────────────────────────────
         s = section("CONSOLES", default_open=False)
@@ -938,20 +944,24 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
             tip="Open an interactive Ollama chat — free, no API key needed")
 
         # ── BUILD ──────────────────────────────────────────────────────────────
-        s = section("BUILD", default_open=False)
-        btn(s, "🔄 Run Update",        self._launch_auto_update, "#1a3a1a", "#2a4a2a",
-            tip="Run Updater.exe in auto mode and relaunch BigEd CC")
-        btn(s, "▶  Run BigEd CC", self._run_fleet_control,  "#1a2a10", "#2a3a18",
-            tip="Launch the compiled BigEd CC from dist/")
-        btn(s, "🔨 Rebuild All",       self._rebuild_all,        "#2a1a10", "#3a2a18",
-            tip="Recompile the app via PyInstaller (build.bat)")
+        if DEV_MODE:
+            s = section("BUILD", default_open=False)
+            btn(s, "🔄 Run Update",        self._launch_auto_update, "#1a3a1a", "#2a4a2a",
+                tip="Run Updater.exe in auto mode and relaunch BigEd CC")
+            btn(s, "▶  Run BigEd CC", self._run_fleet_control,  "#1a2a10", "#2a3a18",
+                tip="Launch the compiled BigEd CC from dist/")
+            btn(s, "🔨 Rebuild All",       self._rebuild_all,        "#2a1a10", "#3a2a18",
+                tip="Recompile the app via PyInstaller (build.bat)")
 
         # ── LOGS ──────────────────────────────────────────────────────────────
         s = section("LOGS")
-        agents = ["all", "supervisor", "hw_supervisor", "researcher", "coder",
+        agents = ["supervisor", "hw_supervisor", "researcher", "coder",
                   "security", "sales", "analyst", "archivist", "onboarding",
                   "implementation", "planner", "legal", "account_manager"]
-        self._log_agent_var = ctk.StringVar(value="all")
+        if DEV_MODE:
+            agents.insert(0, "all")
+        default_log = "all" if DEV_MODE else "supervisor"
+        self._log_agent_var = ctk.StringVar(value=default_log)
         menu = ctk.CTkOptionMenu(
             sb, values=agents, variable=self._log_agent_var,
             font=FONT_SM, fg_color=BG3, button_color=ACCENT,
@@ -959,6 +969,11 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
         )
         menu.pack(fill="x", padx=10, pady=4)
         s["widgets"].append(menu)
+
+        # ── Developer mode indicator ─────────────────────────────────────────
+        if DEV_MODE:
+            dev_label = ctk.CTkLabel(sb, text="🔧 Developer Mode", font=("Segoe UI", 8), text_color=DIM)
+            dev_label.pack(side="bottom", pady=4)
 
     # ── Main area ─────────────────────────────────────────────────────────────
     # ── Tabs (primary content area) ──────────────────────────────────────────
