@@ -216,12 +216,18 @@ class BootManagerMixin:
     def _boot_hw_supervisor(self):
         """Start hw_supervisor, poll until hw_state.json is fresh."""
         L = _launcher()
+        hw_state = L.FLEET_DIR / "hw_state.json"
+        # Delete stale hw_state.json so we only detect fresh writes
+        try:
+            if hw_state.exists():
+                hw_state.unlink()
+        except Exception:
+            pass
         L.wsl(
             "pkill -f hw_supervisor.py 2>/dev/null; sleep 1; "
             "nohup ~/.local/bin/uv run python hw_supervisor.py >> logs/hw_supervisor.log 2>&1 &",
             capture=True, timeout=15,
         )
-        hw_state = L.FLEET_DIR / "hw_state.json"
         for _ in range(10):
             if self._boot_abort.is_set():
                 raise Exception("aborted")
