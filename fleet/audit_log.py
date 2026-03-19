@@ -5,7 +5,7 @@ import json
 import os
 import threading
 import time
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 FLEET_DIR = Path(__file__).parent
@@ -85,3 +85,39 @@ def get_audit_summary() -> dict:
         "by_severity": by_severity,
         "verified": sum(1 for e in events[-10:] if verify_event(e)),
     }
+
+
+def rotate_audit_log(max_age_days: int = 365, max_size_mb: int = 50):
+    """Rotate audit log — archive old entries, enforce retention policy."""
+    if not AUDIT_LOG.exists():
+        return {"status": "no_log"}
+
+    size_mb = AUDIT_LOG.stat().st_size / 1e6
+
+    # Archive if over size limit
+    if size_mb > max_size_mb:
+        archive = AUDIT_LOG.with_suffix(f".{datetime.now(timezone.utc).strftime('%Y%m%d')}.jsonl")
+        import shutil
+        shutil.copy2(AUDIT_LOG, archive)
+        AUDIT_LOG.write_text("", encoding="utf-8")  # truncate
+        return {"status": "archived", "archive": str(archive), "size_mb": round(size_mb, 2)}
+
+    # Purge entries older than max_age_days
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=max_age_days)).isoformat()
+    lines = AUDIT_LOG.read_text(encoding="utf-8").splitlines()
+    kept = []
+    purged = 0
+    for line in lines:
+        try:
+            event = json.loads(line)
+            if event.get("timestamp", "") >= cutoff:
+                kept.append(line)
+            else:
+                purged += 1
+        except json.JSONDecodeError:
+            kept.append(line)  # keep unparseable lines
+
+    if purged > 0:
+        AUDIT_LOG.write_text("\n".join(kept) + "\n" if kept else "", encoding="utf-8")
+
+    return {"status": "rotated", "kept": len(kept), "purged": purged}

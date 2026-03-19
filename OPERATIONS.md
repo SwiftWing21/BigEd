@@ -763,3 +763,44 @@ This document is updated alongside code changes:
 4. **Deployment changes** — Update deployment section if install steps change
 5. **New CLI command** — Add to CLI Reference when `lead_client.py` gains a subcommand
 6. **New dashboard endpoint** — Add to Monitoring section when `dashboard.py` gains a route
+
+---
+
+## Incident Response SOP (SOC 2 CC8 / GDPR Art. 33)
+
+### Severity Classification
+
+| Level | Description | Response Time | Examples |
+|-------|-------------|---------------|----------|
+| SEV-1 | Data breach / secret exposure | < 1 hour | API key in task result, PII in knowledge/ |
+| SEV-2 | Service degradation | < 4 hours | Ollama OOM, supervisor crash loop, thermal runaway |
+| SEV-3 | Operational issue | < 24 hours | Failed skill, stale tasks, agent quarantine |
+| SEV-4 | Cosmetic / minor | Next business day | UI glitch, stale docs, non-blocking warning |
+
+### Response Procedure
+
+1. **DETECT** — Watchdog alerts, DLP findings, dashboard alerts, operator report
+2. **TRIAGE** — Classify severity (SEV-1 through SEV-4)
+3. **CONTAIN** —
+   - SEV-1: `lead_client.py broadcast "PAUSE" --channel fleet` → all workers pause
+   - SEV-2: `lead_client.py gdpr-erase <affected_agent> --confirm` if data compromised
+   - Rotate affected API keys: `lead_client.py dispatch secret_rotate '{"action":"rotate","key":"AFFECTED_KEY"}'`
+4. **INVESTIGATE** —
+   - Check audit log: `GET /api/audit?type=dlp_alert&limit=50`
+   - Generate debug report: "Report Issue" button or `generate_debug_report()`
+   - Review task history: `GET /api/activity`
+5. **REMEDIATE** — Fix root cause, deploy patch, verify via smoke test
+6. **NOTIFY** — GDPR Art. 33: supervisory authority within 72 hours if personal data breach
+7. **DOCUMENT** — Add to `data/resolutions.jsonl` with fix_commit and regression_test
+
+### Breach Notification Template (GDPR Art. 33)
+
+```
+Subject: Data Breach Notification — BigEd CC Fleet
+Date: [DATE]
+Nature of breach: [DESCRIPTION]
+Data subjects affected: [COUNT/SCOPE]
+Likely consequences: [IMPACT]
+Measures taken: [CONTAINMENT + REMEDIATION]
+Contact: [DPO/OPERATOR]
+```
