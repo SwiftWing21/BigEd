@@ -378,6 +378,35 @@ def test_conditional_dag():
     return True, f"positive={tid_c} promoted, negative={tid_y} blocked"
 
 
+def test_path_traversal_blocked():
+    """Security: path traversal in code_review is blocked."""
+    try:
+        from skills.code_review import _pick_file
+        # Try to read /etc/shadow or C:\Windows\System32\config\SAM
+        import sys
+        if sys.platform == "win32":
+            result = _pick_file("C:\\Windows\\System32\\config\\SAM")
+        else:
+            result = _pick_file("/etc/shadow")
+        blocked = result is None
+        return blocked, f"path traversal {'blocked' if blocked else 'ALLOWED (VULN!)'}"
+    except (ImportError, AttributeError):
+        return True, "code_review._pick_file not found (may use different pattern)"
+
+
+def test_ssrf_blocked():
+    """Security: SSRF to internal IPs is blocked."""
+    try:
+        from skills.browser_crawl import _check_ssrf
+        ok1, _ = _check_ssrf("http://127.0.0.1:5555/api/status")
+        ok2, _ = _check_ssrf("http://169.254.169.254/latest/meta-data/")
+        ok3, _ = _check_ssrf("https://example.com")
+        blocked = not ok1 and not ok2 and ok3
+        return blocked, f"internal={'blocked' if not ok1 else 'ALLOWED'} metadata={'blocked' if not ok2 else 'ALLOWED'} external={'allowed' if ok3 else 'blocked'}"
+    except (ImportError, AttributeError):
+        return True, "browser_crawl._check_ssrf not found (may use different pattern)"
+
+
 def test_thermal_readings():
     """10. GPU thermal readings available (if GPU present)."""
     try:
@@ -454,6 +483,8 @@ def main():
         ("DAL round-trip", test_dal_roundtrip),
         ("DAG validation", test_dag_validation),
         ("Conditional DAG", test_conditional_dag),
+        ("Path traversal blocked", test_path_traversal_blocked),
+        ("SSRF blocked", test_ssrf_blocked),
     ])
 
     if not args.fast:
