@@ -53,8 +53,8 @@ Discord: `/aider`, `/claude`, `/gemini`, `/local`, `/status`, `/task`, `/result`
 
 ## Dual Supervisor Architecture
 - `supervisor.py` — Process lifecycle (Ollama start/stop, worker respawn, training detection, Discord/OpenClaw, auto-boot, idle evolution)
-- `hw_supervisor.py` — Model health (keepalive every ~240s, conductor check every ~60s, VRAM/thermal scaling, model tier transitions, HA fallback)
-- `hw_state.json` — Written by hw_supervisor every 5s. Contains: status, model, thermal, models_loaded, conductor status. Read by supervisor, workers, dashboard, and launcher.
+- `hw_supervisor.py` (Dr. Ders) — Model health (keepalive every ~240s, conductor check every ~60s, VRAM/thermal scaling, model tier transitions, HA fallback)
+- `hw_state.json` — Written by Dr. Ders every 5s. Contains: status, model, thermal, models_loaded, conductor status. Read by supervisor, workers, dashboard, and launcher.
 - Cost tracking (CT-1/2/3/4) — Token budgets per worker, per-skill cost attribution, budget alerts, dashboard cost panels
 
 ## Offline / Air-Gap Modes

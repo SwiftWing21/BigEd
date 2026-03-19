@@ -49,7 +49,7 @@ def get_failure_streaks(threshold=3):
                    COUNT(*) as fail_count,
                    MAX(error) as last_error
             FROM (
-                SELECT assigned_to, error,
+                SELECT assigned_to, error, status,
                        ROW_NUMBER() OVER (PARTITION BY assigned_to ORDER BY id DESC) as rn
                 FROM tasks
                 WHERE assigned_to IS NOT NULL AND status IN ('FAILED', 'DONE')

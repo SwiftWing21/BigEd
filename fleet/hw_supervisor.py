@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Hardware Supervisor — thermal-aware GPU/VRAM/power governor for 24/7 fleet operation.
+Dr. Ders (HW_Dr_Ders) — thermal-aware GPU/VRAM/power governor for 24/7 fleet operation.
 
 PURPOSE:
 Runs alongside the primary fleet supervisor as a MINIMAL CPU-ONLY daemon. Monitors GPU
@@ -8,7 +8,7 @@ temperature, VRAM pressure, power draw, and CPU thermals. Manages Ollama model t
 for fleet workers. This is the ONLY process that should touch model loading/unloading.
 
 CRITICAL DESIGN CONSTRAINTS:
-- hw_supervisor itself NEVER uses GPU — it is a pure monitoring/control process
+- Dr. Ders itself NEVER uses GPU — it is a pure monitoring/control process
 - It NEVER loads models for its own inference — only manages models for workers
 - It NEVER calls call_complex() or any LLM API — it is not an AI agent
 - It MUST survive GPU OOM, thermal shutdown, and Ollama crashes
@@ -24,8 +24,9 @@ SCALING PATTERN (park + guard + recover):
 - If no model is loaded (crash/eviction), recovers to smallest available
 - Steps down one tier at a time, never jumps
 
-AI AGENTS: Do not implement model-downgrade logic in skills. This supervisor handles it.
+AI AGENTS: Do not implement model-downgrade logic in skills. Dr. Ders handles it.
 """
+import gc
 import json
 import logging
 import os
@@ -57,8 +58,8 @@ _log_handler = RotatingFileHandler(
     FLEET_DIR / "logs" / "hw_supervisor.log",
     maxBytes=10 * 1024 * 1024, backupCount=5, encoding="utf-8",
 )
-_log_handler.setFormatter(logging.Formatter("%(asctime)s [HW_SUP] %(message)s"))
-log = logging.getLogger("hw_supervisor")
+_log_handler.setFormatter(logging.Formatter("%(asctime)s [Dr. Ders] %(message)s"))
+log = logging.getLogger("dr_ders")
 log.setLevel(logging.INFO)
 log.addHandler(_log_handler)
 log.addHandler(logging.StreamHandler(sys.stdout))
@@ -113,9 +114,78 @@ def load_thermal_config():
         return defaults
 
 
+# ── Memory Leak Self-Monitor ──────────────────────────────────────────────────
+
+_MEMORY_CHECK_INTERVAL = 360  # polls (~30 min at 5s interval)
+_MEMORY_GROWTH_THRESHOLD_MB = 150  # warn if RSS grows this much from baseline
+_MEMORY_CRITICAL_MB = 500  # force gc + log critical if RSS exceeds this
+_baseline_rss_mb = 0.0
+_last_gc_collect = 0
+
+
+def _get_own_rss_mb():
+    """Return this process's RSS in MB, or 0 if psutil unavailable."""
+    if not _HAS_PSUTIL:
+        return 0.0
+    try:
+        proc = psutil.Process(os.getpid())
+        return proc.memory_info().rss / (1024 * 1024)
+    except Exception:
+        return 0.0
+
+
+def _memory_self_check(poll_count):
+    """Periodic self-check: track RSS growth, force gc on leaks.
+
+    Called every _MEMORY_CHECK_INTERVAL polls from the main loop.
+    Returns dict with memory stats for inclusion in hw_state.json.
+    """
+    global _baseline_rss_mb, _last_gc_collect
+
+    rss = _get_own_rss_mb()
+    if rss == 0:
+        return {}
+
+    # First check — set baseline
+    if _baseline_rss_mb == 0:
+        _baseline_rss_mb = rss
+        log.info(f"Memory baseline: {rss:.1f} MB RSS")
+        return {"hw_sup_rss_mb": round(rss, 1)}
+
+    growth = rss - _baseline_rss_mb
+    stats = {"hw_sup_rss_mb": round(rss, 1), "hw_sup_rss_growth_mb": round(growth, 1)}
+
+    if rss > _MEMORY_CRITICAL_MB:
+        # Critical: force aggressive gc
+        collected = gc.collect(2)
+        log.warning(f"MEMORY CRITICAL: {rss:.1f} MB RSS (baseline {_baseline_rss_mb:.1f}) "
+                    f"— forced gc collected {collected} objects")
+        _last_gc_collect = poll_count
+        # Re-measure after gc
+        rss_after = _get_own_rss_mb()
+        stats["hw_sup_rss_mb"] = round(rss_after, 1)
+        stats["hw_sup_gc_freed_mb"] = round(rss - rss_after, 1)
+    elif growth > _MEMORY_GROWTH_THRESHOLD_MB:
+        # Growing — run gc and log warning
+        if poll_count - _last_gc_collect > 60:  # don't gc-spam
+            collected = gc.collect()
+            log.warning(f"Memory growth: {rss:.1f} MB RSS (+{growth:.1f} from baseline) "
+                        f"— gc collected {collected} objects")
+            _last_gc_collect = poll_count
+            rss_after = _get_own_rss_mb()
+            stats["hw_sup_rss_mb"] = round(rss_after, 1)
+    else:
+        # Healthy — periodic gen-0 gc to prevent accumulation
+        if poll_count - _last_gc_collect > _MEMORY_CHECK_INTERVAL:
+            gc.collect(0)
+            _last_gc_collect = poll_count
+
+    return stats
+
+
 # ── State ─────────────────────────────────────────────────────────────────────
 
-def write_state(status, model, thermal=None, models_loaded=None, conductor_status=None):
+def write_state(status, model, thermal=None, models_loaded=None, conductor_status=None, memory_stats=None):
     """Write expanded hw_state.json for supervisor/worker/dashboard/launcher."""
     try:
         state = {
@@ -129,6 +199,8 @@ def write_state(status, model, thermal=None, models_loaded=None, conductor_statu
             state["models_loaded"] = models_loaded  # list of {"name", "size_gb", "device"}
         if conductor_status is not None:
             state["conductor"] = conductor_status  # "loaded" | "unloaded" | "warming"
+        if memory_stats:
+            state["memory"] = memory_stats
         # Atomic write: temp file then rename
         tmp_fd, tmp_path = tempfile.mkstemp(dir=str(FLEET_DIR), suffix='.json')
         with os.fdopen(tmp_fd, 'w', encoding='utf-8') as f:
@@ -490,7 +562,7 @@ def main():
     try:
         import db as _db
         _db.init_db()
-        _db.register_agent("hw_supervisor", "supervisor", os.getpid())
+        _db.register_agent("dr_ders", "supervisor", os.getpid())
         _HAS_DB = True
     except Exception:
         pass
@@ -499,6 +571,7 @@ def main():
     gpu_throttled = False
     below_target_since = None
     was_training = False  # track training transitions for VRAM eviction
+    training_evicted = False  # True only if we actually evicted models for training
 
     host = cfg["ollama_host"]
     conductor_model = cfg["conductor_model"]
@@ -586,11 +659,16 @@ def main():
         write_state("degraded", get_current_local_model())
 
     poll_count = 0
+    mem_stats = {}  # populated by periodic self-check
 
     while True:
         time.sleep(cfg["poll_interval_secs"])
         poll_count += 1
         try:
+            # Memory self-check (every ~30 min)
+            if poll_count % _MEMORY_CHECK_INTERVAL == 0 or poll_count == 1:
+                mem_stats = _memory_self_check(poll_count)
+
             gpu = read_gpu_thermal()
             if not gpu:
                 continue
@@ -614,13 +692,34 @@ def main():
                 if sys.platform != "win32":
                     is_marathon = os.system("pgrep -f dispatch_marathon.py > /dev/null 2>&1") == 0
 
-            # ── Training transition: evict GPU models on start (non-blocking) ──
+            # ── Training transition: VRAM-aware eviction ──
             if is_training and not was_training:
-                log.info("Training detected — evicting GPU models for VRAM headroom")
-                import threading
-                threading.Thread(target=evict_models_for_training, args=(host,), daemon=True).start()
+                # Check if training profile needs Ollama off GPU
+                _gpu_total = gpu.get("vram_total_gb", 12.0) or 12.0
+                _training_vram_free = _gpu_total - (gpu.get("vram_used_gb", 0) or 0)
+                # Read profile hint from hw_state if supervisor wrote it
+                _hw_training_profile = None
+                try:
+                    if HW_STATE_FILE.exists():
+                        _hs = json.loads(HW_STATE_FILE.read_text(encoding="utf-8"))
+                        _hw_training_profile = _hs.get("training_profile")
+                except Exception:
+                    pass
+                # Small profiles (micro/balanced) can coexist with Ollama on GPU
+                if _hw_training_profile in ("micro", "balanced"):
+                    log.info(f"Training detected (profile={_hw_training_profile}) — keeping models on GPU")
+                    training_evicted = False
+                elif _training_vram_free > 5.0:
+                    log.info(f"Training detected — {_training_vram_free:.1f}GB VRAM free, keeping models on GPU")
+                    training_evicted = False
+                else:
+                    log.info(f"Training detected — {_training_vram_free:.1f}GB VRAM free, evicting GPU models")
+                    training_evicted = True
+                    import threading
+                    threading.Thread(target=evict_models_for_training, args=(host,), daemon=True).start()
             elif was_training and not is_training:
                 log.info("Training ended — models will reload on next keepalive cycle")
+                training_evicted = False
             was_training = is_training
 
             gpu_temp = gpu["gpu_temp_c"]
@@ -636,9 +735,9 @@ def main():
             conductor_status = "none"
             if not air_gap:
                 models_loaded = get_loaded_models(host)
-                # Keepalive ping every ~240s — skip during training/throttling
+                # Keepalive ping every ~240s — only skip if training evicted models
                 if poll_count % KEEPALIVE_EVERY_N_POLLS == 0:
-                    if not is_training and not gpu_throttled:
+                    if not (is_training and training_evicted) and not gpu_throttled:
                         current_local = get_current_local_model()
                         ping_keepalive(host, current_local)
                 # Conductor check every ~60s (12 polls)
@@ -689,7 +788,7 @@ def main():
                 below_target_since = None
                 if _HAS_DB:
                     try:
-                        _db.post_note("sup", "hw_supervisor", json.dumps({
+                        _db.post_note("sup", "dr_ders", json.dumps({
                             "type": "thermal_alert",
                             "title": f"GPU throttled at {gpu_temp}°C",
                             "tags": ["thermal", "gpu"],
@@ -708,7 +807,7 @@ def main():
                         below_target_since = None
                         if _HAS_DB:
                             try:
-                                _db.post_note("sup", "hw_supervisor", json.dumps({
+                                _db.post_note("sup", "dr_ders", json.dumps({
                                     "type": "thermal_alert",
                                     "title": f"GPU resumed at {gpu_temp}°C",
                                     "tags": ["thermal", "gpu"],
@@ -753,8 +852,8 @@ def main():
                 if current_model != cfg["tier_crit"]:
                     emergency = True
 
-            elif is_training:
-                # TRAINING: drop to low tier to free VRAM for PyTorch
+            elif is_training and training_evicted:
+                # TRAINING (evicted): drop to low tier to free VRAM for PyTorch
                 if current_model not in (cfg["tier_crit"], cfg["tier_low"]):
                     target_model = cfg["tier_low"]
 
@@ -799,7 +898,7 @@ def main():
                 # Post sup note about model transition
                 if _HAS_DB:
                     try:
-                        _db.post_note("sup", "hw_supervisor", json.dumps({
+                        _db.post_note("sup", "dr_ders", json.dumps({
                             "type": "model_transition",
                             "title": f"Model: {current_model} -> {target_model}",
                             "content": f"{'Emergency ' if emergency else ''}VRAM {vram_pct:.0%}",
@@ -814,7 +913,7 @@ def main():
                     if HW_STATE_FILE.exists():
                         _hw = json.loads(HW_STATE_FILE.read_text(encoding="utf-8"))
                         vr = _hw.get("vision_request")
-                        if vr and not gpu_throttled and not is_training:
+                        if vr and not gpu_throttled and not (is_training and training_evicted):
                             vision_model = vr.get("model", "llava")
                             # Check if vision model is already loaded
                             already_loaded = any(
@@ -845,7 +944,7 @@ def main():
                     except Exception:
                         pass
 
-                write_state("ready", current_model, thermal, models_loaded, conductor_status)
+                write_state("ready", current_model, thermal, models_loaded, conductor_status, mem_stats)
 
         except Exception as e:
             log.warning(f"Poll error (non-fatal): {e}")

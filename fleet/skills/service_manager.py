@@ -17,7 +17,7 @@ _MAC_PLIST_NAME = "com.biged.fleet"
 _LINUX_SERVICE_NAME = "biged-fleet"
 
 # Services that _repair supports (whitelist to prevent arbitrary restarts)
-_REPAIRABLE = {"ollama", "supervisor", "hw_supervisor", "autoboot"}
+_REPAIRABLE = {"ollama", "supervisor", "hw_supervisor", "dr_ders", "autoboot"}
 
 
 def run(payload: dict, config: dict) -> str:
@@ -178,10 +178,10 @@ def _verify_ollama(payload: dict, config: dict) -> str:
 # ── verify_fleet ─────────────────────────────────────────────────────────────
 
 def _verify_fleet(payload: dict, config: dict) -> str:
-    """Check if supervisor and hw_supervisor PIDs are running."""
+    """Check if supervisor and Dr. Ders PIDs are running."""
     result = {
         "supervisor": {"running": False, "pid": None},
-        "hw_supervisor": {"running": False, "pid": None},
+        "dr_ders": {"running": False, "pid": None},
     }
 
     # Try DB first — agents table tracks supervisor PIDs
@@ -198,7 +198,7 @@ def _verify_fleet(payload: dict, config: dict) -> str:
             for row in rows:
                 name = row["name"]
                 pid = row["pid"]
-                key = "hw_supervisor" if "hw" in name else "supervisor"
+                key = "dr_ders" if "hw" in name or "dr_ders" in name else "supervisor"
                 if pid and _is_pid_alive(pid):
                     result[key] = {
                         "running": True,
@@ -272,7 +272,7 @@ def _repair_service(payload: dict, config: dict) -> str:
             return _repair_ollama(config)
         elif service == "supervisor":
             return _repair_supervisor()
-        elif service == "hw_supervisor":
+        elif service in ("hw_supervisor", "dr_ders"):
             return _repair_hw_supervisor()
         elif service == "autoboot":
             return _repair_autoboot()
@@ -365,19 +365,19 @@ def _repair_supervisor() -> str:
 
 
 def _repair_hw_supervisor() -> str:
-    """Start hw_supervisor.py if not running."""
+    """Start Dr. Ders (hw_supervisor.py) if not running."""
     check = json.loads(_verify_fleet({}, {}))
-    if check.get("hw_supervisor", {}).get("running"):
+    if check.get("dr_ders", {}).get("running"):
         return json.dumps({
-            "service": "hw_supervisor",
+            "service": "dr_ders",
             "action": "none",
             "detail": "Already running",
-            "pid": check["hw_supervisor"].get("pid"),
+            "pid": check["dr_ders"].get("pid"),
         })
 
     script = FLEET_DIR / "hw_supervisor.py"
     if not script.exists():
-        return json.dumps({"service": "hw_supervisor", "error": f"Not found: {script}"})
+        return json.dumps({"service": "dr_ders", "error": f"Not found: {script}"})
 
     try:
         if sys.platform == "win32":
@@ -394,9 +394,9 @@ def _repair_hw_supervisor() -> str:
                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
                 start_new_session=True,
             )
-        return json.dumps({"service": "hw_supervisor", "action": "started", "pid": proc.pid})
+        return json.dumps({"service": "dr_ders", "action": "started", "pid": proc.pid})
     except Exception as e:
-        return json.dumps({"service": "hw_supervisor", "error": str(e)})
+        return json.dumps({"service": "dr_ders", "error": str(e)})
 
 
 def _repair_autoboot() -> str:

@@ -152,6 +152,14 @@ def init_db():
             conn.execute("ALTER TABLE messages ADD COLUMN channel TEXT DEFAULT 'fleet'")
         conn.execute("""CREATE INDEX IF NOT EXISTS idx_messages_inbox
             ON messages (to_agent, channel, read_at)""")
+        # Migrate usage: add speed tracking columns
+        usage_cols = {r[1] for r in conn.execute("PRAGMA table_info(usage)").fetchall()}
+        if "eval_duration_ms" not in usage_cols:
+            conn.execute("ALTER TABLE usage ADD COLUMN eval_duration_ms REAL DEFAULT NULL")
+        if "prompt_duration_ms" not in usage_cols:
+            conn.execute("ALTER TABLE usage ADD COLUMN prompt_duration_ms REAL DEFAULT NULL")
+        if "tokens_per_sec" not in usage_cols:
+            conn.execute("ALTER TABLE usage ADD COLUMN tokens_per_sec REAL DEFAULT NULL")
 
 
 def register_agent(name, role, pid):
@@ -749,12 +757,191 @@ def get_waiting_human_tasks():
         return result
 
 
+def get_waiting_human_details():
+    """Return detailed HITL requests with agent info, question, task type, and age.
+
+    Richer version of get_waiting_human_tasks() — includes age_minutes and
+    waiting_since for the launcher UI's HITL panel.
+    """
+    with get_conn() as conn:
+        tasks = conn.execute("""
+            SELECT t.id, t.type, t.assigned_to, t.created_at, t.payload_json
+            FROM tasks t
+            WHERE t.status = 'WAITING_HUMAN'
+            ORDER BY t.created_at ASC
+        """).fetchall()
+        result = []
+        now = datetime.now(timezone.utc)
+        for t in tasks:
+            # Find the question from the agent's HITL request message
+            question = ""
+            waiting_since = t["created_at"] or ""
+            msg = conn.execute("""
+                SELECT body_json, created_at FROM messages
+                WHERE from_agent = ? AND to_agent = 'operator'
+                AND body_json LIKE '%human_input_request%'
+                AND body_json LIKE ?
+                ORDER BY id DESC LIMIT 1
+            """, (t["assigned_to"] or "", f'%"task_id": {t["id"]}%')).fetchone()
+            if msg:
+                try:
+                    body = json.loads(msg["body_json"])
+                    question = body.get("question", "")
+                except Exception:
+                    pass
+                if msg["created_at"]:
+                    waiting_since = msg["created_at"]
+
+            # Calculate age in minutes
+            age_minutes = 0
+            if waiting_since:
+                try:
+                    dt = datetime.fromisoformat(waiting_since).replace(tzinfo=timezone.utc)
+                    age_minutes = int((now - dt).total_seconds() / 60)
+                except Exception:
+                    pass
+
+            result.append({
+                "task_id": t["id"],
+                "agent": t["assigned_to"] or "unknown",
+                "question": question,
+                "task_type": t["type"] or "",
+                "waiting_since": utc_to_local(waiting_since),
+                "age_minutes": age_minutes,
+            })
+        return result
+
+
+def get_pending_advisories():
+    """Return list of pending security advisories with metadata.
+
+    Reads advisory_*.md files from fleet/knowledge/security/pending/ and
+    enriches with JSON sidecar data when available.
+    """
+    pending_dir = Path(__file__).parent / "knowledge" / "security" / "pending"
+    if not pending_dir.exists():
+        return []
+    result = []
+    for md_path in sorted(pending_dir.glob("advisory_*.md")):
+        # Extract advisory ID from filename: advisory_<id>.md
+        stem = md_path.stem  # e.g. "advisory_a1b2c3d4"
+        advisory_id = stem.replace("advisory_", "", 1)
+
+        # Read title from first non-empty line
+        title = ""
+        try:
+            for line in md_path.read_text(encoding="utf-8", errors="ignore").splitlines():
+                stripped = line.strip().lstrip("#").strip()
+                if stripped:
+                    title = stripped
+                    break
+        except Exception:
+            title = advisory_id
+
+        # Check for JSON sidecar
+        json_path = md_path.with_suffix(".json")
+        severity = "UNKNOWN"
+        if json_path.exists():
+            try:
+                meta = json.loads(json_path.read_text(encoding="utf-8", errors="ignore"))
+                severity = meta.get("severity", "UNKNOWN").upper()
+            except Exception:
+                pass
+
+        # File creation/modification date
+        try:
+            mtime = datetime.fromtimestamp(md_path.stat().st_mtime)
+            created = mtime.strftime("%Y-%m-%d")
+        except Exception:
+            created = ""
+
+        result.append({
+            "id": advisory_id,
+            "path": str(md_path),
+            "json_path": str(json_path) if json_path.exists() else None,
+            "severity": severity,
+            "title": title,
+            "created": created,
+        })
+    return result
+
+
+def dismiss_advisory(advisory_id):
+    """Archive an advisory by moving its files to archived/ subfolder.
+
+    Moves both the .md and .json (if present) from pending/ to pending/archived/.
+    Creates the archived/ directory if it doesn't exist.
+
+    Returns:
+        dict with 'moved' count and list of 'files' moved, or 'error' string.
+    """
+    pending_dir = Path(__file__).parent / "knowledge" / "security" / "pending"
+    archive_dir = pending_dir / "archived"
+
+    if not pending_dir.exists():
+        return {"error": "pending directory not found", "moved": 0, "files": []}
+
+    # Find matching files
+    candidates = list(pending_dir.glob(f"advisory_{advisory_id}.*"))
+    if not candidates:
+        return {"error": f"no advisory found with id '{advisory_id}'", "moved": 0, "files": []}
+
+    archive_dir.mkdir(parents=True, exist_ok=True)
+    moved_files = []
+    for src in candidates:
+        if src.is_file():
+            dst = archive_dir / src.name
+            try:
+                src.rename(dst)
+                moved_files.append(str(dst))
+            except Exception as e:
+                return {"error": str(e), "moved": len(moved_files), "files": moved_files}
+
+    return {"moved": len(moved_files), "files": moved_files}
+
+
 # ── Diagnostics (extracted to diagnostics.py) ────────────────────────────────
 from diagnostics import quarantine_agent, clear_quarantine, get_failure_streaks, get_stuck_reviews
 
 
 # ── Cost Tracking (extracted to cost_tracking.py) ────────────────────────────
 from cost_tracking import log_usage, get_usage_summary, get_usage_delta
+
+
+def get_model_speed_stats(hours=24):
+    """Return avg/p50/p95 tokens_per_sec per model over recent window."""
+    with get_conn() as conn:
+        rows = conn.execute("""
+            SELECT model, tokens_per_sec
+            FROM usage
+            WHERE tokens_per_sec IS NOT NULL
+              AND created_at >= datetime('now', ?)
+            ORDER BY model, tokens_per_sec
+        """, (f"-{hours} hours",)).fetchall()
+
+    if not rows:
+        return []
+
+    from collections import defaultdict
+    by_model = defaultdict(list)
+    for r in rows:
+        by_model[r["model"]].append(r["tokens_per_sec"])
+
+    results = []
+    for model, speeds in sorted(by_model.items()):
+        n = len(speeds)
+        avg = sum(speeds) / n
+        p50 = speeds[n // 2]
+        p95_idx = min(int(n * 0.95), n - 1)
+        p95 = speeds[p95_idx]
+        results.append({
+            "model": model,
+            "avg_tok_sec": round(avg, 1),
+            "p50_tok_sec": round(p50, 1),
+            "p95_tok_sec": round(p95, 1),
+            "sample_count": n,
+        })
+    return results
 
 
 # ── Idle Evolution (extracted to idle_evolution.py) ───────────────────────────

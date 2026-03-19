@@ -17,7 +17,7 @@
 - `autoresearch/` — ML training pipeline
 
 ## Fleet Status
-- Skills: 73 | Dashboard: 40+ endpoints | Smoke: 19/19
+- Skills: 73 | Dashboard: 40+ endpoints | Smoke: 22/22
 - All TECH_DEBT resolved | All parallel tracks complete
 - Swarm intelligence: 3 tiers (evolution, research, specialization)
 - Boot: native Windows (no WSL for fleet processes)
@@ -30,7 +30,7 @@
 - max_workers: 10 (RAM-based scaling to 13)
 
 ## Fleet
-- Dual-supervisor: `supervisor.py` + `hw_supervisor.py` (native Windows)
+- Dual-supervisor: `supervisor.py` + Dr. Ders (`hw_supervisor.py`) (native Windows)
 - Config: `fleet/CLAUDE.md` | Status: `lead_client.py status`
 - Process control: REST API (`/api/fleet/*`) | psutil-based (no pkill/pgrep)
 - Boot: auto-start on launch, 7-stage sequence with adaptive timeouts
@@ -42,9 +42,20 @@
 
 ## API
 - Throttle 20% of rate limits, 300ms min between requests
-- Models: `claude-sonnet-4-6` default, `claude-haiku-4-5` high-volume
 - HA fallback: Claude → Gemini → Local (circuit breaker, 3 failures/5min)
-- Cost-aware routing: simple skills → Haiku, complex → Sonnet
+
+## Model Tiers (API + Local)
+- **Haiku** (`claude-haiku-4-5`): Sub-agents, simple/repetitive tasks, high-volume routing
+  - Fleet: flashcards, RAG queries, summaries, indexing, status reports
+  - Multi-agent: grunt work subtasks orchestrated by Sonnet/Opus
+- **Sonnet** (`claude-sonnet-4-6`): Default workhorse — code review, analysis, generation
+  - Fleet: code_review, discuss, security_audit, dataset_synthesize, skill_train
+- **Opus** (`claude-opus-4-6`): Hardest problems — architecture, multi-step reasoning, planning
+  - Fleet: plan_workload, lead_research, skill_evolve, code_write, legal_draft
+- **Local Ollama** (per-skill routing):
+  - Simple skills → `qwen3:4b` (fast, ~89 tok/s) | Medium/Complex → `qwen3:8b` (~45 tok/s)
+  - Routing via `providers.py LOCAL_COMPLEXITY_ROUTING` + `fleet.toml [models.tiers]`
+  - Token speed tracked per-call in `usage` table (tok/s, eval_duration_ms)
 
 ## Claude Code Integration
 - CLI: `claude -p "prompt"` for headless code analysis

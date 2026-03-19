@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Fleet supervisor — starts workers, monitors health, manages GPU/training handoff."""
 
+import gc
 import json
 import logging
 import os
@@ -17,7 +18,7 @@ sys.path.insert(0, str(FLEET_DIR))
 
 import db
 from config import load_config, is_offline, is_air_gap
-from marathon import is_training_running, _check_training_checkpoints, _evict_gpu_models
+from marathon import is_training_running, _check_training_checkpoints, _evict_gpu_models, training_needs_eviction
 
 
 def _load_secrets():
@@ -278,7 +279,7 @@ WATCHDOG_FULL_INTERVAL = 600  # full scan (knowledge files) every 10min
 
 
 def read_hw_state():
-    """Read hw_supervisor state — returns dict or None."""
+    """Read Dr. Ders state — returns dict or None."""
     try:
         if HW_STATE_FILE.exists():
             return json.loads(HW_STATE_FILE.read_text(encoding="utf-8"))
@@ -359,7 +360,7 @@ def write_status_md():
             "",
             "## GPU",
             f"- Training detected: {training_active}",
-            f"- Ollama mode: {'CPU-only (training active)' if training_active else 'eco CPU' if config['fleet']['eco_mode'] else 'GPU'}",
+            f"- Ollama mode: {'CPU-only (training evicted models)' if ollama_evicted_for_training else 'GPU + training coexist' if training_active else 'eco CPU' if config['fleet']['eco_mode'] else 'GPU'}",
         ]
         # Marathon training status
         checkpoint_info = _check_training_checkpoints()
@@ -391,6 +392,91 @@ def shutdown(sig, frame):
     stop_ollama()
     log.info("Fleet stopped.")
     sys.exit(0)
+
+
+# ── Memory Watchdog — cross-monitors Dr. Ders + workers + self ────────────────
+
+_WORKER_RSS_WARN_MB = 300       # per-worker RSS warning threshold
+_WORKER_RSS_CRITICAL_MB = 600   # per-worker RSS → restart worker
+_HW_SUP_RSS_CRITICAL_MB = 400   # Dr. Ders RSS → restart it
+_SUP_SELF_RSS_WARN_MB = 200     # supervisor self-check warning
+_MEMORY_WATCHDOG_INTERVAL = 300  # seconds between full memory sweeps
+
+
+def _memory_watchdog(worker_procs_dict, config):
+    """Cross-monitor memory usage of all fleet processes.
+
+    Returns dict of actions taken for logging/state.
+    """
+    try:
+        import psutil
+    except ImportError:
+        return {}
+
+    actions = []
+
+    # 1. Self-check — supervisor's own RSS
+    try:
+        own = psutil.Process(os.getpid())
+        own_rss = own.memory_info().rss / (1024 * 1024)
+        if own_rss > _SUP_SELF_RSS_WARN_MB:
+            collected = gc.collect()
+            log.warning(f"Supervisor self RSS: {own_rss:.0f} MB — gc collected {collected}")
+            actions.append(f"sup_gc:{collected}")
+        else:
+            # Light gen-0 gc
+            gc.collect(0)
+    except Exception:
+        pass
+
+    # 2. Worker RSS checks — restart leaking workers
+    for role, proc in list(worker_procs_dict.items()):
+        if proc is None or proc.poll() is not None:
+            continue
+        try:
+            p = psutil.Process(proc.pid)
+            rss = p.memory_info().rss / (1024 * 1024)
+            if rss > _WORKER_RSS_CRITICAL_MB:
+                log.warning(f"Worker '{role}' RSS {rss:.0f} MB > {_WORKER_RSS_CRITICAL_MB} MB — restarting")
+                proc.terminate()
+                try:
+                    proc.wait(timeout=10)
+                except subprocess.TimeoutExpired:
+                    proc.kill()
+                worker_procs_dict[role] = None  # will be respawned by dead-worker loop
+                actions.append(f"restart:{role}:{rss:.0f}MB")
+            elif rss > _WORKER_RSS_WARN_MB:
+                log.info(f"Worker '{role}' RSS: {rss:.0f} MB (elevated)")
+                actions.append(f"warn:{role}:{rss:.0f}MB")
+        except (psutil.NoSuchProcess, psutil.AccessDenied):
+            pass
+
+    # 3. Dr. Ders cross-check — read RSS from hw_state.json
+    try:
+        hw_state_file = FLEET_DIR / "hw_state.json"
+        if hw_state_file.exists():
+            hw = json.loads(hw_state_file.read_text(encoding="utf-8"))
+            hw_rss = hw.get("memory", {}).get("hw_sup_rss_mb", 0)
+            if hw_rss > _HW_SUP_RSS_CRITICAL_MB:
+                log.warning(f"Dr. Ders RSS {hw_rss:.0f} MB > {_HW_SUP_RSS_CRITICAL_MB} MB "
+                            f"— flagging for restart")
+                actions.append(f"dr_ders_leak:{hw_rss:.0f}MB")
+                # Post note so dashboard can show the alert
+                try:
+                    db.post_note("sup", "supervisor", json.dumps({
+                        "type": "memory_alert",
+                        "title": f"Dr. Ders memory leak: {hw_rss:.0f} MB",
+                        "content": "RSS exceeds threshold. Consider restarting Dr. Ders.",
+                        "tags": ["memory", "dr_ders"],
+                    }))
+                except Exception:
+                    pass
+    except Exception:
+        pass
+
+    if actions:
+        log.info(f"Memory watchdog: {', '.join(actions)}")
+    return {"actions": actions}
 
 
 def main():
@@ -427,7 +513,7 @@ def main():
 
     ALL_ROLES = _build_roles(config)
     max_workers = config.get("fleet", {}).get("max_workers", 10)
-    # Boot with capped worker count — hw_supervisor can scale up later
+    # Boot with capped worker count — Dr. Ders can scale up later
     ROLES = ALL_ROLES[:max_workers]
     if len(ALL_ROLES) > max_workers:
         log.info(f"Worker cap: starting {len(ROLES)}/{len(ALL_ROLES)} workers (max_workers={max_workers})")
@@ -444,7 +530,7 @@ def main():
         log.debug(f"[main] Ollama not reachable ({e}), starting fresh")
         start_ollama(gpu=not config["fleet"]["eco_mode"])
 
-    # Initial keepalive — pre-load worker model into VRAM (hw_supervisor takes over after boot)
+    # Initial keepalive — pre-load worker model into VRAM (Dr. Ders takes over after boot)
     if not air_gap:
         _ping_ollama_keepalive(config)
 
@@ -460,17 +546,19 @@ def main():
     if not air_gap:
         start_dashboard(config)
 
-    # NOTE: Conductor model warmup + ongoing keepalive handled by hw_supervisor.
-    # hw_supervisor checks conductor every ~60s and keepalive every ~240s.
+    # NOTE: Conductor model warmup + ongoing keepalive handled by Dr. Ders.
+    # Dr. Ders checks conductor every ~60s and keepalive every ~240s.
 
     mode_label = " [AIR-GAP]" if air_gap else " [OFFLINE]" if offline else ""
     log.info(f"Fleet up — {len(ROLES)} workers, eco={config['fleet']['eco_mode']}{mode_label}")
 
     last_status = 0
     last_training_check = 0
+    ollama_evicted_for_training = False  # True only if we switched Ollama to CPU for training
     last_stale_check = 0
     last_watchdog = 0
     last_watchdog_full = 0
+    last_memory_watchdog = 0
     last_sup_notes_ts = None  # ISO timestamp of last sup note read
     training_interval = config["fleet"]["training_check_interval_secs"]
     worker_next_start = {}
@@ -524,46 +612,65 @@ def main():
                 log.warning(f"Dashboard died (exit={dashboard_proc.returncode}) — restarting")
                 start_dashboard(config)
 
-        # Model keepalive now handled by hw_supervisor (every ~240s via hw_state.json)
+        # Model keepalive now handled by Dr. Ders (every ~240s via hw_state.json)
         # Supervisor only reads hw_state for transition awareness
 
-        # Training detection — toggle Ollama GPU mode
+        # Memory watchdog — cross-monitor all fleet processes (every 5 min)
+        if now - last_memory_watchdog >= _MEMORY_WATCHDOG_INTERVAL:
+            last_memory_watchdog = now
+            try:
+                _memory_watchdog(worker_procs, config)
+            except Exception as e:
+                log.debug(f"Memory watchdog error: {e}")
+
+        # Training detection — VRAM-aware: only evict Ollama if training profile needs it
         if now - last_training_check >= training_interval:
             last_training_check = now
-            training_now = is_training_running()
+            training_now, training_profile = is_training_running()
             if training_now and not training_active:
-                log.info("train.py detected — evicting GPU models, switching Ollama to CPU-only")
-                _evict_gpu_models(config)  # best-effort, has internal timeouts
-                time.sleep(2)  # brief pause for eviction to complete
-                stop_ollama()
-                start_ollama(gpu=False)
+                needs_eviction, reason = training_needs_eviction(config, training_profile)
+                log.info(f"train.py detected (profile={training_profile or 'unknown'}) — {reason}")
                 training_active = True
-                # hw_supervisor will re-establish keepalive on next poll
+
+                if needs_eviction:
+                    _evict_gpu_models(config)
+                    time.sleep(2)
+                    stop_ollama()
+                    start_ollama(gpu=False)
+                    ollama_evicted_for_training = True
+                    mode_msg = "Ollama CPU-only"
+                else:
+                    ollama_evicted_for_training = False
+                    mode_msg = "Ollama stays on GPU (training fits in remaining VRAM)"
+
                 try:
                     db.post_note("sup", "supervisor", json.dumps({
                         "type": "training_state",
-                        "title": "Training started — Ollama CPU-only",
+                        "title": f"Training started — {mode_msg}",
                         "tags": ["training"],
                     }))
                 except Exception as e:
                     log.warning(f"[training] failed to post training-started note: {e}")
-                # v0.43: Log marathon training start
                 try:
                     checkpoint_info = _check_training_checkpoints()
                     db.post_task("marathon_log", json.dumps({
                         "session_id": "autoresearch",
                         "goal": "ML training session",
-                        "completed_steps": ["Training detected", "Ollama switched to CPU"],
+                        "completed_steps": ["Training detected", mode_msg],
                         "next_step": "Monitor checkpoints",
-                        "notes": f"Checkpoints: {checkpoint_info}" if checkpoint_info else "No checkpoints yet",
+                        "notes": f"Profile: {training_profile or 'unknown'}. Checkpoints: {checkpoint_info}" if checkpoint_info else f"Profile: {training_profile or 'unknown'}. No checkpoints yet",
                     }), priority=2)
                 except Exception as e:
                     log.warning(f"[training] failed to post marathon_log (start): {e}")
             elif not training_now and training_active:
-                log.info("Training finished — restoring Ollama mode")
-                stop_ollama()
-                start_ollama(gpu=not config["fleet"]["eco_mode"])
                 training_active = False
+                if ollama_evicted_for_training:
+                    log.info("Training finished — restoring Ollama to GPU mode")
+                    stop_ollama()
+                    start_ollama(gpu=not config["fleet"]["eco_mode"])
+                    ollama_evicted_for_training = False
+                else:
+                    log.info("Training finished — Ollama was already on GPU, no restart needed")
                 try:
                     db.post_note("sup", "supervisor", json.dumps({
                         "type": "training_state",
@@ -572,7 +679,6 @@ def main():
                     }))
                 except Exception as e:
                     log.warning(f"[training] failed to post training-finished note: {e}")
-                # v0.43: Log marathon training end
                 try:
                     checkpoint_info = _check_training_checkpoints()
                     db.post_task("marathon_log", json.dumps({
@@ -585,10 +691,10 @@ def main():
                 except Exception as e:
                     log.warning(f"[training] failed to post marathon_log (end): {e}")
 
-        # Log hw_supervisor transitions
+        # Log Dr. Ders transitions
         hw_state = read_hw_state()
         if hw_state and hw_state.get("status") == "transitioning":
-            log.info(f"HW supervisor transitioning to {hw_state.get('model')} — workers pausing claims")
+            log.info(f"Dr. Ders transitioning to {hw_state.get('model')} — workers pausing claims")
 
         # Sup-channel: read inbox + notes every 30s (aligned with status write)
         if now - last_status >= 30:

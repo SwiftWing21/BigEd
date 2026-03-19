@@ -201,7 +201,7 @@ class BootManagerMixin:
         self._boot_stage_defs = [
             ("Ollama server",         "ollama",        ""),
             ("Maintainer (CPU)",      "model_load",    "qwen3:0.6b"),
-            ("HW Supervisor",         "hw_supervisor", ""),
+            ("Dr. Ders",              "hw_supervisor", ""),
             (f"GPU model  {gpu_model}","model_load",   gpu_model),
             ("Fleet supervisor",       "supervisor",    ""),
             ("Workers",                "workers",       ""),
@@ -324,14 +324,14 @@ class BootManagerMixin:
     def _boot_sequence(self):
         """Staged boot — 7 stages, smallest CPU model loaded FIRST.
 
-        Order: Ollama → Maintainer (CPU) → HW Supervisor → GPU model →
+        Order: Ollama → Maintainer (CPU) → Dr. Ders → GPU model →
                Fleet supervisor → Workers → Conductor
 
         Stability design:
-        - Maintainer (smallest CPU model) loads BEFORE hw_supervisor
+        - Maintainer (smallest CPU model) loads BEFORE Dr. Ders
           so there's always a model available for the fleet
-        - hw_supervisor starts with a model already loaded (no empty state)
-        - GPU model loads AFTER hw_supervisor is monitoring
+        - Dr. Ders starts with a model already loaded (no empty state)
+        - GPU model loads AFTER Dr. Ders is monitoring
         - Each stage has explicit timeouts with generous margins
         - Model existence validated before load attempts
         - Failures reset button to Start and clean up boot UI
@@ -369,7 +369,7 @@ class BootManagerMixin:
                 return
         self.after(0, lambda: self._log_output("System boot complete."))
         self.after(0, lambda: self._show_toast("Fleet online — all systems go", GREEN))
-        # Switch log view from hw_supervisor to combined after boot
+        # Switch log view from Dr. Ders to combined after boot
         self._current_log_agent = "all"
         self.after(5000, self._hide_boot_progress)
 
@@ -420,7 +420,7 @@ class BootManagerMixin:
     def _boot_maintainer(self):
         """Stage 1: Load smallest available model on CPU-only.
 
-        This ensures hw_supervisor always has a model to guard when it starts.
+        This ensures Dr. Ders always has a model to guard when it starts.
         The maintainer model is lightweight (~0.5GB RAM) and runs on CPU,
         never touching GPU VRAM.
         """
@@ -469,9 +469,9 @@ class BootManagerMixin:
             raise Exception(f"Maintainer {target}: {e}")
 
     def _boot_hw_supervisor(self):
-        """Stage 1: Start hw_supervisor, poll until hw_state.json is fresh.
+        """Stage 1: Start Dr. Ders, poll until hw_state.json is fresh.
 
-        Stability: delete stale hw_state.json first, give hw_supervisor
+        Stability: delete stale hw_state.json first, give Dr. Ders
         5s to boot Python + detect GPU before first poll.
         """
         L = _launcher()
@@ -484,10 +484,10 @@ class BootManagerMixin:
         except Exception:
             pass
 
-        # Launch hw_supervisor NATIVELY on Windows (no WSL needed)
+        # Launch Dr. Ders NATIVELY on Windows (no WSL needed)
         # It only uses pynvml + psutil + urllib — all cross-platform
         hw_sup_path = L.FLEET_DIR / "hw_supervisor.py"
-        # Kill any existing hw_supervisor process
+        # Kill any existing Dr. Ders process
         _kill_fleet_processes(["hw_supervisor.py"])
         time.sleep(1)
         # Start fresh — native Windows Python, no WSL
@@ -596,7 +596,7 @@ class BootManagerMixin:
         for d in ["logs", "knowledge/summaries", "knowledge/reports"]:
             (L.FLEET_DIR / d).mkdir(parents=True, exist_ok=True)
 
-        # Launch supervisor natively (like hw_supervisor)
+        # Launch supervisor natively (like Dr. Ders)
         subprocess.Popen(
             [_get_python(), str(L.FLEET_DIR / "supervisor.py")],
             cwd=str(L.FLEET_DIR),

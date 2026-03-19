@@ -359,12 +359,12 @@ def main():
         except Exception as e:
             log.warning(f"Heartbeat failed: {e}")
 
-        # Pause during hw_supervisor model transitions
+        # Pause during Dr. Ders model transitions
         try:
             if HW_STATE_FILE.exists():
                 hw = json.loads(HW_STATE_FILE.read_text(encoding="utf-8"))
                 if hw.get("status") == "transitioning":
-                    log.info("HW transition in progress — pausing task claims")
+                    log.info("Dr. Ders transition in progress — pausing task claims")
                     time.sleep(5)
                     continue
         except Exception:

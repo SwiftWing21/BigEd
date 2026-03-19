@@ -3,8 +3,8 @@ eco_mode = false
 idle_enabled = true         # workers self-improve when no tasks pending
 idle_timeout_secs = 30
 training_check_interval_secs = 15   # reduced: catch training start faster
-max_workers = 10              # cap active workers at boot (hw_supervisor scales dynamically)
-worker_scale_interval_secs = 900  # hw_supervisor checks RAM every 15min, adjusts worker count
+max_workers = 10              # cap active workers at boot (Dr. Ders scales dynamically)
+worker_scale_interval_secs = 900  # Dr. Ders checks RAM every 15min, adjusts worker count
 openclaw_enabled = false     # multi-channel gateway (Discord/WhatsApp/Telegram/etc) — enable via FMA GUI
 discord_bot_enabled = true   # lightweight Discord-only bridge to biged-fleetchat
 offline_mode = false         # true = no internet; external API skills gracefully degrade, local Ollama works

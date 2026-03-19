@@ -68,29 +68,43 @@ PRICING = {
     "qwen3:0.6b": {"input": 0.0, "output": 0.0, "cache_read": 0.0, "cache_create": 0.0},
 }
 
-# Task complexity tiers
+# Task complexity tiers — API model routing
 COMPLEXITY_ROUTING = {
     "simple": "claude-haiku-4-5",     # classification, yes/no, simple extraction
     "medium": "claude-sonnet-4-6",    # generation, analysis, code review (default)
     "complex": "claude-opus-4-6",     # multi-step reasoning, architecture decisions
 }
 
+# Task complexity tiers — local Ollama model routing
+# Maps complexity to fleet.toml [models.tiers] key
+LOCAL_COMPLEXITY_ROUTING = {
+    "simple": "mid",       # qwen3:4b — fast, fits alongside 8b
+    "medium": "default",   # qwen3:8b — main worker model
+    "complex": "default",  # qwen3:8b — best local quality
+}
+
 # Skills pre-classified by complexity
 SKILL_COMPLEXITY = {
-    # Simple (use Haiku)
+    # Simple (API: Haiku, Local: 4b) — classification, extraction, indexing
     "flashcard": "simple", "rag_query": "simple", "summarize": "simple",
-    "ingest": "simple", "rag_index": "simple",
-    # Medium (use Sonnet — default)
+    "ingest": "simple", "rag_index": "simple", "code_index": "simple",
+    "account_review": "simple", "status_report": "simple",
+    "stability_report": "simple", "onboard_checklist": "simple",
+    # Medium (API: Sonnet, Local: 8b) — generation, analysis, review
     "web_search": "medium", "code_review": "medium", "discuss": "medium",
     "code_discuss": "medium", "security_audit": "medium", "analyze_results": "medium",
-    # Complex (use Opus)
+    "fma_review": "medium", "code_quality": "medium", "code_refactor": "medium",
+    "curriculum_update": "medium", "dataset_synthesize": "medium",
+    "skill_train": "medium", "research_loop": "medium",
+    # Complex (API: Opus, Local: 8b) — multi-step reasoning, architecture
     "plan_workload": "complex", "lead_research": "complex", "skill_evolve": "complex",
-    "code_write": "complex", "legal_draft": "complex",
+    "code_write": "complex", "legal_draft": "complex", "claude_code": "complex",
+    "swarm_intelligence": "complex", "evolution_coordinator": "complex",
 }
 
 
 def get_optimal_model(skill_name: str, config: dict) -> str:
-    """Return the optimal model for a skill based on complexity classification."""
+    """Return the optimal API model for a skill based on complexity classification."""
     complexity = SKILL_COMPLEXITY.get(skill_name, "medium")
     model = COMPLEXITY_ROUTING.get(complexity, "claude-sonnet-4-6")
     # Override with config if specified
@@ -101,6 +115,22 @@ def get_optimal_model(skill_name: str, config: dict) -> str:
         if complexity == "simple" and config_model != "claude-haiku-4-5":
             return model  # use cheaper model for simple tasks
     return model
+
+
+def get_local_model_for_skill(skill_name: str, config: dict) -> str:
+    """Return the optimal local Ollama model for a skill based on complexity.
+
+    Simple skills use the smaller model (e.g. qwen3:4b) to save VRAM and reduce
+    latency. Medium/complex skills use the default model (e.g. qwen3:8b).
+    """
+    complexity = SKILL_COMPLEXITY.get(skill_name, "medium")
+    tier_key = LOCAL_COMPLEXITY_ROUTING.get(complexity, "default")
+    tiers = config.get("models", {}).get("tiers", {})
+    model = tiers.get(tier_key)
+    if model:
+        return model
+    # Fallback to config default
+    return config.get("models", {}).get("local", "qwen3:8b")
 
 
 # v0.45: HA fallback cascade — if primary fails, try next provider
@@ -253,11 +283,17 @@ def get_provider_health() -> dict:
     return dict(_provider_health)
 
 
-def _call_local(system: str, user: str, models: dict, max_tokens: int) -> str:
+def _call_local(system: str, user: str, models: dict, max_tokens: int,
+                skill_name: str = "unknown", config: dict | None = None,
+                task_id: int | None = None, agent_name: str | None = None) -> str:
     import urllib.request
     import json
     host = models.get("ollama_host", "http://localhost:11434")
-    model = models.get("complex", models.get("local", "qwen3:8b"))
+    # Per-skill model routing: simple skills → smaller model, medium/complex → default
+    if config and skill_name != "unknown":
+        model = get_local_model_for_skill(skill_name, config)
+    else:
+        model = models.get("complex", models.get("local", "qwen3:8b"))
     prompt = f"{system}\n\n{user}"
     body = json.dumps({
         "model": model,
@@ -270,4 +306,33 @@ def _call_local(system: str, user: str, models: dict, max_tokens: int) -> str:
         headers={"Content-Type": "application/json"}, method="POST",
     )
     with urllib.request.urlopen(req, timeout=120) as r:
-        return json.loads(r.read())["response"]
+        data = json.loads(r.read())
+
+    # Extract Ollama performance metrics
+    eval_count = data.get("eval_count", 0)
+    eval_duration = data.get("eval_duration", 0)  # nanoseconds
+    prompt_eval_count = data.get("prompt_eval_count", 0)
+    prompt_eval_duration = data.get("prompt_eval_duration", 0)  # nanoseconds
+
+    tok_per_sec = (eval_count / (eval_duration / 1e9)) if eval_duration > 0 else 0.0
+    eval_duration_ms = eval_duration / 1e6 if eval_duration else None
+    prompt_duration_ms = prompt_eval_duration / 1e6 if prompt_eval_duration else None
+
+    # Log usage with speed metrics
+    try:
+        import db
+        db.log_usage(
+            skill=skill_name, model=model,
+            input_tokens=prompt_eval_count,
+            output_tokens=eval_count,
+            cache_read_tokens=0, cache_create_tokens=0,
+            cost_usd=0.0,
+            task_id=task_id, agent=agent_name,
+            eval_duration_ms=eval_duration_ms,
+            prompt_duration_ms=prompt_duration_ms,
+            tokens_per_sec=tok_per_sec if tok_per_sec > 0 else None,
+        )
+    except Exception:
+        pass  # Usage logging must never break skill execution
+
+    return data.get("response", "")

@@ -52,10 +52,12 @@ def test_db_health():
     """2. DB init + task round-trip."""
     import db
     db.init_db()
-    tid = db.post_task("smoke_test", json.dumps({"test": True}), priority=1)
-    task = db.claim_task("smoke_agent")
+    # Use unique type to avoid claiming stale tasks from prior runs
+    smoke_type = f"smoke_{int(time.time())}"
+    tid = db.post_task(smoke_type, json.dumps({"test": True}), priority=1)
+    task = db.claim_task("smoke_agent", affinity_skills=[smoke_type])
     if not task or task["id"] != tid:
-        return False, "claim_task failed"
+        return False, f"claim_task failed (got {task['id'] if task else 'None'} expected {tid})"
     db.complete_task(tid, json.dumps({"ok": True}))
     result = db.get_task_result(tid)
     if result["status"] != "DONE":

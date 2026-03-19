@@ -370,7 +370,7 @@ def load_tab_cfg() -> dict:
 # ─── Status parser ────────────────────────────────────────────────────────────
 def parse_status():
     """Read STATUS.md and return dict with agents + task counts."""
-    result = {"agents": [], "tasks": {}, "raw": "", "supervisor_status": "OFFLINE", "hw_supervisor_status": "OFFLINE"}
+    result = {"agents": [], "tasks": {}, "raw": "", "supervisor_status": "OFFLINE", "dr_ders_status": "OFFLINE"}
     
     if HW_STATE_JSON.exists():
         try:
@@ -379,15 +379,15 @@ def parse_status():
             if age < 30:
                 hw_data = json.loads(HW_STATE_JSON.read_text(encoding="utf-8"))
                 if hw_data.get("status") == "transitioning":
-                    result["hw_supervisor_status"] = "TRANSIT"
+                    result["dr_ders_status"] = "TRANSIT"
                 else:
-                    result["hw_supervisor_status"] = "ONLINE"
+                    result["dr_ders_status"] = "ONLINE"
             elif age < 120:
-                result["hw_supervisor_status"] = "HUNG"
+                result["dr_ders_status"] = "HUNG"
             else:
-                result["hw_supervisor_status"] = "OFFLINE"
+                result["dr_ders_status"] = "OFFLINE"
         except Exception:
-            result["hw_supervisor_status"] = "OFFLINE"
+            result["dr_ders_status"] = "OFFLINE"
 
     if not STATUS_MD.exists():
         return result
@@ -624,6 +624,7 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
         # Cached agent row widgets — prevents flicker from destroy/recreate cycle
         self._agent_rows = {}  # role -> {frame, dot, name, spark, status, recover, task}
         self._ever_seen_roles = set()  # dynamic — agents appear as they register
+        self._model_perf_labels = {}  # model -> {tps, calls, avg_ms} label widgets
         # Staged boot progress
         self._boot_active = False
         self._boot_widgets = []   # [{frame, dot, label, status}] per stage
@@ -635,7 +636,7 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
 
         self._set_icon()
         self._build_ui()
-        self._current_log_agent = "hw_supervisor"  # show hw_supervisor during boot
+        self._current_log_agent = "Dr. Ders"  # show Dr. Ders log during boot
         self._refresh_status()
         self._schedule_refresh()
         self._schedule_hw()
@@ -663,79 +664,190 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
         # Auto-start fleet on launch — no button press needed
         self.after(1000, self._start_system)
 
+    _CLOSE_PREFS_FILE = DATA_DIR / "close_preferences.json"
+
+    def _load_close_prefs(self):
+        try:
+            if self._CLOSE_PREFS_FILE.exists():
+                return json.loads(self._CLOSE_PREFS_FILE.read_text(encoding="utf-8"))
+        except Exception:
+            pass
+        return {}
+
+    def _save_close_prefs(self, prefs):
+        try:
+            self._CLOSE_PREFS_FILE.parent.mkdir(parents=True, exist_ok=True)
+            self._CLOSE_PREFS_FILE.write_text(json.dumps(prefs), encoding="utf-8")
+        except Exception:
+            pass
+
+    def _shutdown_gui(self):
+        """Stop all timers and background threads before destroy."""
+        # Save window geometry
+        try:
+            self._geometry_file.parent.mkdir(parents=True, exist_ok=True)
+            self._geometry_file.write_text(json.dumps({
+                "w": self.winfo_width(), "h": self.winfo_height(),
+                "x": self.winfo_x(), "y": self.winfo_y(),
+            }))
+        except Exception:
+            pass
+
+        # Signal all timers to stop
+        self._boot_active = False
+        self._system_running = False
+
+        # Stop SSE client
+        if getattr(self, '_sse', None):
+            try:
+                self._sse.stop()
+            except Exception:
+                pass
+
+        # Close modules (DAL connections, etc.)
+        for mod in getattr(self, "_modules", {}).values():
+            try:
+                mod.on_close()
+            except Exception:
+                pass
+
+    def _do_stop_and_close(self):
+        """Soft close: log shutdown, give agents grace period, kill processes, exit."""
+        self._log_output("Shutting down fleet (agents wrapping up)...")
+        self._shutdown_gui()
+        try:
+            from ui.boot import _kill_fleet_processes, _kill_ollama
+            _kill_fleet_processes()
+            time.sleep(1)
+            _kill_ollama()
+        except Exception:
+            pass
+        self.destroy()
+
+    def _do_just_close(self):
+        """Quick close: keep fleet running in background."""
+        self._shutdown_gui()
+        self.destroy()
+
     def _on_close(self):
-        """Ask whether to stop background processes before exiting."""
+        """Smart close dialog with remember-choice + countdown."""
+        prefs = self._load_close_prefs()
+        remembered = prefs.get("action")  # "stop" or "keep" or None
+
+        # If user previously chose "remember", auto-execute with 5s countdown
+        if remembered:
+            self._show_countdown_close(remembered)
+            return
+
+        # First time or reset — show full dialog
+        self._show_close_dialog()
+
+    def _show_countdown_close(self, action):
+        """Auto-close with 5s countdown — user can click to change preferences."""
+        dlg = ctk.CTkToplevel(self)
+        dlg.title("Closing BigEd CC")
+        dlg.geometry("340x140")
+        dlg.resizable(False, False)
+        dlg.configure(fg_color=BG2)
+        dlg.grab_set()
+        dlg.lift()
+        dlg.attributes("-topmost", True)
+
+        action_text = "Stopping fleet + closing" if action == "stop" else "Closing (fleet stays running)"
+        countdown_var = ctk.StringVar(value=f"{action_text} in 5s...")
+
+        ctk.CTkLabel(dlg, textvariable=countdown_var,
+                     font=("Segoe UI", 12, "bold"), text_color=GOLD).pack(pady=(20, 8))
+
+        btn_row = ctk.CTkFrame(dlg, fg_color="transparent")
+        btn_row.pack(side="bottom", fill="x", padx=16, pady=12)
+
+        cancelled = [False]
+
+        def _cancel():
+            cancelled[0] = True
+            dlg.destroy()
+            self._show_close_dialog()  # show full dialog instead
+
+        def _close_now():
+            cancelled[0] = True
+            dlg.destroy()
+            if action == "stop":
+                self._do_stop_and_close()
+            else:
+                self._do_just_close()
+
+        ctk.CTkButton(btn_row, text="Close Now", width=100, height=28,
+                      fg_color=ACCENT, hover_color=ACCENT_H,
+                      command=_close_now).pack(side="right")
+        ctk.CTkButton(btn_row, text="Change Preferences", width=140, height=28,
+                      fg_color=BG3, hover_color=BG,
+                      command=_cancel).pack(side="right", padx=(0, 8))
+
+        # Countdown timer
+        def _tick(remaining):
+            if cancelled[0] or not dlg.winfo_exists():
+                return
+            if remaining <= 0:
+                dlg.destroy()
+                if action == "stop":
+                    self._do_stop_and_close()
+                else:
+                    self._do_just_close()
+                return
+            countdown_var.set(f"{action_text} in {remaining}s...")
+            self.after(1000, lambda: _tick(remaining - 1))
+
+        _tick(5)
+
+    def _show_close_dialog(self):
+        """Full close dialog with remember checkbox."""
         dlg = ctk.CTkToplevel(self)
         dlg.title("Close BigEd CC")
-        dlg.geometry("380x160")
+        dlg.geometry("400x200")
         dlg.resizable(False, False)
         dlg.configure(fg_color=BG2)
         dlg.grab_set()
         dlg.lift()
 
-        ctk.CTkLabel(dlg, text="Stop fleet + Ollama on exit?",
-                     font=("Segoe UI", 13, "bold"), text_color=GOLD).pack(pady=(22, 6))
-        ctk.CTkLabel(dlg, text="Leave running to continue working in the background.",
-                     font=("Segoe UI", 10), text_color=DIM).pack()
+        ctk.CTkLabel(dlg, text="How should BigEd CC close?",
+                     font=("Segoe UI", 13, "bold"), text_color=GOLD).pack(pady=(16, 4))
+        ctk.CTkLabel(dlg, text="Stop & Exit gives agents a moment to wrap up.\n"
+                     "Keep Running leaves the fleet working in the background.",
+                     font=("Segoe UI", 10), text_color=DIM).pack(pady=(0, 8))
+
+        # Remember checkbox
+        remember_var = ctk.BooleanVar(value=False)
+        ctk.CTkCheckBox(dlg, text="Remember my choice (5s countdown next time)",
+                        variable=remember_var, font=("Segoe UI", 10),
+                        text_color=TEXT, fg_color=BG3, hover_color=BG,
+                        checkmark_color=GREEN).pack(pady=(0, 8))
 
         btn_row = ctk.CTkFrame(dlg, fg_color="transparent")
-        btn_row.pack(side="bottom", fill="x", padx=20, pady=16)
+        btn_row.pack(side="bottom", fill="x", padx=16, pady=12)
 
-        def _shutdown_gui():
-            """Stop all timers and background threads before destroy."""
-            # Save window geometry for next launch
-            try:
-                self._geometry_file.parent.mkdir(parents=True, exist_ok=True)
-                self._geometry_file.write_text(json.dumps({
-                    "w": self.winfo_width(), "h": self.winfo_height(),
-                    "x": self.winfo_x(), "y": self.winfo_y(),
-                }))
-            except Exception:
-                pass
-
-            # Signal all timers to stop
-            self._boot_active = False
-            self._system_running = False
-
-            # Stop SSE client
-            if getattr(self, '_sse', None):
-                try:
-                    self._sse.stop()
-                except Exception:
-                    pass
-
-            # Close modules (DAL connections, etc.)
-            for mod in getattr(self, "_modules", {}).values():
-                try:
-                    mod.on_close()
-                except Exception:
-                    pass
-
-        def _stop_and_close():
+        def _stop_exit():
+            if remember_var.get():
+                self._save_close_prefs({"action": "stop"})
             dlg.destroy()
-            self._log_output("Shutting down fleet...")
-            _shutdown_gui()
-            # Stop fleet processes natively via psutil
-            try:
-                _kill_fleet_processes()
-                time.sleep(1)
-                _kill_ollama()
-            except Exception:
-                pass  # best effort — app is closing
-            self.destroy()
+            self._do_stop_and_close()
 
-        def _just_close():
+        def _keep_running():
+            if remember_var.get():
+                self._save_close_prefs({"action": "keep"})
             dlg.destroy()
-            _shutdown_gui()
-            self.destroy()
+            self._do_just_close()
 
-        ctk.CTkButton(btn_row, text="Stop & Exit", width=110, height=32,
+        def _cancel():
+            dlg.destroy()
+
+        ctk.CTkButton(btn_row, text="Stop & Exit", width=100, height=32,
                       fg_color=ACCENT, hover_color=ACCENT_H,
-                      command=_stop_and_close).pack(side="right")
-        ctk.CTkButton(btn_row, text="Exit (keep running)", width=140, height=32,
+                      command=_stop_exit).pack(side="right")
+        ctk.CTkButton(btn_row, text="Keep Running", width=110, height=32,
                       fg_color=BG3, hover_color=BG,
-                      command=_just_close).pack(side="right", padx=(0, 8))
-        ctk.CTkButton(btn_row, text="Cancel", width=80, height=32,
+                      command=_keep_running).pack(side="right", padx=(0, 8))
+        ctk.CTkButton(btn_row, text="Cancel", width=70, height=32,
                       fg_color=BG3, hover_color=BG,
                       command=dlg.destroy).pack(side="right", padx=(0, 8))
 
@@ -981,12 +1093,17 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
         agents = ["supervisor", "hw_supervisor", "researcher", "coder",
                   "security", "sales", "analyst", "archivist", "onboarding",
                   "implementation", "planner", "legal", "account_manager"]
+        # Display-friendly names (hw_supervisor → Dr. Ders)
+        _LOG_DISPLAY = {"hw_supervisor": "Dr. Ders"}
+        _LOG_REVERSE = {"Dr. Ders": "hw_supervisor"}
+        display_agents = [_LOG_DISPLAY.get(a, a) for a in agents]
         if DEV_MODE:
             agents.insert(0, "all")
         default_log = "all" if DEV_MODE else "supervisor"
         self._log_agent_var = ctk.StringVar(value=default_log)
+        self._log_reverse = _LOG_REVERSE  # store for _refresh_log lookups
         menu = ctk.CTkOptionMenu(
-            sb, values=agents, variable=self._log_agent_var,
+            sb, values=display_agents, variable=self._log_agent_var,
             font=FONT_SM, fg_color=BG3, button_color=ACCENT,
             button_hover_color=ACCENT_H, height=28, command=self._switch_log,
         )
@@ -1086,6 +1203,7 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
         left.grid(row=0, column=0, sticky="nsew", padx=(0, 4))
         left.grid_columnconfigure(0, weight=1)
         left.grid_rowconfigure(1, weight=1)
+        left.grid_rowconfigure(2, weight=0)
 
         # Ollama status bar
         ollama_frame = ctk.CTkFrame(left, fg_color=BG2, height=28, corner_radius=6)
@@ -1126,11 +1244,41 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
         self._sup_status_lbl = ctk.CTkLabel(ag_hdr, text="Task Sup: —", font=("Consolas", 9, "bold"), text_color=DIM)
         self._sup_status_lbl.grid(row=0, column=1, padx=8, pady=(4, 2), sticky="e")
 
-        self._hw_sup_status_lbl = ctk.CTkLabel(ag_hdr, text="HW Sup: —", font=("Consolas", 9, "bold"), text_color=DIM)
+        self._hw_sup_status_lbl = ctk.CTkLabel(ag_hdr, text="Dr. Ders: —", font=("Consolas", 9, "bold"), text_color=DIM)
         self._hw_sup_status_lbl.grid(row=0, column=2, padx=8, pady=(4, 2), sticky="e")
 
         self._agents_frame_inner = ctk.CTkFrame(agents_frame, fg_color=BG2)
         self._agents_frame_inner.grid(row=1, column=0, sticky="nsew", padx=4, pady=(0, 4))
+
+        # Model Performance panel (below agents)
+        self._build_model_perf_panel(left)
+
+        # ── Actions panel (HITL + advisories) ────────────────────────────────
+        actions_frame = ctk.CTkFrame(left, fg_color=BG2, corner_radius=6)
+        actions_frame.grid(row=3, column=0, sticky="sew", pady=(4, 0))
+        actions_frame.grid_columnconfigure(0, weight=1)
+        actions_frame.grid_rowconfigure(1, weight=1)
+
+        act_hdr = ctk.CTkFrame(actions_frame, fg_color="transparent")
+        act_hdr.grid(row=0, column=0, sticky="ew")
+        act_hdr.grid_columnconfigure(1, weight=1)
+        ctk.CTkLabel(act_hdr, text="ACTIONS",
+                     font=("Segoe UI", 9, "bold"), text_color=GOLD
+                     ).grid(row=0, column=0, padx=8, pady=(4, 2), sticky="w")
+        self._actions_count_lbl = ctk.CTkLabel(
+            act_hdr, text="", font=("Consolas", 9), text_color=DIM)
+        self._actions_count_lbl.grid(row=0, column=1, padx=8, pady=(4, 2), sticky="e")
+
+        self._actions_scroll = ctk.CTkScrollableFrame(
+            actions_frame, fg_color=BG2, corner_radius=0, height=180)
+        self._actions_scroll.grid(row=1, column=0, sticky="nsew", padx=4, pady=(0, 4))
+        self._actions_scroll.grid_columnconfigure(0, weight=1)
+
+        self._action_cards = []
+        self._actions_empty_lbl = ctk.CTkLabel(
+            self._actions_scroll, text="No pending actions",
+            font=FONT_SM, text_color=DIM)
+        self._actions_empty_lbl.pack(pady=12)
 
         # ── Right column: Log + Task Output ──────────────────────────────────
         right = ctk.CTkFrame(parent, fg_color=BG, corner_radius=0)
@@ -1194,7 +1342,7 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
         # ── Task counter cards row ────────────────────────────────────────────
         counter_frame = ctk.CTkFrame(parent, fg_color=BG, corner_radius=0)
         counter_frame.grid(row=1, column=0, sticky="ew", padx=8, pady=(4, 4))
-        counter_frame.grid_columnconfigure((0, 1, 2, 3, 4), weight=1)
+        counter_frame.grid_columnconfigure((0, 1, 2, 3, 4, 5, 6), weight=1)
 
         counters = [
             ("TOTAL", "#4fc3f7", "total"),
@@ -1202,6 +1350,8 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
             ("BUSY",  "#ff9800", "busy"),
             ("PENDING", "#ffd54f", "pending"),
             ("DONE",  DIM, "done"),
+            ("WAITING", ORANGE, "waiting"),
+            ("MODELS", "#00bcd4", "models"),
         ]
         self._task_counters = {}
         for i, (label, color, key) in enumerate(counters):
@@ -1240,8 +1390,13 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
             seen = {a["name"] for a in agents}
             all_agents = list(agents) + [a for a in stored if a["name"] not in seen]
 
-            # Query fleet.db for per-agent task counts
+            # Query fleet.db for per-agent task counts + enhanced data
             agent_task_counts = {}
+            agent_tok_speed = {}     # name -> avg tok/s (float or None)
+            agent_last_result = {}   # name -> truncated last result string
+            agent_waiting = set()    # names with WAITING_HUMAN tasks
+            n_waiting_human = 0      # total WAITING_HUMAN count
+            n_unique_models = 0      # unique loaded Ollama models
             try:
                 db_path = FLEET_DIR / "fleet.db"
                 if db_path.exists():
@@ -1252,7 +1407,72 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
                     ).fetchall():
                         if row["assigned_to"]:
                             agent_task_counts[row["assigned_to"]] = row["n"]
+
+                    # Token speed per agent (last hour)
+                    try:
+                        for row in conn.execute(
+                            "SELECT agent, AVG(tokens_per_sec) as avg_tps FROM usage "
+                            "WHERE tokens_per_sec > 0 AND created_at > datetime('now', '-1 hour') "
+                            "GROUP BY agent"
+                        ).fetchall():
+                            if row["agent"]:
+                                agent_tok_speed[row["agent"]] = round(row["avg_tps"], 1)
+                    except Exception:
+                        pass  # tokens_per_sec column may not exist yet
+
+                    # Last completed task result per agent
+                    try:
+                        for ag_entry in all_agents:
+                            aname = ag_entry.get("name", "")
+                            if not aname:
+                                continue
+                            row = conn.execute(
+                                "SELECT result_json FROM tasks WHERE assigned_to=? AND status='DONE' "
+                                "ORDER BY id DESC LIMIT 1", (aname,)
+                            ).fetchone()
+                            if row and row["result_json"]:
+                                txt = str(row["result_json"]).strip()
+                                if len(txt) > 40:
+                                    txt = txt[:37] + "..."
+                                agent_last_result[aname] = txt
+                    except Exception:
+                        pass
+
+                    # WAITING_HUMAN tasks
+                    try:
+                        wh_rows = conn.execute(
+                            "SELECT assigned_to, COUNT(*) as n FROM tasks WHERE status='WAITING_HUMAN' GROUP BY assigned_to"
+                        ).fetchall()
+                        for row in wh_rows:
+                            n_waiting_human += row["n"]
+                            if row["assigned_to"]:
+                                agent_waiting.add(row["assigned_to"])
+                    except Exception:
+                        pass
+
                     conn.close()
+            except Exception:
+                pass
+
+            # Count unique loaded Ollama models from hw_state.json
+            try:
+                hw_state_path = FLEET_DIR / "hw_state.json"
+                if hw_state_path.exists():
+                    import json as _json
+                    hw = _json.loads(hw_state_path.read_text(encoding="utf-8", errors="replace"))
+                    loaded = hw.get("models_loaded", [])
+                    if isinstance(loaded, list):
+                        n_unique_models = len(set(loaded))
+                    elif isinstance(loaded, int):
+                        n_unique_models = loaded
+            except Exception:
+                pass
+
+            # Read default model from fleet.toml
+            default_model = "qwen3:8b"
+            try:
+                cfg = load_model_cfg()
+                default_model = cfg.get("local", "qwen3:8b")
             except Exception:
                 pass
 
@@ -1268,6 +1488,8 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
                 self._task_counters["busy"].configure(text=str(n_busy))
                 self._task_counters["pending"].configure(text=str(n_pending))
                 self._task_counters["done"].configure(text=str(n_done))
+                self._task_counters["waiting"].configure(text=str(n_waiting_human))
+                self._task_counters["models"].configure(text=str(n_unique_models))
 
             # Update agent cards grid
             active_names = set()
@@ -1295,6 +1517,13 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
                 count = agent_task_counts.get(name, 0)
                 count_text = f"{count} task{'s' if count != 1 else ''}"
 
+                # Enhanced data
+                model_text = default_model
+                tps = agent_tok_speed.get(name)
+                tps_text = f"{tps} tok/s" if tps is not None else "\u2014 tok/s"
+                last_result = agent_last_result.get(name, "")
+                is_waiting = name in agent_waiting
+
                 if name in self._agent_cards:
                     # Update existing card
                     c = self._agent_cards[name]
@@ -1306,13 +1535,24 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
                     c["spark_lbl"].configure(text=spark, text_color=spark_color)
                     c["count_lbl"].configure(text=count_text)
                     c["edit_btn"].configure(command=lambda a=ag: self._agents_edit_dialog(a))
+                    c["model_lbl"].configure(text=model_text)
+                    c["tps_lbl"].configure(text=tps_text)
+                    c["last_result_lbl"].configure(text=last_result)
+                    # WAITING_HUMAN indicator
+                    if is_waiting:
+                        c["waiting_badge"].configure(text="Needs Input")
+                        c["card"].configure(border_color=ORANGE, border_width=2)
+                    else:
+                        c["waiting_badge"].configure(text="")
+                        c["card"].configure(border_color=BG2, border_width=0)
                 else:
                     # Create new agent card
                     self._agent_cards[name] = self._create_agent_card(
                         self._agent_grid_frame, row_idx, col_idx,
                         display_name, status_text, status_color, dot_color,
                         name_color, task_display, spark, spark_color,
-                        count_text, ag)
+                        count_text, ag, model_text, tps_text, last_result,
+                        is_waiting)
 
             # Hide stale cards
             for key, c in self._agent_cards.items():
@@ -1323,9 +1563,14 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
 
     def _create_agent_card(self, parent, row, col, display_name,
                            status_text, status_color, dot_color, name_color,
-                           task_display, spark, spark_color, count_text, agent_data):
+                           task_display, spark, spark_color, count_text, agent_data,
+                           model_text="", tps_text="\u2014 tok/s", last_result="",
+                           is_waiting=False):
         """Create a single agent dashboard card and return widget dict."""
-        card = ctk.CTkFrame(parent, fg_color=BG2, corner_radius=8, height=100)
+        border_w = 2 if is_waiting else 0
+        border_c = ORANGE if is_waiting else BG2
+        card = ctk.CTkFrame(parent, fg_color=BG2, corner_radius=8, height=130,
+                            border_width=border_w, border_color=border_c)
         card.grid(row=row, column=col, padx=4, pady=4, sticky="nsew")
         card.grid_propagate(False)
 
@@ -1344,33 +1589,56 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
                                   font=("Consolas", 9), text_color=status_color)
         status_lbl.place(relx=1.0, x=-8, y=8, anchor="ne")
 
+        # Model label (below status dot, muted)
+        model_lbl = ctk.CTkLabel(card, text=model_text,
+                                 font=("Consolas", 8), text_color=DIM)
+        model_lbl.place(x=26, y=22)
+
+        # Token speed (next to model)
+        tps_lbl = ctk.CTkLabel(card, text=tps_text,
+                               font=("Consolas", 8), text_color=DIM)
+        tps_lbl.place(relx=1.0, x=-8, y=24, anchor="ne")
+
         # Current task
         task_lbl = ctk.CTkLabel(card, text=task_display,
                                 font=("Consolas", 9), text_color=GOLD)
-        task_lbl.place(x=26, y=30)
+        task_lbl.place(x=26, y=38)
+
+        # Last result preview (below task)
+        last_result_lbl = ctk.CTkLabel(card, text=last_result,
+                                       font=("Consolas", 8), text_color=DIM)
+        last_result_lbl.place(x=26, y=54)
 
         # Activity sparkline
         spark_lbl = ctk.CTkLabel(card, text=spark,
                                  font=("Consolas", 10), text_color=spark_color)
-        spark_lbl.place(x=8, y=54)
+        spark_lbl.place(x=8, y=72)
+
+        # WAITING_HUMAN badge (bottom-left area, orange)
+        waiting_text = "Needs Input" if is_waiting else ""
+        waiting_badge = ctk.CTkLabel(card, text=waiting_text,
+                                     font=("Consolas", 8, "bold"), text_color=ORANGE)
+        waiting_badge.place(x=8, y=92)
 
         # Task count (bottom-right)
         count_lbl = ctk.CTkLabel(card, text=count_text,
                                  font=("Consolas", 8), text_color=DIM)
-        count_lbl.place(relx=1.0, x=-8, y=76, anchor="ne")
+        count_lbl.place(relx=1.0, x=-8, y=106, anchor="ne")
 
-        # Edit button (bottom-left)
+        # Edit button
         edit_btn = ctk.CTkButton(
             card, text="\u270e", font=FONT_SM, width=24, height=18,
             fg_color=BG3, hover_color=BG,
             command=lambda a=agent_data: self._agents_edit_dialog(a))
-        edit_btn.place(relx=1.0, x=-8, y=54, anchor="ne")
+        edit_btn.place(relx=1.0, x=-8, y=72, anchor="ne")
 
         return {
             "card": card, "dot": dot, "name_lbl": name_lbl,
             "status_lbl": status_lbl, "task_lbl": task_lbl,
             "spark_lbl": spark_lbl, "count_lbl": count_lbl,
-            "edit_btn": edit_btn,
+            "edit_btn": edit_btn, "model_lbl": model_lbl,
+            "tps_lbl": tps_lbl, "last_result_lbl": last_result_lbl,
+            "waiting_badge": waiting_badge,
         }
 
     def _agents_add_dialog(self):
@@ -1734,11 +2002,140 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
         new_h = 20 + line_count * 18
         self._task_entry.configure(height=new_h)
 
+    # ── Model Performance Panel ─────────────────────────────────────────────
+    def _build_model_perf_panel(self, parent):
+        """Build the MODEL PERFORMANCE panel showing tok/s per model."""
+        frame = ctk.CTkFrame(parent, fg_color=BG2, corner_radius=6)
+        frame.grid(row=2, column=0, sticky="ew", pady=(4, 0))
+        frame.grid_columnconfigure(0, weight=1)
+        self._model_perf_frame = frame
+
+        # Header
+        ctk.CTkLabel(frame, text="\u26a1 MODEL PERFORMANCE",
+                     font=("Segoe UI", 9, "bold"), text_color=GOLD,
+                     anchor="w").grid(row=0, column=0, padx=8, pady=(4, 2),
+                                      sticky="w", columnspan=4)
+
+        # Column headers
+        hdr_frame = ctk.CTkFrame(frame, fg_color="transparent")
+        hdr_frame.grid(row=1, column=0, sticky="ew", padx=4)
+        for col_idx, (hdr_text, width, anchor) in enumerate([
+            ("Model", 100, "w"), ("tok/s", 55, "e"),
+            ("Calls", 45, "e"), ("Avg ms", 55, "e"),
+        ]):
+            ctk.CTkLabel(hdr_frame, text=hdr_text, font=("Consolas", 8),
+                         text_color=DIM, anchor=anchor, width=width
+                         ).grid(row=0, column=col_idx, padx=2, pady=(0, 1))
+
+        # Data area — holds model rows
+        self._model_perf_data_frame = ctk.CTkFrame(frame, fg_color="transparent")
+        self._model_perf_data_frame.grid(row=2, column=0, sticky="ew", padx=4,
+                                          pady=(0, 4))
+
+        # Initial "No data yet" label
+        self._model_perf_empty = ctk.CTkLabel(
+            self._model_perf_data_frame, text="No data yet",
+            font=("Consolas", 9), text_color=DIM)
+        self._model_perf_empty.grid(row=0, column=0, padx=8, pady=2)
+
+    def _refresh_model_perf(self):
+        """Query fleet.db for per-model tok/s metrics and update the panel."""
+        try:
+            db_path = FLEET_DIR / "fleet.db"
+            if not db_path.exists():
+                return
+            conn = sqlite3.connect(str(db_path), timeout=2)
+            conn.row_factory = sqlite3.Row
+            try:
+                rows = conn.execute("""
+                    SELECT model,
+                           ROUND(AVG(tokens_per_sec), 1) as avg_tps,
+                           COUNT(*) as calls,
+                           ROUND(AVG(eval_duration_ms), 0) as avg_ms
+                    FROM usage
+                    WHERE created_at > datetime('now', '-1 hour')
+                      AND tokens_per_sec > 0
+                    GROUP BY model
+                    ORDER BY avg_tps DESC
+                """).fetchall()
+            except sqlite3.OperationalError:
+                # tokens_per_sec / eval_duration_ms columns don't exist yet
+                conn.close()
+                return
+            conn.close()
+        except Exception:
+            return
+
+        # Update UI on main thread
+        if not rows:
+            # Show empty state
+            for widgets in self._model_perf_labels.values():
+                for w in widgets.values():
+                    w.grid_remove()
+            self._model_perf_empty.grid(row=0, column=0, padx=8, pady=2)
+            return
+
+        self._model_perf_empty.grid_remove()
+
+        # Determine best tok/s for highlighting
+        best_tps = max(r["avg_tps"] for r in rows) if rows else 0
+
+        current_models = set()
+        for i, r in enumerate(rows[:5]):  # max 5 rows
+            model = r["model"]
+            current_models.add(model)
+            tps_val = r["avg_tps"] or 0
+            calls_val = r["calls"] or 0
+            avg_ms_val = int(r["avg_ms"] or 0)
+            tps_color = GREEN if tps_val == best_tps else TEXT
+
+            if model in self._model_perf_labels:
+                # Update existing labels
+                lbl = self._model_perf_labels[model]
+                lbl["name"].configure(text=model)
+                lbl["name"].grid(row=i, column=0, padx=2, pady=1)
+                lbl["tps"].configure(text=f"{tps_val:.1f}", text_color=tps_color)
+                lbl["tps"].grid(row=i, column=1, padx=2, pady=1)
+                lbl["calls"].configure(text=str(calls_val))
+                lbl["calls"].grid(row=i, column=2, padx=2, pady=1)
+                lbl["avg_ms"].configure(text=str(avg_ms_val))
+                lbl["avg_ms"].grid(row=i, column=3, padx=2, pady=1)
+            else:
+                # Create new row labels
+                parent = self._model_perf_data_frame
+                name_lbl = ctk.CTkLabel(parent, text=model, font=("Consolas", 9),
+                                         text_color=TEXT, anchor="w", width=100)
+                name_lbl.grid(row=i, column=0, padx=2, pady=1)
+                tps_lbl = ctk.CTkLabel(parent, text=f"{tps_val:.1f}",
+                                        font=("Consolas", 9, "bold"),
+                                        text_color=tps_color, anchor="e", width=55)
+                tps_lbl.grid(row=i, column=1, padx=2, pady=1)
+                calls_lbl = ctk.CTkLabel(parent, text=str(calls_val),
+                                          font=("Consolas", 9),
+                                          text_color=TEXT, anchor="e", width=45)
+                calls_lbl.grid(row=i, column=2, padx=2, pady=1)
+                ms_lbl = ctk.CTkLabel(parent, text=str(avg_ms_val),
+                                       font=("Consolas", 9),
+                                       text_color=TEXT, anchor="e", width=55)
+                ms_lbl.grid(row=i, column=3, padx=2, pady=1)
+                self._model_perf_labels[model] = {
+                    "name": name_lbl, "tps": tps_lbl,
+                    "calls": calls_lbl, "avg_ms": ms_lbl,
+                }
+
+        # Hide labels for models no longer in results
+        for model, lbl in self._model_perf_labels.items():
+            if model not in current_models:
+                for w in lbl.values():
+                    w.grid_remove()
+
     # ── Refresh ───────────────────────────────────────────────────────────────
     def _refresh_status(self):
         status = parse_status()
         self._update_pills(status)
         self._update_agents_table(status)
+        self._refresh_model_perf()
+        self._refresh_action_items()
         self._refresh_log()
         self._update_action_badge()
 
@@ -1847,15 +2244,15 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
         else:
             self._sup_status_lbl.configure(text="Task Sup: OFFLINE", text_color=RED)
 
-        hw_status = status.get("hw_supervisor_status", "OFFLINE")
+        hw_status = status.get("dr_ders_status", "OFFLINE")
         if hw_status == "ONLINE":
-            self._hw_sup_status_lbl.configure(text="HW Sup: ONLINE", text_color=GREEN)
+            self._hw_sup_status_lbl.configure(text="Dr. Ders: ONLINE", text_color=GREEN)
         elif hw_status == "TRANSIT":
-            self._hw_sup_status_lbl.configure(text="HW Sup: SCALING", text_color=ORANGE)
+            self._hw_sup_status_lbl.configure(text="Dr. Ders: SCALING", text_color=ORANGE)
         elif hw_status == "HUNG":
-            self._hw_sup_status_lbl.configure(text="HW Sup: HUNG", text_color=ORANGE)
+            self._hw_sup_status_lbl.configure(text="Dr. Ders: HUNG", text_color=ORANGE)
         else:
-            self._hw_sup_status_lbl.configure(text="HW Sup: OFFLINE", text_color=RED)
+            self._hw_sup_status_lbl.configure(text="Dr. Ders: OFFLINE", text_color=RED)
 
         # Record activity for sparklines
         self._record_agent_activity(agents)
@@ -1957,14 +2354,216 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
             self._task_counters["done"].configure(text=str(t.get("Done", 0)))
 
     def _refresh_log(self):
-        agent = self._log_agent_var.get()
+        display_agent = self._log_agent_var.get()
+        # Reverse-map display name to log filename (e.g. "Dr. Ders" → "hw_supervisor")
+        agent = getattr(self, '_log_reverse', {}).get(display_agent, display_agent)
         tail = read_log_tail(agent, 80)
         self._log_text.configure(state="normal")
         self._log_text.delete("1.0", "end")
         self._log_text.insert("end", tail)
         self._log_text.see("end")
         self._log_text.configure(state="disabled")
-        self._log_label.configure(text=f"LOG — {agent}")
+        self._log_label.configure(text=f"LOG — {display_agent}")
+
+    # ── HITL Action Panel ──────────────────────────────────────────────────
+    def _refresh_action_items(self):
+        """Fetch HITL tasks and advisories in background, update action cards."""
+        def _fetch():
+            waiting, advisories = [], []
+            try:
+                db_path = FLEET_DIR / "fleet.db"
+                if db_path.exists():
+                    conn = sqlite3.connect(str(db_path), timeout=2)
+                    try:
+                        conn.row_factory = sqlite3.Row
+                        rows = conn.execute("""
+                            SELECT t.id, t.type, t.assigned_to, t.created_at
+                            FROM tasks t WHERE t.status = 'WAITING_HUMAN'
+                            ORDER BY t.created_at ASC
+                        """).fetchall()
+                        for r in rows:
+                            item = dict(r)
+                            msg = conn.execute("""
+                                SELECT body_json FROM messages
+                                WHERE to_agent = 'operator'
+                                AND body_json LIKE '%human_input_request%'
+                                AND body_json LIKE ?
+                                ORDER BY id DESC LIMIT 1
+                            """, (f'%"task_id": {r["id"]}%',)).fetchone()
+                            item["question"] = ""
+                            if msg:
+                                try:
+                                    body = json.loads(msg["body_json"])
+                                    item["question"] = body.get("question", "")
+                                except Exception:
+                                    pass
+                            waiting.append(item)
+                    finally:
+                        conn.close()
+            except Exception:
+                pass
+            try:
+                if PENDING_DIR.exists():
+                    for f in sorted(PENDING_DIR.glob("advisory_*.md"))[:10]:
+                        try:
+                            text = f.read_text(encoding="utf-8", errors="replace")
+                            title = text.split("\n")[0].strip("# ").strip() if text else f.name
+                            advisories.append({
+                                "file": f.name, "title": title[:80], "path": str(f)})
+                        except Exception:
+                            pass
+            except Exception:
+                pass
+            return waiting, advisories
+
+        def _render(data):
+            if not hasattr(self, '_action_cards'):
+                return
+            waiting, advisories = data
+            for w in self._action_cards:
+                try:
+                    w.destroy()
+                except Exception:
+                    pass
+            self._action_cards.clear()
+
+            total = len(waiting) + len(advisories)
+            self._actions_count_lbl.configure(
+                text=f"{total} pending" if total else "")
+
+            if not total:
+                self._actions_empty_lbl.pack(pady=12)
+                return
+            self._actions_empty_lbl.pack_forget()
+
+            for item in waiting:
+                card = ctk.CTkFrame(self._actions_scroll, fg_color=BG3, corner_radius=6)
+                card.pack(fill="x", padx=2, pady=2)
+                self._action_cards.append(card)
+                agent_name = item.get("assigned_to", "?")
+                ctk.CTkLabel(card, text=f"\U0001f916 {agent_name} — Task #{item['id']}",
+                             font=("Segoe UI", 10, "bold"), text_color=GOLD
+                             ).pack(fill="x", padx=6, pady=(4, 0), anchor="w")
+                question = item.get("question", "")[:120]
+                ctk.CTkLabel(card, text=question, font=FONT_SM,
+                             text_color=TEXT, wraplength=280, anchor="w", justify="left"
+                             ).pack(fill="x", padx=6, pady=(2, 0))
+                tid = item["id"]
+                q_full = item.get("question", "")
+                ctk.CTkButton(
+                    card, text="Respond", width=70, height=22, font=FONT_SM,
+                    fg_color=ACCENT, hover_color=ACCENT_H,
+                    command=lambda t=tid, q=q_full: self._respond_to_agent(t, q),
+                ).pack(anchor="e", padx=6, pady=(2, 4))
+
+            for adv in advisories:
+                card = ctk.CTkFrame(self._actions_scroll, fg_color="#2a1a1a", corner_radius=6)
+                card.pack(fill="x", padx=2, pady=2)
+                self._action_cards.append(card)
+                top = ctk.CTkFrame(card, fg_color="transparent")
+                top.pack(fill="x", padx=6, pady=(4, 4))
+                top.grid_columnconfigure(1, weight=1)
+                ctk.CTkLabel(top, text=f"\U0001f512 {adv['title'][:50]}",
+                             font=("Segoe UI", 10, "bold"), text_color=ORANGE
+                             ).grid(row=0, column=0, sticky="w")
+                btn_frame = ctk.CTkFrame(top, fg_color="transparent")
+                btn_frame.grid(row=0, column=2, sticky="e")
+                ctk.CTkButton(
+                    btn_frame, text="View", width=50, height=22, font=FONT_SM,
+                    fg_color=BG3, hover_color=BG,
+                    command=lambda p=adv["path"]: self._view_advisory(p),
+                ).pack(side="left", padx=(0, 3))
+                ctk.CTkButton(
+                    btn_frame, text="Dismiss", width=60, height=22, font=FONT_SM,
+                    fg_color=BG3, hover_color=BG,
+                    command=lambda p=adv["path"]: self._dismiss_advisory_inline(p),
+                ).pack(side="left")
+
+        def _bg():
+            data = _fetch()
+            self.after(0, lambda: _render(data))
+        threading.Thread(target=_bg, daemon=True).start()
+
+    def _respond_to_agent(self, task_id, question):
+        """Open dialog to respond to an agent's HITL request."""
+        win = ctk.CTkToplevel(self)
+        win.title(f"Respond to Task #{task_id}")
+        win.geometry("480x260")
+        win.configure(fg_color=BG)
+        win.grab_set()
+        ctk.CTkLabel(win, text=f"Agent question (Task #{task_id}):",
+                     font=("Segoe UI", 10, "bold"), text_color=GOLD,
+                     anchor="w").pack(fill="x", padx=14, pady=(12, 4))
+        q_text = ctk.CTkTextbox(win, font=FONT_SM, fg_color=BG2,
+                                text_color=TEXT, height=80, wrap="word", corner_radius=4)
+        q_text.pack(fill="x", padx=14)
+        q_text.insert("1.0", question)
+        q_text.configure(state="disabled")
+        ctk.CTkLabel(win, text="Your response:",
+                     font=("Segoe UI", 10, "bold"), text_color=TEXT,
+                     anchor="w").pack(fill="x", padx=14, pady=(8, 4))
+        resp_entry = ctk.CTkEntry(win, font=FONT_SM, fg_color=BG3,
+                                  border_color=ACCENT, text_color=TEXT,
+                                  placeholder_text="Type your response...")
+        resp_entry.pack(fill="x", padx=14)
+        resp_entry.focus_set()
+
+        def _submit():
+            response = resp_entry.get().strip()
+            if not response:
+                return
+            win.destroy()
+            self._send_human_response(task_id, response)
+            self._refresh_action_items()
+
+        ctk.CTkButton(win, text="Submit", font=FONT_SM, height=30,
+                      fg_color=ACCENT, hover_color=ACCENT_H,
+                      command=_submit).pack(padx=14, pady=(10, 14), fill="x")
+        resp_entry.bind("<Return>", lambda e: _submit())
+
+    def _view_advisory(self, path):
+        """Open window showing advisory content."""
+        adv_path = Path(path)
+        if not adv_path.exists():
+            return
+        content = adv_path.read_text(encoding="utf-8", errors="replace")
+        win = ctk.CTkToplevel(self)
+        win.title(f"Advisory: {adv_path.name}")
+        win.geometry("580x420")
+        win.configure(fg_color=BG)
+        win.grab_set()
+        ctk.CTkLabel(win, text=adv_path.name,
+                     font=("Segoe UI", 11, "bold"), text_color=ORANGE,
+                     anchor="w").pack(fill="x", padx=14, pady=(12, 4))
+        text_box = ctk.CTkTextbox(win, font=("Consolas", 10), fg_color=BG2,
+                                  text_color=TEXT, wrap="word", corner_radius=4)
+        text_box.pack(fill="both", expand=True, padx=14, pady=(0, 8))
+        text_box.insert("1.0", content)
+        text_box.configure(state="disabled")
+        btn_frame = ctk.CTkFrame(win, fg_color="transparent")
+        btn_frame.pack(fill="x", padx=14, pady=(0, 14))
+        ctk.CTkButton(btn_frame, text="Dismiss", width=100, height=30, font=FONT_SM,
+                      fg_color=BG3, hover_color=BG,
+                      command=lambda: (win.destroy(), self._dismiss_advisory_inline(path)),
+                      ).pack(side="right", padx=(4, 0))
+        ctk.CTkButton(btn_frame, text="Close", width=80, height=30, font=FONT_SM,
+                      fg_color=BG3, hover_color=BG, command=win.destroy).pack(side="right")
+
+    def _dismiss_advisory_inline(self, path):
+        """Move advisory to archived/ and refresh."""
+        try:
+            adv_path = Path(path)
+            if adv_path.exists():
+                archived_dir = adv_path.parent / "archived"
+                archived_dir.mkdir(exist_ok=True)
+                adv_path.rename(archived_dir / adv_path.name)
+                json_path = adv_path.with_suffix(".json")
+                if json_path.exists():
+                    json_path.rename(archived_dir / json_path.name)
+                self._refresh_action_items()
+                self._update_action_badge()
+        except Exception:
+            pass
 
     def _update_action_badge(self):
         adv_count = count_pending_advisories()
@@ -2059,6 +2658,7 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
                     try:
                         self.after(0, self._refresh_log)
                         self.after(0, self._update_action_badge)
+                        self.after(0, self._refresh_model_perf)
                     except Exception:
                         pass
                 threading.Thread(target=_bg_io_sse, daemon=True).start()
@@ -2078,6 +2678,7 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
                 status = parse_status()
                 self._update_pills(status)
                 self._update_agents_table(status)
+                self._refresh_model_perf()
                 # Refresh Agents tab every 8s (every other cycle) — uses cache, no flicker
                 self._refresh_counter = getattr(self, '_refresh_counter', 0) + 1
                 if self._refresh_counter % 2 == 0:

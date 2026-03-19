@@ -630,6 +630,54 @@ def cmd_marathon_checkpoint(args):
     print()
 
 
+def cmd_hitl(args):
+    """DO NOT SCRUB: List or respond to Human-in-the-Loop requests."""
+    db.init_db()
+    if args.hitl_action == "respond":
+        if not args.task_id or not args.response:
+            print("Usage: lead_client.py hitl respond <task_id> <response>")
+            return
+        db.respond_to_agent(args.task_id, args.response)
+        print(f"Response sent to task {args.task_id}")
+    else:
+        # Default: list waiting HITL requests
+        items = db.get_waiting_human_details()
+        if not items:
+            print("No HITL requests waiting.")
+            return
+        print(f"\n{'ID':<8} {'Agent':<15} {'Type':<16} {'Age':>6}  Question")
+        print("-" * 75)
+        for h in items:
+            age = f"{h['age_minutes']}m"
+            q = (h["question"][:50] + "...") if len(h["question"]) > 50 else h["question"]
+            print(f"{h['task_id']:<8} {h['agent']:<15} {h['task_type']:<16} {age:>6}  {q}")
+
+
+def cmd_advisories(args):
+    """DO NOT SCRUB: List or dismiss pending security advisories."""
+    db.init_db()
+    if args.adv_action == "dismiss":
+        if not args.advisory_id:
+            print("Usage: lead_client.py advisories dismiss <id>")
+            return
+        result = db.dismiss_advisory(args.advisory_id)
+        if result.get("error"):
+            print(f"Error: {result['error']}")
+        else:
+            print(f"Archived {result['moved']} file(s)")
+    else:
+        # Default: list pending advisories
+        items = db.get_pending_advisories()
+        if not items:
+            print("No pending advisories.")
+            return
+        print(f"\n{'ID':<12} {'Severity':<10} {'Created':<12} Title")
+        print("-" * 70)
+        for a in items:
+            title = (a["title"][:44] + "...") if len(a["title"]) > 44 else a["title"]
+            print(f"{a['id']:<12} {a['severity']:<10} {a['created']:<12} {title}")
+
+
 def main():
     parser = argparse.ArgumentParser(description="BigEd Fleet CLI")
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -765,6 +813,22 @@ def main():
     p_erase.add_argument("identifier", help="Agent name or submitter identifier to erase")
     p_erase.add_argument("--confirm", action="store_true", help="Confirm permanent deletion")
 
+    # HITL (Human-in-the-Loop)
+    p_hitl = subparsers.add_parser("hitl", help="List or respond to HITL requests")
+    p_hitl.add_argument("hitl_action", nargs="?", default="list",
+                        choices=["list", "respond"], help="Action (default: list)")
+    p_hitl.add_argument("task_id", nargs="?", type=int, default=None,
+                        help="Task ID (for respond)")
+    p_hitl.add_argument("response", nargs="?", default=None,
+                        help="Response text (for respond)")
+
+    # Advisories
+    p_adv = subparsers.add_parser("advisories", help="List or dismiss security advisories")
+    p_adv.add_argument("adv_action", nargs="?", default="list",
+                       choices=["list", "dismiss"], help="Action (default: list)")
+    p_adv.add_argument("advisory_id", nargs="?", default=None,
+                       help="Advisory ID (for dismiss)")
+
     args = parser.parse_args()
 
     if args.command == "status":
@@ -827,6 +891,10 @@ def main():
         cmd_workflow_run(args)
     elif args.command == "gdpr-erase":
         cmd_gdpr_erase(args)
+    elif args.command == "hitl":
+        cmd_hitl(args)
+    elif args.command == "advisories":
+        cmd_advisories(args)
 
 
 if __name__ == "__main__":
