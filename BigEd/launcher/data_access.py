@@ -234,7 +234,7 @@ class FleetDB:
     """
 
     @staticmethod
-    def _connect(db_path: str | Path, timeout: int = 2):
+    def _connect(db_path: str | Path, timeout: int = 10):
         """Open a connection to fleet.db with Row factory."""
         conn = sqlite3.connect(str(db_path), timeout=timeout)
         conn.row_factory = sqlite3.Row

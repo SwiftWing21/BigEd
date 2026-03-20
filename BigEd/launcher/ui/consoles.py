@@ -643,20 +643,23 @@ Keep responses concise and action-oriented. Lead with the most important insight
                 if out and "Status:" in out:
                     if "Status: DONE" in out:
                         brief = out[:300]
-                        self.after(0, lambda b=brief: self._append(
-                            "system", f"Task {task_id} ({skill}) completed:\n{b}"))
+                        if self.winfo_exists():
+                            self.after(0, lambda b=brief: self._append(
+                                "system", f"Task {task_id} ({skill}) completed:\n{b}"))
                         return
                     elif "Status: FAILED" in out:
                         brief = out[:200]
-                        self.after(0, lambda b=brief: self._append(
-                            "system", f"Task {task_id} ({skill}) failed: {b}"))
+                        if self.winfo_exists():
+                            self.after(0, lambda b=brief: self._append(
+                                "system", f"Task {task_id} ({skill}) failed: {b}"))
                         return
             except Exception:
                 pass
         # Timeout — task still running, notify user
-        self.after(0, lambda: self._append(
-            "system", f"Task {task_id} ({skill}) — still running after {timeout}s. "
-            "Check fleet status for updates."))
+        if self.winfo_exists():
+            self.after(0, lambda: self._append(
+                "system", f"Task {task_id} ({skill}) — still running after {timeout}s. "
+                "Check fleet status for updates."))
 
     def _append(self, role: str, text: str):
         # "biged" is a synthetic role for local persona responses — always "BigEd"

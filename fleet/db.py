@@ -115,7 +115,9 @@ def get_conn(db_path=None):
         conn = sqlite3_mod.connect(str(path), check_same_thread=False, timeout=30)
         key = os.environ.get("BIGED_DB_KEY", "")
         if key:
-            conn.execute(f"PRAGMA key = '{key}'")
+            # Escape single quotes to prevent SQL injection
+            safe_key = key.replace("'", "''")
+            conn.execute(f"PRAGMA key = '{safe_key}'")
         conn.row_factory = sqlite3_mod.Row
     except ImportError:
         conn = sqlite3.connect(str(path), check_same_thread=False, timeout=30)
@@ -182,6 +184,13 @@ def init_db():
             conn.execute("ALTER TABLE usage ADD COLUMN tokens_per_sec REAL DEFAULT NULL")
         if "provider" not in usage_cols:
             conn.execute("ALTER TABLE usage ADD COLUMN provider TEXT DEFAULT NULL")
+            conn.execute("UPDATE usage SET provider='claude' WHERE provider IS NULL AND model LIKE 'claude-%'")
+            conn.execute("UPDATE usage SET provider='gemini' WHERE provider IS NULL AND model LIKE 'gemini-%'")
+            conn.execute("UPDATE usage SET provider='local' WHERE provider IS NULL AND model NOT LIKE 'claude-%' AND model NOT LIKE 'gemini-%' AND model IS NOT NULL")
+        # P2-1: Indexes for common query patterns
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_tasks_assigned ON tasks(assigned_to, status)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_tasks_parent ON tasks(parent_id)")
 
 
 def update_intelligence_score(task_id, score):

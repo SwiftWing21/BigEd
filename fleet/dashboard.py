@@ -247,21 +247,16 @@ def _alert_monitor():
 def api_status():
     # Only show agents with a heartbeat in the last 60s (currently running)
     agents = query("""
-        SELECT name, role, status, last_heartbeat, current_task_id
-        FROM agents
-        WHERE last_heartbeat >= datetime('now', '-60 seconds')
+        SELECT a.name, a.role, a.status, a.last_heartbeat, a.current_task_id,
+               t.type as current_task
+        FROM agents a
+        LEFT JOIN tasks t ON a.current_task_id = t.id
+        WHERE a.last_heartbeat >= datetime('now', '-60 seconds')
         ORDER BY
-            CASE WHEN name IN ('dr_ders', 'hw_supervisor') THEN 0 ELSE 1 END,
-            CASE status WHEN 'BUSY' THEN 0 WHEN 'ACTIVE' THEN 1 ELSE 2 END,
-            name
+            CASE WHEN a.name IN ('dr_ders', 'hw_supervisor') THEN 0 ELSE 1 END,
+            CASE a.status WHEN 'BUSY' THEN 0 WHEN 'ACTIVE' THEN 1 ELSE 2 END,
+            a.name
     """)
-    # Enrich with current task type for display name
-    for a in agents:
-        if a.get("current_task_id"):
-            task = query("SELECT type FROM tasks WHERE id=?", (a["current_task_id"],))
-            a["current_task"] = task[0]["type"] if task else None
-        else:
-            a["current_task"] = None
     counts = {}
     for s in ("PENDING", "RUNNING", "DONE", "FAILED"):
         row = query("SELECT COUNT(*) as n FROM tasks WHERE status=?", (s,))
@@ -799,9 +794,12 @@ def api_data_stats():
     stats = {}
 
     # Fleet DB tables
+    ALLOWED_FLEET_TABLES = frozenset({"tasks", "agents", "messages", "locks", "notes", "usage"})
     try:
         conn = get_conn()
         for table in ["tasks", "agents", "messages", "locks", "notes"]:
+            if table not in ALLOWED_FLEET_TABLES:
+                continue
             try:
                 count = conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
                 stats[f"fleet.{table}"] = {"count": count}
@@ -812,12 +810,15 @@ def api_data_stats():
         pass
 
     # Tools DB (launcher data)
+    ALLOWED_TOOLS_TABLES = frozenset({"crm", "accounts", "onboarding", "customers", "agents"})
     tools_db = Path(__file__).parent.parent / "BigEd" / "launcher" / "data" / "tools.db"
     if tools_db.exists():
         try:
             conn = sqlite3.connect(str(tools_db), timeout=5)
             conn.row_factory = sqlite3.Row
             for table in ["crm", "accounts", "onboarding", "customers", "agents"]:
+                if table not in ALLOWED_TOOLS_TABLES:
+                    continue
                 try:
                     count = conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
                     stats[f"tools.{table}"] = {"count": count}

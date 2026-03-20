@@ -22,8 +22,9 @@ def load_custom_fonts():
         for ttf in _FONT_DIR.glob("*.ttf"):
             ctypes.windll.gdi32.AddFontResourceExW(str(ttf), FR_PRIVATE, 0)
         _FONTS_LOADED = True
-    except Exception:
-        pass
+    except Exception as e:
+        import sys
+        print(f"[WARN] Custom font loading failed: {e}", file=sys.stderr)
 
 # Load fonts at import time
 load_custom_fonts()

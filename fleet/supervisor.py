@@ -100,9 +100,11 @@ def _count_pending_tasks() -> int:
         import sqlite3
         db_path = Path(__file__).parent / "fleet.db"
         conn = sqlite3.connect(str(db_path), timeout=5)
-        row = conn.execute("SELECT COUNT(*) FROM tasks WHERE status='PENDING'").fetchone()
-        conn.close()
-        return row[0] if row else 0
+        try:
+            row = conn.execute("SELECT COUNT(*) FROM tasks WHERE status='PENDING'").fetchone()
+            return row[0] if row else 0
+        finally:
+            conn.close()
     except Exception:
         return 0
 
@@ -110,7 +112,7 @@ def _count_pending_tasks() -> int:
 def _get_running_workers() -> set:
     """Get names of currently running worker processes."""
     running = set()
-    for name, proc in worker_procs.items():
+    for name, proc in list(worker_procs.items()):
         if proc and proc.poll() is None:
             running.add(name)
     return running
@@ -122,11 +124,13 @@ def _pending_tasks_by_type() -> dict:
         import sqlite3
         db_path = Path(__file__).parent / "fleet.db"
         conn = sqlite3.connect(str(db_path), timeout=5)
-        rows = conn.execute(
-            "SELECT type, COUNT(*) as n FROM tasks WHERE status='PENDING' GROUP BY type"
-        ).fetchall()
-        conn.close()
-        return {r[0]: r[1] for r in rows}
+        try:
+            rows = conn.execute(
+                "SELECT type, COUNT(*) as n FROM tasks WHERE status='PENDING' GROUP BY type"
+            ).fetchall()
+            return {r[0]: r[1] for r in rows}
+        finally:
+            conn.close()
     except Exception:
         return {}
 
@@ -228,6 +232,7 @@ def _stop_worker(role):
         except subprocess.TimeoutExpired:
             proc.kill()
     worker_procs.pop(role, None)
+    _last_busy.pop(role, None)
 
 
 def _find_ollama() -> str:
@@ -650,9 +655,9 @@ def shutdown(sig, frame):
     stop_dashboard()
     stop_openclaw()
     stop_discord_bot()
-    for role, proc in worker_procs.items():
+    for role, proc in list(worker_procs.items()):
         proc.terminate()
-    for role, proc in worker_procs.items():
+    for role, proc in list(worker_procs.items()):
         try:
             proc.wait(timeout=5)
         except subprocess.TimeoutExpired:

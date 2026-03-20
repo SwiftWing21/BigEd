@@ -77,7 +77,7 @@ def load_thermal_config():
         "cooldown_window_secs": 60, "poll_interval_secs": 5,
         "grace_period_secs": 15, "cooldown_after_swap_secs": 30,
         "ambient_estimation": True,
-        "vram_emergency": 0.90, "vram_high": 0.75, "vram_restore": 0.60,
+        "vram_emergency": 0.92, "vram_high": 0.85, "vram_restore": 0.60,
         "tier_default": "qwen3:8b", "tier_mid": "qwen3:4b",
         "tier_low": "qwen3:1.7b", "tier_crit": "qwen3:0.6b",
         "training_exclusive_lock": True,

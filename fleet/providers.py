@@ -35,27 +35,30 @@ def _circuit_is_open(provider: str) -> bool:
 
 
 def _circuit_record_failure(provider: str):
-    """Record a failure for a provider. Opens circuit after threshold."""
+    """Record a failure for a provider. Opens circuit after threshold with exponential backoff."""
     with _circuit_lock:
         now = time.time()
-        state = _circuit_state.setdefault(provider, {"failures": 0, "last_failure": 0, "open_until": 0})
+        state = _circuit_state.setdefault(provider, {"failures": 0, "last_failure": 0, "open_until": 0, "cooldowns": 0})
         # Reset if last failure was outside window
         if now - state["last_failure"] > CIRCUIT_WINDOW_SECS:
             state["failures"] = 0
         state["failures"] += 1
         state["last_failure"] = now
         if state["failures"] >= CIRCUIT_FAILURE_THRESHOLD:
-            state["open_until"] = now + CIRCUIT_COOLDOWN_SECS
+            backoff = min(CIRCUIT_COOLDOWN_SECS * (2 ** state.get("cooldowns", 0)), 600)  # max 10min
+            state["open_until"] = now + backoff
+            state["cooldowns"] = state.get("cooldowns", 0) + 1
             import sys
-            print(f"[CIRCUIT] Provider '{provider}' circuit OPEN — {CIRCUIT_FAILURE_THRESHOLD} failures in {CIRCUIT_WINDOW_SECS}s, cooling down {CIRCUIT_COOLDOWN_SECS}s", file=sys.stderr)
+            print(f"[CIRCUIT] Provider '{provider}' circuit OPEN — {CIRCUIT_FAILURE_THRESHOLD} failures in {CIRCUIT_WINDOW_SECS}s, cooling down {backoff}s", file=sys.stderr)
 
 
 def _circuit_record_success(provider: str):
-    """Record a success — reset failure count."""
+    """Record a success — reset failure count and cooldown escalation."""
     with _circuit_lock:
         if provider in _circuit_state:
             _circuit_state[provider]["failures"] = 0
             _circuit_state[provider]["open_until"] = 0
+            _circuit_state[provider]["cooldowns"] = 0
 
 # ── Multi-Backend Abstraction (v0.25.00) ────────────────────────────────────
 

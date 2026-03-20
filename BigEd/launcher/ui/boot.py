@@ -101,6 +101,20 @@ def _launcher():
     return _mod
 
 
+# ─── Ollama host (read from fleet.toml, fallback to default) ─────────────────
+
+def _get_ollama_host():
+    try:
+        import tomllib
+        toml_path = Path(__file__).resolve().parent.parent.parent.parent / "fleet" / "fleet.toml"
+        with open(toml_path, "rb") as f:
+            cfg = tomllib.load(f)
+        return cfg.get("models", {}).get("ollama_host", "http://localhost:11434")
+    except Exception:
+        return "http://localhost:11434"
+
+OLLAMA_HOST = _get_ollama_host()
+
 # ─── Boot spinner characters ─────────────────────────────────────────────────
 _SPIN = "⣾⣽⣻⢿⡿⣟⣯⣷"
 
@@ -130,7 +144,10 @@ def _save_boot_timing(stage: str, duration: float, model: str = ""):
         if len(times) > 10:
             times[:] = times[-10:]
         history[key]["avg"] = round(sum(times) / len(times), 1)
-        _BOOT_HISTORY_FILE.write_text(json.dumps(history, indent=2), encoding="utf-8")
+        # Atomic write: write to temp then replace (safe against crash mid-write)
+        tmp = Path(str(_BOOT_HISTORY_FILE) + '.tmp')
+        tmp.write_text(json.dumps(history, indent=2), encoding="utf-8")
+        tmp.replace(_BOOT_HISTORY_FILE)  # Atomic on same filesystem
     except Exception:
         pass
 
@@ -171,7 +188,7 @@ class BootManagerMixin:
     def _ollama_model_exists(self, model_name):
         """Check if a model is installed in Ollama."""
         try:
-            with urllib.request.urlopen("http://localhost:11434/api/tags", timeout=3) as r:
+            with urllib.request.urlopen(f"{OLLAMA_HOST}/api/tags", timeout=3) as r:
                 data = json.loads(r.read())
             return any(m["name"] == model_name for m in data.get("models", []))
         except Exception:
@@ -180,7 +197,7 @@ class BootManagerMixin:
     def _ollama_list_models(self):
         """Get list of installed model names from Ollama."""
         try:
-            with urllib.request.urlopen("http://localhost:11434/api/tags", timeout=3) as r:
+            with urllib.request.urlopen(f"{OLLAMA_HOST}/api/tags", timeout=3) as r:
                 data = json.loads(r.read())
             return [m["name"] for m in data.get("models", [])]
         except Exception:
@@ -189,7 +206,7 @@ class BootManagerMixin:
     def _ollama_get_loaded(self):
         """Get list of currently loaded models."""
         try:
-            with urllib.request.urlopen("http://localhost:11434/api/ps", timeout=3) as r:
+            with urllib.request.urlopen(f"{OLLAMA_HOST}/api/ps", timeout=3) as r:
                 data = json.loads(r.read())
             return [m["name"] for m in data.get("models", [])]
         except Exception:
@@ -270,18 +287,25 @@ class BootManagerMixin:
             status_lbl.configure(text=f"Downloading {target} — this may take a few minutes...")
 
             def _do_pull():
+                if not hasattr(self, '_alive') or not self._alive:
+                    return
                 import shutil as _shutil
                 ollama_exe = _shutil.which("ollama")
                 if not ollama_exe and sys.platform == "win32":
-                    for p in [
-                        Path(os.environ.get("LOCALAPPDATA", "")) / "Programs" / "Ollama" / "ollama.exe",
-                        Path(os.environ.get("LOCALAPPDATA", "")) / "Ollama" / "ollama.exe",
-                        Path(os.environ.get("PROGRAMFILES", "")) / "Ollama" / "ollama.exe",
+                    for env_var, subpath in [
+                        ("LOCALAPPDATA", "Programs/Ollama/ollama.exe"),
+                        ("LOCALAPPDATA", "Ollama/ollama.exe"),
+                        ("PROGRAMFILES", "Ollama/ollama.exe"),
                     ]:
-                        if p.exists():
-                            ollama_exe = str(p)
-                            break
+                        base = os.environ.get(env_var, "")
+                        if base:
+                            p = Path(base) / subpath
+                            if p.exists():
+                                ollama_exe = str(p)
+                                break
                 if not ollama_exe:
+                    if not hasattr(self, '_alive') or not self._alive:
+                        return
                     self._safe_after(0, lambda: status_lbl.configure(
                         text="Ollama not found", text_color="#f44336"))
                     self._safe_after(0, lambda: btn.configure(
@@ -292,6 +316,8 @@ class BootManagerMixin:
                     capture_output=True, text=True, timeout=600,
                     creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0),
                 )
+                if not hasattr(self, '_alive') or not self._alive:
+                    return
                 if result.returncode == 0:
                     self._safe_after(0, lambda: status_lbl.configure(
                         text=f"{target} ready — restart boot to use it", text_color="#4caf50"))
@@ -572,7 +598,7 @@ class BootManagerMixin:
         import shutil
         # Check if already running
         try:
-            urllib.request.urlopen("http://localhost:11434/api/tags", timeout=2)
+            urllib.request.urlopen(f"{OLLAMA_HOST}/api/tags", timeout=2)
             return "already up"
         except Exception:
             pass
@@ -580,14 +606,17 @@ class BootManagerMixin:
         # Find and launch ollama natively
         ollama_exe = shutil.which("ollama")
         if not ollama_exe and sys.platform == "win32":
-            for p in [
-                Path(os.environ.get("LOCALAPPDATA", "")) / "Programs" / "Ollama" / "ollama.exe",
-                Path(os.environ.get("LOCALAPPDATA", "")) / "Ollama" / "ollama.exe",
-                Path(os.environ.get("PROGRAMFILES", "")) / "Ollama" / "ollama.exe",
+            for env_var, subpath in [
+                ("LOCALAPPDATA", "Programs/Ollama/ollama.exe"),
+                ("LOCALAPPDATA", "Ollama/ollama.exe"),
+                ("PROGRAMFILES", "Ollama/ollama.exe"),
             ]:
-                if p.exists():
-                    ollama_exe = str(p)
-                    break
+                base = os.environ.get(env_var, "")
+                if base:
+                    p = Path(base) / subpath
+                    if p.exists():
+                        ollama_exe = str(p)
+                        break
         if not ollama_exe:
             raise Exception("ollama not found — install from https://ollama.com")
 
@@ -600,7 +629,7 @@ class BootManagerMixin:
         except Exception:
             pass
 
-        subprocess.Popen(
+        self._ollama_proc = subprocess.Popen(
             [ollama_exe, "serve"],
             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
             env=env,
@@ -612,7 +641,7 @@ class BootManagerMixin:
             if self._boot_abort.is_set():
                 raise Exception("aborted")
             try:
-                urllib.request.urlopen("http://localhost:11434/api/tags", timeout=2)
+                urllib.request.urlopen(f"{OLLAMA_HOST}/api/tags", timeout=2)
                 return "started"
             except Exception:
                 time.sleep(2)
@@ -636,7 +665,7 @@ class BootManagerMixin:
         if not target:
             # Fallback: use whatever is installed
             try:
-                with urllib.request.urlopen("http://localhost:11434/api/tags", timeout=3) as r:
+                with urllib.request.urlopen(f"{OLLAMA_HOST}/api/tags", timeout=3) as r:
                     data = json.loads(r.read())
                 models = [m["name"] for m in data.get("models", [])]
                 if models:
@@ -659,7 +688,7 @@ class BootManagerMixin:
             "options": {"num_gpu": 0},
         }).encode()
         req = urllib.request.Request(
-            "http://localhost:11434/api/generate", data=body,
+            f"{OLLAMA_HOST}/api/generate", data=body,
             headers={"Content-Type": "application/json"}, method="POST",
         )
         try:
@@ -750,7 +779,7 @@ class BootManagerMixin:
 
         # Evict idle blocker models before attempting load
         # (models held in VRAM by keep_alive:"24h" with no active fleet tasks)
-        host = "http://localhost:11434"
+        host = OLLAMA_HOST
         evicted = self._evict_idle_blockers(host, model)
         if evicted:
             self._log_output(
@@ -770,11 +799,13 @@ class BootManagerMixin:
             **({"options": {"num_gpu": 0}} if not gpu else {}),
         }).encode()
         req = urllib.request.Request(
-            "http://localhost:11434/api/generate", data=body,
+            f"{OLLAMA_HOST}/api/generate", data=body,
             headers={"Content-Type": "application/json"}, method="POST",
         )
         try:
             with urllib.request.urlopen(req, timeout=int(timeout)) as r:
+                if r.status != 200:
+                    raise Exception(f"{model}: HTTP {r.status}")
                 resp_data = r.read()
                 # Check for error in response
                 try:
@@ -782,7 +813,7 @@ class BootManagerMixin:
                     if "error" in resp:
                         raise Exception(f"{model}: {resp['error']}")
                 except json.JSONDecodeError:
-                    pass  # streaming response, not JSON — that's fine
+                    pass  # Expected: Ollama /api/generate streams NDJSON, last chunk may not parse
             elapsed = time.time() - start_time
             _save_boot_timing("model_load", elapsed, model)
             return f"{model} ({elapsed:.0f}s)"
@@ -864,6 +895,14 @@ class BootManagerMixin:
         self._btn_system_toggle.configure(
             text="▶  Start", fg_color="#1e3a1e", hover_color="#2a4a2a")
         self._log_output("Stopping fleet...")
+        # Terminate Ollama process we started (avoid zombies)
+        if hasattr(self, '_ollama_proc') and self._ollama_proc and self._ollama_proc.poll() is None:
+            self._ollama_proc.terminate()
+            try:
+                self._ollama_proc.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                self._ollama_proc.kill()
+            self._ollama_proc = None
         # Kill all fleet processes natively
         killed = _kill_fleet_processes()
         if killed:

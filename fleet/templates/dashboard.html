@@ -224,6 +224,12 @@ let activityChart = null;
 let skillsChart = null;
 let eventSource = null;
 
+function escapeHTML(s) {
+  const div = document.createElement('div');
+  div.textContent = String(s);
+  return div.innerHTML;
+}
+
 async function fetchJSON(url) {
   const r = await fetch(url);
   return r.json();
@@ -231,7 +237,7 @@ async function fetchJSON(url) {
 
 function badge(status) {
   const s = (status || '').toLowerCase();
-  return `<span class="badge badge-${s}">${status}</span>`;
+  return `<span class="badge badge-${escapeHTML(s)}">${escapeHTML(status)}</span>`;
 }
 
 function timeAgo(dateStr) {
@@ -290,11 +296,11 @@ function updateStatusFromSSE(data) {
   const t = data.tasks;
   const total = t.DONE + t.FAILED + t.PENDING + t.RUNNING;
   document.getElementById('taskStats').innerHTML = `
-    <div class="stat green"><div class="value">${t.DONE}</div><div class="label">Done</div></div>
-    <div class="stat red"><div class="value">${t.FAILED}</div><div class="label">Failed</div></div>
-    <div class="stat orange"><div class="value">${t.RUNNING}</div><div class="label">Running</div></div>
-    <div class="stat blue"><div class="value">${t.PENDING}</div><div class="label">Pending</div></div>
-    <div class="stat gold"><div class="value">${total}</div><div class="label">Total</div></div>
+    <div class="stat green"><div class="value">${escapeHTML(t.DONE)}</div><div class="label">Done</div></div>
+    <div class="stat red"><div class="value">${escapeHTML(t.FAILED)}</div><div class="label">Failed</div></div>
+    <div class="stat orange"><div class="value">${escapeHTML(t.RUNNING)}</div><div class="label">Running</div></div>
+    <div class="stat blue"><div class="value">${escapeHTML(t.PENDING)}</div><div class="label">Pending</div></div>
+    <div class="stat gold"><div class="value">${escapeHTML(total)}</div><div class="label">Total</div></div>
   `;
   // Display name: role/task type + identifier (e.g. "code_review / coder_1")
   function agentDisplayName(a) {
@@ -311,12 +317,12 @@ function updateStatusFromSSE(data) {
   const agentTbody = document.getElementById('agentTable');
   const wasExpanded = agentTbody.dataset.expanded === 'true';
   let rows = '';
-  pinned.forEach(a => { rows += '<tr><td><strong>' + a.name + '</strong></td><td style="color:var(--dim)">' + a.role + '</td><td>' + badge(a.status) + '</td><td style="color:var(--dim)">' + timeAgo(a.last_heartbeat) + '</td></tr>'; });
-  busy.forEach(a => { rows += '<tr><td><strong>' + agentDisplayName(a) + '</strong></td><td style="color:var(--dim)">' + a.role + '</td><td>' + badge(a.status) + '</td><td style="color:var(--dim)">' + timeAgo(a.last_heartbeat) + '</td></tr>'; });
+  pinned.forEach(a => { rows += '<tr><td><strong>' + escapeHTML(a.name) + '</strong></td><td style="color:var(--dim)">' + escapeHTML(a.role) + '</td><td>' + badge(a.status) + '</td><td style="color:var(--dim)">' + timeAgo(a.last_heartbeat) + '</td></tr>'; });
+  busy.forEach(a => { rows += '<tr><td><strong>' + escapeHTML(agentDisplayName(a)) + '</strong></td><td style="color:var(--dim)">' + escapeHTML(a.role) + '</td><td>' + badge(a.status) + '</td><td style="color:var(--dim)">' + timeAgo(a.last_heartbeat) + '</td></tr>'; });
   if (idle.length > 0) {
     rows += '<tr class="idle-toggle" onclick="toggleIdleAgents()" style="cursor:pointer;color:var(--dim)"><td colspan="4">' + (wasExpanded ? '&#9662;' : '&#9656;') + ' ' + idle.length + ' idle' + '</td></tr>';
     if (wasExpanded) {
-      idle.forEach(a => { rows += '<tr class="idle-row"><td>' + agentDisplayName(a) + '</td><td style="color:var(--dim)">' + a.role + '</td><td>' + badge(a.status) + '</td><td style="color:var(--dim)">' + timeAgo(a.last_heartbeat) + '</td></tr>'; });
+      idle.forEach(a => { rows += '<tr class="idle-row"><td>' + escapeHTML(agentDisplayName(a)) + '</td><td style="color:var(--dim)">' + escapeHTML(a.role) + '</td><td>' + badge(a.status) + '</td><td style="color:var(--dim)">' + timeAgo(a.last_heartbeat) + '</td></tr>'; });
     }
   }
   agentTbody.innerHTML = rows;
@@ -327,15 +333,21 @@ function addAlertToBar(alert) {
   if (alert.acknowledged) return;
   const bar = document.getElementById('alertBar');
   const div = document.createElement('div');
-  div.className = `alert-item ${alert.level}`;
-  div.innerHTML = `
-    <strong>${alert.level.toUpperCase()}</strong>
-    <span>${alert.message}</span>
-    <span class="dismiss" onclick="ackAlert(${alert.id}, this.parentElement)">&times;</span>
-  `;
+  div.className = 'alert-item ' + escapeHTML(alert.level);
+  const strong = document.createElement('strong');
+  strong.textContent = alert.level.toUpperCase();
+  const span = document.createElement('span');
+  span.textContent = alert.message;
+  const dismiss = document.createElement('span');
+  dismiss.className = 'dismiss';
+  dismiss.textContent = '\u00d7';
+  dismiss.addEventListener('click', function() { ackAlert(alert.id, div); });
+  div.appendChild(strong);
+  div.appendChild(document.createTextNode(' '));
+  div.appendChild(span);
+  div.appendChild(dismiss);
   bar.prepend(div);
-  // Keep only 5 visible
-  while (bar.children.length > 5) bar.lastChild.remove();
+  while (bar.children.length > 10) bar.lastChild.remove();
 }
 
 async function ackAlert(id, el) {
@@ -353,10 +365,10 @@ async function loadStatus() {
 async function loadCodeStats() {
   const data = await fetchJSON('/api/code_stats');
   document.getElementById('codeStats').innerHTML = `
-    <div class="stat green"><div class="value">${data.lines_added}</div><div class="label">Lines Added</div></div>
-    <div class="stat red"><div class="value">${data.lines_deleted}</div><div class="label">Lines Deleted</div></div>
-    <div class="stat blue"><div class="value">${data.files_changed}</div><div class="label">Files Changed</div></div>
-    <div class="stat gold"><div class="value">${data.commits}</div><div class="label">Commits</div></div>
+    <div class="stat green"><div class="value">${escapeHTML(data.lines_added)}</div><div class="label">Lines Added</div></div>
+    <div class="stat red"><div class="value">${escapeHTML(data.lines_deleted)}</div><div class="label">Lines Deleted</div></div>
+    <div class="stat blue"><div class="value">${escapeHTML(data.files_changed)}</div><div class="label">Files Changed</div></div>
+    <div class="stat gold"><div class="value">${escapeHTML(data.commits)}</div><div class="label">Commits</div></div>
   `;
 }
 
@@ -364,15 +376,15 @@ async function loadThermal() {
   const data = await fetchJSON('/api/thermal');
   const th = data.thresholds || {};
   document.getElementById('thermalGauge').innerHTML = `
-    <div class="gauge"><div class="temp" style="color:${tempColor(data.gpu_temp_c, th.gpu_sustained||75, th.gpu_burst||78)}">${data.gpu_temp_c}&deg;C</div><div class="name">GPU</div></div>
-    <div class="gauge"><div class="temp" style="color:${tempColor(data.cpu_temp_c, th.cpu_sustained||80, 90)}">${data.cpu_temp_c}&deg;C</div><div class="name">CPU</div></div>
-    <div class="gauge"><div class="temp" style="color:var(--blue)">${data.ambient_estimate_c}&deg;C</div><div class="name">Ambient (est)</div></div>
+    <div class="gauge"><div class="temp" style="color:${tempColor(data.gpu_temp_c, th.gpu_sustained||75, th.gpu_burst||78)}">${escapeHTML(data.gpu_temp_c)}&deg;C</div><div class="name">GPU</div></div>
+    <div class="gauge"><div class="temp" style="color:${tempColor(data.cpu_temp_c, th.cpu_sustained||80, 90)}">${escapeHTML(data.cpu_temp_c)}&deg;C</div><div class="name">CPU</div></div>
+    <div class="gauge"><div class="temp" style="color:var(--blue)">${escapeHTML(data.ambient_estimate_c)}&deg;C</div><div class="name">Ambient (est)</div></div>
   `;
   document.getElementById('thermalStats').innerHTML = `
-    <div class="stat"><div class="value">${data.gpu_power_w}W</div><div class="label">GPU Power</div></div>
-    <div class="stat"><div class="value">${data.gpu_fan_pct}%</div><div class="label">Fan</div></div>
-    <div class="stat"><div class="value">${data.gpu_vram_used_gb}/${data.gpu_vram_total_gb}GB</div><div class="label">VRAM</div></div>
-    <div class="stat"><div class="value">${data.model_tier}</div><div class="label">Model Tier</div></div>
+    <div class="stat"><div class="value">${escapeHTML(data.gpu_power_w)}W</div><div class="label">GPU Power</div></div>
+    <div class="stat"><div class="value">${escapeHTML(data.gpu_fan_pct)}%</div><div class="label">Fan</div></div>
+    <div class="stat"><div class="value">${escapeHTML(data.gpu_vram_used_gb)}/${escapeHTML(data.gpu_vram_total_gb)}GB</div><div class="label">VRAM</div></div>
+    <div class="stat"><div class="value">${escapeHTML(data.model_tier)}</div><div class="label">Model Tier</div></div>
   `;
   const note = document.getElementById('thermalNote');
   const notes = [];
@@ -405,10 +417,10 @@ async function loadTraining() {
 async function loadModules() {
   const data = await fetchJSON('/api/modules');
   document.getElementById('modulesList').innerHTML = `
-    <div style="color:var(--dim);margin-bottom:8px">Profile: <strong>${data.profile}</strong></div>
+    <div style="color:var(--dim);margin-bottom:8px">Profile: <strong>${escapeHTML(data.profile)}</strong></div>
     ${(data.modules || []).map(m => `
       <div class="file-item">
-        <span class="name">${m.name} <span style="color:var(--dim)">v${m.version}</span></span>
+        <span class="name">${escapeHTML(m.name)} <span style="color:var(--dim)">v${escapeHTML(m.version)}</span></span>
         <span class="meta">
           ${m.enabled ? '<span style="color:var(--green)">enabled</span>' : '<span style="color:var(--dim)">disabled</span>'}
           ${m.deprecated ? '<span style="color:var(--orange)"> DEPRECATED</span>' : ''}
@@ -422,8 +434,8 @@ async function loadDataStats() {
   const data = await fetchJSON('/api/data_stats');
   document.getElementById('dataStats').innerHTML = Object.entries(data).map(([k, v]) => `
     <div class="file-item">
-      <span class="name">${k}</span>
-      <span class="meta">${v.count} records${v.size_mb ? ` / ${v.size_mb}MB` : ''}</span>
+      <span class="name">${escapeHTML(k)}</span>
+      <span class="meta">${escapeHTML(v.count)} records${v.size_mb ? ` / ${escapeHTML(v.size_mb)}MB` : ''}</span>
     </div>
   `).join('') || '<div style="color:var(--dim)">No data</div>';
 }
@@ -486,8 +498,8 @@ async function loadSkills() {
 async function loadDiscussions() {
   const data = await fetchJSON('/api/discussions');
   document.getElementById('discussionTable').innerHTML = data.slice(0, 15).map(d => `
-    <tr><td>${d.topic}</td><td style="color:var(--dim)">${d.agents.join(', ')}</td>
-    <td>${d.rounds}</td><td>${d.contributions}</td></tr>
+    <tr><td>${escapeHTML(d.topic)}</td><td style="color:var(--dim)">${escapeHTML(d.agents.join(', '))}</td>
+    <td>${escapeHTML(d.rounds)}</td><td>${escapeHTML(d.contributions)}</td></tr>
   `).join('') || '<tr><td colspan="4" style="color:var(--dim)">No discussions yet</td></tr>';
 }
 
@@ -495,8 +507,8 @@ async function loadReviews() {
   const data = await fetchJSON('/api/reviews');
   document.getElementById('reviewList').innerHTML = data.slice(0, 20).map(r => `
     <div class="file-item">
-      <span class="name">${r.file}</span>
-      <span class="meta">${r.category} / ${timeAgo(r.modified)}</span>
+      <span class="name">${escapeHTML(r.file)}</span>
+      <span class="meta">${escapeHTML(r.category)} / ${timeAgo(r.modified)}</span>
     </div>
   `).join('') || '<div style="color:var(--dim)">No reviews yet</div>';
 }
@@ -506,24 +518,24 @@ async function loadKnowledge() {
   const entries = Object.entries(data);
   const totalFiles = entries.reduce((s, [,v]) => s + v.count, 0);
   document.getElementById('knowledgeStats').innerHTML = `
-    <div class="stat gold"><div class="value">${totalFiles}</div><div class="label">Total Files</div></div>
-    <div class="stat blue"><div class="value">${entries.length}</div><div class="label">Categories</div></div>
+    <div class="stat gold"><div class="value">${escapeHTML(totalFiles)}</div><div class="label">Total Files</div></div>
+    <div class="stat blue"><div class="value">${escapeHTML(entries.length)}</div><div class="label">Categories</div></div>
   `;
   document.getElementById('knowledgeList').innerHTML = entries
     .sort((a,b) => b[1].count - a[1].count)
     .map(([cat, v]) => `
-      <div class="file-item"><span class="name">${cat}/</span><span class="meta">${v.count} files</span></div>
+      <div class="file-item"><span class="name">${escapeHTML(cat)}/</span><span class="meta">${escapeHTML(v.count)} files</span></div>
     `).join('');
 }
 
 async function loadRAG() {
   const data = await fetchJSON('/api/rag');
   document.getElementById('ragStats').innerHTML = `
-    <div class="stat gold"><div class="value">${data.files}</div><div class="label">Files Indexed</div></div>
-    <div class="stat blue"><div class="value">${data.chunks}</div><div class="label">Chunks</div></div>
+    <div class="stat gold"><div class="value">${escapeHTML(data.files)}</div><div class="label">Files Indexed</div></div>
+    <div class="stat blue"><div class="value">${escapeHTML(data.chunks)}</div><div class="label">Chunks</div></div>
   `;
   document.getElementById('ragSources').innerHTML = (data.sources || []).slice(0, 15).map(s => `
-    <div class="file-item"><span class="name">${s.path}</span><span class="meta">${s.chunks} chunks</span></div>
+    <div class="file-item"><span class="name">${escapeHTML(s.path)}</span><span class="meta">${escapeHTML(s.chunks)} chunks</span></div>
   `).join('') || '<div style="color:var(--dim)">Not indexed yet</div>';
 }
 
@@ -532,8 +544,8 @@ async function loadTimeline() {
   document.getElementById('timeline').innerHTML = data.map(e => `
     <div class="timeline-item">
       <span class="time">${shortTime(e.time)}</span>
-      <span class="agent">${e.agent}</span>
-      <span>${badge(e.status)} ${e.detail}</span>
+      <span class="agent">${escapeHTML(e.agent)}</span>
+      <span>${badge(e.status)} ${escapeHTML(e.detail)}</span>
     </div>
   `).join('') || '<div style="color:var(--dim);padding:12px">No recent activity</div>';
 }

@@ -261,15 +261,17 @@ class Setup(ctk.CTk):
         if exe:
             return exe
         if sys.platform == "win32":
-            candidates = [
-                Path(os.environ.get("LOCALAPPDATA", "")) / "Programs" / "Ollama" / "ollama.exe",
-                Path(os.environ.get("LOCALAPPDATA", "")) / "Ollama" / "ollama.exe",
-                Path(os.environ.get("PROGRAMFILES", "")) / "Ollama" / "ollama.exe",
-                Path(os.environ.get("USERPROFILE", "")) / "AppData" / "Local" / "Ollama" / "ollama.exe",
-            ]
-            for p in candidates:
-                if p.exists():
-                    return str(p)
+            for env_var, subpath in [
+                ("LOCALAPPDATA", "Programs/Ollama/ollama.exe"),
+                ("LOCALAPPDATA", "Ollama/ollama.exe"),
+                ("PROGRAMFILES", "Ollama/ollama.exe"),
+                ("USERPROFILE", "AppData/Local/Ollama/ollama.exe"),
+            ]:
+                base = os.environ.get(env_var, "")
+                if base:  # Only check if env var has a value
+                    p = Path(base) / subpath
+                    if p.exists():
+                        return str(p)
         return None
 
     # ── Page: Welcome (not installed) ─────────────────────────────────────────
@@ -801,7 +803,7 @@ class Setup(ctk.CTk):
                     self.after(0, lambda l=line: self._log(l))
             proc.wait()
             if proc.returncode != 0:
-                raise RuntimeError(f"Build failed: {' '.join(cmd[:3])}")
+                raise RuntimeError(f"Build failed (exit {proc.returncode}): {' '.join(cmd[:5])}...")
         return "Build complete"
 
     def _step_mkdir(self, d: Path) -> str:
@@ -841,11 +843,23 @@ class Setup(ctk.CTk):
 
     def _step_pip(self) -> str:
         python = shutil.which("python") or shutil.which("python3") or "python"
+        # Check if we need --break-system-packages (PEP 668, Python 3.11+)
+        pip_extra = []
+        try:
+            r = subprocess.run(
+                [python, "-c", "import sys; print(sys.version_info >= (3,11))"],
+                capture_output=True, text=True, timeout=5,
+                creationflags=subprocess.CREATE_NO_WINDOW,
+            )
+            if r.stdout.strip() == "True":
+                pip_extra = ["--break-system-packages"]
+        except Exception:
+            pass
         # Launcher deps
         pkgs = ["customtkinter", "pillow", "psutil", "nvidia-ml-py", "anthropic", "google-genai"]
         self.after(0, lambda: self._log("  pip install (launcher): " + " ".join(pkgs)))
         result = subprocess.run(
-            [python, "-m", "pip", "install", "--quiet"] + pkgs,
+            [python, "-m", "pip", "install", "--quiet"] + pip_extra + pkgs,
             capture_output=True, text=True,
             creationflags=subprocess.CREATE_NO_WINDOW,
         )
@@ -855,7 +869,7 @@ class Setup(ctk.CTk):
         fleet_pkgs = ["httpx", "flask", "psutil", "anthropic", "google-genai"]
         self.after(0, lambda: self._log("  pip install (fleet): " + " ".join(fleet_pkgs)))
         result2 = subprocess.run(
-            [python, "-m", "pip", "install", "--quiet"] + fleet_pkgs,
+            [python, "-m", "pip", "install", "--quiet"] + pip_extra + fleet_pkgs,
             capture_output=True, text=True,
             creationflags=subprocess.CREATE_NO_WINDOW,
         )
@@ -880,72 +894,76 @@ class Setup(ctk.CTk):
     def _step_install_ollama(self) -> str:
         """Install Ollama using best available method: winget > curl+exe > urllib."""
         _NW = getattr(subprocess, 'CREATE_NO_WINDOW', 0)
+        installer = None
 
-        # Strategy 1: winget (most reliable on Windows 11)
-        winget = shutil.which("winget")
-        if winget:
-            self.after(0, lambda: self._log("  Installing via winget..."))
+        try:
+            # Strategy 1: winget (most reliable on Windows 11)
+            winget = shutil.which("winget")
+            if winget:
+                self.after(0, lambda: self._log("  Installing via winget..."))
+                result = subprocess.run(
+                    [winget, "install", "Ollama.Ollama",
+                     "--accept-package-agreements", "--accept-source-agreements", "--silent"],
+                    capture_output=True, text=True, timeout=300,
+                    creationflags=_NW,
+                )
+                if result.returncode == 0:
+                    return "Ollama installed (winget)"
+                self.after(0, lambda: self._log("  winget failed — trying direct download..."))
+
+            # Strategy 2: curl (ships with Windows 11)
+            curl = shutil.which("curl")
+            dl_dir = Path(os.environ.get("TEMP", "."))
+            installer = dl_dir / "OllamaSetup.exe"
+            url = "https://ollama.com/download/OllamaSetup.exe"
+
+            if curl:
+                self.after(0, lambda: self._log("  Downloading OllamaSetup.exe via curl..."))
+                dl = subprocess.run(
+                    [curl, "-L", "-o", str(installer), url],
+                    capture_output=True, timeout=300, creationflags=_NW,
+                )
+                if dl.returncode != 0 or not installer.exists():
+                    self.after(0, lambda: self._log("  curl download failed — trying urllib..."))
+                    installer = None  # fall through
+
+            # Strategy 3: urllib fallback
+            if installer is None or not installer.exists():
+                import urllib.request
+                installer = dl_dir / "OllamaSetup.exe"
+                self.after(0, lambda: self._log("  Downloading OllamaSetup.exe via urllib..."))
+                try:
+                    urllib.request.urlretrieve(url, str(installer))
+                except Exception as e:
+                    raise RuntimeError(f"All download methods failed: {e}")
+
+            # Run the downloaded installer
+            self.after(0, lambda: self._log("  Running OllamaSetup.exe..."))
             result = subprocess.run(
-                [winget, "install", "Ollama.Ollama",
-                 "--accept-package-agreements", "--accept-source-agreements", "--silent"],
-                capture_output=True, text=True, timeout=300,
+                [str(installer), "/VERYSILENT", "/NORESTART"],
+                capture_output=True, timeout=180,
                 creationflags=_NW,
             )
-            if result.returncode == 0:
-                return "Ollama installed (winget)"
-            self.after(0, lambda: self._log("  winget failed — trying direct download..."))
-
-        # Strategy 2: curl (ships with Windows 11)
-        curl = shutil.which("curl")
-        dl_dir = Path(os.environ.get("TEMP", "."))
-        installer = dl_dir / "OllamaSetup.exe"
-        url = "https://ollama.com/download/OllamaSetup.exe"
-
-        if curl:
-            self.after(0, lambda: self._log("  Downloading OllamaSetup.exe via curl..."))
-            dl = subprocess.run(
-                [curl, "-L", "-o", str(installer), url],
-                capture_output=True, timeout=300, creationflags=_NW,
-            )
-            if dl.returncode != 0 or not installer.exists():
-                self.after(0, lambda: self._log("  curl download failed — trying urllib..."))
-                installer = None  # fall through
-        else:
-            installer = None
-
-        # Strategy 3: urllib fallback
-        if installer is None or not installer.exists():
-            import urllib.request
-            installer = dl_dir / "OllamaSetup.exe"
-            self.after(0, lambda: self._log("  Downloading OllamaSetup.exe via urllib..."))
-            try:
-                urllib.request.urlretrieve(url, str(installer))
-            except Exception as e:
-                raise RuntimeError(f"All download methods failed: {e}")
-
-        # Run the downloaded installer
-        self.after(0, lambda: self._log("  Running OllamaSetup.exe..."))
-        result = subprocess.run(
-            [str(installer), "/VERYSILENT", "/NORESTART"],
-            capture_output=True, timeout=180,
-            creationflags=_NW,
-        )
-        try:
-            installer.unlink(missing_ok=True)
-        except Exception:
-            pass
-        if result.returncode != 0:
-            raise RuntimeError(f"Ollama installer exited with code {result.returncode}")
-        return "Ollama installed"
+            if result.returncode != 0:
+                raise RuntimeError(f"Ollama installer exited with code {result.returncode}")
+            return "Ollama installed"
+        finally:
+            if installer and installer.exists():
+                try:
+                    installer.unlink(missing_ok=True)
+                except Exception:
+                    pass
 
     def _step_pull_model(self, model: str = "qwen3:8b") -> str:
         """Pull an Ollama model. Skips if already installed. Starts the server if needed."""
         # Find the freshly-installed ollama
         ollama_exe = shutil.which("ollama")
         if not ollama_exe and sys.platform == "win32":
-            win_path = Path(os.environ.get("LOCALAPPDATA", "")) / "Programs" / "Ollama" / "ollama.exe"
-            if win_path.exists():
-                ollama_exe = str(win_path)
+            base = os.environ.get("LOCALAPPDATA", "")
+            if base:
+                win_path = Path(base) / "Programs" / "Ollama" / "ollama.exe"
+                if win_path.exists():
+                    ollama_exe = str(win_path)
         if not ollama_exe:
             return f"Ollama not found — pull {model} manually later"
 
@@ -992,9 +1010,11 @@ class Setup(ctk.CTk):
 
         ollama_exe = shutil.which("ollama")
         if not ollama_exe and sys.platform == "win32":
-            win_path = Path(os.environ.get("LOCALAPPDATA", "")) / "Programs" / "Ollama" / "ollama.exe"
-            if win_path.exists():
-                ollama_exe = str(win_path)
+            base = os.environ.get("LOCALAPPDATA", "")
+            if base:
+                win_path = Path(base) / "Programs" / "Ollama" / "ollama.exe"
+                if win_path.exists():
+                    ollama_exe = str(win_path)
         if not ollama_exe:
             return "Ollama not found — cannot verify models"
 

@@ -806,8 +806,15 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
         try:
             if self._geometry_file.exists():
                 geo = json.loads(self._geometry_file.read_text())
-                self.geometry(f"{geo['w']}x{geo['h']}+{geo['x']}+{geo['y']}")
-                self._saved_geo = geo
+                saved_x, saved_y = geo['x'], geo['y']
+                saved_w, saved_h = geo['w'], geo['h']
+                screen_w = self.winfo_screenwidth()
+                screen_h = self.winfo_screenheight()
+                # Only restore if window would be visible on screen
+                if (saved_x + saved_w > 0 and saved_x < screen_w
+                        and saved_y + saved_h > 0 and saved_y < screen_h):
+                    self.geometry(f"{saved_w}x{saved_h}+{saved_x}+{saved_y}")
+                    self._saved_geo = geo
         except Exception:
             pass
 
@@ -872,8 +879,8 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
             from ui.sse_client import create_tk_sse_bridge
             self._sse = create_tk_sse_bridge(self)
             self._sse.on("status", self._handle_sse_status)
-            self._sse.on("connected", lambda d: setattr(self, '_sse_active', True))
-            self._sse.on("disconnected", lambda d: setattr(self, '_sse_active', False))
+            self._sse.on("connected", lambda d: self.after(0, lambda: setattr(self, '_sse_active', True)))
+            self._sse.on("disconnected", lambda d: self.after(0, lambda: setattr(self, '_sse_active', False)))
             self._sse_active = False
             self._sse.start()
         except Exception:
@@ -957,8 +964,11 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
 
     def _safe_after(self, ms, func):
         """Schedule callback only if window is still alive."""
-        if self._alive:
-            self.after(ms, func)
+        try:
+            if self.winfo_exists():
+                self.after(ms, func)
+        except Exception:
+            pass
 
     def _on_close(self):
         """Smart close dialog with remember-choice + countdown."""
@@ -2236,12 +2246,13 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
         def _render(data):
             waiting, advisories = data
             # Clear existing cards
-            for w in self._comm_cards:
+            cards = list(self._comm_cards)
+            self._comm_cards.clear()
+            for w in cards:
                 try:
                     w.destroy()
                 except Exception:
                     pass
-            self._comm_cards.clear()
 
             total = len(waiting) + len(advisories)
             if total:
@@ -2688,11 +2699,15 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
                     "calls": calls_lbl, "avg_ms": ms_lbl,
                 }
 
-        # Hide labels for models no longer in results
-        for model, lbl in self._model_perf_labels.items():
+        # Destroy labels for models no longer in results (prevent memory leak)
+        for model in list(self._model_perf_labels.keys()):
             if model not in current_models:
-                for w in lbl.values():
-                    w.grid_remove()
+                for w in self._model_perf_labels[model].values():
+                    try:
+                        w.destroy()
+                    except Exception:
+                        pass
+                del self._model_perf_labels[model]
 
     # ── Refresh ───────────────────────────────────────────────────────────────
     def _refresh_status(self):
@@ -2860,6 +2875,13 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
         if self._system_running:
             self._ever_seen_roles.update(seen.keys())
         else:
+            # Destroy all cached agent row widgets when system stops
+            for cached in self._agent_rows.values():
+                try:
+                    cached['frame'].destroy()
+                except Exception:
+                    pass
+            self._agent_rows.clear()
             self._ever_seen_roles.clear()
         # Only show agents currently present — no ghost OFFLINE rows
         rows = [seen[role_key] for role_key in sorted(self._ever_seen_roles) if role_key in seen]
@@ -2985,12 +3007,13 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
             if not hasattr(self, '_action_cards'):
                 return
             waiting, advisories = data
-            for w in self._action_cards:
+            cards = list(self._action_cards)
+            self._action_cards.clear()
+            for w in cards:
                 try:
                     w.destroy()
                 except Exception:
                     pass
-            self._action_cards.clear()
 
             total = len(waiting) + len(advisories)
             self._actions_count_lbl.configure(

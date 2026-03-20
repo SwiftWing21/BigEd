@@ -669,6 +669,9 @@ class Updater(ctk.CTk):
                     self._log_line(line)
             proc.wait()
             return proc.returncode == 0
+        except subprocess.TimeoutExpired:
+            self._log_line(f"Command timed out: {' '.join(cmd[:3])}")
+            return False
         except FileNotFoundError as e:
             self._log_line(f"Command not found: {e}")
             return False
@@ -683,13 +686,16 @@ class Updater(ctk.CTk):
         if exe:
             return exe
         if sys.platform == "win32":
-            for p in [
-                Path(os.environ.get("LOCALAPPDATA", "")) / "Programs" / "Ollama" / "ollama.exe",
-                Path(os.environ.get("LOCALAPPDATA", "")) / "Ollama" / "ollama.exe",
-                Path(os.environ.get("PROGRAMFILES", "")) / "Ollama" / "ollama.exe",
+            for env_var, subpath in [
+                ("LOCALAPPDATA", "Programs/Ollama/ollama.exe"),
+                ("LOCALAPPDATA", "Ollama/ollama.exe"),
+                ("PROGRAMFILES", "Ollama/ollama.exe"),
             ]:
-                if p.exists():
-                    return str(p)
+                base = os.environ.get(env_var, "")
+                if base:
+                    p = Path(base) / subpath
+                    if p.exists():
+                        return str(p)
         return None
 
     def _get_expected_models(self) -> list[str]:
