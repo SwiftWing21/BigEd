@@ -82,8 +82,48 @@ Always re-read `audit_tracker.md` if it has been updated before generating a new
 - v0.30.00: remote dashboard, A2A federation, export/import, containerization
 - v0.30.01a: disabled agents, HITL evolution toggle, topic diversity fix
 
-## Machine
-See `CLAUDE.USER.md` for hardware, environment, MCP servers, and model routing.
+## Local Machine — CLAUDE.USER.md
+
+`CLAUDE.USER.md` holds machine-specific config (gitignored — never committed).
+If the file is missing on a fresh clone, create it from this template:
+
+```markdown
+# User & Environment — [Machine Name]
+
+## Hardware
+- **GPU:** [model, VRAM]
+- **RAM:** [amount] — max_workers: [N]
+- **Platform:** [OS] — shell: [bash/zsh/powershell]
+
+## Environment
+- Python: [version, runner (uv/pip/conda)]
+- Ollama: [host URL or "not installed"]
+- Keys: [list env vars needed — HF_TOKEN, ANTHROPIC_API_KEY, etc.]
+
+## MCP Servers
+| Server | Transport | URL/Command | Status |
+|--------|-----------|-------------|--------|
+| playwright | http | http://localhost:8931 | active |
+
+## Model Routing
+- **Local default:** [model] (~[VRAM]GB, ~[tok/s] tok/s)
+- **CPU conductor:** [model]
+- **API fallback:** Claude → Gemini → Local
+```
+
+### First-run setup checklist
+If `CLAUDE.USER.md` is missing or fields are blank, the operator should:
+1. Run `python fleet/smoke_test.py` — validates Ollama, DB, skills
+2. Run `python BigEd/launcher/launcher.py` — walkthrough auto-detects hardware
+3. Check `fleet/fleet.db` exists — if not, any fleet script auto-creates via `db.init_db()`
+4. Check `fleet/rag.db` exists — if not, `rag_index` skill creates on first ingest
+5. Verify DAL: `fleet/data_access.py` (FleetDB) and `fleet/rag.py` (RAG store) are the unified data layer — all DB access goes through these, never raw sqlite3
+
+### Data layer reference
+- **FleetDB** (`fleet/data_access.py`): unified DAL for fleet.db — agent counts, task queries, token speeds, HITL status
+- **RAG** (`fleet/rag.py` + `fleet/rag.db`): vector store for knowledge ingestion — `rag_index` writes, `rag_query` reads
+- **Config** (`fleet/config.py`): TOML loader — `load_config()`, `is_offline()`, `is_air_gap()`
+- **MCP** (`fleet/mcp_manager.py`): MCP server registry — reads `.mcp.json`, probes servers, skill routing
 
 ## Fleet
 - Dual-supervisor: `supervisor.py` + Dr. Ders (`hw_supervisor.py`) (native Windows)
