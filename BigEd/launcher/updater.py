@@ -1,7 +1,7 @@
 """
 BigEd CC — Updater
-Only runs steps where tracked source files changed (or output is missing).
-Force Full Rebuild bypasses checks. Dark mode.
+Git pull + incremental build. Only rebuilds steps where tracked source files
+changed (or output is missing). Force Full Rebuild bypasses checks.
 """
 import hashlib
 import json
@@ -73,7 +73,37 @@ def save_manifest(data: dict):
 # tracked_files   — SRC_DIR-relative filenames; step runs if any hash changed
 # required_outputs — Paths that must exist; step runs if any are missing
 # Empty tracked_files + empty outputs = always run
+_NW = getattr(subprocess, 'CREATE_NO_WINDOW', 0)
+
+
+def _git_check_behind() -> tuple[int, list[str]]:
+    """Check how many commits behind upstream. Returns (count, commit_summaries)."""
+    try:
+        subprocess.run(["git", "fetch", "--quiet"], capture_output=True,
+                       timeout=30, cwd=str(SRC_DIR.parent), creationflags=_NW)
+        r = subprocess.run(["git", "rev-list", "--count", "HEAD..@{u}"],
+                           capture_output=True, text=True, timeout=5,
+                           cwd=str(SRC_DIR.parent), creationflags=_NW)
+        behind = int(r.stdout.strip()) if r.returncode == 0 else 0
+        log_lines = []
+        if behind > 0:
+            r2 = subprocess.run(
+                ["git", "log", "--oneline", f"HEAD..@{{u}}", f"--max-count={min(behind, 10)}"],
+                capture_output=True, text=True, timeout=5,
+                cwd=str(SRC_DIR.parent), creationflags=_NW)
+            log_lines = [l.strip() for l in r2.stdout.strip().split("\n") if l.strip()]
+        return behind, log_lines
+    except Exception:
+        return 0, []
+
+
 STEPS = [
+    (
+        "Git Pull",
+        ["git", "pull", "--ff-only"],
+        [],
+        [],
+    ),
     (
         "Upgrade pip",
         ["python", "-m", "pip", "install", "--upgrade", "pip"],
@@ -131,8 +161,9 @@ class Updater(ctk.CTk):
     def __init__(self):
         super().__init__()
         self.title("BigEd CC — Updater")
-        self.geometry("640x500")
-        self.resizable(False, False)
+        self.geometry("720x560")
+        self.resizable(True, True)
+        self.minsize(600, 450)
         self.configure(fg_color=BG)
 
         self._set_icon()
@@ -155,28 +186,46 @@ class Updater(ctk.CTk):
         self.grid_rowconfigure(2, weight=1)
 
         # ── Header ────────────────────────────────────────────────────────────
-        hdr = ctk.CTkFrame(self, fg_color=BG3, height=52, corner_radius=0)
+        hdr = ctk.CTkFrame(self, fg_color=BG3, height=56, corner_radius=0)
         hdr.grid(row=0, column=0, sticky="ew")
         hdr.grid_propagate(False)
-        hdr.grid_columnconfigure(1, weight=1)
-        ctk.CTkLabel(hdr, text="🧱", font=("Segoe UI", 24)).grid(
-            row=0, column=0, padx=(12, 8), pady=6)
-        ctk.CTkLabel(hdr, text="FLEET CONTROL  —  UPDATER",
-                     font=("Segoe UI", 14, "bold"),
-                     text_color=GOLD).grid(row=0, column=1, sticky="w")
-                     
+        hdr.grid_columnconfigure(2, weight=1)
+
+        # Accent stripe
+        ctk.CTkFrame(hdr, fg_color=GOLD, width=3, corner_radius=0
+                     ).grid(row=0, column=0, sticky="ns")
+
+        # Title block
+        title_frame = ctk.CTkFrame(hdr, fg_color="transparent")
+        title_frame.grid(row=0, column=1, padx=(12, 0), pady=8, sticky="w")
+        ctk.CTkLabel(title_frame, text="UPDATER",
+                     font=("Segoe UI", 14, "bold"), text_color=GOLD).pack(anchor="w")
+        ctk.CTkLabel(title_frame, text="git pull + incremental build",
+                     font=("Consolas", 8), text_color=DIM).pack(anchor="w")
+
+        # Right side: last update + git status
+        right_frame = ctk.CTkFrame(hdr, fg_color="transparent")
+        right_frame.grid(row=0, column=2, padx=12, sticky="e")
+
         manifest = load_manifest()
         last_date = manifest.get("__last_date__", "")
         if last_date:
             last_dur = manifest.get("__last_duration__", 0.0)
             last_size = manifest.get("__last_size_mb__", 0.0)
-            last_info = f"Last update: {last_date} ({last_dur:.1f}s, {last_size:.1f} MB)"
+            last_info = f"Last: {last_date}  ({last_dur:.0f}s, {last_size:.1f}MB)"
         else:
-            last_info = "Last update: Never"
-            
+            last_info = "Last: never"
+
         self._last_update_lbl = ctk.CTkLabel(
-            hdr, text=last_info, font=("Segoe UI", 9), text_color=DIM)
-        self._last_update_lbl.grid(row=0, column=2, padx=16, sticky="e")
+            right_frame, text=last_info, font=("Consolas", 8), text_color=DIM)
+        self._last_update_lbl.pack(anchor="e")
+
+        self._git_status_lbl = ctk.CTkLabel(
+            right_frame, text="checking git...", font=("Consolas", 8), text_color=DIM)
+        self._git_status_lbl.pack(anchor="e")
+
+        # Check git status in background
+        threading.Thread(target=self._check_git_status, daemon=True).start()
 
         # ── Progress ──────────────────────────────────────────────────────────
         prog_frame = ctk.CTkFrame(self, fg_color=BG2, corner_radius=0)
@@ -248,14 +297,33 @@ class Updater(ctk.CTk):
         self._force_btn.grid(row=0, column=1, padx=4, pady=9)
 
         self._open_btn = ctk.CTkButton(
-            btn_frame, text="▶  Run BigEd CC", font=("Segoe UI", 11),
-            width=150, height=34, fg_color=BG2, hover_color=BG,
+            btn_frame, text="▶  Launch BigEd CC", font=("Segoe UI", 11),
+            width=140, height=34, fg_color=BG2, hover_color=BG,
             command=self._run_fleet_control)
         self._open_btn.grid(row=0, column=2, padx=4, pady=9)
 
         self._status_lbl = ctk.CTkLabel(
             btn_frame, text="", font=("Segoe UI", 10), text_color=DIM)
         self._status_lbl.grid(row=0, column=4, padx=12, sticky="e")
+
+    # ── Git Status ──────────────────────────────────────────────────────────
+    def _check_git_status(self):
+        """Background: check git for upstream changes and show changelog."""
+        behind, commits = _git_check_behind()
+        if behind > 0:
+            text = f"⬇ {behind} commit{'s' if behind > 1 else ''} behind"
+            color = ORANGE
+            # Show changelog in log
+            self._log_line("── Upstream Changes ──")
+            for c in commits:
+                self._log_line(f"  {c}")
+            if behind > len(commits):
+                self._log_line(f"  ... and {behind - len(commits)} more")
+            self._log_line("")
+        else:
+            text = "✓ up to date"
+            color = GREEN
+        self.after(0, lambda: self._git_status_lbl.configure(text=text, text_color=color))
 
     # ── Helpers ───────────────────────────────────────────────────────────────
     def _log_line(self, text: str):
@@ -380,13 +448,15 @@ class Updater(ctk.CTk):
 
     def _run_cmd(self, cmd: list) -> bool:
         try:
+            # Git commands run from project root, everything else from SRC_DIR
+            cwd = str(SRC_DIR.parent) if cmd[0] == "git" else str(SRC_DIR)
             proc = subprocess.Popen(
                 cmd,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
                 text=True,
-                cwd=str(SRC_DIR),
-                creationflags=subprocess.CREATE_NO_WINDOW,
+                cwd=cwd,
+                creationflags=_NW,
             )
             for line in proc.stdout:
                 line = line.rstrip()

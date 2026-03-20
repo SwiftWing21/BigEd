@@ -115,6 +115,10 @@ Licensed under the [Apache License, Version 2.0](LICENSE).
 
 Copyright 2025-2026 Michael Bachaud ([SwiftWing21](https://github.com/SwiftWing21)).
 
+## Built With
+
+Claude Opus 4.6, Claude Sonnet 4.6, Gemini Pro 3.1 > 2.5, Claude Cowork
+
 ## Also Known As
 
 BigEd, BigEdgucation, Big Edge Compute Control

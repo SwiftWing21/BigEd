@@ -39,24 +39,198 @@ def _launcher():
     return _mod
 
 
+# ─── BigEd persona — first-run greeting & slash-command reference ─────────────
+
+_BIGED_GREETING = """\
+Hi, I'm BigEd — Big Edge Compute Command running on your hardware.
+
+Here's what I bring to the table:
+  🤖  73 autonomous AI skills — research, code review, security audits, and more
+  ⚡  Dual-supervisor fleet — Dr. Ders monitors thermals, supervisor manages workers
+  🔒  Privacy-first — all work stays on your machine; cloud AI is optional
+  🧠  VRAM-aware routing — models scale automatically under GPU pressure
+
+Ready to go:
+  → Type  ?  anytime for a command reference
+  → Press  Ctrl+K  to open the command palette (skills, agents, actions)
+  → Switch to  Fleet Comm  to review tasks waiting on your input
+  → Go to  Settings → Models  to select or install a different local model
+
+Ask me anything about your fleet, or just describe a task and I'll handle it.\
+"""
+
+_BIGED_COMMANDS = """\
+BigEd Command Reference
+────────────────────────────────────────────────
+  ?  /list               Show this command reference
+  /help                  Overview of all help topics
+  /help modules          Add or toggle UI modules (Accounts, CRM, Ingestion…)
+  /help agents           How to prompt local agents for code or research tasks
+  /help review           How to review agent output and approve / reject tasks
+  /help skills           How to build, train, and evolve a custom skill
+  /help dispatch         How to manually dispatch tasks to the fleet
+
+Context shortcuts  (inject live data into this chat):
+  Fleet Status           Attach live agent + task counts
+  Pending Advisories     Attach security findings awaiting review
+  Recent Reports         Attach the latest generated reports
+
+Keyboard shortcuts:
+  Ctrl+K                 Command palette — skills, agents, system actions
+  Ctrl+1 / 2 / 3        Jump to Command Center / Fleet / Fleet Comm tabs
+  F5                     Refresh fleet status\
+"""
+
+_BIGED_HELP: dict[str, str] = {
+    "": """\
+BigEd Help — Topics
+────────────────────────────────────────────────
+  /help modules     Adding and toggling UI modules
+  /help agents      Prompting local agents for code, research, or review work
+  /help review      Reviewing agent output and handling WAITING_HUMAN tasks
+  /help skills      Building, training, and evolving custom fleet skills
+  /help dispatch    Dispatching tasks manually from this console\
+""",
+
+    "modules": """\
+Module Integration — Adding New Tabs to BigEd
+────────────────────────────────────────────────
+Modules live in  BigEd/launcher/modules/  as  mod_<name>.py  files.
+
+Each module is a class with:
+  LABEL = "Tab Name"          # Shown in the tab bar
+  def build_tab(self, parent) # Build your UI into this frame
+  def on_refresh(self)        # Called on each refresh cycle (optional)
+
+To enable or disable modules:
+  Settings → Display → Visible Tabs
+
+To scaffold a new module, just ask me:
+  "Build me a module for tracking customer onboarding progress"
+  I'll dispatch the code_write skill and drop the file into modules/.
+
+After adding a module file, restart BigEd — your tab appears automatically.\
+""",
+
+    "agents": """\
+Prompting Local Agents — Getting Work Done
+────────────────────────────────────────────────
+Describe the task here and I'll format and dispatch it for you.
+
+Code work:
+  "Review fleet/skills/my_skill.py for bugs and edge cases"
+  "Refactor the auth module to use async/await"
+  → Routes to: code_review / code_refactor  (Sonnet)
+
+Research:
+  "Research best practices for VRAM management in Ollama"
+  "Compare the top 5 Python HTTP client libraries"
+  → Routes to: researcher  (Brave Search + Sonnet)
+
+Skill building:
+  "Build a skill that monitors disk usage and alerts on thresholds"
+  "Evolve the summarize skill to support multi-document chunking"
+  → Routes to: skill_evolve / code_write  (Opus)
+
+Security:
+  "Run a security audit on the fleet API endpoints"
+  → Routes to: security_audit  (Sonnet)
+
+Or dispatch directly: Ctrl+K → type the skill name.\
+""",
+
+    "review": """\
+Reviewing Agent Output
+────────────────────────────────────────────────
+Fleet Comm tab shows all WAITING_HUMAN tasks — agents that need your input.
+
+When an agent is waiting:
+  1. Click the orange task card to expand it
+  2. Read the agent's question and any attached context
+  3. Type your response and press Enter or click Send
+  4. The agent resumes automatically
+
+Security advisories (dark red cards):
+  • Approve  — dispatches security_apply to patch the finding
+  • Dismiss  — moves advisory to the dismissed folder
+
+To review completed work in this chat:
+  • Click  Recent Reports  above to inject the latest output
+  • Or ask me: "Summarize the last 3 completed tasks"
+  • Settings → Review tab → configure the evaluator model (Claude / Gemini / Local)\
+""",
+
+    "skills": """\
+Building and Evolving Skills
+────────────────────────────────────────────────
+Skills live in  fleet/skills/  as Python files:
+
+  class MySkill:
+      SKILL_NAME = "my_skill"
+      COMPLEXITY = "medium"         # simple / medium / complex
+      def run(self, payload):       # Your logic here
+          return {"result": ...}
+
+To build a skill from scratch, ask me:
+  "Build a skill that converts Markdown files to formatted PDFs"
+  I'll scaffold the file via DISPATCH: code_write and place it in fleet/skills/.
+
+To evolve an existing skill, ask me:
+  "Evolve the summarize skill to handle documents over 100 pages"
+  The skill_evolve agent runs the skill, scores output quality, generates
+  improvements, and writes the updated version back — with an __evolve_log__.
+
+To train on your own data:
+  Settings → Ingestion → point at your folder
+  The ingest skill indexes it for RAG queries.
+  Then ask agents: "Using the ingested knowledge, find references to X"\
+""",
+
+    "dispatch": """\
+Dispatching Tasks Manually
+────────────────────────────────────────────────
+Three ways to dispatch:
+
+1. Natural language (easiest) — just ask me here and I'll dispatch:
+   "Summarize the last report" → DISPATCH: {"skill": "summarize", ...}
+
+2. Ctrl+K command palette:
+   Type a skill name (e.g. "code_review") to dispatch directly
+   Type @agent_name to send a message to a specific agent
+
+3. Sidebar task bar:
+   Type any prompt in the task entry and press Enter
+   The fleet routes it to the best-matching agent automatically
+
+Skill complexity and routing:
+  Simple  → qwen3:4b  (~89 tok/s)   e.g. flashcard, rag_query, summarize
+  Medium  → qwen3:8b  (~45 tok/s)   e.g. code_review, discuss, security_audit
+  Complex → Claude / Gemini / Opus   e.g. plan_workload, code_write, legal_draft\
+""",
+}
+
+
 # ─── Console Base Class ─────────────────────────────────────────────────────
 class _ConsoleBase(ctk.CTkToplevel):
     """Shared base for Claude and Gemini chat consoles."""
     SYSTEM_PROMPT = """\
-You are an AI advisor integrated into BigEd CC, a local autonomous agent management system.
-You help the operator manage, review, and direct the fleet via natural language.
+You are BigEd — the AI interface for Big Edge Compute Command, a local autonomous agent \
+fleet running on the operator's own hardware. Introduce yourself as "BigEd" for short.
+
+Your role is to help the operator manage, review, and direct the fleet via natural language.
 
 Your capabilities:
-- Read and interpret fleet status, agent health, task queue
+- Read and interpret fleet status, agent health, and the task queue
 - Review security advisories and findings
 - Dispatch fleet tasks by outputting a JSON block the UI will execute
-- Give strategic recommendations on market research, business ops, security posture
+- Guide the operator on module integration, skill building, and agent prompting
+- Give strategic recommendations on code, research, business ops, and security posture
 - Answer questions about the fleet's agents, skills, and findings
 
 To dispatch a fleet task, output a line in this exact format (the UI parses it):
 DISPATCH: {"skill": "skill_name", "payload": {...}}
 
-Keep responses concise. Lead with the most important insight or action.
+Keep responses concise and action-oriented. Lead with the most important insight or next step.
 """
     # Subclasses override these
     TITLE = ""
@@ -99,6 +273,8 @@ Keep responses concise. Lead with the most important insight or action.
                     role = self.ASSISTANT_ROLE
                 self._append(role, msg.get("content", ""))
         self._on_init()
+        # Show BigEd intro on first session (no prior history for this console)
+        self.after(80, self._maybe_greet)
 
     def _get_api_key(self):
         raise NotImplementedError
@@ -340,10 +516,47 @@ Keep responses concise. Lead with the most important insight or action.
         """Return (label, color) based on message content. Override in subclasses."""
         return "● drafting", ORANGE
 
+    # ── BigEd local command handling ──────────────────────────────────────────
+    @staticmethod
+    def _is_local_command(text: str) -> bool:
+        """True if the message is a BigEd built-in command (no API call needed)."""
+        t = text.strip().lower()
+        return t in ("?", "/list") or t.startswith("/help")
+
+    def _handle_command(self, text: str) -> None:
+        """Render a BigEd response locally without calling the API."""
+        t = text.strip().lower()
+        if t in ("?", "/list"):
+            self._append("biged", _BIGED_COMMANDS)
+        elif t == "/help":
+            self._append("biged", _BIGED_HELP[""])
+        elif t.startswith("/help "):
+            topic = t[len("/help "):].strip()
+            if topic in _BIGED_HELP:
+                self._append("biged", _BIGED_HELP[topic])
+            else:
+                known = ", ".join(f"/help {k}" for k in _BIGED_HELP if k)
+                self._append("biged",
+                    f"Unknown help topic: '{topic}'\nAvailable topics: {known}")
+
+    def _maybe_greet(self) -> None:
+        """Show the BigEd intro if this console has no prior history."""
+        if not self._history:
+            self._append("biged", _BIGED_GREETING)
+
     # ── Chat ──────────────────────────────────────────────────────────────────
     def _send(self):
         text = self._input.get().strip()
-        if not text or not self._api_key:
+        if not text:
+            return
+        # Local commands — handled instantly, no API key required
+        if self._is_local_command(text):
+            self._input.delete(0, "end")
+            self._append("user", text)
+            self._handle_command(text)
+            return
+        # Normal API flow
+        if not self._api_key:
             return
         if not self._can_send():
             return
@@ -446,7 +659,8 @@ Keep responses concise. Lead with the most important insight or action.
             "Check fleet status for updates."))
 
     def _append(self, role: str, text: str):
-        prefix = self.ROLE_PREFIXES.get(role, role.title())
+        # "biged" is a synthetic role for local persona responses — always "BigEd"
+        prefix = "BigEd" if role == "biged" else self.ROLE_PREFIXES.get(role, role.title())
         self._chat.configure(state="normal")
         self._chat.insert("end", f"\n{prefix}:\n")
         self._chat.insert("end", f"{text}\n\n")

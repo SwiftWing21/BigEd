@@ -1,6 +1,7 @@
 """0.15.00: Model manager — inventory, install, profile switching for Ollama models."""
 import json
 import os
+import sys
 import urllib.request
 from pathlib import Path
 
@@ -31,6 +32,8 @@ def run(payload: dict, config: dict) -> str:
         return _recommend_profile()
     elif action == "update_check":
         return _check_model_updates(config, host)
+    elif action == "debug":
+        return _debug_models(host, payload.get("target"), payload.get("clean", False))
     else:
         return json.dumps({"error": f"Unknown action: {action}"})
 
@@ -356,3 +359,30 @@ def _check_model_updates(config, host):
         "hitl_recommendation": hitl_recommendation,
         "summary": f"{len(updates)} models checked, {len(suggestions)} alternatives found",
     })
+
+
+def _debug_models(host, target=None, clean=False):
+    """Diagnose loaded models, detect idle blockers, optionally evict them.
+
+    Delegates to fleet/debug_models.py — the canonical module for all
+    idle-model detection and VRAM management.
+
+    payload:
+        target  (str)  – model name to protect from eviction
+        clean   (bool) – if True, evict idle non-target models
+    """
+    # Import the canonical module (lives at fleet/debug_models.py)
+    sys.path.insert(0, str(FLEET_DIR))
+    try:
+        import debug_models
+    finally:
+        sys.path.pop(0)
+
+    try:
+        if clean:
+            report = debug_models.clean_idle(host, target)
+        else:
+            report = debug_models.diagnose(host, target)
+        return json.dumps(report, default=str)
+    except RuntimeError as e:
+        return json.dumps({"error": str(e)})

@@ -186,6 +186,32 @@ class BootManagerMixin:
         except Exception:
             return []
 
+    def _evict_idle_blockers(self, host, target_model):
+        """Evict idle VRAM-blocker models before loading a new one.
+
+        Delegates to fleet/debug_models.py — the canonical module for all
+        idle-model detection, DB correlation, and eviction logic.
+
+        Returns list of evicted model names.
+        """
+        try:
+            # Import canonical module from fleet/
+            fleet_dir = Path(__file__).resolve().parent.parent.parent.parent / "fleet"
+            sys.path.insert(0, str(fleet_dir))
+            try:
+                import debug_models
+            finally:
+                sys.path.pop(0)
+
+            return debug_models.evict_idle_blockers(
+                host=host,
+                target_model=target_model,
+                db_path=fleet_dir / "fleet.db",
+            )
+        except Exception as e:
+            self._log_boot(f"  [warn] evict_idle_blockers: {e}")
+            return []
+
     # ── Boot progress UI with live timers ────────────────────────────────
     def _show_boot_progress(self):
         """Create boot progress line items with live elapsed timers."""
@@ -570,7 +596,16 @@ class BootManagerMixin:
                 available = []
             raise Exception(f"'{model}' not installed. Have: {available}")
 
-        # Check if already loaded
+        # Evict idle blocker models before attempting load
+        # (models held in VRAM by keep_alive:"24h" with no active fleet tasks)
+        host = "http://localhost:11434"
+        evicted = self._evict_idle_blockers(host, model)
+        if evicted:
+            self._log_boot(
+                f"  Freed VRAM: evicted {len(evicted)} idle model(s): {', '.join(evicted)}"
+            )
+
+        # Check if already loaded (after any evictions)
         loaded = self._ollama_get_loaded()
         if model in loaded:
             return f"{model} (cached)"
