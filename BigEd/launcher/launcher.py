@@ -1096,52 +1096,42 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
         hdr.grid_columnconfigure(3, weight=1)
         self._header = hdr
 
-        # ── Logo + title (left group) ──────────────────────────────────
+        # ── Logo ──────────────────────────────────────────────────────
         banner = self._load_banner()
         if banner:
             ctk.CTkLabel(hdr, image=banner, text="").grid(
-                row=0, column=0, padx=(12, 4), pady=6)
+                row=0, column=0, padx=(10, 2), pady=6)
         else:
             ctk.CTkLabel(hdr, text="🧱", font=("Segoe UI", 22)).grid(
-                row=0, column=0, padx=(12, 4), pady=6)
+                row=0, column=0, padx=(10, 2), pady=6)
 
         self._sidebar_btn = ctk.CTkButton(
             hdr, text="≡", font=("Segoe UI", 16), width=28, height=28,
             fg_color="transparent", hover_color=BG2, text_color=DIM,
             corner_radius=4, command=self._toggle_sidebar
         )
-        self._sidebar_btn.grid(row=0, column=1, padx=(0, 6), pady=6)
+        self._sidebar_btn.grid(row=0, column=1, padx=(0, 4), pady=6)
 
-        # Title with version subtitle
+        # Title — single line with dim version
         title_frame = ctk.CTkFrame(hdr, fg_color="transparent")
         title_frame.grid(row=0, column=2, padx=(0, 8), pady=6, sticky="w")
         ctk.CTkLabel(title_frame, text="BIGED CC",
-                     font=FONT_TITLE, text_color=GOLD).pack(anchor="w")
-        ctk.CTkLabel(title_frame, text="alpha 0.31",
-                     font=FONT_XS, text_color=DIM).pack(anchor="w", pady=(0, 0))
+                     font=FONT_TITLE, text_color=GOLD).pack(side="left")
+        ctk.CTkLabel(title_frame, text="  0.31",
+                     font=FONT_XS, text_color=DIM).pack(side="left", pady=(4, 0))
 
-        # ── System stats (center, in a subtle container) ──────────────
-        stats_container = ctk.CTkFrame(hdr, fg_color=BG2, corner_radius=6, height=36)
-        stats_container.grid(row=0, column=3, sticky="w", padx=(0, 8), pady=10)
-        stats_container.grid_propagate(False)
-
-        stats_inner = ctk.CTkFrame(stats_container, fg_color="transparent")
-        stats_inner.pack(expand=True, fill="both", padx=8, pady=4)
-
+        # ── System stats (inline, no container — let them breathe) ────
+        stats_frame = ctk.CTkFrame(hdr, fg_color="transparent")
+        stats_frame.grid(row=0, column=3, sticky="w", padx=(4, 0), pady=8)
         kw = dict(font=FONT_STAT, text_color=DIM)
-        self._stat_cpu = ctk.CTkLabel(stats_inner, text="CPU —", **kw)
-        self._stat_ram = ctk.CTkLabel(stats_inner, text="RAM —", **kw)
-        self._stat_gpu = ctk.CTkLabel(stats_inner, text="GPU —", **kw)
-        self._stat_net = ctk.CTkLabel(stats_inner, text="NET —", **kw)
-        # Separator dots between stats
-        sep_kw = dict(font=FONT_XS, text_color="#444")
-        self._stat_cpu.pack(side="left")
-        ctk.CTkLabel(stats_inner, text=" · ", **sep_kw).pack(side="left")
-        self._stat_ram.pack(side="left")
-        ctk.CTkLabel(stats_inner, text=" · ", **sep_kw).pack(side="left")
-        self._stat_gpu.pack(side="left")
-        ctk.CTkLabel(stats_inner, text=" · ", **sep_kw).pack(side="left")
-        self._stat_net.pack(side="left")
+        self._stat_cpu = ctk.CTkLabel(stats_frame, text="CPU —", **kw)
+        self._stat_ram = ctk.CTkLabel(stats_frame, text="RAM —", **kw)
+        self._stat_gpu = ctk.CTkLabel(stats_frame, text="GPU —", **kw)
+        self._stat_net = ctk.CTkLabel(stats_frame, text="NET —", **kw)
+        self._stat_cpu.pack(side="left", padx=(0, 10))
+        self._stat_ram.pack(side="left", padx=(0, 10))
+        self._stat_gpu.pack(side="left", padx=(0, 10))
+        self._stat_net.pack(side="left", padx=(0, 10))
 
         # ── Right side: Dr. Ders + status + badges ────────────────────
         right_frame = ctk.CTkFrame(hdr, fg_color="transparent")
