@@ -209,6 +209,12 @@ auto_manifest = true  # auto-create manifest if missing
 owner = "SwiftWing21"
 repo = "BigEd"
 
+[modules]
+hub_url = "https://github.com/SwiftWing21/BigEd-ModuleHub"
+enterprise_hub_url = ""           # Private org repo (empty = use public hub)
+auto_update = false               # Check for module updates on boot
+verify_checksums = true           # SHA-256 verification on download
+
 # v0.31.00: MCP Server Integration — connect external tool servers to fleet skills
 [mcp]
 enabled = true                   # master switch for MCP server routing

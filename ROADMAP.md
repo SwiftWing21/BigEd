@@ -681,6 +681,32 @@ log_all_access = true    # SOC 2 audit trail for file operations
 - [x] Hover/click expands: shows each request with dynamic scroll area (launcher.py:2310-2311, 2404-2417)
 - [x] Pinned view: pin button holds list expanded until unpinned (launcher.py:2398-2402)
 
+### 0.053.00b — Module Hub + Scrollable Tab Bar [PLANNED]
+
+**Goal:** GitHub-based module repository with download/install UX + scrollable tab bar for unlimited modules.
+
+**Repo:** https://github.com/SwiftWing21/BigEd-ModuleHub (renamed from BigEds_Agents)
+**Spec:** `docs/specs/module_hub_architecture.md`
+
+**Scrollable tab bar:**
+- [ ] Refactor CustomTabBar: horizontal scroll when tabs exceed window width
+- [ ] Left/right scroll arrows or mouse wheel scroll
+- [ ] Active tab auto-scrolls into view
+- [ ] Minimum tab width to keep text readable
+
+**Module Hub core:**
+- [ ] registry.json catalog (name, version, checksum, tags, enterprise_only)
+- [ ] Module download from GitHub raw URL with SHA-256 verification
+- [ ] Module install: copy to modules/, update manifest, add to fleet.toml
+- [ ] Module Hub section in Settings (install/enable/disable/update cards)
+- [ ] Version checking: installed vs available
+
+**Enterprise:**
+- [ ] Private hub URL in fleet.toml `[modules] enterprise_hub_url`
+- [ ] Federation auto-selects from enterprise hub
+- [ ] Enterprise-only module gating
+- [ ] Agent-generated module recommendations (HITL)
+
 ### 0.051.06b — MiniMax M2.5 Provider Integration [PLANNED]
 
 **Goal:** Add MiniMax M2.5 as a 4th provider in the HA fallback chain. Support both API and Manual Mode (OAuth if available).

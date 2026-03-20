@@ -4,6 +4,7 @@ Uses `claude -p` (print mode) which runs non-interactively and exits.
 Falls back to call_complex() if Claude Code CLI is not installed.
 """
 import json
+import os
 import shutil
 import subprocess
 from datetime import datetime
@@ -46,14 +47,31 @@ def _run_claude(prompt: str, cwd: str = None, timeout: int = 300) -> dict:
     """Execute claude -p and return structured result."""
     if not cwd:
         cwd = str(PROJECT_DIR)
+
+    # SOC 2 Confidentiality: Strict Environment Boundary
+    # Inherit OS env but explicitly strip non-Anthropic fleet secrets
+    safe_env = {
+        k: v for k, v in os.environ.items()
+        if not any(secret in k.upper() for secret in ["GEMINI", "STABILITY", "OPENAI", "DB_KEY", "MQTT"])
+    }
+
     try:
         result = subprocess.run(
             [_CLAUDE_CLI, "-p", prompt],
             capture_output=True, text=True, timeout=timeout,
-            cwd=cwd,
+            cwd=cwd, env=safe_env
         )
         output = result.stdout.strip()
         error = result.stderr.strip()
+
+        # SOC 2 Confidentiality: Synchronous DLP scrub before saving/returning
+        try:
+            from skills._watchdog import _redact_secrets
+            output = _redact_secrets(output)
+            if error:
+                error = _redact_secrets(error)
+        except ImportError:
+            pass # Graceful failover to async watchdog if import fails
 
         # Save output to knowledge
         _save_output(prompt[:50], output)
@@ -132,13 +150,19 @@ def _generate_tests(payload):
 def _custom_prompt(payload):
     """Run a custom prompt through Claude Code."""
     prompt = payload.get("prompt", "")
-    cwd = payload.get("cwd", str(PROJECT_DIR))
+    requested_cwd = payload.get("cwd", str(PROJECT_DIR))
     timeout = payload.get("timeout", 300)
 
     if not prompt:
         return json.dumps({"error": "prompt required"})
 
-    result = _run_claude(prompt, cwd=cwd, timeout=timeout)
+    # SOC 2 Security: Prevent path traversal
+    from skills._security import safe_path
+    resolved_cwd = safe_path(requested_cwd)
+    if not resolved_cwd:
+        return json.dumps({"error": f"Invalid or unauthorized working directory: {requested_cwd}"})
+
+    result = _run_claude(prompt, cwd=str(resolved_cwd), timeout=timeout)
     return json.dumps(result)
 
 
