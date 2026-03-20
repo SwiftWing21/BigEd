@@ -333,6 +333,86 @@ Completed 2026-03-19.
 - Topic diversity fix (weighted random skill selection, per-agent cooldown, cross-worker dedup)
 - Documentation cleanup
 
+### 0.31.01 — Settings Module Split (ui/settings/ package refactor)
+
+- **Goal:** Split 1893-line settings.py into a package of focused modules. Reduce per-module size, enable lazy panel loading, maintain identical UX.
+- **Grading Alignment:** Architecture/SoC → A sustain | Code Quality → A sustain | Performance → A sustain
+- **Dependencies:** None (pure refactor, no feature changes)
+- **Est. Tokens:** ~15-20k (L)
+- **Status:** [ ] Not started
+
+#### Current file map (settings.py, 1893 lines)
+```
+  64-  170  SettingsDialog class + __init__ + _build_ui + _show_section  (107 lines)
+ 172-  345  _build_general_panel + handlers                              (174 lines)
+ 346-  429  _build_display_panel + handlers                              ( 84 lines)
+ 430-  636  _build_models_panel + handlers                               (207 lines)
+ 637-  737  _build_hardware_panel + _hw_metric_card + _load_hw_info      (101 lines)
+ 738-  791  _build_keys_panel                                            ( 54 lines)
+ 792-  853  _build_review_panel                                          ( 62 lines)
+ 854-1264  _build_operations_panel + all op handlers                    (411 lines)
+1265-1566  _build_mcp_panel + all MCP handlers                          (302 lines)
+1567-1674  AgentNamesDialog class                                       (108 lines)
+1675-1893  KeyManagerDialog class                                       (219 lines)
+```
+
+#### Target structure
+```
+ui/settings/
+  __init__.py       SettingsDialog + _show_section + re-exports         (~120 lines)
+  general.py        _build_general_panel + theme/names/behavior/tabs    (~200 lines)
+  display.py        _build_display_panel + scale/font handlers          (~100 lines)
+  models.py         _build_models_panel + diffusion/pipeline handlers   (~220 lines)
+  hardware.py       _build_hardware_panel + metric cards + _load_hw     (~200 lines)
+  keys.py           _build_keys_panel + KeyManagerDialog                (~280 lines)
+  review.py         _build_review_panel                                 ( ~70 lines)
+  operations.py     _build_operations_panel + op handlers               (~420 lines)
+  mcp.py            _build_mcp_panel + all MCP handlers                 (~310 lines)
+  names.py          AgentNamesDialog                                    (~110 lines)
+```
+
+#### Execution plan (5 agents, parallel — worktree isolation)
+
+| Agent | Creates | Moves From | Lines |
+|-------|---------|------------|-------|
+| settings-init | `__init__.py` | Dialog class, nav, _show_section, imports | ~120 |
+| settings-panels-1 | `general.py`, `display.py`, `review.py` | 3 small panels + handlers | ~370 |
+| settings-panels-2 | `models.py`, `hardware.py` | 2 medium panels + handlers | ~420 |
+| settings-panels-3 | `operations.py`, `mcp.py` | 2 large panels + handlers | ~730 |
+| settings-dialogs | `keys.py`, `names.py` | KeyManagerDialog, AgentNamesDialog | ~390 |
+
+#### Pattern: mixin classes
+
+Each panel module exports a mixin class that SettingsDialog inherits:
+```python
+# ui/settings/general.py
+class GeneralPanelMixin:
+    def _build_general_panel(self):
+        ...
+    def _on_theme_change(self, choice):
+        ...
+
+# ui/settings/__init__.py
+from .general import GeneralPanelMixin
+from .display import DisplayPanelMixin
+...
+
+class SettingsDialog(GeneralPanelMixin, DisplayPanelMixin, ..., ctk.CTkToplevel):
+    ...
+```
+
+#### Import compatibility
+The single external import is in `launcher.py:4106`:
+```python
+from ui.settings import SettingsDialog, AgentNamesDialog, KeyManagerDialog
+```
+This continues to work because `__init__.py` re-exports all three classes.
+
+#### Verification
+- `python -c "from ui.settings import SettingsDialog, AgentNamesDialog, KeyManagerDialog"` — import works
+- Launch app → Settings → click every nav tab — all panels render
+- `py_compile` all new files
+
 ### 0.31.00 — MCP Server Integration UX
 
 - **Goal:** Let operators discover, configure, and manage MCP servers through the launcher GUI with zero config-file editing. Split into default fleet-useful servers vs custom user additions.
