@@ -1795,6 +1795,11 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
             height=24, width=140, fg_color=BG2, hover_color=BG3,
             text_color=DIM, command=self._toggle_disabled_section)
         self._disabled_toggle.grid(row=1, column=0, sticky="w", padx=4, pady=2)
+        Tooltip(self._disabled_toggle,
+                "Disabled agents are excluded from fleet boot.\n"
+                "To remove permanently: delete from fleet.toml\n"
+                "[fleet] disabled_agents list and remove the\n"
+                "affinity entry from [affinity] section.")
 
         # Collapsed grid for disabled agents
         self._disabled_grid = ctk.CTkFrame(self._disabled_frame, fg_color=BG, corner_radius=0)
