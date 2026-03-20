@@ -540,6 +540,37 @@ Completed 2026-03-20. 11 files, +194/-90 lines:
 - [ ] Weight adjustment UI for skill complexity routing
 - [ ] Evaluation routine live display (show Tier 1/2 scores as they happen)
 
+### 0.52.00b — Claude Manual Mode Integration (Enterprise) [PLANNED]
+
+**Goal:** ToS-compliant hybrid system — unattended API automation (Lane 2) + human-guided Claude Code sessions (Lane 1). No lane crossing. Spec: `docs/specs/claude-manual-mode-integration.md`
+
+**Phase 1: API audit system**
+- [ ] Prompt queue management UI (ordered list, per-prompt model/tokens/repeat)
+- [ ] Scheduler: recurring interval (1-30 day cadence) + single window block
+- [ ] Audit engine: process queue against training/knowledge files via Anthropic API
+- [ ] Results viewer with structured task list generation
+- [ ] Token/cost tracking per audit run (integrates with existing CT-1/2/3/4)
+
+**Phase 2: VS Code / Claude Code launch integration**
+- [ ] "Open in Claude Code" button in UI (writes context files, launches VS Code)
+- [ ] Auto-generate: task-briefing.md, audit-results.md from API audit output
+- [ ] CLAUDE.md + .claude/rules/ templates for training file compliance
+- [ ] .claude/skills/ training-review workflow template
+- [ ] Cross-platform VS Code launch (macOS/Windows/Linux)
+
+**Phase 3: HITL governance + handoff**
+- [ ] "Manual Claude Code review requested" notification (in-app + optional email/Slack)
+- [ ] HITL approval gate: any API consumption increase requires human confirm
+- [ ] System recommendations (never auto-applied): frequency, model tier, scope changes
+- [ ] Anomalous usage alerting (cost spike detection)
+- [ ] Audit log for all configuration changes
+
+**Open decisions:**
+- Enterprise vs Pro/Max plan targeting (recommend: support both with upgrade path)
+- CLAUDE.md ownership model (BigEd owns dynamic files, user owns rules)
+- Multi-user workspace handling (CLAUDE.local.md per user)
+- Audit result retention policy (90 days default)
+
 ### 0.40.10a — Claude Skills Update + Cowork Integration
 
 - **Goal:** Update all 5 project skills to reflect current architecture (post-cowork refactor + 0.31.x work). Create 3 new skills leveraging installed superpowers plugin patterns.
