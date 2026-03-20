@@ -403,7 +403,7 @@ Completed 2026-03-20. 11 files, +194/-90 lines:
 
 **Boot/Installer:**
 - [ ] Model load response parsing swallows JSONDecodeError silently (boot.py:778-790)
-- [ ] Timeout values too short for large models / slow networks (boot.py:666,777)
+- [x] Timeout values configurable via fleet.toml `[boot] model_load_timeout = 300` — adaptive timeout reads config (boot.py:154-166)
 - [ ] Missing env var null checks create relative paths (installer.py:73, boot.py:581-590)
 - [ ] Model fallback error handling confusing — action card + exception simultaneously (boot.py:735-749)
 - [ ] Build failure error message only shows first 3 words of command (installer.py:794-804)
@@ -416,7 +416,7 @@ Completed 2026-03-20. 11 files, +194/-90 lines:
 **Dashboard:**
 - [x] SSE connection leak — clients cleaned in finally block and dead client removal (dashboard.py:176-177, 1324-1326)
 - [ ] TOML injection in worker disable/enable — agent name not validated (dashboard.py:1286-1311)
-- [ ] fetchJSON() has no error handling — silent failures across all panels (dashboard.html:240-243)
+- [x] fetchJSON() error handling — try/catch with HTTP status check, returns `{}` on failure (dashboard.html:250-258)
 
 **Launcher GUI:**
 - [x] SSE thread UI safety — all UI updates go through `_safe_after()` with `_alive` guard (launcher.py:920, 1089-1095)
@@ -442,13 +442,13 @@ Completed 2026-03-20. 11 files, +194/-90 lines:
 - [ ] DB timeout inconsistency (10s vs 2s vs 30s across layers)
 - [x] Circuit breaker has exponential backoff — `min(60s * 2^cooldowns, 600s)` with cooldown counter (providers.py:38-52)
 - [x] FALLBACK_CHAIN actively used — `_models.py call_complex()` iterates chain with circuit breaker (skills/_models.py:124-138)
-- [ ] Boot timing file not atomic — concurrent write race (boot.py:119-133)
+- [x] Boot timing file already atomic — writes to `.tmp` then `replace()` (boot.py:148-150)
 - [ ] pip missing --break-system-packages for system Python (installer.py:847-861)
 - [ ] 65+ bare `except: pass` blocks across launcher hiding real errors
 - [ ] Memory leaks: _model_perf_labels, _agent_activity deques never cleaned
-- [ ] Alert monitor thread swallows all exceptions silently (dashboard.py:182-241)
-- [ ] hw_state.json concurrent read/write without locking (dashboard.py:631-656)
-- [ ] Content-Security-Policy header missing on dashboard
+- [x] Alert monitor exception logging — logs first 3 failures via `logging.warning()` (dashboard.py:258-263)
+- [x] hw_state.json writes already atomic — `tempfile.mkstemp` + `os.replace` (hw_supervisor.py:205-208)
+- [x] Content-Security-Policy header on all dashboard responses — `_add_security_headers()` after_request handler (dashboard.py:111-120)
 - [ ] Stale task recovery uses time-based detection instead of PID liveness (db.py:657-677)
 
 ### 0.050.05b — P3 Polish & Accessibility [PLANNED]
@@ -591,6 +591,35 @@ Partially completed in v0.51.00b (24e21d4). Dr. Ders respawn, startup perf, disa
 - [ ] Multi-machine: fleet federation, Dr. Ders hardware monitoring, cross-platform (Win/Linux/macOS)
 - [ ] Badges: build status, Python version, license, platform support
 - [ ] Topics/tags: ai-agents, fleet-management, ollama, claude, gemini, local-ai, enterprise
+
+### 0.051.06b — MiniMax M2.5 Provider Integration [PLANNED]
+
+**Goal:** Add MiniMax M2.5 as a 4th provider in the HA fallback chain. Support both API and Manual Mode (OAuth if available).
+
+**API Integration (Lane 2):**
+- [ ] Add MiniMax to `providers.py` FALLBACK_CHAIN: `["claude", "gemini", "minimax", "local"]`
+- [ ] `_call_minimax()` function in providers.py (OpenAI-compatible API format)
+- [ ] PRICING entry for M2.5 (input/output per million tokens)
+- [ ] Circuit breaker integration (same pattern as Claude/Gemini)
+- [ ] Cost tracking: `db.log_usage()` with provider="minimax"
+- [ ] fleet.toml `[models]` section: `minimax_model = "MiniMax-M1-80k"` + API key config
+- [ ] Skill complexity routing: add M2.5 to `SKILL_COMPLEXITY` tiers
+
+**Manual Mode Integration (Lane 1 — if OAuth supported):**
+- [ ] Research MiniMax OAuth/API key model (check docs for device flow or token-based auth)
+- [ ] Add Lane 1 support in Manual Mode spec if OAuth available
+- [ ] "Open in MiniMax" button alongside "Open in Claude Code" (if applicable)
+- [ ] Context file generation for MiniMax sessions
+
+**Model Routing:**
+- [ ] M2.5 as mid-tier: between Gemini Flash (cheap) and Claude Sonnet (quality)
+- [ ] Auto-route: simple → Gemini Flash, standard → MiniMax M2.5, complex → Claude Sonnet/Opus
+- [ ] Benchmark: compare M2.5 vs Gemini Flash vs Claude Haiku on fleet skill tasks
+
+**Testing:**
+- [ ] Provider health probe for MiniMax API
+- [ ] Fallback verification: Claude → Gemini → MiniMax → Local
+- [ ] Cost comparison dashboard panel showing all 4 providers
 
 ### 0.052.00b — Claude Manual Mode Integration (Enterprise) [PLANNED]
 
