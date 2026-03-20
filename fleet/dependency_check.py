@@ -46,11 +46,15 @@ def _run(cmd: list[str], timeout: int = 10) -> tuple[bool, str]:
 
 
 def _probe_url(url: str, timeout: int = 3) -> tuple[bool, str]:
-    """HTTP probe — returns (reachable, detail)."""
+    """HTTP probe — returns (reachable, detail). Any response = alive."""
     import urllib.request
+    import urllib.error
     try:
         with urllib.request.urlopen(url, timeout=timeout) as resp:
             return True, f"HTTP {resp.status}"
+    except urllib.error.HTTPError as e:
+        # 400/405/etc still means the server is reachable
+        return True, f"HTTP {e.code}"
     except Exception as e:
         return False, str(e)
 
