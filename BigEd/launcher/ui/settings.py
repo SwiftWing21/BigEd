@@ -636,36 +636,73 @@ class SettingsDialog(ctk.CTkToplevel):
     # ── Hardware Panel ───────────────────────────────────────────────────
     def _build_hardware_panel(self):
         L = _launcher()
-        panel = ctk.CTkFrame(self._content, fg_color=GLASS_PANEL)
+        panel = ctk.CTkScrollableFrame(self._content, fg_color=GLASS_PANEL)
         self._panels["hardware"] = panel
-        panel.grid_columnconfigure(0, weight=1)
-        panel.grid_rowconfigure(2, weight=1)
 
-        # GPU Power section
-        self._section_header_grid(panel, "GPU Power & Thermal", row=0)
-        gpu_frame = ctk.CTkFrame(panel, fg_color=GLASS_BG, corner_radius=6)
-        gpu_frame.grid(row=1, column=0, sticky="ew", padx=16, pady=(0, 8))
-        ctk.CTkLabel(gpu_frame,
-                     text="Control GPU power limits and monitor thermals.",
+        # ── GPU Power & Thermal ────────────────────────────────────────
+        self._section_header(panel, "GPU Power & Thermal")
+        gpu_ctrl = ctk.CTkFrame(panel, fg_color=GLASS_BG, corner_radius=6)
+        gpu_ctrl.pack(fill="x", padx=16, pady=(0, 12))
+        gpu_ctrl.grid_columnconfigure(1, weight=1)
+        ctk.CTkLabel(gpu_ctrl, text="Control GPU power limits and monitor thermals.",
                      font=("Segoe UI", 9), text_color=DIM
-                     ).pack(padx=12, pady=(10, 4), anchor="w")
-        ctk.CTkButton(gpu_frame, text="Open GPU Power Manager", font=FONT_SM,
-                      width=180, height=30, fg_color=BG3, hover_color=BG2,
+                     ).grid(row=0, column=0, columnspan=2, padx=12, pady=(10, 4), sticky="w")
+        ctk.CTkButton(gpu_ctrl, text="Open GPU Power Manager", font=FONT_SM,
+                      width=180, height=28, fg_color=BG3, hover_color=BG2,
                       command=lambda: L.ThermalDialog(self._parent)
-                      ).pack(padx=12, pady=(0, 10), anchor="w")
+                      ).grid(row=1, column=0, padx=12, pady=(0, 10), sticky="w")
 
-        # Hardware Details section
-        self._section_header_grid(panel, "Hardware Details", row=2)
-        hw_text = ctk.CTkTextbox(panel, font=("Consolas", 10),
-                                 fg_color=GLASS_BG, text_color=TEXT,
-                                 wrap="none", corner_radius=6)
-        hw_text.grid(row=3, column=0, sticky="nsew", padx=16, pady=(0, 12))
-        hw_text.insert("end", "Loading hardware info...")
-        hw_text.configure(state="disabled")
-        self._hw_text = hw_text
+        # ── System Overview (metric cards) ─────────────────────────────
+        self._section_header(panel, "System Overview")
+        self._hw_cards_frame = ctk.CTkFrame(panel, fg_color="transparent")
+        self._hw_cards_frame.pack(fill="x", padx=16, pady=(0, 12))
+        self._hw_cards_frame.grid_columnconfigure((0, 1, 2), weight=1)
 
-        bar = ctk.CTkFrame(panel, fg_color="transparent", height=36)
-        bar.grid(row=4, column=0, sticky="ew", padx=16, pady=(0, 12))
+        # Placeholder cards — populated by _load_hw_info
+        self._hw_card_cpu = self._hw_metric_card(self._hw_cards_frame, 0, 0,
+            "CPU", "—", "—", DIM)
+        self._hw_card_ram = self._hw_metric_card(self._hw_cards_frame, 0, 1,
+            "RAM", "—", "—", DIM)
+        self._hw_card_gpu = self._hw_metric_card(self._hw_cards_frame, 0, 2,
+            "GPU", "—", "—", DIM)
+
+        # ── Detailed Metrics ───────────────────────────────────────────
+        self._section_header(panel, "Details")
+        details_frame = ctk.CTkFrame(panel, fg_color=GLASS_BG, corner_radius=6)
+        details_frame.pack(fill="x", padx=16, pady=(0, 12))
+        details_frame.grid_columnconfigure(1, weight=1)
+
+        self._hw_detail_rows = {}
+        detail_items = [
+            ("cpu_name", "CPU Model"),
+            ("cpu_cores", "Cores"),
+            ("cpu_freq", "Frequency"),
+            ("ram_total", "RAM Total"),
+            ("ram_used", "RAM Used"),
+            ("ram_avail", "RAM Available"),
+            ("gpu_name", "GPU Model"),
+            ("vram_total", "VRAM Total"),
+            ("vram_used", "VRAM Used"),
+            ("gpu_temp", "GPU Temp"),
+            ("gpu_power", "GPU Power"),
+            ("gpu_fan", "GPU Fan"),
+        ]
+        for i, (key, label) in enumerate(detail_items):
+            ctk.CTkLabel(details_frame, text=label, font=FONT_SM,
+                         text_color=DIM, anchor="w", width=100
+                         ).grid(row=i, column=0, padx=(12, 8), pady=3, sticky="w")
+            val_lbl = ctk.CTkLabel(details_frame, text="—", font=("Consolas", 10),
+                                   text_color=TEXT, anchor="w")
+            val_lbl.grid(row=i, column=1, padx=(0, 12), pady=3, sticky="w")
+            self._hw_detail_rows[key] = val_lbl
+
+        # Bottom padding
+        ctk.CTkFrame(details_frame, fg_color="transparent", height=8).grid(
+            row=len(detail_items), column=0, columnspan=2)
+
+        # Refresh button
+        bar = ctk.CTkFrame(panel, fg_color="transparent")
+        bar.pack(fill="x", padx=16, pady=(0, 12))
         ctk.CTkButton(bar, text="↻ Refresh", font=FONT_SM, width=90, height=28,
                       fg_color=BG3, hover_color=BG2,
                       command=lambda: threading.Thread(
@@ -674,109 +711,205 @@ class SettingsDialog(ctk.CTkToplevel):
 
         threading.Thread(target=self._load_hw_info, daemon=True).start()
 
+    def _hw_metric_card(self, parent, row, col, title, value, subtitle, color):
+        """Create a metric card widget. Returns dict of labels for updating."""
+        card = ctk.CTkFrame(parent, fg_color=GLASS_BG, corner_radius=8, height=90)
+        card.grid(row=row, column=col, padx=4, pady=4, sticky="nsew")
+        card.grid_propagate(False)
+
+        ctk.CTkLabel(card, text=title.upper(), font=("Consolas", 8),
+                     text_color=DIM).place(x=12, y=8)
+        val_lbl = ctk.CTkLabel(card, text=value, font=("Segoe UI", 22, "bold"),
+                               text_color=color)
+        val_lbl.place(x=12, y=26)
+        sub_lbl = ctk.CTkLabel(card, text=subtitle, font=("Consolas", 9),
+                               text_color=DIM)
+        sub_lbl.place(x=12, y=58)
+
+        # Usage bar at bottom
+        bar_bg = ctk.CTkFrame(card, fg_color=BG3, height=4, corner_radius=2)
+        bar_bg.place(x=12, rely=1.0, y=-12, relwidth=1.0, width=-24)
+        bar_fill = ctk.CTkFrame(bar_bg, fg_color=color, height=4, corner_radius=2)
+        bar_fill.place(x=0, y=0, relwidth=0.0)
+
+        return {"card": card, "value": val_lbl, "subtitle": sub_lbl, "bar": bar_fill, "color": color}
+
     # ── Keys Panel ───────────────────────────────────────────────────────
     def _build_keys_panel(self):
-        panel = ctk.CTkFrame(self._content, fg_color=GLASS_PANEL)
+        panel = ctk.CTkScrollableFrame(self._content, fg_color=GLASS_PANEL)
         self._panels["keys"] = panel
-        panel.grid_columnconfigure(0, weight=1)
-        panel.grid_rowconfigure(0, weight=1)
 
-        # Embed a simple message + launch button (full KeyManager is complex)
-        inner = ctk.CTkFrame(panel, fg_color=GLASS_BG, corner_radius=6)
-        inner.place(relx=0.5, rely=0.4, anchor="center")
+        self._section_header(panel, "API Key Manager")
 
-        ctk.CTkLabel(inner, text="🔑", font=("Segoe UI", 32)
-                     ).pack(pady=(24, 8))
-        ctk.CTkLabel(inner, text="API Key Manager",
-                     font=("Segoe UI", 14, "bold"), text_color=GOLD
-                     ).pack(pady=(0, 4))
-        ctk.CTkLabel(inner,
-                     text="Add, rotate, and manage API keys for Anthropic, Gemini,\n"
-                          "Stability AI, Replicate, and other services.",
-                     font=("Segoe UI", 10), text_color=DIM, justify="center"
-                     ).pack(padx=24, pady=(0, 12))
-        ctk.CTkButton(inner, text="Open Key Manager", font=("Segoe UI", 11),
-                      width=160, height=34, fg_color=ACCENT, hover_color=ACCENT_H,
+        # Key status cards
+        keys_grid = ctk.CTkFrame(panel, fg_color="transparent")
+        keys_grid.pack(fill="x", padx=16, pady=(0, 12))
+        keys_grid.grid_columnconfigure((0, 1), weight=1)
+
+        import os
+        key_defs = [
+            ("Anthropic", "ANTHROPIC_API_KEY", "Claude API — code review, analysis, planning"),
+            ("Google AI", "GEMINI_API_KEY", "Gemini — review pass, fallback reasoning"),
+            ("HuggingFace", "HF_TOKEN", "Model downloads, dataset access"),
+            ("GitHub", "GITHUB_TOKEN", "PR sync, code search, issue tracking"),
+            ("Discord", "DISCORD_BOT_TOKEN", "Fleet chat bridge"),
+            ("Brave", "BRAVE_API_KEY", "Web search API"),
+        ]
+
+        for i, (name, env_key, desc) in enumerate(key_defs):
+            card = ctk.CTkFrame(keys_grid, fg_color=GLASS_BG, corner_radius=6, height=70)
+            card.grid(row=i // 2, column=i % 2, padx=4, pady=4, sticky="nsew")
+            card.grid_propagate(False)
+
+            has_key = bool(os.environ.get(env_key))
+            dot_color = GREEN if has_key else "#444"
+            status_text = "configured" if has_key else "not set"
+
+            ctk.CTkLabel(card, text="●", font=("Consolas", 12),
+                         text_color=dot_color).place(x=10, y=10)
+            ctk.CTkLabel(card, text=name, font=FONT_BOLD,
+                         text_color=TEXT).place(x=28, y=8)
+            ctk.CTkLabel(card, text=env_key, font=("Consolas", 8),
+                         text_color=DIM).place(x=28, y=28)
+            ctk.CTkLabel(card, text=desc, font=("Segoe UI", 8),
+                         text_color=DIM).place(x=10, y=48)
+            ctk.CTkLabel(card, text=status_text, font=("Consolas", 9),
+                         text_color=dot_color).place(relx=1.0, x=-10, y=10, anchor="ne")
+
+        # Full key manager button
+        self._section_header(panel, "Advanced")
+        adv_frame = ctk.CTkFrame(panel, fg_color=GLASS_BG, corner_radius=6)
+        adv_frame.pack(fill="x", padx=16, pady=(0, 12))
+        ctk.CTkLabel(adv_frame, text="Add, rotate, and manage API keys with the full key manager.",
+                     font=("Segoe UI", 9), text_color=DIM
+                     ).pack(padx=12, pady=(10, 4), anchor="w")
+        ctk.CTkButton(adv_frame, text="Open Key Manager", font=FONT_SM,
+                      width=150, height=28, fg_color=ACCENT, hover_color=ACCENT_H,
                       command=lambda: KeyManagerDialog(self._parent)
-                      ).pack(pady=(0, 24))
+                      ).pack(padx=12, pady=(0, 10), anchor="w")
 
     # ── Review Panel ─────────────────────────────────────────────────────
     def _build_review_panel(self):
         L = _launcher()
-        panel = ctk.CTkFrame(self._content, fg_color=GLASS_PANEL)
+        panel = ctk.CTkScrollableFrame(self._content, fg_color=GLASS_PANEL)
         self._panels["review"] = panel
-        panel.grid_columnconfigure(0, weight=1)
-        panel.grid_rowconfigure(0, weight=1)
 
-        inner = ctk.CTkFrame(panel, fg_color=GLASS_BG, corner_radius=6)
-        inner.place(relx=0.5, rely=0.4, anchor="center")
+        self._section_header(panel, "Evaluator-Optimizer Review")
 
-        ctk.CTkLabel(inner, text="🧪", font=("Segoe UI", 32)
-                     ).pack(pady=(24, 8))
-        ctk.CTkLabel(inner, text="Review Settings",
-                     font=("Segoe UI", 14, "bold"), text_color=GOLD
-                     ).pack(pady=(0, 4))
-        ctk.CTkLabel(inner,
-                     text="Configure the evaluator-optimizer review pass.\n"
-                          "Enable/disable reviews and choose provider (API, subscription, local).",
-                     font=("Segoe UI", 10), text_color=DIM, justify="center"
-                     ).pack(padx=24, pady=(0, 12))
-        ctk.CTkButton(inner, text="Open Review Settings", font=("Segoe UI", 11),
-                      width=170, height=34, fg_color=ACCENT, hover_color=ACCENT_H,
+        # Review config summary
+        cfg_frame = ctk.CTkFrame(panel, fg_color=GLASS_BG, corner_radius=6)
+        cfg_frame.pack(fill="x", padx=16, pady=(0, 12))
+        cfg_frame.grid_columnconfigure(1, weight=1)
+
+        review_enabled = True
+        review_provider = "api"
+        max_rounds = 2
+        try:
+            import sys
+            sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent / "fleet"))
+            from config import load_config
+            cfg = load_config()
+            rc = cfg.get("review", {})
+            review_enabled = rc.get("enabled", True)
+            review_provider = rc.get("provider", "api")
+            max_rounds = rc.get("max_rounds", 2)
+        except Exception:
+            pass
+
+        settings_data = [
+            ("Status", "Enabled" if review_enabled else "Disabled",
+             GREEN if review_enabled else RED),
+            ("Provider", review_provider.upper(), GOLD),
+            ("Max Rounds", str(max_rounds), DIM),
+        ]
+
+        for i, (label, value, color) in enumerate(settings_data):
+            ctk.CTkLabel(cfg_frame, text=label, font=FONT_SM,
+                         text_color=DIM, anchor="w", width=100
+                         ).grid(row=i, column=0, padx=(12, 8), pady=6, sticky="w")
+            ctk.CTkLabel(cfg_frame, text=value, font=("Consolas", 11, "bold"),
+                         text_color=color, anchor="w"
+                         ).grid(row=i, column=1, padx=(0, 12), pady=6, sticky="w")
+
+        ctk.CTkFrame(cfg_frame, fg_color="transparent", height=4).grid(
+            row=len(settings_data), column=0, columnspan=2)
+
+        # Description
+        self._section_header(panel, "How It Works")
+        desc_frame = ctk.CTkFrame(panel, fg_color=GLASS_BG, corner_radius=6)
+        desc_frame.pack(fill="x", padx=16, pady=(0, 12))
+        ctk.CTkLabel(desc_frame,
+                     text="High-stakes skills (code_write, pen_test, legal_draft) go through\n"
+                          "adversarial review before results are accepted. The evaluator checks\n"
+                          "quality, safety, and correctness. Configurable in fleet.toml [review].",
+                     font=("Segoe UI", 9), text_color=DIM, justify="left"
+                     ).pack(padx=12, pady=10, anchor="w")
+
+        ctk.CTkButton(desc_frame, text="Open Review Settings", font=FONT_SM,
+                      width=160, height=28, fg_color=ACCENT, hover_color=ACCENT_H,
                       command=lambda: L.ReviewDialog(self._parent)
-                      ).pack(pady=(0, 24))
+                      ).pack(padx=12, pady=(0, 10), anchor="w")
 
     # ── Operations Panel ─────────────────────────────────────────────────
     def _build_operations_panel(self):
         panel = ctk.CTkScrollableFrame(self._content, fg_color=GLASS_PANEL)
         self._panels["operations"] = panel
 
-        def _ops_btn(parent, label, cmd, desc=None, color=BG3, hover=BG2):
-            frame = ctk.CTkFrame(parent, fg_color="transparent")
-            frame.pack(fill="x", padx=0, pady=(0, 2))
-            ctk.CTkButton(frame, text=label, font=FONT_SM,
-                          width=200, height=30, fg_color=color, hover_color=hover,
-                          anchor="w", command=cmd).pack(side="left")
-            if desc:
-                ctk.CTkLabel(frame, text=desc, font=("Segoe UI", 9),
-                             text_color=DIM).pack(side="left", padx=(10, 0))
+        def _ops_card(parent, icon, label, cmd, desc, color=BG3, hover=BG2):
+            """Operation action card with icon, label, description."""
+            card = ctk.CTkFrame(parent, fg_color=GLASS_BG, corner_radius=6)
+            card.pack(fill="x", padx=0, pady=3)
+            card.grid_columnconfigure(1, weight=1)
+
+            ctk.CTkLabel(card, text=icon, font=("Segoe UI", 16)
+                         ).grid(row=0, column=0, rowspan=2, padx=(12, 8), pady=8)
+            ctk.CTkLabel(card, text=label, font=FONT_BOLD,
+                         text_color=TEXT, anchor="w"
+                         ).grid(row=0, column=1, padx=(0, 8), pady=(8, 0), sticky="w")
+            ctk.CTkLabel(card, text=desc, font=("Segoe UI", 9),
+                         text_color=DIM, anchor="w"
+                         ).grid(row=1, column=1, padx=(0, 8), pady=(0, 8), sticky="w")
+            ctk.CTkButton(card, text="Run", font=FONT_SM,
+                          width=60, height=26, fg_color=color, hover_color=hover,
+                          command=cmd
+                          ).grid(row=0, column=2, rowspan=2, padx=(0, 12), pady=8)
 
         # Fleet Recovery
         self._section_header(panel, "Fleet Recovery")
-        recover_frame = ctk.CTkFrame(panel, fg_color=GLASS_BG, corner_radius=6)
+        recover_frame = ctk.CTkFrame(panel, fg_color="transparent")
         recover_frame.pack(fill="x", padx=16, pady=(0, 12))
-        inner = ctk.CTkFrame(recover_frame, fg_color="transparent")
-        inner.pack(fill="x", padx=12, pady=10)
-        _ops_btn(inner, "↺  Recover All", self._parent._recover_all,
-                 "Kill and restart Ollama + supervisor + all workers",
-                 "#2a2a10", "#3a3a18")
+        _ops_card(recover_frame, "↺", "Recover All",
+                  self._parent._recover_all,
+                  "Kill and restart Ollama + supervisor + all workers")
 
         # Security
         self._section_header(panel, "Security")
-        sec_frame = ctk.CTkFrame(panel, fg_color=GLASS_BG, corner_radius=6)
+        sec_frame = ctk.CTkFrame(panel, fg_color="transparent")
         sec_frame.pack(fill="x", padx=16, pady=(0, 12))
-        inner = ctk.CTkFrame(sec_frame, fg_color="transparent")
-        inner.pack(fill="x", padx=12, pady=10)
-        _ops_btn(inner, "🔍 Security Audit", self._parent._run_audit,
-                 "Audit all fleet skills and configs")
-        _ops_btn(inner, "🌐 Pen Test", self._parent._run_pentest,
-                 "Network service scan of local environment")
-        _ops_btn(inner, "📂 Advisories", self._parent._open_advisories,
-                 "View and apply pending security advisories")
+        _ops_card(sec_frame, "🔍", "Security Audit",
+                  self._parent._run_audit,
+                  "Audit all fleet skills and configs")
+        _ops_card(sec_frame, "🌐", "Pen Test",
+                  self._parent._run_pentest,
+                  "Network service scan of local environment")
+        _ops_card(sec_frame, "📂", "Advisories",
+                  self._parent._open_advisories,
+                  "View and apply pending security advisories")
 
         # Marathon
         self._section_header(panel, "Marathon")
-        marathon_frame = ctk.CTkFrame(panel, fg_color=GLASS_BG, corner_radius=6)
+        marathon_frame = ctk.CTkFrame(panel, fg_color="transparent")
         marathon_frame.pack(fill="x", padx=16, pady=(0, 12))
-        inner = ctk.CTkFrame(marathon_frame, fg_color="transparent")
-        inner.pack(fill="x", padx=12, pady=10)
-        _ops_btn(inner, "🏃 Start Marathon", self._parent._start_marathon,
-                 "8-hour discussion + lead research + synthesis run")
-        _ops_btn(inner, "📋 Marathon Log", self._parent._show_marathon_log,
-                 "Tail marathon.log — current phase and output")
-        _ops_btn(inner, "⏹  Stop Marathon", self._parent._stop_marathon,
-                 "Kill the running marathon process",
-                 "#2a1a1a", "#3a2020")
+        _ops_card(marathon_frame, "🏃", "Start Marathon",
+                  self._parent._start_marathon,
+                  "8-hour discussion + lead research + synthesis run")
+        _ops_card(marathon_frame, "📋", "Marathon Log",
+                  self._parent._show_marathon_log,
+                  "Tail marathon.log — current phase and output")
+        _ops_card(marathon_frame, "⏹", "Stop Marathon",
+                  self._parent._stop_marathon,
+                  "Kill the running marathon process",
+                  "#5a2020", "#6a2828")
 
     # ── Helpers ──────────────────────────────────────────────────────────
     def _section_header(self, parent, text: str):
@@ -1038,42 +1171,57 @@ class SettingsDialog(ctk.CTkToplevel):
             self._status.configure(text="Import successful.", text_color=GREEN)
 
     def _load_hw_info(self):
+        """Load hardware info into metric cards and detail rows."""
         L = _launcher()
-        lines = []
-        lines.append("── CPU ─────────────────────────────────────────────────")
+
+        # ── CPU ────────────────────────────────────────────────────────
         try:
-            cpu = psutil.cpu_freq()
+            cpu_pct = psutil.cpu_percent(interval=1)
+            cores_phys = psutil.cpu_count(logical=False) or 0
+            cores_log = psutil.cpu_count(logical=True) or 0
+            cpu_freq = psutil.cpu_freq()
+            freq_text = f"{cpu_freq.current:.0f} MHz" if cpu_freq else "—"
             try:
-                name = subprocess.check_output(
+                cpu_name = subprocess.check_output(
                     ["wmic", "cpu", "get", "Name"],
                     creationflags=subprocess.CREATE_NO_WINDOW,
                     text=True, timeout=5).strip().split("\n")[-1].strip()
             except Exception:
-                name = "Unknown"
-            lines.append(f"  Name        : {name}")
-            lines.append(f"  Cores       : {psutil.cpu_count(logical=False)} physical  "
-                         f"{psutil.cpu_count(logical=True)} logical")
-            if cpu:
-                lines.append(f"  Frequency   : {cpu.current:.0f} MHz  "
-                             f"(max {cpu.max:.0f} MHz)")
-            lines.append(f"  Usage       : {psutil.cpu_percent(interval=1):.1f}%")
-        except Exception as e:
-            lines.append(f"  Error: {e}")
+                cpu_name = "Unknown"
 
-        lines.append("")
-        lines.append("── RAM ─────────────────────────────────────────────────")
+            color = GREEN if cpu_pct < 60 else ORANGE if cpu_pct < 85 else RED
+            self._hw_card_cpu["value"].configure(text=f"{cpu_pct:.0f}%", text_color=color)
+            self._hw_card_cpu["subtitle"].configure(text=f"{cores_phys}C/{cores_log}T  {freq_text}")
+            self._hw_card_cpu["bar"].configure(fg_color=color)
+            self._hw_card_cpu["bar"].place(x=0, y=0, relwidth=cpu_pct / 100)
+
+            self._hw_detail_rows["cpu_name"].configure(text=cpu_name)
+            self._hw_detail_rows["cpu_cores"].configure(text=f"{cores_phys} physical, {cores_log} logical")
+            self._hw_detail_rows["cpu_freq"].configure(
+                text=f"{cpu_freq.current:.0f} MHz (max {cpu_freq.max:.0f} MHz)" if cpu_freq else "—")
+        except Exception:
+            pass
+
+        # ── RAM ────────────────────────────────────────────────────────
         try:
             vm = psutil.virtual_memory()
-            lines.append(f"  Total       : {vm.total/1e9:.1f} GB")
-            lines.append(f"  Used        : {vm.used/1e9:.1f} GB  ({vm.percent:.1f}%)")
-            lines.append(f"  Available   : {vm.available/1e9:.1f} GB")
-        except Exception as e:
-            lines.append(f"  Error: {e}")
+            ram_pct = vm.percent
+            color = GREEN if ram_pct < 60 else ORANGE if ram_pct < 85 else RED
+            self._hw_card_ram["value"].configure(text=f"{ram_pct:.0f}%", text_color=color)
+            self._hw_card_ram["subtitle"].configure(
+                text=f"{vm.used/1e9:.1f} / {vm.total/1e9:.1f} GB")
+            self._hw_card_ram["bar"].configure(fg_color=color)
+            self._hw_card_ram["bar"].place(x=0, y=0, relwidth=ram_pct / 100)
 
-        lines.append("")
-        lines.append("── GPU ─────────────────────────────────────────────────")
-        if L._GPU_OK:
-            try:
+            self._hw_detail_rows["ram_total"].configure(text=f"{vm.total/1e9:.1f} GB")
+            self._hw_detail_rows["ram_used"].configure(text=f"{vm.used/1e9:.1f} GB ({ram_pct:.1f}%)")
+            self._hw_detail_rows["ram_avail"].configure(text=f"{vm.available/1e9:.1f} GB")
+        except Exception:
+            pass
+
+        # ── GPU ────────────────────────────────────────────────────────
+        try:
+            if L._GPU_OK:
                 import pynvml
                 name = pynvml.nvmlDeviceGetName(L._GPU_HANDLE)
                 mem = pynvml.nvmlDeviceGetMemoryInfo(L._GPU_HANDLE)
@@ -1081,27 +1229,36 @@ class SettingsDialog(ctk.CTkToplevel):
                 temp = pynvml.nvmlDeviceGetTemperature(
                     L._GPU_HANDLE, pynvml.NVML_TEMPERATURE_GPU)
                 power = pynvml.nvmlDeviceGetPowerUsage(L._GPU_HANDLE) / 1000
-                lines.append(f"  Name        : {name}")
-                lines.append(f"  VRAM Total  : {mem.total/1e9:.1f} GB")
-                lines.append(f"  VRAM Used   : {mem.used/1e9:.2f} GB  "
-                             f"({mem.used*100//mem.total}%)")
-                lines.append(f"  VRAM Free   : {mem.free/1e9:.2f} GB")
-                lines.append(f"  GPU Usage   : {util.gpu}%")
-                lines.append(f"  Temp        : {temp}°C")
-                lines.append(f"  Power       : {power:.1f} W")
-            except Exception as e:
-                lines.append(f"  Error: {e}")
-        else:
-            lines.append("  No NVIDIA GPU detected via NVML")
+                fan = 0
+                try:
+                    fan = pynvml.nvmlDeviceGetFanSpeed(L._GPU_HANDLE)
+                except Exception:
+                    pass
 
-        result = "\n".join(lines)
-        self.after(0, lambda: self._update_hw_text(result))
+                vram_pct = mem.used * 100 / mem.total if mem.total else 0
+                color = GREEN if temp < 70 else ORANGE if temp < 82 else RED
+                self._hw_card_gpu["value"].configure(text=f"{temp}°C", text_color=color)
+                self._hw_card_gpu["subtitle"].configure(
+                    text=f"VRAM {mem.used/1e9:.1f}/{mem.total/1e9:.0f} GB  {util.gpu}%")
+                self._hw_card_gpu["bar"].configure(fg_color=color)
+                self._hw_card_gpu["bar"].place(x=0, y=0, relwidth=vram_pct / 100)
 
-    def _update_hw_text(self, text: str):
-        self._hw_text.configure(state="normal")
-        self._hw_text.delete("1.0", "end")
-        self._hw_text.insert("end", text)
-        self._hw_text.configure(state="disabled")
+                self._hw_detail_rows["gpu_name"].configure(text=str(name))
+                self._hw_detail_rows["vram_total"].configure(text=f"{mem.total/1e9:.1f} GB")
+                self._hw_detail_rows["vram_used"].configure(
+                    text=f"{mem.used/1e9:.2f} GB ({vram_pct:.0f}%)")
+                self._hw_detail_rows["gpu_temp"].configure(
+                    text=f"{temp}°C", text_color=color)
+                self._hw_detail_rows["gpu_power"].configure(text=f"{power:.0f} W")
+                self._hw_detail_rows["gpu_fan"].configure(
+                    text=f"{fan}%" if fan else "—")
+            else:
+                self._hw_card_gpu["value"].configure(text="N/A", text_color=DIM)
+                self._hw_card_gpu["subtitle"].configure(text="CPU-only mode")
+                self._hw_detail_rows["gpu_name"].configure(text="No GPU detected")
+        except Exception as e:
+            self._hw_card_gpu["value"].configure(text="ERR", text_color=RED)
+            self._hw_card_gpu["subtitle"].configure(text=str(e)[:30])
 
     # ── MCP Servers Panel ─────────────────────────────────────────────────
 
