@@ -745,23 +745,46 @@ def api_thermal():
         "thermal_state": "unknown", "model_tier": "unknown",
     }
 
-    # Read from hw_state.json (written by hw_supervisor)
+    # Read from hw_state.json (written by hw_supervisor.write_state())
+    # Thermal data is nested under hw["thermal"], not top-level
     if HW_STATE_JSON.exists():
         try:
             hw = json.loads(HW_STATE_JSON.read_text())
+            th = hw.get("thermal", {})
+            model = hw.get("model", "unknown")
+
+            # Determine model tier from model name
+            tier_map = {"qwen3:8b": "default", "qwen3:4b": "mid",
+                        "qwen3:1.7b": "low", "qwen3:0.6b": "critical"}
+            model_tier = tier_map.get(model, model or "unknown")
+
             result.update({
-                "gpu_temp_c": hw.get("gpu_temp_c", 0),
-                "gpu_power_w": hw.get("gpu_power_w", 0),
-                "gpu_fan_pct": hw.get("gpu_fan_pct", 0),
-                "gpu_vram_used_gb": round(hw.get("gpu_vram_used_bytes", 0) / (1024**3), 2),
-                "gpu_vram_total_gb": round(hw.get("gpu_vram_total_bytes", 0) / (1024**3), 2),
-                "cpu_temp_c": hw.get("cpu_temp_c", 0),
-                "ambient_estimate_c": hw.get("ambient_estimate_c", 0),
-                "thermal_state": hw.get("state", "unknown"),
-                "model_tier": hw.get("current_tier", "unknown"),
+                "gpu_temp_c": th.get("gpu_temp_c", 0),
+                "gpu_power_w": th.get("gpu_power_w", 0),
+                "gpu_fan_pct": th.get("gpu_fan_pct", 0),
+                "gpu_vram_used_gb": round(th.get("vram_used_gb", 0), 2),
+                "gpu_vram_total_gb": round(th.get("vram_total_gb", 0), 2),
+                "cpu_temp_c": th.get("cpu_temp_c", 0),
+                "ambient_estimate_c": th.get("ambient_est_c", 0),
+                "thermal_state": hw.get("status", "unknown"),
+                "model_tier": model_tier,
             })
         except Exception:
             pass
+
+    # System resources (always available, even without GPU)
+    try:
+        import psutil
+        ram = psutil.virtual_memory()
+        result["system"] = {
+            "ram_total_gb": round(ram.total / (1024**3), 1),
+            "ram_used_gb": round(ram.used / (1024**3), 1),
+            "ram_pct": ram.percent,
+            "cpu_pct": psutil.cpu_percent(interval=0),
+            "cpu_cores": psutil.cpu_count(logical=False) or psutil.cpu_count() or 0,
+        }
+    except Exception:
+        pass
 
     # Add config thresholds
     cfg = _load_config()

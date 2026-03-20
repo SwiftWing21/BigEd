@@ -98,6 +98,12 @@ areas include:
 - [BigEd/SECURITY_COMPLIANCE_BLUEPRINT.md](BigEd/SECURITY_COMPLIANCE_BLUEPRINT.md) -- Security controls, OWASP mapping, compliance
 - [ROADMAP.md](ROADMAP.md) -- Version scheme and milestone tracking
 
+## Support
+
+If BigEd CC is useful to you, consider supporting development:
+
+[![Ko-fi](https://img.shields.io/badge/Ko--fi-Support%20BigEd%20CC-FF5E5B?logo=ko-fi&logoColor=white)](https://ko-fi.com/swiftwing21)
+
 ## Contributing
 
 Contributions are welcome. Please see [CONTRIBUTING.md](CONTRIBUTING.md) for

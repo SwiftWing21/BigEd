@@ -8,7 +8,7 @@ type = "code_discuss"
 [tasks.payload]
 agent_name = "coder_1"
 role_perspective = "software architect"
-topic = "fleet skill module interface design"
+topic = "fleet horizontal scaling — sharding task queues across multiple supervisors"
 round = 1
 
 [[tasks]]
@@ -16,7 +16,7 @@ type = "code_discuss"
 [tasks.payload]
 agent_name = "coder_1"
 role_perspective = "software architect"
-topic = "supervisor worker lifecycle and restart strategy"
+topic = "skill pipeline design — chaining skills in DAG sequences with typed I/O contracts"
 round = 1
 
 [[tasks]]
@@ -24,7 +24,7 @@ type = "code_discuss"
 [tasks.payload]
 agent_name = "coder_1"
 role_perspective = "software architect"
-topic = "designing a skill pipeline — chaining skills in sequence"
+topic = "multi-backend orchestration — LocalBackend ABC vs provider-level abstraction tradeoffs"
 round = 1
 
 [[tasks]]
@@ -32,7 +32,7 @@ type = "code_discuss"
 [tasks.payload]
 agent_name = "coder_1"
 role_perspective = "software architect"
-topic = "multi-customer fleet isolation — one fleet DB vs per-customer DB"
+topic = "worker lifecycle management — crash backoff, health probes, and graceful shutdown ordering"
 round = 1
 
 [[tasks]]
@@ -40,7 +40,7 @@ type = "code_discuss"
 [tasks.payload]
 agent_name = "coder_1"
 role_perspective = "software architect"
-topic = "designing a customer fleet remote monitoring webhook skill"
+topic = "DAG task graph optimization — conditional edges, priority inheritance, and cycle detection"
 round = 1
 
 [[tasks]]
@@ -48,7 +48,7 @@ type = "code_discuss"
 [tasks.payload]
 agent_name = "coder_1"
 role_perspective = "software architect"
-topic = "fleet task priority and preemption — how to interrupt a long skill"
+topic = "dual supervisor separation — supervisor.py vs hw_supervisor.py boundary and shared state via hw_state.json"
 round = 1
 
 [[tasks]]
@@ -56,7 +56,7 @@ type = "code_discuss"
 [tasks.payload]
 agent_name = "coder_1"
 role_perspective = "software architect"
-topic = "launcher SQLite and fleet SQLite — shared vs separate databases"
+topic = "knowledge layer architecture — RAG indexing, file-based artifacts, and DB-backed metadata coexistence"
 round = 1
 
 # ── Code reviews ───────────────────────────────────────────────────────────────
@@ -67,7 +67,23 @@ type = "code_review"
 agent_name = "coder_1"
 perspective = "software architect"
 file = "supervisor.py"
-focus = "module structure, worker lifecycle, restart coupling"
+focus = "module boundaries, worker lifecycle coupling, process control abstraction"
+
+[[tasks]]
+type = "code_review"
+[tasks.payload]
+agent_name = "coder_1"
+perspective = "software architect"
+file = "dashboard.py"
+focus = "endpoint organization, Blueprint split candidates, data access patterns"
+
+[[tasks]]
+type = "code_review"
+[tasks.payload]
+agent_name = "coder_1"
+perspective = "software architect"
+file = "providers.py"
+focus = "backend abstraction coherence, model routing logic, HA fallback cascade design"
 
 [[tasks]]
 type = "code_review"
@@ -75,23 +91,7 @@ type = "code_review"
 agent_name = "coder_1"
 perspective = "software architect"
 file = "db.py"
-focus = "schema design, connection management, public interface"
-
-[[tasks]]
-type = "code_review"
-[tasks.payload]
-agent_name = "coder_1"
-perspective = "software architect"
-file = "skills/marketing.py"
-focus = "module composition, importlib usage, skill interface"
-
-[[tasks]]
-type = "code_review"
-[tasks.payload]
-agent_name = "coder_1"
-perspective = "software architect"
-file = "skills/synthesize.py"
-focus = "API integration pattern, output structure"
+focus = "schema design, connection management, DAG query patterns, migration strategy"
 
 # ── Skill drafts ───────────────────────────────────────────────────────────────
 
@@ -100,44 +100,44 @@ type = "skill_draft"
 [tasks.payload]
 agent_name = "coder_1"
 perspective = "software architect"
-skill_name = "email_outreach"
-description = "Composes and queues cold outreach emails for CRM leads. Reads leads from the fleet DB, generates personalised email copy using the local Ollama model, and saves drafts to knowledge/outreach/ for human review before sending."
-inputs = "lead_company, lead_contact, lead_industry, service_description"
-outputs = "draft email saved to knowledge/outreach/, summary of drafts generated"
+skill_name = "architecture_lint"
+description = "Scans fleet Python modules for architectural violations: circular imports, god-object methods (>200 LOC), missing ABC implementations, and boundary leaks between layers (skills importing from launcher, dashboard importing from supervisor)."
+inputs = "directory, max_files, violation_types"
+outputs = "structured violation report saved to knowledge/quality/arch_lint_<date>.md"
 
 [[tasks]]
 type = "skill_draft"
 [tasks.payload]
 agent_name = "coder_1"
 perspective = "software architect"
-skill_name = "customer_health_check"
-description = "Pings a customer fleet endpoint and records latency, agent status, and fleet version to the customers table in the launcher SQLite DB. Flags degraded or offline customers."
-inputs = "customer_name, endpoint_url, expected_version"
-outputs = "health status dict, updates customers table, returns latency and status"
+skill_name = "dependency_graph"
+description = "Builds an import dependency graph of fleet modules using AST analysis. Detects circular dependencies, identifies coupling hotspots, and generates a DOT-format visualization. Tracks graph complexity over time."
+inputs = "root_directory, exclude_patterns"
+outputs = "dependency graph JSON + DOT file saved to knowledge/quality/dep_graph_<date>.json"
 
 [[tasks]]
 type = "skill_draft"
 [tasks.payload]
 agent_name = "coder_1"
 perspective = "software architect"
-skill_name = "skill_pipeline"
-description = "Executes a sequence of fleet skills in order, passing the output of each as input to the next. Enables multi-step workflows like: web_crawl → summarize → marketing."
-inputs = "steps: list of {skill, payload} dicts"
-outputs = "list of results from each step, final result"
+skill_name = "api_benchmark"
+description = "Benchmarks fleet dashboard API endpoints by sending timed requests and recording latency percentiles (p50/p95/p99). Compares against baseline from previous runs to detect regressions."
+inputs = "endpoints list, iterations_per_endpoint, baseline_path"
+outputs = "benchmark report saved to knowledge/quality/api_bench_<date>.md"
 
-# ── Code write (aider) ────────────────────────────────────────────────────────
-
-[[tasks]]
-type = "code_write"
-[tasks.payload]
-instructions = "Create a Python CLI tool that reads fleet.db and prints a summary of task success/failure rates per skill type, with a bar chart using Unicode blocks"
-create_files = ["task_stats.py"]
+# ── Code write ─────────────────────────────────────────────────────────────────
 
 [[tasks]]
 type = "code_write"
 [tasks.payload]
-instructions = "Create a Python script that monitors fleet agent heartbeats and sends a desktop notification (using plyer) when any agent has been offline for more than 5 minutes"
-create_files = ["heartbeat_monitor.py"]
+instructions = "Create a Python utility that analyzes fleet module boundaries by scanning imports across supervisor.py, dashboard.py, worker.py, providers.py, and db.py. Report any cross-layer imports that violate the intended architecture (e.g., dashboard importing directly from supervisor internals)."
+create_files = ["module_boundary_check.py"]
+
+[[tasks]]
+type = "code_write"
+[tasks.payload]
+instructions = "Create a Python script that reads fleet.db and hw_state.json to produce a single-page health summary: agent count by status, task throughput (last 1h/24h), model performance (tok/s avg), and top 5 skills by volume. Output as formatted markdown."
+create_files = ["fleet_health_summary.py"]
 
 # ── Code write reviews ────────────────────────────────────────────────────────
 
@@ -155,7 +155,7 @@ type = "fma_review"
 agent_name = "coder_1"
 perspective = "software architect"
 file = "launcher.py"
-focus = "module structure, GUI architecture, extensibility, new feature integration points"
+focus = "module structure, GUI architecture, extensibility points, Settings/Boot/Console separation"
 mode = "both"
 round = 1
 
@@ -164,8 +164,8 @@ type = "fma_review"
 [tasks.payload]
 agent_name = "coder_1"
 perspective = "software architect"
-file = "updater.py"
-focus = "update pipeline design, self-update mechanism, build step orchestration"
+file = "build.py"
+focus = "build pipeline design, platform detection, PyInstaller configuration, production flag handling"
 mode = "both"
 round = 2
 
@@ -174,23 +174,14 @@ type = "fma_review"
 [tasks.payload]
 agent_name = "coder_1"
 perspective = "software architect"
-focus = "Discord/OpenClaw integration, fleet skill exposure via GUI, settings panel design"
+focus = "fleet component boundaries — where supervisor/dashboard/worker/skills interfaces should be formalized as ABCs"
 mode = "discuss"
 round = 3
-
-[[tasks]]
-type = "fma_review"
-[tasks.payload]
-agent_name = "coder_1"
-perspective = "software architect"
-file = "installer.py"
-focus = "installation flow, dependency management, cross-environment compatibility"
-mode = "review"
 
 # ── Codebase indexing ──────────────────────────────────────────────────────────
 
 [[tasks]]
 type = "code_index"
 [tasks.payload]
-directory = "/mnt/c/Users/max/Projects/Education/fleet"
+directory = "fleet"
 max_files = 25

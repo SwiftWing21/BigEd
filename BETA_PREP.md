@@ -1,6 +1,6 @@
 # BigEd CC -- Beta Prep Release Notes
 
-**Version:** Beta 1.0 (transitioning from Alpha 0.25.01)
+**Version:** Beta 1.0 (transitioning from Alpha 0.28.00)
 **Date:** 2026-03-19
 **License:** Apache 2.0 -- Michael Bachaud (SwiftWing21)
 **Repository:** github.com/SwiftWing21/BigEds_Agents
@@ -9,7 +9,7 @@
 
 ## 1. Release Summary
 
-BigEd CC is transitioning from Alpha (0.25.01) to Beta 1.0. All S-tier infrastructure milestones are complete. All P1, P2, and P3 audit issues are resolved. Technical debt is at zero. The system runs a 74-skill autonomous AI worker fleet with dual supervisors, swarm intelligence, and multi-backend model support on a single desktop machine.
+BigEd CC is transitioning from Alpha (0.28.00) to Beta 1.0. All S-tier infrastructure milestones are complete. All P1, P2, and P3 audit issues are resolved. Technical debt is at zero. The system runs a 74-skill autonomous AI worker fleet with dual supervisors, swarm intelligence, and multi-backend model support on a single desktop machine.
 
 **Key numbers at beta entry:**
 
@@ -23,6 +23,7 @@ BigEd CC is transitioning from Alpha (0.25.01) to Beta 1.0. All S-tier infrastru
 | Security tests | 7 |
 | Open P0/P1/P2/P3 issues | 0 |
 | Tech debt items | 0 (all 4.1-4.8 resolved) |
+| Setup scripts | 2 (setup.ps1, setup.sh) |
 | Audit grade | S (overall) |
 
 ---
@@ -76,7 +77,7 @@ BigEd CC is transitioning from Alpha (0.25.01) to Beta 1.0. All S-tier infrastru
 | 0.19.00 | Swarm Tier 3: Swarm Intelligence |
 | 0.20.00 | Additional Skills + GUI Overhaul |
 
-### Phase 3: Alpha (0.21.00 -- 0.25.01) -- 5 S-tier milestones + 4 patches
+### Phase 3: Alpha (0.21.00 -- 0.28.00) -- 5 S-tier milestones + 6 patches
 
 | Version | Feature |
 |---------|---------|
@@ -90,6 +91,8 @@ BigEd CC is transitioning from Alpha (0.25.01) to Beta 1.0. All S-tier infrastru
 | 0.24.00 | **S4: Security Defaults** -- SQLCipher, TLS, RBAC, API attribution, adversarial tests |
 | 0.25.00 | **Multi-Backend** -- LocalBackend ABC, 3 backends, HuggingFace search, OpenAI adapter |
 | 0.25.01 | P3 audit items resolved, comprehensive test suites added |
+| 0.27.00 | Settings Display panel, UI scaling, Apache 2.0 license, public readiness |
+| 0.28.00 | System Detection walkthrough, API key validation, setup scripts, agent card polish |
 
 ### Parallel Tracks (all complete)
 
@@ -102,9 +105,9 @@ BigEd CC is transitioning from Alpha (0.25.01) to Beta 1.0. All S-tier infrastru
 | GR (Hardening) | GR-1/2/3/4 | VRAM eviction, WSL2 subnet, zombie cleanup, base64 secret detection |
 | FI (Feature Isolation) | FI-1/2/3 | 9 extracted modules from launcher god-object |
 
-### Current: v0.27.00
+### Current: v0.28.00
 
-Settings Display panel and UI scaling features.
+System Detection walkthrough step with hardware probing (RAM/CPU/GPU via psutil/pynvml), 4 tier profiles (minimal/light/standard/full), and auto-writes fleet.toml. API key validation disables console buttons when keys are unconfigured. Agent card layout improvements (140px height, better spacing, repositioned edit button). Security advisory enrichment with severity counts and analysis summaries. Dashboard thermal API fix for hw_state.json nesting and psutil system resources. Supervisor liveness extraction (_check_supervisor_liveness shared between parse_status and SSE). First-time setup guide (SETUP.md) with cross-platform scripts (setup.ps1, setup.sh). Ko-fi support badge and .github/FUNDING.yml.
 
 ---
 
@@ -159,6 +162,7 @@ Settings Display panel and UI scaling features.
 - [x] No hardcoded local paths in source
 - [x] Security tokens empty by default in config
 - [x] Test coverage: 22/22 smoke, 32+ skill, 22 dashboard, 7 security
+- [x] First-time setup guide (SETUP.md) with cross-platform scripts
 
 ---
 
@@ -180,7 +184,12 @@ Settings Display panel and UI scaling features.
 
 ### Launch and Boot
 
-- [ ] Clean first launch (no data dir) -- walkthrough dialog appears with 6 steps
+- [ ] Clean first launch (no data dir) -- walkthrough dialog appears with 7 steps
+- [ ] System Detection step -- "Detect & Adjust" probes RAM/CPU/GPU and writes fleet.toml
+- [ ] System Detection on low-RAM (<8GB) system -- selects "minimal" tier, eco_mode ON, qwen3:0.6b
+- [ ] System Detection on no-GPU system -- eco_mode ON, CPU-appropriate model and worker count
+- [ ] System Detection re-detect -- clicking "Re-detect" after initial detection works
+- [ ] System Detection skip -- skipping preserves existing fleet.toml defaults
 - [ ] Skip walkthrough -- "Skip All" works, "don't show again" persists to fleet.toml
 - [ ] Normal launch -- fleet boots via 7-stage sequence, all agents register
 - [ ] Launch with saved geometry -- window restores previous position and size

@@ -31,23 +31,23 @@
 
 ## Scoreboard
 
-> Last updated: **v0.25.01** | Audited by: Opus (2026-03-19)
+> Last updated: **v0.28.00** | Audited by: Opus (2026-03-19)
 
 | Dimension | Grade | Trend | Key Gap |
 |-----------|-------|-------|---------|
-| **Architecture / SoC** | A | ↑ | theme.py extracted, fleet_api.py + data_access.py complete, launcher -234 LOC |
-| **Code Quality** | A | ↑ | All P1/P2/P3 resolved; deferred imports documented |
-| **Testing** | A | ↑ | 22/22 smoke + 32 skill unit tests + 22 dashboard tests + 7 security tests |
-| **Security** | A | ↑ | SQLCipher, TLS, RBAC, API attribution, adversarial testing |
+| **Architecture / SoC** | A | → | theme.py extracted, fleet_api.py + data_access.py complete, launcher -234 LOC |
+| **Code Quality** | A | → | All P1/P2/P3 resolved; deferred imports documented |
+| **Testing** | A | → | 22/22 smoke + 32 skill unit tests + 22 dashboard tests + 7 security tests |
+| **Security** | A | → | SQLCipher, TLS, RBAC, API attribution, adversarial testing |
 | **Reliability / S1** | A | → | S1 complete |
-| **Observability / S2** | A | ↑ | /api/health, /api/agents/performance, JSON logging, alerts pipeline |
-| **Usability / UX** | A | → | IQ on cards, timestamps, Fleet Comm modernized |
-| **Dynamic Abilities** | S | ↑ | Auto-trigger evolution/research, swarm affinity, multi-backend |
-| **Module / Plugin Support** | A | ↑ | Backend ABC, 3 backends, HuggingFace search, OpenAI adapter |
-| **Data Processing + HITL** | S | ↑ | Tier 2 LLM scoring, distributed tracing, auto-intelligence |
+| **Observability / S2** | A | → | /api/health, /api/agents/performance, JSON logging, alerts pipeline |
+| **Usability / UX** | A+ | ↑ | System detection auto-configures fleet; settings display panel; API key validation; setup scripts |
+| **Dynamic Abilities** | S | → | Auto-trigger evolution/research, swarm affinity, multi-backend |
+| **Module / Plugin Support** | A | → | Backend ABC, 3 backends, HuggingFace search, OpenAI adapter |
+| **Data Processing + HITL** | S | → | Tier 2 LLM scoring, distributed tracing, auto-intelligence |
 | **Performance** | A | → | Code-aware token estimation (P2-02), configurable timeout (P3-01) |
-| **Documentation** | A | → | CLAUDE.md thorough; compliance docs complete |
-| **Overall** | **S** | ↑ | All milestones complete. All P1/P2/P3 resolved. Zero open issues. |
+| **Documentation** | S | ↑ | README, CONTRIBUTING, SETUP.md, setup scripts, BETA_PREP — comprehensive public-ready docs |
+| **Overall** | **S** | ↑ | All milestones complete. UX A+, Docs S. Zero open issues. |
 
 ---
 
@@ -387,6 +387,13 @@
 | Token estimation fix (P2-02) | CODE_SKILLS set with 2.0 multiplier for code skills | v0.25.00 |
 | Auto-start walkthrough fix (P3-05) | Skip auto-boot if _should_show_walkthrough() | v0.25.00 |
 | Configurable local timeout (P3-01) | config["fleet"]["local_timeout"] fallback 120s | v0.25.00 |
+| Settings Display panel | UI scaling, display tab in settings | v0.27.00 |
+| Apache 2.0 license + public readiness | LICENSE, NOTICE, README, CONTRIBUTING | v0.27.00 |
+| System Detection walkthrough | Hardware probing (psutil/pynvml), 4-tier auto-config, fleet.toml write | v0.28.00 |
+| API key validation UX | Console buttons show "(no key)" and disable when key missing | v0.28.00 |
+| Dashboard thermal API fix | Correct hw_state.json nesting, psutil system resources | v0.28.00 |
+| First-time setup scripts | setup.ps1 (Windows), setup.sh (Linux/macOS/SteamOS), SETUP.md guide | v0.28.00 |
+| Supervisor liveness extraction | _check_supervisor_liveness() shared by parse_status() and SSE | v0.28.00 |
 
 ---
 
@@ -397,7 +404,8 @@
 | 2026-03-19 | v0.21.01 | Opus | Full codebase | First post-1.0 deep audit. Overall A-. 3 P1, 9 P2, 7 P3 issues logged. S1 path clear via 0.21.00. |
 | 2026-03-19 | v0.21.03 | Opus | Incremental | Intelligence scoring, HITL model recs, Gemini ToS — Data Processing+HITL upgraded A-→A. 74 skills. |
 | 2026-03-19 | v0.25.00 | Opus | Full S-tier | All 4 S-tier milestones (S1-S4) + Multi-Backend complete. Overall A+. All P1/P2 resolved. |
+| 2026-03-19 | v0.28.00 | Opus | Incremental | UX A→A+ (system detection, setup scripts), Docs A→S (README/CONTRIBUTING/SETUP.md). Zero open issues. |
 
 ---
 
-*Next audit: at 0.21.00 (S1 Reliability milestone). Focus: P2-06/07/08 resolution, timer chain _alive guards, SSE race fix, connection leak fix.*
+*Next audit: at next milestone. All current items resolved.*

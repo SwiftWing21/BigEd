@@ -392,6 +392,14 @@ Completed 2026-03-19. Backend abstraction for non-Ollama model providers:
 
 **P2/P3 audit fixes included:** P2-02 (code-aware token multiplier), P2-09 (settings.py section docs), P3-01 (configurable local timeout), P3-05 (skip auto-start during walkthrough).
 
+### 0.27.00 — Beta Prep + Settings Display + Apache 2.0 [DONE]
+
+Completed 2026-03-19. Settings Display panel (UI scaling controls), Apache 2.0 licensing (LICENSE, NOTICE), public readiness files (README.md, CONTRIBUTING.md), BETA_PREP.md QA checklist, theme.py expanded with new styles. launcher.py +144 lines, settings.py +131 lines.
+
+### 0.28.00 — System Detection + Setup Tooling + Advisory Enrichment [DONE]
+
+Completed 2026-03-19. System Detection walkthrough step (hardware probing via psutil/pynvml, auto-adjust fleet.toml), API key checks on console buttons (disabled with "(no key)" when missing), agent card layout improvements (height 130->140, better row spacing), advisory card enrichment (severity counts + analysis summary), supervisor liveness extraction. Setup tooling: SETUP.md, scripts/setup.ps1, scripts/setup.sh. Dashboard thermal API fix, Ko-fi funding badge.
+
 ### 2.0 — Multi-Fleet & Remote Orchestration
 
 - Fleet-to-fleet communication (federated supervisor mesh)

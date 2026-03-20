@@ -352,6 +352,33 @@ def load_model_cfg() -> dict:
         return defaults
 
 
+def _quick_key_check(env_name: str) -> bool:
+    """Fast check if an API key is configured (env var or ~/.secrets).
+
+    Does NOT validate the key — just checks if a non-empty value exists.
+    """
+    # Check environment variable first (fastest)
+    if os.environ.get(env_name, "").strip():
+        return True
+    # Check ~/.secrets (WSL-style export file)
+    secrets = Path.home() / ".secrets"
+    if secrets.exists():
+        try:
+            for line in secrets.read_text(errors="ignore").splitlines():
+                line = line.strip()
+                if line.startswith("#") or not line:
+                    continue
+                # Handle: export KEY=value or KEY=value
+                clean = line.replace("export ", "", 1)
+                if clean.startswith(env_name + "="):
+                    val = clean.split("=", 1)[1].strip().strip("'\"")
+                    if val:
+                        return True
+        except Exception:
+            pass
+    return False
+
+
 def _fleet_mode() -> str:
     """Return 'air_gap', 'offline', or 'online' based on fleet.toml flags."""
     try:
@@ -390,10 +417,14 @@ def load_tab_cfg() -> dict:
 
 
 # ─── Status parser ────────────────────────────────────────────────────────────
-def parse_status():
-    """Read STATUS.md and return dict with agents + task counts."""
-    result = {"agents": [], "tasks": {}, "raw": "", "supervisor_status": "OFFLINE", "dr_ders_status": "OFFLINE"}
-    
+def _check_supervisor_liveness():
+    """Check supervisor and Dr. Ders liveness via file mtime.
+
+    Returns dict with supervisor_status and dr_ders_status keys.
+    Used by both parse_status() and the SSE handler.
+    """
+    result = {"supervisor_status": "OFFLINE", "dr_ders_status": "OFFLINE"}
+
     if HW_STATE_JSON.exists():
         try:
             mtime = HW_STATE_JSON.stat().st_mtime
@@ -406,23 +437,32 @@ def parse_status():
                     result["dr_ders_status"] = "ONLINE"
             elif age < 120:
                 result["dr_ders_status"] = "HUNG"
-            else:
-                result["dr_ders_status"] = "OFFLINE"
         except Exception:
-            result["dr_ders_status"] = "OFFLINE"
+            pass
+
+    if STATUS_MD.exists():
+        try:
+            mtime = STATUS_MD.stat().st_mtime
+            age = time.time() - mtime
+            if age < 30:
+                result["supervisor_status"] = "ONLINE"
+            elif age < 120:
+                result["supervisor_status"] = "HUNG"
+        except Exception:
+            pass
+
+    return result
+
+
+def parse_status():
+    """Read STATUS.md and return dict with agents + task counts."""
+    result = {"agents": [], "tasks": {}, "raw": "", "supervisor_status": "OFFLINE", "dr_ders_status": "OFFLINE"}
+
+    result.update(_check_supervisor_liveness())
 
     if not STATUS_MD.exists():
         return result
     try:
-        mtime = STATUS_MD.stat().st_mtime
-        age = time.time() - mtime
-        if age < 30:
-            result["supervisor_status"] = "ONLINE"
-        elif age < 120:
-            result["supervisor_status"] = "HUNG"
-        else:
-            result["supervisor_status"] = "OFFLINE"
-            
         text = STATUS_MD.read_text(encoding="utf-8", errors="ignore")
         result["raw"] = text
         lines = text.splitlines()
@@ -1117,13 +1157,32 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
         s = section("CONSOLES", default_open=False)
         _mode = _fleet_mode()
         _api_disabled = _mode in ("offline", "air_gap")
-        _claude_tip = "Disabled — offline mode" if _api_disabled else "Open an interactive Claude API chat with fleet dispatch support"
-        _gemini_tip = "Disabled — offline mode" if _api_disabled else "Open an interactive Gemini chat with fleet dispatch support"
-        self._btn_claude_console = btn(s, "🤖 Claude Console", self._open_claude_console, "#1a1a2e", "#252540", tip=_claude_tip)
-        self._btn_gemini_console = btn(s, "✦  Gemini Console", self._open_gemini_console, "#1a2a1a", "#253525", tip=_gemini_tip)
+        _has_claude = _quick_key_check("ANTHROPIC_API_KEY")
+        _has_gemini = _quick_key_check("GEMINI_API_KEY")
+
         if _api_disabled:
-            self._btn_claude_console.configure(state="disabled", text="🤖 Claude (offline)")
-            self._btn_gemini_console.configure(state="disabled", text="✦  Gemini (offline)")
+            _c_text, _c_tip, _c_state = "🤖 Claude (offline)", "Disabled — offline mode", "disabled"
+            _g_text, _g_tip, _g_state = "✦  Gemini (offline)", "Disabled — offline mode", "disabled"
+        elif not _has_claude:
+            _c_text = "🤖 Claude (no key)"
+            _c_tip = "Set ANTHROPIC_API_KEY in ~/.secrets or Key Manager to enable"
+            _c_state = "disabled"
+        else:
+            _c_text, _c_tip, _c_state = "🤖 Claude Console", "Open an interactive Claude API chat with fleet dispatch support", "normal"
+
+        if not _api_disabled and not _has_gemini:
+            _g_text = "✦  Gemini (no key)"
+            _g_tip = "Set GEMINI_API_KEY in ~/.secrets or Key Manager to enable"
+            _g_state = "disabled"
+        elif not _api_disabled:
+            _g_text, _g_tip, _g_state = "✦  Gemini Console", "Open an interactive Gemini chat with fleet dispatch support", "normal"
+
+        self._btn_claude_console = btn(s, _c_text, self._open_claude_console, "#1a1a2e", "#252540", tip=_c_tip)
+        self._btn_gemini_console = btn(s, _g_text, self._open_gemini_console, "#1a2a1a", "#253525", tip=_g_tip)
+        if _c_state == "disabled":
+            self._btn_claude_console.configure(state="disabled")
+        if _g_state == "disabled":
+            self._btn_gemini_console.configure(state="disabled")
         btn(s, "⚡ Local Console",  self._open_local_console, "#2a2010", "#3a3020",
             tip="Open an interactive Ollama chat — free, no API key needed")
 
@@ -1614,73 +1673,68 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
         """Create a single agent dashboard card and return widget dict."""
         border_w = 2 if is_waiting else 0
         border_c = ORANGE if is_waiting else BG2
-        card = ctk.CTkFrame(parent, fg_color=BG2, corner_radius=8, height=130,
+        card = ctk.CTkFrame(parent, fg_color=BG2, corner_radius=8, height=140,
                             border_width=border_w, border_color=border_c)
         card.grid(row=row, column=col, padx=4, pady=4, sticky="nsew")
         card.grid_propagate(False)
 
-        # Status dot
+        # Row 0 (y=6): Status dot + Agent name + status text
         dot = ctk.CTkLabel(card, text="\u25cf", font=("Consolas", 14),
                            text_color=dot_color)
         dot.place(x=8, y=8)
 
-        # Agent name
         name_lbl = ctk.CTkLabel(card, text=display_name,
                                 font=("Segoe UI", 11, "bold"), text_color=name_color)
         name_lbl.place(x=26, y=6)
 
-        # Status label (top-right)
         status_lbl = ctk.CTkLabel(card, text=status_text,
                                   font=("Consolas", 9), text_color=status_color)
         status_lbl.place(relx=1.0, x=-8, y=8, anchor="ne")
 
-        # Model label (below status dot, muted)
+        # Row 1 (y=28): Model + IQ + tok/s — pushed down to clear 11pt bold name
         model_lbl = ctk.CTkLabel(card, text=model_text,
                                  font=("Consolas", 8), text_color=DIM)
-        model_lbl.place(x=26, y=22)
+        model_lbl.place(x=26, y=28)
 
-        # Token speed (next to model)
-        tps_lbl = ctk.CTkLabel(card, text=tps_text,
-                               font=("Consolas", 8), text_color=DIM)
-        tps_lbl.place(relx=1.0, x=-8, y=24, anchor="ne")
-
-        # Intelligence score (next to tok/s line)
         iq_lbl = ctk.CTkLabel(card, text=iq_text,
                                font=("Consolas", 8), text_color=iq_color)
-        iq_lbl.place(relx=1.0, x=-70, y=24, anchor="ne")
+        iq_lbl.place(relx=1.0, x=-70, y=28, anchor="ne")
 
-        # Current task
+        tps_lbl = ctk.CTkLabel(card, text=tps_text,
+                               font=("Consolas", 8), text_color=DIM)
+        tps_lbl.place(relx=1.0, x=-8, y=28, anchor="ne")
+
+        # Row 2 (y=44): Current task
         task_lbl = ctk.CTkLabel(card, text=task_display,
                                 font=("Consolas", 9), text_color=GOLD)
-        task_lbl.place(x=26, y=38)
+        task_lbl.place(x=26, y=44)
 
-        # Last result preview (below task)
+        # Row 3 (y=60): Last result preview
         last_result_lbl = ctk.CTkLabel(card, text=last_result,
                                        font=("Consolas", 8), text_color=DIM)
-        last_result_lbl.place(x=26, y=54)
+        last_result_lbl.place(x=26, y=60)
 
-        # Activity sparkline
+        # Row 4 (y=78): Activity sparkline + edit button
         spark_lbl = ctk.CTkLabel(card, text=spark,
                                  font=("Consolas", 10), text_color=spark_color)
-        spark_lbl.place(x=8, y=72)
+        spark_lbl.place(x=8, y=78)
 
-        # WAITING_HUMAN badge (bottom-left area, orange)
-        waiting_text = "Needs Input" if is_waiting else ""
-        waiting_badge = ctk.CTkLabel(card, text=waiting_text,
-                                     font=("Consolas", 8, "bold"), text_color=ORANGE)
-        waiting_badge.place(x=8, y=92)
-
-        # Task count (bottom-right)
-        count_lbl = ctk.CTkLabel(card, text=count_text,
-                                 font=("Consolas", 8), text_color=DIM)
-        count_lbl.place(relx=1.0, x=-8, y=106, anchor="ne")
-
-        # Edit button
         edit_btn = ctk.CTkButton(
             card, text="\u270e", font=FONT_SM, width=24, height=18,
             fg_color=BG3, hover_color=BG,
             command=lambda a=agent_data: self._agents_edit_dialog(a))
-        edit_btn.place(relx=1.0, x=-8, y=72, anchor="ne")
+        edit_btn.place(relx=1.0, x=-8, y=78, anchor="ne")
+
+        # Row 5 (y=98): WAITING_HUMAN badge
+        waiting_text = "Needs Input" if is_waiting else ""
+        waiting_badge = ctk.CTkLabel(card, text=waiting_text,
+                                     font=("Consolas", 8, "bold"), text_color=ORANGE)
+        waiting_badge.place(x=8, y=98)
+
+        # Row 6 (y=116): Task count (bottom-right)
+        count_lbl = ctk.CTkLabel(card, text=count_text,
+                                 font=("Consolas", 8), text_color=DIM)
+        count_lbl.place(relx=1.0, x=-8, y=116, anchor="ne")
 
         return {
             "card": card, "dot": dot, "name_lbl": name_lbl,
@@ -1833,8 +1887,43 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
                     for f in sorted(PENDING_DIR.glob("advisory_*.md"))[:10]:
                         try:
                             text = f.read_text(encoding="utf-8", errors="replace")
-                            title = text.split("\n")[0].strip("# ").strip() if text else f.name
-                            advisories.append({"file": f.name, "title": title[:80], "path": str(f)})
+                            lines = text.splitlines()
+                            title = lines[0].strip("# ").strip() if lines else f.name
+                            # Extract severity counts and analysis summary
+                            summary = ""
+                            counts = ""
+                            in_analysis = False
+                            for ln in lines:
+                                if ln.startswith("**Findings:**"):
+                                    counts = ln.replace("**Findings:**", "").strip()
+                                elif ln.startswith("## Analysis"):
+                                    in_analysis = True
+                                elif in_analysis and ln.strip() and not ln.startswith("##"):
+                                    # Take first non-empty line of analysis
+                                    summary = ln.strip("- ").strip()[:120]
+                                    in_analysis = False
+                                elif ln.startswith("## ") and in_analysis:
+                                    in_analysis = False
+                            # Also try JSON companion for structured counts
+                            json_path = f.with_suffix(".json")
+                            if not counts and json_path.exists():
+                                try:
+                                    jdata = json.loads(json_path.read_text())
+                                    c = jdata.get("counts", {})
+                                    parts = []
+                                    for sev in ("HIGH", "MEDIUM", "LOW"):
+                                        if c.get(sev, 0):
+                                            parts.append(f"{c[sev]} {sev}")
+                                    counts = ", ".join(parts)
+                                    if not summary:
+                                        summary = (jdata.get("analysis", "") or "")[:120]
+                                except Exception:
+                                    pass
+                            advisories.append({
+                                "file": f.name, "title": title[:80],
+                                "path": str(f), "counts": counts,
+                                "summary": summary,
+                            })
                         except Exception:
                             pass
             except Exception:
@@ -1921,8 +2010,9 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
                 card.pack(fill="x", padx=4, pady=3)
                 self._comm_cards.append(card)
 
+                # Title row + buttons
                 top = ctk.CTkFrame(card, fg_color="transparent")
-                top.pack(fill="x", padx=8, pady=(8, 8))
+                top.pack(fill="x", padx=8, pady=(8, 0))
                 ctk.CTkLabel(top, text=f"\U0001f512 {adv['title']}",
                              font=("Segoe UI", 10, "bold"), text_color=ORANGE).pack(side="left")
                 ctk.CTkButton(
@@ -1937,6 +2027,30 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
                     font=FONT_SM, text_color=DIM,
                     command=lambda p=adv["path"]: self._dismiss_advisory(p),
                 ).pack(side="right")
+
+                # Severity counts (e.g. "2 HIGH, 1 MEDIUM")
+                _counts = adv.get("counts", "")
+                if _counts:
+                    _sev_colors = {"HIGH": RED, "MEDIUM": ORANGE, "LOW": DIM}
+                    counts_frame = ctk.CTkFrame(card, fg_color="transparent")
+                    counts_frame.pack(fill="x", padx=12, pady=(4, 0), anchor="w")
+                    for part in _counts.split(", "):
+                        _color = DIM
+                        for sev, col in _sev_colors.items():
+                            if sev in part:
+                                _color = col
+                                break
+                        ctk.CTkLabel(counts_frame, text=part.strip(),
+                                     font=("Consolas", 9, "bold"), text_color=_color,
+                                     ).pack(side="left", padx=(0, 8))
+
+                # Summary preview
+                _summary = adv.get("summary", "")
+                if _summary:
+                    ctk.CTkLabel(card, text=_summary, font=FONT_SM,
+                                 text_color=DIM, wraplength=600,
+                                 anchor="w", justify="left",
+                                 ).pack(fill="x", padx=12, pady=(2, 8))
 
         # Run async
         def _bg():
@@ -2251,14 +2365,8 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
         has_recent = any(history)
         return text, GREEN if has_recent else "#555555"
 
-    def _update_agents_table(self, status):
-        if self._boot_active:
-            return  # boot progress occupies the agents panel
-        agents     = status.get("agents", [])
-        pending    = status.get("tasks", {}).get("Pending", 0)
-
-        # Update supervisor status labels — NEVER touch _system_running or button
-        # here. Only _start_system/_stop_system control the button state.
+    def _update_supervisor_labels(self, status):
+        """Update Task Sup and Dr. Ders status labels from liveness dict."""
         sup_status = status.get("supervisor_status", "OFFLINE")
         if sup_status == "ONLINE":
             self._sup_status_lbl.configure(text="Task Sup: ONLINE", text_color=GREEN)
@@ -2276,6 +2384,17 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
             self._hw_sup_status_lbl.configure(text="Dr. Ders: HUNG", text_color=ORANGE)
         else:
             self._hw_sup_status_lbl.configure(text="Dr. Ders: OFFLINE", text_color=RED)
+
+    def _update_agents_table(self, status):
+        if self._boot_active:
+            return  # boot progress occupies the agents panel
+        agents     = status.get("agents", [])
+        pending    = status.get("tasks", {}).get("Pending", 0)
+
+        # Update supervisor status labels
+        self._update_supervisor_labels(status)
+
+        hw_status = status.get("dr_ders_status", "OFFLINE")
 
         # Dr. Ders header — compact GPU/model/thermal from hw_state.json
         try:
@@ -2695,13 +2814,26 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
         self._stat_net.configure(text=net_s, text_color=DIM)
 
     def _handle_sse_status(self, data):
-        """Handle SSE status push — update agents and task counts without polling."""
+        """Handle SSE status push — update agents and task counts without polling.
+
+        SSE data contains agents/tasks but NOT supervisor liveness, so we
+        merge in file-based supervisor/dr_ders status from parse_status().
+        """
         try:
-            agents = data.get("data", {}).get("agents", [])
-            tasks = data.get("data", {}).get("tasks", {})
-            # Update the agents display
-            if hasattr(self, '_update_agents_table'):
-                self._update_agents_table({"agents": agents, "tasks": tasks})
+            payload = data.get("data", {})
+            agents = payload.get("agents", [])
+            tasks = payload.get("tasks", {})
+
+            # SSE doesn't carry supervisor liveness — probe files for that
+            sup_status = _check_supervisor_liveness()
+
+            status = {
+                "agents": agents,
+                "tasks": tasks,
+                **sup_status,
+            }
+            self._update_pills(status)
+            self._update_agents_table(status)
         except Exception:
             pass
 
@@ -2716,8 +2848,10 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
             # If SSE is active, skip file-based polling for agent/task data
             if getattr(self, '_sse_active', False):
                 next_interval = 8000  # slower poll when SSE active
-                # SSE handles agent/task updates — only do module refreshes here
+                # SSE handles agent/task updates — but supervisor liveness
+                # must still be polled from file mtimes (SSE doesn't carry it)
                 self._refresh_counter = getattr(self, '_refresh_counter', 0) + 1
+                self._update_supervisor_labels(_check_supervisor_liveness())
                 # Log tail + action badge in background thread
                 def _bg_io_sse():
                     try:
@@ -4259,27 +4393,170 @@ class ReviewDialog(ctk.CTkToplevel):
 
 # ─── Walkthrough ─────────────────────────────────────────────────────────────
 
+def _detect_system_profile():
+    """Probe hardware and return a profile dict with recommended settings.
+
+    Returns dict with keys: ram_gb, cpu_cores, gpu_name, vram_gb,
+    tier ("minimal"|"light"|"standard"|"full"), and recommended config values.
+    """
+    ram_gb = round(psutil.virtual_memory().total / (1024 ** 3), 1)
+    cpu_cores = psutil.cpu_count(logical=False) or psutil.cpu_count() or 2
+
+    gpu_name = None
+    vram_gb = 0.0
+    if _GPU_OK:
+        try:
+            gpu_name = pynvml.nvmlDeviceGetName(_GPU_HANDLE)
+            if isinstance(gpu_name, bytes):
+                gpu_name = gpu_name.decode()
+            mem = pynvml.nvmlDeviceGetMemoryInfo(_GPU_HANDLE)
+            vram_gb = round(mem.total / (1024 ** 3), 1)
+        except Exception:
+            pass
+
+    # Determine tier
+    has_gpu = vram_gb >= 2.0
+    if has_gpu and vram_gb >= 8.0 and ram_gb >= 16:
+        tier = "full"
+    elif has_gpu and vram_gb >= 4.0 and ram_gb >= 12:
+        tier = "standard"
+    elif ram_gb >= 8:
+        tier = "light"
+    else:
+        tier = "minimal"
+
+    # Recommended settings per tier
+    profiles = {
+        "minimal": {
+            "eco_mode": True,
+            "max_workers": min(3, max(2, cpu_cores // 2)),
+            "model": "qwen3:0.6b",
+            "conductor_model": "qwen3:0.6b",
+            "model_tiers": {"default": "qwen3:0.6b", "mid": "qwen3:0.6b",
+                            "low": "qwen3:0.6b", "critical": "qwen3:0.6b"},
+        },
+        "light": {
+            "eco_mode": not has_gpu,
+            "max_workers": min(5, max(3, cpu_cores // 2)),
+            "model": "qwen3:1.7b" if not has_gpu else "qwen3:4b",
+            "conductor_model": "qwen3:0.6b",
+            "model_tiers": {"default": "qwen3:1.7b" if not has_gpu else "qwen3:4b",
+                            "mid": "qwen3:1.7b", "low": "qwen3:0.6b",
+                            "critical": "qwen3:0.6b"},
+        },
+        "standard": {
+            "eco_mode": False,
+            "max_workers": min(7, max(4, cpu_cores - 2)),
+            "model": "qwen3:4b" if vram_gb < 6 else "qwen3:8b",
+            "conductor_model": "qwen3:0.6b",
+            "model_tiers": {"default": "qwen3:4b" if vram_gb < 6 else "qwen3:8b",
+                            "mid": "qwen3:4b", "low": "qwen3:1.7b",
+                            "critical": "qwen3:0.6b"},
+        },
+        "full": {
+            "eco_mode": False,
+            "max_workers": min(10, max(5, cpu_cores - 2)),
+            "model": "qwen3:8b",
+            "conductor_model": "qwen3:4b",
+            "model_tiers": {"default": "qwen3:8b", "mid": "qwen3:8b",
+                            "low": "qwen3:1.7b", "critical": "qwen3:0.6b"},
+        },
+    }
+
+    rec = profiles[tier]
+    return {
+        "ram_gb": ram_gb,
+        "cpu_cores": cpu_cores,
+        "gpu_name": gpu_name,
+        "vram_gb": vram_gb,
+        "tier": tier,
+        **rec,
+    }
+
+
+def _apply_system_profile(profile: dict):
+    """Write auto-detected profile recommendations to fleet.toml."""
+    try:
+        doc = tomlkit.parse(FLEET_TOML.read_text(encoding="utf-8"))
+
+        # [fleet]
+        fleet = doc.setdefault("fleet", {})
+        fleet["eco_mode"] = profile["eco_mode"]
+        fleet["max_workers"] = profile["max_workers"]
+
+        # [models]
+        models = doc.setdefault("models", {})
+        models["local"] = profile["model"]
+        models["complex"] = profile["model"]
+        models["conductor_model"] = profile["conductor_model"]
+
+        # [models.tiers]
+        tiers = models.setdefault("tiers", {})
+        for k, v in profile["model_tiers"].items():
+            tiers[k] = v
+
+        # [gpu]
+        gpu = doc.setdefault("gpu", {})
+        gpu["mode"] = "full" if not profile["eco_mode"] else "eco"
+
+        # Record what we detected
+        detected = doc.setdefault("system_detected", {})
+        detected["ram_gb"] = profile["ram_gb"]
+        detected["cpu_cores"] = profile["cpu_cores"]
+        detected["gpu_name"] = profile.get("gpu_name") or "none"
+        detected["vram_gb"] = profile["vram_gb"]
+        detected["tier"] = profile["tier"]
+        detected["detected_at"] = datetime.now().isoformat(timespec="seconds")
+
+        FLEET_TOML.write_text(tomlkit.dumps(doc), encoding="utf-8")
+        return True
+    except Exception:
+        return False
+
+
 class WalkthroughDialog(ctk.CTkToplevel):
-    """First-run walkthrough — 6-step guided setup with skip/skip-all."""
+    """First-run walkthrough — 7-step guided setup with skip/skip-all.
+
+    Step 2 (System Detection) probes RAM, CPU, and GPU via psutil/pynvml
+    and auto-adjusts fleet.toml for the best experience on the user's hardware.
+    Critical for non-GPU users and systems with < 8 GB RAM.
+    """
 
     STEPS = [
         {
             "title": "Welcome to BigEd CC",
             "desc": (
-                "BigEd CC is an autonomous AI agent fleet that runs on your machine.\n\n"
-                "Your fleet has 11+ workers (researchers, coders, analysts, security) "
-                "coordinated by a supervisor. They share a task queue, communicate via "
-                "messages, and store knowledge locally.\n\n"
+                "BigEd CC is an autonomous AI agent fleet that runs entirely on your machine.\n\n"
+                "Your fleet has 74 skills across 10+ specialized worker roles — researchers, "
+                "coders, analysts, security auditors, and more — coordinated by a dual-supervisor "
+                "system. Workers share a task queue, communicate via messages, and build "
+                "a local knowledge base over time.\n\n"
+                "Everything stays private. Nothing leaves your machine unless you enable cloud AI.\n\n"
                 "This walkthrough will help you get set up. You can skip any step."
             ),
         },
         {
-            "title": "API Keys",
+            "title": "System Detection",
             "desc": (
-                "For cloud AI (Claude, Gemini) and web search (Brave, Tavily), you need API keys.\n\n"
+                "BigEd CC can detect your hardware and auto-adjust settings for the best "
+                "experience on your system.\n\n"
+                "This checks your RAM, CPU cores, and GPU/VRAM to set the right model size, "
+                "worker count, and eco mode. It is especially important for systems with less "
+                "than 8 GB RAM or no dedicated GPU.\n\n"
+                "Click 'Detect & Adjust' to scan your hardware now, or skip to use defaults."
+            ),
+            "action_label": "Detect & Adjust",
+            "has_auto_detect": True,
+        },
+        {
+            "title": "API Keys (Optional)",
+            "desc": (
+                "BigEd CC works fully offline with local models. Cloud AI is optional.\n\n"
+                "If you add API keys, the fleet gains access to Claude, Gemini, and web search "
+                "(Brave, Tavily). The system uses intelligent fallback: Claude > Gemini > Local, "
+                "so if one provider is down, tasks route to the next automatically.\n\n"
                 "Keys are stored in ~/.secrets (never committed to git).\n"
-                "You can manage them anytime from the Key Manager in Settings.\n\n"
-                "If you only want to use local models (Ollama), you can skip this step."
+                "You can manage them anytime from Settings > Key Manager."
             ),
             "action_label": "Open Key Manager",
         },
@@ -4287,43 +4564,49 @@ class WalkthroughDialog(ctk.CTkToplevel):
             "title": "Fleet Profile",
             "desc": (
                 "Choose a deployment profile that matches your use case:\n\n"
-                "  minimal    — Ingestion + Outputs only\n"
-                "  research   — Same, focused on RAG and research\n"
+                "  minimal    — Ingestion + Outputs (lightweight, personal use)\n"
+                "  research   — Same + RAG pipeline and research workflows\n"
                 "  consulting — CRM, Onboarding, Customers, Accounts + research\n"
-                "  full       — Everything enabled\n\n"
-                "Current profile is shown below. Change it in Settings > General."
+                "  full       — All modules enabled\n\n"
+                "You can change your profile anytime in Settings. Modules can also be "
+                "toggled individually from the sidebar."
             ),
         },
         {
             "title": "Ollama Setup",
             "desc": (
                 "Ollama is the local AI engine that powers your fleet workers.\n\n"
-                "It should be installed and running. The default model is qwen3:8b (~6GB VRAM).\n"
-                "If you have less GPU memory, the hardware supervisor will auto-scale "
-                "to smaller models.\n\n"
-                "Eco mode (CPU-only) is available if you have no GPU."
+                "The default model is qwen3:8b (~6.9 GB VRAM). Dr. Ders, the hardware "
+                "supervisor, monitors your GPU in real-time and automatically scales between "
+                "model tiers if needed:\n\n"
+                "  Default  — qwen3:8b (best quality, needs GPU)\n"
+                "  Low      — qwen3:1.7b (lighter, less VRAM)\n"
+                "  Critical — qwen3:0.6b (CPU-only fallback)\n\n"
+                "No GPU? Enable Eco Mode in fleet.toml to run everything on CPU."
             ),
         },
         {
             "title": "Dispatch Your First Task",
             "desc": (
-                "Try dispatching a task! Use the taskbar at the bottom of the main window.\n\n"
-                "Example tasks:\n"
-                '  summarize — "Summarize the key concepts of transformer architecture"\n'
-                '  web_search — "Find recent papers on local AI deployment"\n'
-                '  code_review — "Review fleet/worker.py for potential issues"\n\n'
-                "The task will be queued and picked up by the best-matching worker."
+                "Use the task bar at the bottom of the main window to dispatch work.\n\n"
+                "Try one of these:\n"
+                '  summarize — "Summarize the key ideas in transformer architecture"\n'
+                '  web_search — "Find recent open-source local AI projects"\n'
+                '  flashcard — "Create flashcards on Python async patterns"\n\n'
+                "The fleet automatically routes each task to the best-matching worker "
+                "based on skill affinity. Results appear in the Knowledge tab."
             ),
         },
         {
-            "title": "Console Tour",
+            "title": "Consoles & Fleet Comm",
             "desc": (
-                "BigEd CC has 3 interactive consoles (sidebar > Consoles):\n\n"
-                "  Claude Console — Cloud AI via Anthropic API\n"
-                "  Gemini Console — Cloud AI via Google API\n"
-                "  Local Console  — Free, runs on Ollama (no API key needed)\n\n"
-                "Each console can dispatch fleet tasks mid-conversation.\n"
-                "You're all set! Close this dialog to start using BigEd CC."
+                "BigEd CC has 3 interactive consoles in the sidebar:\n\n"
+                "  Claude Console — Cloud AI (Anthropic API key required)\n"
+                "  Gemini Console — Cloud AI (Google API key required)\n"
+                "  Local Console  — Free, powered by Ollama\n\n"
+                "Each console can dispatch fleet tasks mid-conversation.\n\n"
+                "Fleet Comm (bottom panel) shows real-time worker activity, task results, "
+                "and system events. You're all set — close this to start using BigEd CC."
             ),
         },
     ]
@@ -4331,7 +4614,7 @@ class WalkthroughDialog(ctk.CTkToplevel):
     def __init__(self, parent):
         super().__init__(parent)
         self.title("BigEd CC — Setup Walkthrough")
-        self.geometry("560x440")
+        self.geometry("560x480")
         self.resizable(False, False)
         self.configure(fg_color=BG2)
         self.grab_set()
@@ -4339,6 +4622,7 @@ class WalkthroughDialog(ctk.CTkToplevel):
         self._parent = parent
         self._step = 0
         self._skipped = []
+        self._detected_profile = None  # filled by auto-detect
 
         ico = HERE / "brick.ico"
         if ico.exists():
@@ -4367,6 +4651,12 @@ class WalkthroughDialog(ctk.CTkToplevel):
         self._desc = ctk.CTkLabel(self, text="", font=FONT, text_color=TEXT,
                                    wraplength=520, justify="left", anchor="nw")
         self._desc.pack(padx=20, pady=(8, 0), fill="both", expand=True, anchor="nw")
+
+        # Detection result area (shown only on system detection step)
+        self._detect_result = ctk.CTkLabel(self, text="", font=("Consolas", 10),
+                                            text_color=DIM, wraplength=520,
+                                            justify="left", anchor="nw")
+        # Not packed by default
 
         # Action button (optional, shown for some steps)
         self._action_btn = ctk.CTkButton(self, text="", height=30,
@@ -4410,7 +4700,38 @@ class WalkthroughDialog(ctk.CTkToplevel):
         self._progress.set((self._step + 1) / total)
         self._step_label.configure(text=f"Step {self._step + 1} of {total}")
         self._title.configure(text=step["title"])
-        self._desc.configure(text=step["desc"])
+
+        # If system detection ran, update Ollama step to reflect detected model
+        desc = step["desc"]
+        if step["title"] == "Ollama Setup" and self._detected_profile:
+            p = self._detected_profile
+            if p["eco_mode"]:
+                desc = (
+                    "Ollama is the local AI engine that powers your fleet workers.\n\n"
+                    f"Based on your system ({p['ram_gb']} GB RAM, "
+                    f"{'no GPU' if not p['gpu_name'] else p['gpu_name']}), "
+                    f"Eco Mode has been enabled with {p['model']} as the default model.\n\n"
+                    "Dr. Ders, the hardware supervisor, monitors your system in real-time "
+                    "and will scale between model tiers automatically if needed.\n\n"
+                    "You can adjust these settings later in fleet.toml."
+                )
+            elif p["tier"] != "full":
+                desc = (
+                    "Ollama is the local AI engine that powers your fleet workers.\n\n"
+                    f"Based on your system ({p['ram_gb']} GB RAM, "
+                    f"{p['gpu_name']} with {p['vram_gb']} GB VRAM), "
+                    f"the default model has been set to {p['model']}.\n\n"
+                    "Dr. Ders, the hardware supervisor, monitors your GPU in real-time "
+                    "and automatically scales between model tiers if needed.\n\n"
+                    "You can adjust these settings later in fleet.toml."
+                )
+        self._desc.configure(text=desc)
+
+        # Detection result area
+        if step.get("has_auto_detect") and self._detected_profile:
+            self._detect_result.pack(padx=20, pady=(6, 0), anchor="w")
+        else:
+            self._detect_result.pack_forget()
 
         # Action button
         if "action_label" in step:
@@ -4448,6 +4769,42 @@ class WalkthroughDialog(ctk.CTkToplevel):
                 KeyManagerDialog(self._parent)
             except Exception:
                 pass
+        elif step.get("action_label") == "Detect & Adjust":
+            self._run_auto_detect()
+
+    def _run_auto_detect(self):
+        """Run hardware detection and show results."""
+        self._action_btn.configure(state="disabled", text="Detecting...")
+        self.update_idletasks()
+        try:
+            profile = _detect_system_profile()
+            self._detected_profile = profile
+
+            gpu_str = f"{profile['gpu_name']} ({profile['vram_gb']} GB VRAM)" if profile["gpu_name"] else "None detected"
+            tier_labels = {"minimal": "Minimal", "light": "Light", "standard": "Standard", "full": "Full"}
+
+            result_text = (
+                f"  RAM: {profile['ram_gb']} GB  |  CPU: {profile['cpu_cores']} cores  |  GPU: {gpu_str}\n"
+                f"  Tier: {tier_labels.get(profile['tier'], profile['tier'])}\n"
+                f"  Model: {profile['model']}  |  Workers: {profile['max_workers']}"
+                f"  |  Eco: {'ON' if profile['eco_mode'] else 'OFF'}"
+            )
+
+            applied = _apply_system_profile(profile)
+            if applied:
+                result_text += "\n  Settings applied to fleet.toml"
+                self._detect_result.configure(text=result_text, text_color=GREEN)
+            else:
+                result_text += "\n  Could not write to fleet.toml — apply manually"
+                self._detect_result.configure(text=result_text, text_color=ORANGE)
+
+            self._detect_result.pack(padx=20, pady=(6, 0), anchor="w")
+            self._action_btn.configure(text="Re-detect", state="normal")
+        except Exception as e:
+            self._detect_result.configure(
+                text=f"  Detection failed: {e}", text_color=RED)
+            self._detect_result.pack(padx=20, pady=(6, 0), anchor="w")
+            self._action_btn.configure(text="Retry", state="normal")
 
     def _finish(self):
         if self._no_show_var.get():
