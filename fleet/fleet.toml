@@ -241,11 +241,11 @@ peer_timeout_secs = 5        # timeout for peer health probes
 # v0.51.02b: Auto-save & Backup — periodic snapshots of fleet state
 [backup]
 enabled = true
-interval_secs = 300
-location = "~/BigEd-backups"
-depth = 10
-prune_enabled = true
-warn_disk_usage_pct = 80
+interval_secs = 1200             # 20 minutes default (beta). Min: 180 (3 min), configurable via UI
+location = "~/BigEd-backups"     # changeable via Settings or fleet.toml
+depth = 10                       # max backups to keep (1-20, or 0 for infinite)
+prune_enabled = true             # true = clean up beyond depth. false = keep all (disk warning shown)
+warn_disk_usage_pct = 80         # warn when backup dir exceeds this % of free disk
 
 [backup.targets]
 fleet_db = true

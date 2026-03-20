@@ -2,7 +2,8 @@
 BigEd CC — Auto-Save & Backup System.
 
 Configurable via fleet.toml [backup] section.
-Default: every 5 minutes, keep last 10, ~/BigEd-backups/
+Default: every 20 minutes, keep last 10, ~/BigEd-backups/
+Min interval: 3 minutes. Max depth: 20 (or 0 for infinite).
 """
 import hashlib
 import json
@@ -22,9 +23,10 @@ class BackupManager:
     def __init__(self, config: dict = None):
         cfg = (config or {}).get("backup", {})
         self.enabled = cfg.get("enabled", True)
-        self.interval = cfg.get("interval_secs", 300)
+        self.interval = max(180, cfg.get("interval_secs", 1200))  # min 3 minutes
         self.location = Path(os.path.expanduser(cfg.get("location", str(DEFAULT_LOCATION))))
-        self.depth = cfg.get("depth", 10)
+        raw_depth = cfg.get("depth", 10)
+        self.depth = 0 if raw_depth == 0 else min(20, max(1, raw_depth))  # 1-20, or 0=infinite
         self.prune_enabled = cfg.get("prune_enabled", True)
         self.warn_pct = cfg.get("warn_disk_usage_pct", 80)
         self.verify = cfg.get("safety", {}).get("verify_integrity", True)
@@ -140,6 +142,8 @@ class BackupManager:
     def _prune(self):
         if not self.location.exists():
             return
+        if self.depth == 0:
+            return  # Infinite — never prune (user opted into "do not clean")
         backups = sorted(
             [d for d in self.location.iterdir() if d.is_dir() and (d / "manifest.json").exists()],
             key=lambda d: d.name,
