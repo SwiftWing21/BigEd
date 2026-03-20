@@ -773,9 +773,39 @@ def main():
     poll_count = 0
     mem_stats = {}  # populated by periodic self-check
 
+    # ── Wake-up timer: event-driven with adaptive sleep ──────────────────
+    # Instead of constant 5s polling, Dr. Ders sleeps longer when idle
+    # and wakes on events (thermal spike, model eviction, training change).
+    _wake_event = threading.Event()
+    _base_interval = cfg["poll_interval_secs"]  # 5s base
+    _idle_interval = 30  # sleep up to 30s when nothing is happening
+    _current_interval = _base_interval
+    _consecutive_idle = 0
+
+    def wake_drders():
+        """External trigger to wake Dr. Ders immediately (called on events)."""
+        _wake_event.set()
+
+    # Monitor hw_state.json for external wake requests
+    def _watch_wake_file():
+        wake_file = FLEET_DIR / ".drders_wake"
+        while True:
+            try:
+                if wake_file.exists():
+                    wake_file.unlink(missing_ok=True)
+                    wake_drders()
+            except Exception:
+                pass
+            time.sleep(2)
+
+    threading.Thread(target=_watch_wake_file, daemon=True).start()
+
     while True:
-        time.sleep(cfg["poll_interval_secs"])
+        # Adaptive sleep: wait for event OR timeout
+        _wake_event.wait(timeout=_current_interval)
+        _wake_event.clear()
         poll_count += 1
+
         try:
             # Memory self-check (every ~30 min)
             if poll_count % _MEMORY_CHECK_INTERVAL == 0 or poll_count == 1:
@@ -1096,8 +1126,26 @@ def main():
 
                 write_state("ready", current_model, thermal, models_loaded, conductor_status, mem_stats)
 
+                # ── Adaptive wake-up interval ────────────────────────
+                # Speed up when something is happening, slow down when idle
+                needs_attention = (
+                    gpu_throttled or
+                    is_training or
+                    (gpu.get("gpu_temp_c", 0) > cfg["gpu_max_sustained_c"] - 5) or
+                    (gpu.get("vram_pct", 0) > cfg.get("vram_high", 0.85))
+                )
+                if needs_attention:
+                    _current_interval = _base_interval  # 5s — active monitoring
+                    _consecutive_idle = 0
+                else:
+                    _consecutive_idle += 1
+                    # Gradually increase sleep: 5s → 10s → 15s → 20s → 30s max
+                    _current_interval = min(_idle_interval, _base_interval + (_consecutive_idle * 5))
+
         except Exception as e:
             log.warning(f"Poll error (non-fatal): {e}")
+            _current_interval = _base_interval  # Reset to fast poll on error
+            _consecutive_idle = 0
             # Failsafe: recover to boot model (0.6b CPU) on errors
             if drders_promoted and DRDERS_BOOT_MODEL:
                 log.info(f"Error recovery: falling back to {DRDERS_BOOT_MODEL} (CPU failsafe)")
