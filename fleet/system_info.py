@@ -80,12 +80,13 @@ def get_platform() -> dict:
 
 
 def detect_system() -> dict:
-    """Full system snapshot — RAM, CPU, GPU, platform in one call."""
+    """Full system snapshot — RAM, CPU, GPU, platform, local models in one call."""
     return {
         "memory": get_memory(),
         "cpu": get_cpu(),
         "gpu": get_gpu(),
         "platform": get_platform(),
+        "local_models": detect_local_models(),
     }
 
 
@@ -157,6 +158,88 @@ def generate_user_md() -> str:
 """
 
 
+def detect_local_models() -> dict:
+    """Discover all local model backends and their loaded/available models.
+
+    Probes Ollama, llama.cpp, and llamafile servers. Returns what's running,
+    what models are loaded in VRAM, and what's available on disk.
+    """
+    try:
+        from config import load_config
+        cfg = load_config()
+    except Exception:
+        cfg = {}
+
+    ollama_host = cfg.get("models", {}).get("ollama_host", "http://localhost:11434")
+    backends_cfg = cfg.get("models", {}).get("backends", {})
+    llama_cpp_url = backends_cfg.get("llama_cpp_url", "http://localhost:8080")
+
+    result = {
+        "backends": {},
+        "total_loaded": 0,
+        "total_available": 0,
+    }
+
+    # ── Ollama ────────────────────────────────────────────────────────────
+    ollama = {"name": "ollama", "running": False, "url": ollama_host,
+              "loaded": [], "available": []}
+    try:
+        import urllib.request
+        import json as _json
+        with urllib.request.urlopen(f"{ollama_host}/api/tags", timeout=3) as r:
+            data = _json.loads(r.read())
+            ollama["running"] = True
+            ollama["available"] = [m["name"] for m in data.get("models", [])]
+        # Check what's actually loaded in VRAM
+        with urllib.request.urlopen(f"{ollama_host}/api/ps", timeout=3) as r:
+            ps = _json.loads(r.read())
+            ollama["loaded"] = [m["name"] for m in ps.get("models", [])]
+    except Exception:
+        pass
+    result["backends"]["ollama"] = ollama
+
+    # ── llama.cpp ─────────────────────────────────────────────────────────
+    llama_cpp = {"name": "llama_cpp", "running": False, "url": llama_cpp_url,
+                 "loaded": [], "available": []}
+    try:
+        import urllib.request
+        import json as _json
+        with urllib.request.urlopen(f"{llama_cpp_url}/v1/models", timeout=2) as r:
+            data = _json.loads(r.read())
+            llama_cpp["running"] = True
+            models = [m["id"] for m in data.get("data", [])]
+            llama_cpp["available"] = models
+            llama_cpp["loaded"] = models  # llama.cpp loads one model at a time
+    except Exception:
+        pass
+    result["backends"]["llama_cpp"] = llama_cpp
+
+    # ── llamafile ─────────────────────────────────────────────────────────
+    # llamafile uses same API as llama.cpp but might run on a different port
+    llamafile_url = backends_cfg.get("llamafile_url", "http://localhost:8081")
+    llamafile = {"name": "llamafile", "running": False, "url": llamafile_url,
+                 "loaded": [], "available": []}
+    try:
+        import urllib.request
+        import json as _json
+        with urllib.request.urlopen(f"{llamafile_url}/v1/models", timeout=2) as r:
+            data = _json.loads(r.read())
+            llamafile["running"] = True
+            models = [m["id"] for m in data.get("data", [])]
+            llamafile["available"] = models
+            llamafile["loaded"] = models
+    except Exception:
+        pass
+    result["backends"]["llamafile"] = llamafile
+
+    # ── Summary ───────────────────────────────────────────────────────────
+    for b in result["backends"].values():
+        result["total_loaded"] += len(b["loaded"])
+        result["total_available"] += len(b["available"])
+
+    return result
+
+
 def _detect_shell() -> str:
     """Best-effort shell detection."""
     import os
@@ -171,13 +254,19 @@ def _detect_shell() -> str:
 
 
 def _detect_ollama() -> str:
-    """Check if Ollama is reachable."""
+    """Check if Ollama is reachable. Reads host from fleet.toml."""
     import urllib.request
+    host = "http://localhost:11434"
     try:
-        host = "http://localhost:11434"
+        from config import load_config
+        cfg = load_config()
+        host = cfg.get("models", {}).get("ollama_host", host)
+    except Exception:
+        pass
+    try:
         with urllib.request.urlopen(f"{host}/api/tags", timeout=2) as resp:
             if resp.status == 200:
                 return f"{host} (running)"
     except Exception:
         pass
-    return "http://localhost:11434 (not detected)"
+    return f"{host} (not detected)"

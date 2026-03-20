@@ -283,6 +283,43 @@ def check_python_packages() -> dict:
     }
 
 
+def check_local_models() -> dict:
+    """Local model backends — Ollama, llama.cpp, llamafile."""
+    try:
+        from system_info import detect_local_models
+        info = detect_local_models()
+        backends = info.get("backends", {})
+        running = [name for name, b in backends.items() if b.get("running")]
+        loaded = info.get("total_loaded", 0)
+        available = info.get("total_available", 0)
+
+        details = []
+        for name, b in backends.items():
+            if b.get("running"):
+                details.append(f'{name}: {len(b["loaded"])} loaded, {len(b["available"])} available')
+
+        return {
+            "name": "local-models",
+            "category": "hardware",
+            "required": False,
+            "found": len(running) > 0,
+            "ok": len(running) > 0,
+            "running_backends": running,
+            "total_loaded": loaded,
+            "total_available": available,
+            "detail": "; ".join(details) if details else "No local model backends running",
+        }
+    except Exception:
+        return {
+            "name": "local-models",
+            "category": "hardware",
+            "required": False,
+            "found": False,
+            "ok": False,
+            "detail": "Detection failed",
+        }
+
+
 def check_system_ram() -> dict:
     """System RAM check via system_info."""
     try:
@@ -322,6 +359,7 @@ ALL_CHECKS = [
     check_ollama,
     check_python_packages,
     check_system_ram,
+    check_local_models,
     check_fleet_db,
     check_rag_db,
     check_docker,
