@@ -85,20 +85,26 @@ Always re-read `audit_tracker.md` if it has been updated before generating a new
 ## Local Machine — CLAUDE.USER.md
 
 `CLAUDE.USER.md` holds machine-specific config (gitignored — never committed).
-If the file is missing on a fresh clone, create it from this template:
+If the file is missing, auto-generate it:
+```bash
+python -c "import sys; sys.path.insert(0,'fleet'); from system_info import generate_user_md; open('CLAUDE.USER.md','w').write(generate_user_md())"
+```
+
+Or create manually from this template:
 
 ```markdown
 # User & Environment — [Machine Name]
 
 ## Hardware
-- **GPU:** [model, VRAM]
-- **RAM:** [amount] — max_workers: [N]
+- **GPU:** [model, VRAM] or "None (CPU-only)"
+- **RAM:** [total]GB — max_workers: [N] ([tier])
+- **CPU:** [physical] cores ([logical] logical)
 - **Platform:** [OS] — shell: [bash/zsh/powershell]
 
 ## Environment
-- Python: [version, runner (uv/pip/conda)]
-- Ollama: [host URL or "not installed"]
-- Keys: [list env vars needed — HF_TOKEN, ANTHROPIC_API_KEY, etc.]
+- Python: [version]
+- Ollama: [host URL] (running|not detected)
+- Keys: HF_TOKEN, ANTHROPIC_API_KEY, VRAM_LIMIT_GB
 
 ## MCP Servers
 | Server | Transport | URL/Command | Status |
@@ -109,21 +115,40 @@ If the file is missing on a fresh clone, create it from this template:
 - **Local default:** [model] (~[VRAM]GB, ~[tok/s] tok/s)
 - **CPU conductor:** [model]
 - **API fallback:** Claude → Gemini → Local
+
+## Worker Limits (auto-detected)
+- RAM tier: [minimal|basic|standard|high|server] ([total]GB)
+- Recommended max_workers: [N]
+- Memory limit per worker: [M]MB
 ```
+
+### RAM-based worker scaling
+`fleet/system_info.py` → `get_worker_limits()` auto-detects RAM and recommends:
+
+| RAM | max_workers | memory_limit_mb | Tier |
+|-----|-------------|-----------------|------|
+| <8GB | 3 | 256 | minimal |
+| 8-16GB | 6 | 384 | basic |
+| 16-32GB | 10 | 512 | standard |
+| 32-64GB | 13 | 512 | high |
+| 64GB+ | 16 | 768 | server |
 
 ### First-run setup checklist
 If `CLAUDE.USER.md` is missing or fields are blank, the operator should:
-1. Run `python fleet/smoke_test.py` — validates Ollama, DB, skills
-2. Run `python BigEd/launcher/launcher.py` — walkthrough auto-detects hardware
-3. Check `fleet/fleet.db` exists — if not, any fleet script auto-creates via `db.init_db()`
-4. Check `fleet/rag.db` exists — if not, `rag_index` skill creates on first ingest
-5. Verify DAL: `fleet/data_access.py` (FleetDB) and `fleet/rag.py` (RAG store) are the unified data layer — all DB access goes through these, never raw sqlite3
+1. Run `python -c "..."` (above) to auto-generate CLAUDE.USER.md from detected hardware
+2. Run `python fleet/smoke_test.py` — validates Ollama, DB, skills
+3. Run `python BigEd/launcher/launcher.py` — walkthrough auto-detects hardware
+4. Check `fleet/fleet.db` exists — if not, any fleet script auto-creates via `db.init_db()`
+5. Check `fleet/rag.db` exists — if not, `rag_index` skill creates on first ingest
+6. Verify DAL: `fleet/data_access.py` (FleetDB) and `fleet/rag.py` (RAG store) are the unified data layer — all DB access goes through these, never raw sqlite3
 
 ### Data layer reference
 - **FleetDB** (`fleet/data_access.py`): unified DAL for fleet.db — agent counts, task queries, token speeds, HITL status
 - **RAG** (`fleet/rag.py` + `fleet/rag.db`): vector store for knowledge ingestion — `rag_index` writes, `rag_query` reads
 - **Config** (`fleet/config.py`): TOML loader — `load_config()`, `is_offline()`, `is_air_gap()`
 - **MCP** (`fleet/mcp_manager.py`): MCP server registry — reads `.mcp.json`, probes servers, skill routing
+- **System** (`fleet/system_info.py`): unified hardware detection — `detect_system()`, `get_memory()`, `get_worker_limits()`, `generate_user_md()`
+- **GPU** (`fleet/gpu.py`): vendor-agnostic GPU backend — NVIDIA/AMD/Intel/Null, used by system_info + hw_supervisor
 
 ## Fleet
 - Dual-supervisor: `supervisor.py` + Dr. Ders (`hw_supervisor.py`) (native Windows)
