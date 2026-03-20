@@ -359,6 +359,96 @@ Completed 2026-03-20. 11 files, +194/-90 lines:
 
 **CI:** GitHub Actions Node.js 24 compatibility, release workflow brick.ico fix.
 
+### 0.50.02b — P0 Security & Stability Hardening [PLANNED]
+
+**10 P0 bugs** identified by 5-agent audit. Must fix before any public beta.
+
+**Boot/Installer P0s:**
+- [ ] Daemon thread + GUI race condition — threads mutate UI without `_safe_after()` (boot.py:308,478)
+- [ ] Zombie Ollama processes — `subprocess.Popen` without storing process ref (boot.py:603-608)
+- [ ] Hard-coded Ollama port `localhost:11434` in 12+ places — should read from fleet.toml (boot.py, installer.py, updater.py)
+
+**Supervisor P0s:**
+- [ ] DB connection leak in `_count_pending_tasks()` — no close on exception path (supervisor.py:96-131)
+- [ ] `_last_busy` dict grows unbounded — never cleaned on agent removal (supervisor.py:93)
+- [ ] Shutdown crash — iterating `worker_procs.items()` without `list()` copy (supervisor.py:653-659)
+
+**Dashboard P0s (XSS):**
+- [ ] Agent names concatenated into HTML via innerHTML (dashboard.html:314-319)
+- [ ] Alert messages injected via innerHTML (dashboard.html:331-334)
+- [ ] 12+ template injection points across all dashboard sections (dashboard.html)
+- [ ] SQL injection pattern in `/api/data_stats` dynamic table names (dashboard.py:806)
+
+### 0.50.03b — P1 Reliability & Error Handling [PLANNED]
+
+**19 P1 bugs** — high priority for beta stability.
+
+**Boot/Installer:**
+- [ ] Model load response parsing swallows JSONDecodeError silently (boot.py:778-790)
+- [ ] Timeout values too short for large models / slow networks (boot.py:666,777)
+- [ ] Missing env var null checks create relative paths (installer.py:73, boot.py:581-590)
+- [ ] Model fallback error handling confusing — action card + exception simultaneously (boot.py:735-749)
+- [ ] Build failure error message only shows first 3 words of command (installer.py:794-804)
+
+**Supervisor:**
+- [ ] Worker zombie process leak — `worker_procs[role] = None` instead of `del` (supervisor.py:900-911)
+- [ ] VRAM threshold edge case — `>` vs `>=` causes oscillation at boundary (hw_supervisor.py:965-982)
+- [ ] Dynamic agents never scale down — `_last_busy` defaults to `now` (supervisor.py:877-885)
+
+**Dashboard:**
+- [ ] SSE connection leak — clients not cleaned on exception (dashboard.py:1218-1245)
+- [ ] TOML injection in worker disable/enable — agent name not validated (dashboard.py:1286-1311)
+- [ ] fetchJSON() has no error handling — silent failures across all panels (dashboard.html:227-230)
+
+**Launcher GUI:**
+- [ ] setattr() from SSE thread bypasses tkinter main thread (launcher.py:875-876)
+- [ ] Unguarded UI updates in `_poll_task_result()` after window close (consoles.py:646-659)
+- [ ] Widget destroy during iteration — memory corruption risk (launcher.py:2239-2244)
+- [ ] Font loading failure silently swallowed (theme.py:15-26)
+- [ ] Window geometry restoration off-screen on multi-monitor (launcher.py:806-812)
+
+**Data Layer:**
+- [ ] SQLCipher key SQL injection — f-string PRAGMA (db.py:116-118)
+- [ ] Provider column migration incomplete — NULL backfill needed (db.py:183-184)
+
+### 0.50.04b — P2 Hardening & Performance [PLANNED]
+
+**27+ P2 bugs** — medium priority, improves robustness.
+
+**Key items:**
+- [ ] N+1 query in `/api/status` — should use JOIN for current_task (dashboard.py:249-269)
+- [ ] Missing DB indexes on tasks.status, tasks.assigned_to, agents.name (db.py schema)
+- [ ] Missing foreign key on tasks.parent_id — orphaned DAG chains (db.py:38-50)
+- [ ] VRAM threshold mismatch between fleet.toml and hw_supervisor defaults
+- [ ] Config loaded once at import — stale after fleet.toml edits (config.py:27-29)
+- [ ] DB timeout inconsistency (10s vs 2s vs 30s across layers)
+- [ ] Circuit breaker has no exponential backoff — fixed 60s cooldown (providers.py:22-34)
+- [ ] FALLBACK_CHAIN declared but never used — no actual HA failover (providers.py:301)
+- [ ] Boot timing file not atomic — concurrent write race (boot.py:119-133)
+- [ ] pip missing --break-system-packages for system Python (installer.py:847-861)
+- [ ] 65+ bare `except: pass` blocks across launcher hiding real errors
+- [ ] Memory leaks: _model_perf_labels, _agent_activity deques never cleaned
+- [ ] Alert monitor thread swallows all exceptions silently (dashboard.py:182-241)
+- [ ] hw_state.json concurrent read/write without locking (dashboard.py:631-656)
+- [ ] Content-Security-Policy header missing on dashboard
+- [ ] Stale task recovery uses time-based detection instead of PID liveness (db.py:657-677)
+
+### 0.50.05b — P3 Polish & Accessibility [PLANNED]
+
+**14+ P3 items** — low priority, UX improvements.
+
+- [ ] No progress feedback during long model loads (boot.py:765-788)
+- [ ] fleet.toml path not verified before load (boot.py:160-168)
+- [ ] Ctrl+K command palette undiscoverable — no UI hint
+- [ ] OmniBox badge abbreviations unexplained (SYS/SKL/AGT)
+- [ ] Dialog resize clipping on small screens
+- [ ] SSE client start exception silently swallowed (launcher.py:871-881)
+- [ ] Dashboard badge status values not validated (dashboard.html:232-235)
+- [ ] No rate limiting on expensive dashboard endpoints
+- [ ] Worker disable/enable not audit logged
+- [ ] GITHUB_REPO typo in config.py default vs fleet.toml
+- [ ] No distributed locking for federation mode (db.py:686-711)
+
 ### 0.40.10a — Claude Skills Update + Cowork Integration
 
 - **Goal:** Update all 5 project skills to reflect current architecture (post-cowork refactor + 0.31.x work). Create 3 new skills leveraging installed superpowers plugin patterns.
