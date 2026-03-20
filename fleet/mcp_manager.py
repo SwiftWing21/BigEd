@@ -174,6 +174,36 @@ def remove_server(name: str):
     save_mcp_json(data)
 
 
+def get_mcp_url(server_name: str) -> str | None:
+    """Get the URL for a configured HTTP MCP server from the user's .mcp.json.
+
+    Returns the URL string if the server is configured and is HTTP type,
+    None otherwise. This is the single source of truth for MCP server
+    addresses — never hardcode URLs in skills.
+    """
+    data = load_mcp_json()
+    cfg = data.get("mcpServers", {}).get(server_name)
+    if not cfg:
+        return None
+    if cfg.get("type") != "http":
+        return None
+    return cfg.get("url")
+
+
+def is_mcp_available(server_name: str, timeout: int = 2) -> tuple[bool, str | None]:
+    """Check if an MCP server is configured AND reachable.
+
+    Returns (available, url) — url is None if not configured/reachable.
+    """
+    url = get_mcp_url(server_name)
+    if not url:
+        return False, None
+    status = probe_server(server_name, {"type": "http", "url": url}, timeout=timeout)
+    if status.get("status") in ("online", "configured"):
+        return True, url
+    return False, None
+
+
 def enable_default(name: str) -> bool:
     """Enable a bundled default MCP server."""
     if name not in MCP_DEFAULTS:

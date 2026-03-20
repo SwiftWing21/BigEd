@@ -35,6 +35,7 @@ DESCRIPTION = "Browser crawl — full DOM rendering via Playwright (headless Chr
 REQUIRES_NETWORK = True
 
 _HAS_PLAYWRIGHT = None  # lazy check
+_MCP_CHECKED = None      # (available: bool, url: str|None)
 
 _BLOCKED_HOSTS = {'127.0.0.1', 'localhost', '169.254.169.254', '::1', '0.0.0.0', 'metadata.google.internal'}
 
@@ -49,6 +50,21 @@ def _check_ssrf(url):
     return True, ""
 
 
+def _check_mcp_playwright():
+    """Check if Playwright MCP server is configured and reachable (user's .mcp.json)."""
+    global _MCP_CHECKED
+    if _MCP_CHECKED is None:
+        try:
+            import sys
+            sys.path.insert(0, str(FLEET_DIR))
+            from mcp_manager import is_mcp_available
+            available, url = is_mcp_available("playwright", timeout=2)
+            _MCP_CHECKED = (available, url)
+        except Exception:
+            _MCP_CHECKED = (False, None)
+    return _MCP_CHECKED
+
+
 def _check_playwright():
     global _HAS_PLAYWRIGHT
     if _HAS_PLAYWRIGHT is None:
@@ -58,6 +74,43 @@ def _check_playwright():
         except ImportError:
             _HAS_PLAYWRIGHT = False
     return _HAS_PLAYWRIGHT
+
+
+def _crawl_mcp(url, mcp_url, wait_sec=2, selector=None):
+    """Crawl via Playwright MCP server — URL read from user's .mcp.json config."""
+    import urllib.request
+
+    # MCP Playwright uses JSON-RPC-like calls
+    body = json.dumps({
+        "method": "browser_navigate",
+        "params": {"url": url},
+    }).encode("utf-8")
+    req = urllib.request.Request(
+        f"{mcp_url}/navigate" if "/navigate" not in mcp_url else mcp_url,
+        data=body, method="POST",
+        headers={"Content-Type": "application/json"},
+    )
+    with urllib.request.urlopen(req, timeout=30 + wait_sec) as resp:
+        data = json.loads(resp.read())
+
+    # Extract content from MCP response
+    content = data.get("content", data.get("text", data.get("body", "")))
+    if isinstance(content, list):
+        content = "\n".join(
+            item.get("text", "") if isinstance(item, dict) else str(item)
+            for item in content
+        )
+
+    title = data.get("title", "")
+    links = data.get("links", [])
+
+    return {
+        "title": title,
+        "content": content[:10000] if isinstance(content, str) else str(content)[:10000],
+        "links": links[:50] if isinstance(links, list) else [],
+        "renderer": "mcp_playwright",
+        "mcp_url": mcp_url,
+    }
 
 
 def _crawl_playwright(url, wait_sec=2, selector=None):
@@ -184,9 +237,14 @@ def run(payload, config):
 
     BROWSER_DIR.mkdir(parents=True, exist_ok=True)
 
+    # Resolve renderer: MCP server (user config) → local pip → httpx fallback
+    mcp_available, mcp_url = _check_mcp_playwright()
+    has_local = _check_playwright()
+
     try:
         if action == "screenshot":
-            if not _check_playwright():
+            # Screenshots need local playwright (MCP doesn't support screenshots yet)
+            if not has_local:
                 return {"error": "Playwright required for screenshots. Run: pip install playwright && playwright install chromium"}
             viewport = payload.get("viewport", {"width": 1280, "height": 720})
             result = _screenshot_playwright(url, viewport, wait_sec)
@@ -195,13 +253,23 @@ def run(payload, config):
             selector = payload.get("selector", "")
             if not selector:
                 return {"error": "selector required for extract action"}
-            if _check_playwright():
+            if has_local:
                 result = _crawl_playwright(url, wait_sec, selector)
             else:
                 return {"error": "Playwright required for CSS selector extraction"}
 
         elif action == "crawl":
-            if _check_playwright():
+            # 3-tier fallback: MCP server → local playwright → httpx
+            if mcp_available and mcp_url:
+                try:
+                    result = _crawl_mcp(url, mcp_url, wait_sec)
+                except Exception:
+                    # MCP failed — fall through to local
+                    if has_local:
+                        result = _crawl_playwright(url, wait_sec)
+                    else:
+                        result = _crawl_httpx_fallback(url)
+            elif has_local:
                 result = _crawl_playwright(url, wait_sec)
             else:
                 result = _crawl_httpx_fallback(url)
