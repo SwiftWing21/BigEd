@@ -19,6 +19,14 @@ complex_provider = "local"    # "claude" | "gemini" | "local"
 conductor_model = "qwen3:4b"  # CPU-pinned user chat model (num_gpu=0, ~2-3GB RAM, 0 VRAM)
 vision_model = "llava"        # local multimodal model for image analysis (llava, minicpm-v, qwen-vl)
 ollama_host = "http://localhost:11434"
+keep_alive_mins = 30             # model stay loaded (auto-refreshed while app runs)
+
+# Model hopping batch thresholds — don't swap models unless enough demand queued
+# Prevents thrashing between tiers for single low-value tasks
+[models.batch_thresholds]
+high_value = 1                   # 1 high-priority task triggers model swap
+medium_value = 5                 # 5 medium tasks triggers swap
+low_value = 15                   # 15 low tasks triggers swap
 
 [review]
 enabled = true                 # evaluator-optimizer pass on skill outputs (Gemini P0: adversarial review on by default)
@@ -44,6 +52,10 @@ poll_interval_secs = 5        # hw_supervisor main loop interval
 grace_period_secs = 20        # worker drain time before model swap (longer = safer)
 cooldown_after_swap_secs = 60 # prevent rapid model bouncing (1 min)
 ambient_estimation = true     # track cooldown rate to estimate ambient temp
+cpu_temp_enabled = true       # enable CPU temp reading (may require admin/lm-sensors/LHM)
+# Linux: sudo apt install lm-sensors && sudo sensors-detect
+# Windows: Install LibreHardwareMonitor (run as service for auto-elevation)
+# macOS: brew install osx-cpu-temp
 
 [thermal.vram]
 # Relaxed thresholds — only swap models when genuinely out of room
@@ -101,6 +113,7 @@ accounts = false        # bolt-on: service account monitoring
 ingestion = true        # file/folder import to RAG
 outputs = true          # knowledge browser
 owner_core = false      # bolt-on: owner dashboard — enable via walkthrough
+intelligence = true     # system transparency, model controls, prompt queue, evaluation
 
 [launcher.profiles.minimal]
 modules = ["ingestion", "outputs"]
@@ -181,8 +194,10 @@ enabled = false  # set true after running: lead_client.py install-service
 # v0.42: Idle skill evolution — workers self-improve when no tasks pending
 [idle]
 enabled = true   # workers self-improve when no tasks pending
-threshold_polls = 3  # consecutive idle polls before entering idle mode (~3s at 1s/poll)
-skills = ["skill_evolve", "skill_test", "code_quality", "benchmark"]
+threshold_polls = 30  # consecutive idle polls before idle mode (~30s at 1s/poll)
+cooldown_secs = 60    # minimum seconds between idle evolution runs per agent
+skills = ["code_quality", "benchmark", "skill_evolve", "code_review", "summarize"]
+# Note: skill_test removed from idle rotation — was 96% of all tasks (28k+ flood)
 
 # 0.14: Knowledge integrity verification
 [integrity]

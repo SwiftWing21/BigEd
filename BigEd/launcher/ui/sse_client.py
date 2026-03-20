@@ -87,8 +87,8 @@ class SSEClient:
 
             while self._running:
                 try:
-                    # Read one line (SSE is line-delimited)
-                    chunk = resp.read(1).decode("utf-8", errors="replace")
+                    # Read in larger chunks for performance (SSE lines split below)
+                    chunk = resp.read(4096).decode("utf-8", errors="replace")
                     if not chunk:
                         break  # connection closed
 

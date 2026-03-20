@@ -488,6 +488,58 @@ Completed 2026-03-20. 11 files, +194/-90 lines:
 - [ ] Reduce 30s polling to 5min for slow-changing data (knowledge, RAG, code stats)
 - [ ] Update Chart.js data instead of destroy/recreate (dashboard.html:449, 477)
 
+### 0.51.01b — Task Pipeline Optimization [PLANNED]
+
+**Goal:** 30-40% throughput improvement, 15-20% API cost reduction. Addresses 10 bottlenecks from pipeline audit.
+
+**Critical (implement first):**
+- [ ] Atomic task claiming — combine SELECT+UPDATE into single query (db.py:241-281)
+- [ ] Enable prompt caching — `cache_control: ephemeral` on all stable system prompts (providers.py:332-369)
+- [ ] Async usage logging — buffer writes, flush on timer instead of sync per-call (cost_tracking.py:16-33)
+- [ ] Adaptive polling — 100ms/500ms/2s based on queue depth + jitter (worker.py:505)
+
+**Medium priority:**
+- [ ] Global idle evolution dedup — check PENDING+RUNNING before creating task (idle_evolution.py)
+- [ ] DAG promotion index — add `idx_tasks_depends` for faster WAITING resolution (db.py:330-382)
+- [ ] API request batching — coalesce simple skills into 10-task batches (skills/_models.py)
+- [ ] Deterministic Tier 2 sampling — by task_id hash, not random (intelligence.py:105)
+
+**Lower priority:**
+- [ ] Cache skill staleness ranking in idle evolution (idle_evolution.py:40-113)
+- [ ] Batch-claim N tasks per poll when queue depth > threshold
+
+### 0.51.02b — Auto-Save & Backup System [PLANNED]
+
+**Goal:** Prevent data loss from power outage or crashes. Configurable backup frequency/depth/location.
+
+**Implementation:**
+- [ ] `fleet/backup_manager.py` — BackupManager class with auto-save thread
+- [ ] `fleet.toml [backup]` section — enabled, interval_secs=300, depth=10, location, prune_enabled
+- [ ] Backup targets: fleet.db, rag.db, tools.db, knowledge/, fleet.toml (configurable per-target)
+- [ ] WAL checkpoint before backup — `PRAGMA wal_checkpoint(TRUNCATE)`
+- [ ] Backup manifest JSON — timestamp, file hashes, row counts, integrity check results
+- [ ] Integrity verification — `PRAGMA integrity_check` after each backup
+- [ ] Prune beyond depth — with "do not clean" toggle + disk usage warning
+- [ ] CLI: `lead_client.py backup`, `backup --list`, `backup --restore ID`
+- [ ] Supervisor integration — backup on fleet startup + on skill_deploy completion
+- [ ] Graceful shutdown saves task queue (already implemented in 0.51.00b)
+
+### 0.51.03b — Intelligence Module + Cost Dashboard [PLANNED]
+
+**Goal:** System transparency tab for understanding capabilities, model settings, prompt queue, evaluation.
+
+**Implemented (needs testing):**
+- [x] Intelligence module (mod_intelligence.py) — 5 panels: overview, model settings, prompt queue, evaluation, cost
+- [x] API Cost Tracker dashboard panel — today/7d/30d spend, provider breakdown, projections
+- [x] billing_ocr skill — OCR screenshots of Claude/Gemini billing dashboards
+- [x] token_optimizer skill — audit usage patterns, recommend cost optimizations
+
+**Remaining:**
+- [ ] Prompt queue dispatches to configurable skill type (not just summarize)
+- [ ] Model settings panel with live edit capability (write back to fleet.toml)
+- [ ] Weight adjustment UI for skill complexity routing
+- [ ] Evaluation routine live display (show Tier 1/2 scores as they happen)
+
 ### 0.40.10a — Claude Skills Update + Cowork Integration
 
 - **Goal:** Update all 5 project skills to reflect current architecture (post-cowork refactor + 0.31.x work). Create 3 new skills leveraging installed superpowers plugin patterns.

@@ -25,8 +25,7 @@ def load_custom_fonts():
     except Exception as e:
         print(f"[WARN] Custom font loading failed: {e}", file=sys.stderr)
 
-# Load fonts at import time
-load_custom_fonts()
+# Fonts loaded lazily — call load_custom_fonts() after window creation
 
 # Backgrounds
 BG       = "#1a1a1a"

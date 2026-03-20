@@ -30,14 +30,24 @@ from fleet_api import (
     ollama_tags, ollama_ps, ollama_is_running, ollama_keepalive,
 )
 
-# GPU via pynvml (NVIDIA); graceful fallback if unavailable
-try:
-    import pynvml
-    pynvml.nvmlInit()
-    _GPU_HANDLE = pynvml.nvmlDeviceGetHandleByIndex(0)
-    _GPU_OK = True
-except Exception:
-    _GPU_OK = False
+# GPU via pynvml (NVIDIA); lazy init for faster startup
+_GPU_OK = None  # None = not yet checked
+_GPU_HANDLE = None
+_pynvml = None  # module ref, set by _ensure_gpu()
+
+def _ensure_gpu():
+    global _GPU_OK, _GPU_HANDLE, _pynvml
+    if _GPU_OK is not None:
+        return _GPU_OK
+    try:
+        import pynvml
+        pynvml.nvmlInit()
+        _GPU_HANDLE = pynvml.nvmlDeviceGetHandleByIndex(0)
+        _pynvml = pynvml
+        _GPU_OK = True
+    except Exception:
+        _GPU_OK = False
+    return _GPU_OK
 
 # PyInstaller bundles assets into sys._MEIPASS; fall back to script dir
 if getattr(sys, "frozen", False):
@@ -483,6 +493,85 @@ def _check_supervisor_liveness():
     return result
 
 
+def _zombie_sweep() -> list:
+    """Final sweep: kill any orphaned fleet processes still running.
+    Cross-platform — uses psutil. Returns list of killed process names."""
+    killed = []
+    try:
+        import psutil
+        fleet_scripts = {"supervisor.py", "hw_supervisor.py", "worker.py",
+                         "dashboard.py", "dispatch_marathon.py", "train.py"}
+        my_pid = os.getpid()
+        for proc in psutil.process_iter(['pid', 'name', 'cmdline']):
+            try:
+                if proc.pid == my_pid:
+                    continue
+                cmdline = ' '.join(proc.info.get('cmdline') or [])
+                for script in fleet_scripts:
+                    if script in cmdline:
+                        proc.kill()
+                        killed.append(f"{script}(pid={proc.pid})")
+                        break
+            except (psutil.NoSuchProcess, psutil.AccessDenied):
+                continue
+    except ImportError:
+        pass
+    return killed
+
+
+def _graceful_save_tasks():
+    """Requeue RUNNING tasks to PENDING and mark agents OFFLINE for clean resume.
+    Writes a shutdown marker so next boot knows to recover."""
+    import sqlite3
+    db_path = FLEET_DIR / "fleet.db"
+    if not db_path.exists():
+        return
+    try:
+        conn = sqlite3.connect(str(db_path), timeout=10)
+        # Count tasks to requeue
+        running = conn.execute("SELECT COUNT(*) FROM tasks WHERE status='RUNNING'").fetchone()[0]
+        if running > 0:
+            conn.execute("UPDATE tasks SET status='PENDING', assigned_to=NULL WHERE status='RUNNING'")
+        # Mark all agents offline
+        conn.execute("UPDATE agents SET status='OFFLINE', current_task_id=NULL")
+        # Write shutdown marker
+        conn.execute("""
+            INSERT OR REPLACE INTO notes (from_agent, to_agent, body_json, channel)
+            VALUES ('system', 'system', ?, 'sup')
+        """, (json.dumps({
+            "type": "graceful_shutdown",
+            "timestamp": time.time(),
+            "tasks_requeued": running,
+        }),))
+        conn.commit()
+        conn.close()
+    except Exception:
+        pass
+
+
+def _unload_all_ollama_models():
+    """Unload all Ollama models (keep_alive=0) to free VRAM on app close.
+    Ollama stays running — just releases model memory."""
+    import urllib.request
+    try:
+        host = "http://localhost:11434"
+        # Get loaded models
+        with urllib.request.urlopen(f"{host}/api/ps", timeout=3) as r:
+            data = json.loads(r.read())
+        models = [m["name"] for m in data.get("models", [])]
+        for model in models:
+            try:
+                body = json.dumps({"model": model, "keep_alive": 0}).encode()
+                req = urllib.request.Request(
+                    f"{host}/api/generate", data=body, method="POST",
+                    headers={"Content-Type": "application/json"})
+                urllib.request.urlopen(req, timeout=5)
+            except Exception:
+                pass
+    except Exception:
+        pass
+
+
 def parse_status():
     """Read STATUS.md and return dict with agents + task counts."""
     result = {"agents": [], "tasks": {}, "raw": "", "supervisor_status": "OFFLINE", "dr_ders_status": "OFFLINE"}
@@ -569,10 +658,11 @@ def get_hw_stats(prev_net, prev_time):
     ram_str = f"RAM {vm.used/1e9:.1f}/{vm.total/1e9:.1f} GB  {vm.percent:.0f}%"
 
     # GPU
+    _ensure_gpu()
     if _GPU_OK:
         try:
-            util = pynvml.nvmlDeviceGetUtilizationRates(_GPU_HANDLE)
-            mem  = pynvml.nvmlDeviceGetMemoryInfo(_GPU_HANDLE)
+            util = _pynvml.nvmlDeviceGetUtilizationRates(_GPU_HANDLE)
+            mem  = _pynvml.nvmlDeviceGetMemoryInfo(_GPU_HANDLE)
             gpu_str = (f"GPU {util.gpu}%  "
                        f"VRAM {mem.used/1e9:.1f}/{mem.total/1e9:.1f} GB")
         except Exception:
@@ -692,6 +782,7 @@ class CustomTabBar(ctk.CTkFrame):
         "Onboarding":     "🎓",
         "Outputs":        "📤",
         "Owner":          "👤",
+        "Intelligence":   "🧠",
     }
 
     def __init__(self, master, **kwargs):
@@ -795,6 +886,9 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
     def __init__(self):
         super().__init__()
 
+        from ui.theme import load_custom_fonts
+        load_custom_fonts()  # After window exists, before UI build
+
         self.title("BigEd CC")
         self.geometry("1050x960")
         self.minsize(800, 720)
@@ -867,7 +961,7 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
             self._sidebar.configure(width=130)
 
         self._current_log_agent = "Dr. Ders"  # show Dr. Ders log during boot
-        self._refresh_status()
+        self._safe_after(100, self._refresh_status)
         self._schedule_refresh()
         self._schedule_hw()
         self._schedule_ollama_watch()
@@ -945,16 +1039,46 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
                 pass
 
     def _do_stop_and_close(self):
-        """Soft close: log shutdown, give agents grace period, kill processes, exit."""
-        self._log_output("Shutting down fleet (agents wrapping up)...")
+        """Graceful close: save task queue, unload models, kill agents, exit.
+
+        1. Requeue RUNNING tasks to PENDING (resume on next startup)
+        2. Mark all agents OFFLINE
+        3. Unload Ollama models (free VRAM)
+        4. Kill fleet processes
+        """
+        self._log_output("Shutting down fleet...")
         self._shutdown_gui()
+
+        # 1. Save task queue — requeue RUNNING tasks so they resume on next boot
         try:
-            from ui.boot import _kill_fleet_processes, _kill_ollama
-            _kill_fleet_processes()
-            time.sleep(1)
-            _kill_ollama()
+            self._log_output("  Saving task queue...")
+            _graceful_save_tasks()
         except Exception:
             pass
+
+        # 2. Unload all models to free VRAM
+        try:
+            self._log_output("  Unloading models...")
+            _unload_all_ollama_models()
+        except Exception:
+            pass
+
+        # 3. Kill fleet processes (supervisor, workers, dashboard, Dr. Ders)
+        try:
+            from ui.boot import _kill_fleet_processes
+            _kill_fleet_processes()
+        except Exception:
+            pass
+
+        # 4. Final zombie sweep — confirm no fleet processes left behind
+        try:
+            time.sleep(1)
+            zombies = _zombie_sweep()
+            if zombies:
+                self._log_output(f"  Cleaned {len(zombies)} zombie(s): {', '.join(zombies)}")
+        except Exception:
+            pass
+
         self.destroy()
 
     def _do_just_close(self):
@@ -1150,7 +1274,7 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
         # Title — single line with dim version
         title_frame = ctk.CTkFrame(hdr, fg_color="transparent")
         title_frame.grid(row=0, column=2, padx=(0, 8), pady=6, sticky="w")
-        ctk.CTkLabel(title_frame, text="BIGED CC",
+        ctk.CTkLabel(title_frame, text="BigEd CC",
                      font=("RuneScape Bold 12", 26, "bold"), text_color=GOLD).pack(side="left")
         ctk.CTkLabel(title_frame, text=f"  {_get_version()}",
                      font=FONT_XS, text_color=DIM).pack(side="left", pady=(6, 0))
@@ -1424,14 +1548,16 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
         # Load modular tabs via module system
         self._modules = {}
         try:
-            from modules import load_modules
+            from modules import load_modules, _load_manifest
             self._modules = load_modules(self, tab_cfg)
-            for name, mod in self._modules.items():
+        except ImportError:
+            pass  # Module system not available
+
+        for name, mod in self._modules.items():
+            try:
                 label = getattr(mod, "LABEL", name.title())
-                # Check for deprecation banner
                 deprecated = False
                 try:
-                    from modules import _load_manifest
                     manifest = _load_manifest()
                     meta = manifest.get(name, {})
                     deprecated = meta.get("deprecated", False)
@@ -1440,7 +1566,6 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
                 tabs.add(label)
                 tab_frame = tabs.tab(label)
                 if deprecated:
-                    # Show deprecation banner
                     banner = ctk.CTkFrame(tab_frame, fg_color="#3a2a00", corner_radius=4)
                     banner.pack(fill="x", padx=4, pady=(4, 0))
                     since = meta.get("deprecated_since", "")
@@ -1454,15 +1579,14 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
                     ctk.CTkLabel(banner, text=msg, font=FONT_SM,
                                  text_color=ORANGE, wraplength=600
                                  ).pack(padx=8, pady=4)
-                    # Wrap in sub-frame for module content
                     content = ctk.CTkFrame(tab_frame, fg_color="transparent")
                     content.pack(fill="both", expand=True)
                     mod.build_tab(content)
                 else:
                     mod.build_tab(tab_frame)
-        except ImportError:
-            # Fallback: no module system available, skip modular tabs
-            pass
+            except Exception as e:
+                import sys
+                print(f"[WARN] Module '{name}' failed to build tab: {e}", file=sys.stderr)
 
         tabs.set("Command Center")
 
@@ -1882,48 +2006,56 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
             n_all = n_active + n_disabled
             if hasattr(self, '_agent_summary'):
                 self._agent_summary.configure(
-                    text=f"{n_active} active / {n_disabled} disabled / {n_all} total")
+                    text=f"{n_active} active / {n_all} total")
 
-            if hasattr(self, '_disabled_toggle'):
-                arrow = "\u25bc" if self._disabled_expanded else "\u25b6"
-                self._disabled_toggle.configure(text=f"{arrow} Disabled ({n_disabled})")
+            # Only show disabled agents section in dev mode
+            if DEV_MODE:
+                if hasattr(self, '_disabled_toggle'):
+                    arrow = "\u25bc" if self._disabled_expanded else "\u25b6"
+                    self._disabled_toggle.configure(text=f"{arrow} Disabled ({n_disabled})")
 
-            # Render disabled agent cards
-            if hasattr(self, '_disabled_grid'):
-                disabled_active_names = set()
-                for i, dag in enumerate(disabled_list):
-                    d_name = dag.get("name", "?")
-                    disabled_active_names.add(d_name)
-                    r = i // 3
-                    c = i % 3
-                    if d_name in self._disabled_cards:
-                        self._disabled_cards[d_name]["card"].grid(
-                            row=r, column=c, padx=4, pady=2, sticky="nsew")
-                    else:
-                        dcard = ctk.CTkFrame(
-                            self._disabled_grid, fg_color=BG2, corner_radius=8,
-                            height=60, border_width=1, border_color="#333")
-                        dcard.grid(row=r, column=c, padx=4, pady=2, sticky="nsew")
-                        dcard.grid_propagate(False)
-                        ctk.CTkLabel(dcard, text="\u25cf", font=("Consolas", 14),
-                                     text_color="#555").place(x=8, y=8)
-                        ctk.CTkLabel(dcard, text=d_name, font=("RuneScape Plain 12", 11),
-                                     text_color="#666").place(x=26, y=6)
-                        ctk.CTkLabel(dcard, text="DISABLED", font=("Consolas", 9),
-                                     text_color="#555").place(
-                                         relx=1.0, x=-8, y=8, anchor="ne")
-                        enable_btn = ctk.CTkButton(
-                            dcard, text="Enable", font=("Consolas", 9),
-                            height=20, width=60,
-                            fg_color="#2e7d32", hover_color="#388e3c",
-                            command=lambda n=d_name: self._toggle_agent_disabled(
-                                n, enable=True))
-                        enable_btn.place(relx=1.0, x=-8, y=34, anchor="ne")
-                        self._disabled_cards[d_name] = {"card": dcard}
-                # Hide stale disabled cards
-                for key, dc in self._disabled_cards.items():
-                    if key not in disabled_active_names:
-                        dc["card"].grid_remove()
+                # Render disabled agent cards
+                if hasattr(self, '_disabled_grid'):
+                    disabled_active_names = set()
+                    for i, dag in enumerate(disabled_list):
+                        d_name = dag.get("name", "?")
+                        disabled_active_names.add(d_name)
+                        r = i // 3
+                        c = i % 3
+                        if d_name in self._disabled_cards:
+                            self._disabled_cards[d_name]["card"].grid(
+                                row=r, column=c, padx=4, pady=2, sticky="nsew")
+                        else:
+                            dcard = ctk.CTkFrame(
+                                self._disabled_grid, fg_color=BG2, corner_radius=8,
+                                height=60, border_width=1, border_color="#333")
+                            dcard.grid(row=r, column=c, padx=4, pady=2, sticky="nsew")
+                            dcard.grid_propagate(False)
+                            ctk.CTkLabel(dcard, text="\u25cf", font=("Consolas", 14),
+                                         text_color="#555").place(x=8, y=8)
+                            ctk.CTkLabel(dcard, text=d_name, font=("RuneScape Plain 12", 11),
+                                         text_color="#666").place(x=26, y=6)
+                            ctk.CTkLabel(dcard, text="DISABLED", font=("Consolas", 9),
+                                         text_color="#555").place(
+                                             relx=1.0, x=-8, y=8, anchor="ne")
+                            enable_btn = ctk.CTkButton(
+                                dcard, text="Enable", font=("Consolas", 9),
+                                height=20, width=60,
+                                fg_color="#2e7d32", hover_color="#388e3c",
+                                command=lambda n=d_name: self._toggle_agent_disabled(
+                                    n, enable=True))
+                            enable_btn.place(relx=1.0, x=-8, y=34, anchor="ne")
+                            self._disabled_cards[d_name] = {"card": dcard}
+                    # Hide stale disabled cards
+                    for key, dc in self._disabled_cards.items():
+                        if key not in disabled_active_names:
+                            dc["card"].grid_remove()
+            else:
+                # Production: hide disabled section entirely
+                if hasattr(self, '_disabled_toggle'):
+                    self._disabled_toggle.grid_remove()
+                if hasattr(self, '_disabled_grid'):
+                    self._disabled_grid.grid_remove()
 
         self._db_query_bg(_fetch, _render)
 
@@ -3227,7 +3359,7 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
         except Exception as e:
             self._log_output(f"HW stats error: {e}")
         finally:
-            self._safe_after(3000, self._schedule_hw)
+            self._safe_after(5000, self._schedule_hw)
 
     def _apply_hw(self, cpu_s, ram_s, gpu_s, net_s):
         def _target_color(pct_str, warn=70, crit=90):
@@ -3396,9 +3528,9 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
             if models:
                 names = [m["name"].split(":")[0] for m in models]
                 vram_str = ""
-                if _GPU_OK and not eco:
+                if _ensure_gpu() and not eco:
                     try:
-                        mem = pynvml.nvmlDeviceGetMemoryInfo(_GPU_HANDLE)
+                        mem = _pynvml.nvmlDeviceGetMemoryInfo(_GPU_HANDLE)
                         vram_str = f" {mem.used/1e9:.1f}GB"
                     except Exception:
                         pass
@@ -4186,7 +4318,8 @@ from ui.dialogs.review import _init_review_refs
 from ui.dialogs.walkthrough import _init_walkthrough_refs
 
 # Inject late-bound refs into dialog modules (avoids circular imports)
-_pynvml_mod = pynvml if _GPU_OK else None
+_ensure_gpu()
+_pynvml_mod = _pynvml if _GPU_OK else None
 _init_thermal_refs(HERE, _GPU_OK, _GPU_HANDLE if _GPU_OK else None, _pynvml_mod)
 _init_model_selector_refs(HERE, FLEET_DIR, FLEET_TOML, _GPU_OK,
                           _GPU_HANDLE if _GPU_OK else None, _pynvml_mod, load_model_cfg)
@@ -4232,9 +4365,9 @@ def generate_debug_report(app=None, error=None, traceback_str=None):
     try:
         report["hardware"]["cpu_percent"] = psutil.cpu_percent()
         report["hardware"]["ram_percent"] = psutil.virtual_memory().percent
-        if _GPU_OK:
-            mem = pynvml.nvmlDeviceGetMemoryInfo(_GPU_HANDLE)
-            temp = pynvml.nvmlDeviceGetTemperature(_GPU_HANDLE, pynvml.NVML_TEMPERATURE_GPU)
+        if _ensure_gpu():
+            mem = _pynvml.nvmlDeviceGetMemoryInfo(_GPU_HANDLE)
+            temp = _pynvml.nvmlDeviceGetTemperature(_GPU_HANDLE, _pynvml.NVML_TEMPERATURE_GPU)
             report["hardware"]["gpu_temp_c"] = temp
             report["hardware"]["vram_used_gb"] = round(mem.used / 1e9, 2)
             report["hardware"]["vram_total_gb"] = round(mem.total / 1e9, 2)

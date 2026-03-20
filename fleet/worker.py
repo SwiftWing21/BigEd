@@ -360,15 +360,14 @@ def main():
     log = setup_logging(role)
     config = load_config()
 
-    db.init_db()
-    db.register_agent(role, role, os.getpid())
-
-    # Check if this agent is disabled in config
+    # Check if this agent is disabled in config — exit before DB registration
     disabled = set(config.get("fleet", {}).get("disabled_agents", []))
     if role in disabled:
         log.info(f"Agent '{role}' is disabled in fleet.toml — exiting")
-        db.heartbeat(role, status="DISABLED")
-        return
+        return  # Exit immediately, no DB registration
+
+    db.init_db()
+    db.register_agent(role, role, os.getpid())
 
     # Load role-based skill affinity from config
     base_role = role.split("_")[0]
@@ -392,7 +391,10 @@ def main():
     curriculum_idx = 0
     last_task_time = time.time()
     idle_timeout = config['fleet']['idle_timeout_secs']
+    idle_cooldown = config.get("idle", {}).get("cooldown_secs", 60)
     idle_count = 0
+    _idle_failures = 0  # consecutive idle evolution failures — pauses after 3
+    _last_idle_run = 0.0  # timestamp of last idle evolution run
     session_calls = 0
     max_calls = config.get("workers", {}).get("max_calls_per_session", MAX_CALLS_PER_SESSION)
 
@@ -475,27 +477,52 @@ def main():
             time.sleep(5)
             continue
 
-        # Check if quarantined by watchdog
+        # Check if quarantined by watchdog — auto-recover after 5 minutes
         try:
             from db import get_conn
             with get_conn() as _conn:
                 _row = _conn.execute(
-                    "SELECT status FROM agents WHERE name=?", (role,)).fetchone()
+                    "SELECT status, last_heartbeat FROM agents WHERE name=?", (role,)).fetchone()
                 if _row and _row["status"] == "QUARANTINED":
-                    log.warning("Agent quarantined by watchdog — pausing claims")
-                    time.sleep(10)
-                    continue
+                    try:
+                        from datetime import datetime
+                        last = datetime.fromisoformat(_row["last_heartbeat"])
+                        age = (datetime.utcnow() - last).total_seconds()
+                        if age > 300:  # 5 minutes
+                            log.info("Quarantine timeout (5m) — auto-recovering to IDLE")
+                            _conn.execute("UPDATE agents SET status='IDLE' WHERE name=?", (role,))
+                        else:
+                            log.warning(f"Agent quarantined — waiting ({300 - age:.0f}s remaining)")
+                            time.sleep(10)
+                            continue
+                    except Exception:
+                        log.warning("Agent quarantined by watchdog — pausing claims")
+                        time.sleep(10)
+                        continue
         except Exception:
             pass
 
         task = db.claim_task(role, affinity_skills=affinity_skills)
         if not task:
             idle_count += 1
-            if idle_count >= IDLE_THRESHOLD and config.get("idle", {}).get("enabled", False):
-                _run_idle_evolution(role, config)
+            now = time.time()
+            cooldown_ok = (now - _last_idle_run) >= idle_cooldown
+            if idle_count >= IDLE_THRESHOLD and config.get("idle", {}).get("enabled", False) and cooldown_ok:
+                if _idle_failures < 3:  # Stop after 3 consecutive failures
+                    try:
+                        _run_idle_evolution(role, config)
+                        _idle_failures = 0
+                        _last_idle_run = now
+                    except Exception as e:
+                        _idle_failures += 1
+                        _last_idle_run = now  # Cooldown on failure too
+                        log.warning(f"Idle evolution failed ({_idle_failures}/3): {e}")
+                        if _idle_failures >= 3:
+                            log.info("Idle evolution paused — too many failures. Resumes after successful task.")
                 idle_count = 0
         if task:
             idle_count = 0  # reset on task claim
+            _idle_failures = 0  # reset idle failure counter on successful task claim
             last_task_time = time.time()
             session_calls += 1
             if session_calls > max_calls:

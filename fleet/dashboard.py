@@ -998,6 +998,90 @@ def api_usage_budgets():
         return jsonify({"error": _safe_error(e)}), 500
 
 
+@app.route("/api/usage/dashboard")
+def api_usage_dashboard():
+    """Cost intelligence dashboard — live spend, projections, per-provider breakdown."""
+    try:
+        conn = get_conn()
+        result = {"providers": {}, "today": {}, "week": {}, "month": {}, "projection": {}}
+
+        # Per-provider totals (today)
+        for period, label, interval in [
+            ("today", "Today", "-1 day"),
+            ("week", "7 days", "-7 days"),
+            ("month", "30 days", "-30 days"),
+        ]:
+            rows = conn.execute(f"""
+                SELECT provider,
+                       COALESCE(SUM(input_tokens), 0) as input_tokens,
+                       COALESCE(SUM(output_tokens), 0) as output_tokens,
+                       COALESCE(SUM(cost_usd), 0) as cost_usd,
+                       COUNT(*) as calls
+                FROM usage
+                WHERE created_at >= datetime('now', '{interval}')
+                GROUP BY provider
+            """).fetchall()
+            period_data = {}
+            total_cost = 0
+            total_tokens = 0
+            for r in rows:
+                p = r["provider"] or "local"
+                period_data[p] = {
+                    "input_tokens": r["input_tokens"],
+                    "output_tokens": r["output_tokens"],
+                    "cost_usd": round(r["cost_usd"], 4),
+                    "calls": r["calls"],
+                }
+                total_cost += r["cost_usd"]
+                total_tokens += r["input_tokens"] + r["output_tokens"]
+            period_data["_total"] = {
+                "cost_usd": round(total_cost, 4),
+                "tokens": total_tokens,
+                "calls": sum(d["calls"] for d in period_data.values() if isinstance(d, dict) and "calls" in d),
+            }
+            result[period] = period_data
+
+        # Top skills by cost (last 7 days)
+        top_skills = conn.execute("""
+            SELECT skill, provider,
+                   COALESCE(SUM(cost_usd), 0) as cost_usd,
+                   COALESCE(SUM(input_tokens + output_tokens), 0) as tokens,
+                   COUNT(*) as calls
+            FROM usage
+            WHERE created_at >= datetime('now', '-7 days')
+            GROUP BY skill, provider
+            ORDER BY cost_usd DESC
+            LIMIT 20
+        """).fetchall()
+        result["top_skills"] = [dict(r) for r in top_skills]
+
+        # Daily cost trend (last 14 days)
+        daily = conn.execute("""
+            SELECT DATE(created_at) as day,
+                   COALESCE(SUM(cost_usd), 0) as cost_usd,
+                   COALESCE(SUM(input_tokens + output_tokens), 0) as tokens
+            FROM usage
+            WHERE created_at >= datetime('now', '-14 days')
+            GROUP BY DATE(created_at)
+            ORDER BY day
+        """).fetchall()
+        result["daily_trend"] = [dict(r) for r in daily]
+
+        # Projection: based on 7-day average
+        if result["week"].get("_total", {}).get("cost_usd", 0) > 0:
+            weekly_cost = result["week"]["_total"]["cost_usd"]
+            result["projection"] = {
+                "monthly_usd": round(weekly_cost * 4.3, 2),
+                "yearly_usd": round(weekly_cost * 52, 2),
+                "daily_avg_usd": round(weekly_cost / 7, 4),
+            }
+
+        conn.close()
+        return jsonify(result)
+    except Exception as e:
+        return jsonify({"error": _safe_error(e)}), 500
+
+
 @app.route("/api/usage/regression")
 def api_usage_regression():
     """CT-3: Flag skills with >20% token increase vs previous period."""

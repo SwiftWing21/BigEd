@@ -307,27 +307,74 @@ def validate_configured_models(cfg):
     return present
 
 
-def warmup_model(model_name):
-    """Load a model into VRAM. Validates model exists first."""
+# ── Sticky Model Loader ──────────────────────────────────────────────────────
+# "Park and guard" — load once on GPU, keep it there, only swap under genuine
+# pressure (thermal/VRAM emergency). Fast recovery to same state if evicted.
+_model_gpu_assignment = {}       # model_name → num_gpu (99=GPU, 0=CPU)
+_last_model_change = 0.0         # timestamp of last model swap
+MODEL_CHANGE_COOLDOWN = 120      # minimum seconds between non-emergency model swaps
+
+
+def _get_keep_alive():
+    """Read keep_alive from fleet.toml [models] section, default 30m."""
     try:
-        # Check if model exists before trying to warm up
+        cfg = load_thermal_config()
+        mins = int(cfg.get("keep_alive_mins", 30))
+        return f"{mins}m"
+    except Exception:
+        return "30m"
+
+
+def warmup_model(model_name, on_gpu=True):
+    """Load a model with sticky GPU assignment. Remembers placement for fast recovery."""
+    global _last_model_change
+    try:
         available = get_available_models()
         if model_name not in available:
-            log.info(f"Cannot warmup '{model_name}' — not installed. Run: ollama pull {model_name}")
+            log.info(f"Cannot warmup '{model_name}' — not installed")
             return False
-        body = json.dumps({"model": model_name, "prompt": "", "keep_alive": "5m"}).encode()
+
+        # Sticky assignment: remember GPU/CPU placement per model
+        num_gpu = 99 if on_gpu else 0  # 99 = all layers on GPU, 0 = CPU only
+        _model_gpu_assignment[model_name] = num_gpu
+        keep_alive = _get_keep_alive()
+
+        body = json.dumps({
+            "model": model_name, "prompt": "", "keep_alive": keep_alive,
+            "options": {"num_gpu": num_gpu},
+        }).encode()
         req = urllib.request.Request(
             "http://localhost:11434/api/generate", data=body, method="POST",
             headers={"Content-Type": "application/json"})
-        with urllib.request.urlopen(req, timeout=45) as r:
+        with urllib.request.urlopen(req, timeout=60) as r:
             resp = json.loads(r.read())
             if "error" in resp:
                 log.info(f"Warmup error for '{model_name}': {resp['error']}")
                 return False
+        _last_model_change = time.time()
         return True
     except Exception as e:
         log.info(f"Warmup failed for '{model_name}': {e}")
         return False
+
+
+def can_transition_model(emergency=False) -> bool:
+    """Check if enough time has passed since last model change (dampening)."""
+    if emergency:
+        return True  # Always allow emergency transitions
+    elapsed = time.time() - _last_model_change
+    if elapsed < MODEL_CHANGE_COOLDOWN:
+        log.info(f"Model change cooldown: {MODEL_CHANGE_COOLDOWN - elapsed:.0f}s remaining")
+        return False
+    return True
+
+
+def recover_model(model_name):
+    """Fast recovery: reload model with same GPU/CPU assignment it had before."""
+    prev_gpu = _model_gpu_assignment.get(model_name, 99)  # default to GPU
+    on_gpu = prev_gpu > 0
+    log.info(f"Fast recovery: {model_name} → {'GPU' if on_gpu else 'CPU'} (restoring previous state)")
+    return warmup_model(model_name, on_gpu=on_gpu)
 
 
 def evict_models_for_training(host=None):
@@ -489,7 +536,7 @@ def ensure_conductor(host, conductor_model):
     # Not loaded — warm it up on CPU
     try:
         body = json.dumps({
-            "model": conductor_model, "keep_alive": "24h",
+            "model": conductor_model, "keep_alive": _get_keep_alive(),
             "options": {"num_gpu": 0},
         }).encode()
         req = urllib.request.Request(
@@ -504,6 +551,10 @@ def ensure_conductor(host, conductor_model):
 # ── Model Transition ──────────────────────────────────────────────────────────
 
 def transition_model(target, current, cfg, emergency=False):
+    """Transition to a new model. Respects cooldown unless emergency."""
+    if not emergency and not can_transition_model():
+        return  # Cooldown active — skip non-emergency transition
+
     log.info(f"{'EMERGENCY ' if emergency else ''}Transition: {current} -> {target}")
 
     if not emergency:
@@ -519,8 +570,10 @@ def transition_model(target, current, cfg, emergency=False):
         unload_all_models()
         time.sleep(2)
 
-    log.info(f"Warming up {target}...")
-    warmup_model(target)
+    # Use sticky loader — GPU for worker models, CPU for critical/failsafe
+    on_gpu = target not in (cfg.get("tier_crit", ""), cfg.get("conductor_model", ""))
+    log.info(f"Loading {target} ({'GPU' if on_gpu else 'CPU'})...")
+    warmup_model(target, on_gpu=on_gpu)
 
     write_state("ready", target)
     log.info("Transition complete.")
@@ -694,14 +747,16 @@ def main():
             DRDERS_PROMOTED_MODEL = m
             break
 
+    # Always keep failsafe micro model loaded on CPU — never evict this
     if DRDERS_BOOT_MODEL:
-        log.info(f"Dr. Ders failsafe model: {DRDERS_BOOT_MODEL}")
+        log.info(f"Dr. Ders failsafe model: {DRDERS_BOOT_MODEL} (CPU, permanent)")
+        warmup_model(DRDERS_BOOT_MODEL, on_gpu=False)
 
     if DRDERS_PROMOTED_MODEL:
         log.info(f"Promoting Dr. Ders: {DRDERS_BOOT_MODEL} → {DRDERS_PROMOTED_MODEL} (CPU)")
         try:
             body = json.dumps({
-                "model": DRDERS_PROMOTED_MODEL, "keep_alive": "24h",
+                "model": DRDERS_PROMOTED_MODEL, "keep_alive": _get_keep_alive(),
                 "options": {"num_gpu": 0},
             }).encode()
             req = urllib.request.Request(
@@ -1043,21 +1098,11 @@ def main():
 
         except Exception as e:
             log.warning(f"Poll error (non-fatal): {e}")
-            # Failsafe: drop to boot model (0.6b) on errors for stability
-            if drders_promoted:
-                try:
-                    log.info(f"Error recovery: falling back to {DRDERS_BOOT_MODEL} (CPU failsafe)")
-                    body = json.dumps({
-                        "model": DRDERS_BOOT_MODEL, "keep_alive": "24h",
-                        "options": {"num_gpu": 0},
-                    }).encode()
-                    req = urllib.request.Request(
-                        f"{host}/api/generate", data=body, method="POST",
-                        headers={"Content-Type": "application/json"})
-                    urllib.request.urlopen(req, timeout=30)
-                    drders_promoted = False
-                except Exception:
-                    pass
+            # Failsafe: recover to boot model (0.6b CPU) on errors
+            if drders_promoted and DRDERS_BOOT_MODEL:
+                log.info(f"Error recovery: falling back to {DRDERS_BOOT_MODEL} (CPU failsafe)")
+                recover_model(DRDERS_BOOT_MODEL)
+                drders_promoted = False
             # Write error state so launcher knows we're alive but struggling
             try:
                 write_state("error", get_current_local_model())

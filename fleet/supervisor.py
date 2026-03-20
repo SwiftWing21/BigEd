@@ -88,6 +88,7 @@ ollama_proc = None
 discord_proc = None
 openclaw_proc = None
 dashboard_proc = None
+hw_supervisor_proc = None
 worker_procs = {}
 training_active = False
 ollama_evicted_for_training = False
@@ -448,6 +449,17 @@ def stop_dashboard():
     dashboard_proc = None
 
 
+def start_hw_supervisor(config):
+    """Start Dr. Ders (hw_supervisor) — thermal/VRAM governor for the fleet."""
+    global hw_supervisor_proc
+    log.info("Starting Dr. Ders (hw_supervisor)")
+    hw_supervisor_proc = subprocess.Popen(
+        [PYTHON, str(FLEET_DIR / "hw_supervisor.py")],
+        cwd=str(FLEET_DIR),
+        creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0),
+    )
+
+
 def start_worker(role, config):
     cmd = [PYTHON, str(FLEET_DIR / "worker.py"), "--role", role]
 
@@ -561,11 +573,14 @@ def read_hw_state():
 
 
 
-def _ping_ollama_keepalive(config, keep_alive="24h", model_override=None):
-    """Load model into VRAM and keep it there. 24h effectively means never unload."""
+def _ping_ollama_keepalive(config, keep_alive=None, model_override=None):
+    """Load model into VRAM and keep it there. Reads keep_alive from fleet.toml."""
     host = config.get("models", {}).get("ollama_host", "http://localhost:11434")
     model = model_override or config.get("models", {}).get("local", "qwen3:8b")
-    body = json.dumps({"model": model, "keep_alive": keep_alive}).encode()
+    if keep_alive is None:
+        keep_alive = f"{config.get('models', {}).get('keep_alive_mins', 30)}m"
+    body = json.dumps({"model": model, "keep_alive": keep_alive,
+                       "options": {"num_gpu": 99}}).encode()  # 99 = all layers on GPU (sticky)
     req = urllib.request.Request(
         f"{host}/api/generate", data=body,
         headers={"Content-Type": "application/json"}, method="POST",
@@ -584,7 +599,8 @@ def _warmup_conductor(config):
     model = config.get("models", {}).get("conductor_model")
     if not model:
         return
-    body = json.dumps({"model": model, "keep_alive": "24h", "options": {"num_gpu": 0}}).encode()
+    ka = f"{config.get('models', {}).get('keep_alive_mins', 30)}m"
+    body = json.dumps({"model": model, "keep_alive": ka, "options": {"num_gpu": 0}}).encode()
     req = urllib.request.Request(
         f"{host}/api/generate", data=body,
         headers={"Content-Type": "application/json"}, method="POST",
@@ -662,6 +678,13 @@ def shutdown(sig, frame):
             proc.wait(timeout=5)
         except subprocess.TimeoutExpired:
             proc.kill()
+    # Stop Dr. Ders after workers, before Ollama
+    if hw_supervisor_proc and hw_supervisor_proc.poll() is None:
+        hw_supervisor_proc.terminate()
+        try:
+            hw_supervisor_proc.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            hw_supervisor_proc.kill()
     stop_ollama()
     log.info("Fleet stopped.")
     sys.exit(0)
@@ -827,6 +850,9 @@ def main():
     if not air_gap:
         start_dashboard(config)
 
+    # Start Dr. Ders (hw_supervisor) — respawned if it crashes
+    start_hw_supervisor(config)
+
     # NOTE: Conductor model warmup + ongoing keepalive handled by Dr. Ders.
     # Dr. Ders checks conductor every ~60s and keepalive every ~240s.
 
@@ -937,6 +963,11 @@ def main():
             if dashboard_proc and dashboard_proc.poll() is not None:
                 log.warning(f"Dashboard died (exit={dashboard_proc.returncode}) — restarting")
                 start_dashboard(config)
+
+        # Respawn Dr. Ders if crashed
+        if hw_supervisor_proc and hw_supervisor_proc.poll() is not None:
+            log.warning("Dr. Ders crashed — respawning")
+            start_hw_supervisor(config)
 
         # Model keepalive now handled by Dr. Ders (every ~240s via hw_state.json)
         # Supervisor only reads hw_state for transition awareness

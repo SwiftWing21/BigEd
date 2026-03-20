@@ -186,6 +186,13 @@
     <div id="modulesList"></div>
   </div>
 
+  <div class="card wide">
+    <h2>API Cost Tracker</h2>
+    <div class="stat-row" id="costSummary"></div>
+    <div id="costDetails" style="margin-top:12px"></div>
+    <div id="costNote" style="color:var(--dim);font-size:11px;margin-top:8px"></div>
+  </div>
+
   <div class="card">
     <h2>Code Reviews</h2>
     <div class="file-list" id="reviewList"></div>
@@ -615,12 +622,94 @@ async function loadAgentActivity() {
   }
 }
 
+async function loadCostTracker() {
+  try {
+    var data = await fetchJSON('/api/usage/dashboard');
+    var summary = document.getElementById('costSummary');
+    var details = document.getElementById('costDetails');
+    var note = document.getElementById('costNote');
+
+    var today = (data.today || {})._total || {};
+    var week = (data.week || {})._total || {};
+    var month = (data.month || {})._total || {};
+    var proj = data.projection || {};
+
+    summary.textContent = '';
+    var stats = [
+      {label: 'Today', value: '$' + (today.cost_usd || 0).toFixed(4), color: 'green'},
+      {label: '7 Days', value: '$' + (week.cost_usd || 0).toFixed(4), color: 'blue'},
+      {label: '30 Days', value: '$' + (month.cost_usd || 0).toFixed(2), color: 'gold'},
+      {label: 'Proj/Month', value: proj.monthly_usd ? '$' + proj.monthly_usd.toFixed(2) : '—', color: 'dim'},
+      {label: 'Calls Today', value: String(today.calls || 0), color: 'orange'},
+    ];
+    stats.forEach(function(s) {
+      var div = document.createElement('div');
+      div.className = 'stat ' + s.color;
+      var val = document.createElement('div');
+      val.className = 'value';
+      val.textContent = s.value;
+      var lbl = document.createElement('div');
+      lbl.className = 'label';
+      lbl.textContent = s.label;
+      div.appendChild(val);
+      div.appendChild(lbl);
+      summary.appendChild(div);
+    });
+
+    // Provider breakdown
+    details.textContent = '';
+    var providers = ['claude', 'gemini', 'local'];
+    var providerColors = {claude: '#c8a84b', gemini: '#4fc3f7', local: '#4caf50'};
+    var weekData = data.week || {};
+    providers.forEach(function(p) {
+      var pd = weekData[p];
+      if (!pd) return;
+      var row = document.createElement('div');
+      row.style.cssText = 'display:flex;justify-content:space-between;padding:2px 0;font-size:12px';
+      var name = document.createElement('span');
+      name.textContent = p;
+      name.style.color = providerColors[p] || 'var(--dim)';
+      name.style.fontWeight = 'bold';
+      var cost = document.createElement('span');
+      cost.textContent = '$' + (pd.cost_usd || 0).toFixed(4) + '  (' + (pd.calls || 0) + ' calls)';
+      cost.style.color = 'var(--dim)';
+      row.appendChild(name);
+      row.appendChild(cost);
+      details.appendChild(row);
+    });
+
+    // Top skills
+    if (data.top_skills && data.top_skills.length > 0) {
+      var skillHdr = document.createElement('div');
+      skillHdr.textContent = 'Top skills by cost (7d):';
+      skillHdr.style.cssText = 'font-size:11px;color:var(--dim);margin-top:8px;margin-bottom:4px';
+      details.appendChild(skillHdr);
+      data.top_skills.slice(0, 5).forEach(function(s) {
+        var row = document.createElement('div');
+        row.style.cssText = 'display:flex;justify-content:space-between;padding:1px 0;font-size:11px;color:var(--text)';
+        var name = document.createElement('span');
+        name.textContent = escapeHTML(s.skill || '?');
+        var cost = document.createElement('span');
+        cost.textContent = '$' + (s.cost_usd || 0).toFixed(4);
+        cost.style.color = 'var(--dim)';
+        row.appendChild(name);
+        row.appendChild(cost);
+        details.appendChild(row);
+      });
+    }
+
+    note.textContent = 'Costs tracked locally per API call. Anthropic/Google do not expose account billing APIs.';
+  } catch(e) {
+    console.error('Cost tracker error:', e);
+  }
+}
+
 async function loadAll() {
   await Promise.all([
     loadStatus(), loadCodeStats(), loadThermal(), loadTraining(),
     loadActivity(), loadSkills(), loadDiscussions(), loadModules(),
     loadReviews(), loadKnowledge(), loadRAG(), loadTimeline(),
-    loadDataStats(), loadAlerts(), loadAgentActivity(),
+    loadDataStats(), loadAlerts(), loadAgentActivity(), loadCostTracker(),
   ]);
   document.getElementById('lastUpdate').textContent = 'Updated: ' + new Date().toLocaleTimeString();
 }
@@ -634,7 +723,7 @@ setInterval(async () => {
     loadThermal(), loadTraining(), loadActivity(), loadSkills(),
     loadModules(), loadReviews(), loadKnowledge(), loadRAG(),
     loadTimeline(), loadDataStats(), loadCodeStats(), loadAlerts(),
-    loadAgentActivity(),
+    loadAgentActivity(), loadCostTracker(),
   ]);
 }, 30000);
 </script>
