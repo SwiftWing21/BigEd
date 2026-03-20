@@ -598,7 +598,57 @@ Partially completed in v0.51.00b (24e21d4). Dr. Ders respawn, startup perf, disa
 - [ ] Topics/tags: ai-agents, fleet-management, ollama, claude, gemini, minimax, local-ai, enterprise
 - [ ] Screenshot gallery: launcher, dashboard, Fleet Comm, Intelligence tab, Manual Mode
 
-### 0.051.07b — Manual Chat + Fleet Comm UX Redesign [PLANNED]
+### 0.051.07b — File Access Control + SOC 2 Folder Permissions [PLANNED]
+
+**Goal:** Enterprise-grade folder access control for SOC 2 compliance. Agents and modules get explicit read/read-write/full access per directory. IDE embed uses sandboxed workspace.
+
+**File access control system:**
+- [ ] `fleet.toml [filesystem]` section: define access zones with permission levels
+- [ ] Permission levels: `read` (view only), `read_write` (create/edit), `full` (create/edit/delete/execute)
+- [ ] Per-agent access: agents inherit zone permissions, can be restricted further
+- [ ] Per-module access: modules declare required paths, validated at load time
+- [ ] Audit logging: all file operations logged with agent/module, path, action, timestamp
+
+**Proposed fleet.toml config:**
+```toml
+[filesystem]
+# Access zones — agents/modules can only access declared paths
+[filesystem.zones]
+project = {path = ".", access = "read"}
+knowledge = {path = "fleet/knowledge", access = "read_write"}
+code_drafts = {path = "fleet/knowledge/code_drafts", access = "read_write"}
+skills = {path = "fleet/skills", access = "read"}        # deploy_skill gets full
+config = {path = "fleet/fleet.toml", access = "read"}     # settings UI gets read_write
+backups = {path = "~/BigEd-backups", access = "full"}
+workspace = {path = "fleet/knowledge/code_writes/workspace", access = "full"}
+
+[filesystem.overrides]
+# Skill-specific overrides
+deploy_skill = {zones = ["skills"], access = "full"}      # can write to skills/
+code_write = {zones = ["workspace", "code_drafts"], access = "full"}
+ingest = {zones = ["knowledge"], access = "read_write"}
+
+[filesystem.enterprise]
+enforce = false          # true on enterprise installs (forced)
+deny_by_default = true   # reject access to paths not in zones
+log_all_access = true    # SOC 2 audit trail for file operations
+```
+
+**Implementation:**
+- [ ] `fleet/filesystem_guard.py` — FileSystemGuard class: validates path access before any file I/O
+- [ ] Wrap skill file operations through guard (code_write, ingest, deploy_skill, rag_index)
+- [ ] Integration with existing sandbox (Docker) for code execution
+- [ ] Dashboard panel: file access audit log viewer
+- [ ] Enterprise mode: deny_by_default=true, log_all_access=true, enforce=true
+
+**IDE embed (SOC 2 compliant):**
+- [ ] code-server (VS Code in browser) running on localhost with workspace restriction
+- [ ] Embedded via WebView in a module tab (pywebview or tkinterweb)
+- [ ] Workspace scoped to `filesystem.zones.workspace` path only
+- [ ] Claude Code / Gemini sessions launch in scoped workspace
+- [ ] File changes in workspace auto-detected, staged for review
+
+### 0.051.08b — Manual Chat + Fleet Comm UX Redesign [PLANNED]
 
 **Goal:** Integrate Manual Mode (OAuth) chat directly into Fleet Comm tab. Unified UX for agent HITL requests + human-initiated Manual Chat sessions.
 
