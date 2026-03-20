@@ -365,6 +365,42 @@ class BootManagerMixin:
         # Switch log view from Dr. Ders to combined after boot
         self._current_log_agent = "all"
         self._safe_after(5000, self._hide_boot_progress)
+        # Auto-open dashboard in browser if configured
+        self._safe_after(1500, self._auto_open_dashboard)
+
+    def _auto_open_dashboard(self):
+        """Open dashboard in default browser after boot, if enabled.
+
+        Respects air_gap_mode (skip) and dashboard.auto_open config.
+        Runs in a thread to avoid blocking the UI.
+        """
+        L = _launcher()
+        try:
+            import tomllib
+            with open(L.FLEET_TOML, "rb") as f:
+                cfg = tomllib.load(f)
+            fleet = cfg.get("fleet", {})
+            dash = cfg.get("dashboard", {})
+            # Skip if air-gap or dashboard disabled
+            if fleet.get("air_gap_mode", False):
+                return
+            if not dash.get("enabled", True):
+                return
+            if not dash.get("auto_open", True):
+                return
+            port = dash.get("port", 5555)
+        except Exception:
+            port = 5555
+
+        def _open():
+            try:
+                import webbrowser
+                webbrowser.open(f"http://localhost:{port}")
+                self._safe_after(0, lambda: self._log_output(
+                    f"Dashboard opened at http://localhost:{port}"))
+            except Exception:
+                pass
+        threading.Thread(target=_open, daemon=True).start()
 
     # ── Individual boot stages ───────────────────────────────────────────
 

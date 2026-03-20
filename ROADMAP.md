@@ -400,6 +400,10 @@ Completed 2026-03-19. Settings Display panel (UI scaling controls), Apache 2.0 l
 
 Completed 2026-03-19. System Detection walkthrough step (hardware probing via psutil/pynvml, auto-adjust fleet.toml), API key checks on console buttons (disabled with "(no key)" when missing), agent card layout improvements (height 130->140, better row spacing), advisory card enrichment (severity counts + analysis summary), supervisor liveness extraction. Setup tooling: SETUP.md, scripts/setup.ps1, scripts/setup.sh. Dashboard thermal API fix, Ko-fi funding badge.
 
+### 0.29.00 — Dashboard Auto-Open + Audit Sync [DONE]
+
+Completed 2026-03-19. Dashboard auto-opens in default browser on boot complete (1.5s delay, threaded). Respects air-gap mode, `dashboard.enabled`, and new `dashboard.auto_open` fleet.toml toggle. Console persistence marked done (already working since v0.27.00 via JSONL). Audit tracker synced — UX deep-dive updated.
+
 ### 2.0 — Multi-Fleet & Remote Orchestration
 
 - Fleet-to-fleet communication (federated supervisor mesh)

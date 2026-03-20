@@ -200,11 +200,11 @@
 | First-run walkthrough | ✓ Done (v0.34) | 6-step, skip-all, re-trigger |
 | Model performance panel | ✓ Done (v0.21.01) | Tok/s live comparison |
 | Settings dialog | ✓ Good | 820x580, 6 tabs, sidebar nav |
-| Console persistence | Planned (0.21.03) | Chat history across rebuilds |
-| Dashboard auto-open | Planned (0.22.01) | On boot complete |
+| Console persistence | ✓ Done (v0.27.00) | JSONL history per console, 100-msg cap, load on reopen |
+| Dashboard auto-open | ✓ Done (v0.29.00) | Opens browser on boot complete, respects air-gap + config |
 | Intelligence scoring | ✓ Done (v0.21.03) | 0.0-1.0 per task, Tier 1 mechanical |
 
-**Next UX wins:** Console history persistence (0.21.03), dashboard auto-open (0.22.01), model comparison benchmarks (0.21.02).
+**Next UX wins:** Model comparison benchmarks, console search/filter UI.
 
 ---
 
@@ -394,6 +394,8 @@
 | Dashboard thermal API fix | Correct hw_state.json nesting, psutil system resources | v0.28.00 |
 | First-time setup scripts | setup.ps1 (Windows), setup.sh (Linux/macOS/SteamOS), SETUP.md guide | v0.28.00 |
 | Supervisor liveness extraction | _check_supervisor_liveness() shared by parse_status() and SSE | v0.28.00 |
+| Dashboard auto-open on boot | webbrowser.open after boot complete, threaded, air-gap aware | v0.29.00 |
+| Console persistence confirmed | JSONL history per console already working since v0.27.00 | v0.29.00 |
 
 ---
 
