@@ -96,14 +96,30 @@ def check_ollama() -> dict:
     """Ollama for local LLM inference."""
     path = _which("ollama")
     version = ""
+
+    # Windows: check default install path if not on PATH
+    if not path and sys.platform == "win32":
+        import os
+        win_path = Path(os.environ.get("LOCALAPPDATA", "")) / "Programs" / "Ollama" / "ollama.exe"
+        if win_path.exists():
+            path = str(win_path)
+
     if path:
-        ok, out = _run(["ollama", "--version"])
+        ok, out = _run([path, "--version"])
         version = out.split()[-1] if ok else ""
 
-    # Check if running (may be installed but not on PATH, e.g. Windows native)
-    running, _ = _probe_url("http://localhost:11434/api/tags")
+    # Check if running (may be installed but not on PATH, or started as service)
+    # Read host from fleet.toml if available, fall back to default
+    ollama_host = "http://localhost:11434"
+    try:
+        from config import load_config
+        cfg = load_config()
+        ollama_host = cfg.get("models", {}).get("ollama_host", ollama_host)
+    except Exception:
+        pass
+    running, _ = _probe_url(f"{ollama_host}/api/tags")
 
-    # OK if either on PATH or reachable on localhost
+    # OK if either found on disk or reachable
     found = bool(path) or running
 
     return {
