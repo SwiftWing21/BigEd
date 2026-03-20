@@ -11,39 +11,33 @@
 |-----|--------|---------|-------|
 | Pre-1.0 | `v0.XX` | v0.31, v0.48 | Feature versions — historical, frozen |
 | 1.0 | `1.0` | 1.0 | Production release tag |
-| Post-1.0 (dev) | `0.XX.00` | 0.15.00, 0.20.00 | Major infrastructure work |
-| **Alpha** | `0.XX.YY` | 0.21.01, 0.21.02 | **Current era** — see below |
+| Post-1.0 | `0.XX.00` | 0.15.00, 0.30.00 | Major infrastructure — historical, frozen |
+| **Beta** | `0.XX.YYb` | 0.50.00b, 0.50.01b | **Current era** — see below |
 | Future | `X.0` | 2.0, 5.0 | Major platform milestones |
 
-### Alpha Versioning (current)
+### Beta Versioning (current)
 
-BigEd CC is now an **alpha working product** — agents run unattended, fleet boots natively, swarm intelligence active. The versioning reflects two parallel work streams:
+BigEd CC is a **beta product** — fleet runs autonomously, installer/updater pipeline active, dynamic agent scaling operational. Versioning uses tight `.YY` patches within each milestone:
 
-**`0.XX.00` — Milestones (S-Tier infrastructure)**
-Major system capabilities. Each `0.XX` is a milestone from the S-Tier plan:
-- 0.21 = Reliability, 0.22 = Observability, 0.23 = Auto-Intelligence, 0.24 = Security, 0.25 = Multi-Backend
+**`0.XX.00b` — Milestones**
+Major capability jumps. Each `0.XX` is a feature theme:
+- 0.42 = Beta release, installer pipeline
+- 0.50 = Model recovery, dynamic scaling, pixel fonts
+- 0.51 = Dashboard refactor, live agents, thermal fallback
 
-**`0.XX.YY` — Patches (UX, agent quality, polish)**
-Between milestones, `.YY` patches focus on end-user experience:
-- **Reduce clicks** — streamline user flows, fewer steps to common actions
-- **Agent enhancements** — fill skill gaps, improve output quality, tune idle behavior
-- **Console flows** — retention between builds/updates, session persistence
-- **GUI polish** — layout refinements, information density, responsiveness
-- **Bug fixes** — stability issues discovered during alpha use
+**`0.XX.YYb` — Patches (tight iteration)**
+Small, focused changes within a milestone. Each `.YY` bump is one session or PR:
+- `.01` through `.99` — bug fixes, UX tweaks, config changes, polish
 
 Example progression:
 ```
-0.21.00  — S1 Reliability milestone (audit fixes, crash backoff, self-heal)
-0.21.01  — UX: one-click task dispatch from agent cards
-0.21.02  — Agent: improve idle evolution skill selection
-0.21.03  — Console: preserve chat history across rebuilds
-0.22.00  — S2 Observability milestone (health endpoint, alerts)
-0.22.01  — UX: dashboard auto-open on boot complete
-0.22.02  — Agent: quality scoring on task outputs
-...
+0.50.00b  — Installer overhaul, model recovery, dynamic scaling, pixel fonts
+0.50.01b  — Dashboard live agents, thermal fallback, scaling tuning
+0.50.02b  — Agent naming, Dr. Ders wake-up timer
+0.51.00b  — Task-based agents, dashboard deep refactor
 ```
 
-> **Note for AI assistants (Claude/Gemini):** Use `0.XX.00` for milestone features and `0.XX.YY` (YY > 0) for UX/agent/polish patches. Place chronologically after the last version. Pre-1.0 versions are frozen history.
+> **Note for AI assistants (Claude/Gemini):** Use `0.XX.00b` for milestone features and `0.XX.YYb` (YY > 0) for patches. Always include the `b` suffix. Pre-beta versions are frozen history.
 
 ---
 
@@ -332,6 +326,38 @@ Completed 2026-03-19.
 - HITL evolution toggle (operator approval for idle evolution proposals)
 - Topic diversity fix (weighted random skill selection, per-agent cooldown, cross-worker dedup)
 - Documentation cleanup
+
+### 0.50.00b — Installer Overhaul + Model Recovery + Dynamic Scaling [DONE]
+
+Completed 2026-03-20. Major session — 45 files, +1635/-335 lines:
+
+**Installer overhaul:** Python/Ollama detection with status indicators, UAC elevation for Program Files path, 3-tier Ollama install (winget > curl > urllib), all 4 tier models pulled (0.6b/1.7b/4b/8b) with skip-if-installed, post-install verification, scrollable options page.
+
+**Model recovery (5-system resilience):** boot.py graceful fallback to best available model + HITL dropdown. hw_supervisor non-blocking tier validation. Installer 4-model pull with verification. Updater TOML-aware expected models with post-recovery verification. Supervisor get_best_available_model() for worker routing.
+
+**Dynamic agent scaling:** Boot 4 core agents (coder_1, researcher, planner, archivist), type-aware scale-up mapping pending task types to roles via affinity, scale-down after 5min idle, auto-generated instance names (coder_4, researcher_2).
+
+**Dr. Ders model promotion:** 0.6b boot → best available CPU model (4b/1.7b) steady state → 0.6b failsafe on error. All CPU-bound (num_gpu=0).
+
+**UI:** Pixel fonts (Plain 11/12, Bold 12) across 27 files. Header hamburger 28pt, title 26pt. Dynamic version from git tags. Dashboard button prominent blue. Boot error overlay persists.
+
+**Dashboard:** Alert dedup + bubble icon. 5min startup grace. Disabled agents excluded from warnings. Collapsible idle agents. Ollama multi-path detection.
+
+**Build:** Runtime counter, step timings, artifact sizes in build.py.
+
+### 0.50.01b — Dashboard Live Agents + Thermal Fallback [DONE]
+
+Completed 2026-03-20. 11 files, +194/-90 lines:
+
+**Dashboard live agents:** Only show agents with heartbeat <60s (no ghost agents from old sessions). Agent display names show task_type / agent_name. Dynamic template reload (no restart for HTML changes). Supervisors pinned top, idle collapsed at bottom.
+
+**Thermal:** Direct GPU fallback when hw_state.json stale. CPU temp module (fleet/cpu_temp.py) with PowerShell WMI → wmic → psutil fallback chain, 5s cache. "0°C = sensor unavailable" note.
+
+**Activity panel:** Replaces Training panel. One-line training badge, activity feed as main content.
+
+**Fleet tuning:** Worker poll 2s→1s, idle threshold 6→3, idle timeout 30→10s, scale-up threshold 5→2. Dashboard added to kill targets on fleet stop.
+
+**CI:** GitHub Actions Node.js 24 compatibility, release workflow brick.ico fix.
 
 ### 0.40.10a — Claude Skills Update + Cowork Integration
 

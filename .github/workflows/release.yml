@@ -35,10 +35,17 @@ jobs:
         working-directory: BigEd/launcher
         run: python build.py --production
 
+      - name: Copy assets to dist
+        working-directory: BigEd/launcher
+        run: |
+          Copy-Item -Path brick.ico, brick_banner.png -Destination dist/ -ErrorAction SilentlyContinue
+        shell: pwsh
+
       - name: Create release zip
         working-directory: BigEd/launcher/dist
         run: |
-          Compress-Archive -Path BigEdCC.exe, Updater.exe, Setup.exe, brick.ico, brick_banner.png -DestinationPath BigEdCC-Windows-${{ github.ref_name }}.zip
+          $files = @('BigEdCC.exe', 'Updater.exe', 'Setup.exe') + (Get-ChildItem -Name *.ico, *.png -ErrorAction SilentlyContinue)
+          Compress-Archive -Path $files -DestinationPath BigEdCC-Windows-${{ github.ref_name }}.zip
         shell: pwsh
 
       - name: Write version file
