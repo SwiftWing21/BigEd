@@ -16,7 +16,12 @@ from pathlib import Path
 
 import customtkinter as ctk
 
-FLEET_DIR = Path(__file__).resolve().parent.parent.parent.parent / "fleet"
+# Dynamic FLEET_DIR — works regardless of install location
+try:
+    import launcher as _launcher
+    FLEET_DIR = Path(_launcher.FLEET_DIR)
+except ImportError:
+    FLEET_DIR = Path(__file__).resolve().parent.parent.parent.parent / "fleet"
 FLEET_TOML = FLEET_DIR / "fleet.toml"
 
 LABEL = "Intelligence"
@@ -43,6 +48,9 @@ class Module:
     """Intelligence module — system transparency + model controls + prompt queue."""
 
     LABEL = "Intelligence"
+    VERSION = "0.051"
+    DEFAULT_ENABLED = True
+    DEPENDS_ON = []
 
     def __init__(self, app):
         self._app = app

@@ -1,11 +1,12 @@
 {
   "modules": [
-    {"name": "crm", "file": "mod_crm.py", "version": "0.22", "default_enabled": false, "deprecated": false},
-    {"name": "accounts", "file": "mod_accounts.py", "version": "0.22", "default_enabled": false, "deprecated": false},
-    {"name": "onboarding", "file": "mod_onboarding.py", "version": "0.23", "default_enabled": false, "deprecated": false},
-    {"name": "customers", "file": "mod_customers.py", "version": "0.23", "default_enabled": false, "deprecated": false},
-    {"name": "ingestion", "file": "mod_ingestion.py", "version": "0.23", "default_enabled": true, "deprecated": false},
-    {"name": "outputs", "file": "mod_outputs.py", "version": "0.23", "default_enabled": true, "deprecated": false},
-    {"name": "intelligence", "file": "mod_intelligence.py", "version": "0.51", "default_enabled": true, "deprecated": false}
+    {"name": "crm", "file": "mod_crm.py", "version": "0.22", "default_enabled": false, "deprecated": false, "author": "BigEd Core", "description": "Customer relationship management, contact tracking, interaction history", "license": "Apache-2.0", "min_biged_version": "0.050.00b"},
+    {"name": "accounts", "file": "mod_accounts.py", "version": "0.22", "default_enabled": false, "deprecated": false, "author": "BigEd Core", "description": "Account management, organization profiles, billing integration", "license": "Apache-2.0", "min_biged_version": "0.050.00b"},
+    {"name": "onboarding", "file": "mod_onboarding.py", "version": "0.23", "default_enabled": false, "deprecated": false, "author": "BigEd Core", "description": "Guided onboarding workflows, setup wizards, first-run configuration", "license": "Apache-2.0", "min_biged_version": "0.050.00b"},
+    {"name": "customers", "file": "mod_customers.py", "version": "0.23", "default_enabled": false, "deprecated": false, "author": "BigEd Core", "description": "Customer data views, segmentation, engagement analytics", "license": "Apache-2.0", "min_biged_version": "0.050.00b"},
+    {"name": "ingestion", "file": "mod_ingestion.py", "version": "0.23", "default_enabled": true, "deprecated": false, "author": "BigEd Core", "description": "Data ingestion pipeline, file upload, RAG indexing, format conversion", "license": "Apache-2.0", "min_biged_version": "0.050.00b"},
+    {"name": "outputs", "file": "mod_outputs.py", "version": "0.23", "default_enabled": true, "deprecated": false, "author": "BigEd Core", "description": "Task output viewer, export controls, result history and formatting", "license": "Apache-2.0", "min_biged_version": "0.050.00b"},
+    {"name": "intelligence", "file": "mod_intelligence.py", "version": "0.051", "default_enabled": true, "deprecated": false, "author": "BigEd Core", "description": "System transparency, model controls, prompt queue, evaluation display", "license": "Apache-2.0", "min_biged_version": "0.050.00b"},
+    {"name": "owner_core", "file": "mod_owner_core.py", "version": "0.47", "default_enabled": false, "deprecated": false, "author": "BigEd Core", "description": "Owner administration panel, system configuration, fleet governance", "license": "Apache-2.0", "min_biged_version": "0.050.00b"}
   ]
 }

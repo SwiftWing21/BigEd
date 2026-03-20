@@ -445,6 +445,8 @@ def load_tab_cfg() -> dict:
         "accounts": False,
         "ingestion": True,
         "outputs": True,
+        "owner_core": False,
+        "intelligence": True,
     }
     try:
         import tomllib
@@ -813,10 +815,36 @@ class CustomTabBar(ctk.CTkFrame):
         self.grid_columnconfigure(0, weight=1)
         self.grid_rowconfigure(2, weight=1)   # 0=bar strip, 1=separator, 2=content
 
-        # ── Tab button strip ──────────────────────────────────────────────────
-        self._bar = ctk.CTkFrame(self, fg_color=BG2, height=42, corner_radius=0)
-        self._bar.grid(row=0, column=0, sticky="ew")
+        # ── Tab button strip (scrollable) ────────────────────────────────────
+        bar_container = ctk.CTkFrame(self, fg_color=BG2, height=42, corner_radius=0)
+        bar_container.grid(row=0, column=0, sticky="ew")
+        bar_container.grid_propagate(False)
+        bar_container.grid_columnconfigure(1, weight=1)
+
+        # Left scroll chevron
+        self._scroll_left_btn = ctk.CTkButton(
+            bar_container, text="\u25C0", width=20, height=38,
+            font=("Consolas", 12), fg_color="transparent", hover_color=BG3,
+            text_color=BG2, corner_radius=0,
+            command=lambda: self._scroll_tabs(-1))
+        self._scroll_left_btn.grid(row=0, column=0, sticky="ns")
+
+        # Inner frame for tab buttons
+        self._bar = ctk.CTkFrame(bar_container, fg_color=BG2, height=42, corner_radius=0)
+        self._bar.grid(row=0, column=1, sticky="nsew")
         self._bar.grid_propagate(False)
+
+        # Right scroll chevron
+        self._scroll_right_btn = ctk.CTkButton(
+            bar_container, text="\u25B6", width=20, height=38,
+            font=("Consolas", 12), fg_color="transparent", hover_color=BG3,
+            text_color=BG2, corner_radius=0,
+            command=lambda: self._scroll_tabs(1))
+        self._scroll_right_btn.grid(row=0, column=2, sticky="ns")
+
+        self._tab_scroll_offset = 0
+        self._all_tab_cells: list = []
+        self._tab_names_order: list[str] = []
 
         # Full-width 1-px separator beneath the strip
         self._sep = ctk.CTkFrame(self, fg_color=BG3, height=1, corner_radius=0)
@@ -872,7 +900,10 @@ class CustomTabBar(ctk.CTkFrame):
         self._tab_frames[name]     = content
         self._tab_buttons[name]    = btn
         self._tab_indicators[name] = indicator
+        self._all_tab_cells.append(cell)
+        self._tab_names_order.append(name)
         self._col += 1
+        self._scroll_tabs(0)  # Refresh chevron visibility
 
     def tab(self, name: str) -> ctk.CTkFrame:
         """Return the content frame for a tab (used when building tab contents)."""
@@ -882,6 +913,12 @@ class CustomTabBar(ctk.CTkFrame):
         """Switch to the named tab (lazy-builds deferred tabs on first view)."""
         if name not in self._tab_frames:
             return
+        # Auto-scroll tab bar to keep the selected tab visible
+        if name in self._tab_names_order:
+            idx = self._tab_names_order.index(name)
+            if idx < self._tab_scroll_offset or idx >= self._tab_scroll_offset + 5:
+                self._tab_scroll_offset = max(0, idx - 2)
+                self._scroll_tabs(0)
         # Build lazy tab content on first view
         app = self.winfo_toplevel()
         if hasattr(app, '_lazy_tabs') and name in app._lazy_tabs and name not in app._built_tabs:
@@ -902,6 +939,26 @@ class CustomTabBar(ctk.CTkFrame):
     def get(self) -> str:
         """Return the name of the currently active tab."""
         return self._active
+
+    # ── Scroll support ───────────────────────────────────────────────────────
+
+    def _scroll_tabs(self, direction: int) -> None:
+        """Scroll tab bar left (-1) or right (+1). 0 = refresh in place."""
+        visible_count = 5
+        max_offset = max(0, len(self._all_tab_cells) - visible_count)
+        self._tab_scroll_offset = max(0, min(
+            self._tab_scroll_offset + direction, max_offset))
+        # Re-grid: show tabs in the visible window, hide the rest
+        for i, cell in enumerate(self._all_tab_cells):
+            if self._tab_scroll_offset <= i < self._tab_scroll_offset + visible_count + 3:
+                cell.grid(row=0, column=i - self._tab_scroll_offset, sticky="ns", padx=0)
+            else:
+                cell.grid_remove()
+        # Update chevron colours: visible when scrollable, hidden when at limit
+        self._scroll_left_btn.configure(
+            text_color=TEXT if self._tab_scroll_offset > 0 else BG2)
+        self._scroll_right_btn.configure(
+            text_color=TEXT if self._tab_scroll_offset < max_offset else BG2)
 
 
 # ─── Main App ─────────────────────────────────────────────────────────────────
