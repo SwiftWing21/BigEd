@@ -64,7 +64,8 @@ def _run_research_cycle(payload, config):
         gaps_result = json.loads(_detect_knowledge_gaps())
         gaps = gaps_result.get("gaps", [])
         if gaps:
-            topic = gaps[0]["area"]
+            import random
+            topic = random.choice(gaps[:3])["area"]  # pick from top 3 gaps
         else:
             return json.dumps({"status": "no_gaps", "message": "Knowledge base is well-covered"})
 

@@ -678,6 +678,169 @@ def cmd_advisories(args):
             print(f"{a['id']:<12} {a['severity']:<10} {a['created']:<12} {title}")
 
 
+def cmd_export(args):
+    """Export fleet config, skills, and curricula to a portable tarball."""
+    import tarfile
+    import time as _time
+    fleet_dir = Path(__file__).parent
+
+    # Build manifest
+    manifest = {
+        "version": "1.0",
+        "exported_at": _time.strftime("%Y-%m-%dT%H:%M:%S"),
+        "source": "BigEd CC Fleet",
+        "contents": []
+    }
+
+    # Determine output path
+    timestamp = _time.strftime("%Y%m%d_%H%M%S")
+    out_path = args.output or f"biged-fleet-export-{timestamp}.tar.gz"
+
+    with tarfile.open(out_path, "w:gz") as tar:
+        # 1. fleet.toml (sanitized — strip secrets)
+        toml_path = fleet_dir / "fleet.toml"
+        if toml_path.exists():
+            content = toml_path.read_text(encoding="utf-8")
+            import re
+            sanitized = re.sub(
+                r'^((?:dashboard_token|admin_token|operator_token)\s*=\s*)".+"',
+                r'\1""  # REDACTED — set after import',
+                content, flags=re.MULTILINE
+            )
+            import io
+            data = sanitized.encode("utf-8")
+            info = tarfile.TarInfo(name="fleet.toml")
+            info.size = len(data)
+            tar.addfile(info, io.BytesIO(data))
+            manifest["contents"].append("fleet.toml")
+
+        # 2. Skills directory
+        skills_dir = fleet_dir / "skills"
+        if skills_dir.exists():
+            for f in sorted(skills_dir.glob("*.py")):
+                arcname = f"skills/{f.name}"
+                tar.add(str(f), arcname=arcname)
+                manifest["contents"].append(arcname)
+
+        # 3. Idle curricula
+        curricula_dir = fleet_dir / "idle_curricula"
+        if curricula_dir.exists():
+            for f in sorted(curricula_dir.rglob("*")):
+                if f.is_file():
+                    arcname = f"idle_curricula/{f.relative_to(curricula_dir)}"
+                    tar.add(str(f), arcname=arcname)
+                    manifest["contents"].append(arcname)
+
+        # 4. Workflows
+        workflows_dir = fleet_dir / "workflows_defs"
+        if workflows_dir.exists():
+            for f in sorted(workflows_dir.rglob("*.yaml")):
+                arcname = f"workflows_defs/{f.relative_to(workflows_dir)}"
+                tar.add(str(f), arcname=arcname)
+                manifest["contents"].append(arcname)
+
+        # 5. Write manifest
+        import io
+        mdata = json.dumps(manifest, indent=2).encode("utf-8")
+        minfo = tarfile.TarInfo(name="manifest.json")
+        minfo.size = len(mdata)
+        tar.addfile(minfo, io.BytesIO(mdata))
+
+    print(f"Exported {len(manifest['contents'])} items → {out_path}")
+    print(f"  Config: fleet.toml (secrets redacted)")
+    print(f"  Skills: {sum(1 for c in manifest['contents'] if c.startswith('skills/'))} files")
+    print(f"  Curricula: {sum(1 for c in manifest['contents'] if c.startswith('idle_curricula/'))} files")
+
+
+def cmd_import(args):
+    """Import fleet config from an exported tarball."""
+    import tarfile
+    fleet_dir = Path(__file__).parent
+
+    if not os.path.exists(args.file):
+        print(f"Error: File not found: {args.file}")
+        sys.exit(1)
+
+    if not tarfile.is_tarfile(args.file):
+        print(f"Error: Not a valid tar archive: {args.file}")
+        sys.exit(1)
+
+    with tarfile.open(args.file, "r:gz") as tar:
+        # Security: check for path traversal
+        for member in tar.getmembers():
+            if member.name.startswith("/") or ".." in member.name:
+                print(f"Error: Unsafe path in archive: {member.name}")
+                sys.exit(1)
+
+        # Read manifest
+        try:
+            mf = tar.extractfile("manifest.json")
+            manifest = json.loads(mf.read())
+        except (KeyError, Exception):
+            print("Error: No manifest.json in archive — not a valid BigEd export")
+            sys.exit(1)
+
+        print(f"Archive: {args.file}")
+        print(f"  Exported: {manifest.get('exported_at', 'unknown')}")
+        print(f"  Contents: {len(manifest.get('contents', []))} items")
+
+        if args.dry_run:
+            print("\n[DRY RUN] Would import:")
+            for item in manifest.get("contents", []):
+                dest = fleet_dir / item
+                exists = "overwrite" if dest.exists() else "new"
+                print(f"  {item} ({exists})")
+            return
+
+        # Extract files
+        imported = 0
+        skipped = 0
+        for member in tar.getmembers():
+            if member.name == "manifest.json":
+                continue
+
+            dest = fleet_dir / member.name
+
+            # Never overwrite fleet.toml secrets — merge mode
+            if member.name == "fleet.toml" and dest.exists():
+                if args.merge:
+                    existing = dest.read_text(encoding="utf-8")
+                    import re
+                    secrets_found = {}
+                    for key in ("dashboard_token", "admin_token", "operator_token"):
+                        m = re.search(rf'^{key}\s*=\s*"(.+)"', existing, re.MULTILINE)
+                        if m:
+                            secrets_found[key] = m.group(1)
+
+                    f = tar.extractfile(member)
+                    new_content = f.read().decode("utf-8")
+
+                    for key, val in secrets_found.items():
+                        new_content = re.sub(
+                            rf'^({key}\s*=\s*)"".*$',
+                            rf'\1"{val}"',
+                            new_content, flags=re.MULTILINE
+                        )
+                    dest.write_text(new_content, encoding="utf-8")
+                    print(f"  Merged: fleet.toml (secrets preserved)")
+                    imported += 1
+                else:
+                    print(f"  Skipped: fleet.toml (use --merge to update; secrets would be lost)")
+                    skipped += 1
+                continue
+
+            # Create parent dirs
+            dest.parent.mkdir(parents=True, exist_ok=True)
+
+            # Extract file
+            f = tar.extractfile(member)
+            if f:
+                dest.write_bytes(f.read())
+                imported += 1
+
+        print(f"\nImported: {imported} files, Skipped: {skipped}")
+
+
 def main():
     parser = argparse.ArgumentParser(description="BigEd Fleet CLI")
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -829,6 +992,15 @@ def main():
     p_adv.add_argument("advisory_id", nargs="?", default=None,
                        help="Advisory ID (for dismiss)")
 
+    # Fleet Export/Import (v0.30.00)
+    export_p = subparsers.add_parser("export", help="Export fleet config, skills, and curricula to a portable tarball")
+    export_p.add_argument("-o", "--output", default=None, help="Output file path (default: biged-fleet-export-<timestamp>.tar.gz)")
+
+    import_p = subparsers.add_parser("import", help="Import fleet config from an exported tarball")
+    import_p.add_argument("file", help="Path to the export tarball (.tar.gz)")
+    import_p.add_argument("--merge", action="store_true", help="Merge config instead of replacing")
+    import_p.add_argument("--dry-run", action="store_true", help="Show what would be imported without applying")
+
     args = parser.parse_args()
 
     if args.command == "status":
@@ -895,6 +1067,10 @@ def main():
         cmd_hitl(args)
     elif args.command == "advisories":
         cmd_advisories(args)
+    elif args.command == "export":
+        cmd_export(args)
+    elif args.command == "import":
+        cmd_import(args)
 
 
 if __name__ == "__main__":

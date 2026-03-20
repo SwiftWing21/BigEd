@@ -152,3 +152,123 @@ def capabilities():
             "notes": True,
         },
     })
+
+
+# ── Federation (v0.30.00) ──────────────────────────────────────────────────
+
+def _get_federation_config() -> dict:
+    """Load federation config from fleet.toml."""
+    try:
+        from config import load_config
+        cfg = load_config()
+        return cfg.get("federation", {})
+    except Exception:
+        return {}
+
+
+def _get_peer_list() -> list:
+    """Get configured peer fleet URLs."""
+    fed_cfg = _get_federation_config()
+    if not fed_cfg.get("enabled", False):
+        return []
+    return fed_cfg.get("peers", [])
+
+
+def _probe_peer(peer_url: str, timeout: int = 5) -> dict:
+    """Health-check a peer fleet via its A2A agent card."""
+    import urllib.request
+    try:
+        url = f"{peer_url.rstrip('/')}/.well-known/agent.json"
+        req = urllib.request.Request(url, headers={"Accept": "application/json"})
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            data = json.loads(resp.read())
+            return {
+                "url": peer_url,
+                "status": "online",
+                "name": data.get("name", "unknown"),
+                "skills": len(data.get("capabilities", {}).get("skills", [])),
+                "version": data.get("version", "?"),
+            }
+    except Exception as e:
+        return {
+            "url": peer_url,
+            "status": "offline",
+            "error": str(e),
+        }
+
+
+def forward_to_peer(peer_url: str, skill: str, payload: dict, priority: int = 5) -> dict:
+    """Forward a task to a peer fleet via A2A task/send."""
+    import urllib.request
+    try:
+        url = f"{peer_url.rstrip('/')}/a2a/task/send"
+        body = json.dumps({
+            "skill": skill,
+            "payload": payload,
+            "priority": priority,
+            "callback_url": None,
+        }).encode("utf-8")
+        req = urllib.request.Request(
+            url, data=body, method="POST",
+            headers={"Content-Type": "application/json", "Accept": "application/json"},
+        )
+        fed_cfg = _get_federation_config()
+        timeout = fed_cfg.get("peer_timeout_secs", 5)
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            result = json.loads(resp.read())
+            result["forwarded_to"] = peer_url
+            return result
+    except Exception as e:
+        return {"error": str(e), "peer": peer_url}
+
+
+@a2a_bp.route("/a2a/federation/peers")
+def federation_peers():
+    """List configured peers and their online status."""
+    fed_cfg = _get_federation_config()
+    if not fed_cfg.get("enabled", False):
+        return jsonify({"enabled": False, "peers": [], "message": "Federation disabled in fleet.toml"}), 200
+
+    peers = _get_peer_list()
+    timeout = fed_cfg.get("peer_timeout_secs", 5)
+    results = [_probe_peer(p, timeout=timeout) for p in peers]
+
+    return jsonify({
+        "enabled": True,
+        "overflow_threshold": fed_cfg.get("overflow_threshold", 0.85),
+        "peers": results,
+        "total": len(results),
+        "online": sum(1 for r in results if r["status"] == "online"),
+    })
+
+
+@a2a_bp.route("/a2a/federation/status")
+def federation_status():
+    """Federation overview — local capacity + peer availability."""
+    fed_cfg = _get_federation_config()
+
+    # Get local queue stats
+    local_stats = {"pending": 0, "running": 0, "capacity": 1.0}
+    try:
+        import db
+        with db.get_conn() as conn:
+            pending = conn.execute("SELECT COUNT(*) FROM tasks WHERE status='PENDING'").fetchone()[0]
+            running = conn.execute("SELECT COUNT(*) FROM tasks WHERE status='RUNNING'").fetchone()[0]
+            from config import load_config
+            cfg = load_config()
+            max_w = cfg.get("fleet", {}).get("max_workers", 10)
+            utilization = running / max(max_w, 1)
+            local_stats = {"pending": pending, "running": running, "utilization": round(utilization, 2)}
+    except Exception:
+        pass
+
+    threshold = fed_cfg.get("overflow_threshold", 0.85)
+    should_forward = local_stats.get("utilization", 0) > threshold
+
+    return jsonify({
+        "enabled": fed_cfg.get("enabled", False),
+        "local": local_stats,
+        "overflow_threshold": threshold,
+        "should_forward": should_forward,
+        "peers_configured": len(fed_cfg.get("peers", [])),
+    })

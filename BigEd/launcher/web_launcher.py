@@ -82,7 +82,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         <span id="conn-status" class="status offline"
               hx-get="/api/ping" hx-trigger="every 5s" hx-swap="innerHTML">Checking...</span>
         <span style="flex:1"></span>
-        <span class="mono" style="color:var(--dim)">Web Launcher v0.03</span>
+        <span class="mono" style="color:var(--dim)">Web Launcher v0.04</span>
     </div>
 
     <div class="container">
@@ -138,6 +138,30 @@ HTML_TEMPLATE = """<!DOCTYPE html>
                            style="width:100%; padding:8px; background:var(--bg); color:var(--text); border:1px solid var(--bg3); border-radius:4px; font-size:13px;">
                     <button type="submit" class="btn btn-blue" style="margin-top:8px">Dispatch</button>
                 </form>
+            </div>
+
+            <!-- Agent Management -->
+            <div class="card">
+                <h2>Agent Management</h2>
+                <div hx-get="/partial/agents/manage" hx-trigger="load, every 10s" hx-swap="innerHTML">
+                    Loading...
+                </div>
+            </div>
+
+            <!-- Settings -->
+            <div class="card">
+                <h2>Settings</h2>
+                <div hx-get="/partial/settings" hx-trigger="load" hx-swap="innerHTML">
+                    Loading...
+                </div>
+            </div>
+
+            <!-- Console -->
+            <div class="card">
+                <h2>Console</h2>
+                <div hx-get="/partial/console" hx-trigger="load, every 5s" hx-swap="innerHTML">
+                    Loading...
+                </div>
             </div>
         </div>
     </div>
@@ -264,6 +288,108 @@ def action_dispatch():
         return jsonify({"task_id": task_id, "status": "dispatched"})
     except Exception as e:
         return str(e), 500
+
+
+@app.route("/partial/agents/manage")
+def partial_agents_manage():
+    """Agent management view with enable/disable toggles."""
+    data = _api("/api/status")
+    if "error" in data:
+        return '<p style="color:var(--dim)">Dashboard unavailable</p>'
+    agents = data.get("agents", [])
+    if not agents:
+        return '<p style="color:var(--dim)">No agents registered</p>'
+
+    # Read disabled agents from config
+    disabled = set()
+    try:
+        sys.path.insert(0, str(Path(__file__).parent.parent.parent / "fleet"))
+        from config import load_config
+        cfg = load_config()
+        disabled = set(cfg.get("fleet", {}).get("disabled_agents", []))
+    except Exception:
+        pass
+
+    rows = ""
+    for a in agents:
+        name = a.get("name", "?")
+        status = a.get("status", "?")
+        is_disabled = name in disabled
+        dot = "dot-red" if is_disabled else "dot-green" if status in ("IDLE", "BUSY") else "dot-yellow"
+        state_text = "DISABLED" if is_disabled else status
+        if is_disabled:
+            btn = f'<button class="btn btn-green" hx-post="/action/agent/{name}/enable" hx-swap="none" hx-on::after-request="htmx.trigger(this.closest(\'div\'), \'htmx:load\')">Enable</button>'
+        else:
+            btn = f'<button class="btn btn-red" hx-post="/action/agent/{name}/disable" hx-swap="none" hx-on::after-request="htmx.trigger(this.closest(\'div\'), \'htmx:load\')">Disable</button>'
+        rows += f'<tr><td><span class="status-dot {dot}"></span>{name}</td><td>{a.get("role","")}</td><td>{state_text}</td><td>{btn}</td></tr>'
+    return f'<table><tr><th>Agent</th><th>Role</th><th>Status</th><th>Action</th></tr>{rows}</table>'
+
+
+@app.route("/action/agent/<name>/disable", methods=["POST"])
+def action_agent_disable(name):
+    result = _api(f"/api/fleet/worker/{name}/disable", method="POST")
+    return jsonify(result)
+
+
+@app.route("/action/agent/<name>/enable", methods=["POST"])
+def action_agent_enable(name):
+    result = _api(f"/api/fleet/worker/{name}/enable", method="POST")
+    return jsonify(result)
+
+
+@app.route("/partial/settings")
+def partial_settings():
+    """Read-only settings view from fleet.toml."""
+    try:
+        sys.path.insert(0, str(Path(__file__).parent.parent.parent / "fleet"))
+        from config import load_config
+        cfg = load_config()
+
+        sections = [
+            ("Fleet", cfg.get("fleet", {})),
+            ("Models", cfg.get("models", {})),
+            ("Dashboard", cfg.get("dashboard", {})),
+            ("Security", {k: "***" if "token" in k else v for k, v in cfg.get("security", {}).items()}),
+            ("Thermal", cfg.get("thermal", {})),
+        ]
+
+        html = ""
+        for section_name, section_data in sections:
+            rows = ""
+            for k, v in section_data.items():
+                if isinstance(v, dict):
+                    continue  # skip nested tables
+                rows += f'<tr><td style="color:var(--accent)">{k}</td><td class="mono">{v}</td></tr>'
+            if rows:
+                html += f'<h3 style="color:var(--gold);font-size:12px;margin:12px 0 4px;text-transform:uppercase">{section_name}</h3>'
+                html += f'<table>{rows}</table>'
+        return html or '<p style="color:var(--dim)">No config loaded</p>'
+    except Exception as e:
+        return f'<p style="color:var(--dim)">{e}</p>'
+
+
+@app.route("/partial/console")
+def partial_console():
+    """Recent completed tasks (console view)."""
+    try:
+        sys.path.insert(0, str(Path(__file__).parent.parent.parent / "fleet"))
+        import db
+        db.init_db()
+        with db.get_conn() as conn:
+            tasks = conn.execute(
+                "SELECT id, type, status, assigned_to, created_at "
+                "FROM tasks ORDER BY id DESC LIMIT 20"
+            ).fetchall()
+        if not tasks:
+            return '<p style="color:var(--dim)">No tasks yet</p>'
+        rows = ""
+        for t in tasks:
+            status = t["status"]
+            color = "var(--green)" if status == "DONE" else "var(--red)" if status == "FAILED" else "var(--accent)"
+            rows += f'<tr><td class="mono">#{t["id"]}</td><td>{t["type"]}</td><td style="color:{color}">{status}</td><td>{t["assigned_to"] or ""}</td><td style="color:var(--dim)">{t["created_at"]}</td></tr>'
+        return f'<table><tr><th>ID</th><th>Skill</th><th>Status</th><th>Agent</th><th>Created</th></tr>{rows}</table>'
+    except Exception as e:
+        return f'<p style="color:var(--dim)">{e}</p>'
 
 
 def main():

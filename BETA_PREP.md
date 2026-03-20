@@ -1,6 +1,6 @@
 # BigEd CC -- Beta Prep Release Notes
 
-**Version:** Beta 1.0 (transitioning from Alpha 0.28.00)
+**Version:** Beta 1.0 (from Alpha 0.30.01a)
 **Date:** 2026-03-19
 **License:** Apache 2.0 -- Michael Bachaud (SwiftWing21)
 **Repository:** github.com/SwiftWing21/BigEds_Agents
@@ -9,14 +9,14 @@
 
 ## 1. Release Summary
 
-BigEd CC is transitioning from Alpha (0.28.00) to Beta 1.0. All S-tier infrastructure milestones are complete. All P1, P2, and P3 audit issues are resolved. Technical debt is at zero. The system runs a 74-skill autonomous AI worker fleet with dual supervisors, swarm intelligence, and multi-backend model support on a single desktop machine.
+BigEd CC is transitioning from Alpha (0.30.01a) to Beta 1.0. All S-tier infrastructure milestones are complete, plus 2.0/5.0 features pulled forward (remote dashboard, A2A federation, containerization). HITL QA agent refinement complete. The system runs a 74-skill autonomous AI worker fleet with dual supervisors, swarm intelligence, and multi-backend model support on a single desktop machine.
 
 **Key numbers at beta entry:**
 
 | Metric | Value |
 |--------|-------|
 | Skills | 74 |
-| Dashboard endpoints | 40+ |
+| Dashboard endpoints | 45+ |
 | Smoke tests | 22/22 |
 | Skill unit tests | 32 |
 | Dashboard tests | 22 |

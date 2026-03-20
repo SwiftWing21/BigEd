@@ -1,0 +1,54 @@
+services:
+  playwright-mcp:
+    image: mcr.microsoft.com/playwright/mcp:latest
+    container_name: playwright-mcp
+    command: ["--port", "8931", "--host", "0.0.0.0", "--allowed-hosts", "*"]
+    ports:
+      - "127.0.0.1:8931:8931"
+    volumes:
+      - ./education-context:/workspace/education-context:ro
+    init: true
+    restart: unless-stopped
+
+  fleet:
+    build: .
+    container_name: biged-fleet
+    ports:
+      - "127.0.0.1:5555:5555"
+      - "127.0.0.1:8080:8080"
+    volumes:
+      - ./fleet/fleet.toml:/app/fleet/fleet.toml:ro
+      - fleet-data:/app/fleet/knowledge
+      - fleet-logs:/app/fleet/logs
+    environment:
+      - OLLAMA_HOST=http://ollama:11434
+    depends_on:
+      ollama:
+        condition: service_healthy
+    restart: unless-stopped
+
+  ollama:
+    image: ollama/ollama:latest
+    container_name: biged-ollama
+    ports:
+      - "127.0.0.1:11434:11434"
+    volumes:
+      - ollama-data:/root/.ollama
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:11434/api/tags"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+volumes:
+  fleet-data:
+  fleet-logs:
+  ollama-data:

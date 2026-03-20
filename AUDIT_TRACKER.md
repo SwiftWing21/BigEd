@@ -354,6 +354,8 @@
 | HA fallback cascade | Claude→Gemini→Local with circuit breaker | v0.45 |
 | Swarm 3-tier intelligence | Evolution, research, specialization | 0.17–0.19 |
 | Cost tracking CT-1/2/3/4 | Token budgets, cost attribution, enforcement | v0.31–v0.38 |
+| Remote dashboard, federation, export/import, web launcher, containers | 2.0/5.0 feature pull-forward | 0.30.00 |
+| Disabled agents, HITL toggle, topic diversity fix | HITL QA + agent refinement | 0.30.01a |
 | Double budget check (P1-01) | Cached first check_budget() result, single DB round-trip | v0.21.04 |
 | Health probe token burn (P1-02) | client.models.list(limit=1) replaces inference call | v0.21.04 |
 | Redundant import (P2-01) | Removed in-function `from providers import PRICING` | v0.21.04 |
@@ -405,6 +407,8 @@
 |------|---------|---------|-------|---------|
 | 2026-03-19 | v0.21.01 | Opus | Full codebase | First post-1.0 deep audit. Overall A-. 3 P1, 9 P2, 7 P3 issues logged. S1 path clear via 0.21.00. |
 | 2026-03-19 | v0.21.03 | Opus | Incremental | Intelligence scoring, HITL model recs, Gemini ToS — Data Processing+HITL upgraded A-→A. 74 skills. |
+| 2026-03-19 | 0.30.00 | Opus | Incremental | Remote dashboard, A2A federation, export/import, web launcher, containerization. |
+| 2026-03-19 | 0.30.01a | Opus | Incremental | Disabled agents, HITL evolution toggle, topic diversity fix, documentation cleanup. |
 | 2026-03-19 | v0.25.00 | Opus | Full S-tier | All 4 S-tier milestones (S1-S4) + Multi-Backend complete. Overall A+. All P1/P2 resolved. |
 | 2026-03-19 | v0.28.00 | Opus | Incremental | UX A→A+ (system detection, setup scripts), Docs A→S (README/CONTRIBUTING/SETUP.md). Zero open issues. |
 

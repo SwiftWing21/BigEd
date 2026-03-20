@@ -314,6 +314,25 @@ Completed 2026-03-19. UX refinements and audit fixes across 3 files:
 
 **P2-01 fix:** Redundant `from providers import PRICING` in-function import removed.
 
+### 0.30.00 — 2.0/5.0 Feature Pull-Forward [DONE]
+
+Completed 2026-03-19.
+
+- Remote dashboard access (bind_address, CORS, TLS+auth safety gate)
+- Fleet export/import CLI (lead_client.py export/import with manifest + secret redaction)
+- A2A Federation foundation (peer discovery, health probes, task overflow routing)
+- Web launcher enhancement (agent management, settings view, console view)
+- Containerization foundation (Dockerfile, docker-compose with fleet + ollama services)
+
+### 0.30.01a — HITL QA + Agent Refinement [DONE]
+
+Completed 2026-03-19.
+
+- Disabled agents feature (fleet.toml config, supervisor filtering, dashboard API, launcher GUI)
+- HITL evolution toggle (operator approval for idle evolution proposals)
+- Topic diversity fix (weighted random skill selection, per-agent cooldown, cross-worker dedup)
+- Documentation cleanup
+
 ### 0.21.00 — S1: Reliability (99.99% uptime) [DONE]
 
 Completed 2026-03-19. S-Tier 1 reliability milestone — 6 files, all P2-06/07/08 blockers resolved:
@@ -437,7 +456,7 @@ Completed 2026-03-19. Dashboard auto-opens in default browser on boot complete (
 
 ## Audit Coverage Check (per AUDIT_TRACKER.md)
 
-> Reviewed at v0.25.01.
+> Reviewed at v0.30.01a.
 
 - **Criteria fully covered:** All 12 dimensions at A or S grade
 - **Criteria partially covered:** None

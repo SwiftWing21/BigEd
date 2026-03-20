@@ -285,7 +285,7 @@ def _run_idle_evolution(agent_name, config):
 
     # --- Original: skill_test on least-evolved skill ---
     try:
-        skill = db.get_least_evolved_skill()
+        skill = db.get_least_evolved_skill(agent=agent_name)
         if not skill:
             return
         # Check budget before idle work
@@ -295,9 +295,21 @@ def _run_idle_evolution(agent_name, config):
             return  # respect daily budgets
 
         log.info(f"Idle mode: evolving '{skill}'")
-        # Dispatch as low-priority self-assigned task
-        tid = db.post_task("skill_test", json.dumps({"skill": skill, "idle": True}),
-                          priority=1, assigned_to=agent_name)
+        # HITL gate: if enabled, create WAITING_HUMAN task for operator approval
+        hitl = config.get("fleet", {}).get("hitl_evolution", False)
+        if hitl:
+            tid = db.post_task("skill_test", json.dumps({
+                "skill": skill, "idle": True,
+                "hitl_proposal": True,
+                "proposed_by": agent_name,
+                "description": f"Evolution proposal: test & improve '{skill}'"
+            }), priority=1)
+            with db.get_conn() as conn:
+                conn.execute("UPDATE tasks SET status='WAITING_HUMAN' WHERE id=?", (tid,))
+            log.info(f"HITL evolution proposal #{tid} for '{skill}' — awaiting operator")
+        else:
+            tid = db.post_task("skill_test", json.dumps({"skill": skill, "idle": True}),
+                              priority=1, assigned_to=agent_name)
         db.log_idle_run(agent_name, skill)
     except Exception as e:
         log.debug(f"Idle evolution skipped: {e}")
@@ -351,6 +363,13 @@ def main():
     db.init_db()
     db.register_agent(role, role, os.getpid())
 
+    # Check if this agent is disabled in config
+    disabled = set(config.get("fleet", {}).get("disabled_agents", []))
+    if role in disabled:
+        log.info(f"Agent '{role}' is disabled in fleet.toml — exiting")
+        db.heartbeat(role, status="DISABLED")
+        return
+
     # Load role-based skill affinity from config
     base_role = role.split("_")[0]
     affinity_skills = config.get("affinity", {}).get(base_role, None)
@@ -367,6 +386,9 @@ def main():
         sys.exit(1)
 
     curriculum = load_idle_curriculum(role)
+    if curriculum:
+        import random as _rng
+        _rng.shuffle(curriculum)  # v0.30.01a: avoid linear iteration convergence
     curriculum_idx = 0
     last_task_time = time.time()
     idle_timeout = config['fleet']['idle_timeout_secs']

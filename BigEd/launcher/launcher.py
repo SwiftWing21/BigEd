@@ -641,6 +641,126 @@ class Tooltip:
 # ─── Boot sequence (extracted to ui/boot.py — TECH_DEBT 4.1) ─────────────────
 from ui.boot import BootManagerMixin, _kill_fleet_processes, _kill_ollama
 
+# ─── Custom Tab Bar ───────────────────────────────────────────────────────────
+class CustomTabBar(ctk.CTkFrame):
+    """Icon + label tab switcher — drop-in API replacement for CTkTabview.
+
+    Provides .add(name), .tab(name), .set(name), .get() to match the
+    CTkTabview interface used throughout the app.
+
+    Active tab: gold text + 3-px ACCENT indicator beneath the button.
+    Inactive tab: dim text, transparent bg, BG3 on hover.
+    """
+
+    _ICONS: dict[str, str] = {
+        "Command Center": "🖥",
+        "Fleet":          "⚡",
+        "Fleet Comm":     "💬",
+        "Accounts":       "📋",
+        "CRM":            "🤝",
+        "Customers":      "👥",
+        "Ingestion":      "📥",
+        "Onboarding":     "🎓",
+        "Outputs":        "📤",
+        "Owner":          "👤",
+    }
+
+    def __init__(self, master, **kwargs):
+        # Strip any CTkTabview colour kwargs callers might pass — we manage colours ourselves
+        for _k in ("fg_color", "segmented_button_fg_color", "segmented_button_selected_color",
+                   "segmented_button_selected_hover_color", "segmented_button_unselected_color",
+                   "segmented_button_unselected_hover_color", "text_color", "corner_radius"):
+            kwargs.pop(_k, None)
+        super().__init__(master, fg_color="transparent", corner_radius=0, **kwargs)
+        self.grid_columnconfigure(0, weight=1)
+        self.grid_rowconfigure(2, weight=1)   # 0=bar strip, 1=separator, 2=content
+
+        # ── Tab button strip ──────────────────────────────────────────────────
+        self._bar = ctk.CTkFrame(self, fg_color=BG2, height=42, corner_radius=0)
+        self._bar.grid(row=0, column=0, sticky="ew")
+        self._bar.grid_propagate(False)
+
+        # Full-width 1-px separator beneath the strip
+        self._sep = ctk.CTkFrame(self, fg_color=BG3, height=1, corner_radius=0)
+        self._sep.grid(row=1, column=0, sticky="ew")
+
+        # ── Content area ──────────────────────────────────────────────────────
+        self._content = ctk.CTkFrame(self, fg_color=BG, corner_radius=0)
+        self._content.grid(row=2, column=0, sticky="nsew")
+        self._content.grid_columnconfigure(0, weight=1)
+        self._content.grid_rowconfigure(0, weight=1)
+
+        self._tab_frames:    dict[str, ctk.CTkFrame]  = {}
+        self._tab_buttons:   dict[str, ctk.CTkButton] = {}
+        self._tab_indicators: dict[str, ctk.CTkFrame] = {}
+        self._active: str = ""
+        self._col: int = 0
+
+    # ── Public API (mirrors CTkTabview) ───────────────────────────────────────
+
+    def add(self, name: str) -> None:
+        """Register a new tab — creates a button in the strip and a content frame."""
+        icon = self._ICONS.get(name, "▸")
+
+        # Cell: stacks button (row 0) + accent indicator (row 1)
+        cell = ctk.CTkFrame(self._bar, fg_color="transparent", corner_radius=0)
+        cell.grid(row=0, column=self._col, sticky="ns", padx=0)
+        cell.grid_rowconfigure(0, weight=1)
+
+        btn = ctk.CTkButton(
+            cell,
+            text=f"{icon}  {name}",
+            font=("Segoe UI", 11),
+            fg_color="transparent",
+            hover_color=BG3,
+            text_color=DIM,
+            corner_radius=0,
+            height=38,
+            anchor="center",
+            command=lambda n=name: self.set(n),
+        )
+        btn.grid(row=0, column=0, sticky="nsew")
+
+        # 3-px accent indicator — transparent until this tab is active
+        indicator = ctk.CTkFrame(cell, fg_color="transparent", height=3, corner_radius=0)
+        indicator.grid(row=1, column=0, sticky="ew")
+        indicator.grid_propagate(False)
+
+        # Content frame (hidden until selected)
+        content = ctk.CTkFrame(self._content, fg_color=BG, corner_radius=0)
+        content.grid(row=0, column=0, sticky="nsew")
+        content.grid_remove()
+
+        self._tab_frames[name]     = content
+        self._tab_buttons[name]    = btn
+        self._tab_indicators[name] = indicator
+        self._col += 1
+
+    def tab(self, name: str) -> ctk.CTkFrame:
+        """Return the content frame for a tab (used when building tab contents)."""
+        return self._tab_frames[name]
+
+    def set(self, name: str) -> None:
+        """Switch to the named tab."""
+        if name not in self._tab_frames:
+            return
+        # Deactivate previous
+        if self._active and self._active in self._tab_buttons:
+            self._tab_buttons[self._active].configure(
+                text_color=DIM, fg_color="transparent")
+            self._tab_indicators[self._active].configure(fg_color="transparent")
+            self._tab_frames[self._active].grid_remove()
+        # Activate new
+        self._active = name
+        self._tab_buttons[name].configure(text_color=GOLD, fg_color=BG3)
+        self._tab_indicators[name].configure(fg_color=ACCENT)
+        self._tab_frames[name].grid()
+
+    def get(self) -> str:
+        """Return the name of the currently active tab."""
+        return self._active
+
+
 # ─── Main App ─────────────────────────────────────────────────────────────────
 class BigEdCC(BootManagerMixin, ctk.CTk):
     def __init__(self):
@@ -1191,8 +1311,8 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
             s = section("BUILD", default_open=False)
             btn(s, "🔄 Run Update",        self._launch_auto_update, "#1a3a1a", "#2a4a2a",
                 tip="Run Updater.exe in auto mode and relaunch BigEd CC")
-            btn(s, "▶  Run BigEd CC", self._run_fleet_control,  "#1a2a10", "#2a3a18",
-                tip="Launch the compiled BigEd CC from dist/")
+            btn(s, "▶  Launch Big Edge Compute Command", self._run_fleet_control,  "#1a2a10", "#2a3a18",
+                tip="Launch the compiled Big Edge Compute Command from dist/")
             btn(s, "🔨 Rebuild All",       self._rebuild_all,        "#2a1a10", "#3a2a18",
                 tip="Recompile the app via PyInstaller (build.bat)")
 
@@ -1228,17 +1348,7 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
     def _build_tabs(self):
         self._db_init()
 
-        tabs = ctk.CTkTabview(
-            self,
-            fg_color=BG,
-            segmented_button_fg_color=BG2,
-            segmented_button_selected_color=ACCENT,
-            segmented_button_selected_hover_color=ACCENT_H,
-            segmented_button_unselected_color=BG3,
-            segmented_button_unselected_hover_color=BG2,
-            text_color=TEXT,
-            corner_radius=0,
-        )
+        tabs = CustomTabBar(self)
         tabs.grid(row=1, column=1, sticky="nsew", padx=0, pady=0)
         self._tabs = tabs
 
@@ -1484,6 +1594,32 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
 
         self._agent_cards = {}   # name -> dict of card widgets
         self._agents_tab_cache = {}  # kept for DB-based instance list
+
+        # ── Disabled agents section ─────────────────────────────────────────
+        self._disabled_frame = ctk.CTkFrame(parent, fg_color=BG, corner_radius=0)
+        self._disabled_frame.grid(row=3, column=0, sticky="ew", padx=8, pady=(0, 4))
+        self._disabled_frame.grid_columnconfigure(0, weight=1)
+
+        # Summary bar
+        self._agent_summary = ctk.CTkLabel(
+            self._disabled_frame, text="",
+            font=("Consolas", 10), text_color=DIM, anchor="w")
+        self._agent_summary.grid(row=0, column=0, sticky="w", padx=4, pady=(4, 0))
+
+        # Toggle button
+        self._disabled_toggle = ctk.CTkButton(
+            self._disabled_frame, text="\u25b6 Disabled (0)", font=("Consolas", 10),
+            height=24, width=140, fg_color=BG2, hover_color=BG3,
+            text_color=DIM, command=self._toggle_disabled_section)
+        self._disabled_toggle.grid(row=1, column=0, sticky="w", padx=4, pady=2)
+
+        # Collapsed grid for disabled agents
+        self._disabled_grid = ctk.CTkFrame(self._disabled_frame, fg_color=BG, corner_radius=0)
+        self._disabled_grid.grid_columnconfigure((0, 1, 2), weight=1)
+        # Start collapsed
+        self._disabled_expanded = False
+        self._disabled_cards = {}
+
         self._agents_tab_refresh()
 
     def _agents_tab_refresh(self):
@@ -1504,6 +1640,26 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
             _EXCLUDE = {"supervisor", "hw_supervisor", "dr_ders", "coder"}
             all_agents = [a for a in all_agents if a.get("name") not in _EXCLUDE
                           and a.get("role") != "supervisor"]
+
+            # Read disabled agents from fleet.toml config
+            disabled_agents = set()
+            try:
+                import tomllib
+                toml_path = FLEET_DIR / "fleet.toml"
+                if toml_path.exists():
+                    with open(toml_path, "rb") as f:
+                        full_cfg = tomllib.load(f)
+                    disabled_agents = set(full_cfg.get("fleet", {}).get("disabled_agents", []))
+            except Exception:
+                pass
+
+            # Split into active and disabled lists
+            active_agents = [a for a in all_agents if a.get("name") not in disabled_agents]
+            disabled_list = [a for a in all_agents if a.get("name") in disabled_agents]
+            # Add disabled agents that aren't currently registered (they won't be running)
+            for d_name in disabled_agents:
+                if not any(a.get("name") == d_name for a in disabled_list):
+                    disabled_list.append({"name": d_name, "role": d_name, "status": "DISABLED"})
 
             # Query fleet.db for per-agent task counts + enhanced data
             # Wrapped in try/except so DB schema mismatches don't kill card rendering
@@ -1563,10 +1719,10 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
             except Exception:
                 pass
 
-            # Update task counter cards
-            n_total = len(all_agents)
-            n_idle = sum(1 for a in all_agents if a.get("status") == "IDLE")
-            n_busy = sum(1 for a in all_agents if a.get("status") == "BUSY")
+            # Update task counter cards (use active_agents for counters)
+            n_total = len(active_agents)
+            n_idle = sum(1 for a in active_agents if a.get("status") == "IDLE")
+            n_busy = sum(1 for a in active_agents if a.get("status") == "BUSY")
             n_pending = tasks.get("Pending", 0)
             n_done = tasks.get("Done", 0)
             if hasattr(self, '_task_counters'):
@@ -1580,7 +1736,7 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
 
             # Update agent cards grid
             active_names = set()
-            for i, ag in enumerate(all_agents):
+            for i, ag in enumerate(active_agents):
               try:
                 row_idx = i // 3
                 col_idx = i % 3
@@ -1663,7 +1819,82 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
                 if key not in active_names:
                     c["card"].grid_remove()
 
+            # ── Disabled agents summary & grid ──────────────────────────────
+            n_active = len(active_agents)
+            n_disabled = len(disabled_agents)
+            n_all = n_active + n_disabled
+            if hasattr(self, '_agent_summary'):
+                self._agent_summary.configure(
+                    text=f"{n_active} active / {n_disabled} disabled / {n_all} total")
+
+            if hasattr(self, '_disabled_toggle'):
+                arrow = "\u25bc" if self._disabled_expanded else "\u25b6"
+                self._disabled_toggle.configure(text=f"{arrow} Disabled ({n_disabled})")
+
+            # Render disabled agent cards
+            if hasattr(self, '_disabled_grid'):
+                disabled_active_names = set()
+                for i, dag in enumerate(disabled_list):
+                    d_name = dag.get("name", "?")
+                    disabled_active_names.add(d_name)
+                    r = i // 3
+                    c = i % 3
+                    if d_name in self._disabled_cards:
+                        self._disabled_cards[d_name]["card"].grid(
+                            row=r, column=c, padx=4, pady=2, sticky="nsew")
+                    else:
+                        dcard = ctk.CTkFrame(
+                            self._disabled_grid, fg_color=BG2, corner_radius=8,
+                            height=60, border_width=1, border_color="#333")
+                        dcard.grid(row=r, column=c, padx=4, pady=2, sticky="nsew")
+                        dcard.grid_propagate(False)
+                        ctk.CTkLabel(dcard, text="\u25cf", font=("Consolas", 14),
+                                     text_color="#555").place(x=8, y=8)
+                        ctk.CTkLabel(dcard, text=d_name, font=("Segoe UI", 11),
+                                     text_color="#666").place(x=26, y=6)
+                        ctk.CTkLabel(dcard, text="DISABLED", font=("Consolas", 9),
+                                     text_color="#555").place(
+                                         relx=1.0, x=-8, y=8, anchor="ne")
+                        enable_btn = ctk.CTkButton(
+                            dcard, text="Enable", font=("Consolas", 9),
+                            height=20, width=60,
+                            fg_color="#2e7d32", hover_color="#388e3c",
+                            command=lambda n=d_name: self._toggle_agent_disabled(
+                                n, enable=True))
+                        enable_btn.place(relx=1.0, x=-8, y=34, anchor="ne")
+                        self._disabled_cards[d_name] = {"card": dcard}
+                # Hide stale disabled cards
+                for key, dc in self._disabled_cards.items():
+                    if key not in disabled_active_names:
+                        dc["card"].grid_remove()
+
         self._db_query_bg(_fetch, _render)
+
+    def _toggle_disabled_section(self):
+        """Toggle visibility of disabled agents grid."""
+        self._disabled_expanded = not self._disabled_expanded
+        if self._disabled_expanded:
+            self._disabled_grid.grid(row=2, column=0, sticky="ew", padx=0, pady=2)
+        else:
+            self._disabled_grid.grid_remove()
+        if hasattr(self, '_disabled_toggle'):
+            n = len(self._disabled_cards)
+            arrow = "\u25bc" if self._disabled_expanded else "\u25b6"
+            self._disabled_toggle.configure(text=f"{arrow} Disabled ({n})")
+
+    def _toggle_agent_disabled(self, agent_name, enable=False):
+        """Toggle agent disabled state via dashboard API."""
+        try:
+            action = "enable" if enable else "disable"
+            url = f"http://localhost:5555/api/fleet/worker/{agent_name}/{action}"
+            req = urllib.request.Request(url, method="POST", data=b"{}",
+                                        headers={"Content-Type": "application/json"})
+            urllib.request.urlopen(req, timeout=5)
+            self._agents_tab_refresh()
+        except Exception as e:
+            import logging
+            logging.getLogger("launcher").warning(
+                "Toggle agent %s failed: %s", agent_name, e)
 
     def _create_agent_card(self, parent, row, col, display_name,
                            status_text, status_color, dot_color, name_color,
@@ -1725,6 +1956,14 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
             command=lambda a=agent_data: self._agents_edit_dialog(a))
         edit_btn.place(relx=1.0, x=-8, y=78, anchor="ne")
 
+        # Disable button (next to edit)
+        disable_btn = ctk.CTkButton(
+            card, text="\u2715", font=FONT_SM, width=24, height=18,
+            fg_color="#c62828", hover_color="#d32f2f",
+            command=lambda n=display_name: self._toggle_agent_disabled(
+                n.replace("\u2026", ""), enable=False))
+        disable_btn.place(relx=1.0, x=-36, y=78, anchor="ne")
+
         # Row 5 (y=98): WAITING_HUMAN badge
         waiting_text = "Needs Input" if is_waiting else ""
         waiting_badge = ctk.CTkLabel(card, text=waiting_text,
@@ -1740,7 +1979,8 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
             "card": card, "dot": dot, "name_lbl": name_lbl,
             "status_lbl": status_lbl, "task_lbl": task_lbl,
             "spark_lbl": spark_lbl, "count_lbl": count_lbl,
-            "edit_btn": edit_btn, "model_lbl": model_lbl,
+            "edit_btn": edit_btn, "disable_btn": disable_btn,
+            "model_lbl": model_lbl,
             "tps_lbl": tps_lbl, "last_result_lbl": last_result_lbl,
             "waiting_badge": waiting_badge, "iq_lbl": iq_lbl,
         }
@@ -4049,8 +4289,12 @@ class ModelSelectorDialog(ctk.CTkToplevel):
             try: self.iconbitmap(str(ico))
             except Exception: pass
 
-        self._vram_total = self._detect_vram()
-        self._vram_safe  = min(self._vram_total * 0.85, 10.0)
+        self._hw         = self._detect_hardware()
+        self._vram_total = self._hw["vram_gb"]
+        # CPU-only: no GPU VRAM detected; allow small models (≤4B) to remain selectable
+        self._vram_safe  = self._vram_total * 0.85 if self._vram_total > 0 else 4.0
+        self._vendor     = self._hw["vendor"]
+        self._is_apu     = self._hw["is_apu"]
         self._current    = self._read_current_model()
         self._selected   = self._current
         self._row_frames = {}
@@ -4058,14 +4302,52 @@ class ModelSelectorDialog(ctk.CTkToplevel):
         self._stack_var  = ctk.StringVar(value=mcfg.get("complex_provider", "claude"))
         self._build_ui()
 
-    def _detect_vram(self) -> float:
+    def _detect_hardware(self) -> dict:
+        """Detect GPU vendor, VRAM, and type via fleet/gpu.py backends.
+
+        Detection order: NVIDIA (pynvml) → AMD (pyamdgpuinfo / rocm-smi)
+        → sysfs (Linux — covers Steam Deck APU) → CPU-only fallback.
+
+        Returns a dict with keys:
+            vram_gb      – total VRAM in GB (0.0 for CPU-only)
+            name         – human-readable GPU name
+            vendor       – "nvidia" | "amd" | "amd_sysfs" | "cpu"
+            is_apu       – True when VRAM < 4 GB detected via sysfs
+                           (heuristic: integrated/APU shares system RAM)
+        """
+        try:
+            fleet_str = str(FLEET_DIR)
+            if fleet_str not in sys.path:
+                sys.path.insert(0, fleet_str)
+            from gpu import detect_gpu, NullBackend, NvidiaBackend, AmdBackend, SysfsBackend  # noqa: PLC0415
+            backend, has_gpu = detect_gpu()
+            if not has_gpu:
+                return {"vram_gb": 0.0, "name": "CPU only (no GPU)", "vendor": "cpu", "is_apu": False}
+            mem     = backend.get_memory_info()
+            vram_gb = (mem.total_bytes / 1e9) if mem else 0.0
+            name    = backend.get_name()
+            if isinstance(backend, NvidiaBackend):
+                vendor, is_apu = "nvidia", False
+            elif isinstance(backend, AmdBackend):
+                vendor, is_apu = "amd", False          # discrete AMD (RX 7900 XTX etc.)
+            elif isinstance(backend, SysfsBackend):
+                vendor = "amd_sysfs"
+                is_apu = vram_gb < 4.0                 # Steam Deck / Radeon integrated
+            else:
+                vendor, is_apu = "unknown", False
+            return {"vram_gb": vram_gb, "name": name, "vendor": vendor, "is_apu": is_apu}
+        except Exception:
+            pass
+        # Final fallback — pynvml direct (matches pre-existing behaviour)
         if _GPU_OK:
             try:
-                mem = pynvml.nvmlDeviceGetMemoryInfo(_GPU_HANDLE)
-                return mem.total / 1e9
+                mem  = pynvml.nvmlDeviceGetMemoryInfo(_GPU_HANDLE)
+                raw  = pynvml.nvmlDeviceGetName(_GPU_HANDLE)
+                name = raw if isinstance(raw, str) else raw.decode()
+                return {"vram_gb": mem.total / 1e9, "name": name, "vendor": "nvidia", "is_apu": False}
             except Exception:
                 pass
-        return 12.0  # known hardware fallback
+        return {"vram_gb": 12.0, "name": "Unknown GPU", "vendor": "unknown", "is_apu": False}
 
     def _read_current_model(self) -> str:
         return load_model_cfg().get("local", "qwen3:8b")
@@ -4082,12 +4364,34 @@ class ModelSelectorDialog(ctk.CTkToplevel):
         ctk.CTkLabel(hdr, text="🧠  LLM MODEL SELECTOR",
                      font=("Segoe UI", 13, "bold"), text_color=GOLD
                      ).grid(row=0, column=0, padx=14, pady=10, sticky="w")
-        vram_str = (f"GPU VRAM: {self._vram_total:.1f} GB total  |  "
+        gpu_label = self._hw.get("name", "Unknown GPU")
+        vram_str = (f"{gpu_label}  |  "
+                    f"{self._vram_total:.1f} GB total  |  "
                     f"safe limit: {self._vram_safe:.1f} GB  |  "
                     f"grayed = won't fit")
         ctk.CTkLabel(hdr, text=vram_str,
                      font=("Segoe UI", 9), text_color=DIM
                      ).grid(row=0, column=1, padx=8, sticky="w")
+
+        # Vendor-specific advisory — shown as a second row inside the header frame
+        if self._is_apu:
+            warn_text = ("⚠  Integrated / APU GPU (Steam Deck or similar) — "
+                         "VRAM is shared system RAM. Keep models ≤ 4B for stable performance.")
+        elif self._vendor == "amd":
+            warn_text = ("⚠  AMD GPU — Ollama needs ROCm for GPU acceleration. "
+                         "Without ROCm, models run CPU-only regardless of VRAM.")
+        elif self._vendor == "cpu":
+            warn_text = ("⚠  No GPU detected — CPU-only mode. "
+                         "Stick to 4B models or smaller for usable speed.")
+        else:
+            warn_text = None
+
+        if warn_text:
+            hdr.configure(height=72)          # expand header to fit warning row
+            ctk.CTkLabel(hdr, text=warn_text,
+                         font=("Segoe UI", 8), text_color=ORANGE,
+                         anchor="w"
+                         ).grid(row=1, column=0, columnspan=2, padx=14, pady=(0, 6), sticky="w")
 
         # Stack Mode bar
         stack_bar = ctk.CTkFrame(self, fg_color=BG2, height=48, corner_radius=0)

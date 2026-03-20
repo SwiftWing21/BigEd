@@ -1,4 +1,4 @@
-"""Idle Evolution (v0.42) — workers self-improve when no tasks pending."""
+"""Idle Evolution (v0.42+0.30.01a) — workers self-improve when no tasks pending."""
 
 
 def _get_conn():
@@ -37,8 +37,19 @@ def get_idle_stats(period="week"):
         return [dict(r) for r in rows]
 
 
-def get_least_evolved_skill():
-    """Find the skill with the oldest (or no) idle evolution run."""
+def get_least_evolved_skill(agent=None):
+    """Pick a skill to evolve — weighted random from the least-evolved bottom 30%.
+
+    v0.30.01a: Replaces deterministic selection to prevent all agents
+    converging on the same skill (topic diversity fix).
+
+    - Weighted random from bottom 30% least-evolved skills
+    - 4h per-agent cooldown (skip skills this agent evolved recently)
+    - Cross-worker dedup (skip skills another agent is currently evolving)
+    """
+    import random
+    _AGENT_COOLDOWN_H = 4
+
     with _get_conn() as conn:
         # Get all skill types that have been dispatched at least once
         active_skills = conn.execute(
@@ -47,17 +58,56 @@ def get_least_evolved_skill():
         if not active_skills:
             return None
         skill_names = [r["type"] for r in active_skills]
-        # Find which has the oldest idle_run (or none at all)
+
+        # Get last evolution time for each skill
+        skill_staleness = []
         for skill in skill_names:
             row = conn.execute(
                 "SELECT MAX(created_at) as last_run FROM idle_runs WHERE skill=?",
                 (skill,)
             ).fetchone()
-            if not row or not row["last_run"]:
-                return skill  # never evolved
-        # All have been evolved — return oldest
-        row = conn.execute("""
-            SELECT skill, MAX(created_at) as last_run
-            FROM idle_runs GROUP BY skill ORDER BY last_run ASC LIMIT 1
-        """).fetchone()
-        return row["skill"] if row else skill_names[0]
+            last_run = row["last_run"] if row and row["last_run"] else "2000-01-01"
+            skill_staleness.append((skill, last_run))
+
+        # Sort by staleness (oldest first = most stale)
+        skill_staleness.sort(key=lambda x: x[1])
+
+        # Take bottom 30% (at least 3 skills)
+        n_candidates = max(3, len(skill_staleness) * 30 // 100)
+        candidates = skill_staleness[:n_candidates]
+
+        # Filter: per-agent cooldown (skip skills this agent evolved in last 4h)
+        if agent:
+            cooled = conn.execute(
+                "SELECT DISTINCT skill FROM idle_runs WHERE agent=? "
+                "AND created_at >= datetime('now', ?)",
+                (agent, f"-{_AGENT_COOLDOWN_H} hours")
+            ).fetchall()
+            cooled_skills = {r["skill"] for r in cooled}
+            candidates = [(s, t) for s, t in candidates if s not in cooled_skills]
+
+        # Filter: cross-worker dedup (skip skills currently being evolved by another agent)
+        currently_evolving = conn.execute(
+            "SELECT payload_json FROM tasks WHERE status='RUNNING' "
+            "AND type IN ('skill_test', 'evolution_coordinator', 'skill_evolve')"
+        ).fetchall()
+        evolving_skills = set()
+        import json
+        for row in currently_evolving:
+            try:
+                p = json.loads(row["payload_json"] or "{}")
+                if p.get("skill"):
+                    evolving_skills.add(p["skill"])
+            except Exception:
+                pass
+        candidates = [(s, t) for s, t in candidates if s not in evolving_skills]
+
+        if not candidates:
+            # Fallback: random from all skills
+            return random.choice(skill_names) if skill_names else None
+
+        # Weighted random: older = higher weight
+        # Weight = index position (1-based, where 1 = most stale = highest weight)
+        weights = list(range(len(candidates), 0, -1))
+        chosen = random.choices(candidates, weights=weights, k=1)[0]
+        return chosen[0]

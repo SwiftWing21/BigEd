@@ -60,9 +60,12 @@ PYTHON = sys.executable
 
 
 def _build_roles(config):
-    """Expand BASE_ROLES, replacing 'coder' with coder_1..coder_N instances."""
+    """Expand BASE_ROLES, replacing 'coder' with coder_1..coder_N and filtering disabled agents."""
+    disabled = set(config.get("fleet", {}).get("disabled_agents", []))
     roles = []
     for r in BASE_ROLES:
+        if r in disabled:
+            continue
         if r == "coder":
             n = max(1, int(config.get("workers", {}).get("coder_count", 1)))
             roles.extend(f"coder_{i}" for i in range(1, n + 1))
@@ -167,10 +170,12 @@ def start_dashboard(config):
     if not config.get("dashboard", {}).get("enabled", False):
         log.info("Dashboard disabled in fleet.toml")
         return
-    port = config.get("dashboard", {}).get("port", 5555)
-    log.info(f"Starting dashboard on http://localhost:{port}")
+    dash_cfg = config.get("dashboard", {})
+    port = dash_cfg.get("port", 5555)
+    host = dash_cfg.get("bind_address", "127.0.0.1")
+    log.info(f"Starting dashboard on http://{host}:{port}")
     dashboard_proc = subprocess.Popen(
-        [PYTHON, str(FLEET_DIR / "dashboard.py"), "--port", str(port)],
+        [PYTHON, str(FLEET_DIR / "dashboard.py"), "--port", str(port), "--host", host],
         cwd=str(FLEET_DIR),
     )
 
@@ -606,15 +611,24 @@ def main():
                 log.debug(f"Scale check error: {e}")
 
         # Restart dead workers with cool-down backoff
+        disabled = set(config.get("fleet", {}).get("disabled_agents", []))
         for role in list(worker_procs.keys()):
             proc = worker_procs.get(role)
             if proc and proc.poll() is not None:
+                # If role was disabled while running, don't respawn
+                if role in disabled:
+                    log.info(f"Worker '{role}' exited and is disabled — removing from worker_procs")
+                    del worker_procs[role]
+                    continue
                 log.warning(f"Worker '{role}' died (exit={proc.returncode}) — entering 15s cool-down")
                 _json_log("WARNING", "worker_crash", worker=role, exit_code=proc.returncode)
                 worker_procs[role] = None
                 worker_next_start[role] = now + 15
-                
+
         for role, next_time in list(worker_next_start.items()):
+            if role in disabled:
+                worker_next_start.pop(role, None)
+                continue
             if worker_procs.get(role) is None and now >= next_time:
                 log.info(f"Cool-down complete. Respawning worker '{role}'")
                 _json_log("INFO", "worker_respawn", worker=role)

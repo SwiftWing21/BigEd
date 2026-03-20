@@ -37,6 +37,22 @@ HW_STATE_JSON = FLEET_DIR / "hw_state.json"
 
 app = Flask(__name__)
 
+# ── CORS config (populated at startup for remote access) ────────────────────
+_cors_origins: list[str] = []
+
+
+@app.after_request
+def _cors_headers(response):
+    """Add CORS headers when the request Origin is in the allowed list."""
+    if not _cors_origins:
+        return response
+    origin = request.headers.get("Origin", "")
+    if origin in _cors_origins:
+        response.headers["Access-Control-Allow-Origin"] = origin
+        response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization"
+        response.headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS"
+    return response
+
 
 # ── TLS (auto-generate self-signed cert) ──────────────────────────────────
 
@@ -1838,6 +1854,49 @@ def index():
     return Response(DASHBOARD_HTML, mimetype="text/html")
 
 
+# ── Agent Disable/Enable ──────────────────────────────────────────────────────
+
+@app.route("/api/fleet/worker/<name>/disable", methods=["POST"])
+def worker_disable(name):
+    """Disable a worker — adds to disabled_agents list in fleet.toml."""
+    try:
+        cfg = _load_config()
+        disabled = cfg.get("fleet", {}).get("disabled_agents", [])
+        if name not in disabled:
+            disabled.append(name)
+            _update_fleet_toml_disabled(disabled)
+        return jsonify({"status": "disabled", "agent": name, "disabled_agents": disabled})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/fleet/worker/<name>/enable", methods=["POST"])
+def worker_enable(name):
+    """Enable a worker — removes from disabled_agents list in fleet.toml."""
+    try:
+        cfg = _load_config()
+        disabled = cfg.get("fleet", {}).get("disabled_agents", [])
+        if name in disabled:
+            disabled.remove(name)
+            _update_fleet_toml_disabled(disabled)
+        return jsonify({"status": "enabled", "agent": name, "disabled_agents": disabled})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+def _update_fleet_toml_disabled(disabled_list):
+    """Update the disabled_agents list in fleet.toml."""
+    toml_path = FLEET_DIR / "fleet.toml"
+    content = toml_path.read_text(encoding="utf-8")
+    arr = "[" + ", ".join(f'"{a}"' for a in disabled_list) + "]"
+    new_content = re.sub(
+        r'^disabled_agents\s*=\s*\[.*\].*$',
+        f'disabled_agents = {arr}  # agents excluded from fleet boot',
+        content, count=1, flags=re.MULTILINE
+    )
+    toml_path.write_text(new_content, encoding="utf-8")
+
+
 # ── Entry ────────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
@@ -1850,10 +1909,42 @@ if __name__ == "__main__":
     except Exception:
         pass
 
+    import logging
+    _log = logging.getLogger("dashboard")
+
     parser = argparse.ArgumentParser()
     parser.add_argument("--port", type=int, default=5555)
     parser.add_argument("--host", default="127.0.0.1")
     args = parser.parse_args()
+
+    # ── Read bind_address + CORS from config ────────────────────────────────
+    cfg = _load_config()
+    dash_cfg = cfg.get("dashboard", {})
+    bind_addr = dash_cfg.get("bind_address", "127.0.0.1")
+    cors_origins_cfg = dash_cfg.get("cors_origins", [])
+
+    # --host flag overrides config when explicitly provided
+    if args.host != "127.0.0.1":
+        bind_addr = args.host
+
+    # ── Safety gate: remote bind requires auth + TLS ────────────────────────
+    if bind_addr not in ("127.0.0.1", "localhost"):
+        sec_cfg = cfg.get("security", {})
+        token = sec_cfg.get("dashboard_token", "")
+        cert_dir = FLEET_DIR / "certs"
+        has_tls = (cert_dir / "cert.pem").exists() and (cert_dir / "key.pem").exists()
+        safe = True
+        if not token:
+            _log.error("Remote bind (%s) requires dashboard_token in [security] — falling back to 127.0.0.1", bind_addr)
+            safe = False
+        if not has_tls:
+            _log.error("Remote bind (%s) requires TLS certs (fleet/certs/cert.pem + key.pem) — falling back to 127.0.0.1", bind_addr)
+            safe = False
+        if not safe:
+            bind_addr = "127.0.0.1"
+
+    # Populate module-level CORS list for the after_request handler
+    _cors_origins.extend(cors_origins_cfg)
 
     # Start background threads
     threading.Thread(target=_alert_monitor, daemon=True).start()
@@ -1864,8 +1955,8 @@ if __name__ == "__main__":
     ssl_ctx = None
     if cert and key:
         ssl_ctx = (cert, key)
-        print(f"Fleet Dashboard v2: https://localhost:{args.port} (TLS)")
+        print(f"Fleet Dashboard v2: https://{bind_addr}:{args.port} (TLS)")
     else:
-        print(f"Fleet Dashboard v2: http://localhost:{args.port} (no TLS — openssl not found)")
-    app.run(host=args.host, port=args.port, debug=False, threaded=True,
+        print(f"Fleet Dashboard v2: http://{bind_addr}:{args.port} (no TLS — openssl not found)")
+    app.run(host=bind_addr, port=args.port, debug=False, threaded=True,
             ssl_context=ssl_ctx)

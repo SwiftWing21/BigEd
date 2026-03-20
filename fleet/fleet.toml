@@ -9,6 +9,8 @@ openclaw_enabled = false     # multi-channel gateway (Discord/WhatsApp/Telegram/
 discord_bot_enabled = true   # lightweight Discord-only bridge to biged-fleetchat
 offline_mode = false         # true = no internet; external API skills gracefully degrade, local Ollama works
 air_gap_mode = false         # true = max isolation (implies offline_mode); no sockets, no secrets, skill whitelist
+disabled_agents = ["sales", "onboarding", "implementation", "legal", "account_manager"]  # agents excluded from fleet boot
+hitl_evolution = false           # true = evolution proposals go to WAITING_HUMAN for operator approval
 
 [models]
 local = "qwen3:8b"
@@ -78,6 +80,8 @@ temperature = 0.9
 enabled = true                 # localhost web dashboard for fleet metrics
 port = 5555
 auto_open = true               # open dashboard in browser when fleet boot completes
+bind_address = "127.0.0.1"    # listen address — set "0.0.0.0" for remote access (requires TLS + auth)
+cors_origins = []              # allowed CORS origins for remote access (e.g. ["https://my-admin.example.com"])
 
 [openclaw]
 port = 18789
@@ -188,3 +192,10 @@ auto_manifest = true  # auto-create manifest if missing
 [github]
 owner = "SwiftWing21"
 repo = "BigEds_Agents"
+
+# v0.30.00: A2A Federation — peer fleet discovery and task overflow routing
+[federation]
+enabled = false              # enable peer discovery and task forwarding
+peers = []                   # peer fleet URLs (e.g. ["http://192.168.1.50:5555", "http://fleet2.local:5555"])
+overflow_threshold = 0.85    # forward tasks to peers when local queue > 85% capacity
+peer_timeout_secs = 5        # timeout for peer health probes
