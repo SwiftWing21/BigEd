@@ -581,16 +581,55 @@ Partially completed in v0.51.00b (24e21d4). Dr. Ders respawn, startup perf, disa
 
 ### 0.051.05b — GitHub Public Presence Update [PLANNED]
 
-**Goal:** Update GitHub repo description, README, and metadata to reflect current enterprise capabilities.
+**Goal:** Update GitHub repo description, README, and metadata to reflect BigEd CC's value proposition.
 
-- [ ] GitHub repo description: enterprise-ready AI agent fleet with SOC 2 compliance, multi-machine model control, all-OS support
-- [ ] README.md refresh: current architecture, feature list, screenshots, quick start
-- [ ] Credit: link to Karpathy's autoresearch repo (https://github.com/karpathy/build-nanogpt) for training pipeline inspiration
-- [ ] Feature highlights: auto-installs dependencies, air-gap mode, HITL governance, 74+ skills
+**Blurb:**
+> BigEd CC eliminates manual CLI setup for local AI. One-click deployment of Ollama models + agent fleet.
+> Use OAuth Manual Mode (Claude Code / Gemini) with pre-loaded .md context from agent requests — or
+> let the fleet work autonomously via API. No terminal required. All platforms. Enterprise-ready.
+
+- [ ] GitHub repo description: one-click local AI fleet, OAuth Manual Mode, auto-install, all-OS
+- [ ] README.md: value proposition blurb, architecture diagram, screenshots, quick start
+- [ ] Credit: link to Karpathy's autoresearch repo (https://github.com/karpathy/build-nanogpt) for training pipeline
+- [ ] Feature highlights: auto-installs deps, air-gap mode, HITL governance, 74+ skills, Manual Mode
 - [ ] Compliance section: SOC 2 alignment, DLP, RBAC, audit logging, encryption at rest
 - [ ] Multi-machine: fleet federation, Dr. Ders hardware monitoring, cross-platform (Win/Linux/macOS)
 - [ ] Badges: build status, Python version, license, platform support
-- [ ] Topics/tags: ai-agents, fleet-management, ollama, claude, gemini, local-ai, enterprise
+- [ ] Topics/tags: ai-agents, fleet-management, ollama, claude, gemini, minimax, local-ai, enterprise
+- [ ] Screenshot gallery: launcher, dashboard, Fleet Comm, Intelligence tab, Manual Mode
+
+### 0.051.07b — Manual Chat + Fleet Comm UX Redesign [PLANNED]
+
+**Goal:** Integrate Manual Mode (OAuth) chat directly into Fleet Comm tab. Unified UX for agent HITL requests + human-initiated Manual Chat sessions.
+
+**Fleet Comm tab redesign:**
+- [ ] Split Fleet Comm into two sections: "Agent Requests" (top) + "Manual Chat" (bottom)
+- [ ] Agent HITL requests: collapsed to 1-line summary when not hovered, expand on hover
+- [ ] Arrow button to pin/hold request list open (sticky mode)
+- [ ] Dynamic scrollbar when > 3-5 HITL requests pending
+- [ ] Scroll area auto-sizes based on pending request count
+- [ ] Request count badge on Fleet Comm tab icon
+
+**Manual Chat integration:**
+- [ ] "Manual Chat" panel below agent requests in Fleet Comm
+- [ ] Model selector dropdown: Claude Code (OAuth), Gemini (OAuth), Local Ollama
+- [ ] For OAuth models: "Open in Claude Code" / "Open in Gemini" button (writes .md context, launches VS Code/browser)
+- [ ] For Local models: inline chat interface (direct Ollama /api/generate)
+- [ ] Pre-load context from selected agent request (click request → context fills Manual Chat)
+- [ ] Context preview: shows what .md files will be written before launch
+
+**Agent request → Manual Chat flow:**
+- [ ] Click agent HITL request → populates Manual Chat with full context
+- [ ] User selects OAuth model → "Open Session" writes task-briefing.md + opens IDE
+- [ ] User selects Local model → inline response rendered in Fleet Comm
+- [ ] Response feeds back to agent (closes HITL loop)
+
+**Dynamic behavior:**
+- [ ] HITL requests stack when local/API models running unattended
+- [ ] Badge counter updates in real-time via SSE
+- [ ] Collapsed view: "3 agent requests pending ▸" (single line)
+- [ ] Hover/click expands: shows each request with agent name, question preview, age
+- [ ] Pinned view: arrow button holds list expanded until unpinned
 
 ### 0.051.06b — MiniMax M2.5 Provider Integration [PLANNED]
 
