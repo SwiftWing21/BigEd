@@ -1,7 +1,7 @@
 [fleet]
 eco_mode = false
 idle_enabled = true         # workers self-improve when no tasks pending
-idle_timeout_secs = 30
+idle_timeout_secs = 10
 training_check_interval_secs = 15   # reduced: catch training start faster
 max_workers = 10              # cap active workers at boot (Dr. Ders scales dynamically)
 worker_scale_interval_secs = 900  # Dr. Ders checks RAM every 15min, adjusts worker count
@@ -181,7 +181,7 @@ enabled = false  # set true after running: lead_client.py install-service
 # v0.42: Idle skill evolution — workers self-improve when no tasks pending
 [idle]
 enabled = true   # workers self-improve when no tasks pending
-threshold_polls = 6  # consecutive idle polls before entering idle mode (~30s at 5s/poll)
+threshold_polls = 3  # consecutive idle polls before entering idle mode (~3s at 1s/poll)
 skills = ["skill_evolve", "skill_test", "code_quality", "benchmark"]
 
 # 0.14: Knowledge integrity verification

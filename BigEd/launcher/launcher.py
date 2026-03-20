@@ -2854,17 +2854,15 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
         # Record activity for sparklines
         self._record_agent_activity(agents)
 
-        # Dynamic roles — show only agents that have been seen (empty at cold start)
-        # Only track agents when fleet is actually running to avoid stale ghost rows
+        # Dynamic roles — only show agents actively running (heartbeat this session)
+        # No OFFLINE ghosts from previous sessions
         seen = {a["name"]: a for a in agents}
         if self._system_running:
             self._ever_seen_roles.update(seen.keys())
-        rows = []
-        for role_key in sorted(self._ever_seen_roles):
-            if role_key in seen:
-                rows.append(seen[role_key])
-            else:
-                rows.append({"name": role_key, "role": role_key, "status": "OFFLINE"})
+        else:
+            self._ever_seen_roles.clear()
+        # Only show agents currently present — no ghost OFFLINE rows
+        rows = [seen[role_key] for role_key in sorted(self._ever_seen_roles) if role_key in seen]
 
         active_roles = set()
         for i, a in enumerate(rows):

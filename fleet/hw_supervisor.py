@@ -370,16 +370,22 @@ def read_gpu_thermal():
 
 def read_cpu_thermal():
     """Read CPU package temp via psutil (Windows: WMI fallback)."""
-    if not _HAS_PSUTIL:
-        return None
+    if _HAS_PSUTIL:
+        try:
+            if hasattr(psutil, 'sensors_temperatures'):
+                temps = psutil.sensors_temperatures()
+                if temps:
+                    # Linux: coretemp/k10temp; Windows: may not be available
+                    for chip in ("coretemp", "k10temp", "acpitz"):
+                        if chip in temps:
+                            return max(t.current for t in temps[chip])
+        except Exception:
+            pass
+    # Fallback: shared cpu_temp module (Windows WMI / cross-platform)
     try:
-        temps = psutil.sensors_temperatures()
-        if temps:
-            # Linux: coretemp/k10temp; Windows: may not be available
-            for chip in ("coretemp", "k10temp", "acpitz"):
-                if chip in temps:
-                    return max(t.current for t in temps[chip])
-        return None
+        from cpu_temp import read_cpu_temp
+        val = read_cpu_temp()
+        return val if val > 0 else None
     except Exception:
         return None
 

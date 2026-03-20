@@ -150,6 +150,7 @@
     <h2>Thermal</h2>
     <div class="thermal-gauge" id="thermalGauge"></div>
     <div class="stat-row" id="thermalStats" style="margin-top:12px"></div>
+    <div id="thermalNote" style="color:var(--dim);font-size:11px;margin-top:6px;display:none"></div>
   </div>
 
   <div class="card">
@@ -159,17 +160,9 @@
   </div>
 
   <div class="card">
-    <div style="display:flex;gap:8px;align-items:center">
-      <h2 id="trainingTab" onclick="showTrainingView('training')" style="cursor:pointer;opacity:0.5">Training</h2>
-      <h2 id="activityTab" onclick="showTrainingView('activity')" style="cursor:pointer">Activity</h2>
-    </div>
-    <div id="trainingView" style="display:none">
-      <div id="trainingStatus"></div>
-      <div class="file-list" id="trainingLogs" style="margin-top:8px"></div>
-    </div>
-    <div id="activityView">
-      <div class="file-list" id="agentActivityLog" style="max-height:300px;overflow-y:auto"></div>
-    </div>
+    <h2>Activity</h2>
+    <div id="trainingBadge" style="font-size:11px;color:var(--dim);margin-bottom:8px">Training: idle</div>
+    <div id="activityFeed" style="max-height:350px;overflow-y:auto"></div>
   </div>
 
   <div class="card">
@@ -303,20 +296,27 @@ function updateStatusFromSSE(data) {
     <div class="stat blue"><div class="value">${t.PENDING}</div><div class="label">Pending</div></div>
     <div class="stat gold"><div class="value">${total}</div><div class="label">Total</div></div>
   `;
-  // Sort: dr_ders/hw_supervisor first, then busy, then idle (collapsible)
+  // Display name: role/task type + identifier (e.g. "code_review / coder_1")
+  function agentDisplayName(a) {
+    if (['dr_ders', 'hw_supervisor'].includes(a.name)) return a.name;
+    const task = a.current_task || a.role;
+    return task + ' / ' + a.name;
+  }
+
+  // Sort: supervisors first, then busy (with task type), then idle collapsed
   const priority = ['dr_ders', 'hw_supervisor'];
   const pinned = data.agents.filter(a => priority.includes(a.name));
-  const busy = data.agents.filter(a => ['BUSY','ACTIVE'].includes(a.status) && !priority.includes(a.name));
-  const idle = data.agents.filter(a => !['BUSY','ACTIVE'].includes(a.status) && !priority.includes(a.name));
+  const busy = data.agents.filter(a => ['BUSY','ACTIVE','RUNNING'].includes(a.status) && !priority.includes(a.name));
+  const idle = data.agents.filter(a => !['BUSY','ACTIVE','RUNNING'].includes(a.status) && !priority.includes(a.name));
   const agentTbody = document.getElementById('agentTable');
   const wasExpanded = agentTbody.dataset.expanded === 'true';
   let rows = '';
-  pinned.forEach(a => { rows += '<tr><td>' + a.name + '</td><td style="color:var(--dim)">' + a.role + '</td><td>' + badge(a.status) + '</td><td style="color:var(--dim)">' + timeAgo(a.last_heartbeat) + '</td></tr>'; });
-  busy.forEach(a => { rows += '<tr><td>' + a.name + '</td><td style="color:var(--dim)">' + a.role + '</td><td>' + badge(a.status) + '</td><td style="color:var(--dim)">' + timeAgo(a.last_heartbeat) + '</td></tr>'; });
+  pinned.forEach(a => { rows += '<tr><td><strong>' + a.name + '</strong></td><td style="color:var(--dim)">' + a.role + '</td><td>' + badge(a.status) + '</td><td style="color:var(--dim)">' + timeAgo(a.last_heartbeat) + '</td></tr>'; });
+  busy.forEach(a => { rows += '<tr><td><strong>' + agentDisplayName(a) + '</strong></td><td style="color:var(--dim)">' + a.role + '</td><td>' + badge(a.status) + '</td><td style="color:var(--dim)">' + timeAgo(a.last_heartbeat) + '</td></tr>'; });
   if (idle.length > 0) {
-    rows += '<tr class="idle-toggle" onclick="toggleIdleAgents()" style="cursor:pointer;color:var(--dim)"><td colspan="4">' + (wasExpanded ? '&#9662;' : '&#9656;') + ' ' + idle.length + ' idle agent' + (idle.length > 1 ? 's' : '') + '</td></tr>';
+    rows += '<tr class="idle-toggle" onclick="toggleIdleAgents()" style="cursor:pointer;color:var(--dim)"><td colspan="4">' + (wasExpanded ? '&#9662;' : '&#9656;') + ' ' + idle.length + ' idle' + '</td></tr>';
     if (wasExpanded) {
-      idle.forEach(a => { rows += '<tr class="idle-row"><td>' + a.name + '</td><td style="color:var(--dim)">' + a.role + '</td><td>' + badge(a.status) + '</td><td style="color:var(--dim)">' + timeAgo(a.last_heartbeat) + '</td></tr>'; });
+      idle.forEach(a => { rows += '<tr class="idle-row"><td>' + agentDisplayName(a) + '</td><td style="color:var(--dim)">' + a.role + '</td><td>' + badge(a.status) + '</td><td style="color:var(--dim)">' + timeAgo(a.last_heartbeat) + '</td></tr>'; });
     }
   }
   agentTbody.innerHTML = rows;
@@ -374,25 +374,32 @@ async function loadThermal() {
     <div class="stat"><div class="value">${data.gpu_vram_used_gb}/${data.gpu_vram_total_gb}GB</div><div class="label">VRAM</div></div>
     <div class="stat"><div class="value">${data.model_tier}</div><div class="label">Model Tier</div></div>
   `;
+  const note = document.getElementById('thermalNote');
+  const notes = [];
+  if (data.gpu_temp_c === 0) notes.push('GPU');
+  if (data.cpu_temp_c === 0) notes.push('CPU');
+  if (notes.length > 0) {
+    note.textContent = '*0\u00b0C = ' + notes.join(', ') + ' sensor unavailable';
+    note.style.display = 'block';
+  } else {
+    note.style.display = 'none';
+  }
+  if (data._note) {
+    note.textContent = data._note;
+    note.style.display = 'block';
+  }
 }
 
 async function loadTraining() {
   const data = await fetchJSON('/api/training');
-  let html = '';
+  const badge = document.getElementById('trainingBadge');
   if (data.locked) {
-    const pct = Math.round(data.elapsed_s / data.timeout_s * 100);
-    html = `<div style="color:var(--orange)">Training active: ${data.holder} (${Math.round(data.elapsed_s/60)}min / ${Math.round(data.timeout_s/60)}min)</div>`;
+    badge.textContent = 'Training: active \u2014 ' + data.holder + ' (' + Math.round(data.elapsed_s / 60) + 'min)';
+    badge.style.color = 'var(--orange)';
   } else {
-    html = '<div style="color:var(--dim)">No training in progress</div>';
+    badge.textContent = 'Training: idle';
+    badge.style.color = 'var(--dim)';
   }
-  document.getElementById('trainingStatus').innerHTML = html;
-
-  document.getElementById('trainingLogs').innerHTML = (data.recent_logs || []).map(l => `
-    <div class="file-item">
-      <span class="name">${l.skill} ${l.improved ? '<span style="color:var(--green)">improved</span>' : '<span style="color:var(--dim)">no change</span>'}</span>
-      <span class="meta">${l.before.toFixed(2)} -> ${l.after.toFixed(2)} (${l.iterations} iter)</span>
-    </div>
-  `).join('') || '<div style="color:var(--dim)">No training logs</div>';
 }
 
 async function loadModules() {
@@ -560,36 +567,39 @@ function toggleIdleAgents() {
   loadStatus();
 }
 
-function showTrainingView(view) {
-  document.getElementById('trainingView').style.display = view === 'training' ? 'block' : 'none';
-  document.getElementById('activityView').style.display = view === 'activity' ? 'block' : 'none';
-  document.getElementById('trainingTab').style.opacity = view === 'training' ? '1' : '0.5';
-  document.getElementById('activityTab').style.opacity = view === 'activity' ? '1' : '0.5';
-}
-
 async function loadAgentActivity() {
   const data = await fetchJSON('/api/timeline');
-  const el = document.getElementById('agentActivityLog');
-  el.textContent = '';
+  const el = document.getElementById('activityFeed');
+  while (el.firstChild) el.removeChild(el.firstChild);
   (data || []).slice(0, 50).forEach(function(e) {
-    const div = document.createElement('div');
+    var div = document.createElement('div');
     div.className = 'timeline-item';
-    const time = document.createElement('span');
+    var time = document.createElement('span');
     time.className = 'time';
     time.textContent = shortTime(e.time);
-    const agent = document.createElement('span');
+    var agent = document.createElement('span');
     agent.className = 'agent';
     agent.textContent = e.agent;
-    const detail = document.createElement('span');
-    detail.textContent = e.detail;
+    var statusBadge = document.createElement('span');
+    var s = (e.status || '').toLowerCase();
+    statusBadge.className = 'badge badge-' + s;
+    statusBadge.textContent = e.status || '';
+    var detail = document.createElement('span');
+    detail.textContent = ' ' + (e.detail || '');
+    var info = document.createElement('span');
+    info.appendChild(statusBadge);
+    info.appendChild(detail);
     div.appendChild(time);
     div.appendChild(agent);
-    div.appendChild(detail);
+    div.appendChild(info);
     el.appendChild(div);
   });
   if (!data || data.length === 0) {
-    el.textContent = 'No recent activity';
-    el.style.color = 'var(--dim)';
+    var empty = document.createElement('div');
+    empty.textContent = 'No recent activity';
+    empty.style.color = 'var(--dim)';
+    empty.style.padding = '12px';
+    el.appendChild(empty);
   }
 }
 

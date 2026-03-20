@@ -22,7 +22,7 @@ from config import load_config, is_offline, is_air_gap, AIR_GAP_SKILLS
 
 HW_STATE_FILE = FLEET_DIR / "hw_state.json"
 
-IDLE_THRESHOLD = 6  # polls with no task before entering idle mode (~30s at 5s poll)
+IDLE_THRESHOLD = 3  # polls with no task before entering idle mode (~3s at 1s poll)
 IDLE_SKILLS = ["skill_evolve", "skill_test", "code_quality", "benchmark"]
 MAX_CALLS_PER_SESSION = 500  # per-agent capability budget (OWASP LLM08)
 
@@ -611,7 +611,7 @@ def main():
                 log.warning(f"Idle task failed: {e}")
             last_task_time = time.time()
 
-        time.sleep(2)
+        time.sleep(1)
 
     log.info("Stopped")
 

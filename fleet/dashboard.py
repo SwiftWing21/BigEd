@@ -245,7 +245,23 @@ def _alert_monitor():
 
 @app.route("/api/status")
 def api_status():
-    agents = query("SELECT name, role, status, last_heartbeat FROM agents ORDER BY name")
+    # Only show agents with a heartbeat in the last 60s (currently running)
+    agents = query("""
+        SELECT name, role, status, last_heartbeat, current_task_id
+        FROM agents
+        WHERE last_heartbeat >= datetime('now', '-60 seconds')
+        ORDER BY
+            CASE WHEN name IN ('dr_ders', 'hw_supervisor') THEN 0 ELSE 1 END,
+            CASE status WHEN 'BUSY' THEN 0 WHEN 'ACTIVE' THEN 1 ELSE 2 END,
+            name
+    """)
+    # Enrich with current task type for display name
+    for a in agents:
+        if a.get("current_task_id"):
+            task = query("SELECT type FROM tasks WHERE id=?", (a["current_task_id"],))
+            a["current_task"] = task[0]["type"] if task else None
+        else:
+            a["current_task"] = None
     counts = {}
     for s in ("PENDING", "RUNNING", "DONE", "FAILED"):
         row = query("SELECT COUNT(*) as n FROM tasks WHERE status=?", (s,))
@@ -658,24 +674,10 @@ def api_thermal():
     # Fallback: read CPU temp directly if hw_state.json has no CPU data
     if result["cpu_temp_c"] == 0:
         try:
-            import psutil as _psutil_thermal
-            temps = _psutil_thermal.sensors_temperatures()
-            if temps:
-                for chip in ("coretemp", "k10temp", "acpitz"):
-                    if chip in temps:
-                        result["cpu_temp_c"] = round(
-                            max(t.current for t in temps[chip])
-                        )
-                        break
-                if result["cpu_temp_c"] == 0:
-                    # No known chip name matched — try any sensor
-                    for name, entries in temps.items():
-                        for entry in entries:
-                            if entry.current > 0:
-                                result["cpu_temp_c"] = round(entry.current)
-                                break
-                        if result["cpu_temp_c"] > 0:
-                            break
+            from cpu_temp import read_cpu_temp
+            val = read_cpu_temp()
+            if val > 0:
+                result["cpu_temp_c"] = val
         except Exception:
             pass
 
@@ -1273,7 +1275,10 @@ DASHBOARD_HTML = _TEMPLATE_PATH.read_text(encoding="utf-8") if _TEMPLATE_PATH.ex
 
 @app.route("/")
 def index():
-    return Response(DASHBOARD_HTML, mimetype="text/html")
+    template = FLEET_DIR / "templates" / "dashboard.html"
+    if template.exists():
+        return Response(template.read_text(encoding="utf-8"), mimetype="text/html")
+    return Response(DASHBOARD_HTML, mimetype="text/html")  # fallback to cached
 
 
 # ── Agent Disable/Enable ──────────────────────────────────────────────────────

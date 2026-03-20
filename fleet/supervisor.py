@@ -64,7 +64,7 @@ CORE_AGENTS = {"coder_1", "researcher", "planner", "archivist"}
 # Scale-up order — agents added when queue builds up (generic overflow)
 SCALE_ORDER = ["coder_2", "coder_3", "analyst", "security", "coder"]
 # Scale thresholds
-SCALE_UP_QUEUE_DEPTH = 5      # pending tasks to trigger scale-up
+SCALE_UP_QUEUE_DEPTH = 2      # pending tasks to trigger scale-up
 SCALE_DOWN_IDLE_SECS = 300    # 5 min idle before scale-down
 # Max dynamic instances per base role (e.g. coder_4, researcher_2)
 MAX_DYNAMIC_PER_ROLE = 4
