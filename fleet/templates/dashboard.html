@@ -176,6 +176,16 @@
   </div>
 
   <div class="card">
+    <h2>Evolution Leaderboard</h2>
+    <div id="evolutionStats"></div>
+  </div>
+
+  <div class="card">
+    <h2>Quality Trend (IQ)</h2>
+    <div id="qualityTrend"></div>
+  </div>
+
+  <div class="card">
     <h2>Discussions / Meetings</h2>
     <table><thead><tr><th>Topic</th><th>Agents</th><th>Rounds</th><th>Posts</th></tr></thead>
     <tbody id="discussionTable"></tbody></table>
@@ -238,8 +248,14 @@ function escapeHTML(s) {
 }
 
 async function fetchJSON(url) {
-  const r = await fetch(url);
-  return r.json();
+  try {
+    const r = await fetch(url);
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    return await r.json();
+  } catch(e) {
+    console.error('fetchJSON error:', url, e);
+    return {};
+  }
 }
 
 function badge(status) {
@@ -704,12 +720,78 @@ async function loadCostTracker() {
   }
 }
 
+async function loadEvolution() {
+    try {
+        var data = await fetchJSON('/api/evolution');
+        var el = document.getElementById('evolutionStats');
+        el.textContent = '';
+
+        // Agent contributions table
+        if (data.agents && data.agents.length > 0) {
+            var table = document.createElement('table');
+            var thead = document.createElement('thead');
+            var headerRow = document.createElement('tr');
+            ['Agent', 'Tasks', 'Done', 'IQ'].forEach(function(h) {
+                var th = document.createElement('th');
+                th.textContent = h;
+                headerRow.appendChild(th);
+            });
+            thead.appendChild(headerRow);
+            table.appendChild(thead);
+
+            var tbody = document.createElement('tbody');
+            data.agents.slice(0, 10).forEach(function(a) {
+                var tr = document.createElement('tr');
+                var cells = [a.agent || '?', a.tasks, a.done, a.avg_iq || '\u2014'];
+                cells.forEach(function(val, i) {
+                    var td = document.createElement('td');
+                    td.textContent = String(val);
+                    if (i > 0) td.style.color = 'var(--dim)';
+                    tr.appendChild(td);
+                });
+                tbody.appendChild(tr);
+            });
+            table.appendChild(tbody);
+            el.appendChild(table);
+        } else {
+            el.textContent = 'No agent data yet';
+            el.style.color = 'var(--dim)';
+        }
+
+        // Quality trend
+        var qel = document.getElementById('qualityTrend');
+        qel.textContent = '';
+        if (data.quality_trend && data.quality_trend.length > 0) {
+            data.quality_trend.forEach(function(d) {
+                var row = document.createElement('div');
+                row.style.cssText = 'display:flex;justify-content:space-between;padding:2px 0;font-size:12px';
+                var day = document.createElement('span');
+                day.textContent = d.day;
+                day.style.color = 'var(--dim)';
+                var score = document.createElement('span');
+                score.textContent = 'IQ: ' + (d.avg_score || '\u2014') + ' (' + d.scored_tasks + ' tasks)';
+                var color = (d.avg_score || 0) >= 0.7 ? 'var(--green)' : (d.avg_score || 0) >= 0.4 ? 'var(--orange)' : 'var(--red)';
+                score.style.color = color;
+                row.appendChild(day);
+                row.appendChild(score);
+                qel.appendChild(row);
+            });
+        } else {
+            qel.textContent = 'No scored tasks yet';
+            qel.style.color = 'var(--dim)';
+        }
+    } catch(e) {
+        console.error('Evolution load error:', e);
+    }
+}
+
 async function loadAll() {
   await Promise.all([
     loadStatus(), loadCodeStats(), loadThermal(), loadTraining(),
     loadActivity(), loadSkills(), loadDiscussions(), loadModules(),
     loadReviews(), loadKnowledge(), loadRAG(), loadTimeline(),
     loadDataStats(), loadAlerts(), loadAgentActivity(), loadCostTracker(),
+    loadEvolution(),
   ]);
   document.getElementById('lastUpdate').textContent = 'Updated: ' + new Date().toLocaleTimeString();
 }
@@ -723,7 +805,7 @@ setInterval(async () => {
     loadThermal(), loadTraining(), loadActivity(), loadSkills(),
     loadModules(), loadReviews(), loadKnowledge(), loadRAG(),
     loadTimeline(), loadDataStats(), loadCodeStats(), loadAlerts(),
-    loadAgentActivity(), loadCostTracker(),
+    loadAgentActivity(), loadCostTracker(), loadEvolution(),
   ]);
 }, 30000);
 </script>

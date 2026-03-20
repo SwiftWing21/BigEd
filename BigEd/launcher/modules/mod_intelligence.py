@@ -46,7 +46,7 @@ class Module:
 
     def __init__(self, app):
         self._app = app
-        self._prompt_queue = []
+        self._prompt_queue = []  # list of {"prompt": str, "skill": str}
         self._queue_running = False
         self._queue_loop_count = 0
         self._queue_max_loops = 1
@@ -154,6 +154,18 @@ class Module:
                       fg_color=ACCENT, hover_color=ACCENT_H,
                       command=self._add_prompt).grid(row=0, column=1, padx=2)
 
+        # Skill type selector
+        ctk.CTkLabel(input_row, text="Skill:", font=FONT_SM, text_color=DIM).grid(row=0, column=2, padx=(8, 2))
+        self._queue_skill_var = ctk.StringVar(value="summarize")
+        skill_menu = ctk.CTkOptionMenu(
+            input_row, variable=self._queue_skill_var,
+            values=["summarize", "code_review", "web_search", "code_quality",
+                    "security_audit", "analyze_results", "benchmark", "research_loop"],
+            font=FONT_SM, width=120, height=28,
+            fg_color=BG3,
+        )
+        skill_menu.grid(row=0, column=3, padx=2)
+
         # Queue list
         self._queue_frame = ctk.CTkFrame(card, fg_color=BG3, corner_radius=4)
         self._queue_frame.pack(fill="x", padx=12, pady=4)
@@ -188,7 +200,7 @@ class Module:
         text = self._prompt_entry.get().strip()
         if not text:
             return
-        self._prompt_queue.append(text)
+        self._prompt_queue.append({"prompt": text, "skill": self._queue_skill_var.get()})
         self._prompt_entry.delete(0, "end")
         self._refresh_queue_display()
 
@@ -199,12 +211,14 @@ class Module:
             ctk.CTkLabel(self._queue_frame, text="Queue empty",
                          font=FONT_SM, text_color=DIM).pack(padx=8, pady=8)
             return
-        for i, prompt in enumerate(self._prompt_queue):
+        for i, item in enumerate(self._prompt_queue):
             row = ctk.CTkFrame(self._queue_frame, fg_color="transparent")
             row.pack(fill="x", padx=4, pady=1)
             ctk.CTkLabel(row, text=f"{i+1}.", font=FONT_XS, text_color=DIM,
                          width=20).pack(side="left")
-            ctk.CTkLabel(row, text=prompt[:80], font=FONT_SM, text_color=TEXT,
+            ctk.CTkLabel(row, text=f"[{item['skill']}]", font=FONT_XS, text_color=GOLD,
+                         width=80).pack(side="left")
+            ctk.CTkLabel(row, text=item['prompt'][:60], font=FONT_SM, text_color=TEXT,
                          anchor="w").pack(side="left", fill="x", expand=True)
             ctk.CTkButton(row, text="x", width=20, height=20, font=FONT_XS,
                           fg_color=BG, hover_color="#5a2020",
@@ -249,11 +263,11 @@ class Module:
         while self._queue_running:
             if not self._prompt_queue:
                 break
-            prompt = self._prompt_queue[idx % len(self._prompt_queue)]
+            item = self._prompt_queue[idx % len(self._prompt_queue)]
             # Dispatch as a task
             try:
-                db.post_task("summarize", json.dumps({"prompt": prompt}))
-                status = f"Loop {self._queue_loop_count+1}, prompt {idx+1}/{len(self._prompt_queue)}"
+                db.post_task(item['skill'], json.dumps({"prompt": item['prompt']}))
+                status = f"Loop {self._queue_loop_count+1}, [{item['skill']}] {idx+1}/{len(self._prompt_queue)}"
                 try:
                     self._queue_status.configure(text=status)
                 except Exception:

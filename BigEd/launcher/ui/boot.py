@@ -151,16 +151,32 @@ def _save_boot_timing(stage: str, duration: float, model: str = ""):
     except Exception:
         pass
 
+def _get_fleet_toml_boot_config() -> dict:
+    """Read [boot] section from fleet.toml. Returns empty dict on failure."""
+    try:
+        import tomllib
+        toml_path = Path(__file__).resolve().parent.parent.parent.parent / "fleet" / "fleet.toml"
+        with open(toml_path, "rb") as f:
+            cfg = tomllib.load(f)
+        return cfg.get("boot", {})
+    except Exception:
+        return {}
+
+
 def _get_adaptive_timeout(stage: str, model: str = "", default: float = 40) -> float:
     """Get timeout for a boot stage based on history.
 
-    First boot or model change: use generous default (120s).
+    First boot or model change: use generous default from fleet.toml
+    [boot] model_load_timeout (default 300s).
     Subsequent boots: avg + 60s headroom (minimum 30s).
     """
+    boot_cfg = _get_fleet_toml_boot_config()
+    configured_default = boot_cfg.get("model_load_timeout", 300)
+
     history = _load_boot_history()
     key = f"{stage}:{model}" if model else stage
     if key not in history or not history[key].get("times"):
-        return 120  # first boot — very generous
+        return configured_default  # first boot — use configured timeout
     avg = history[key]["avg"]
     return max(30, avg + 60)  # avg + 60s headroom, minimum 30s
 

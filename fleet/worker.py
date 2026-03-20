@@ -593,6 +593,24 @@ def main():
                                 log.info(f"Task {task['id']} Tier2 score: {t2_score:.3f} → blended: {blended:.3f}")
                         except Exception:
                             pass  # scoring must never block task processing
+                        # HITL notification: if evolved skill scored higher than deployed
+                        try:
+                            if task['type'] in ('skill_evolve', 'skill_test') and intel_score is not None and intel_score > 0.7:
+                                db.post_message(
+                                    from_agent=role,
+                                    to_agent="operator",
+                                    body_json=json.dumps({
+                                        "type": "skill_draft_ready",
+                                        "skill": task['type'],
+                                        "score": intel_score,
+                                        "task_id": task['id'],
+                                        "message": f"High-quality skill draft ready (IQ: {intel_score:.2f}). Review in knowledge/code_drafts/",
+                                    }),
+                                    channel="fleet",
+                                )
+                                log.info(f"HITL notification: skill draft scored {intel_score:.2f}")
+                        except Exception:
+                            pass  # HITL notification must never block task processing
                 else:
                     db.complete_task(task['id'], json.dumps(result))
                     log.info(f"Task {task['id']} done")
@@ -613,6 +631,24 @@ def main():
                             log.info(f"Task {task['id']} Tier2 score: {t2_score:.3f} → blended: {blended:.3f}")
                     except Exception:
                         pass  # scoring must never block task processing
+                    # HITL notification: if evolved skill scored higher than deployed
+                    try:
+                        if task['type'] in ('skill_evolve', 'skill_test') and intel_score is not None and intel_score > 0.7:
+                            db.post_message(
+                                from_agent=role,
+                                to_agent="operator",
+                                body_json=json.dumps({
+                                    "type": "skill_draft_ready",
+                                    "skill": task['type'],
+                                    "score": intel_score,
+                                    "task_id": task['id'],
+                                    "message": f"High-quality skill draft ready (IQ: {intel_score:.2f}). Review in knowledge/code_drafts/",
+                                }),
+                                channel="fleet",
+                            )
+                            log.info(f"HITL notification: skill draft scored {intel_score:.2f}")
+                    except Exception:
+                        pass  # HITL notification must never block task processing
                 # CT-4: Post-execution budget check
                 try:
                     from skills._models import check_budget

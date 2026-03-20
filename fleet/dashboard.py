@@ -108,6 +108,19 @@ def _log_api_attribution(response):
     return response
 
 
+@app.after_request
+def _add_security_headers(response):
+    """Add Content-Security-Policy and other security headers to all responses."""
+    response.headers['Content-Security-Policy'] = (
+        "default-src 'self'; "
+        "script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; "
+        "style-src 'self' 'unsafe-inline'; "
+        "img-src 'self' data:; "
+        "connect-src 'self'"
+    )
+    return response
+
+
 # ── DB helpers ───────────────────────────────────────────────────────────────
 
 def get_conn():
@@ -235,8 +248,32 @@ def _alert_monitor():
                     except Exception:
                         pass
 
-        except Exception:
-            pass
+            # Check for high-scoring skill drafts pending review
+            try:
+                drafts = query("""
+                    SELECT t.id, t.type, t.intelligence_score, t.assigned_to
+                    FROM tasks t
+                    WHERE t.type IN ('skill_evolve', 'evolution_coordinator')
+                    AND t.status = 'DONE'
+                    AND t.intelligence_score > 0.7
+                    AND t.created_at >= datetime('now', '-24 hours')
+                    AND t.id NOT IN (
+                        SELECT CAST(json_extract(body_json, '$.task_id') AS INTEGER)
+                        FROM messages WHERE json_extract(body_json, '$.type') = 'draft_reviewed'
+                    )
+                    LIMIT 3
+                """)
+                if drafts:
+                    _add_alert("info", f"{len(drafts)} high-quality skill draft(s) ready for review", "evolution")
+            except Exception:
+                pass
+
+        except Exception as e:
+            _alert_failure_count = getattr(_alert_monitor, '_failures', 0) + 1
+            _alert_monitor._failures = _alert_failure_count
+            if _alert_failure_count <= 3:
+                import logging
+                logging.warning(f"Alert monitor error: {e}")
 
         time.sleep(30)  # Check every 30s
 
@@ -1106,6 +1143,55 @@ def api_usage_regression():
         })
     except Exception as e:
         return jsonify({"error": _safe_error(e)}), 500
+
+
+# ── Evolution Leaderboard & Quality Metrics ───────────────────────────────────
+
+@app.route("/api/evolution")
+def api_evolution():
+    """Evolution leaderboard — skill improvement rates and agent contributions."""
+    try:
+        conn = get_conn()
+        # Top evolved skills (most improved)
+        skills = conn.execute("""
+            SELECT type as skill, COUNT(*) as evolutions,
+                   SUM(CASE WHEN status='DONE' THEN 1 ELSE 0 END) as successful
+            FROM tasks
+            WHERE type IN ('skill_evolve', 'evolution_coordinator', 'skill_test')
+            AND created_at >= datetime('now', '-30 days')
+            GROUP BY type ORDER BY evolutions DESC
+        """).fetchall()
+
+        # Agent contributions
+        agents = conn.execute("""
+            SELECT assigned_to as agent, COUNT(*) as tasks,
+                   SUM(CASE WHEN status='DONE' THEN 1 ELSE 0 END) as done,
+                   ROUND(AVG(intelligence_score), 3) as avg_iq
+            FROM tasks
+            WHERE created_at >= datetime('now', '-7 days')
+            AND assigned_to IS NOT NULL
+            GROUP BY assigned_to ORDER BY tasks DESC
+        """).fetchall()
+
+        # Quality scores trend
+        quality = conn.execute("""
+            SELECT DATE(created_at) as day,
+                   ROUND(AVG(intelligence_score), 3) as avg_score,
+                   COUNT(*) as scored_tasks
+            FROM tasks
+            WHERE intelligence_score IS NOT NULL
+            AND created_at >= datetime('now', '-14 days')
+            GROUP BY DATE(created_at) ORDER BY day
+        """).fetchall()
+
+        conn.close()
+        return jsonify({
+            "skills": [dict(r) for r in skills],
+            "agents": [dict(r) for r in agents],
+            "quality_trend": [dict(r) for r in quality],
+        })
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 
 # ── Agent Cards ───────────────────────────────────────────────────────────────

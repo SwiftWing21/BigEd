@@ -69,6 +69,13 @@ SCALE_DOWN_IDLE_SECS = 300    # 5 min idle before scale-down
 # Max dynamic instances per base role (e.g. coder_4, researcher_2)
 MAX_DYNAMIC_PER_ROLE = 4
 
+# ── Auto-triggered pipeline intervals ────────────────────────────────────────
+_last_research_trigger = 0
+_last_evolution_trigger = 0
+_last_results_mtime = 0
+RESEARCH_INTERVAL = 86400    # 24 hours
+EVOLUTION_INTERVAL = 604800  # 7 days
+
 
 def _build_roles(config):
     """Expand BASE_ROLES, replacing 'coder' with coder_1..coder_N and filtering disabled agents."""
@@ -888,10 +895,8 @@ def main():
     last_model_recommend = 0
     MODEL_RECOMMEND_INTERVAL = 6 * 3600  # every 6 hours
     # v0.23 S3: Auto-Intelligence — periodic evolution + research dispatch
-    last_auto_evolution = 0
-    AUTO_EVOLUTION_INTERVAL = 3600  # dispatch evolution_coordinator every 1 hour
-    last_auto_research = 0
-    AUTO_RESEARCH_INTERVAL = 7200  # dispatch research_loop every 2 hours
+    # Intervals defined at module level: RESEARCH_INTERVAL (24h), EVOLUTION_INTERVAL (7d)
+    global _last_research_trigger, _last_evolution_trigger, _last_results_mtime
 
     while True:
         now = time.time()
@@ -1142,38 +1147,78 @@ def main():
             except Exception as e:
                 log.warning(f"Watchdog error: {e}")
 
-        # v0.23 S3: Auto-Intelligence — periodic evolution pipeline dispatch
-        if now - last_auto_evolution >= AUTO_EVOLUTION_INTERVAL:
-            last_auto_evolution = now
+        # Auto-trigger research cycle (daily)
+        if now - _last_research_trigger > RESEARCH_INTERVAL:
             try:
-                evo_skill_path = FLEET_DIR / "skills" / "evolution_coordinator.py"
-                if evo_skill_path.exists():
-                    # Check if any agent is idle before dispatching
-                    with db.get_conn() as _conn:
-                        idle_agents = _conn.execute(
-                            "SELECT COUNT(*) as cnt FROM agents WHERE status='IDLE' "
-                            "AND (julianday('now') - julianday(last_heartbeat)) * 86400 < 60"
-                        ).fetchone()
-                    if idle_agents and idle_agents["cnt"] > 0:
-                        db.post_task("evolution_coordinator",
-                                     json.dumps({"trigger": "supervisor_periodic"}),
-                                     priority=2)
-                        log.info("Auto-intelligence: dispatched evolution_coordinator pipeline")
+                import sqlite3
+                db_path = Path(__file__).parent / "fleet.db"
+                conn = sqlite3.connect(str(db_path), timeout=5)
+                try:
+                    # Only trigger if no research tasks already pending
+                    pending_research = conn.execute(
+                        "SELECT COUNT(*) FROM tasks WHERE type='research_loop' AND status='PENDING'"
+                    ).fetchone()[0]
+                    if pending_research == 0:
+                        conn.execute(
+                            "INSERT INTO tasks (type, status, priority, payload_json, created_at) "
+                            "VALUES ('research_loop', 'PENDING', 3, ?, datetime('now'))",
+                            (json.dumps({"action": "detect_gaps"}),)
+                        )
+                        conn.commit()
+                        log.info("Auto-triggered daily research cycle")
+                finally:
+                    conn.close()
+                _last_research_trigger = now
             except Exception as e:
-                log.debug(f"Auto-evolution dispatch error: {e}")
+                log.debug(f"Research trigger failed: {e}")
 
-        # v0.23 S3: Auto-Intelligence — periodic research cycle dispatch
-        if now - last_auto_research >= AUTO_RESEARCH_INTERVAL:
-            last_auto_research = now
+        # Auto-trigger evolution sweep (weekly)
+        if now - _last_evolution_trigger > EVOLUTION_INTERVAL:
             try:
-                research_skill_path = FLEET_DIR / "skills" / "research_loop.py"
-                if research_skill_path.exists():
-                    db.post_task("research_loop",
-                                 json.dumps({"trigger": "supervisor_periodic"}),
-                                 priority=2)
-                    log.info("Auto-intelligence: dispatched research_loop cycle")
+                import sqlite3
+                db_path = Path(__file__).parent / "fleet.db"
+                conn = sqlite3.connect(str(db_path), timeout=5)
+                try:
+                    pending_evo = conn.execute(
+                        "SELECT COUNT(*) FROM tasks WHERE type='evolution_coordinator' AND status='PENDING'"
+                    ).fetchone()[0]
+                    if pending_evo == 0:
+                        conn.execute(
+                            "INSERT INTO tasks (type, status, priority, payload_json, created_at) "
+                            "VALUES ('evolution_coordinator', 'PENDING', 2, ?, datetime('now'))",
+                            (json.dumps({"action": "evolve_bottom_10"}),)
+                        )
+                        conn.commit()
+                        log.info("Auto-triggered weekly evolution sweep")
+                finally:
+                    conn.close()
+                _last_evolution_trigger = now
             except Exception as e:
-                log.debug(f"Auto-research dispatch error: {e}")
+                log.debug(f"Evolution trigger failed: {e}")
+
+        # Auto-trigger ml_bridge import (watch autoresearch/results.tsv)
+        results_tsv = Path(__file__).parent.parent / "autoresearch" / "results.tsv"
+        if results_tsv.exists():
+            mtime = results_tsv.stat().st_mtime
+            if mtime > _last_results_mtime and _last_results_mtime > 0:
+                # New results detected
+                try:
+                    import sqlite3
+                    db_path = Path(__file__).parent / "fleet.db"
+                    conn = sqlite3.connect(str(db_path), timeout=5)
+                    try:
+                        conn.execute(
+                            "INSERT INTO tasks (type, status, priority, payload_json, created_at) "
+                            "VALUES ('ml_bridge', 'PENDING', 4, ?, datetime('now'))",
+                            (json.dumps({"action": "import_results"}),)
+                        )
+                        conn.commit()
+                        log.info("Auto-triggered ml_bridge import (new results.tsv entries)")
+                    finally:
+                        conn.close()
+                except Exception:
+                    pass
+            _last_results_mtime = mtime
 
         # Periodic model recommendation — HITL upgrade suggestions (every 6h)
         if now - last_model_recommend >= MODEL_RECOMMEND_INTERVAL:

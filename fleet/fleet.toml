@@ -255,3 +255,7 @@ knowledge = true
 
 [backup.safety]
 verify_integrity = true
+
+# v0.050.03b: Configurable boot timeouts — used by adaptive timeout in boot.py
+[boot]
+model_load_timeout = 300         # first-boot default timeout (seconds) for model loading
