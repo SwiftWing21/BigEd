@@ -145,7 +145,8 @@ def start_ollama(gpu=False):
     try:
         ollama_proc = subprocess.Popen(
             [ollama_exe, "serve"], env=env,
-            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0),
         )
         time.sleep(3)
     except FileNotFoundError:
@@ -187,6 +188,7 @@ def start_discord_bot(config):
     discord_proc = subprocess.Popen(
         [PYTHON, str(FLEET_DIR / "discord_bot.py")],
         cwd=str(FLEET_DIR),
+        creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0),
     )
 
 
@@ -213,6 +215,7 @@ def start_openclaw(config):
         ["openclaw", "gateway", "--port", str(port)],
         cwd=str(FLEET_DIR),
         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+        creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0),
     )
 
 
@@ -240,6 +243,7 @@ def start_dashboard(config):
     dashboard_proc = subprocess.Popen(
         [PYTHON, str(FLEET_DIR / "dashboard.py"), "--port", str(port), "--host", host],
         cwd=str(FLEET_DIR),
+        creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0),
     )
 
 
