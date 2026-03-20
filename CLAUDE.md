@@ -149,6 +149,7 @@ If `CLAUDE.USER.md` is missing or fields are blank, the operator should:
 - **MCP** (`fleet/mcp_manager.py`): MCP server registry — reads `.mcp.json`, probes servers, skill routing
 - **System** (`fleet/system_info.py`): unified hardware detection — `detect_system()`, `get_memory()`, `get_worker_limits()`, `generate_user_md()`
 - **GPU** (`fleet/gpu.py`): vendor-agnostic GPU backend — NVIDIA/AMD/Intel/Null, used by system_info + hw_supervisor
+- **Dependencies** (`fleet/dependency_check.py`): pre-flight checker — `check_all()`, `summary()`, CLI with `--json`. Categories: core, hardware, data, optional, mcp
 
 ## Fleet
 - Dual-supervisor: `supervisor.py` + Dr. Ders (`hw_supervisor.py`) (native Windows)
