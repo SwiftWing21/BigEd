@@ -559,6 +559,19 @@ Partially completed in v0.51.00b (24e21d4). Dr. Ders respawn, startup perf, disa
 - [ ] Weight adjustment UI for skill complexity routing
 - [ ] Evaluation routine live display (show Tier 1/2 scores as they happen)
 
+### 0.051.04b — GitHub Public Presence Update [PLANNED]
+
+**Goal:** Update GitHub repo description, README, and metadata to reflect current enterprise capabilities.
+
+- [ ] GitHub repo description: enterprise-ready AI agent fleet with SOC 2 compliance, multi-machine model control, all-OS support
+- [ ] README.md refresh: current architecture, feature list, screenshots, quick start
+- [ ] Credit: link to Karpathy's autoresearch repo (https://github.com/karpathy/build-nanogpt) for training pipeline inspiration
+- [ ] Feature highlights: auto-installs dependencies, air-gap mode, HITL governance, 74+ skills
+- [ ] Compliance section: SOC 2 alignment, DLP, RBAC, audit logging, encryption at rest
+- [ ] Multi-machine: fleet federation, Dr. Ders hardware monitoring, cross-platform (Win/Linux/macOS)
+- [ ] Badges: build status, Python version, license, platform support
+- [ ] Topics/tags: ai-agents, fleet-management, ollama, claude, gemini, local-ai, enterprise
+
 ### 0.052.00b — Claude Manual Mode Integration (Enterprise) [PLANNED]
 
 **Goal:** ToS-compliant hybrid system — unattended API automation (Lane 2) + human-guided Claude Code sessions (Lane 1). No lane crossing. Spec: `docs/specs/claude-manual-mode-integration.md`
