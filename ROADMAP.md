@@ -559,7 +559,27 @@ Partially completed in v0.51.00b (24e21d4). Dr. Ders respawn, startup perf, disa
 - [ ] Weight adjustment UI for skill complexity routing
 - [ ] Evaluation routine live display (show Tier 1/2 scores as they happen)
 
-### 0.051.04b — GitHub Public Presence Update [PLANNED]
+### 0.051.04b — Autoresearch Pipeline Integration [PLANNED]
+
+**Goal:** Wire disconnected research/training pipelines into closed feedback loops.
+
+**Auto-bridges (currently manual):**
+- [ ] Auto-trigger `research_cycle` workflow daily (gap detection → web search → summarize → index)
+- [ ] Auto-trigger `skill_evolution_pipeline` weekly (evolve bottom 10% performing skills)
+- [ ] `ml_bridge` auto-import when new `autoresearch/results.tsv` entries detected
+- [ ] Dataset synthesize outputs → autoresearch data pipeline (JSONL → training)
+
+**Dashboard visibility:**
+- [ ] Evolution leaderboard panel (skill improvement rates, agent contributions)
+- [ ] Quality metrics panel (code_quality scores, benchmark results over time)
+- [ ] HITL notification when skill draft scores higher than deployed version
+
+**Screenshot skill:**
+- [x] `fleet/skills/screenshot.py` — capture full/window/region, UX test suite
+- [ ] Automated UX test suite: capture launcher + dashboard + Fleet tab on each release
+- [ ] Screenshot diff tool: compare before/after for visual regression
+
+### 0.051.05b — GitHub Public Presence Update [PLANNED]
 
 **Goal:** Update GitHub repo description, README, and metadata to reflect current enterprise capabilities.
 
