@@ -8,7 +8,47 @@ remain at the top level.
 import os
 import time
 import threading
+import queue
 from abc import ABC, abstractmethod
+
+# ── Async usage logging (non-blocking, batched) ──────────────────────────────
+
+_usage_queue = queue.Queue()
+_usage_thread_started = False
+
+def _start_usage_logger():
+    global _usage_thread_started
+    if _usage_thread_started:
+        return
+    _usage_thread_started = True
+    def _flush_loop():
+        while True:
+            batch = []
+            try:
+                # Collect up to 10 entries or wait 2 seconds
+                item = _usage_queue.get(timeout=2)
+                batch.append(item)
+                while len(batch) < 10:
+                    try:
+                        batch.append(_usage_queue.get_nowait())
+                    except queue.Empty:
+                        break
+            except queue.Empty:
+                continue
+            # Flush batch to DB
+            for entry in batch:
+                try:
+                    import db
+                    db.log_usage(**entry)
+                except Exception:
+                    pass
+    t = threading.Thread(target=_flush_loop, daemon=True)
+    t.start()
+
+def async_log_usage(**kwargs):
+    """Non-blocking usage logging. Batches writes every 2s."""
+    _start_usage_logger()
+    _usage_queue.put(kwargs)
 
 # Circuit breaker state per provider
 _circuit_state = {}  # provider -> {"failures": int, "last_failure": float, "open_until": float}
@@ -350,11 +390,10 @@ def _call_claude(system: str, user: str, models: dict, max_tokens: int, cache_sy
                 system=system_param,
                 messages=[{"role": "user", "content": user}],
             )
-            # CT-1: Capture usage
+            # CT-1: Capture usage (async — off hot path)
             try:
-                import db
                 model_id = models.get("complex", "claude-sonnet-4-6")
-                db.log_usage(
+                async_log_usage(
                     skill=skill_name, model=model_id,
                     input_tokens=resp.usage.input_tokens,
                     output_tokens=resp.usage.output_tokens,
@@ -402,12 +441,11 @@ def _call_gemini(system: str, user: str, models: dict, max_tokens: int,
             if finish_reason == 3:
                 raise RuntimeError(f"Gemini safety block on skill={skill_name} — content policy triggered")
 
-    # Track Gemini usage (best-effort)
+    # Track Gemini usage (async — off hot path)
     try:
         usage = resp.usage_metadata
         if usage:
-            import db
-            db.log_usage(
+            async_log_usage(
                 skill=skill_name,
                 model=model_name,
                 input_tokens=getattr(usage, "prompt_token_count", 0) or 0,
@@ -503,10 +541,9 @@ def _call_local(system: str, user: str, models: dict, max_tokens: int,
     eval_duration_ms = eval_duration / 1e6 if eval_duration else None
     prompt_duration_ms = prompt_eval_duration / 1e6 if prompt_eval_duration else None
 
-    # Log usage with speed metrics
+    # Log usage with speed metrics (async — off hot path)
     try:
-        import db
-        db.log_usage(
+        async_log_usage(
             skill=skill_name, model=model,
             input_tokens=prompt_eval_count,
             output_tokens=eval_count,

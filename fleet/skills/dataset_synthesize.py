@@ -224,6 +224,15 @@ def run(payload: dict, config: dict) -> str:
         for entry in entries:
             f.write(json.dumps(entry) + "\n")
 
+    # Optional: copy training data to autoresearch pipeline
+    autoresearch_dir = FLEET_DIR.parent / "autoresearch" / "data"
+    copied_to_autoresearch = False
+    if autoresearch_dir.exists():
+        import shutil
+        shutil.copy2(output_path, autoresearch_dir / output_path.name)
+        print(f"[dataset_synthesize] Copied training data to autoresearch: {output_path.name}", file=sys.stderr)
+        copied_to_autoresearch = True
+
     return json.dumps({
         "status": "ok",
         "format": format_type,
@@ -231,4 +240,5 @@ def run(payload: dict, config: dict) -> str:
         "gemini_excluded": gemini_excluded,
         "output": str(output_path),
         "topic": topic,
+        "copied_to_autoresearch": copied_to_autoresearch,
     })

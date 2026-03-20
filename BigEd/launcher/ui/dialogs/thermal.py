@@ -42,6 +42,7 @@ class ThermalDialog(ctk.CTkToplevel):
         super().__init__(parent)
         self.title("BigEd CC — GPU Power & Thermal")
         self.geometry("580x480")
+        self.resizable(False, False)
         self.configure(fg_color=BG)
         self.grab_set()
 

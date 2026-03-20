@@ -191,6 +191,9 @@ def init_db():
         conn.execute("CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_tasks_assigned ON tasks(assigned_to, status)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_tasks_parent ON tasks(parent_id)")
+        # DAG promotion: index for dependency lookups and status+type queries
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_tasks_depends ON tasks(depends_on) WHERE depends_on IS NOT NULL")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_tasks_status_type ON tasks(status, type)")
 
 
 def update_intelligence_score(task_id, score):

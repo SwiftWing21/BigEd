@@ -1,102 +1,83 @@
 # BigEd CC
 
-**Autonomous AI agent fleet orchestration for local-first compute.**
+> One-click local AI fleet deployment. No terminal required.
 
-<!-- Badges -->
+BigEd CC eliminates manual CLI setup for local AI. Deploy Ollama models and a 74-skill agent fleet with one click. Use OAuth Manual Mode (Claude Code / Gemini) with pre-loaded context from agent requests, or let the fleet work autonomously via API.
+
+**All platforms. Enterprise-ready. SOC 2 aligned.**
+
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
-<!-- ![CI](https://img.shields.io/github/actions/workflow/status/SwiftWing21/BigEd-CC/ci.yml?branch=main) -->
-<!-- ![Version](https://img.shields.io/badge/alpha-0.25-orange) -->
 
----
+## Features
 
-## What is BigEd CC?
-
-BigEd CC (BigEd Command Center) is an autonomous AI agent fleet platform that
-orchestrates 74 specialized skills across local and cloud model backends. It
-uses a dual-supervisor architecture with swarm intelligence to run unattended
-workloads -- research, code review, security audits, ML training, and more --
-on consumer-grade hardware. The system supports Ollama, llama.cpp, and
-llamafile for local inference, with automatic failover to Claude and Gemini
-APIs when needed.
-
-## Key Features
-
-- **74 Skills** -- code review, security audit, research, flashcards, dataset synthesis, marathon ML sessions, and dozens more
-- **Fleet Orchestration** -- dual-supervisor system (`supervisor.py` + Dr. Ders) manages process lifecycle, model health, VRAM scaling, and worker respawn
-- **Swarm Intelligence** -- three tiers of autonomous behavior: evolution, research, and specialization
-- **Human-in-the-Loop Review** -- skill drafts are never auto-deployed; all outputs go through review before promotion
-- **Multi-Backend Models** -- local inference via Ollama/llama.cpp/llamafile, with HA fallback to Claude and Gemini APIs (circuit breaker, automatic failover)
-- **Security** -- OWASP B+ rating, 26 security controls, SQLCipher-encrypted database, TLS, RBAC, GDPR B compliance
-- **Cross-Platform** -- Windows, Linux, and macOS support
-- **Offline / Air-Gap Mode** -- full local operation without internet; air-gap mode disables dashboard, secrets, and external APIs
-- **Marathon ML Sessions** -- long-running training pipelines with progress tracking and resource-aware scheduling
+- **One-Click Setup** — Auto-installs Python, Ollama, models, and dependencies
+- **74+ AI Skills** — Code review, security audit, web research, ML training, and more
+- **Dynamic Agent Scaling** — 4 core agents + demand-based scaling (up to 16)
+- **Multi-Model Support** — Ollama (local), Claude, Gemini, MiniMax M2.5
+- **Manual Mode** — OAuth integration for Claude Code and Gemini sessions
+- **Dr. Ders** — Hardware supervisor with thermal management and model tier scaling
+- **Fleet Dashboard** — Real-time web UI at localhost:5555
+- **Auto-Save Backup** — Configurable periodic snapshots with integrity verification
+- **Cost Intelligence** — Per-call token tracking, budget enforcement, optimization recommendations
+- **Enterprise Ready** — RBAC, DLP, audit logging, file access control, air-gap mode
 
 ## Quick Start
 
-```bash
-# 1. Clone the repository
-git clone https://github.com/SwiftWing21/BigEd-CC.git
-cd BigEd-CC
-
-# 2. Install dependencies
-pip install -r BigEd/launcher/requirements.txt
-# or, if using uv:
-uv sync
-
-# 3. Install and start Ollama, then pull a model
-ollama pull qwen3:8b
-
-# 4. Launch BigEd CC
-python BigEd/launcher/launcher.py
+### Windows
+```
+Download Setup.exe from Releases → Run → Follow wizard
 ```
 
-The launcher GUI will start the fleet supervisor, boot workers, and open the
-dashboard automatically.
+### From Source (All Platforms)
+```bash
+git clone https://github.com/SwiftWing21/BigEd.git
+cd BigEd
+python fleet/dependency_check.py          # pre-flight check
+python fleet/smoke_test.py --fast         # verify 22/22 tests
+python BigEd/launcher/launcher.py         # launch GUI
+```
 
 ## Architecture
 
 ```
-BigEd-CC/
-  fleet/          Workers, skills, supervisor, dashboard, fleet.db
-  BigEd/          Launcher GUI, compliance docs, build tooling
-  autoresearch/   ML training pipeline and dataset tools
+BigEd CC
+├── BigEd/launcher/     — GUI launcher (customtkinter)
+│   ├── ui/             — Boot sequence, settings, consoles, dialogs
+│   ├── modules/        — Intelligence, Ingestion, Outputs (pluggable)
+│   └── fonts/          — Custom pixel fonts
+├── fleet/              — 74-skill AI worker fleet
+│   ├── supervisor.py   — Process lifecycle + dynamic scaling
+│   ├── hw_supervisor.py — Dr. Ders (thermal + model management)
+│   ├── dashboard.py    — Web dashboard (localhost:5555)
+│   ├── worker.py       — Generic task executor
+│   ├── skills/         — 74 registered skills
+│   └── knowledge/      — Agent-generated artifacts
+├── autoresearch/       — ML training pipeline (inspired by Karpathy)
+├── scripts/            — Setup scripts (Windows/Linux/macOS)
+└── docs/specs/         — Enterprise integration specs
 ```
 
-- **Fleet** -- 74 registered skills dispatched to workers by a dual-supervisor system. Workers communicate via SQLite task queue and SSE bridge.
-- **Launcher** -- Tkinter GUI that manages fleet boot, configuration, and dev-mode controls.
-- **Autoresearch** -- Dataset synthesis, model fine-tuning, and evaluation pipelines.
+## Model Support
 
-For deeper architecture details, see [FRAMEWORK_BLUEPRINT.md](FRAMEWORK_BLUEPRINT.md)
-and [OPERATIONS.md](OPERATIONS.md).
+| Provider | Models | Auth | Cost |
+|----------|--------|------|------|
+| **Ollama (Local)** | qwen3:8b, 4b, 1.7b, 0.6b | None | Free |
+| **Claude** | Haiku, Sonnet, Opus | API key or OAuth | Per-token |
+| **Gemini** | Flash, Pro | API key or OAuth | Per-token |
+| **MiniMax** | M2.5 | API key | Per-token |
 
-## Hardware Requirements
+## Enterprise
 
-| Tier | RAM | GPU | Notes |
-|------|-----|-----|-------|
-| **Minimum** | 8 GB | Any (or CPU-only) | Use smaller models (`qwen3:4b`, `qwen3:0.6b`); reduced worker count |
-| **Recommended** | 32 GB | RTX 3080 Ti (12 GB VRAM) | Full fleet with `qwen3:8b`; 10+ concurrent workers |
+- **Compliance Tiers**: Basic → Standard → Enterprise (SOC 2 aligned)
+- **RBAC**: Admin / Operator / Viewer roles
+- **File Access Control**: Per-zone read/read_write/full permissions
+- **DLP**: Secret detection, base64 scanning, output scrubbing
+- **Audit Trail**: All API calls, file access, config changes logged
+- **Air-Gap Mode**: Full offline operation with local models only
 
-BigEd CC runs on CPU-only systems with smaller models. GPU acceleration is
-recommended for production workloads and marathon ML sessions.
+## Training Pipeline
 
-## Configuration
-
-The primary configuration file is [`fleet/fleet.toml`](fleet/fleet.toml). Key
-areas include:
-
-- **Models** -- model tiers, VRAM limits, complexity routing
-- **Security** -- TLS, RBAC, SQLCipher, OWASP controls
-- **Budgets** -- per-worker token budgets and cost attribution
-- **Offline mode** -- `offline_mode` and `air_gap_mode` flags
-- **Workers** -- coder count, max workers, idle behavior
-
-## Documentation
-
-- [FRAMEWORK_BLUEPRINT.md](FRAMEWORK_BLUEPRINT.md) -- System architecture and design decisions
-- [OPERATIONS.md](OPERATIONS.md) -- Operational procedures and runbooks
-- [CROSS_PLATFORM.md](CROSS_PLATFORM.md) -- Platform-specific setup and compatibility
-- [BigEd/SECURITY_COMPLIANCE_BLUEPRINT.md](BigEd/SECURITY_COMPLIANCE_BLUEPRINT.md) -- Security controls, OWASP mapping, compliance
-- [ROADMAP.md](ROADMAP.md) -- Version scheme and milestone tracking
+Autonomous ML training loop inspired by [Karpathy's build-nanogpt](https://github.com/karpathy/build-nanogpt). Agent-edited `train.py` runs 5-minute experiments, measures val_bpb, keeps or reverts changes.
 
 ## Support
 
@@ -106,19 +87,10 @@ If BigEd CC is useful to you, consider supporting development:
 
 ## Contributing
 
-Contributions are welcome. Please see [CONTRIBUTING.md](CONTRIBUTING.md) for
-guidelines on submitting issues and pull requests.
+See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
 
 ## License
 
-Licensed under the [Apache License, Version 2.0](LICENSE).
+Apache 2.0 — see [LICENSE](LICENSE).
 
 Copyright 2025-2026 Michael Bachaud ([SwiftWing21](https://github.com/SwiftWing21)).
-
-## Built With
-
-Claude Opus 4.6, Claude Sonnet 4.6, Gemini Pro 3.1 > 2.5, Claude Cowork
-
-## Also Known As
-
-BigEd, BigEdgucation, Big Edge Compute Control

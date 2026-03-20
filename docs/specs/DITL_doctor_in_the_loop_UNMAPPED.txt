@@ -1,0 +1,72 @@
+UNMAPPED FEATURE — Doctor in the Loop (DITL)
+==============================================
+Confirmation hex required to activate: generate on request
+Do NOT implement unless hex value placed in version ID field.
+
+STATUS: Notated only. Not roadmapped. Not planned for any version.
+
+--- CONCEPT ---
+
+HIPAA-compliant configuration layer for healthcare environments.
+
+Core idea: Air-gap mode + HIPAA-specific compliance settings:
+- Patient data handling: all PHI encrypted at rest (SQLCipher) + in transit (TLS 1.3)
+- BAA (Business Associate Agreement) enforcement flag
+- Minimum necessary standard: agents only access data required for their task
+- Audit trail: immutable log of all PHI access (who, what, when, why)
+- Data retention policies: configurable per regulation (state + federal)
+- De-identification: automatic PHI stripping before any external API call
+- Consent tracking: per-patient consent records for AI-assisted review
+
+Network model: local network access only (no internet), folder-level ACLs via
+FileSystemGuard zones with HIPAA-specific permission sets:
+- Patient records: read-only to review agents, read-write to dictation agent
+- Chart notes: read-write to dictation + review agents
+- Billing codes: read-only to all agents
+- Lab results: read-only, time-limited access windows
+
+--- TEXT TO SPEECH / DICTATION WORKFLOW (NOTATED ONLY) ---
+
+Voice-to-text pipeline for chart/patient care note dictation:
+1. Doctor speaks → local STT (Whisper or similar) → raw transcript
+2. Transcript → formatting agent → structured clinical note (SOAP format)
+3. Structured note → 5-agent review cycle:
+   - Agent 1: Medical accuracy (terminology, dosages, contraindications)
+   - Agent 2: Completeness (required fields per note type)
+   - Agent 3: Compliance (HIPAA language, consent references)
+   - Agent 4: Billing alignment (ICD-10/CPT code suggestions)
+   - Agent 5: Adversarial review (challenge assumptions, flag risks)
+4. Minimum standard: agents must reach consensus or flag disagreements
+5. Disagreements presented to doctor as structured "argument summary"
+6. Doctor provides direct feedback → re-processing cycle
+7. Final note: doctor approves → signed, timestamped, immutable
+
+Key requirement: agents generate "recommendations of tests/procedures" with
+structured arguments. Doctor can:
+- Accept recommendation
+- Reject with reason (fed back for learning)
+- Ask for more information (triggers deeper research)
+- Provide direct feedback/context (re-processes with new info)
+- Partially accept (accept some recommendations, reject others)
+
+--- DITL AGENT INTERACTION MODEL ---
+
+Current limitation: HITL requests are binary (accept/reject).
+DITL requires: multi-turn feedback loop with context preservation.
+
+Proposed flow:
+1. Agent generates recommendation with evidence chain
+2. Doctor sees: recommendation + supporting evidence + confidence level
+3. Doctor can respond with:
+   a. "Approved" → recommendation applied
+   b. "Rejected: [reason]" → logged, agent learns from rejection
+   c. "Need more info: [specific question]" → agent researches, returns
+   d. "Modify: [feedback]" → agent re-generates with doctor's input
+   e. "Discuss: [context]" → opens multi-agent debate with doctor's input
+4. All interactions logged in immutable audit trail
+5. Final decision always the doctor's — agents advise, never decide
+
+This interaction model (c, d, e) requires the HITL response enhancement
+described below, which IS being implemented separately.
+
+--- DO NOT IMPLEMENT WITHOUT CONFIRMATION HEX ---

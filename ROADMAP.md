@@ -431,7 +431,7 @@ Completed 2026-03-20. 11 files, +194/-90 lines:
 
 ### 0.050.04b — P2 Hardening & Performance [PARTIAL]
 
-**27+ P2 bugs** — 5 key items fixed, remainder still open.
+**27+ P2 bugs** — 12 key items fixed, 4 remaining (FK constraint, VRAM threshold mismatch, config staleness, PID-based stale task recovery).
 
 **Key items:**
 - [x] N+1 query in `/api/status` — uses LEFT JOIN for current_task (dashboard.py:250-253)
@@ -439,38 +439,38 @@ Completed 2026-03-20. 11 files, +194/-90 lines:
 - [ ] Missing foreign key on tasks.parent_id — orphaned DAG chains (PRAGMA foreign_keys=ON set, but no FK constraint in CREATE TABLE)
 - [ ] VRAM threshold mismatch between fleet.toml and hw_supervisor defaults
 - [ ] Config loaded once at import — stale after fleet.toml edits (config.py:27-29)
-- [ ] DB timeout inconsistency (10s vs 2s vs 30s across layers)
+- [x] DB timeout consistency — unified to 30s timeout + 30s PRAGMA busy_timeout across all layers (db.py:115-128)
 - [x] Circuit breaker has exponential backoff — `min(60s * 2^cooldowns, 600s)` with cooldown counter (providers.py:38-52)
 - [x] FALLBACK_CHAIN actively used — `_models.py call_complex()` iterates chain with circuit breaker (skills/_models.py:124-138)
 - [x] Boot timing file already atomic — writes to `.tmp` then `replace()` (boot.py:148-150)
-- [ ] pip missing --break-system-packages for system Python (installer.py:847-861)
-- [ ] 65+ bare `except: pass` blocks across launcher hiding real errors
-- [ ] Memory leaks: _model_perf_labels, _agent_activity deques never cleaned
+- [x] pip --break-system-packages for system Python — PEP 668 check + flag (installer.py:846-855)
+- [x] Bare `except:` upgraded to `except Exception:` across launcher — 0 bare except remaining (102 `except Exception` sites)
+- [x] Memory leak fix: _model_perf_labels cleaned for stale models (launcher.py:2992-2999), _agent_activity uses bounded deque(maxlen=10)
 - [x] Alert monitor exception logging — logs first 3 failures via `logging.warning()` (dashboard.py:258-263)
 - [x] hw_state.json writes already atomic — `tempfile.mkstemp` + `os.replace` (hw_supervisor.py:205-208)
 - [x] Content-Security-Policy header on all dashboard responses — `_add_security_headers()` after_request handler (dashboard.py:111-120)
 - [ ] Stale task recovery uses time-based detection instead of PID liveness (db.py:657-677)
 
-### 0.050.05b — P3 Polish & Accessibility [PLANNED]
+### 0.050.05b — P3 Polish & Accessibility [PARTIAL]
 
-**14+ P3 items** — low priority, UX improvements.
+**14+ P3 items** — 5 verified fixed, 6 remaining.
 
-- [ ] No progress feedback during long model loads (boot.py:765-788)
-- [ ] fleet.toml path not verified before load (boot.py:160-168)
-- [ ] Ctrl+K command palette undiscoverable — no UI hint
-- [ ] OmniBox badge abbreviations unexplained (SYS/SKL/AGT)
+- [x] No progress feedback during long model loads — "this may take a few minutes" status (boot.py:306)
+- [x] fleet.toml path not verified before load — `Path.exists()` check in `_read_fleet_models` (boot.py:194)
+- [x] Ctrl+K command palette undiscoverable — "Ctrl+K  command palette" label in status bar (launcher.py:2716)
+- [x] OmniBox badge abbreviations unexplained — "SYS = System   SKL = Skill   AGT = Agent" legend (omnibox.py:81)
 - [ ] Dialog resize clipping on small screens
-- [ ] SSE client start exception silently swallowed (launcher.py:871-881)
+- [x] SSE client start exception logged to stderr — `[WARN] SSE client failed` (launcher.py:982)
 - [ ] Dashboard badge status values not validated (dashboard.html:232-235)
 - [ ] No rate limiting on expensive dashboard endpoints
 - [ ] Worker disable/enable not audit logged
-- [ ] GITHUB_REPO typo in config.py default vs fleet.toml
+- [x] ~~GITHUB_REPO typo~~ — not a bug: fleet.toml overrides config.py default correctly
 - [ ] No distributed locking for federation mode (db.py:686-711)
 
 ### 0.051.00b — Startup Performance & UX Polish [PARTIAL]
 
 **Goal:** Sub-700ms window visible, 144Hz-smooth refresh, hide dev scaffolding. Public beta polish.
-Partially completed in v0.51.00b (24e21d4). Dr. Ders respawn, startup perf, disabled agents, idle evolution backoff all done. Dashboard web perf and refresh smoothing remain.
+Partially completed in v0.51.00b (24e21d4). Dr. Ders respawn, startup perf, disabled agents, idle evolution backoff, refresh smoothing all done. Dashboard web perf, lazy tab loading, and idle evolution API key gating remain.
 
 **CRITICAL: Dr. Ders respawn — FIXED**
 - [x] Supervisor spawns hw_supervisor.py via `start_hw_supervisor()` and respawns on crash (supervisor.py:452-458, 967-970)
@@ -491,9 +491,9 @@ Partially completed in v0.51.00b (24e21d4). Dr. Ders respawn, startup perf, disa
 - [ ] Cache parse_status() for 1-2s — called 3x at startup (launcher.py:486, 870, 2714)
 
 **Refresh cycle smoothing (target: no stalls > 16ms on 144Hz):**
-- [ ] Increase HW stats interval 3s -> 5s — human eye can't perceive <100ms changes (launcher.py:3230)
-- [ ] Skip parse_status() when SSE active — redundant I/O every 4s (launcher.py:3288)
-- [ ] SSE client reads 1 byte at a time -> read 4KB chunks (sse_client.py:91)
+- [x] Increase HW stats interval 3s -> 5s — now 5000ms interval (launcher.py:3521)
+- [x] Skip parse_status() when SSE active — `_sse_active` guard, polls at 8s instead of 4s (launcher.py:3588-3593)
+- [x] SSE client reads 4KB chunks — `resp.read(4096)` (sse_client.py:91)
 - [x] Cache action cards — `_agent_rows` dict with update-only pattern instead of destroy/recreate (launcher.py:933, 3033-3040)
 
 **Idle evolution quarantine spiral:**
@@ -507,107 +507,107 @@ Partially completed in v0.51.00b (24e21d4). Dr. Ders respawn, startup perf, disa
 - [ ] Reduce 30s polling to 5min for slow-changing data (knowledge, RAG, code stats)
 - [ ] Update Chart.js data instead of destroy/recreate (dashboard.html:449, 477)
 
-### 0.051.01b — Task Pipeline Optimization [PLANNED]
+### 0.051.01b — Task Pipeline Optimization [PARTIAL]
 
-**Goal:** 30-40% throughput improvement, 15-20% API cost reduction. Addresses 10 bottlenecks from pipeline audit.
+**Goal:** 30-40% throughput improvement, 15-20% API cost reduction. 7 of 10 bottlenecks resolved.
 
 **Critical (implement first):**
-- [ ] Atomic task claiming — combine SELECT+UPDATE into single query (db.py:241-281)
+- [x] Atomic task claiming — UPDATE...WHERE(SELECT) eliminates race conditions (db.py:241-282)
 - [x] Enable prompt caching — `cache_control: ephemeral` on stable system prompts (providers.py:338)
-- [ ] Async usage logging — buffer writes, flush on timer instead of sync per-call (cost_tracking.py:16-33)
-- [ ] Adaptive polling — 100ms/500ms/2s based on queue depth + jitter (worker.py:505)
+- [ ] Async usage logging — still synchronous INSERT per call (cost_tracking.py:16-33)
+- [x] Adaptive polling — 0.1s/0.5s/2s based on recent activity + jitter (worker.py:692-698)
 
 **Medium priority:**
 - [x] Global idle evolution dedup — worker checks pending queue before creating idle task (worker.py:513-524)
-- [ ] DAG promotion index — add `idx_tasks_depends` for faster WAITING resolution (db.py:330-382)
-- [ ] API request batching — coalesce simple skills into 10-task batches (skills/_models.py)
-- [ ] Deterministic Tier 2 sampling — by task_id hash, not random (intelligence.py:105)
+- [x] DAG promotion index — `idx_tasks_depends` on tasks(depends_on) (db.py:195)
+- [x] API request batching — `call_complex_batch()` via Anthropic Message Batches API (skills/_models.py:178)
+- [ ] Deterministic Tier 2 sampling — still uses random.random(), not task_id hash (intelligence.py:105-106)
 
 **Lower priority:**
-- [ ] Cache skill staleness ranking in idle evolution (idle_evolution.py:40-113)
-- [ ] Batch-claim N tasks per poll when queue depth > threshold
+- [ ] Cache skill staleness ranking in idle evolution — no cache, queries DB each time (idle_evolution.py:40-113)
+- [ ] Batch-claim N tasks per poll when queue depth > threshold — only single claim_task() exists
 
-### 0.051.02b — Auto-Save & Backup System [PLANNED]
+### 0.051.02b — Auto-Save & Backup System [PARTIAL]
 
-**Goal:** Prevent data loss from power outage or crashes. Configurable backup frequency/depth/location.
+**Goal:** Prevent data loss from power outage or crashes. Configurable backup frequency/depth/location. 9 of 10 items done.
 
 **Implementation:**
-- [ ] `fleet/backup_manager.py` — BackupManager class with auto-save thread
-- [ ] `fleet.toml [backup]` section — enabled, interval_secs=300, depth=10, location, prune_enabled
-- [ ] Backup targets: fleet.db, rag.db, tools.db, knowledge/, fleet.toml (configurable per-target)
-- [ ] WAL checkpoint before backup — `PRAGMA wal_checkpoint(TRUNCATE)`
-- [ ] Backup manifest JSON — timestamp, file hashes, row counts, integrity check results
-- [ ] Integrity verification — `PRAGMA integrity_check` after each backup
-- [ ] Prune beyond depth — with "do not clean" toggle + disk usage warning
-- [ ] CLI: `lead_client.py backup`, `backup --list`, `backup --restore ID`
-- [ ] Supervisor integration — backup on fleet startup + on skill_deploy completion
-- [ ] Graceful shutdown saves task queue (already implemented in 0.051.00b)
+- [x] `fleet/backup_manager.py` — BackupManager class with auto-save thread (203 lines)
+- [x] `fleet.toml [backup]` section — enabled, interval_secs=1200, depth=10, location, prune_enabled, targets, safety
+- [x] Backup targets: fleet.db, rag.db, knowledge/, fleet.toml (configurable per-target via fleet.toml)
+- [x] WAL checkpoint before backup — `PRAGMA wal_checkpoint(TRUNCATE)` (backup_manager.py:121)
+- [x] Backup manifest JSON — timestamp, file hashes, integrity check results (backup_manager.py:49-82)
+- [x] Integrity verification — `PRAGMA integrity_check` after each backup (backup_manager.py:126-133)
+- [x] Prune beyond depth — with depth=0 "do not clean" toggle + disk usage warning (backup_manager.py:142-178)
+- [ ] CLI: `lead_client.py backup`, `backup --list`, `backup --restore ID` — not yet in lead_client.py
+- [x] Supervisor integration — BackupManager imported and started on fleet startup (supervisor.py:868-869)
+- [x] Graceful shutdown saves task queue — `_graceful_save_tasks()` (launcher.py:522, 1057)
 
-### 0.051.03b — Intelligence Module + Cost Dashboard [PLANNED]
+### 0.051.03b — Intelligence Module + Cost Dashboard [PARTIAL]
 
-**Goal:** System transparency tab for understanding capabilities, model settings, prompt queue, evaluation.
+**Goal:** System transparency tab for understanding capabilities, model settings, prompt queue, evaluation. 5 of 8 items done.
 
-**Implemented (needs testing):**
+**Implemented:**
 - [x] Intelligence module (mod_intelligence.py) — 5 panels: overview, model settings, prompt queue, evaluation, cost
-- [x] API Cost Tracker dashboard panel — today/7d/30d spend, provider breakdown, projections
-- [x] billing_ocr skill — OCR screenshots of Claude/Gemini billing dashboards
-- [x] token_optimizer skill — audit usage patterns, recommend cost optimizations
+- [x] API Cost Tracker dashboard panel — today/7d/30d spend, provider breakdown, projections (dashboard.html:200-202, 641)
+- [x] billing_ocr skill — OCR screenshots of Claude/Gemini billing dashboards (fleet/skills/billing_ocr.py)
+- [x] token_optimizer skill — audit usage patterns, recommend cost optimizations (fleet/skills/token_optimizer.py)
+- [x] Prompt queue dispatches to configurable skill type — dropdown selector with StringVar (mod_intelligence.py:159-203)
 
 **Remaining:**
-- [ ] Prompt queue dispatches to configurable skill type (not just summarize)
-- [ ] Model settings panel with live edit capability (write back to fleet.toml)
-- [ ] Weight adjustment UI for skill complexity routing
-- [ ] Evaluation routine live display (show Tier 1/2 scores as they happen)
+- [ ] Model settings panel with live edit capability (write back to fleet.toml) — read-only display, no write-back
+- [ ] Weight adjustment UI for skill complexity routing — no UI for adjusting SKILL_COMPLEXITY weights
+- [ ] Evaluation routine live display (show Tier 1/2 scores as they happen) — scores stored but not streamed to UI
 
-### 0.051.04b — Autoresearch Pipeline Integration [PLANNED]
+### 0.051.04b — Autoresearch Pipeline Integration [PARTIAL]
 
-**Goal:** Wire disconnected research/training pipelines into closed feedback loops.
+**Goal:** Wire disconnected research/training pipelines into closed feedback loops. 7 of 10 items done.
 
-**Auto-bridges (currently manual):**
-- [ ] Auto-trigger `research_cycle` workflow daily (gap detection → web search → summarize → index)
-- [ ] Auto-trigger `skill_evolution_pipeline` weekly (evolve bottom 10% performing skills)
-- [ ] `ml_bridge` auto-import when new `autoresearch/results.tsv` entries detected
-- [ ] Dataset synthesize outputs → autoresearch data pipeline (JSONL → training)
+**Auto-bridges:**
+- [x] Auto-trigger `research_cycle` workflow daily — `RESEARCH_INTERVAL = 86400` in supervisor (supervisor.py:76, 1151)
+- [x] Auto-trigger `skill_evolution_pipeline` weekly — `EVOLUTION_INTERVAL = 604800` in supervisor (supervisor.py:77, 1176)
+- [x] `ml_bridge` auto-import when new `autoresearch/results.tsv` entries detected — mtime watch (supervisor.py:1199-1214)
+- [ ] Dataset synthesize outputs → autoresearch data pipeline (JSONL → training) — no auto-routing from dataset_synthesize to training
 
 **Dashboard visibility:**
-- [ ] Evolution leaderboard panel (skill improvement rates, agent contributions)
-- [ ] Quality metrics panel (code_quality scores, benchmark results over time)
-- [ ] HITL notification when skill draft scores higher than deployed version
+- [x] Evolution leaderboard panel — skill improvement rates, agent contributions (dashboard.html:179-180)
+- [x] Quality metrics panel — code_quality scores, benchmark results over time (dashboard.html:185)
+- [x] HITL notification when skill draft scores higher than deployed version — `skill_draft_ready` (worker.py:603-649)
 
 **Screenshot skill:**
 - [x] `fleet/skills/screenshot.py` — capture full/window/region, UX test suite
-- [ ] Automated UX test suite: capture launcher + dashboard + Fleet tab on each release
-- [ ] Screenshot diff tool: compare before/after for visual regression
+- [ ] Automated UX test suite: capture launcher + dashboard + Fleet tab on each release — skill exists but no automated per-release trigger
+- [ ] Screenshot diff tool: compare before/after for visual regression — not implemented
 
-### 0.051.05b — GitHub Public Presence Update [PLANNED]
+### 0.051.05b — GitHub Public Presence Update [PARTIAL]
 
-**Goal:** Update GitHub repo description, README, and metadata to reflect BigEd CC's value proposition.
+**Goal:** Update GitHub repo description, README, and metadata to reflect BigEd CC's value proposition. README done, GitHub metadata pending.
 
 **Blurb:**
 > BigEd CC eliminates manual CLI setup for local AI. One-click deployment of Ollama models + agent fleet.
 > Use OAuth Manual Mode (Claude Code / Gemini) with pre-loaded .md context from agent requests — or
 > let the fleet work autonomously via API. No terminal required. All platforms. Enterprise-ready.
 
-- [ ] GitHub repo description: one-click local AI fleet, OAuth Manual Mode, auto-install, all-OS
-- [ ] README.md: value proposition blurb, architecture diagram, screenshots, quick start
-- [ ] Credit: link to Karpathy's autoresearch repo (https://github.com/karpathy/build-nanogpt) for training pipeline
-- [ ] Feature highlights: auto-installs deps, air-gap mode, HITL governance, 74+ skills, Manual Mode
-- [ ] Compliance section: SOC 2 alignment, DLP, RBAC, audit logging, encryption at rest
-- [ ] Multi-machine: fleet federation, Dr. Ders hardware monitoring, cross-platform (Win/Linux/macOS)
-- [ ] Badges: build status, Python version, license, platform support
-- [ ] Topics/tags: ai-agents, fleet-management, ollama, claude, gemini, minimax, local-ai, enterprise
-- [ ] Screenshot gallery: launcher, dashboard, Fleet Comm, Intelligence tab, Manual Mode
+- [ ] GitHub repo description: one-click local AI fleet, OAuth Manual Mode, auto-install, all-OS (requires GitHub web UI)
+- [x] README.md: value proposition blurb, architecture tree, quick start (README.md — 80+ lines)
+- [x] Credit: link to Karpathy's build-nanogpt for training pipeline (README.md:80)
+- [x] Feature highlights: auto-installs deps, air-gap mode, HITL governance, 74+ skills, Manual Mode (README.md:12-23)
+- [x] Compliance section: SOC 2 alignment, DLP, RBAC, audit logging (README.md:71-74)
+- [ ] Multi-machine: fleet federation details, cross-platform specifics — not in README
+- [x] Badges: license badge present (README.md:9)
+- [ ] Topics/tags: ai-agents, fleet-management, etc. (requires GitHub web UI)
+- [ ] Screenshot gallery: no screenshots in README or repo
 
-### 0.051.07b — File Access Control + SOC 2 Folder Permissions [PLANNED]
+### 0.051.07b — File Access Control + SOC 2 Folder Permissions [PARTIAL]
 
 **Goal:** Enterprise-grade folder access control for SOC 2 compliance. Agents and modules get explicit read/read-write/full access per directory. IDE embed uses sandboxed workspace.
 
 **File access control system:**
-- [ ] `fleet.toml [filesystem]` section: define access zones with permission levels
-- [ ] Permission levels: `read` (view only), `read_write` (create/edit), `full` (create/edit/delete/execute)
-- [ ] Per-agent access: agents inherit zone permissions, can be restricted further
-- [ ] Per-module access: modules declare required paths, validated at load time
-- [ ] Audit logging: all file operations logged with agent/module, path, action, timestamp
+- [x] `fleet.toml [filesystem]` section: zones, overrides, enforce, deny_by_default, log_all_access (fleet.toml:259-269)
+- [x] Permission levels: `read` (view only), `read_write` (create/edit), `full` (create/edit/delete/execute) — ACCESS_LEVELS dict (filesystem_guard.py:21)
+- [x] Per-agent access: agents identified in `check_access()`, inherit zone permissions (filesystem_guard.py:50-91)
+- [x] Per-module/skill access: skill overrides from `[filesystem.overrides]` (filesystem_guard.py:69-74)
+- [x] Audit logging: file-based SOC 2 audit trail + logger (filesystem_guard.py:93-116)
 
 **Proposed fleet.toml config:**
 ```toml
@@ -635,11 +635,11 @@ log_all_access = true    # SOC 2 audit trail for file operations
 ```
 
 **Implementation:**
-- [ ] `fleet/filesystem_guard.py` — FileSystemGuard class: validates path access before any file I/O
-- [ ] Wrap skill file operations through guard (code_write, ingest, deploy_skill, rag_index)
+- [x] `fleet/filesystem_guard.py` — FileSystemGuard class with check_access(), log_access(), zone matching (150+ lines)
+- [ ] Wrap skill file operations through guard (code_write, ingest, deploy_skill, rag_index) — guard exists but not yet wired into skills
 - [ ] Integration with existing sandbox (Docker) for code execution
 - [ ] Dashboard panel: file access audit log viewer
-- [ ] Enterprise mode: deny_by_default=true, log_all_access=true, enforce=true
+- [x] Enterprise mode: `is_enterprise()` returns True when enforce + deny_by_default both active (filesystem_guard.py:122-124)
 
 **IDE embed (SOC 2 compliant):**
 - [ ] code-server (VS Code in browser) running on localhost with workspace restriction
@@ -648,38 +648,38 @@ log_all_access = true    # SOC 2 audit trail for file operations
 - [ ] Claude Code / Gemini sessions launch in scoped workspace
 - [ ] File changes in workspace auto-detected, staged for review
 
-### 0.051.08b — Manual Chat + Fleet Comm UX Redesign [PLANNED]
+### 0.051.08b — Manual Chat + Fleet Comm UX Redesign [PARTIAL]
 
 **Goal:** Integrate Manual Mode (OAuth) chat directly into Fleet Comm tab. Unified UX for agent HITL requests + human-initiated Manual Chat sessions.
 
 **Fleet Comm tab redesign:**
-- [ ] Split Fleet Comm into two sections: "Agent Requests" (top) + "Manual Chat" (bottom)
-- [ ] Agent HITL requests: collapsed to 1-line summary when not hovered, expand on hover
-- [ ] Arrow button to pin/hold request list open (sticky mode)
-- [ ] Dynamic scrollbar when > 3-5 HITL requests pending
-- [ ] Scroll area auto-sizes based on pending request count
+- [x] Split Fleet Comm into two sections: "Agent Requests" (top) + "Manual Chat" (bottom) (launcher.py:2289-2386)
+- [x] Agent HITL requests: collapsed to 1-line summary, expand on hover (launcher.py:2303-2311, 2392-2396)
+- [x] Pin button to hold request list open (sticky mode) — pin icon with gold highlight (launcher.py:2314-2318, 2398-2402)
+- [x] Dynamic scrollbar when requests pending — CTkScrollableFrame (launcher.py:2337-2338)
+- [x] Scroll area auto-sizes based on pending request count — `min(300, max(60, n * 60))` (launcher.py:2415-2416)
 - [ ] Request count badge on Fleet Comm tab icon
 
 **Manual Chat integration:**
-- [ ] "Manual Chat" panel below agent requests in Fleet Comm
-- [ ] Model selector dropdown: Claude Code (OAuth), Gemini (OAuth), Local Ollama
-- [ ] For OAuth models: "Open in Claude Code" / "Open in Gemini" button (writes .md context, launches VS Code/browser)
-- [ ] For Local models: inline chat interface (direct Ollama /api/generate)
-- [ ] Pre-load context from selected agent request (click request → context fills Manual Chat)
+- [x] "Manual Chat" panel below agent requests in Fleet Comm (launcher.py:2344-2386)
+- [x] Model selector dropdown: Claude Code (OAuth), Gemini (OAuth), Local (Ollama) (launcher.py:2355-2361)
+- [x] For OAuth models: "Open in Claude Code" (VS Code launch) / "Open in Gemini" (AI Studio) (launcher.py:2467-2485)
+- [x] For Local models: inline chat interface (direct Ollama /api/generate, threaded) (launcher.py:2440-2458)
+- [ ] Pre-load context from selected agent request (click request fills Manual Chat)
 - [ ] Context preview: shows what .md files will be written before launch
 
 **Agent request → Manual Chat flow:**
 - [ ] Click agent HITL request → populates Manual Chat with full context
-- [ ] User selects OAuth model → "Open Session" writes task-briefing.md + opens IDE
-- [ ] User selects Local model → inline response rendered in Fleet Comm
+- [x] User selects OAuth model → writes task-briefing.md + opens IDE/browser (launcher.py:2467-2485)
+- [x] User selects Local model → inline response rendered in Fleet Comm (launcher.py:2440-2465)
 - [ ] Response feeds back to agent (closes HITL loop)
 
 **Dynamic behavior:**
-- [ ] HITL requests stack when local/API models running unattended
+- [x] HITL requests stack when local/API models running unattended — refresh_comm() loads all WAITING_HUMAN (launcher.py:2489)
 - [ ] Badge counter updates in real-time via SSE
-- [ ] Collapsed view: "3 agent requests pending ▸" (single line)
-- [ ] Hover/click expands: shows each request with agent name, question preview, age
-- [ ] Pinned view: arrow button holds list expanded until unpinned
+- [x] Collapsed view: "N agent requests ▸" (single line, orange/green coloring) (launcher.py:2407-2411)
+- [x] Hover/click expands: shows each request with dynamic scroll area (launcher.py:2310-2311, 2404-2417)
+- [x] Pinned view: pin button holds list expanded until unpinned (launcher.py:2398-2402)
 
 ### 0.051.06b — MiniMax M2.5 Provider Integration [PLANNED]
 
@@ -722,8 +722,8 @@ log_all_access = true    # SOC 2 audit trail for file operations
 - [ ] Token/cost tracking per audit run (integrates with existing CT-1/2/3/4)
 
 **Phase 2: VS Code / Claude Code launch integration**
-- [ ] "Open in Claude Code" button in UI (writes context files, launches VS Code)
-- [ ] Auto-generate: task-briefing.md, audit-results.md from API audit output
+- [x] "Open in Claude Code" button in UI — basic implementation in Manual Chat (writes task-briefing.md, launches VS Code) (launcher.py:2467-2480)
+- [ ] Auto-generate: task-briefing.md, audit-results.md from API audit output — only basic briefing, no audit-results
 - [ ] CLAUDE.md + .claude/rules/ templates for training file compliance
 - [ ] .claude/skills/ training-review workflow template
 - [ ] Cross-platform VS Code launch (macOS/Windows/Linux)

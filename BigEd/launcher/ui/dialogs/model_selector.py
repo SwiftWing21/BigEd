@@ -63,6 +63,7 @@ class ModelSelectorDialog(ctk.CTkToplevel):
         super().__init__(parent)
         self.title("BigEd CC — LLM Model Selector")
         self.geometry("700x520")
+        self.resizable(False, False)
         self.configure(fg_color=BG)
         self.grab_set()
 

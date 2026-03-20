@@ -256,6 +256,26 @@ knowledge = true
 [backup.safety]
 verify_integrity = true
 
+# v0.051.07b: FileSystem Access Guard — SOC 2 compliant file access control
+[filesystem]
+enforce = false              # true = validate all file access (forced true on enterprise)
+deny_by_default = false      # true = reject access to paths not in zones
+log_all_access = false       # true = SOC 2 audit trail for file operations
+
+[filesystem.zones]
+knowledge = {path = "fleet/knowledge", access = "read_write"}
+code_drafts = {path = "fleet/knowledge/code_drafts", access = "read_write"}
+skills = {path = "fleet/skills", access = "read"}
+config = {path = "fleet/fleet.toml", access = "read"}
+backups = {path = "~/BigEd-backups", access = "full"}
+workspace = {path = "fleet/knowledge/code_writes/workspace", access = "full"}
+screenshots = {path = "fleet/knowledge/screenshots", access = "read_write"}
+
+[filesystem.overrides]
+deploy_skill = {zones = ["skills"], access = "full"}
+code_write = {zones = ["workspace", "code_drafts"], access = "full"}
+ingest = {zones = ["knowledge"], access = "read_write"}
+
 # v0.050.03b: Configurable boot timeouts — used by adaptive timeout in boot.py
 [boot]
 model_load_timeout = 300         # first-boot default timeout (seconds) for model loading

@@ -1463,6 +1463,7 @@ def worker_disable(name):
         if name not in disabled:
             disabled.append(name)
             _update_fleet_toml_disabled(disabled)
+            _add_alert("info", f"Agent '{name}' disabled by operator", "fleet")
         return jsonify({"status": "disabled", "agent": name, "disabled_agents": disabled})
     except Exception as e:
         return jsonify({"error": str(e)}), 500
@@ -1477,6 +1478,7 @@ def worker_enable(name):
         if name in disabled:
             disabled.remove(name)
             _update_fleet_toml_disabled(disabled)
+            _add_alert("info", f"Agent '{name}' enabled by operator", "fleet")
         return jsonify({"status": "enabled", "agent": name, "disabled_agents": disabled})
     except Exception as e:
         return jsonify({"error": str(e)}), 500

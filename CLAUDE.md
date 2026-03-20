@@ -1,4 +1,4 @@
-# BigEd CC — Beta (0.42.00b)
+# BigEd CC — Beta (0.051.04b)
 
 ## Quick Start
 ```bash
@@ -42,16 +42,20 @@ End every roadmap with an Audit Coverage Check section.
 - Roadmap: `ROADMAP.md`
 
 ## Structure
-- `fleet/` — 74-skill AI worker fleet (Ollama + Claude/Gemini)
+- `fleet/` — 77-skill AI worker fleet (Ollama + Claude/Gemini)
 - `BigEd/` — launcher GUI + compliance docs
 - `autoresearch/` — ML training pipeline
+- `fleet/backup_manager.py` — auto-save backup system
+- `fleet/cpu_temp.py` — cross-platform CPU temperature
+- `fleet/filesystem_guard.py` — SOC 2 file access control
+- `docs/specs/` — enterprise integration specs
 
 ## Fleet Status
-- Skills: 74 | Dashboard: 45+ endpoints | Smoke: 22/22 | Audit: S
-- All TECH_DEBT resolved | S1-S5 complete | Security: OWASP B+, 26 controls, GDPR B
-- v0.31.00: MCP server integration UX, system_info, dependency_check
-- v0.40.10a: skills update (8 skills), cowork refactor integration, settings split
-- v0.42.00b: beta release — dual-mode updater, GitHub Releases pipeline, installer overhaul
+- Skills: 77 (added billing_ocr, token_optimizer, screenshot) | Dashboard: 50+ endpoints | Smoke: 22/22
+- Dynamic agent scaling: 4 core + demand-based | Dr. Ders: event-driven wake-up timer
+- Security: P0-P2 hardened (XSS, SQL injection, thread safety, zombie cleanup)
+- Backup: auto-save every 20min, configurable depth/location
+- v0.050.00b-0.051.04b: installer overhaul, model recovery, startup perf, autoresearch integration
 
 ## Gotchas
 - **Ollama PATH**: not on Git Bash PATH on Windows — supervisor auto-finds via `%LOCALAPPDATA%\Programs\Ollama`
@@ -60,6 +64,9 @@ End every roadmap with an Audit Coverage Check section.
 - **DB access**: always through `data_access.py` (FleetDB) or `rag.py` — never raw sqlite3
 - **Skills never auto-deploy**: drafts go to `knowledge/code_drafts/`, operator reviews before promotion
 - **No `uv run` on Windows**: use native `python` — `uv run` is WSL only
+- **Idle evolution flood**: skill_test removed from idle rotation — was 96% of tasks
+- **Zombie Ollama**: close handler unloads all models (keep_alive=0) — Ollama stays running
+- **Dr. Ders offline**: supervisor now spawns + respawns hw_supervisor.py
 
 ## Local Machine — CLAUDE.USER.md
 
@@ -114,9 +121,11 @@ python -c "import sys; sys.path.insert(0,'fleet'); from system_info import gener
 - **Haiku** (`claude-haiku-4-5`): Sub-agents, high-volume routing
 - **Sonnet** (`claude-sonnet-4-6`): Default — code review, analysis, generation
 - **Opus** (`claude-opus-4-6`): Architecture, multi-step reasoning, planning
-- **Local Ollama**: qwen3:4b (fast, ~89 tok/s) | qwen3:8b (~45 tok/s)
+- **Local Ollama**: qwen3:8b (default GPU) | qwen3:4b (conductor CPU) | qwen3:0.6b (failsafe CPU)
   - Routing: `providers.py LOCAL_COMPLEXITY_ROUTING` + `fleet.toml [models.tiers]`
+- **MiniMax** (planned): M2.5 as mid-tier provider
 
 ## Dev Mode
 - `DEV_MODE = True` during alpha (shows BUILD, debug, idle controls)
 - Production: `BIGED_PRODUCTION=1` env var or `build.py --production`
+- Beta: `0.XXX.YYb` format, `b` suffix until 1.000.00 graduation

@@ -2188,6 +2188,7 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
         win = ctk.CTkToplevel(self)
         win.title("Agent Instance")
         win.geometry("380x280")
+        win.resizable(False, False)
         win.configure(fg_color=BG)
         win.grab_set()
 
@@ -2285,51 +2286,211 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
 
     # ── Fleet Comm tab ─────────────────────────────────────────────────────
     def _build_tab_comm(self, parent):
-        """Human-in-the-Loop: agent questions, security advisories, message feed."""
-        parent.grid_rowconfigure(1, weight=1)
+        """Fleet Comm: collapsible Agent Requests + Manual Chat panel."""
+        parent.grid_rowconfigure(1, weight=0)   # request list (dynamic)
+        parent.grid_rowconfigure(2, weight=1)   # manual chat (expands)
         parent.grid_columnconfigure(0, weight=1)
 
         # Persist provider selection across refreshes (default: Local — always available)
         if not hasattr(self, "_comm_provider_var"):
             self._comm_provider_var = ctk.StringVar(value="⚡ Local")
 
-        # Header
-        hdr = ctk.CTkFrame(parent, fg_color=BG2, height=32, corner_radius=4)
-        hdr.grid(row=0, column=0, sticky="ew", padx=4, pady=(4, 0))
-        hdr.grid_propagate(False)
-        ctk.CTkLabel(hdr, text="FLEET COMM", font=("RuneScape Bold 12", 10, "bold"),
-                     text_color=GOLD).pack(side="left", padx=8, pady=4)
-        self._comm_status = ctk.CTkLabel(hdr, text="", font=FONT_SM, text_color=DIM)
-        self._comm_status.pack(side="left", padx=8)
-        ctk.CTkButton(hdr, text="Refresh", width=60, height=24, font=FONT_SM,
+        # ── Agent Requests header (collapsible) ──────────────────────────
+        req_header = ctk.CTkFrame(parent, fg_color=BG2, height=36, corner_radius=0)
+        req_header.grid(row=0, column=0, sticky="ew")
+        req_header.grid_propagate(False)
+
+        self._comm_requests_collapsed = True
+        self._comm_pin = False
+
+        self._comm_req_label = ctk.CTkLabel(
+            req_header, text="\u25b8 0 agent requests", font=FONT_BOLD,
+            text_color=DIM, anchor="w", cursor="hand2")
+        self._comm_req_label.pack(side="left", padx=12)
+        self._comm_req_label.bind("<Button-1>", lambda e: self._toggle_comm_requests())
+        self._comm_req_label.bind("<Enter>", lambda e: self._expand_comm_requests())
+
+        # Pin button
+        self._comm_pin_btn = ctk.CTkButton(
+            req_header, text="\U0001f4cc", width=28, height=28, font=FONT_SM,
+            fg_color="transparent", hover_color=BG3,
+            command=self._toggle_comm_pin)
+        self._comm_pin_btn.pack(side="right", padx=4)
+
+        # Refresh button
+        ctk.CTkButton(req_header, text="Refresh", width=60, height=24, font=FONT_SM,
                       fg_color=BG3, hover_color=BG,
-                      command=self._refresh_comm).pack(side="right", padx=8, pady=4)
-        # AI draft provider toggle — right side of header, left of Refresh
+                      command=self._refresh_comm).pack(side="right", padx=4, pady=4)
+
+        # AI draft provider toggle
         ctk.CTkSegmentedButton(
-            hdr,
-            values=["🤖 Claude", "✦ Gemini", "⚡ Local"],
+            req_header,
+            values=["\U0001f916 Claude", "\u2726 Gemini", "\u26a1 Local"],
             variable=self._comm_provider_var,
             font=FONT_SM,
             selected_color=ACCENT, selected_hover_color=ACCENT_H,
             unselected_color=BG3, unselected_hover_color=BG2,
             width=220, height=24,
         ).pack(side="right", padx=(0, 4), pady=4)
-        ctk.CTkLabel(hdr, text="AI draft:", font=("RuneScape Plain 11", 9),
-                     text_color=DIM).pack(side="right", padx=(8, 2), pady=4)
 
-        # Scrollable content area
-        self._comm_scroll = ctk.CTkScrollableFrame(parent, fg_color=BG, corner_radius=0)
-        self._comm_scroll.grid(row=1, column=0, sticky="nsew", padx=4, pady=4)
-        self._comm_scroll.grid_columnconfigure(0, weight=1)
+        # ── Request list (scrollable, starts collapsed) ──────────────────
+        self._comm_request_frame = ctk.CTkScrollableFrame(
+            parent, fg_color=BG, corner_radius=0, height=0)
+        self._comm_request_frame.grid_columnconfigure(0, weight=1)
+        # Start collapsed — do not grid yet
+        self._comm_request_cards = []
+        self._comm_cards = []  # track rendered card widgets (compat)
 
-        self._comm_cards = []  # track rendered card widgets
+        # ── Manual Chat section ──────────────────────────────────────────
+        chat_frame = ctk.CTkFrame(parent, fg_color=BG, corner_radius=0)
+        chat_frame.grid(row=2, column=0, sticky="nsew")
+
+        # Chat header with model selector
+        chat_hdr = ctk.CTkFrame(chat_frame, fg_color=BG2, height=36, corner_radius=0)
+        chat_hdr.pack(fill="x")
+        chat_hdr.pack_propagate(False)
+        ctk.CTkLabel(chat_hdr, text="Manual Chat", font=FONT_BOLD,
+                     text_color=GOLD, anchor="w").pack(side="left", padx=12)
+
+        self._manual_model_var = ctk.StringVar(value="Local (Ollama)")
+        ctk.CTkOptionMenu(
+            chat_hdr, variable=self._manual_model_var,
+            values=["Local (Ollama)", "Claude Code (OAuth)", "Gemini (OAuth)"],
+            font=FONT_SM, width=160, height=26,
+            fg_color=BG3,
+        ).pack(side="right", padx=8, pady=5)
+
+        # Chat display
+        self._manual_chat_display = ctk.CTkTextbox(
+            chat_frame, font=("Consolas", 11), fg_color=BG2,
+            text_color=TEXT, corner_radius=4)
+        self._manual_chat_display.pack(fill="both", expand=True, padx=8, pady=4)
+        self._manual_chat_display.configure(state="disabled")
+
+        # Input row
+        input_row = ctk.CTkFrame(chat_frame, fg_color="transparent")
+        input_row.pack(fill="x", padx=8, pady=(0, 8))
+        input_row.grid_columnconfigure(0, weight=1)
+
+        self._manual_chat_entry = ctk.CTkEntry(
+            input_row, font=FONT, fg_color=BG2,
+            placeholder_text="Type a message or select an agent request above...")
+        self._manual_chat_entry.grid(row=0, column=0, sticky="ew", padx=(0, 4))
+        self._manual_chat_entry.bind("<Return>", lambda e: self._send_manual_chat())
+
+        ctk.CTkButton(
+            input_row, text="Send", width=70, height=30, font=FONT_SM,
+            fg_color=ACCENT, hover_color=ACCENT_H,
+            command=self._send_manual_chat,
+        ).grid(row=0, column=1)
+
+    def _toggle_comm_requests(self):
+        """Toggle collapsible Agent Requests panel."""
+        self._comm_requests_collapsed = not self._comm_requests_collapsed
+        self._update_comm_request_view()
+
+    def _expand_comm_requests(self):
+        """Expand Agent Requests on hover (unless pinned open)."""
+        if self._comm_requests_collapsed and not self._comm_pin:
+            self._comm_requests_collapsed = False
+            self._update_comm_request_view()
+
+    def _toggle_comm_pin(self):
+        """Pin/unpin the Agent Requests panel open."""
+        self._comm_pin = not self._comm_pin
+        color = GOLD if self._comm_pin else DIM
+        self._comm_pin_btn.configure(text_color=color)
+
+    def _update_comm_request_view(self):
+        """Show/hide the collapsible request list and update arrow."""
+        n = len(self._comm_request_cards)
+        arrow = "\u25b8" if self._comm_requests_collapsed else "\u25be"
+        color = ORANGE if n else GREEN
+        self._comm_req_label.configure(
+            text=f"{arrow} {n} agent request{'s' if n != 1 else ''}",
+            text_color=color)
+        if self._comm_requests_collapsed:
+            self._comm_request_frame.grid_remove()
+        else:
+            h = min(300, max(60, n * 60))
+            self._comm_request_frame.configure(height=h)
+            self._comm_request_frame.grid(row=1, column=0, sticky="ew")
+
+    # ── Manual Chat helpers ──────────────────────────────────────────────
+
+    def _send_manual_chat(self):
+        """Send a message from the Manual Chat input."""
+        text = self._manual_chat_entry.get().strip()
+        if not text:
+            return
+        model = self._manual_model_var.get()
+        self._manual_chat_entry.delete(0, "end")
+
+        # Append user message to display
+        self._manual_chat_display.configure(state="normal")
+        self._manual_chat_display.insert("end", f"\nYou: {text}\n")
+        self._manual_chat_display.configure(state="disabled")
+        self._manual_chat_display.see("end")
+
+        if "OAuth" in model:
+            self._launch_oauth_session(model, text)
+        else:
+            threading.Thread(target=self._local_chat, args=(text,), daemon=True).start()
+
+    def _local_chat(self, prompt):
+        """Send prompt to local Ollama and stream response."""
+        try:
+            mcfg = load_model_cfg()
+            host = mcfg.get("ollama_host", "http://localhost:11434")
+            model = mcfg.get("local", "qwen3:8b")
+            body = json.dumps({
+                "model": model, "prompt": prompt,
+                "stream": False, "options": {"num_gpu": 99},
+            }).encode()
+            req = urllib.request.Request(
+                f"{host}/api/generate", data=body, method="POST",
+                headers={"Content-Type": "application/json"})
+            with urllib.request.urlopen(req, timeout=120) as r:
+                resp = json.loads(r.read())
+            response = resp.get("response", "No response")
+            self._safe_after(0, lambda r=response: self._append_chat_response(r))
+        except Exception as e:
+            self._safe_after(0, lambda e=str(e): self._append_chat_response(f"Error: {e}"))
+
+    def _append_chat_response(self, text):
+        """Append an assistant response to the Manual Chat display."""
+        self._manual_chat_display.configure(state="normal")
+        self._manual_chat_display.insert("end", f"\nAssistant: {text}\n")
+        self._manual_chat_display.configure(state="disabled")
+        self._manual_chat_display.see("end")
+
+    def _launch_oauth_session(self, model, context):
+        """Write context files and launch OAuth session (Claude Code or Gemini)."""
+        # Write task-briefing.md
+        briefing = FLEET_DIR / "task-briefing.md"
+        briefing.write_text(f"# Manual Chat Session\n\n{context}\n", encoding="utf-8")
+
+        if "Claude" in model:
+            try:
+                subprocess.Popen(
+                    ["code", str(FLEET_DIR.parent)],
+                    creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+                self._append_chat_response("Opened VS Code with Claude Code context.")
+            except Exception as e:
+                self._append_chat_response(f"Could not open VS Code: {e}")
+        elif "Gemini" in model:
+            import webbrowser
+            webbrowser.open("https://aistudio.google.com")
+            self._append_chat_response(
+                "Opened Google AI Studio. Context written to task-briefing.md.")
+
+    # ── Fleet Comm — data refresh ────────────────────────────────────────
 
     def _refresh_comm(self):
         """Load WAITING_HUMAN tasks and security advisories into Fleet Comm."""
         def _fetch():
             from data_access import FleetDB
             waiting = FleetDB.waiting_human_tasks(FLEET_DIR / "fleet.db")
-            # Mark tasks without questions
             for item in waiting:
                 if not item.get("question"):
                     item["question"] = "(no question)"
@@ -2341,7 +2502,6 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
                             text = f.read_text(encoding="utf-8", errors="replace")
                             lines = text.splitlines()
                             title = lines[0].strip("# ").strip() if lines else f.name
-                            # Extract severity counts and analysis summary
                             summary = ""
                             counts = ""
                             in_analysis = False
@@ -2351,12 +2511,10 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
                                 elif ln.startswith("## Analysis"):
                                     in_analysis = True
                                 elif in_analysis and ln.strip() and not ln.startswith("##"):
-                                    # Take first non-empty line of analysis
                                     summary = ln.strip("- ").strip()[:120]
                                     in_analysis = False
                                 elif ln.startswith("## ") and in_analysis:
                                     in_analysis = False
-                            # Also try JSON companion for structured counts
                             json_path = f.with_suffix(".json")
                             if not counts and json_path.exists():
                                 try:
@@ -2384,8 +2542,9 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
 
         def _render(data):
             waiting, advisories = data
-            # Clear existing cards
-            cards = list(self._comm_cards)
+            # Clear existing request cards
+            cards = list(self._comm_request_cards)
+            self._comm_request_cards.clear()
             self._comm_cards.clear()
             for w in cards:
                 try:
@@ -2394,51 +2553,38 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
                     pass
 
             total = len(waiting) + len(advisories)
-            if total:
-                self._comm_status.configure(
-                    text=f"{total} pending", text_color=ORANGE)
-            else:
-                self._comm_status.configure(
-                    text="All clear", text_color=GREEN)
+            scroll = self._comm_request_frame
 
             if not total:
-                lbl = ctk.CTkLabel(self._comm_scroll, text="No pending communications",
-                                   font=FONT, text_color=DIM)
-                lbl.pack(pady=40)
-                self._comm_cards.append(lbl)
+                self._update_comm_request_view()
                 return
 
             # Render WAITING_HUMAN cards
             for item in waiting:
-                # Outer wrapper with orange left accent stripe
-                wrapper = ctk.CTkFrame(self._comm_scroll, fg_color=ORANGE, corner_radius=6)
+                wrapper = ctk.CTkFrame(scroll, fg_color=ORANGE, corner_radius=6)
                 wrapper.pack(fill="x", padx=4, pady=3)
+                self._comm_request_cards.append(wrapper)
                 self._comm_cards.append(wrapper)
                 card = ctk.CTkFrame(wrapper, fg_color=BG2, corner_radius=6)
                 card.pack(fill="both", expand=True, padx=(2, 0))
 
-                # Header row: title left, timestamp right
                 top = ctk.CTkFrame(card, fg_color="transparent")
                 top.pack(fill="x", padx=8, pady=(8, 0))
-                # Left side: type + agent stacked
                 hdr_left = ctk.CTkFrame(top, fg_color="transparent")
                 hdr_left.pack(side="left")
                 ctk.CTkLabel(hdr_left, text=item.get("type", "task"),
                              font=("RuneScape Bold 12", 10, "bold"), text_color=TEXT).pack(anchor="w")
                 ctk.CTkLabel(hdr_left, text=item.get("assigned_to", "?"),
                              font=("RuneScape Plain 11", 8), text_color=DIM).pack(anchor="w")
-                # Right side: relative timestamp
                 ago = self._fmt_ago(item.get("created_at"))
                 if ago:
                     ctk.CTkLabel(top, text=ago,
                                  font=("RuneScape Plain 11", 8), text_color=DIM).pack(side="right")
 
-                # Question
                 ctk.CTkLabel(card, text=item.get("question", ""),
                              font=FONT, text_color=TEXT, wraplength=600,
                              anchor="w", justify="left").pack(fill="x", padx=8, pady=(4, 0))
 
-                # Reply field + Draft + Send
                 reply_frame = ctk.CTkFrame(card, fg_color="transparent")
                 reply_frame.pack(fill="x", padx=8, pady=(4, 8))
                 reply_frame.grid_columnconfigure(0, weight=1)
@@ -2446,7 +2592,7 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
                 reply_var = ctk.StringVar()
                 entry = ctk.CTkEntry(reply_frame, textvariable=reply_var,
                                      font=FONT_SM, fg_color=BG3, border_color=ACCENT,
-                                     placeholder_text="Type your response or click ✨ to AI-draft…")
+                                     placeholder_text="Type your response or click \u2728 to AI-draft\u2026")
                 entry.grid(row=0, column=0, sticky="ew", padx=(0, 4))
 
                 tid = item["id"]
@@ -2454,9 +2600,8 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
                 agent_name = item.get("assigned_to", "agent")
                 entry.bind("<Return>", lambda e, t=tid, v=reply_var: self._send_human_response(t, v.get()))
 
-                # ✨ Draft button — filled by AI, uses selected provider
                 draft_btn = ctk.CTkButton(
-                    reply_frame, text="✨", width=32, height=28,
+                    reply_frame, text="\u2728", width=32, height=28,
                     fg_color=BG3, hover_color=BG2,
                     font=("RuneScape Plain 12", 13), text_color=GOLD,
                 )
@@ -2473,11 +2618,11 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
 
             # Render security advisories
             for adv in advisories:
-                card = ctk.CTkFrame(self._comm_scroll, fg_color="#2a1a1a", corner_radius=6)
+                card = ctk.CTkFrame(scroll, fg_color="#2a1a1a", corner_radius=6)
                 card.pack(fill="x", padx=4, pady=3)
+                self._comm_request_cards.append(card)
                 self._comm_cards.append(card)
 
-                # Title row + buttons
                 top = ctk.CTkFrame(card, fg_color="transparent")
                 top.pack(fill="x", padx=8, pady=(8, 0))
                 ctk.CTkLabel(top, text=f"\U0001f512 {adv['title']}",
@@ -2495,7 +2640,6 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
                     command=lambda p=adv["path"]: self._dismiss_advisory(p),
                 ).pack(side="right")
 
-                # Severity counts (e.g. "2 HIGH, 1 MEDIUM")
                 _counts = adv.get("counts", "")
                 if _counts:
                     _sev_colors = {"HIGH": RED, "MEDIUM": ORANGE, "LOW": DIM}
@@ -2511,13 +2655,15 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
                                      font=("Consolas", 9, "bold"), text_color=_color,
                                      ).pack(side="left", padx=(0, 8))
 
-                # Summary preview
                 _summary = adv.get("summary", "")
                 if _summary:
                     ctk.CTkLabel(card, text=_summary, font=FONT_SM,
                                  text_color=DIM, wraplength=600,
                                  anchor="w", justify="left",
                                  ).pack(fill="x", padx=12, pady=(2, 8))
+
+            # Update collapsible view after cards rendered
+            self._update_comm_request_view()
 
         # Run async
         def _bg():
@@ -3224,41 +3370,123 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
         threading.Thread(target=_bg, daemon=True).start()
 
     def _respond_to_agent(self, task_id, question):
-        """Open dialog to respond to an agent's HITL request."""
-        win = ctk.CTkToplevel(self)
-        win.title(f"Respond to Task #{task_id}")
-        win.geometry("480x260")
-        win.configure(fg_color=BG)
-        win.grab_set()
-        ctk.CTkLabel(win, text=f"Agent question (Task #{task_id}):",
-                     font=("RuneScape Bold 12", 10, "bold"), text_color=GOLD,
-                     anchor="w").pack(fill="x", padx=14, pady=(12, 4))
-        q_text = ctk.CTkTextbox(win, font=FONT_SM, fg_color=BG2,
-                                text_color=TEXT, height=80, wrap="word", corner_radius=4)
-        q_text.pack(fill="x", padx=14)
-        q_text.insert("1.0", question)
-        q_text.configure(state="disabled")
-        ctk.CTkLabel(win, text="Your response:",
-                     font=("RuneScape Bold 12", 10, "bold"), text_color=TEXT,
-                     anchor="w").pack(fill="x", padx=14, pady=(8, 4))
-        resp_entry = ctk.CTkEntry(win, font=FONT_SM, fg_color=BG3,
-                                  border_color=ACCENT, text_color=TEXT,
-                                  placeholder_text="Type your response...")
-        resp_entry.pack(fill="x", padx=14)
-        resp_entry.focus_set()
+        """Open structured response dialog for an agent's HITL request."""
+        dlg = ctk.CTkToplevel(self)
+        dlg.title(f"Agent Request #{task_id}")
+        dlg.geometry("550x480")
+        dlg.resizable(False, False)
+        dlg.configure(fg_color=BG2)
+        dlg.transient(self)
+        dlg.grab_set()
 
-        def _submit():
-            response = resp_entry.get().strip()
-            if not response:
-                return
-            win.destroy()
-            self._send_human_response(task_id, response)
-            self._refresh_action_items()
+        # Question display
+        ctk.CTkLabel(dlg, text="Agent is asking:", font=FONT_BOLD,
+                     text_color=GOLD).pack(padx=16, pady=(12, 4), anchor="w")
+        q_frame = ctk.CTkFrame(dlg, fg_color=BG3, corner_radius=4)
+        q_frame.pack(fill="x", padx=16, pady=(0, 8))
+        ctk.CTkLabel(q_frame, text=question, font=FONT_SM, text_color=TEXT,
+                     wraplength=500, justify="left", anchor="w"
+                     ).pack(padx=8, pady=8, anchor="w")
 
-        ctk.CTkButton(win, text="Submit", font=FONT_SM, height=30,
+        # Response type selector
+        ctk.CTkLabel(dlg, text="Your response:", font=FONT_BOLD,
+                     text_color=TEXT).pack(padx=16, pady=(4, 4), anchor="w")
+
+        response_type = ctk.StringVar(value="approve")
+        types_frame = ctk.CTkFrame(dlg, fg_color="transparent")
+        types_frame.pack(fill="x", padx=16)
+
+        options = [
+            ("approve", "Approve", "Accept the recommendation as-is"),
+            ("reject", "Reject", "Reject with reason (agent learns from feedback)"),
+            ("more_info", "Need More Info", "Ask agent to research further"),
+            ("feedback", "Provide Feedback", "Give context for agent to re-process"),
+            ("discuss", "Open Discussion", "Start multi-agent debate on this topic"),
+        ]
+
+        for val, label, desc in options:
+            row = ctk.CTkFrame(types_frame, fg_color="transparent")
+            row.pack(fill="x", pady=1)
+            ctk.CTkRadioButton(row, text=label, variable=response_type, value=val,
+                               font=FONT_SM, text_color=TEXT,
+                               fg_color=ACCENT, hover_color=ACCENT_H
+                               ).pack(side="left", padx=(0, 8))
+            ctk.CTkLabel(row, text=desc, font=FONT_XS, text_color=DIM
+                         ).pack(side="left")
+
+        # Response text
+        response_text = ctk.CTkTextbox(dlg, font=FONT, fg_color=BG,
+                                       height=100, corner_radius=4)
+        response_text.pack(fill="x", padx=16, pady=8)
+        response_text.insert("1.0", "")
+
+        # Buttons
+        btn_row = ctk.CTkFrame(dlg, fg_color="transparent")
+        btn_row.pack(fill="x", padx=16, pady=(0, 12))
+
+        def submit():
+            rtype = response_type.get()
+            text = response_text.get("1.0", "end").strip()
+
+            # Build structured response
+            response = json.dumps({
+                "type": rtype,
+                "text": text,
+                "timestamp": time.time(),
+            })
+
+            try:
+                from data_access import FleetDB
+                FleetDB.send_human_response(FLEET_DIR / "fleet.db", task_id, response)
+
+                # For "more_info" and "discuss" — create follow-up task
+                if rtype == "more_info":
+                    self._create_followup_task(task_id, "research_loop",
+                        f"Agent needs more information: {text}")
+                elif rtype == "discuss":
+                    self._create_followup_task(task_id, "discuss",
+                        f"Discussion requested by operator: {text}")
+
+                self._log_output(f"Response sent to task #{task_id} ({rtype})")
+            except Exception as e:
+                self._log_output(f"Response failed: {e}")
+
+            dlg.destroy()
+            self._refresh_action_items_now()
+
+        ctk.CTkButton(btn_row, text="Send Response", font=FONT_SM,
                       fg_color=ACCENT, hover_color=ACCENT_H,
-                      command=_submit).pack(padx=14, pady=(10, 14), fill="x")
-        resp_entry.bind("<Return>", lambda e: _submit())
+                      width=120, height=32, command=submit
+                      ).pack(side="right")
+        ctk.CTkButton(btn_row, text="Cancel", font=FONT_SM,
+                      fg_color=BG3, hover_color=BG,
+                      width=80, height=32, command=dlg.destroy
+                      ).pack(side="right", padx=(0, 8))
+
+    def _create_followup_task(self, parent_task_id, skill, prompt):
+        """Create a follow-up task linked to the original HITL request."""
+        try:
+            import sqlite3
+            conn = sqlite3.connect(str(FLEET_DIR / "fleet.db"), timeout=5)
+            try:
+                conn.execute(
+                    "INSERT INTO tasks (type, status, priority, payload_json, parent_id, created_at) "
+                    "VALUES (?, 'PENDING', 5, ?, ?, datetime('now'))",
+                    (skill, json.dumps({"prompt": prompt, "hitl_followup": True}), parent_task_id)
+                )
+                conn.commit()
+            finally:
+                conn.close()
+        except Exception:
+            pass
+
+    def _refresh_action_items_now(self):
+        """Immediately refresh action items and comm panel."""
+        self._refresh_action_items()
+        try:
+            self._refresh_comm()
+        except Exception:
+            pass
 
     def _view_advisory(self, path):
         """Open window showing advisory content."""
@@ -3269,6 +3497,7 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
         win = ctk.CTkToplevel(self)
         win.title(f"Advisory: {adv_path.name}")
         win.geometry("580x420")
+        win.minsize(580, 420)
         win.configure(fg_color=BG)
         win.grab_set()
         ctk.CTkLabel(win, text=adv_path.name,
