@@ -1,0 +1,91 @@
+BigEd CC — Task Lifecycle Flow
+================================
+
+[Task Created]
+    |
+    +---> Sources:
+    |       - User: lead_client.py task "prompt"
+    |       - User: Launcher task dispatch bar
+    |       - Agent: idle evolution (auto)
+    |       - System: daily research_cycle (auto)
+    |       - System: weekly evolution_coordinator (auto)
+    |       - HITL follow-up: more_info / discuss
+    |
+    +---> db.post_task(type, payload, priority)
+    |       Status: PENDING
+    |       Priority: 1-5 (5=highest)
+    |       parent_id: optional (DAG chains)
+    |
+    v
+[Task Queue]  -----> Atomic claim: UPDATE...WHERE subquery
+    |                 Affinity matching: skill type --> agent role
+    |                 Priority ordering: highest first, then oldest
+    |
+    v
+[Worker Claims Task]
+    |
+    +---> db.claim_task(agent_name, affinity_skills)
+    |       Status: PENDING --> RUNNING
+    |       assigned_to: agent name
+    |
+    +---> Input guardrails:
+    |       - DLP secret scan on payload
+    |       - PII detection
+    |       - Block if flagged
+    |
+    v
+[Skill Execution]
+    |
+    +---> Provider selection:
+    |       1. Local Ollama (default, free)
+    |       2. Claude API (cache_control: ephemeral)
+    |       3. Gemini API
+    |       4. MiniMax M2.5 (planned)
+    |
+    +---> SKILL_COMPLEXITY routing:
+    |       simple --> Haiku/qwen3:4b ($0.80/M)
+    |       medium --> Sonnet/qwen3:8b ($3.00/M)
+    |       complex --> Opus ($15.00/M)
+    |
+    +---> Prompt caching: system prompts cached (90% input reduction)
+    |
+    +---> async_log_usage() --> batched DB writes (off hot path)
+    |
+    v
+[Quality Scoring]
+    |
+    +---> Tier 1: Heuristic (every task, free)
+    |       - Output length, structure, code validity
+    |       - Score: 0.0-1.0
+    |
+    +---> Tier 2: LLM Review (10% sample)
+    |       - Second model judges quality
+    |       - Blended: 60% Tier1 + 40% Tier2
+    |
+    +---> intelligence_score saved to tasks table
+    |
+    v
+[Task Complete]
+    |
+    +---> Status: RUNNING --> DONE (or FAILED)
+    +---> Result saved to result_json
+    +---> Budget check (warn/throttle/block)
+    +---> DAG promotion: unblock WAITING children
+    |
+    +---> If skill_evolve && score > 0.7:
+    |       HITL notification: "High-quality draft ready"
+    |
+    v
+[Review Cycle] (if review.enabled)
+    |
+    +---> Adversarial review (different provider)
+    +---> Max 2 rounds
+    +---> APPROVED --> keep result
+    +---> REJECTED --> re-execute or fail
+    |
+    v
+[Knowledge Output]
+    |
+    +---> Results saved to knowledge/ directory
+    +---> RAG index updated (incremental)
+    +---> Agent IQ score updated (24h rolling avg)

@@ -250,6 +250,7 @@ Keep responses concise and action-oriented. Lead with the most important insight
         super().__init__(parent)
         self.title(self.TITLE)
         self.geometry("820x620")
+        self.resizable(False, False)
         self.configure(fg_color=BG)
         self.grab_set()
 
@@ -347,6 +348,7 @@ Keep responses concise and action-oriented. Lead with the most important insight
         win = ctk.CTkToplevel(self)
         win.title("Set API Key")
         win.geometry("480x190")
+        win.resizable(False, False)
         win.configure(fg_color=BG)
         win.grab_set()
         win.lift()

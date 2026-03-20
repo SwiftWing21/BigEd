@@ -120,6 +120,16 @@ def _get_changed_files(project_dir: Path) -> list:
 
 
 def run(payload, config):
+    try:
+        from filesystem_guard import FileSystemGuard
+        from config import load_config
+        guard = FileSystemGuard(load_config())
+        target = payload.get("project_dir", "")
+        if not guard.check_access(target, "write", skill="code_write"):
+            return {"error": f"Access denied to {target} by FileSystemGuard"}
+    except ImportError:
+        pass  # Guard not available — allow (non-enterprise)
+
     instructions = payload.get("instructions", "")
     if not instructions:
         return {"error": "No instructions provided"}

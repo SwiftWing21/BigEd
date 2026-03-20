@@ -30,6 +30,7 @@ class AgentNamesDialog(ctk.CTkToplevel):
         super().__init__(parent)
         self.title("BigEd CC — Agent Names")
         self.geometry("500x560")
+        self.resizable(False, False)
         self.configure(fg_color=BG)
         self.grab_set()
         self._parent = parent

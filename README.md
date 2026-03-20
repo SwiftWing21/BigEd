@@ -54,7 +54,8 @@ BigEd CC
 │   └── knowledge/      — Agent-generated artifacts
 ├── autoresearch/       — ML training pipeline (inspired by Karpathy)
 ├── scripts/            — Setup scripts (Windows/Linux/macOS)
-└── docs/specs/         — Enterprise integration specs
+├── docs/specs/         — Enterprise integration specs
+└── docs/flowcharts/    — System flow charts (boot, tasks, models, HITL)
 ```
 
 ## Model Support

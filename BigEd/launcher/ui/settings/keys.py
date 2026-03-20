@@ -87,6 +87,7 @@ class KeyManagerDialog(ctk.CTkToplevel):
         super().__init__(parent)
         self.title("BigEd CC — API Key Manager")
         self.geometry("780x540")
+        self.resizable(False, False)
         self.configure(fg_color=BG)
         self.grab_set()
 

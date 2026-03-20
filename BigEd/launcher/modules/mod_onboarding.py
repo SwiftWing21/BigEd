@@ -179,6 +179,7 @@ class Module:
         win = ctk.CTkToplevel(self.app)
         win.title("Add Customer")
         win.geometry("300x120")
+        win.resizable(False, False)
         win.configure(fg_color=BG)
         win.grab_set()
         ctk.CTkLabel(win, text="Customer name:", font=FONT_SM,

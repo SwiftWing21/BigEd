@@ -190,6 +190,7 @@ class Module:
         win = ctk.CTkToplevel(self.app)
         win.title("Service Account")
         win.geometry("460x520")
+        win.resizable(False, False)
         win.configure(fg_color=BG)
         win.grab_set()
 

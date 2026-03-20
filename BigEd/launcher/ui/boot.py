@@ -794,7 +794,7 @@ class BootManagerMixin:
                 self._safe_after(0, lambda m=model: self._log_output(
                     f"  No models installed — creating recovery action..."))
                 self._safe_after(0, lambda m=model: self._create_model_recovery_action(m))
-                raise Exception(f"No models installed — use recovery action to pull '{model}'")
+                return f"degraded — no models (action card created)"
 
         # Evict idle blocker models before attempting load
         # (models held in VRAM by keep_alive:"24h" with no active fleet tasks)

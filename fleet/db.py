@@ -623,6 +623,12 @@ def post_task(type_, payload_json, priority=5, assigned_to=None,
             json.loads(payload_json)
         except (json.JSONDecodeError, TypeError):
             raise ValueError(f"payload_json must be valid JSON, got: {repr(payload_json)[:100]}")
+    # Validate parent_id references an existing task
+    if parent_id:
+        with get_conn() as conn:
+            parent = conn.execute("SELECT id FROM tasks WHERE id=?", (parent_id,)).fetchone()
+            if not parent:
+                raise ValueError(f"Parent task {parent_id} does not exist")
     # Clamp priority
     priority = max(1, min(10, int(priority)))
 
@@ -668,7 +674,11 @@ def post_task(type_, payload_json, priority=5, assigned_to=None,
 
 
 def recover_stale_tasks(timeout_secs=900):
-    """Requeue RUNNING tasks whose assigned agent has gone stale (no heartbeat)."""
+    """Requeue RUNNING tasks whose assigned agent has gone stale (no heartbeat).
+
+    Also verifies the assigned agent's PID is actually dead via psutil
+    before requeuing — avoids false recovery when heartbeat is merely delayed.
+    """
     recovered = []
     def _do():
         with get_conn() as conn:
@@ -681,6 +691,18 @@ def recover_stale_tasks(timeout_secs=900):
                        OR (julianday('now') - julianday(a.last_heartbeat)) * 86400 > ?)
             """, (timeout_secs,)).fetchall()
             for r in rows:
+                # Verify the assigned agent's PID is dead before requeuing
+                try:
+                    import psutil
+                    agent_row = conn.execute(
+                        "SELECT pid FROM agents WHERE name=?",
+                        (r["assigned_to"],)
+                    ).fetchone()
+                    if agent_row and agent_row["pid"]:
+                        if psutil.pid_exists(agent_row["pid"]):
+                            continue  # Agent is alive, task isn't stale
+                except Exception:
+                    pass
                 conn.execute(
                     "UPDATE tasks SET status='PENDING', assigned_to=NULL WHERE id=?",
                     (r['id'],)

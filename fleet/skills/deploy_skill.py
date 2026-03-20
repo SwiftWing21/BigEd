@@ -82,6 +82,15 @@ def _validate_skill(path: Path) -> tuple[bool, str]:
 
 
 def run(payload, config):
+    try:
+        from filesystem_guard import FileSystemGuard
+        from config import load_config
+        guard = FileSystemGuard(load_config())
+        if not guard.check_access("fleet/skills", "write", skill="deploy_skill"):
+            return {"error": "Access denied to skills/ by FileSystemGuard"}
+    except ImportError:
+        pass
+
     skill_name = payload.get("skill_name", "")
     if not skill_name:
         return json.dumps({"status": "failed", "error": "No skill_name provided"})

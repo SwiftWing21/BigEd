@@ -1001,6 +1001,11 @@ def main():
     import_p.add_argument("--merge", action="store_true", help="Merge config instead of replacing")
     import_p.add_argument("--dry-run", action="store_true", help="Show what would be imported without applying")
 
+    # Backup (v0.51)
+    backup_parser = subparsers.add_parser("backup", help="Manual backup")
+    backup_parser.add_argument("--list", action="store_true", help="List recent backups")
+    backup_parser.add_argument("--restore", metavar="ID", help="Restore from backup ID")
+
     args = parser.parse_args()
 
     if args.command == "status":
@@ -1071,6 +1076,21 @@ def main():
         cmd_export(args)
     elif args.command == "import":
         cmd_import(args)
+    elif args.command == "backup":
+        from backup_manager import BackupManager
+        from config import load_config
+        bm = BackupManager(load_config())
+        if args.list:
+            backups = bm.list_backups()
+            for b in backups[:10]:
+                size = b.get("total_size_bytes", 0) / 1024 / 1024
+                print(f"  {b['id']}  {b.get('trigger', '?'):<12}  {size:.1f} MB")
+        elif args.restore:
+            print(f"Restore from {args.restore} — not yet implemented (manual copy from ~/BigEd-backups/{args.restore}/)")
+        else:
+            result = bm.perform_backup(trigger="cli")
+            size = result.get("total_size_bytes", 0) / 1024 / 1024
+            print(f"Backup complete: {result['id']} ({size:.1f} MB)")
 
 
 if __name__ == "__main__":

@@ -278,6 +278,16 @@ def _walk_files(root: Path, recursive: bool, extensions: set | None,
 
 
 def run(payload, config):
+    try:
+        from filesystem_guard import FileSystemGuard
+        from config import load_config
+        guard = FileSystemGuard(load_config())
+        source = payload.get("source_dir", "")
+        if not guard.check_access(source, "read", skill="ingest"):
+            return {"error": f"Access denied to {source} by FileSystemGuard"}
+    except ImportError:
+        pass
+
     import sys
     sys.path.insert(0, str(FLEET_DIR))
     from rag import RAGIndex

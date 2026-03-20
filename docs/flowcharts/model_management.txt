@@ -1,0 +1,97 @@
+BigEd CC — Model Management Flow
+===================================
+
+[Dr. Ders Main Loop] (event-driven, 5-30s adaptive)
+        |
+        +---> Read GPU thermal (pynvml)
+        +---> Read CPU thermal (cpu_temp.py)
+        +---> Read VRAM usage (pynvml)
+        +---> Check training status (DB lock / process detection)
+        |
+        v
+[Evaluate State]
+        |
+        +---> GPU temp > burst (85C)?
+        |         |
+        |         Yes --> EMERGENCY: switch to tier_crit (0.6b CPU)
+        |                 unload_all_models()
+        |                 warmup_model("qwen3:0.6b", on_gpu=False)
+        |
+        +---> GPU temp > sustained (82C)?
+        |         |
+        |         Yes --> Scale down one tier (8b -> 4b -> 1.7b -> 0.6b)
+        |                 Skip unavailable tiers
+        |                 can_transition_model()? (120s cooldown)
+        |
+        +---> VRAM > emergency (92%)?
+        |         |
+        |         Yes --> Switch to tier_crit
+        |
+        +---> VRAM > high (85%)?
+        |         |
+        |         Yes --> Step down one tier
+        |
+        +---> Training started?
+        |         |
+        |         Yes --> Evict GPU models for PyTorch
+        |                 Switch to tier_low on CPU
+        |
+        +---> No model loaded? (crash recovery)
+        |         |
+        |         Yes --> recover_model() with sticky assignment
+        |                 Load smallest available, step up if VRAM allows
+        |
+        +---> Everything normal?
+        |         |
+        |         Yes --> Stay parked (NEVER auto-scale UP)
+        |                 Increase sleep interval (5s -> 10 -> 15 -> 20 -> 30s)
+        |
+        v
+[Sticky Model Loader]
+        |
+        +---> _model_gpu_assignment: {model -> num_gpu}
+        |       qwen3:8b -> 99 (all layers GPU)
+        |       qwen3:4b -> 0  (CPU conductor)
+        |       qwen3:0.6b -> 0 (CPU failsafe)
+        |
+        +---> warmup_model(name, on_gpu):
+        |       Check model installed (ollama list)
+        |       Set num_gpu (99=GPU, 0=CPU)
+        |       keep_alive from fleet.toml (default 30m)
+        |       Cache assignment in _model_gpu_assignment
+        |
+        +---> recover_model(name):
+        |       Restore SAME GPU/CPU assignment from cache
+        |       Fast path — no decision needed
+        |
+        v
+[Keepalive System]
+        |
+        +---> Every ~240s: ping_keepalive(host, model)
+        |       Refreshes keep_alive timer
+        |       Prevents Ollama auto-unload
+        |
+        +---> Every ~60s: ensure_conductor(host, conductor_model)
+        |       Verify CPU conductor model loaded
+        |       Reload if missing (num_gpu=0)
+        |
+        v
+[Model Promotion (Dr. Ders)]
+        |
+        +---> Boot: load smallest model (0.6b) for fast start
+        +---> After startup checks pass:
+        |       Find best installed CPU model (4b > 1.7b > 0.6b)
+        |       Promote to larger model for quality
+        |       0.6b stays loaded as failsafe
+        |
+        +---> On error: fall back to 0.6b (instant recovery)
+
+[Close / Shutdown]
+        |
+        +---> _unload_all_ollama_models()
+        |       Set keep_alive=0 on every loaded model
+        |       VRAM freed, Ollama stays running (system tray)
+        +---> _graceful_save_tasks()
+        |       RUNNING tasks --> PENDING (resume on next boot)
+        +---> _zombie_sweep()
+                Kill any orphaned fleet processes

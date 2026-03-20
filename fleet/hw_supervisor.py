@@ -1038,7 +1038,7 @@ def main():
 
             else:
                 # NORMAL: only scale DOWN on pressure, never UP
-                if vram_pct > cfg["vram_emergency"]:
+                if vram_pct >= cfg["vram_emergency"]:
                     if cfg["tier_crit"] in available_tier_models:
                         target_model = cfg["tier_crit"]
                     else:
@@ -1047,7 +1047,7 @@ def main():
                             log.warning(f"Tier 'crit' model {cfg['tier_crit']} not available, "
                                         f"falling back to {target_model}")
                     emergency = True
-                elif vram_pct > cfg["vram_high"]:
+                elif vram_pct >= cfg["vram_high"]:
                     # Step down one tier from current — skip unavailable tiers
                     try:
                         idx = tier_order.index(current_model)

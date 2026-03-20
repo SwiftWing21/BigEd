@@ -572,13 +572,28 @@ def _unload_all_ollama_models():
         pass
 
 
+_status_cache = None
+_status_cache_time = 0.0
+
+
 def parse_status():
-    """Read STATUS.md and return dict with agents + task counts."""
+    """Read STATUS.md and return dict with agents + task counts.
+
+    Cached with 2s TTL — multiple callers in the same refresh cycle
+    share a single file read + parse.
+    """
+    global _status_cache, _status_cache_time
+    now = time.time()
+    if _status_cache is not None and (now - _status_cache_time) < 2:
+        return _status_cache
+
     result = {"agents": [], "tasks": {}, "raw": "", "supervisor_status": "OFFLINE", "dr_ders_status": "OFFLINE"}
 
     result.update(_check_supervisor_liveness())
 
     if not STATUS_MD.exists():
+        _status_cache = result
+        _status_cache_time = now
         return result
     try:
         text = STATUS_MD.read_text(encoding="utf-8", errors="ignore")
@@ -615,6 +630,9 @@ def parse_status():
                                 pass
     except Exception:
         pass
+
+    _status_cache = result
+    _status_cache_time = now
     return result
 
 
@@ -861,9 +879,14 @@ class CustomTabBar(ctk.CTkFrame):
         return self._tab_frames[name]
 
     def set(self, name: str) -> None:
-        """Switch to the named tab."""
+        """Switch to the named tab (lazy-builds deferred tabs on first view)."""
         if name not in self._tab_frames:
             return
+        # Build lazy tab content on first view
+        app = self.winfo_toplevel()
+        if hasattr(app, '_lazy_tabs') and name in app._lazy_tabs and name not in app._built_tabs:
+            app._lazy_tabs[name](self._tab_frames[name])
+            app._built_tabs.add(name)
         # Deactivate previous
         if self._active and self._active in self._tab_buttons:
             self._tab_buttons[self._active].configure(
@@ -1535,17 +1558,22 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
         tabs.grid(row=1, column=1, sticky="nsew", padx=0, pady=0)
         self._tabs = tabs
 
+        # Lazy-load infrastructure: deferred tabs build on first view
+        self._lazy_tabs = {}
+        self._built_tabs = set()
+
         tab_cfg = load_tab_cfg()
 
-        # Always-on core tabs
+        # Always-on core tabs (built immediately — visible at startup)
         tabs.add("Command Center")
         self._build_tab_cc(tabs.tab("Command Center"))
 
         tabs.add("Fleet")
         self._build_tab_agents(tabs.tab("Fleet"))
 
+        # Fleet Comm — deferred until first click
         tabs.add("Fleet Comm")
-        self._build_tab_comm(tabs.tab("Fleet Comm"))
+        self._lazy_tabs["Fleet Comm"] = lambda p: self._build_tab_comm(p)
 
         # Load modular tabs via module system
         self._modules = {}
@@ -1566,7 +1594,19 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
                 except Exception:
                     pass
                 tabs.add(label)
-                tab_frame = tabs.tab(label)
+                # Defer module tab builds until first view
+                self._lazy_tabs[label] = self._make_module_builder(mod, label, deprecated,
+                                                                    meta if deprecated else {})
+            except Exception as e:
+                import sys
+                print(f"[WARN] Module '{name}' failed to register tab: {e}", file=sys.stderr)
+
+        tabs.set("Command Center")
+
+    def _make_module_builder(self, mod, label, deprecated, meta):
+        """Return a callable that builds a module tab on first view."""
+        def _builder(tab_frame):
+            try:
                 if deprecated:
                     banner = ctk.CTkFrame(tab_frame, fg_color="#3a2a00", corner_radius=4)
                     banner.pack(fill="x", padx=4, pady=(4, 0))
@@ -1588,9 +1628,8 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
                     mod.build_tab(tab_frame)
             except Exception as e:
                 import sys
-                print(f"[WARN] Module '{name}' failed to build tab: {e}", file=sys.stderr)
-
-        tabs.set("Command Center")
+                print(f"[WARN] Module '{label}' failed to build tab: {e}", file=sys.stderr)
+        return _builder
 
     # ── Tab: Command Center (default) ────────────────────────────────────────
     def _build_tab_cc(self, parent):
@@ -2488,6 +2527,9 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
 
     def _refresh_comm(self):
         """Load WAITING_HUMAN tasks and security advisories into Fleet Comm."""
+        # Guard: skip if Fleet Comm tab hasn't been built yet (lazy-load)
+        if "Fleet Comm" not in getattr(self, '_built_tabs', set()):
+            return
         def _fetch():
             from data_access import FleetDB
             waiting = FleetDB.waiting_human_tasks(FLEET_DIR / "fleet.db")
@@ -2554,6 +2596,12 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
 
             total = len(waiting) + len(advisories)
             scroll = self._comm_request_frame
+
+            # Update Fleet Comm tab badge with pending HITL count
+            n = len(waiting)
+            tab_text = "\U0001f4ac  Fleet Comm" + (f" ({n})" if n > 0 else "")
+            if hasattr(self, '_tabs') and "Fleet Comm" in self._tabs._tab_buttons:
+                self._tabs._tab_buttons["Fleet Comm"].configure(text=tab_text)
 
             if not total:
                 self._update_comm_request_view()
@@ -3498,6 +3546,7 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
         win.title(f"Advisory: {adv_path.name}")
         win.geometry("580x420")
         win.minsize(580, 420)
+        win.resizable(False, False)
         win.configure(fg_color=BG)
         win.grab_set()
         ctk.CTkLabel(win, text=adv_path.name,

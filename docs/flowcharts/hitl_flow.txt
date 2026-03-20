@@ -1,0 +1,83 @@
+BigEd CC — Human-in-the-Loop (HITL) Flow
+==========================================
+
+[Agent Encounters Decision Point]
+        |
+        +---> Ambiguous result (medium/low confidence)
+        +---> Security advisory needs approval
+        +---> Skill draft scored > 0.7 (ready for review)
+        +---> Evaluation disagreement (Tier 1 vs Tier 2)
+        |
+        v
+[Agent Posts HITL Request]
+        |
+        +---> db.post_task(status="WAITING_HUMAN")
+        +---> Message to operator channel
+        |
+        v
+[Notification System]
+        |
+        +---> Fleet Comm tab: badge counter updates "(N)"
+        +---> Dashboard: info alert "N agent requests pending"
+        +---> Action panel: card with question + respond button
+        +---> Collapsible: stacks to 1-line when not hovered
+        |
+        v
+[User Reviews Request]
+        |
+        +---> Sees: question + supporting evidence + confidence
+        +---> Clicks "Respond" button
+        |
+        v
+[Response Dialog]  (5 structured options)
+        |
+        +---> [Approve]
+        |       Send approval, task resumes with approved result
+        |       Status: WAITING_HUMAN --> PENDING (reprocessed)
+        |
+        +---> [Reject + Reason]
+        |       Reason logged for agent learning
+        |       Task marked FAILED with rejection context
+        |       Agent adjusts approach on similar future tasks
+        |
+        +---> [Need More Info]
+        |       Creates follow-up task: research_loop
+        |       parent_id links to original request
+        |       Agent researches, returns with more context
+        |       New HITL request with enriched data
+        |
+        +---> [Provide Feedback]
+        |       User's context fed back to agent
+        |       Task re-processed with user's input
+        |       Agent generates improved result
+        |
+        +---> [Open Discussion]
+        |       Creates follow-up task: discuss
+        |       Multi-agent debate triggered
+        |       Multiple perspectives gathered
+        |       Consensus or disagreement summary returned
+        |
+        v
+[Response Sent]
+        |
+        +---> Structured JSON: {type, text, timestamp}
+        +---> FleetDB.send_human_response()
+        +---> Task status updated
+        +---> Action panel refreshed
+        |
+        v
+[Agent Continues]
+        |
+        +---> For Approve: result accepted, pipeline continues
+        +---> For Reject: task failed, agent learns
+        +---> For More Info: waits for research result
+        +---> For Feedback: re-executes with new context
+        +---> For Discuss: waits for consensus
+
+[Manual Chat Integration]
+        |
+        +---> Click agent request --> context fills Manual Chat
+        +---> Select model: Local (Ollama), Claude Code, Gemini
+        +---> Local: inline response via Ollama /api/generate
+        +---> OAuth: writes task-briefing.md, opens VS Code/browser
+        +---> Response feeds back to agent (closes HITL loop)

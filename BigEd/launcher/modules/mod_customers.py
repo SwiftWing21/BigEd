@@ -153,6 +153,7 @@ class Module:
         win = ctk.CTkToplevel(self.app)
         win.title("Customer Deployment")
         win.geometry("420x340")
+        win.resizable(False, False)
         win.configure(fg_color=BG)
         win.grab_set()
 

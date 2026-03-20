@@ -69,6 +69,25 @@ _sse_clients = []
 _monitor_start_time = time.time()
 
 
+# ── In-memory rate limiter for expensive endpoints ────────────────────────
+_rate_limits = {}  # endpoint -> (last_call_time, count)
+
+def _check_rate_limit(endpoint, max_per_min=10):
+    """Simple in-memory rate limit. Returns True if allowed."""
+    now = time.time()
+    if endpoint not in _rate_limits:
+        _rate_limits[endpoint] = (now, 1)
+        return True
+    last, count = _rate_limits[endpoint]
+    if now - last > 60:
+        _rate_limits[endpoint] = (now, 1)
+        return True
+    if count >= max_per_min:
+        return False
+    _rate_limits[endpoint] = (last, count + 1)
+    return True
+
+
 # ── API call attribution logging ──────────────────────────────────────────
 
 @app.after_request
@@ -500,6 +519,8 @@ def api_discussions():
 
 @app.route("/api/knowledge")
 def api_knowledge():
+    if not _check_rate_limit("knowledge", 5):
+        return jsonify({"error": "Rate limited"}), 429
     categories = {}
     if not KNOWLEDGE_DIR.exists():
         return jsonify(categories)
@@ -629,6 +650,8 @@ def api_timeline():
 
 @app.route("/api/rag")
 def api_rag():
+    if not _check_rate_limit("rag", 5):
+        return jsonify({"error": "Rate limited"}), 429
     rag_db = FLEET_DIR / "rag.db"
     if not rag_db.exists():
         return jsonify({"files": 0, "chunks": 0, "sources": []})
@@ -800,6 +823,19 @@ def api_training():
     return jsonify(result)
 
 
+@app.route("/api/dashboard/batch")
+def api_dashboard_batch():
+    """Combined endpoint -- returns status, thermal, and training in one call.
+
+    Reduces launcher round-trips from 3 sequential requests to 1.
+    """
+    return jsonify({
+        "status": api_status().get_json(),
+        "thermal": api_thermal().get_json(),
+        "training": api_training().get_json(),
+    })
+
+
 @app.route("/api/modules")
 def api_modules():
     """Enabled modules, versions, deprecation status."""
@@ -828,6 +864,8 @@ def api_modules():
 @app.route("/api/data_stats")
 def api_data_stats():
     """Per-module data size and growth metrics."""
+    if not _check_rate_limit("data_stats", 5):
+        return jsonify({"error": "Rate limited"}), 429
     stats = {}
 
     # Fleet DB tables
@@ -1454,9 +1492,13 @@ def index():
 
 # ── Agent Disable/Enable ──────────────────────────────────────────────────────
 
+VALID_AGENT = re.compile(r'^[a-zA-Z0-9_-]{1,64}$')
+
 @app.route("/api/fleet/worker/<name>/disable", methods=["POST"])
 def worker_disable(name):
     """Disable a worker — adds to disabled_agents list in fleet.toml."""
+    if not VALID_AGENT.match(name):
+        return jsonify({"error": "Invalid agent name"}), 400
     try:
         cfg = _load_config()
         disabled = cfg.get("fleet", {}).get("disabled_agents", [])
@@ -1472,6 +1514,8 @@ def worker_disable(name):
 @app.route("/api/fleet/worker/<name>/enable", methods=["POST"])
 def worker_enable(name):
     """Enable a worker — removes from disabled_agents list in fleet.toml."""
+    if not VALID_AGENT.match(name):
+        return jsonify({"error": "Invalid agent name"}), 400
     try:
         cfg = _load_config()
         disabled = cfg.get("fleet", {}).get("disabled_agents", [])

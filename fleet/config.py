@@ -23,10 +23,33 @@ def load_config():
     return cfg
 
 
-# GitHub owner/repo — configurable via fleet.toml [github]
-_cfg = load_config()
-GITHUB_OWNER = _cfg.get("github", {}).get("owner", "SwiftWing21")
-GITHUB_REPO = _cfg.get("github", {}).get("repo", "BigEds_Agents")
+# GitHub owner/repo — lazy-loaded from fleet.toml [github]
+_cfg = None
+
+def _get_cfg():
+    global _cfg
+    if _cfg is None:
+        _cfg = load_config()
+    return _cfg
+
+def reload_config():
+    """Force re-read of fleet.toml on next access."""
+    global _cfg
+    _cfg = None
+
+def get_github_owner():
+    return _get_cfg().get("github", {}).get("owner", "SwiftWing21")
+
+def get_github_repo():
+    return _get_cfg().get("github", {}).get("repo", "BigEds_Agents")
+
+def __getattr__(name):
+    """Lazy module-level attributes — resolved on first access."""
+    if name == "GITHUB_OWNER":
+        return get_github_owner()
+    if name == "GITHUB_REPO":
+        return get_github_repo()
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
 def is_offline(config: dict) -> bool:

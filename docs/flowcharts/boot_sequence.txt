@@ -1,0 +1,89 @@
+BigEd CC — Boot Sequence Flow
+==============================
+
+User clicks "Start"
+        |
+        v
+[Stage 0: Ollama]
+        |
+        +---> shutil.which("ollama")
+        |         |
+        |    Found? --No--> Check Windows paths:
+        |         |           LOCALAPPDATA/Programs/Ollama/
+        |         |           LOCALAPPDATA/Ollama/
+        |         |           PROGRAMFILES/Ollama/
+        |         |              |
+        |         |         Found? --No--> HITL: "Install Ollama" action card
+        |         |              |                    |
+        |         v              v                    v
+        +---> Check if already running (localhost:11434/api/tags)
+        |         |
+        |    Running? --Yes--> Adopt existing Ollama
+        |         |
+        |         No
+        |         |
+        |         v
+        +---> subprocess.Popen([ollama, "serve"])
+        |     Store proc ref (self._ollama_proc)
+        |     Poll 30s for /api/tags response
+        |
+        v
+[Stage 1: Maintainer Model (CPU)]
+        |
+        +---> Find smallest installed model (0.6b > 1.7b > 4b)
+        +---> Load on CPU (num_gpu=0, keep_alive=30m)
+        +---> Ensures Dr. Ders has a model to monitor
+        |
+        v
+[Stage 2: Dr. Ders (hw_supervisor.py)]
+        |
+        +---> supervisor.py start_hw_supervisor()
+        +---> Startup checks: GPU readable? Ollama reachable? Models known?
+        +---> Model promotion: 0.6b boot --> best CPU model (4b/1.7b)
+        +---> Failsafe: 0.6b stays loaded permanently
+        +---> Event-driven wake-up timer (5s active, 30s idle)
+        |
+        v
+[Stage 3: GPU Model]
+        |
+        +---> Read fleet.toml [models] local = "qwen3:8b"
+        +---> Model exists? --No--> Pick best fallback + HITL action card
+        |         |
+        |         Yes
+        |         |
+        +---> warmup_model(model, on_gpu=True)
+        |     num_gpu=99, keep_alive=30m (configurable)
+        |     Sticky GPU assignment cached in _model_gpu_assignment
+        |
+        v
+[Stage 4: Fleet Supervisor]
+        |
+        +---> supervisor.py main()
+        +---> start_ollama() (adopt or start)
+        +---> start_hw_supervisor() (Dr. Ders)
+        +---> Start core agents: coder_1, researcher, planner, archivist
+        +---> Start dashboard (Flask on :5555)
+        +---> Start backup auto-save thread (every 20min)
+        +---> Enter main loop: scaling + respawn + auto-research triggers
+        |
+        v
+[Stage 5: Workers]
+        |
+        +---> 4 core agents boot with --role flag
+        +---> Each: register in DB, claim tasks, adaptive polling
+        +---> Dynamic scaling: 2+ pending tasks --> spin up from SCALE_ORDER
+        +---> Idle evolution after 30s of no tasks (60s cooldown)
+        |
+        v
+[Stage 6: Conductor Model (CPU)]
+        |
+        +---> Load conductor (qwen3:4b) on CPU (num_gpu=0)
+        +---> Used for user chat / Dr. Ders health checks
+        |
+        v
+[Boot Complete]
+        |
+        +---> write_state("ready", model)
+        +---> Dashboard auto-opens (localhost:5555)
+        +---> Fleet Comm active, agents claiming tasks
+        +---> Dr. Ders monitoring thermals + VRAM

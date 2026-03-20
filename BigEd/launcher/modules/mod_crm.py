@@ -192,6 +192,7 @@ class Module:
         win = ctk.CTkToplevel(self.app)
         win.title("CRM - Contact")
         win.geometry("400x340")
+        win.resizable(False, False)
         win.configure(fg_color=BG)
         win.grab_set()
 
@@ -246,6 +247,7 @@ class Module:
         win = ctk.CTkToplevel(self.app)
         win.title("Prospect - Find Leads")
         win.geometry("360x260")
+        win.resizable(False, False)
         win.configure(fg_color=BG)
         win.grab_set()
 
@@ -314,6 +316,7 @@ class Module:
         win = ctk.CTkToplevel(self.app)
         win.title(f"Import Leads ({len(leads)} found)")
         win.geometry("600x480")
+        win.resizable(False, False)
         win.configure(fg_color=BG)
         win.grab_set()
 

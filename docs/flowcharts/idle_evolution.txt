@@ -1,0 +1,115 @@
+BigEd CC — Idle Evolution Flow
+=================================
+
+[Worker Main Loop]
+        |
+        +---> Claim task from queue
+        |         |
+        |    Task found? --Yes--> Execute skill, reset idle counter
+        |         |
+        |         No
+        |         |
+        +---> idle_count++
+        |
+        +---> idle_count >= 30? (threshold_polls, ~30s at 1s/poll)
+        |         |
+        |         No --> sleep(2s + jitter), loop
+        |         |
+        |         Yes
+        |         v
+        +---> Cooldown check: (now - _last_idle_run) >= 60s?
+        |         |
+        |         No --> skip, loop
+        |         |
+        |         Yes
+        |         v
+        +---> Global dedup: PENDING tasks < 3?
+        |         |
+        |         No --> skip (real work exists, don't create idle tasks)
+        |         |
+        |         Yes
+        |         v
+        +---> Failure check: _idle_failures < 3?
+        |         |
+        |         No --> "Idle evolution paused — too many failures"
+        |         |       Resumes after successful real task
+        |         |
+        |         Yes
+        |         v
+[_run_idle_evolution()]
+        |
+        v
+[Skill Selection] (idle_evolution.py)
+        |
+        +---> Query: all completed skill types from task history
+        +---> Calculate staleness: how long since each skill was evolved
+        +---> Sort by staleness (most stale first)
+        +---> Take bottom 30% (least evolved)
+        +---> Weighted random selection (more stale = higher weight)
+        |
+        +---> Per-agent cooldown: skip if this agent evolved same skill < 4h ago
+        +---> Cross-worker dedup: skip if another agent currently evolving this skill
+        |
+        +---> Available skills pool:
+        |       code_quality, benchmark, skill_evolve, code_review, summarize
+        |       (skill_test REMOVED — was 96% of all tasks)
+        |
+        v
+[Skill Execution]
+        |
+        +---> Run selected skill via local Ollama
+        +---> Output: evolved code / quality report / benchmark results
+        +---> Save to knowledge/ directory
+        |
+        +---> Success? --Yes--> _idle_failures = 0
+        |         |
+        |         No --> _idle_failures++ (max 3 before pause)
+        |
+        v
+[Evolution Pipeline] (if skill_evolve selected)
+        |
+        +---> 6-stage workflow (skill_evolution_pipeline.toml):
+        |
+        |   1. [DRAFT]    skill_draft: generate new version
+        |         |
+        |   2. [TEST]     skill_test: syntax, imports, schema validation
+        |         |
+        |   3. [REVIEW]   code_review + security_review (parallel)
+        |         |
+        |   4. [EVOLVE]   skill_evolve: incorporate review feedback
+        |         |
+        |   5. [DEPLOY]   deploy_skill: copy to skills/ (MANUAL GATE)
+        |         |
+        |   6. [VERIFY]   skill_test on deployed version
+        |
+        +---> Output: knowledge/code_drafts/<skill>_evolved_<date>.py
+        +---> NEVER auto-deployed — operator reviews before promotion
+        |
+        v
+[Intelligence Scoring]
+        |
+        +---> Tier 1 heuristic: score output quality (0.0-1.0)
+        +---> If score > 0.7:
+        |       HITL notification: "High-quality draft ready for review"
+        |       Dashboard alert: "N drafts ready"
+        |
+        v
+[Auto-Triggered Workflows] (supervisor.py)
+        |
+        +---> Daily (24h): research_cycle
+        |       detect_gaps --> web_search --> summarize --> rag_index
+        |
+        +---> Weekly (7d): evolution_coordinator
+        |       evolve bottom 10% performing skills
+        |
+        +---> On results.tsv change: ml_bridge auto-import
+        |       autoresearch experiment results --> fleet knowledge
+        |
+        v
+[Knowledge Feedback Loop]
+        |
+        +---> Research outputs --> knowledge/ directory
+        +---> rag_index incremental update --> rag.db (FTS5)
+        +---> Agent queries via rag_query --> context-aware responses
+        +---> Better context --> better skill outputs --> better scores
+        +---> Loop: continuous improvement without operator intervention

@@ -453,17 +453,17 @@ Completed 2026-03-20. 11 files, +194/-90 lines:
 
 ### 0.050.05b — P3 Polish & Accessibility [PARTIAL]
 
-**14+ P3 items** — 5 verified fixed, 6 remaining.
+**14+ P3 items** — 8 verified fixed, 3 remaining.
 
 - [x] No progress feedback during long model loads — "this may take a few minutes" status (boot.py:306)
 - [x] fleet.toml path not verified before load — `Path.exists()` check in `_read_fleet_models` (boot.py:194)
 - [x] Ctrl+K command palette undiscoverable — "Ctrl+K  command palette" label in status bar (launcher.py:2716)
 - [x] OmniBox badge abbreviations unexplained — "SYS = System   SKL = Skill   AGT = Agent" legend (omnibox.py:81)
-- [ ] Dialog resize clipping on small screens
+- [x] Dialog resize clipping on small screens — `resizable(False, False)` on all CTkToplevel dialogs (launcher, consoles, settings, modules)
 - [x] SSE client start exception logged to stderr — `[WARN] SSE client failed` (launcher.py:982)
 - [ ] Dashboard badge status values not validated (dashboard.html:232-235)
-- [ ] No rate limiting on expensive dashboard endpoints
-- [ ] Worker disable/enable not audit logged
+- [x] No rate limiting on expensive dashboard endpoints — `_check_rate_limit()` on /api/knowledge, /api/rag, /api/data_stats (dashboard.py:70-87)
+- [x] Worker disable/enable not audit logged — `_add_alert("info", "Agent disabled by operator")` (dashboard.py:1466)
 - [x] ~~GITHUB_REPO typo~~ — not a bug: fleet.toml overrides config.py default correctly
 - [ ] No distributed locking for federation mode (db.py:686-711)
 
