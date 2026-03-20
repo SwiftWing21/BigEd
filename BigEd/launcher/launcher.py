@@ -140,6 +140,8 @@ ctk.set_default_color_theme("dark-blue")
 from ui.theme import (
     BG, BG2, BG3, ACCENT, ACCENT_H, GOLD, TEXT, DIM,
     GREEN, ORANGE, RED, MONO, FONT, FONT_SM, FONT_H,
+    BLUE, CYAN, FONT_STAT, FONT_BOLD, FONT_TITLE, FONT_XS,
+    HEADER_HEIGHT, BTN_HEIGHT,
 )
 
 
@@ -555,7 +557,7 @@ def get_hw_stats(prev_net, prev_time):
 
     # Network — find Ethernet interface with most traffic
     now = time.time()
-    net_str = "ETH —"
+    net_str = "NET —"
     counters = psutil.net_io_counters(pernic=True)
     eth = None
     for name, c in counters.items():
@@ -579,7 +581,7 @@ def get_hw_stats(prev_net, prev_time):
                 if b >= 1e6: return f"{b/1e6:.1f} MB/s"
                 if b >= 1e3: return f"{b/1e3:.0f} KB/s"
                 return f"{b:.0f} B/s"
-            net_str = f"ETH  ↑{fmt(tx)}  ↓{fmt(rx)}"
+            net_str = f"NET  ↑{fmt(tx)}  ↓{fmt(rx)}"
 
     new_prev = {name: c for name, c in counters.items()}
     return cpu_str, ram_str, gpu_str, net_str, new_prev, now
@@ -1088,66 +1090,84 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
 
     # ── Header ────────────────────────────────────────────────────────────────
     def _build_header(self):
-        hdr = ctk.CTkFrame(self, fg_color=BG3, height=60, corner_radius=0)
+        hdr = ctk.CTkFrame(self, fg_color=BG3, height=HEADER_HEIGHT, corner_radius=0)
         hdr.grid(row=0, column=0, columnspan=2, sticky="ew")
         hdr.grid_propagate(False)
         hdr.grid_columnconfigure(3, weight=1)
-        self._header = hdr  # v0.44: store ref for update banner row shift
+        self._header = hdr
 
+        # ── Logo + title (left group) ──────────────────────────────────
         banner = self._load_banner()
         if banner:
             ctk.CTkLabel(hdr, image=banner, text="").grid(
-                row=0, column=0, padx=(10, 2), pady=(6, 0))
+                row=0, column=0, padx=(12, 4), pady=6)
         else:
             ctk.CTkLabel(hdr, text="🧱", font=("Segoe UI", 22)).grid(
-                row=0, column=0, padx=(10, 2), pady=(6, 0))
+                row=0, column=0, padx=(12, 4), pady=6)
 
         self._sidebar_btn = ctk.CTkButton(
-            hdr, text="≡", font=("Segoe UI", 16), width=30, height=30,
-            fg_color="transparent", hover_color=BG2, text_color=TEXT,
-            command=self._toggle_sidebar
+            hdr, text="≡", font=("Segoe UI", 16), width=28, height=28,
+            fg_color="transparent", hover_color=BG2, text_color=DIM,
+            corner_radius=4, command=self._toggle_sidebar
         )
-        self._sidebar_btn.grid(row=0, column=1, padx=(2, 6), pady=(6, 0))
+        self._sidebar_btn.grid(row=0, column=1, padx=(0, 6), pady=6)
 
-        ctk.CTkLabel(hdr, text="BIGED CC",
-                     font=("Segoe UI", 14, "bold"),
-                     text_color=GOLD).grid(row=0, column=2, padx=4, pady=(6, 0), sticky="w")
+        # Title with version subtitle
+        title_frame = ctk.CTkFrame(hdr, fg_color="transparent")
+        title_frame.grid(row=0, column=2, padx=(0, 8), pady=6, sticky="w")
+        ctk.CTkLabel(title_frame, text="BIGED CC",
+                     font=FONT_TITLE, text_color=GOLD).pack(anchor="w")
+        ctk.CTkLabel(title_frame, text="alpha 0.31",
+                     font=FONT_XS, text_color=DIM).pack(anchor="w", pady=(0, 0))
 
-        # Inline stats
-        stats_frame = ctk.CTkFrame(hdr, fg_color="transparent")
-        stats_frame.grid(row=0, column=3, sticky="w", padx=(8, 0), pady=(8, 0))
-        kw = dict(font=("Consolas", 10), text_color=DIM)
-        self._stat_cpu = ctk.CTkLabel(stats_frame, text="CPU —", **kw)
-        self._stat_ram = ctk.CTkLabel(stats_frame, text="RAM —", **kw)
-        self._stat_gpu = ctk.CTkLabel(stats_frame, text="GPU —", **kw)
-        self._stat_net = ctk.CTkLabel(stats_frame, text="ETH —", **kw)
-        self._stat_cpu.pack(side="left", padx=(0, 8))
-        self._stat_ram.pack(side="left", padx=(0, 8))
-        self._stat_gpu.pack(side="left", padx=(0, 8))
-        self._stat_net.pack(side="left", padx=(0, 8))
+        # ── System stats (center, in a subtle container) ──────────────
+        stats_container = ctk.CTkFrame(hdr, fg_color=BG2, corner_radius=6, height=36)
+        stats_container.grid(row=0, column=3, sticky="w", padx=(0, 8), pady=10)
+        stats_container.grid_propagate(False)
 
-        # Dr. Ders status (always-on hw monitor)
+        stats_inner = ctk.CTkFrame(stats_container, fg_color="transparent")
+        stats_inner.pack(expand=True, fill="both", padx=8, pady=4)
+
+        kw = dict(font=FONT_STAT, text_color=DIM)
+        self._stat_cpu = ctk.CTkLabel(stats_inner, text="CPU —", **kw)
+        self._stat_ram = ctk.CTkLabel(stats_inner, text="RAM —", **kw)
+        self._stat_gpu = ctk.CTkLabel(stats_inner, text="GPU —", **kw)
+        self._stat_net = ctk.CTkLabel(stats_inner, text="NET —", **kw)
+        # Separator dots between stats
+        sep_kw = dict(font=FONT_XS, text_color="#444")
+        self._stat_cpu.pack(side="left")
+        ctk.CTkLabel(stats_inner, text=" · ", **sep_kw).pack(side="left")
+        self._stat_ram.pack(side="left")
+        ctk.CTkLabel(stats_inner, text=" · ", **sep_kw).pack(side="left")
+        self._stat_gpu.pack(side="left")
+        ctk.CTkLabel(stats_inner, text=" · ", **sep_kw).pack(side="left")
+        self._stat_net.pack(side="left")
+
+        # ── Right side: Dr. Ders + status + badges ────────────────────
+        right_frame = ctk.CTkFrame(hdr, fg_color="transparent")
+        right_frame.grid(row=0, column=4, sticky="e", padx=(0, 10), pady=6)
+
         self._dr_ders_hdr = ctk.CTkLabel(
-            hdr, text="Dr.Ders —", font=("Consolas", 10), text_color=DIM)
-        self._dr_ders_hdr.grid(row=0, column=4, padx=(4, 2), pady=(8, 0), sticky="e")
+            right_frame, text="Dr.Ders —", font=FONT_XS, text_color=DIM)
+        self._dr_ders_hdr.pack(side="left", padx=(0, 4))
 
         self._status_pills = ctk.CTkLabel(
-            hdr, text="● loading...", font=("Consolas", 11), text_color=DIM)
-        self._status_pills.grid(row=0, column=5, padx=8, pady=(8, 0), sticky="e")
+            right_frame, text="● loading...", font=FONT_STAT, text_color=DIM)
+        self._status_pills.pack(side="left", padx=(0, 6))
 
         self._action_badge = ctk.CTkLabel(
-            hdr, text="", font=("Segoe UI", 9, "bold"),
-            text_color="#1a1a1a", fg_color=ORANGE,
-            corner_radius=8, width=0, cursor="hand2")
-        self._action_badge.grid(row=0, column=6, padx=(0, 4), pady=(8, 0))
+            right_frame, text="", font=("Segoe UI", 9, "bold"),
+            text_color=BG, fg_color=ORANGE,
+            corner_radius=10, width=0, cursor="hand2")
+        self._action_badge.pack(side="left", padx=(0, 4))
         self._action_badge.bind("<Button-1>", lambda e: self._navigate_to_comm())
 
         self._update_badge = ctk.CTkButton(
-            hdr, text="", font=("Segoe UI", 9, "bold"),
+            right_frame, text="", font=("Segoe UI", 9, "bold"),
             text_color=TEXT, fg_color="transparent",
-            hover_color=BG3, corner_radius=8, width=0,
+            hover_color=BG3, corner_radius=10, width=0,
             command=self._launch_auto_update)
-        self._update_badge.grid(row=0, column=7, padx=(0, 4), pady=(8, 0))
+        self._update_badge.pack(side="left", padx=(0, 4))
 
         # Offline / Air-Gap mode badge
         mode = _fleet_mode()
@@ -1160,10 +1180,10 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
             badge_text = " OFFLINE "
             badge_fg = ORANGE
         self._mode_badge = ctk.CTkLabel(
-            hdr, text=badge_text, font=("Segoe UI", 9, "bold"),
-            text_color="#1a1a1a" if badge_text else TEXT,
-            fg_color=badge_fg, corner_radius=8, width=0)
-        self._mode_badge.grid(row=0, column=7, padx=(0, 8), pady=(8, 0))
+            right_frame, text=badge_text, font=("Segoe UI", 9, "bold"),
+            text_color=BG if badge_text else TEXT,
+            fg_color=badge_fg, corner_radius=10, width=0)
+        self._mode_badge.pack(side="left")
 
     # ── Sidebar ───────────────────────────────────────────────────────────────
     def _toggle_sidebar(self):

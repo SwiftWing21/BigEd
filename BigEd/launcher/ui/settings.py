@@ -31,6 +31,8 @@ import psutil
 from ui.theme import (
     BG, BG2, BG3, ACCENT, ACCENT_H, GOLD, TEXT, DIM,
     GREEN, ORANGE, RED, MONO, FONT, FONT_SM, FONT_H,
+    BLUE, FONT_XS, FONT_STAT, FONT_BOLD, FONT_TITLE,
+    GLASS_BG, GLASS_NAV, GLASS_PANEL, GLASS_HOVER, GLASS_SEL, GLASS_BORDER,
 )
 
 # ─── Lazy imports from launcher ──────────────────────────────────────────────
@@ -55,12 +57,6 @@ _SETTINGS_NAV = [
     ("MCP Servers", "mcp"),
 ]
 
-_GLASS_BG    = "#0f0f0f"
-_GLASS_NAV   = "#141414"
-_GLASS_PANEL = "#181818"
-_GLASS_HOVER = "#222222"
-_GLASS_SEL   = "#1a1a2e"
-_GLASS_BORDER = "#2a2a2a"
 
 
 # ─── Unified Settings Dialog ────────────────────────────────────────────────
@@ -73,7 +69,7 @@ class SettingsDialog(ctk.CTkToplevel):
         self.title("BigEd CC — Settings")
         self.geometry("820x580")
         self.minsize(700, 480)
-        self.configure(fg_color=_GLASS_BG)
+        self.configure(fg_color=GLASS_BG)
         self.grab_set()
         self._parent = parent
         self._nav_buttons = {}
@@ -97,35 +93,50 @@ class SettingsDialog(ctk.CTkToplevel):
         self.grid_columnconfigure(1, weight=1)  # content
         self.grid_rowconfigure(1, weight=1)
 
-        # ── Gradient header ──────────────────────────────────────────────
-        hdr = ctk.CTkFrame(self, fg_color=_GLASS_BG, height=50, corner_radius=0)
+        # ── Header ────────────────────────────────────────────────────
+        hdr = ctk.CTkFrame(self, fg_color=GLASS_BG, height=56, corner_radius=0)
         hdr.grid(row=0, column=0, columnspan=2, sticky="ew")
         hdr.grid_propagate(False)
-        hdr.grid_columnconfigure(1, weight=1)
-        ctk.CTkLabel(hdr, text="⚙  SETTINGS",
-                     font=("Segoe UI", 15, "bold"), text_color=GOLD
-                     ).grid(row=0, column=0, padx=18, pady=12, sticky="w")
-        ctk.CTkLabel(hdr, text="BigEd CC configuration",
-                     font=("Segoe UI", 9), text_color=DIM
-                     ).grid(row=0, column=1, padx=8, sticky="w")
+        hdr.grid_columnconfigure(2, weight=1)
+
+        # Accent stripe on left edge
+        stripe = ctk.CTkFrame(hdr, fg_color=GOLD, width=3, corner_radius=0)
+        stripe.grid(row=0, column=0, sticky="ns", padx=0)
+
+        # Title block
+        title_frame = ctk.CTkFrame(hdr, fg_color="transparent")
+        title_frame.grid(row=0, column=1, padx=(12, 0), pady=8, sticky="w")
+        ctk.CTkLabel(title_frame, text="SETTINGS",
+                     font=FONT_TITLE, text_color=GOLD).pack(anchor="w")
+        ctk.CTkLabel(title_frame, text="fleet configuration & preferences",
+                     font=FONT_XS, text_color=DIM).pack(anchor="w")
+
+        # Version pill on right
+        ctk.CTkLabel(hdr, text=" v0.31 ", font=FONT_XS,
+                     text_color=DIM, fg_color=GLASS_NAV,
+                     corner_radius=8).grid(row=0, column=2, padx=16, sticky="e")
 
         # ── Left nav ────────────────────────────────────────────────────
-        nav = ctk.CTkFrame(self, fg_color=_GLASS_NAV, width=160, corner_radius=0)
+        nav = ctk.CTkFrame(self, fg_color=GLASS_NAV, width=170, corner_radius=0)
         nav.grid(row=1, column=0, sticky="nsew")
         nav.grid_propagate(False)
 
+        # Nav section label
+        ctk.CTkLabel(nav, text="SECTIONS", font=FONT_XS,
+                     text_color="#444").pack(padx=14, pady=(12, 6), anchor="w")
+
         for i, (label, key) in enumerate(_SETTINGS_NAV):
             b = ctk.CTkButton(
-                nav, text=f"  {label}", font=FONT,
-                fg_color="transparent", hover_color=_GLASS_HOVER,
-                text_color=DIM, anchor="w", height=36, corner_radius=0,
+                nav, text=f"  {label}", font=FONT_SM,
+                fg_color="transparent", hover_color=GLASS_HOVER,
+                text_color=DIM, anchor="w", height=34, corner_radius=4,
                 command=lambda k=key: self._show_section(k),
             )
-            b.pack(fill="x", padx=0, pady=(1 if i else 8, 0))
+            b.pack(fill="x", padx=6, pady=1)
             self._nav_buttons[key] = b
 
         # ── Content area ────────────────────────────────────────────────
-        self._content = ctk.CTkFrame(self, fg_color=_GLASS_PANEL, corner_radius=0)
+        self._content = ctk.CTkFrame(self, fg_color=GLASS_PANEL, corner_radius=0)
         self._content.grid(row=1, column=1, sticky="nsew")
         self._content.grid_columnconfigure(0, weight=1)
         self._content.grid_rowconfigure(0, weight=1)
@@ -146,7 +157,7 @@ class SettingsDialog(ctk.CTkToplevel):
         # Update nav highlighting
         for k, b in self._nav_buttons.items():
             if k == key:
-                b.configure(fg_color=_GLASS_SEL, text_color=GOLD)
+                b.configure(fg_color=GLASS_SEL, text_color=GOLD)
             else:
                 b.configure(fg_color="transparent", text_color=DIM)
         # Show/hide panels
@@ -160,12 +171,12 @@ class SettingsDialog(ctk.CTkToplevel):
     # ── General Panel ────────────────────────────────────────────────────
     def _build_general_panel(self):
         L = _launcher()
-        panel = ctk.CTkScrollableFrame(self._content, fg_color=_GLASS_PANEL)
+        panel = ctk.CTkScrollableFrame(self._content, fg_color=GLASS_PANEL)
         self._panels["general"] = panel
 
         # Section: Agent Theme
         self._section_header(panel, "Agent Theme")
-        theme_frame = ctk.CTkFrame(panel, fg_color=_GLASS_BG, corner_radius=6)
+        theme_frame = ctk.CTkFrame(panel, fg_color=GLASS_BG, corner_radius=6)
         theme_frame.pack(fill="x", padx=16, pady=(0, 12))
         theme_frame.grid_columnconfigure(1, weight=1)
 
@@ -187,7 +198,7 @@ class SettingsDialog(ctk.CTkToplevel):
 
         # Section: Custom Agent Names
         self._section_header(panel, "Custom Agent Names")
-        names_frame = ctk.CTkFrame(panel, fg_color=_GLASS_BG, corner_radius=6)
+        names_frame = ctk.CTkFrame(panel, fg_color=GLASS_BG, corner_radius=6)
         names_frame.pack(fill="x", padx=16, pady=(0, 12))
         names_frame.grid_columnconfigure(1, weight=1)
 
@@ -208,8 +219,8 @@ class SettingsDialog(ctk.CTkToplevel):
             ctk.CTkLabel(names_frame, text=f"{role}:", font=("Consolas", 10),
                          text_color=DIM, anchor="e", width=110
                          ).grid(row=i, column=0, padx=(10, 6), pady=2, sticky="e")
-            entry = ctk.CTkEntry(names_frame, font=FONT_SM, fg_color=_GLASS_BG,
-                                 border_color=_GLASS_BORDER, text_color=TEXT,
+            entry = ctk.CTkEntry(names_frame, font=FONT_SM, fg_color=GLASS_BG,
+                                 border_color=GLASS_BORDER, text_color=TEXT,
                                  placeholder_text=theme_default, height=28)
             entry.grid(row=i, column=1, sticky="ew", padx=(0, 10), pady=2)
             current = L._custom_names.get(role, "")
@@ -232,7 +243,7 @@ class SettingsDialog(ctk.CTkToplevel):
 
         # Section: Fleet Behavior
         self._section_header(panel, "Fleet Behavior")
-        behavior_frame = ctk.CTkFrame(panel, fg_color=_GLASS_BG, corner_radius=6)
+        behavior_frame = ctk.CTkFrame(panel, fg_color=GLASS_BG, corner_radius=6)
         behavior_frame.pack(fill="x", padx=16, pady=(0, 12))
 
         self._claude_research_var2 = ctk.BooleanVar(
@@ -251,7 +262,7 @@ class SettingsDialog(ctk.CTkToplevel):
 
         # Section: Ingestion
         self._section_header(panel, "File Ingestion")
-        ingest_frame = ctk.CTkFrame(panel, fg_color=_GLASS_BG, corner_radius=6)
+        ingest_frame = ctk.CTkFrame(panel, fg_color=GLASS_BG, corner_radius=6)
         ingest_frame.pack(fill="x", padx=16, pady=(0, 12))
         ingest_frame.grid_columnconfigure(1, weight=1)
 
@@ -262,8 +273,8 @@ class SettingsDialog(ctk.CTkToplevel):
                      text_color=TEXT).grid(row=0, column=0, padx=12, pady=(12, 4), sticky="w")
         self._ingest_path_var = ctk.StringVar(value=ingest_path)
         ctk.CTkEntry(ingest_frame, textvariable=self._ingest_path_var,
-                     font=("Consolas", 9), fg_color=_GLASS_BG,
-                     border_color=_GLASS_BORDER, text_color=TEXT, height=28
+                     font=("Consolas", 9), fg_color=GLASS_BG,
+                     border_color=GLASS_BORDER, text_color=TEXT, height=28
                      ).grid(row=1, column=0, columnspan=2, sticky="ew",
                             padx=12, pady=(0, 4))
 
@@ -286,7 +297,7 @@ class SettingsDialog(ctk.CTkToplevel):
 
         # Section: Visible Tabs
         self._section_header(panel, "Visible Tabs (Requires Restart)")
-        tabs_frame = ctk.CTkFrame(panel, fg_color=_GLASS_BG, corner_radius=6)
+        tabs_frame = ctk.CTkFrame(panel, fg_color=GLASS_BG, corner_radius=6)
         tabs_frame.pack(fill="x", padx=16, pady=(0, 12))
 
         ctk.CTkLabel(tabs_frame, text="Enable or disable modular launcher tabs.",
@@ -318,7 +329,7 @@ class SettingsDialog(ctk.CTkToplevel):
 
         # Section: Backup & Restore
         self._section_header(panel, "Backup & Restore")
-        backup_frame = ctk.CTkFrame(panel, fg_color=_GLASS_BG, corner_radius=6)
+        backup_frame = ctk.CTkFrame(panel, fg_color=GLASS_BG, corner_radius=6)
         backup_frame.pack(fill="x", padx=16, pady=(0, 12))
 
         ctk.CTkLabel(backup_frame, text="Export or import configurations securely.",
@@ -334,13 +345,13 @@ class SettingsDialog(ctk.CTkToplevel):
     # ── Display Panel ────────────────────────────────────────────────────
     def _build_display_panel(self):
         L = _launcher()
-        panel = ctk.CTkScrollableFrame(self._content, fg_color=_GLASS_PANEL)
+        panel = ctk.CTkScrollableFrame(self._content, fg_color=GLASS_PANEL)
         self._panels["display"] = panel
         prefs = L._load_settings()
 
         # Section: UI Scale
         self._section_header(panel, "UI Scale")
-        scale_frame = ctk.CTkFrame(panel, fg_color=_GLASS_BG, corner_radius=6)
+        scale_frame = ctk.CTkFrame(panel, fg_color=GLASS_BG, corner_radius=6)
         scale_frame.pack(fill="x", padx=16, pady=(0, 12))
 
         ctk.CTkLabel(scale_frame, text="Adjust UI size (75%–150%). Applied on next launch.",
@@ -370,7 +381,7 @@ class SettingsDialog(ctk.CTkToplevel):
 
         # Section: Window Behavior
         self._section_header(panel, "Window Behavior")
-        win_frame = ctk.CTkFrame(panel, fg_color=_GLASS_BG, corner_radius=6)
+        win_frame = ctk.CTkFrame(panel, fg_color=GLASS_BG, corner_radius=6)
         win_frame.pack(fill="x", padx=16, pady=(0, 12))
 
         self._sidebar_vis_var = ctk.BooleanVar(value=prefs.get("sidebar_visible", True))
@@ -403,7 +414,7 @@ class SettingsDialog(ctk.CTkToplevel):
 
         # Section: Density
         self._section_header(panel, "Density")
-        density_frame = ctk.CTkFrame(panel, fg_color=_GLASS_BG, corner_radius=6)
+        density_frame = ctk.CTkFrame(panel, fg_color=GLASS_BG, corner_radius=6)
         density_frame.pack(fill="x", padx=16, pady=(0, 12))
 
         self._compact_var = ctk.BooleanVar(value=prefs.get("compact_mode", False))
@@ -418,12 +429,12 @@ class SettingsDialog(ctk.CTkToplevel):
     # ── Models Panel ─────────────────────────────────────────────────────
     def _build_models_panel(self):
         L = _launcher()
-        panel = ctk.CTkScrollableFrame(self._content, fg_color=_GLASS_PANEL)
+        panel = ctk.CTkScrollableFrame(self._content, fg_color=GLASS_PANEL)
         self._panels["models"] = panel
 
         # LLM Model button
         self._section_header(panel, "LLM Model")
-        llm_frame = ctk.CTkFrame(panel, fg_color=_GLASS_BG, corner_radius=6)
+        llm_frame = ctk.CTkFrame(panel, fg_color=GLASS_BG, corner_radius=6)
         llm_frame.pack(fill="x", padx=16, pady=(0, 12))
 
         current_model = L.load_model_cfg().get("local", "qwen3:8b")
@@ -441,7 +452,7 @@ class SettingsDialog(ctk.CTkToplevel):
 
         # Diffusion Models
         self._section_header(panel, "Image Generation (Stable Diffusion)")
-        diff_frame = ctk.CTkFrame(panel, fg_color=_GLASS_BG, corner_radius=6)
+        diff_frame = ctk.CTkFrame(panel, fg_color=GLASS_BG, corner_radius=6)
         diff_frame.pack(fill="x", padx=16, pady=(0, 12))
 
         diff_settings = self._settings.get("diffusion", {})
@@ -513,7 +524,7 @@ class SettingsDialog(ctk.CTkToplevel):
         self._diff_steps_var = ctk.StringVar(
             value=str(diff_settings.get("default_steps", 30)))
         ctk.CTkEntry(params_row, textvariable=self._diff_steps_var,
-                     font=FONT_SM, fg_color=_GLASS_BG, border_color=_GLASS_BORDER,
+                     font=FONT_SM, fg_color=GLASS_BG, border_color=GLASS_BORDER,
                      text_color=TEXT, width=50, height=28
                      ).pack(side="left", padx=(4, 16))
 
@@ -522,13 +533,13 @@ class SettingsDialog(ctk.CTkToplevel):
         self._diff_guidance_var = ctk.StringVar(
             value=str(diff_settings.get("default_guidance", 7.5)))
         ctk.CTkEntry(params_row, textvariable=self._diff_guidance_var,
-                     font=FONT_SM, fg_color=_GLASS_BG, border_color=_GLASS_BORDER,
+                     font=FONT_SM, fg_color=GLASS_BG, border_color=GLASS_BORDER,
                      text_color=TEXT, width=50, height=28
                      ).pack(side="left", padx=(4, 0))
 
         # ── Upscale section ───────────────────────────────────────────
         self._section_header(panel, "Upscale Pipeline (SD 1.5)")
-        up_frame = ctk.CTkFrame(panel, fg_color=_GLASS_BG, corner_radius=6)
+        up_frame = ctk.CTkFrame(panel, fg_color=GLASS_BG, corner_radius=6)
         up_frame.pack(fill="x", padx=16, pady=(0, 12))
 
         ctk.CTkLabel(up_frame,
@@ -550,7 +561,7 @@ class SettingsDialog(ctk.CTkToplevel):
         ).pack(side="left", padx=(8, 0))
 
         # Method descriptions
-        desc_frame = ctk.CTkFrame(up_frame, fg_color=_GLASS_BG, corner_radius=4)
+        desc_frame = ctk.CTkFrame(up_frame, fg_color=GLASS_BG, corner_radius=4)
         desc_frame.pack(fill="x", padx=12, pady=(4, 8))
         ctk.CTkLabel(desc_frame,
                      text="none     — output at base resolution (512x512)\n"
@@ -568,7 +579,7 @@ class SettingsDialog(ctk.CTkToplevel):
         self._upscale_passes_var = ctk.StringVar(
             value=str(diff_settings.get("default_upscale_passes", 1)))
         ctk.CTkEntry(refine_row, textvariable=self._upscale_passes_var,
-                     font=FONT_SM, fg_color=_GLASS_BG, border_color=_GLASS_BORDER,
+                     font=FONT_SM, fg_color=GLASS_BG, border_color=GLASS_BORDER,
                      text_color=TEXT, width=40, height=28
                      ).pack(side="left", padx=(4, 14))
 
@@ -577,7 +588,7 @@ class SettingsDialog(ctk.CTkToplevel):
         self._upscale_factor_var = ctk.StringVar(
             value=str(diff_settings.get("default_upscale_factor", 1.5)))
         ctk.CTkEntry(refine_row, textvariable=self._upscale_factor_var,
-                     font=FONT_SM, fg_color=_GLASS_BG, border_color=_GLASS_BORDER,
+                     font=FONT_SM, fg_color=GLASS_BG, border_color=GLASS_BORDER,
                      text_color=TEXT, width=50, height=28
                      ).pack(side="left", padx=(4, 14))
 
@@ -586,12 +597,12 @@ class SettingsDialog(ctk.CTkToplevel):
         self._upscale_strength_var = ctk.StringVar(
             value=str(diff_settings.get("default_upscale_strength", 0.35)))
         ctk.CTkEntry(refine_row, textvariable=self._upscale_strength_var,
-                     font=FONT_SM, fg_color=_GLASS_BG, border_color=_GLASS_BORDER,
+                     font=FONT_SM, fg_color=GLASS_BG, border_color=GLASS_BORDER,
                      text_color=TEXT, width=50, height=28
                      ).pack(side="left", padx=(4, 0))
 
         # Pipeline preview
-        preview_frame = ctk.CTkFrame(up_frame, fg_color=_GLASS_BG, corner_radius=4)
+        preview_frame = ctk.CTkFrame(up_frame, fg_color=GLASS_BG, corner_radius=4)
         preview_frame.pack(fill="x", padx=12, pady=(4, 10))
         self._pipeline_preview = ctk.CTkLabel(
             preview_frame, text="", font=("Consolas", 9), text_color=GOLD, anchor="w")
@@ -625,14 +636,14 @@ class SettingsDialog(ctk.CTkToplevel):
     # ── Hardware Panel ───────────────────────────────────────────────────
     def _build_hardware_panel(self):
         L = _launcher()
-        panel = ctk.CTkFrame(self._content, fg_color=_GLASS_PANEL)
+        panel = ctk.CTkFrame(self._content, fg_color=GLASS_PANEL)
         self._panels["hardware"] = panel
         panel.grid_columnconfigure(0, weight=1)
         panel.grid_rowconfigure(2, weight=1)
 
         # GPU Power section
         self._section_header_grid(panel, "GPU Power & Thermal", row=0)
-        gpu_frame = ctk.CTkFrame(panel, fg_color=_GLASS_BG, corner_radius=6)
+        gpu_frame = ctk.CTkFrame(panel, fg_color=GLASS_BG, corner_radius=6)
         gpu_frame.grid(row=1, column=0, sticky="ew", padx=16, pady=(0, 8))
         ctk.CTkLabel(gpu_frame,
                      text="Control GPU power limits and monitor thermals.",
@@ -646,7 +657,7 @@ class SettingsDialog(ctk.CTkToplevel):
         # Hardware Details section
         self._section_header_grid(panel, "Hardware Details", row=2)
         hw_text = ctk.CTkTextbox(panel, font=("Consolas", 10),
-                                 fg_color=_GLASS_BG, text_color=TEXT,
+                                 fg_color=GLASS_BG, text_color=TEXT,
                                  wrap="none", corner_radius=6)
         hw_text.grid(row=3, column=0, sticky="nsew", padx=16, pady=(0, 12))
         hw_text.insert("end", "Loading hardware info...")
@@ -665,13 +676,13 @@ class SettingsDialog(ctk.CTkToplevel):
 
     # ── Keys Panel ───────────────────────────────────────────────────────
     def _build_keys_panel(self):
-        panel = ctk.CTkFrame(self._content, fg_color=_GLASS_PANEL)
+        panel = ctk.CTkFrame(self._content, fg_color=GLASS_PANEL)
         self._panels["keys"] = panel
         panel.grid_columnconfigure(0, weight=1)
         panel.grid_rowconfigure(0, weight=1)
 
         # Embed a simple message + launch button (full KeyManager is complex)
-        inner = ctk.CTkFrame(panel, fg_color=_GLASS_BG, corner_radius=6)
+        inner = ctk.CTkFrame(panel, fg_color=GLASS_BG, corner_radius=6)
         inner.place(relx=0.5, rely=0.4, anchor="center")
 
         ctk.CTkLabel(inner, text="🔑", font=("Segoe UI", 32)
@@ -692,12 +703,12 @@ class SettingsDialog(ctk.CTkToplevel):
     # ── Review Panel ─────────────────────────────────────────────────────
     def _build_review_panel(self):
         L = _launcher()
-        panel = ctk.CTkFrame(self._content, fg_color=_GLASS_PANEL)
+        panel = ctk.CTkFrame(self._content, fg_color=GLASS_PANEL)
         self._panels["review"] = panel
         panel.grid_columnconfigure(0, weight=1)
         panel.grid_rowconfigure(0, weight=1)
 
-        inner = ctk.CTkFrame(panel, fg_color=_GLASS_BG, corner_radius=6)
+        inner = ctk.CTkFrame(panel, fg_color=GLASS_BG, corner_radius=6)
         inner.place(relx=0.5, rely=0.4, anchor="center")
 
         ctk.CTkLabel(inner, text="🧪", font=("Segoe UI", 32)
@@ -717,7 +728,7 @@ class SettingsDialog(ctk.CTkToplevel):
 
     # ── Operations Panel ─────────────────────────────────────────────────
     def _build_operations_panel(self):
-        panel = ctk.CTkScrollableFrame(self._content, fg_color=_GLASS_PANEL)
+        panel = ctk.CTkScrollableFrame(self._content, fg_color=GLASS_PANEL)
         self._panels["operations"] = panel
 
         def _ops_btn(parent, label, cmd, desc=None, color=BG3, hover=BG2):
@@ -732,7 +743,7 @@ class SettingsDialog(ctk.CTkToplevel):
 
         # Fleet Recovery
         self._section_header(panel, "Fleet Recovery")
-        recover_frame = ctk.CTkFrame(panel, fg_color=_GLASS_BG, corner_radius=6)
+        recover_frame = ctk.CTkFrame(panel, fg_color=GLASS_BG, corner_radius=6)
         recover_frame.pack(fill="x", padx=16, pady=(0, 12))
         inner = ctk.CTkFrame(recover_frame, fg_color="transparent")
         inner.pack(fill="x", padx=12, pady=10)
@@ -742,7 +753,7 @@ class SettingsDialog(ctk.CTkToplevel):
 
         # Security
         self._section_header(panel, "Security")
-        sec_frame = ctk.CTkFrame(panel, fg_color=_GLASS_BG, corner_radius=6)
+        sec_frame = ctk.CTkFrame(panel, fg_color=GLASS_BG, corner_radius=6)
         sec_frame.pack(fill="x", padx=16, pady=(0, 12))
         inner = ctk.CTkFrame(sec_frame, fg_color="transparent")
         inner.pack(fill="x", padx=12, pady=10)
@@ -755,7 +766,7 @@ class SettingsDialog(ctk.CTkToplevel):
 
         # Marathon
         self._section_header(panel, "Marathon")
-        marathon_frame = ctk.CTkFrame(panel, fg_color=_GLASS_BG, corner_radius=6)
+        marathon_frame = ctk.CTkFrame(panel, fg_color=GLASS_BG, corner_radius=6)
         marathon_frame.pack(fill="x", padx=16, pady=(0, 12))
         inner = ctk.CTkFrame(marathon_frame, fg_color="transparent")
         inner.pack(fill="x", padx=12, pady=10)
@@ -769,13 +780,20 @@ class SettingsDialog(ctk.CTkToplevel):
 
     # ── Helpers ──────────────────────────────────────────────────────────
     def _section_header(self, parent, text: str):
-        ctk.CTkLabel(parent, text=text, font=("Segoe UI", 12, "bold"),
-                     text_color=GOLD).pack(padx=16, pady=(16, 6), anchor="w")
+        frame = ctk.CTkFrame(parent, fg_color="transparent")
+        frame.pack(fill="x", padx=16, pady=(16, 6))
+        ctk.CTkFrame(frame, fg_color=GOLD, width=3, height=14,
+                     corner_radius=1).pack(side="left", padx=(0, 8))
+        ctk.CTkLabel(frame, text=text.upper(), font=FONT_BOLD,
+                     text_color=GOLD).pack(side="left")
 
     def _section_header_grid(self, parent, text: str, row: int):
-        ctk.CTkLabel(parent, text=text, font=("Segoe UI", 12, "bold"),
-                     text_color=GOLD).grid(row=row, column=0, padx=16,
-                                           pady=(16, 6), sticky="w")
+        frame = ctk.CTkFrame(parent, fg_color="transparent")
+        frame.grid(row=row, column=0, padx=16, pady=(16, 6), sticky="w")
+        ctk.CTkFrame(frame, fg_color=GOLD, width=3, height=14,
+                     corner_radius=1).pack(side="left", padx=(0, 8))
+        ctk.CTkLabel(frame, text=text.upper(), font=FONT_BOLD,
+                     text_color=GOLD).pack(side="left")
 
     # ── Display panel handlers ────────────────────────────────────────────
     def _on_scale_preview(self, value):
@@ -1089,12 +1107,12 @@ class SettingsDialog(ctk.CTkToplevel):
 
     def _build_mcp_panel(self):
         """MCP Servers panel — view and manage connected MCP tool servers."""
-        panel = ctk.CTkScrollableFrame(self._content, fg_color=_GLASS_PANEL)
+        panel = ctk.CTkScrollableFrame(self._content, fg_color=GLASS_PANEL)
         self._panels["mcp"] = panel
 
         # ── Status overview ────────────────────────────────────────────
         self._section_header(panel, "Connected Servers")
-        status_frame = ctk.CTkFrame(panel, fg_color=_GLASS_BG, corner_radius=6)
+        status_frame = ctk.CTkFrame(panel, fg_color=GLASS_BG, corner_radius=6)
         status_frame.pack(fill="x", padx=16, pady=(0, 12))
         status_frame.grid_columnconfigure(1, weight=1)
 
@@ -1110,7 +1128,7 @@ class SettingsDialog(ctk.CTkToplevel):
 
         # ── Bundled Defaults ───────────────────────────────────────────
         self._section_header(panel, "Bundled Defaults")
-        defaults_frame = ctk.CTkFrame(panel, fg_color=_GLASS_BG, corner_radius=6)
+        defaults_frame = ctk.CTkFrame(panel, fg_color=GLASS_BG, corner_radius=6)
         defaults_frame.pack(fill="x", padx=16, pady=(0, 12))
 
         self._mcp_toggles = {}
@@ -1156,7 +1174,7 @@ class SettingsDialog(ctk.CTkToplevel):
 
         # ── Integrations (one-click add) ──────────────────────────────
         self._section_header(panel, "Integrations")
-        int_frame = ctk.CTkFrame(panel, fg_color=_GLASS_BG, corner_radius=6)
+        int_frame = ctk.CTkFrame(panel, fg_color=GLASS_BG, corner_radius=6)
         int_frame.pack(fill="x", padx=16, pady=(0, 12))
 
         integrations = [
@@ -1205,21 +1223,21 @@ class SettingsDialog(ctk.CTkToplevel):
 
         # ── Custom Server ─────────────────────────────────────────────
         self._section_header(panel, "Custom Server")
-        custom_frame = ctk.CTkFrame(panel, fg_color=_GLASS_BG, corner_radius=6)
+        custom_frame = ctk.CTkFrame(panel, fg_color=GLASS_BG, corner_radius=6)
         custom_frame.pack(fill="x", padx=16, pady=(0, 12))
         custom_frame.grid_columnconfigure(1, weight=1)
 
         ctk.CTkLabel(custom_frame, text="Name", font=FONT_SM,
                     text_color=DIM).grid(row=0, column=0, padx=12, pady=(10, 4), sticky="w")
         self._custom_name = ctk.CTkEntry(
-            custom_frame, font=MONO, fg_color=BG, border_color=_GLASS_BORDER,
+            custom_frame, font=MONO, fg_color=BG, border_color=GLASS_BORDER,
             height=28, placeholder_text="my-server")
         self._custom_name.grid(row=0, column=1, padx=12, pady=(10, 4), sticky="ew")
 
         ctk.CTkLabel(custom_frame, text="URL", font=FONT_SM,
                     text_color=DIM).grid(row=1, column=0, padx=12, pady=4, sticky="w")
         self._custom_url = ctk.CTkEntry(
-            custom_frame, font=MONO, fg_color=BG, border_color=_GLASS_BORDER,
+            custom_frame, font=MONO, fg_color=BG, border_color=GLASS_BORDER,
             height=28, placeholder_text="http://localhost:8080 or npx -y @org/server")
         self._custom_url.grid(row=1, column=1, padx=12, pady=4, sticky="ew")
 
