@@ -15,7 +15,7 @@ import sys
 from pathlib import Path
 
 HERE = Path(__file__).parent
-APP_NAME = "BigEd CC"
+APP_NAME = "Big Edge Compute Command"
 APP_ID = "com.biged.cc"
 VERSION = "0.43"
 

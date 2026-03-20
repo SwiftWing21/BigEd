@@ -1,7 +1,14 @@
 """
 BigEd CC — Updater
-Git pull + incremental build. Only rebuilds steps where tracked source files
-changed (or output is missing). Force Full Rebuild bypasses checks.
+Dual-mode updater supporting both source (git) and installed (release) users.
+
+Source mode (git repo detected):
+    Git pull + incremental PyInstaller build. Only rebuilds steps where
+    tracked source files changed (or output is missing).
+
+Release mode (no git repo / frozen .exe):
+    Downloads latest release from GitHub Releases API, swaps binaries.
+    No Git, pip, or Python required on the user's machine.
 """
 import hashlib
 import json
@@ -28,6 +35,22 @@ UPD_NEW_PATH  = DIST_DIR / "Updater_new.exe"   # staged build — swapped on clo
 REQ_FILE      = SRC_DIR  / "requirements.txt"
 MANIFEST_FILE = DIST_DIR / ".update_manifest.json"
 HERE          = SRC_DIR
+
+
+# ─── Mode detection ──────────────────────────────────────────────────────────
+def _detect_update_mode() -> str:
+    """Detect whether we're in a git repo (source) or installed (release).
+
+    Checks up to 3 parent levels for a .git directory.
+    Returns 'git' or 'release'.
+    """
+    for parent in [SRC_DIR, SRC_DIR.parent, SRC_DIR.parent.parent]:
+        if (parent / ".git").exists():
+            return "git"
+    return "release"
+
+
+UPDATE_MODE = _detect_update_mode()
 
 # ─── Theme ────────────────────────────────────────────────────────────────────
 ctk.set_appearance_mode("dark")
@@ -170,6 +193,7 @@ class Updater(ctk.CTk):
         self._build_ui()
         self._running = False
         self._pending_self_update = False
+        self._pending_release = None
         self._start_time = 0.0
         self.protocol("WM_DELETE_WINDOW", self._on_close)
 
@@ -198,9 +222,10 @@ class Updater(ctk.CTk):
         # Title block
         title_frame = ctk.CTkFrame(hdr, fg_color="transparent")
         title_frame.grid(row=0, column=1, padx=(12, 0), pady=8, sticky="w")
+        mode_label = "git pull + incremental build" if UPDATE_MODE == "git" else "GitHub release download"
         ctk.CTkLabel(title_frame, text="UPDATER",
                      font=("Segoe UI", 14, "bold"), text_color=GOLD).pack(anchor="w")
-        ctk.CTkLabel(title_frame, text="git pull + incremental build",
+        ctk.CTkLabel(title_frame, text=mode_label,
                      font=("Consolas", 8), text_color=DIM).pack(anchor="w")
 
         # Right side: last update + git status
@@ -306,14 +331,20 @@ class Updater(ctk.CTk):
             btn_frame, text="", font=("Segoe UI", 10), text_color=DIM)
         self._status_lbl.grid(row=0, column=4, padx=12, sticky="e")
 
-    # ── Git Status ──────────────────────────────────────────────────────────
+    # ── Status Check ─────────────────────────────────────────────────────────
     def _check_git_status(self):
-        """Background: check git for upstream changes and show changelog."""
+        """Background: check for updates (git or release mode)."""
+        if UPDATE_MODE == "git":
+            self._check_git_upstream()
+        else:
+            self._check_release_upstream()
+
+    def _check_git_upstream(self):
+        """Git mode: check for upstream commits."""
         behind, commits = _git_check_behind()
         if behind > 0:
             text = f"⬇ {behind} commit{'s' if behind > 1 else ''} behind"
             color = ORANGE
-            # Show changelog in log
             self._log_line("── Upstream Changes ──")
             for c in commits:
                 self._log_line(f"  {c}")
@@ -323,6 +354,34 @@ class Updater(ctk.CTk):
         else:
             text = "✓ up to date"
             color = GREEN
+        self.after(0, lambda: self._git_status_lbl.configure(text=text, text_color=color))
+
+    def _check_release_upstream(self):
+        """Release mode: check GitHub Releases API for new version."""
+        try:
+            from release_updater import check_release, read_installed_version
+            current = read_installed_version(DIST_DIR)
+            release = check_release(current)
+            if release:
+                tag = release["tag"]
+                text = f"⬇ {tag} available"
+                color = ORANGE
+                self._pending_release = release
+                self._log_line("── New Release ──")
+                self._log_line(f"  {tag}: {release['name']}")
+                for a in release.get("assets", []):
+                    size_mb = a["size"] / (1024 * 1024)
+                    self._log_line(f"    {a['name']} ({size_mb:.1f} MB)")
+                self._log_line("")
+            else:
+                text = "✓ up to date"
+                color = GREEN
+                self._pending_release = None
+        except Exception as e:
+            text = "⚠ check failed"
+            color = RED
+            self._pending_release = None
+            self._log_line(f"Release check error: {e}")
         self.after(0, lambda: self._git_status_lbl.configure(text=text, text_color=color))
 
     # ── Helpers ───────────────────────────────────────────────────────────────
@@ -403,6 +462,13 @@ class Updater(ctk.CTk):
         self.after(1000, self._update_stopwatch)
 
     def _run_steps(self, force: bool):
+        if UPDATE_MODE == "release":
+            self._run_release_update(force)
+        else:
+            self._run_git_steps(force)
+
+    def _run_git_steps(self, force: bool):
+        """Source mode: git pull + incremental build."""
         manifest = load_manifest()
         total    = len(STEPS)
         skipped  = 0
@@ -445,6 +511,143 @@ class Updater(ctk.CTk):
                 return
 
         self.after(0, lambda s=skipped: self._on_complete(s))
+
+    def _run_release_update(self, force: bool):
+        """Release mode: download + swap binaries from GitHub Releases."""
+        from release_updater import (
+            check_release, read_installed_version, download_asset,
+            apply_update, write_installed_version,
+        )
+        import tempfile
+
+        # Step 1 — Check for updates
+        self.after(0, lambda: (
+            self._step_label.configure(text="Checking for updates..."),
+            self._set_dot(0, "running"),
+        ))
+        self._log_line("── Checking GitHub Releases ──")
+
+        current = "" if force else read_installed_version(DIST_DIR)
+        try:
+            release = check_release(current)
+        except Exception as e:
+            self._log_line(f"Error: {e}")
+            self.after(0, lambda: (
+                self._set_dot(0, "error"),
+                self._step_label.configure(text="✕ Failed: check for updates"),
+                self._status_lbl.configure(text="Update failed", text_color=RED),
+            ))
+            self._running = False
+            self.after(0, self._re_enable_btns)
+            return
+
+        if release is None:
+            self._log_line("Already up to date.")
+            self.after(0, lambda: (
+                self._set_dot(0, "done"),
+                self._progress.set(1.0),
+            ))
+            self.after(0, lambda: self._on_complete(len(STEPS) - 1))
+            return
+
+        tag = release["tag"]
+        self._log_line(f"  New: {tag} — {release['name']}")
+        self.after(0, lambda: (
+            self._set_dot(0, "done"),
+            self._progress.set(0.2),
+        ))
+
+        # Find best asset
+        assets = release.get("assets", [])
+        if not assets:
+            self._log_line("Release has no downloadable assets.")
+            self.after(0, lambda: self._on_complete(0))
+            return
+
+        chosen = None
+        for a in assets:
+            if a["name"].lower().endswith(".zip"):
+                chosen = a
+                break
+        if chosen is None:
+            for a in assets:
+                if a["name"].lower().endswith(".exe"):
+                    chosen = a
+                    break
+        if chosen is None:
+            chosen = assets[0]
+
+        # Step 2 — Download
+        self.after(0, lambda: (
+            self._step_label.configure(text=f"Downloading {chosen['name']}..."),
+            self._set_dot(1, "running") if len(self._step_dots) > 1 else None,
+        ))
+        size_mb = chosen["size"] / (1024 * 1024)
+        self._log_line(f"── Downloading {chosen['name']} ({size_mb:.1f} MB) ──")
+
+        tmp_path = Path(tempfile.gettempdir()) / "bigedcc_update" / chosen["name"]
+        try:
+            def _progress(done, total):
+                if total > 0:
+                    frac = 0.2 + 0.5 * (done / total)
+                    self.after(0, lambda f=frac: self._progress.set(f))
+
+            download_asset(chosen["url"], tmp_path, progress_cb=_progress)
+        except Exception as e:
+            self._log_line(f"Download failed: {e}")
+            self.after(0, lambda: (
+                self._set_dot(1, "error") if len(self._step_dots) > 1 else None,
+                self._step_label.configure(text="✕ Download failed"),
+                self._status_lbl.configure(text="Update failed", text_color=RED),
+            ))
+            self._running = False
+            self.after(0, self._re_enable_btns)
+            return
+
+        self.after(0, lambda: (
+            self._set_dot(1, "done") if len(self._step_dots) > 1 else None,
+            self._progress.set(0.7),
+        ))
+
+        # Step 3 — Apply
+        self.after(0, lambda: (
+            self._step_label.configure(text="Applying update..."),
+            self._set_dot(2, "running") if len(self._step_dots) > 2 else None,
+        ))
+        self._log_line("── Applying Update ──")
+
+        try:
+            updated_files = apply_update(tmp_path, DIST_DIR, log_cb=self._log_line)
+            write_installed_version(DIST_DIR, tag)
+        except Exception as e:
+            self._log_line(f"Apply failed: {e}")
+            self.after(0, lambda: (
+                self._set_dot(2, "error") if len(self._step_dots) > 2 else None,
+                self._step_label.configure(text="✕ Apply failed"),
+                self._status_lbl.configure(text="Update failed", text_color=RED),
+            ))
+            self._running = False
+            self.after(0, self._re_enable_btns)
+            return
+        finally:
+            if tmp_path.exists():
+                tmp_path.unlink(missing_ok=True)
+
+        # Check if updater was replaced
+        if any("updater" in f.lower() for f in updated_files):
+            self._pending_self_update = True
+            self._log_line("Updater_new.exe staged — will self-update on close")
+
+        self.after(0, lambda: (
+            self._set_dot(2, "done") if len(self._step_dots) > 2 else None,
+            self._progress.set(1.0),
+        ))
+        # Mark remaining dots as skipped
+        for i in range(3, len(self._step_dots)):
+            self.after(0, lambda idx=i: self._set_dot(idx, "skip"))
+
+        self._log_line(f"✓ Updated to {tag}")
+        self.after(0, lambda: self._on_complete(0))
 
     def _run_cmd(self, cmd: list) -> bool:
         try:

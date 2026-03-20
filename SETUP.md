@@ -101,33 +101,35 @@ ollama pull qwen3:4b
 
 **Option A -- Download the installer (easiest):**
 
-1. Go to the [BigEd CC releases page](https://github.com/SwiftWing21/BigEd-CC/releases).
+1. Go to the [BigEd CC releases page](https://github.com/SwiftWing21/BigEd/releases).
 2. Download the latest `.exe` file.
 3. Run it and follow the installer.
 
 **Option B -- Download the source code:**
 
-If you want to run from source, or if no installer is available yet:
+If you want to run from source or contribute:
 
-1. Go to [github.com/SwiftWing21/BigEd-CC](https://github.com/SwiftWing21/BigEd-CC).
-2. Click the green **Code** button, then click **Download ZIP**.
+1. Go to [github.com/SwiftWing21/BigEd](https://github.com/SwiftWing21/BigEd).
+2. Click the green **Code** button, then click **Download ZIP** (or use
+   `git clone https://github.com/SwiftWing21/BigEd.git` if you have Git).
 3. Extract the ZIP file to a folder you will remember (for example, your
    Desktop or Documents folder).
 4. Open Terminal. Type the following commands one at a time, pressing Enter
    after each:
    ```
-   cd path\to\BigEd-CC
+   cd path\to\BigEd
    pip install -r BigEd/launcher/requirements.txt
+   pip install -r fleet/requirements.txt
    ```
-   Replace `path\to\BigEd-CC` with the actual path to the folder you extracted.
-   For example: `cd C:\Users\YourName\Desktop\BigEd-CC`
-5. The `pip install` command downloads the libraries BigEd CC needs. Wait for
-   it to finish.
+   Replace `path\to\BigEd` with the actual path to the folder you extracted.
+   For example: `cd C:\Users\YourName\Desktop\BigEd`
+5. The `pip install` commands download the libraries BigEd CC needs. Wait for
+   them to finish.
 
 #### Step 5 -- Launch BigEd CC
 
 - **If you used the installer:** Double-click the BigEd CC shortcut or `.exe`
-  file.
+  file. Updates are handled automatically by the built-in Updater.
 - **If you downloaded the source code:** Open Terminal, go to the folder, and
   type:
   ```
@@ -177,7 +179,7 @@ If your computer has less than 16 GB of RAM, use `ollama pull qwen3:4b` instead.
 
 **Option A -- AppImage (easiest):**
 
-1. Go to the [BigEd CC releases page](https://github.com/SwiftWing21/BigEd-CC/releases).
+1. Go to the [BigEd CC releases page](https://github.com/SwiftWing21/BigEd/releases).
 2. Download the `.AppImage` file.
 3. In the terminal, make it runnable:
    ```
@@ -192,9 +194,10 @@ If your computer has less than 16 GB of RAM, use `ollama pull qwen3:4b` instead.
 
 1. In the terminal, type these commands one at a time:
    ```
-   git clone https://github.com/SwiftWing21/BigEd-CC.git
-   cd BigEd-CC
+   git clone https://github.com/SwiftWing21/BigEd.git
+   cd BigEd
    pip3 install -r BigEd/launcher/requirements.txt
+   pip3 install -r fleet/requirements.txt
    python3 BigEd/launcher/launcher.py
    ```
 2. If `git` is not installed, install it first:
@@ -268,7 +271,7 @@ If your Mac has 8 GB of RAM, use `ollama pull qwen3:4b` instead.
 
 **Option A -- DMG installer (easiest):**
 
-1. Go to the [BigEd CC releases page](https://github.com/SwiftWing21/BigEd-CC/releases).
+1. Go to the [BigEd CC releases page](https://github.com/SwiftWing21/BigEd/releases).
 2. Download the `.dmg` file.
 3. Open it and drag BigEd CC to your Applications folder.
 
@@ -276,9 +279,10 @@ If your Mac has 8 GB of RAM, use `ollama pull qwen3:4b` instead.
 
 1. In the terminal, type these commands one at a time:
    ```
-   git clone https://github.com/SwiftWing21/BigEd-CC.git
-   cd BigEd-CC
+   git clone https://github.com/SwiftWing21/BigEd.git
+   cd BigEd
    pip3 install -r BigEd/launcher/requirements.txt
+   pip3 install -r fleet/requirements.txt
    python3 BigEd/launcher/launcher.py
    ```
 
@@ -365,6 +369,27 @@ When you open BigEd CC for the first time:
 
 After the first launch, BigEd CC will skip the walkthrough and go straight to
 the main screen.
+
+---
+
+## Updating BigEd CC
+
+BigEd CC includes a built-in Updater that supports two update methods. It
+automatically detects which one to use based on how you installed the
+application.
+
+**Installer users (release mode):** If you installed BigEd CC using
+`Setup.exe` from the releases page, the Updater downloads new versions
+directly from GitHub Releases. No Git or Python development tools are needed.
+Open the Updater from the Start Menu or the installation folder.
+
+**Source users (git mode):** If you cloned the repository with Git, the
+Updater runs `git pull` followed by an incremental PyInstaller build. It only
+rebuilds what changed. Git must be installed and on your PATH.
+
+Both modes use the same Updater window. The subtitle at the top tells you
+which mode is active ("git pull + incremental build" or "GitHub release
+download").
 
 ---
 

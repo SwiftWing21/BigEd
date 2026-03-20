@@ -46,6 +46,7 @@ fail()  { echo -e "${RED}[FAIL]${RESET}  $*"; }
 
 # ── Summary tracking ─────────────────────────────────────────────────────────
 SUMMARY_OS=""
+SUMMARY_GIT=""
 SUMMARY_PYTHON=""
 SUMMARY_TKINTER=""
 SUMMARY_OLLAMA=""
@@ -164,7 +165,39 @@ run_sudo() {
     fi
 }
 
-# ── 2. Check Python 3.11+ ────────────────────────────────────────────────────
+# ── 2. Check Git ─────────────────────────────────────────────────────────────
+check_git() {
+    info "Checking Git..."
+
+    if command -v git &>/dev/null; then
+        local git_ver
+        git_ver="$(git --version 2>&1 | grep -oP '[\d.]+' | head -1 || echo 'unknown')"
+        SUMMARY_GIT="$git_ver"
+        ok "Git $git_ver"
+        return 0
+    fi
+
+    warn "Git not found. Attempting to install..."
+    case "$PKG_MGR" in
+        apt)    run_sudo apt install -y git ;;
+        pacman) run_sudo pacman -S --noconfirm git ;;
+        dnf)    run_sudo dnf install -y git ;;
+        brew)   brew install git ;;
+        *)      warn "Unknown package manager. Please install git manually." ;;
+    esac
+
+    if command -v git &>/dev/null; then
+        local git_ver
+        git_ver="$(git --version 2>&1 | grep -oP '[\d.]+' | head -1 || echo 'unknown')"
+        SUMMARY_GIT="$git_ver"
+        ok "Git $git_ver installed"
+    else
+        SUMMARY_GIT="MISSING"
+        warn "Git not installed. Updater will fall back to GitHub Release downloads."
+    fi
+}
+
+# ── 3. Check Python 3.11+ ────────────────────────────────────────────────────
 check_python() {
     info "Checking Python..."
 
@@ -235,7 +268,7 @@ install_python() {
     esac
 }
 
-# ── 3. Check tkinter ─────────────────────────────────────────────────────────
+# ── 4. Check tkinter ─────────────────────────────────────────────────────────
 check_tkinter() {
     info "Checking tkinter..."
 
@@ -285,31 +318,49 @@ install_tkinter() {
     esac
 }
 
-# ── 4. Install Python dependencies ───────────────────────────────────────────
+# ── 5. Install Python dependencies (launcher + fleet) ───────────────────────
 install_deps() {
     info "Installing Python dependencies..."
 
-    local req_file="$REPO_ROOT/BigEd/launcher/requirements.txt"
-    if [[ ! -f "$req_file" ]]; then
-        fail "Requirements file not found: $req_file"
+    local launcher_req="$REPO_ROOT/BigEd/launcher/requirements.txt"
+    local fleet_req="$REPO_ROOT/fleet/requirements.txt"
+
+    if [[ ! -f "$launcher_req" ]]; then
+        fail "Requirements file not found: $launcher_req"
         exit 1
     fi
 
-    if python3 -m pip install -r "$req_file" 2>/dev/null; then
-        SUMMARY_DEPS="installed"
-        ok "Python dependencies installed"
-    elif python3 -m pip install --user -r "$req_file" 2>/dev/null; then
-        SUMMARY_DEPS="installed (--user)"
-        ok "Python dependencies installed (--user fallback)"
+    # Launcher deps
+    info "Launcher: $launcher_req"
+    if python3 -m pip install -r "$launcher_req" 2>/dev/null; then
+        ok "Launcher dependencies installed"
+    elif python3 -m pip install --user -r "$launcher_req" 2>/dev/null; then
+        ok "Launcher dependencies installed (--user fallback)"
     else
         SUMMARY_DEPS="FAILED"
-        fail "Failed to install Python dependencies."
-        fail "Try manually: python3 -m pip install -r $req_file"
+        fail "Failed to install launcher dependencies."
+        fail "Try manually: python3 -m pip install -r $launcher_req"
         exit 1
     fi
+
+    # Fleet deps
+    if [[ -f "$fleet_req" ]]; then
+        info "Fleet:    $fleet_req"
+        if python3 -m pip install -r "$fleet_req" 2>/dev/null; then
+            ok "Fleet dependencies installed"
+        elif python3 -m pip install --user -r "$fleet_req" 2>/dev/null; then
+            ok "Fleet dependencies installed (--user fallback)"
+        else
+            warn "Fleet pip install had issues. Dashboard and some skills may not work."
+        fi
+    else
+        warn "fleet/requirements.txt not found — fleet dependencies not installed."
+    fi
+
+    SUMMARY_DEPS="installed"
 }
 
-# ── 5. Check/install Ollama ───────────────────────────────────────────────────
+# ── 6. Check/install Ollama ───────────────────────────────────────────────────
 check_ollama() {
     if [[ "$SKIP_OLLAMA" == true ]]; then
         SUMMARY_OLLAMA="skipped (API-only mode)"
@@ -369,7 +420,7 @@ install_ollama() {
     esac
 }
 
-# ── 6. Pull default model ────────────────────────────────────────────────────
+# ── 7. Pull default model ────────────────────────────────────────────────────
 pull_model() {
     if [[ "$SKIP_OLLAMA" == true ]]; then
         return 0
@@ -395,7 +446,7 @@ pull_model() {
     fi
 }
 
-# ── 7. SteamOS-specific checks ───────────────────────────────────────────────
+# ── 8. SteamOS-specific checks ───────────────────────────────────────────────
 steamos_checks() {
     if [[ "$DISTRO" != "steamos" ]]; then
         return 0
@@ -427,13 +478,14 @@ steamos_checks() {
     warn "  sudo steamos-readonly enable"
 }
 
-# ── 8. Final summary ─────────────────────────────────────────────────────────
+# ── 9. Final summary ─────────────────────────────────────────────────────────
 print_summary() {
     echo ""
     echo "================================"
     echo " BigEd CC — Setup Complete"
     echo "================================"
     echo " OS:      $SUMMARY_OS"
+    echo " Git:     ${SUMMARY_GIT:-unknown}  [${SUMMARY_GIT:+OK}${SUMMARY_GIT:-WARN}]"
     echo " Python:  ${SUMMARY_PYTHON:-unknown}  [${SUMMARY_PYTHON:+OK}${SUMMARY_PYTHON:-FAIL}]"
     echo " tkinter: ${SUMMARY_TKINTER:-unknown} [${SUMMARY_TKINTER:+OK}${SUMMARY_TKINTER:-FAIL}]"
     echo " Ollama:  ${SUMMARY_OLLAMA:-unknown}  [${SUMMARY_OLLAMA:+OK}${SUMMARY_OLLAMA:-FAIL}]"
@@ -459,6 +511,7 @@ main() {
 
     detect_os
     steamos_checks
+    check_git
     check_python
     check_tkinter
     install_deps

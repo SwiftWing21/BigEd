@@ -1,0 +1,88 @@
+name: Build & Release
+
+# Trigger on version tags: v0.40.10a, v0.41.00, etc.
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write  # needed to create releases and upload assets
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        working-directory: BigEd/launcher
+        run: pip install -r requirements.txt
+
+      - name: Generate icons
+        working-directory: BigEd/launcher
+        run: python generate_icon.py
+
+      - name: Build all executables
+        working-directory: BigEd/launcher
+        run: python build.py --production
+
+      - name: Create release zip
+        working-directory: BigEd/launcher/dist
+        run: |
+          Compress-Archive -Path BigEdCC.exe, Updater.exe, Setup.exe, brick.ico, brick_banner.png -DestinationPath BigEdCC-Windows-${{ github.ref_name }}.zip
+        shell: pwsh
+
+      - name: Write version file
+        working-directory: BigEd/launcher/dist
+        run: echo "${{ github.ref_name }}" > .bigedcc_version
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-release
+          path: |
+            BigEd/launcher/dist/BigEdCC.exe
+            BigEd/launcher/dist/Updater.exe
+            BigEd/launcher/dist/Setup.exe
+            BigEd/launcher/dist/BigEdCC-Windows-${{ github.ref_name }}.zip
+            BigEd/launcher/dist/.bigedcc_version
+
+  # Linux build (AppImage) — future expansion
+  # build-linux:
+  #   runs-on: ubuntu-latest
+  #   steps: ...
+
+  release:
+    needs: [build-windows]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download Windows artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: windows-release
+          path: release-assets/
+
+      - name: List release assets
+        run: find release-assets/ -type f | sort
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: "BigEd CC ${{ github.ref_name }}"
+          draft: false
+          prerelease: ${{ contains(github.ref_name, 'a') || contains(github.ref_name, 'b') }}
+          generate_release_notes: true
+          files: |
+            release-assets/BigEd/launcher/dist/BigEdCC-Windows-${{ github.ref_name }}.zip
+            release-assets/BigEd/launcher/dist/Setup.exe
+            release-assets/BigEd/launcher/dist/BigEdCC.exe
+            release-assets/BigEd/launcher/dist/Updater.exe

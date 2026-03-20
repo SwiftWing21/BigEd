@@ -191,7 +191,7 @@ auto_manifest = true  # auto-create manifest if missing
 
 [github]
 owner = "SwiftWing21"
-repo = "BigEds_Agents"
+repo = "BigEd"
 
 # v0.31.00: MCP Server Integration — connect external tool servers to fleet skills
 [mcp]

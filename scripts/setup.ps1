@@ -15,6 +15,7 @@ $ErrorActionPreference = "Stop"
 # ---------------------------------------------------------------------------
 $RepoRoot = (Resolve-Path "$PSScriptRoot\..").Path
 $RequirementsFile = Join-Path $RepoRoot "BigEd\launcher\requirements.txt"
+$FleetRequirementsFile = Join-Path $RepoRoot "fleet\requirements.txt"
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -60,7 +61,43 @@ if ($SkipOllama) {
 Write-Host ""
 
 # ---------------------------------------------------------------------------
-# 2. Check Python 3.11+
+# 2. Check Git (needed for source-based updates)
+# ---------------------------------------------------------------------------
+Write-Step "Checking Git ..."
+
+$gitVersion = $null
+try {
+    $gitVersion = (& git --version 2>&1).ToString().Trim()
+    Write-OK "$gitVersion"
+} catch {
+    Write-Warn "Git is not installed. It is required for source-based updates."
+    Write-Host ""
+
+    $installGit = Read-Host "   Download and install Git now? (Y/n)"
+    if ($installGit -eq "n") {
+        Write-Warn "Skipping Git. The Updater will fall back to GitHub Release downloads."
+        Write-Warn "You can install Git later from https://git-scm.com"
+    } else {
+        Write-Info "Opening Git download page ..."
+        Start-Process "https://git-scm.com/download/win"
+        Write-Host ""
+        Read-Host "   Press Enter after you have installed Git to continue"
+
+        $env:Path = [System.Environment]::GetEnvironmentVariable("Path", "Machine") + ";" +
+                    [System.Environment]::GetEnvironmentVariable("Path", "User")
+
+        try {
+            $gitVersion = (& git --version 2>&1).ToString().Trim()
+            Write-OK "$gitVersion"
+        } catch {
+            Write-Warn "Git still not detected. Source-based updates will not work."
+            Write-Warn "The Updater will use GitHub Release downloads instead."
+        }
+    }
+}
+
+# ---------------------------------------------------------------------------
+# 3. Check Python 3.11+
 # ---------------------------------------------------------------------------
 Write-Step "Checking Python 3.11+ ..."
 
@@ -96,7 +133,7 @@ $PythonCmd = $py.Command
 Write-OK "$($py.Version) found (command: $PythonCmd)"
 
 # ---------------------------------------------------------------------------
-# 3. Check pip
+# 4. Check pip
 # ---------------------------------------------------------------------------
 Write-Step "Checking pip ..."
 
@@ -116,34 +153,52 @@ try {
 }
 
 # ---------------------------------------------------------------------------
-# 4. Install Python dependencies
+# 5. Install Python dependencies (launcher + fleet)
 # ---------------------------------------------------------------------------
 Write-Step "Installing Python dependencies ..."
 
+# Launcher dependencies
 if (-not (Test-Path $RequirementsFile)) {
     Write-Err "requirements.txt not found at: $RequirementsFile"
     Write-Err "Make sure you cloned the full repository."
     exit 1
 }
 
-Write-Info "Using: $RequirementsFile"
-
+Write-Info "Launcher: $RequirementsFile"
 try {
     & $PythonCmd -m pip install -r $RequirementsFile 2>&1 | ForEach-Object {
         $line = $_.ToString()
-        # Show only the interesting lines, not the full pip output
         if ($line -match "^(Requirement already satisfied|Successfully installed|Installing collected)") {
             Write-Info $line
         }
     }
-    Write-OK "Dependencies installed."
+    Write-OK "Launcher dependencies installed."
 } catch {
     Write-Err "pip install failed: $_"
     Write-Warn "You can retry manually: $PythonCmd -m pip install -r $RequirementsFile"
 }
 
+# Fleet dependencies
+if (Test-Path $FleetRequirementsFile) {
+    Write-Info "Fleet:    $FleetRequirementsFile"
+    try {
+        & $PythonCmd -m pip install -r $FleetRequirementsFile 2>&1 | ForEach-Object {
+            $line = $_.ToString()
+            if ($line -match "^(Requirement already satisfied|Successfully installed|Installing collected)") {
+                Write-Info $line
+            }
+        }
+        Write-OK "Fleet dependencies installed."
+    } catch {
+        Write-Warn "Fleet pip install had issues: $_"
+        Write-Warn "Fleet dashboard and some skills may not work until fixed."
+    }
+} else {
+    Write-Warn "fleet/requirements.txt not found — fleet dependencies not installed."
+}
+
 # ---------------------------------------------------------------------------
-# 5. Check Ollama
+# 6. Check Ollama
 # ---------------------------------------------------------------------------
 $ollamaVersion = $null
 
@@ -200,7 +255,7 @@ if ($SkipOllama) {
     }
 
     # ------------------------------------------------------------------
-    # 6. Check / pull default model
+    # 7. Check / pull default model
     # ------------------------------------------------------------------
     if ($ollamaVersion) {
         Write-Step "Checking default model (qwen3:8b) ..."
@@ -223,7 +278,7 @@ if ($SkipOllama) {
 }
 
 # ---------------------------------------------------------------------------
-# 7. Verify tkinter
+# 8. Verify tkinter
 # ---------------------------------------------------------------------------
 Write-Step "Checking tkinter ..."
 
@@ -238,7 +293,7 @@ try {
 }
 
 # ---------------------------------------------------------------------------
-# 8. Final summary
+# 9. Final summary
 # ---------------------------------------------------------------------------
 Write-Host ""
 Write-Host "================================" -ForegroundColor Green
@@ -269,7 +324,11 @@ $tkDisplay = try {
     "missing  [WARN]"
 }
 
+$gitDisplay = if ($gitVersion) { ($gitVersion -replace "^git version\s*", "") + "  [OK]" }
+              else { "not installed  [WARN — updates will use Release downloads]" }
+
 Write-Host "   Python:   $pyDisplay  [OK]"       -ForegroundColor Green
+Write-Host "   Git:      $gitDisplay"             -ForegroundColor $(if ($gitDisplay -match "OK") { "Green" } else { "Yellow" })
 Write-Host "   Ollama:   $ollamaDisplay"          -ForegroundColor $(if ($ollamaDisplay -match "OK|skipped") { "Green" } else { "Yellow" })
 Write-Host "   Model:    $modelDisplay"           -ForegroundColor $(if ($modelDisplay -match "OK|skipped") { "Green" } else { "Yellow" })
 Write-Host "   Deps:     installed  [OK]"         -ForegroundColor Green

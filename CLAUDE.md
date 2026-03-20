@@ -1,4 +1,4 @@
-# BigEd CC — Alpha (0.40.10a)
+# BigEd CC — Beta (0.42.00b)
 
 ## Quick Start
 ```bash
@@ -51,6 +51,7 @@ End every roadmap with an Audit Coverage Check section.
 - All TECH_DEBT resolved | S1-S5 complete | Security: OWASP B+, 26 controls, GDPR B
 - v0.31.00: MCP server integration UX, system_info, dependency_check
 - v0.40.10a: skills update (8 skills), cowork refactor integration, settings split
+- v0.42.00b: beta release — dual-mode updater, GitHub Releases pipeline, installer overhaul
 
 ## Gotchas
 - **Ollama PATH**: not on Git Bash PATH on Windows — supervisor auto-finds via `%LOCALAPPDATA%\Programs\Ollama`

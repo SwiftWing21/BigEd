@@ -1,5 +1,5 @@
 """
-BigEd CC — Uninstaller
+Big Edge Compute Command — Uninstaller
 Reads install location from registry, removes shortcuts, registry entry, and files.
 """
 import os
@@ -24,7 +24,7 @@ else:
 BANNER_PNG = BUNDLE / "brick_banner.png"
 ICON_ICO   = BUNDLE / "brick.ico"
 
-APP_NAME  = "BigEd CC"
+APP_NAME  = "Big Edge Compute Command"
 PUBLISHER = "Max's Home Lab"
 REG_KEY   = r"Software\Microsoft\Windows\CurrentVersion\Uninstall\BigEdCC"
 
@@ -74,7 +74,7 @@ def _remove_shortcuts() -> list[str]:
         removed.append("Desktop shortcut")
     programs = (
         Path(os.environ.get("APPDATA", "~"))
-        / "Microsoft/Windows/Start Menu/Programs/BigEd CC"
+        / "Microsoft/Windows/Start Menu/Programs/Big Edge Compute Command"
     )
     if programs.exists():
         shutil.rmtree(programs, ignore_errors=True)
@@ -146,7 +146,7 @@ class Uninstaller(ctk.CTk):
 
     # ── Page: Confirm ─────────────────────────────────────────────────────────
     def _page_confirm(self, parent):
-        ctk.CTkLabel(parent, text="Uninstall BigEd CC",
+        ctk.CTkLabel(parent, text="Uninstall Big Edge Compute Command",
                      font=("Segoe UI", 14, "bold"), text_color=GOLD
                      ).pack(pady=(24, 10))
 

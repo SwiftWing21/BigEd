@@ -468,7 +468,7 @@ This continues to work because `__init__.py` re-exports all three classes.
 - **Grading Alignment:** Module/Plugin Support → A to S | Usability/UX → A+ sustain | Architecture/SoC → A sustain
 - **Dependencies:** v0.30.00 (web launcher, settings view, containerization)
 - **Est. Tokens:** ~30-50k (L/XL)
-- **Status:** [ ] Not started
+- **Status:** [x] Phase 1+3 done (config, settings panel, dashboard API, web launcher). Phase 2 (wizard modal) and Phase 4 (web enable/disable buttons) pending.
 
 #### S-Tier SOC: Default vs Custom MCP Servers
 

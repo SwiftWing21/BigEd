@@ -1,5 +1,5 @@
 """
-BigEd CC — Unified Setup
+Big Edge Compute Command — Unified Setup
 Auto-detects installation state on launch:
   • Not installed  →  Install only
   • Installed      →  Reinstall  |  Uninstall
@@ -31,8 +31,8 @@ UPDATER_EXE = BUNDLE / "Updater.exe"
 BANNER_PNG  = BUNDLE / "brick_banner.png"
 ICON_ICO    = BUNDLE / "brick.ico"
 
-APP_NAME    = "BigEd CC"
-APP_VERSION = "1.0"
+APP_NAME    = "Big Edge Compute Command"
+APP_VERSION = "0.42.00b"
 PUBLISHER   = "Max's Home Lab"
 DEFAULT_DIR = Path(os.environ.get("LOCALAPPDATA", "C:/Users/Public")) / "BigEdCC"
 REG_KEY     = r"Software\Microsoft\Windows\CurrentVersion\Uninstall\BigEdCC"
@@ -123,7 +123,7 @@ def remove_shortcuts() -> list[str]:
         removed.append("Desktop shortcut")
     programs = (
         Path(os.environ.get("APPDATA", "~"))
-        / "Microsoft/Windows/Start Menu/Programs/BigEd CC"
+        / "Microsoft/Windows/Start Menu/Programs/Big Edge Compute Command"
     )
     if programs.exists():
         shutil.rmtree(programs, ignore_errors=True)
@@ -231,7 +231,7 @@ class Setup(ctk.CTk):
 
     # ── Page: Welcome (not installed) ─────────────────────────────────────────
     def _page_welcome(self, parent):
-        ctk.CTkLabel(parent, text="Welcome to BigEd CC Setup",
+        ctk.CTkLabel(parent, text="Welcome to Big Edge Compute Command Setup",
                      font=("Segoe UI", 14, "bold"), text_color=GOLD,
                      ).pack(pady=(26, 10))
 
@@ -268,7 +268,7 @@ class Setup(ctk.CTk):
 
     # ── Page: Installed (manage) ───────────────────────────────────────────────
     def _page_installed(self, parent):
-        ctk.CTkLabel(parent, text="BigEd CC is installed",
+        ctk.CTkLabel(parent, text="Big Edge Compute Command is installed",
                      font=("Segoe UI", 14, "bold"), text_color=GOLD,
                      ).pack(pady=(22, 4))
 
@@ -511,7 +511,7 @@ class Setup(ctk.CTk):
         btn_row.pack(side="bottom", fill="x", padx=24, pady=20)
 
         self._launch_btn = ctk.CTkButton(
-            btn_row, text="▶  Launch BigEdCC", width=180, height=36,
+            btn_row, text="▶  Launch Big Edge Compute Command", width=240, height=36,
             fg_color=ACCENT, hover_color=ACCENT_H,
             command=self._launch_fleet)
         self._launch_btn.pack(side="left")
@@ -564,9 +564,10 @@ class Setup(ctk.CTk):
         ]
         if self._diffusion.get():
             steps.append(
-                (p(0.95), "Installing Stable Diffusion...", lambda: self._step_pip_diffusion()),
+                (p(0.92), "Installing Stable Diffusion...", lambda: self._step_pip_diffusion()),
             )
         steps += [
+            (p(0.97), "Writing version file...",     lambda: self._step_write_version(install_dir)),
             (1.00,    "Done.",                        lambda: None),
         ]
 
@@ -711,8 +712,9 @@ class Setup(ctk.CTk):
 
     def _step_pip(self) -> str:
         python = shutil.which("python") or shutil.which("python3") or "python"
-        pkgs   = ["customtkinter", "pillow", "psutil", "nvidia-ml-py", "anthropic"]
-        self.after(0, lambda: self._log("  pip install " + " ".join(pkgs)))
+        # Launcher deps
+        pkgs = ["customtkinter", "pillow", "psutil", "nvidia-ml-py", "anthropic", "google-genai"]
+        self.after(0, lambda: self._log("  pip install (launcher): " + " ".join(pkgs)))
         result = subprocess.run(
             [python, "-m", "pip", "install", "--quiet"] + pkgs,
             capture_output=True, text=True,
@@ -720,6 +722,16 @@ class Setup(ctk.CTk):
         )
         if result.returncode != 0:
             raise RuntimeError((result.stderr or result.stdout or "pip failed")[-300:])
+        # Fleet deps
+        fleet_pkgs = ["httpx", "flask", "psutil", "anthropic", "google-genai"]
+        self.after(0, lambda: self._log("  pip install (fleet): " + " ".join(fleet_pkgs)))
+        result2 = subprocess.run(
+            [python, "-m", "pip", "install", "--quiet"] + fleet_pkgs,
+            capture_output=True, text=True,
+            creationflags=subprocess.CREATE_NO_WINDOW,
+        )
+        if result2.returncode != 0:
+            self.after(0, lambda: self._log("  ⚠ Fleet deps had issues — dashboard may not work"))
         return "Python packages installed"
 
     def _step_pip_diffusion(self) -> str:
@@ -736,6 +748,12 @@ class Setup(ctk.CTk):
             raise RuntimeError((result.stderr or result.stdout or "pip failed")[-300:])
         return "Stable Diffusion dependencies installed"
 
+    def _step_write_version(self, install_dir: Path) -> str:
+        """Write version file so the release updater knows what's installed."""
+        vf = install_dir / ".bigedcc_version"
+        vf.write_text(f"v{APP_VERSION}", encoding="utf-8")
+        return f"v{APP_VERSION}"
+
     def _step_shortcuts(self, install_dir: Path) -> str:
         target = install_dir / "BigEdCC.exe"
         icon   = install_dir / "brick.ico"
@@ -747,7 +765,7 @@ class Setup(ctk.CTk):
         if self._startmenu_sc.get():
             programs = (
                 Path(os.environ.get("APPDATA", "~"))
-                / "Microsoft/Windows/Start Menu/Programs/BigEd CC"
+                / "Microsoft/Windows/Start Menu/Programs/Big Edge Compute Command"
             )
             programs.mkdir(parents=True, exist_ok=True)
             create_shortcut(target, programs / "BigEdCC.lnk", icon)
