@@ -13,11 +13,12 @@
 | 1.0 | `1.0` | 1.0 | Production release tag — historical |
 | Post-1.0 | `0.XX.00` | 0.15.00, 0.30.00 | Infrastructure — historical, frozen |
 | **Beta** | `0.XXX.YYb` | 0.050.00b, 0.051.01b | **Current era** — see below |
-| Major | `0.X00.00b` | 0.100.00b, 0.200.00b | Major capability milestones |
+| Major | `0.X00.00b` | 0.100.00b, 0.200.00b | Major capability milestones (still beta) |
+| Graduation | `1.000.00` | 1.000.00 | Clears beta — no `b` suffix |
 
 ### Beta Versioning (current)
 
-BigEd CC is a **beta product** — fleet runs autonomously, installer/updater pipeline active, dynamic agent scaling operational. Versioning uses tight `.YY` patches within each milestone:
+BigEd CC is a **beta product** — fleet runs autonomously, installer/updater pipeline active, dynamic agent scaling operational. The `b` suffix stays until `1.000.00` graduation. The middle segment (`XXX`) has no upper limit — beta continues as long as needed for debugging, testing, and refinement. Versioning uses tight `.YY` patches within each milestone:
 
 **`0.XXX.00b` — Milestones**
 Major capability jumps. Each `0.XXX` is a feature theme:
@@ -50,9 +51,11 @@ Example progression:
 0.200.00b  — Intelligent Orchestration (was 3.0)
 0.300.00b  — Enterprise & Multi-Tenant (was 4.0)
 0.400.00b  — Platform & SaaS (was 5.0)
+...
+1.000.00   — Beta graduation (no b suffix, production-stable)
 ```
 
-> **Note for AI assistants (Claude/Gemini):** Use `0.XXX.00b` for milestone features and `0.XXX.YYb` (YY > 0) for patches. Always include the `b` suffix. The middle segment is 3 digits (zero-padded). Major milestones use `0.X00.00b`. Pre-beta versions are frozen history.
+> **Note for AI assistants (Claude/Gemini):** Use `0.XXX.00b` for milestone features and `0.XXX.YYb` (YY > 0) for patches. Always include the `b` suffix until `1.000.00` graduation. The middle segment is 3 digits (zero-padded) but has no upper limit — `0.999.99b` is valid if needed. Major milestones use `0.X00.00b`. Pre-beta versions are frozen history. `1.000.00` clears beta state — no `b` suffix, production-stable.
 
 ---
 
