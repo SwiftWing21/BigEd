@@ -274,29 +274,37 @@ def get_available_models(host="http://localhost:11434"):
 
 
 def validate_configured_models(cfg):
-    """Check that all configured models are actually installed. Log warnings for missing."""
+    """Check configured models against Ollama. Returns set of available tier model names.
+
+    Never blocks on missing models — the main loop uses the returned set to skip
+    unavailable tiers. Returns empty set if Ollama is unreachable.
+    """
     available = get_available_models(cfg.get("ollama_host", "http://localhost:11434"))
     if not available:
         log.warning(" No models found in Ollama (is it running?)")
-        return False
+        return set()
 
-    needed = set()
-    needed.add(cfg.get("tier_default", "qwen3:8b"))
-    needed.add(cfg.get("tier_mid", "qwen3:4b"))
-    needed.add(cfg.get("tier_low", "qwen3:1.7b"))
-    needed.add(cfg.get("tier_crit", "qwen3:0.6b"))
+    tier_models = {
+        cfg.get("tier_default", "qwen3:8b"),
+        cfg.get("tier_mid", "qwen3:4b"),
+        cfg.get("tier_low", "qwen3:1.7b"),
+        cfg.get("tier_crit", "qwen3:0.6b"),
+    }
     if cfg.get("conductor_model"):
-        needed.add(cfg["conductor_model"])
+        tier_models.add(cfg["conductor_model"])
 
-    missing = [m for m in sorted(needed) if m not in available]
+    available_set = set(available)
+    present = tier_models & available_set
+    missing = sorted(tier_models - available_set)
+
     if missing:
-        log.warning(f" Missing models: {', '.join(missing)}")
+        log.warning(f"Missing tier models: {', '.join(missing)}")
         log.info(f"Available: {', '.join(available)}")
-        log.info(f"Run: ollama pull {missing[0]}")
-        return False
+    if present:
+        log.info(f"{len(present)}/{len(tier_models)} configured models available: "
+                 f"{', '.join(sorted(present))}")
 
-    log.info(f"All {len(needed)} configured models available")
-    return True
+    return present
 
 
 def warmup_model(model_name):
@@ -586,8 +594,8 @@ def main():
     # Must happen BEFORE any model checks (which involve HTTP calls that can stall).
     write_state("starting", get_current_local_model())
 
-    # Validate all configured models exist before entering main loop
-    validate_configured_models(cfg)
+    # Validate configured models — store available set for tier transitions
+    available_tier_models = validate_configured_models(cfg)
 
     # Check loaded models — keep anything from our tier system, evict unknowns
     known_models = {
@@ -657,6 +665,49 @@ def main():
         failed = [k for k, v in startup_checks.items() if not v]
         log.warning(f"Startup checks: {passed}/{total} passed. Failed: {failed}")
         write_state("degraded", get_current_local_model())
+
+    # ── Dr. Ders model promotion ──────────────────────────────────────────
+    # Boot fast on smallest model, then promote to best available CPU-bound
+    # model for better monitoring quality. Smallest stays as crash failsafe.
+    installed = get_available_models(host)
+    # Promotion preference: largest CPU-suitable model first
+    DRDERS_PROMOTE_ORDER = ["qwen3:4b", "qwen3:1.7b", "qwen3:0.6b"]
+    DRDERS_BOOT_MODEL = None
+    DRDERS_PROMOTED_MODEL = None
+    drders_promoted = False
+
+    # Find smallest installed model as boot/failsafe
+    for m in reversed(DRDERS_PROMOTE_ORDER):
+        if m in installed:
+            DRDERS_BOOT_MODEL = m
+            break
+
+    # Find largest installed model as promotion target
+    for m in DRDERS_PROMOTE_ORDER:
+        if m in installed and m != DRDERS_BOOT_MODEL:
+            DRDERS_PROMOTED_MODEL = m
+            break
+
+    if DRDERS_BOOT_MODEL:
+        log.info(f"Dr. Ders failsafe model: {DRDERS_BOOT_MODEL}")
+
+    if DRDERS_PROMOTED_MODEL:
+        log.info(f"Promoting Dr. Ders: {DRDERS_BOOT_MODEL} → {DRDERS_PROMOTED_MODEL} (CPU)")
+        try:
+            body = json.dumps({
+                "model": DRDERS_PROMOTED_MODEL, "keep_alive": "24h",
+                "options": {"num_gpu": 0},
+            }).encode()
+            req = urllib.request.Request(
+                f"{host}/api/generate", data=body, method="POST",
+                headers={"Content-Type": "application/json"})
+            urllib.request.urlopen(req, timeout=60)
+            drders_promoted = True
+            log.info(f"Dr. Ders promoted to {DRDERS_PROMOTED_MODEL} (CPU-bound)")
+        except Exception as e:
+            log.warning(f"Promotion failed, staying on {DRDERS_BOOT_MODEL}: {e}")
+    elif DRDERS_BOOT_MODEL:
+        log.info(f"Only one CPU model installed ({DRDERS_BOOT_MODEL}) — no promotion needed")
 
     poll_count = 0
     mem_stats = {}  # populated by periodic self-check
@@ -832,6 +883,8 @@ def main():
             #
             tier_order = [cfg["tier_default"], cfg["tier_mid"],
                           cfg["tier_low"], cfg["tier_crit"]]
+            # Filter tier_order to only models confirmed available
+            avail_tiers = [t for t in tier_order if t in available_tier_models]
             current_model = get_current_local_model()
             target_model = current_model
             emergency = False
@@ -847,15 +900,29 @@ def main():
                 pass
 
             if gpu_throttled:
-                # THERMAL EMERGENCY: drop to critical (CPU-only)
-                target_model = cfg["tier_crit"]
-                if current_model != cfg["tier_crit"]:
+                # THERMAL EMERGENCY: drop to smallest available tier
+                if cfg["tier_crit"] in available_tier_models:
+                    target_model = cfg["tier_crit"]
+                else:
+                    # tier_crit missing — find smallest available
+                    target_model = avail_tiers[-1] if avail_tiers else current_model
+                    if target_model != current_model:
+                        log.warning(f"Tier 'crit' model {cfg['tier_crit']} not available, "
+                                    f"falling back to {target_model}")
+                if current_model != target_model:
                     emergency = True
 
             elif is_training and training_evicted:
                 # TRAINING (evicted): drop to low tier to free VRAM for PyTorch
                 if current_model not in (cfg["tier_crit"], cfg["tier_low"]):
-                    target_model = cfg["tier_low"]
+                    if cfg["tier_low"] in available_tier_models:
+                        target_model = cfg["tier_low"]
+                    elif cfg["tier_crit"] in available_tier_models:
+                        log.warning(f"Tier 'low' model {cfg['tier_low']} not available, "
+                                    f"skipping to '{cfg['tier_crit']}'")
+                        target_model = cfg["tier_crit"]
+                    else:
+                        log.warning(f"No low/crit tier models available for training mode")
 
             elif not loaded:
                 # RECOVERY: no worker model loaded — find the best available
@@ -881,17 +948,39 @@ def main():
             else:
                 # NORMAL: only scale DOWN on pressure, never UP
                 if vram_pct > cfg["vram_emergency"]:
-                    target_model = cfg["tier_crit"]
+                    if cfg["tier_crit"] in available_tier_models:
+                        target_model = cfg["tier_crit"]
+                    else:
+                        target_model = avail_tiers[-1] if avail_tiers else current_model
+                        if target_model != current_model:
+                            log.warning(f"Tier 'crit' model {cfg['tier_crit']} not available, "
+                                        f"falling back to {target_model}")
                     emergency = True
                 elif vram_pct > cfg["vram_high"]:
-                    # Step down one tier from current
+                    # Step down one tier from current — skip unavailable tiers
                     try:
                         idx = tier_order.index(current_model)
-                        if idx < len(tier_order) - 1:
-                            target_model = tier_order[idx + 1]
+                        # Walk forward through tiers to find next available
+                        for step_idx in range(idx + 1, len(tier_order)):
+                            candidate = tier_order[step_idx]
+                            if candidate in available_tier_models:
+                                target_model = candidate
+                                break
+                            else:
+                                tier_name = ["default", "mid", "low", "crit"][step_idx]
+                                log.info(f"Tier '{tier_name}' model {candidate} not available, skipping")
                     except ValueError:
-                        target_model = cfg["tier_mid"]
+                        # Current model not in tier_order — pick first available below default
+                        for candidate in avail_tiers[1:]:
+                            target_model = candidate
+                            break
                 # No auto-scale UP — stay parked on current model
+
+            if target_model != current_model:
+                # Final guard: don't transition to a model we know is unavailable
+                if target_model not in available_tier_models and target_model != current_model:
+                    log.warning(f"Target model {target_model} not in available set, staying on {current_model}")
+                    target_model = current_model
 
             if target_model != current_model:
                 transition_model(target_model, current_model, cfg, emergency)
@@ -948,6 +1037,21 @@ def main():
 
         except Exception as e:
             log.warning(f"Poll error (non-fatal): {e}")
+            # Failsafe: drop to boot model (0.6b) on errors for stability
+            if drders_promoted:
+                try:
+                    log.info(f"Error recovery: falling back to {DRDERS_BOOT_MODEL} (CPU failsafe)")
+                    body = json.dumps({
+                        "model": DRDERS_BOOT_MODEL, "keep_alive": "24h",
+                        "options": {"num_gpu": 0},
+                    }).encode()
+                    req = urllib.request.Request(
+                        f"{host}/api/generate", data=body, method="POST",
+                        headers={"Content-Type": "application/json"})
+                    urllib.request.urlopen(req, timeout=30)
+                    drders_promoted = False
+                except Exception:
+                    pass
             # Write error state so launcher knows we're alive but struggling
             try:
                 write_state("error", get_current_local_model())

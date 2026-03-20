@@ -274,11 +274,11 @@ class WalkthroughDialog(ctk.CTkToplevel):
                                              fg_color=BG3, progress_color=ACCENT)
         self._progress.pack(padx=20, pady=(16, 0))
 
-        self._step_label = ctk.CTkLabel(self, text="", font=("Segoe UI", 10),
+        self._step_label = ctk.CTkLabel(self, text="", font=("RuneScape Plain 11", 10),
                                          text_color=DIM)
         self._step_label.pack(pady=(4, 0))
 
-        self._title = ctk.CTkLabel(self, text="", font=("Segoe UI", 16, "bold"),
+        self._title = ctk.CTkLabel(self, text="", font=("RuneScape Bold 12", 16, "bold"),
                                     text_color=GOLD)
         self._title.pack(padx=20, pady=(12, 0), anchor="w")
 
@@ -304,7 +304,7 @@ class WalkthroughDialog(ctk.CTkToplevel):
 
         self._no_show_var = ctk.BooleanVar(value=True)
         ctk.CTkCheckBox(bottom, text="Don't show again", variable=self._no_show_var,
-                        font=("Segoe UI", 9), text_color=DIM,
+                        font=("RuneScape Plain 11", 9), text_color=DIM,
                         fg_color=ACCENT, checkmark_color=TEXT,
                         checkbox_width=16, checkbox_height=16,
                         ).pack(side="left", padx=(8, 0), pady=12)

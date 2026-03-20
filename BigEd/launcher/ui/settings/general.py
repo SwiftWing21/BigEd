@@ -45,7 +45,7 @@ class GeneralPanelMixin:
 
         ctk.CTkLabel(theme_frame,
                      text="Themes change how agent roles are displayed throughout the UI.",
-                     font=("Segoe UI", 9), text_color=DIM
+                     font=("RuneScape Plain 11", 9), text_color=DIM
                      ).grid(row=1, column=0, columnspan=2, padx=12, pady=(0, 10), sticky="w")
 
         # Section: Custom Agent Names
@@ -89,7 +89,7 @@ class GeneralPanelMixin:
         ctk.CTkButton(name_btn_frame, text="Clear All", font=FONT_SM,
                       width=80, height=28, fg_color=BG3, hover_color=BG2,
                       command=self._clear_names).pack(side="right", padx=4)
-        self._names_status = ctk.CTkLabel(name_btn_frame, text="", font=("Segoe UI", 9),
+        self._names_status = ctk.CTkLabel(name_btn_frame, text="", font=("RuneScape Plain 11", 9),
                                           text_color=DIM)
         self._names_status.pack(side="left", padx=8)
 
@@ -109,7 +109,7 @@ class GeneralPanelMixin:
         ).pack(padx=12, pady=(12, 4), anchor="w")
         ctk.CTkLabel(behavior_frame,
                      text="When ON, complex analysis routes through Claude API instead of local LLM.",
-                     font=("Segoe UI", 9), text_color=DIM
+                     font=("RuneScape Plain 11", 9), text_color=DIM
                      ).pack(padx=12, pady=(0, 12), anchor="w")
 
         # Section: Ingestion
@@ -139,12 +139,12 @@ class GeneralPanelMixin:
                       width=60, height=26, fg_color=ACCENT, hover_color=ACCENT_H,
                       command=self._save_ingest_path).pack(side="left", padx=4)
         self._ingest_path_status = ctk.CTkLabel(
-            btn_row, text="", font=("Segoe UI", 9), text_color=DIM)
+            btn_row, text="", font=("RuneScape Plain 11", 9), text_color=DIM)
         self._ingest_path_status.pack(side="left", padx=8)
 
         ctk.CTkLabel(ingest_frame,
                      text="Files from this folder appear in the Ingestion tab for import into RAG.",
-                     font=("Segoe UI", 9), text_color=DIM
+                     font=("RuneScape Plain 11", 9), text_color=DIM
                      ).grid(row=3, column=0, columnspan=2, padx=12, pady=(0, 10), sticky="w")
 
         # Section: Visible Tabs
@@ -153,7 +153,7 @@ class GeneralPanelMixin:
         tabs_frame.pack(fill="x", padx=16, pady=(0, 12))
 
         ctk.CTkLabel(tabs_frame, text="Enable or disable modular launcher tabs.",
-                     font=("Segoe UI", 9), text_color=DIM).pack(padx=12, pady=(10, 0), anchor="w")
+                     font=("RuneScape Plain 11", 9), text_color=DIM).pack(padx=12, pady=(10, 0), anchor="w")
 
         tab_grid = ctk.CTkFrame(tabs_frame, fg_color="transparent")
         tab_grid.pack(fill="x", padx=12, pady=8)
@@ -176,7 +176,7 @@ class GeneralPanelMixin:
         btn_row_tabs.pack(fill="x", padx=12, pady=(0, 12))
         ctk.CTkButton(btn_row_tabs, text="Save Tabs", font=FONT_SM, width=100, height=26,
                       fg_color=BG3, hover_color=BG2, command=self._save_tabs).pack(side="left")
-        self._tabs_status = ctk.CTkLabel(btn_row_tabs, text="", font=("Segoe UI", 9), text_color=DIM)
+        self._tabs_status = ctk.CTkLabel(btn_row_tabs, text="", font=("RuneScape Plain 11", 9), text_color=DIM)
         self._tabs_status.pack(side="left", padx=8)
 
         # Section: Backup & Restore
@@ -185,7 +185,7 @@ class GeneralPanelMixin:
         backup_frame.pack(fill="x", padx=16, pady=(0, 12))
 
         ctk.CTkLabel(backup_frame, text="Export or import configurations securely.",
-                     font=("Segoe UI", 9), text_color=DIM).pack(padx=12, pady=(10, 6), anchor="w")
+                     font=("RuneScape Plain 11", 9), text_color=DIM).pack(padx=12, pady=(10, 6), anchor="w")
 
         btn_row2 = ctk.CTkFrame(backup_frame, fg_color="transparent")
         btn_row2.pack(fill="x", padx=12, pady=(0, 12))

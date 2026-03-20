@@ -66,6 +66,7 @@ def _require_role(role):
 _alerts = []
 _alert_lock = threading.Lock()
 _sse_clients = []
+_monitor_start_time = time.time()
 
 
 # ── API call attribution logging ──────────────────────────────────────────
@@ -142,16 +143,20 @@ def _load_config():
 # ── Alerts ───────────────────────────────────────────────────────────────────
 
 def _add_alert(level: str, message: str, source: str = "system"):
-    """Add an alert (info/warning/critical) and broadcast via SSE."""
-    alert = {
-        "id": int(time.time() * 1000),
-        "level": level,
-        "message": message,
-        "source": source,
-        "time": datetime.utcnow().isoformat(),
-        "acknowledged": False,
-    }
+    """Add an alert (info/warning/critical) and broadcast via SSE. Deduplicates."""
     with _alert_lock:
+        # Deduplicate: skip if same message already exists and isn't acknowledged
+        for existing in _alerts[-20:]:
+            if existing["message"] == message and not existing["acknowledged"]:
+                return
+        alert = {
+            "id": int(time.time() * 1000),
+            "level": level,
+            "message": message,
+            "source": source,
+            "time": datetime.utcnow().isoformat(),
+            "acknowledged": False,
+        }
         _alerts.append(alert)
         # Keep only last 100 alerts
         if len(_alerts) > 100:
@@ -193,13 +198,18 @@ def _alert_monitor():
                     _add_alert("warning", f"GPU temp {gpu_temp}C above sustained limit {sustained}C", "thermal")
 
             # Check for crashed workers (stale heartbeats)
+            # Skip disabled/quarantined agents and allow 5min grace after startup
+            cfg = cfg if 'cfg' in dir() else _load_config()
+            disabled = set(cfg.get("fleet", {}).get("disabled_agents", []))
             agents = query("""
-                SELECT name, last_heartbeat FROM agents
+                SELECT name, last_heartbeat, status FROM agents
                 WHERE last_heartbeat < datetime('now', '-5 minutes')
-                AND status != 'OFFLINE'
+                AND status NOT IN ('OFFLINE', 'QUARANTINED', 'SLEEPING')
             """)
-            for a in agents:
-                _add_alert("warning", f"Agent '{a['name']}' no heartbeat for >5min", "fleet")
+            stale = [a for a in agents if a["name"] not in disabled]
+            if stale and (time.time() - _monitor_start_time) > 300:
+                names = ", ".join(a["name"] for a in stale)
+                _add_alert("warning", f"{len(stale)} agent(s) stale: {names}", "fleet")
 
             # Check disk space
             import shutil
@@ -628,6 +638,50 @@ def api_thermal():
             })
         except Exception:
             pass
+
+    # Fallback: read GPU directly if hw_state.json has no thermal data
+    if result["gpu_temp_c"] == 0:
+        try:
+            from gpu import detect_gpu, read_telemetry
+            backend, has_gpu = detect_gpu()
+            if has_gpu:
+                gpu_data = read_telemetry(backend)
+                if gpu_data:
+                    result["gpu_temp_c"] = gpu_data.get("gpu_temp_c", 0)
+                    result["gpu_power_w"] = gpu_data.get("gpu_power_w", 0)
+                    result["gpu_fan_pct"] = gpu_data.get("gpu_fan_pct", 0)
+                    result["gpu_vram_used_gb"] = round(gpu_data.get("vram_used_gb", 0), 2)
+                    result["gpu_vram_total_gb"] = round(gpu_data.get("vram_total_gb", 0), 2)
+        except Exception:
+            pass
+
+    # Fallback: read CPU temp directly if hw_state.json has no CPU data
+    if result["cpu_temp_c"] == 0:
+        try:
+            import psutil as _psutil_thermal
+            temps = _psutil_thermal.sensors_temperatures()
+            if temps:
+                for chip in ("coretemp", "k10temp", "acpitz"):
+                    if chip in temps:
+                        result["cpu_temp_c"] = round(
+                            max(t.current for t in temps[chip])
+                        )
+                        break
+                if result["cpu_temp_c"] == 0:
+                    # No known chip name matched — try any sensor
+                    for name, entries in temps.items():
+                        for entry in entries:
+                            if entry.current > 0:
+                                result["cpu_temp_c"] = round(entry.current)
+                                break
+                        if result["cpu_temp_c"] > 0:
+                            break
+        except Exception:
+            pass
+
+    # Annotate if GPU sensor is still unreadable after fallbacks
+    if result["gpu_temp_c"] == 0:
+        result["_note"] = "0\u00b0C = unable to access GPU sensor"
 
     # System resources (always available, even without GPU)
     try:

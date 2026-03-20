@@ -59,7 +59,7 @@ class KeysPanelMixin:
                          text_color=TEXT).place(x=28, y=8)
             ctk.CTkLabel(card, text=env_key, font=("Consolas", 8),
                          text_color=DIM).place(x=28, y=28)
-            ctk.CTkLabel(card, text=desc, font=("Segoe UI", 8),
+            ctk.CTkLabel(card, text=desc, font=("RuneScape Plain 11", 8),
                          text_color=DIM).place(x=10, y=48)
             ctk.CTkLabel(card, text=status_text, font=("Consolas", 9),
                          text_color=dot_color).place(relx=1.0, x=-10, y=10, anchor="ne")
@@ -69,7 +69,7 @@ class KeysPanelMixin:
         adv_frame = ctk.CTkFrame(panel, fg_color=GLASS_BG, corner_radius=6)
         adv_frame.pack(fill="x", padx=16, pady=(0, 12))
         ctk.CTkLabel(adv_frame, text="Add, rotate, and manage API keys with the full key manager.",
-                     font=("Segoe UI", 9), text_color=DIM
+                     font=("RuneScape Plain 11", 9), text_color=DIM
                      ).pack(padx=12, pady=(10, 4), anchor="w")
         ctk.CTkButton(adv_frame, text="Open Key Manager", font=FONT_SM,
                       width=150, height=28, fg_color=ACCENT, hover_color=ACCENT_H,
@@ -109,10 +109,10 @@ class KeyManagerDialog(ctk.CTkToplevel):
         hdr.grid_propagate(False)
         hdr.grid_columnconfigure(1, weight=1)
         ctk.CTkLabel(hdr, text="\U0001f511  API KEY MANAGER",
-                     font=("Segoe UI", 13, "bold"), text_color=GOLD
+                     font=("RuneScape Bold 12", 13, "bold"), text_color=GOLD
                      ).grid(row=0, column=0, padx=14, pady=10, sticky="w")
         ctk.CTkLabel(hdr, text="Keys stored in ~/.secrets  |  masked values shown",
-                     font=("Segoe UI", 9), text_color=DIM
+                     font=("RuneScape Plain 11", 9), text_color=DIM
                      ).grid(row=0, column=1, padx=8, sticky="w")
 
         # Scrollable key table
@@ -126,7 +126,7 @@ class KeyManagerDialog(ctk.CTkToplevel):
         hrow.grid_columnconfigure(1, weight=1)
         for col, (txt, w) in enumerate([("", 18), ("Key / Label", 0),
                                          ("Tier", 70), ("Status", 110), ("Value", 160), ("", 80)]):
-            ctk.CTkLabel(hrow, text=txt, font=("Segoe UI", 9, "bold"),
+            ctk.CTkLabel(hrow, text=txt, font=("RuneScape Bold 12", 9, "bold"),
                          text_color=DIM, width=w, anchor="w"
                          ).grid(row=0, column=col, padx=6, pady=4, sticky="w")
 
@@ -183,12 +183,12 @@ class KeyManagerDialog(ctk.CTkToplevel):
             name_frame.grid(row=0, column=1, sticky="w", padx=4)
             ctk.CTkLabel(name_frame, text=name, font=("Consolas", 10, "bold"),
                          text_color=TEXT, anchor="w").pack(anchor="w")
-            ctk.CTkLabel(name_frame, text=label, font=("Segoe UI", 9),
+            ctk.CTkLabel(name_frame, text=label, font=("RuneScape Plain 11", 9),
                          text_color=DIM, anchor="w").pack(anchor="w")
 
-            ctk.CTkLabel(row, text=tier, font=("Segoe UI", 9),
+            ctk.CTkLabel(row, text=tier, font=("RuneScape Plain 11", 9),
                          text_color=tier_col, width=70).grid(row=0, column=2, padx=4)
-            ctk.CTkLabel(row, text=status_txt, font=("Segoe UI", 10, "bold"),
+            ctk.CTkLabel(row, text=status_txt, font=("RuneScape Bold 12", 10, "bold"),
                          text_color=status_col, width=90).grid(row=0, column=3, padx=4)
             ctk.CTkLabel(row, text=masked or "\u2014", font=("Consolas", 9),
                          text_color=DIM, width=160, anchor="w").grid(row=0, column=4, padx=4)
@@ -198,7 +198,7 @@ class KeyManagerDialog(ctk.CTkToplevel):
                           ).grid(row=0, column=5, padx=(4, 8), pady=4)
 
             # Purpose tooltip row
-            ctk.CTkLabel(row, text=f"  {purpose[:90]}", font=("Segoe UI", 9),
+            ctk.CTkLabel(row, text=f"  {purpose[:90]}", font=("RuneScape Plain 11", 9),
                          text_color=DIM, anchor="w"
                          ).grid(row=1, column=1, columnspan=5, sticky="w", padx=4, pady=(0, 6))
 

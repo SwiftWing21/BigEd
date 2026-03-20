@@ -12,6 +12,8 @@ Release mode (no git repo / frozen .exe):
 """
 import hashlib
 import json
+import os
+import shutil
 import subprocess
 import sys
 import threading
@@ -224,7 +226,7 @@ class Updater(ctk.CTk):
         title_frame.grid(row=0, column=1, padx=(12, 0), pady=8, sticky="w")
         mode_label = "git pull + incremental build" if UPDATE_MODE == "git" else "GitHub release download"
         ctk.CTkLabel(title_frame, text="UPDATER",
-                     font=("Segoe UI", 14, "bold"), text_color=GOLD).pack(anchor="w")
+                     font=("RuneScape Bold 12", 14, "bold"), text_color=GOLD).pack(anchor="w")
         ctk.CTkLabel(title_frame, text=mode_label,
                      font=("Consolas", 8), text_color=DIM).pack(anchor="w")
 
@@ -263,7 +265,7 @@ class Updater(ctk.CTk):
 
         self._step_label = ctk.CTkLabel(
             info_row, text="Ready — changed files only",
-            font=("Segoe UI", 11), text_color=DIM, anchor="w")
+            font=("RuneScape Plain 12", 11), text_color=DIM, anchor="w")
         self._step_label.grid(row=0, column=0, sticky="w")
 
         self._timer_lbl = ctk.CTkLabel(
@@ -288,7 +290,7 @@ class Updater(ctk.CTk):
             f.grid(row=0, column=i, padx=4)
             dot = ctk.CTkLabel(f, text="○", font=("Consolas", 14), text_color=DIM)
             dot.pack()
-            lbl = ctk.CTkLabel(f, text=name, font=("Segoe UI", 9), text_color=DIM)
+            lbl = ctk.CTkLabel(f, text=name, font=("RuneScape Plain 11", 9), text_color=DIM)
             lbl.pack()
             self._step_dots.append((dot, lbl))
 
@@ -310,25 +312,25 @@ class Updater(ctk.CTk):
         btn_frame.grid_columnconfigure(3, weight=1)
 
         self._run_btn = ctk.CTkButton(
-            btn_frame, text="▶  Run Update", font=("Segoe UI", 11, "bold"),
+            btn_frame, text="▶  Run Update", font=("RuneScape Bold 12", 11, "bold"),
             width=140, height=34, fg_color="#2a6a2a", hover_color="#3a7a3a",
             command=lambda: self._start_update(force=False))
         self._run_btn.grid(row=0, column=0, padx=(12, 4), pady=9)
 
         self._force_btn = ctk.CTkButton(
-            btn_frame, text="⟳  Force Full", font=("Segoe UI", 10),
+            btn_frame, text="⟳  Force Full", font=("RuneScape Plain 11", 10),
             width=110, height=34, fg_color="#5a2020", hover_color="#6a2828",
             command=lambda: self._start_update(force=True))
         self._force_btn.grid(row=0, column=1, padx=4, pady=9)
 
         self._open_btn = ctk.CTkButton(
-            btn_frame, text="▶  Launch BigEd CC", font=("Segoe UI", 11),
+            btn_frame, text="▶  Launch BigEd CC", font=("RuneScape Plain 12", 11),
             width=140, height=34, fg_color=BG2, hover_color=BG,
             command=self._run_fleet_control)
         self._open_btn.grid(row=0, column=2, padx=4, pady=9)
 
         self._status_lbl = ctk.CTkLabel(
-            btn_frame, text="", font=("Segoe UI", 10), text_color=DIM)
+            btn_frame, text="", font=("RuneScape Plain 11", 10), text_color=DIM)
         self._status_lbl.grid(row=0, column=4, padx=12, sticky="e")
 
     # ── Status Check ─────────────────────────────────────────────────────────
@@ -674,6 +676,241 @@ class Updater(ctk.CTk):
             self._log_line(f"Error: {e}")
             return False
 
+    # ── Ollama model recovery ──────────────────────────────────────────────
+    def _find_ollama(self) -> str | None:
+        """Find ollama binary — PATH + common Windows install locations."""
+        exe = shutil.which("ollama")
+        if exe:
+            return exe
+        if sys.platform == "win32":
+            for p in [
+                Path(os.environ.get("LOCALAPPDATA", "")) / "Programs" / "Ollama" / "ollama.exe",
+                Path(os.environ.get("LOCALAPPDATA", "")) / "Ollama" / "ollama.exe",
+                Path(os.environ.get("PROGRAMFILES", "")) / "Ollama" / "ollama.exe",
+            ]:
+                if p.exists():
+                    return str(p)
+        return None
+
+    def _get_expected_models(self) -> list[str]:
+        """Read expected models from fleet.toml, fallback to hardcoded defaults.
+
+        Parses [models] keys (local, complex, conductor_model, vision_model)
+        and [models.tiers] keys (default, mid, low, critical) via tomllib.
+        Falls back to regex line scanning if tomllib unavailable or fails.
+        """
+        toml_path = None
+        for root in [SRC_DIR.parent, SRC_DIR.parent.parent]:
+            candidate = root / "fleet" / "fleet.toml"
+            if candidate.exists():
+                toml_path = candidate
+                break
+
+        if toml_path is None:
+            return ["qwen3:0.6b", "qwen3:1.7b", "qwen3:4b", "qwen3:8b"]
+
+        # Strategy 1: proper TOML parse (Python 3.11+)
+        try:
+            import tomllib
+            with open(toml_path, "rb") as f:
+                data = tomllib.load(f)
+            models = set()
+            models_section = data.get("models", {})
+            # Top-level model keys
+            for key in ("local", "complex", "conductor_model", "vision_model"):
+                val = models_section.get(key, "")
+                if val and ":" in val:
+                    models.add(val)
+            # Tier models
+            tiers = models_section.get("tiers", {})
+            for key in ("default", "mid", "low", "critical"):
+                val = tiers.get(key, "")
+                if val and ":" in val:
+                    models.add(val)
+            if models:
+                return sorted(models)
+        except Exception:
+            pass
+
+        # Strategy 2: regex fallback for older Python or parse errors
+        try:
+            text = toml_path.read_text(encoding="utf-8")
+            models = set()
+            for line in text.splitlines():
+                line = line.strip()
+                if "=" in line and not line.startswith("#"):
+                    val = line.split("=", 1)[1].strip().strip('"').strip("'")
+                    if ":" in val and val.split(":")[0].isalpha():
+                        models.add(val)
+            if models:
+                return sorted(models)
+        except Exception:
+            pass
+
+        return ["qwen3:0.6b", "qwen3:1.7b", "qwen3:4b", "qwen3:8b"]
+
+    def _install_ollama(self) -> str | None:
+        """Install Ollama via winget > curl+exe > urllib. Returns exe path or None."""
+        self._log_line("  Attempting Ollama install...")
+
+        # Strategy 1: winget
+        winget = shutil.which("winget")
+        if winget:
+            self._log_line("  Installing via winget...")
+            result = subprocess.run(
+                [winget, "install", "Ollama.Ollama",
+                 "--accept-package-agreements", "--accept-source-agreements", "--silent"],
+                capture_output=True, text=True, timeout=300,
+                creationflags=_NW,
+            )
+            if result.returncode == 0:
+                self._log_line("  Ollama installed via winget")
+                return self._find_ollama()
+            self._log_line("  winget failed — trying direct download...")
+
+        # Strategy 2: curl
+        import tempfile
+        dl_dir = Path(tempfile.gettempdir())
+        installer = dl_dir / "OllamaSetup.exe"
+        url = "https://ollama.com/download/OllamaSetup.exe"
+
+        curl = shutil.which("curl")
+        if curl:
+            self._log_line("  Downloading via curl...")
+            dl = subprocess.run(
+                [curl, "-L", "-o", str(installer), url],
+                capture_output=True, timeout=300, creationflags=_NW,
+            )
+            if dl.returncode != 0 or not installer.exists():
+                installer = None
+
+        # Strategy 3: urllib
+        if installer is None or not installer.exists():
+            import urllib.request
+            installer = dl_dir / "OllamaSetup.exe"
+            self._log_line("  Downloading via urllib...")
+            try:
+                urllib.request.urlretrieve(url, str(installer))
+            except Exception as e:
+                self._log_line(f"  All download methods failed: {e}")
+                return None
+
+        self._log_line("  Running OllamaSetup.exe...")
+        result = subprocess.run(
+            [str(installer), "/VERYSILENT", "/NORESTART"],
+            capture_output=True, timeout=180,
+            creationflags=_NW,
+        )
+        try:
+            installer.unlink(missing_ok=True)
+        except Exception:
+            pass
+        if result.returncode != 0:
+            self._log_line(f"  Installer exited with code {result.returncode}")
+            return None
+        return self._find_ollama()
+
+    def _check_and_recover_models(self):
+        """Check for missing Ollama models and re-pull them. Installs Ollama if needed."""
+        ollama_exe = self._find_ollama()
+        if not ollama_exe:
+            self._log_line("── Model Recovery: Ollama not found — attempting install...")
+            ollama_exe = self._install_ollama()
+            if not ollama_exe:
+                self._log_line("  Could not install Ollama — download from https://ollama.com")
+                return
+
+        self._log_line("── Model Health Check ──")
+        expected = self._get_expected_models()
+        self._log_line(f"  Expected: {', '.join(expected)}")
+
+        # Get currently available models
+        try:
+            r = subprocess.run(
+                [ollama_exe, "list"],
+                capture_output=True, text=True, timeout=10,
+                creationflags=_NW,
+            )
+            available = set()
+            if r.returncode == 0:
+                for line in r.stdout.strip().splitlines()[1:]:  # skip header
+                    name = line.split()[0] if line.split() else ""
+                    if name:
+                        available.add(name)
+        except Exception as e:
+            self._log_line(f"  Could not query Ollama: {e}")
+            return
+
+        # Find missing
+        missing = [m for m in expected if m not in available]
+
+        if not missing:
+            self._log_line(f"  All {len(expected)} models present \u2713")
+            return
+
+        self._log_line(f"  Missing: {', '.join(missing)}")
+
+        # Ensure server is running
+        import urllib.request
+        try:
+            urllib.request.urlopen("http://localhost:11434/api/tags", timeout=2)
+        except Exception:
+            self._log_line("  Starting Ollama server...")
+            subprocess.Popen(
+                [ollama_exe, "serve"],
+                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                creationflags=_NW,
+            )
+            time.sleep(4)
+
+        # Pull missing models (smallest first for fast recovery)
+        missing.sort(key=lambda m: float(m.split(":")[-1].replace("b", ""))
+                     if "b" in m.split(":")[-1] else 99)
+        for model in missing:
+            self._log_line(f"  Pulling {model}...")
+            self.after(0, lambda m=model: self._step_label.configure(
+                text=f"Recovering model: {m}..."))
+            try:
+                result = subprocess.run(
+                    [ollama_exe, "pull", model],
+                    capture_output=True, text=True, timeout=600,
+                    creationflags=_NW,
+                )
+                if result.returncode == 0:
+                    self._log_line(f"  {model} recovered \u2713")
+                else:
+                    self._log_line(f"  \u26a0 {model} failed — run 'ollama pull {model}' manually")
+            except subprocess.TimeoutExpired:
+                self._log_line(f"  \u26a0 {model} timed out — run 'ollama pull {model}' manually")
+            except Exception as e:
+                self._log_line(f"  \u26a0 {model} error: {e}")
+
+        # Verify recovery — re-check installed models
+        self._log_line("  Verifying recovery...")
+        try:
+            r = subprocess.run(
+                [ollama_exe, "list"],
+                capture_output=True, text=True, timeout=10,
+                creationflags=_NW,
+            )
+            verified = set()
+            if r.returncode == 0:
+                for line in r.stdout.strip().splitlines()[1:]:
+                    name = line.split()[0] if line.split() else ""
+                    if name:
+                        verified.add(name)
+            still_missing = [m for m in missing if m not in verified]
+            if still_missing:
+                self._log_line(f"  \u26a0 Still missing after recovery: {', '.join(still_missing)}")
+                self.after(0, lambda: self._step_label.configure(
+                    text=f"Model recovery incomplete — {len(still_missing)} model(s) missing"))
+            else:
+                self._log_line(f"  All {len(missing)} missing model(s) recovered \u2713")
+                self.after(0, lambda: self._step_label.configure(
+                    text=f"\u2713 Model recovery complete — {len(expected)} models verified"))
+        except Exception as e:
+            self._log_line(f"  Verification failed: {e}")
+
     def _on_complete(self, skipped: int = 0):
         self._running = False
 
@@ -715,6 +952,9 @@ class Updater(ctk.CTk):
         if UPD_NEW_PATH.exists():
             self._pending_self_update = True
             self._log_line("✓ Updater_new.exe staged — Updater will self-update on close")
+
+        # Model health check — recover missing Ollama models
+        threading.Thread(target=self._check_and_recover_models, daemon=True).start()
 
     def _on_close(self):
         self._launch_swap_if_needed()

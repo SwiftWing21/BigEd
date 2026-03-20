@@ -79,10 +79,10 @@ class ThermalDialog(ctk.CTkToplevel):
         hdr.grid_propagate(False)
         hdr.grid_columnconfigure(1, weight=1)
         ctk.CTkLabel(hdr, text="⚡  GPU POWER & THERMAL",
-                     font=("Segoe UI", 13, "bold"), text_color=GOLD
+                     font=("RuneScape Bold 12", 13, "bold"), text_color=GOLD
                      ).grid(row=0, column=0, padx=14, pady=10, sticky="w")
         self._gpu_name_lbl = ctk.CTkLabel(
-            hdr, text="Detecting GPU...", font=("Segoe UI", 9), text_color=DIM)
+            hdr, text="Detecting GPU...", font=("RuneScape Plain 11", 9), text_color=DIM)
         self._gpu_name_lbl.grid(row=0, column=1, padx=8, sticky="w")
 
         # Live stats bar
@@ -111,12 +111,12 @@ class ThermalDialog(ctk.CTkToplevel):
         pl_frame.grid_columnconfigure(0, weight=1)
 
         ctk.CTkLabel(pl_frame, text="Power Limit",
-                     font=("Segoe UI", 11, "bold"), text_color=GOLD,
+                     font=("RuneScape Bold 12", 11, "bold"), text_color=GOLD,
                      anchor="w").grid(row=0, column=0, padx=12, pady=(10, 2), sticky="w")
         ctk.CTkLabel(pl_frame,
                      text="Lowering power reduces heat and extends GPU lifespan.\n"
                           "The GPU throttles gracefully — no stability issues.",
-                     font=("Segoe UI", 9), text_color=DIM,
+                     font=("RuneScape Plain 11", 9), text_color=DIM,
                      anchor="w", justify="left"
                      ).grid(row=1, column=0, padx=12, pady=(0, 8), sticky="w")
 
@@ -144,13 +144,13 @@ class ThermalDialog(ctk.CTkToplevel):
         range_row = ctk.CTkFrame(pl_frame, fg_color="transparent")
         range_row.grid(row=3, column=0, padx=12, pady=(0, 6), sticky="ew")
         range_row.grid_columnconfigure(1, weight=1)
-        self._min_lbl = ctk.CTkLabel(range_row, text="min", font=("Segoe UI", 8),
+        self._min_lbl = ctk.CTkLabel(range_row, text="min", font=("RuneScape Plain 11", 8),
                                      text_color=DIM, anchor="w")
         self._min_lbl.grid(row=0, column=0, sticky="w")
-        self._max_lbl = ctk.CTkLabel(range_row, text="max", font=("Segoe UI", 8),
+        self._max_lbl = ctk.CTkLabel(range_row, text="max", font=("RuneScape Plain 11", 8),
                                      text_color=DIM, anchor="e")
         self._max_lbl.grid(row=0, column=2, sticky="e")
-        self._default_lbl = ctk.CTkLabel(range_row, text="", font=("Segoe UI", 8),
+        self._default_lbl = ctk.CTkLabel(range_row, text="", font=("RuneScape Plain 11", 8),
                                          text_color=DIM, anchor="center")
         self._default_lbl.grid(row=0, column=1)
 
@@ -164,7 +164,7 @@ class ThermalDialog(ctk.CTkToplevel):
             ("Stock  100%", 100), ("Max TDP", 110),
         ]):
             ctk.CTkButton(
-                preset_frame, text=label, font=("Segoe UI", 10),
+                preset_frame, text=label, font=("RuneScape Plain 11", 10),
                 width=0, height=28, fg_color=BG3, hover_color=BG,
                 command=lambda p=pct: self._set_pct(p),
             ).grid(row=0, column=col + 1, padx=4)
@@ -178,7 +178,7 @@ class ThermalDialog(ctk.CTkToplevel):
         self._apply_btn = ctk.CTkButton(
             bottom, text="⚡ Apply Limit", width=120, height=34,
             fg_color=ACCENT, hover_color=ACCENT_H,
-            font=("Segoe UI", 11, "bold"),
+            font=("RuneScape Bold 12", 11, "bold"),
             state="disabled",
             command=self._apply)
         self._apply_btn.grid(row=0, column=0, padx=(12, 8), pady=9)

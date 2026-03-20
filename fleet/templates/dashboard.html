@@ -24,7 +24,8 @@
   .header .live-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--green); animation: pulse 2s infinite; }
   @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
 
-  .alert-bar { padding: 0 16px; }
+  .alert-bar { padding: 0 16px; display: none; }
+  .alert-bar.expanded { display: block; }
   .alert-item {
     padding: 8px 16px; margin: 4px 0; border-radius: 4px; font-size: 13px;
     display: flex; align-items: center; gap: 8px;
@@ -33,6 +34,15 @@
   .alert-item.warning { background: #3d2e0e; border-left: 3px solid var(--orange); }
   .alert-item.info { background: #1b2a3d; border-left: 3px solid var(--blue); }
   .alert-item .dismiss { cursor: pointer; margin-left: auto; color: var(--dim); }
+  .alert-bubble {
+    position: relative; cursor: pointer; margin-left: 4px;
+    width: 24px; height: 24px; border-radius: 50%;
+    display: none; align-items: center; justify-content: center;
+    font-size: 11px; font-weight: bold; color: #fff;
+  }
+  .alert-bubble.has-alerts { display: inline-flex; }
+  .alert-bubble.warning { background: var(--orange); }
+  .alert-bubble.critical { background: var(--red); }
 
   .grid {
     display: grid; grid-template-columns: repeat(auto-fit, minmax(380px, 1fr));
@@ -105,6 +115,9 @@
   .gauge .temp { font-size: 24px; font-weight: bold; }
   .gauge .name { font-size: 11px; color: var(--dim); margin-top: 4px; }
 
+  .idle-toggle td { font-style: italic; padding: 4px 8px; }
+  .idle-toggle:hover td { color: var(--text) !important; }
+
   @media (max-width: 800px) {
     .grid { grid-template-columns: 1fr; }
     .card.wide { grid-column: span 1; }
@@ -119,6 +132,7 @@
   <div class="status">
     <div class="live-dot" id="liveDot"></div>
     <span id="connectionStatus">Connecting...</span>
+    <span class="alert-bubble" id="alertBubble" onclick="toggleAlerts()" title="Alerts"></span>
     <button class="refresh-btn" onclick="loadAll()">Refresh</button>
     <span id="lastUpdate"></span>
   </div>
@@ -145,9 +159,17 @@
   </div>
 
   <div class="card">
-    <h2>Training</h2>
-    <div id="trainingStatus"></div>
-    <div class="file-list" id="trainingLogs" style="margin-top:8px"></div>
+    <div style="display:flex;gap:8px;align-items:center">
+      <h2 id="trainingTab" onclick="showTrainingView('training')" style="cursor:pointer;opacity:0.5">Training</h2>
+      <h2 id="activityTab" onclick="showTrainingView('activity')" style="cursor:pointer">Activity</h2>
+    </div>
+    <div id="trainingView" style="display:none">
+      <div id="trainingStatus"></div>
+      <div class="file-list" id="trainingLogs" style="margin-top:8px"></div>
+    </div>
+    <div id="activityView">
+      <div class="file-list" id="agentActivityLog" style="max-height:300px;overflow-y:auto"></div>
+    </div>
   </div>
 
   <div class="card">
@@ -281,10 +303,23 @@ function updateStatusFromSSE(data) {
     <div class="stat blue"><div class="value">${t.PENDING}</div><div class="label">Pending</div></div>
     <div class="stat gold"><div class="value">${total}</div><div class="label">Total</div></div>
   `;
-  document.getElementById('agentTable').innerHTML = data.agents.map(a => `
-    <tr><td>${a.name}</td><td style="color:var(--dim)">${a.role}</td>
-    <td>${badge(a.status)}</td><td style="color:var(--dim)">${timeAgo(a.last_heartbeat)}</td></tr>
-  `).join('');
+  // Sort: dr_ders/hw_supervisor first, then busy, then idle (collapsible)
+  const priority = ['dr_ders', 'hw_supervisor'];
+  const pinned = data.agents.filter(a => priority.includes(a.name));
+  const busy = data.agents.filter(a => ['BUSY','ACTIVE'].includes(a.status) && !priority.includes(a.name));
+  const idle = data.agents.filter(a => !['BUSY','ACTIVE'].includes(a.status) && !priority.includes(a.name));
+  const agentTbody = document.getElementById('agentTable');
+  const wasExpanded = agentTbody.dataset.expanded === 'true';
+  let rows = '';
+  pinned.forEach(a => { rows += '<tr><td>' + a.name + '</td><td style="color:var(--dim)">' + a.role + '</td><td>' + badge(a.status) + '</td><td style="color:var(--dim)">' + timeAgo(a.last_heartbeat) + '</td></tr>'; });
+  busy.forEach(a => { rows += '<tr><td>' + a.name + '</td><td style="color:var(--dim)">' + a.role + '</td><td>' + badge(a.status) + '</td><td style="color:var(--dim)">' + timeAgo(a.last_heartbeat) + '</td></tr>'; });
+  if (idle.length > 0) {
+    rows += '<tr class="idle-toggle" onclick="toggleIdleAgents()" style="cursor:pointer;color:var(--dim)"><td colspan="4">' + (wasExpanded ? '&#9662;' : '&#9656;') + ' ' + idle.length + ' idle agent' + (idle.length > 1 ? 's' : '') + '</td></tr>';
+    if (wasExpanded) {
+      idle.forEach(a => { rows += '<tr class="idle-row"><td>' + a.name + '</td><td style="color:var(--dim)">' + a.role + '</td><td>' + badge(a.status) + '</td><td style="color:var(--dim)">' + timeAgo(a.last_heartbeat) + '</td></tr>'; });
+    }
+  }
+  agentTbody.innerHTML = rows;
   document.getElementById('lastUpdate').textContent = 'Updated: ' + new Date().toLocaleTimeString();
 }
 
@@ -499,8 +534,63 @@ async function loadTimeline() {
 async function loadAlerts() {
   const data = await fetchJSON('/api/alerts');
   const bar = document.getElementById('alertBar');
-  bar.innerHTML = '';
-  data.filter(a => !a.acknowledged).slice(0, 5).forEach(addAlertToBar);
+  const bubble = document.getElementById('alertBubble');
+  while (bar.firstChild) bar.removeChild(bar.firstChild);
+  const active = data.filter(a => !a.acknowledged).slice(0, 10);
+  active.forEach(addAlertToBar);
+  if (active.length > 0) {
+    const hasCrit = active.some(a => a.level === 'critical');
+    bubble.className = 'alert-bubble has-alerts ' + (hasCrit ? 'critical' : 'warning');
+    bubble.textContent = active.length;
+    bubble.title = active.length + ' alert(s) — click to expand';
+  } else {
+    bubble.className = 'alert-bubble';
+    bubble.textContent = '';
+    bar.classList.remove('expanded');
+  }
+}
+
+function toggleAlerts() {
+  document.getElementById('alertBar').classList.toggle('expanded');
+}
+
+function toggleIdleAgents() {
+  const t = document.getElementById('agentTable');
+  t.dataset.expanded = t.dataset.expanded === 'true' ? 'false' : 'true';
+  loadStatus();
+}
+
+function showTrainingView(view) {
+  document.getElementById('trainingView').style.display = view === 'training' ? 'block' : 'none';
+  document.getElementById('activityView').style.display = view === 'activity' ? 'block' : 'none';
+  document.getElementById('trainingTab').style.opacity = view === 'training' ? '1' : '0.5';
+  document.getElementById('activityTab').style.opacity = view === 'activity' ? '1' : '0.5';
+}
+
+async function loadAgentActivity() {
+  const data = await fetchJSON('/api/timeline');
+  const el = document.getElementById('agentActivityLog');
+  el.textContent = '';
+  (data || []).slice(0, 50).forEach(function(e) {
+    const div = document.createElement('div');
+    div.className = 'timeline-item';
+    const time = document.createElement('span');
+    time.className = 'time';
+    time.textContent = shortTime(e.time);
+    const agent = document.createElement('span');
+    agent.className = 'agent';
+    agent.textContent = e.agent;
+    const detail = document.createElement('span');
+    detail.textContent = e.detail;
+    div.appendChild(time);
+    div.appendChild(agent);
+    div.appendChild(detail);
+    el.appendChild(div);
+  });
+  if (!data || data.length === 0) {
+    el.textContent = 'No recent activity';
+    el.style.color = 'var(--dim)';
+  }
 }
 
 async function loadAll() {
@@ -508,7 +598,7 @@ async function loadAll() {
     loadStatus(), loadCodeStats(), loadThermal(), loadTraining(),
     loadActivity(), loadSkills(), loadDiscussions(), loadModules(),
     loadReviews(), loadKnowledge(), loadRAG(), loadTimeline(),
-    loadDataStats(), loadAlerts(),
+    loadDataStats(), loadAlerts(), loadAgentActivity(),
   ]);
   document.getElementById('lastUpdate').textContent = 'Updated: ' + new Date().toLocaleTimeString();
 }
@@ -522,6 +612,7 @@ setInterval(async () => {
     loadThermal(), loadTraining(), loadActivity(), loadSkills(),
     loadModules(), loadReviews(), loadKnowledge(), loadRAG(),
     loadTimeline(), loadDataStats(), loadCodeStats(), loadAlerts(),
+    loadAgentActivity(),
   ]);
 }, 30000);
 </script>

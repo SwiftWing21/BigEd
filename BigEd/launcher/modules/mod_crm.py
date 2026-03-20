@@ -13,7 +13,7 @@ from data_access import DataAccess
 
 # These are set by the module loader from the app's theme
 BG = BG2 = BG3 = ACCENT = ACCENT_H = GOLD = TEXT = DIM = GREEN = ORANGE = RED = ""
-FONT_SM = ("Segoe UI", 10)
+FONT_SM = ("RuneScape Plain 11", 10)
 
 
 def _shell_safe(s: str) -> str:
@@ -115,7 +115,7 @@ class Module:
         self._scroll.grid_columnconfigure((0, 1, 2, 3, 4), weight=1)
 
         for col, txt in enumerate(["Company", "Industry", "Contact", "Stage", ""]):
-            ctk.CTkLabel(self._scroll, text=txt, font=("Segoe UI", 9, "bold"),
+            ctk.CTkLabel(self._scroll, text=txt, font=("RuneScape Bold 12", 9, "bold"),
                          text_color=DIM, anchor="w"
                          ).grid(row=0, column=col, padx=6, pady=(2, 4), sticky="ew")
 
@@ -265,7 +265,7 @@ class Module:
         win.grid_columnconfigure(1, weight=1)
 
         ctk.CTkLabel(win, text="Dispatches to sales agent via fleet task queue.",
-                     font=("Segoe UI", 9), text_color=DIM, wraplength=300
+                     font=("RuneScape Plain 11", 9), text_color=DIM, wraplength=300
                      ).grid(row=len(fields), column=0, columnspan=2, padx=14, pady=(6, 2))
 
         def _dispatch():

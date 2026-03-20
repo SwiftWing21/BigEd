@@ -48,7 +48,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         :root { --bg: #1a1a2e; --bg2: #16213e; --bg3: #0f3460; --text: #e0e0e0;
                 --dim: #888; --accent: #4fc3f7; --green: #66bb6a; --red: #ef5350; --gold: #ffd54f; }
         * { margin: 0; padding: 0; box-sizing: border-box; }
-        body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg); color: var(--text); }
+        body { font-family: 'RuneScape Plain 12', system-ui, sans-serif; background: var(--bg); color: var(--text); }
         .header { background: var(--bg3); padding: 12px 20px; display: flex; align-items: center; gap: 16px; }
         .header h1 { font-size: 18px; color: var(--gold); }
         .header .status { font-size: 12px; padding: 4px 10px; border-radius: 12px; }

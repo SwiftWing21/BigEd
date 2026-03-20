@@ -31,7 +31,7 @@ class HardwarePanelMixin:
         gpu_ctrl.pack(fill="x", padx=16, pady=(0, 12))
         gpu_ctrl.grid_columnconfigure(1, weight=1)
         ctk.CTkLabel(gpu_ctrl, text="Control GPU power limits and monitor thermals.",
-                     font=("Segoe UI", 9), text_color=DIM
+                     font=("RuneScape Plain 11", 9), text_color=DIM
                      ).grid(row=0, column=0, columnspan=2, padx=12, pady=(10, 4), sticky="w")
         ctk.CTkButton(gpu_ctrl, text="Open GPU Power Manager", font=FONT_SM,
                       width=180, height=28, fg_color=BG3, hover_color=BG2,
@@ -105,7 +105,7 @@ class HardwarePanelMixin:
 
         ctk.CTkLabel(card, text=title.upper(), font=("Consolas", 8),
                      text_color=DIM).place(x=12, y=8)
-        val_lbl = ctk.CTkLabel(card, text=value, font=("Segoe UI", 22, "bold"),
+        val_lbl = ctk.CTkLabel(card, text=value, font=("RuneScape Bold 12", 22, "bold"),
                                text_color=color)
         val_lbl.place(x=12, y=26)
         sub_lbl = ctk.CTkLabel(card, text=subtitle, font=("Consolas", 9),

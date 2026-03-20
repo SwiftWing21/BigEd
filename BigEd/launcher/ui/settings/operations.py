@@ -21,12 +21,12 @@ class OperationsPanelMixin:
             card.pack(fill="x", padx=0, pady=3)
             card.grid_columnconfigure(1, weight=1)
 
-            ctk.CTkLabel(card, text=icon, font=("Segoe UI", 16)
+            ctk.CTkLabel(card, text=icon, font=("RuneScape Plain 12", 16)
                          ).grid(row=0, column=0, rowspan=2, padx=(12, 8), pady=8)
             ctk.CTkLabel(card, text=label, font=FONT_BOLD,
                          text_color=TEXT, anchor="w"
                          ).grid(row=0, column=1, padx=(0, 8), pady=(8, 0), sticky="w")
-            ctk.CTkLabel(card, text=desc, font=("Segoe UI", 9),
+            ctk.CTkLabel(card, text=desc, font=("RuneScape Plain 11", 9),
                          text_color=DIM, anchor="w"
                          ).grid(row=1, column=1, padx=(0, 8), pady=(0, 8), sticky="w")
             ctk.CTkButton(card, text="Run", font=FONT_SM,

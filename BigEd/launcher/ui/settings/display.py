@@ -29,7 +29,7 @@ class DisplayPanelMixin:
         scale_frame.pack(fill="x", padx=16, pady=(0, 12))
 
         ctk.CTkLabel(scale_frame, text="Adjust UI size (75%–150%). Applied on next launch.",
-                     font=("Segoe UI", 9), text_color=DIM).pack(padx=12, pady=(10, 6), anchor="w")
+                     font=("RuneScape Plain 11", 9), text_color=DIM).pack(padx=12, pady=(10, 6), anchor="w")
 
         slider_row = ctk.CTkFrame(scale_frame, fg_color="transparent")
         slider_row.pack(fill="x", padx=12, pady=(0, 4))
@@ -98,7 +98,7 @@ class DisplayPanelMixin:
                       fg_color=BG3, progress_color=GOLD
                       ).pack(padx=12, pady=(10, 4), anchor="w")
         ctk.CTkLabel(density_frame, text="Reduces spacing. Takes effect on next launch.",
-                     font=("Segoe UI", 9), text_color=DIM).pack(padx=12, pady=(0, 10), anchor="w")
+                     font=("RuneScape Plain 11", 9), text_color=DIM).pack(padx=12, pady=(0, 10), anchor="w")
 
     # ── Display panel handlers ────────────────────────────────────────────
 

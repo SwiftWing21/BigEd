@@ -71,7 +71,7 @@ class ReviewPanelMixin:
                      text="High-stakes skills (code_write, pen_test, legal_draft) go through\n"
                           "adversarial review before results are accepted. The evaluator checks\n"
                           "quality, safety, and correctness. Configurable in fleet.toml [review].",
-                     font=("Segoe UI", 9), text_color=DIM, justify="left"
+                     font=("RuneScape Plain 11", 9), text_color=DIM, justify="left"
                      ).pack(padx=12, pady=10, anchor="w")
 
         ctk.CTkButton(desc_frame, text="Open Review Settings", font=FONT_SM,

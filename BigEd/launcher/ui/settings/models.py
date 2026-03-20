@@ -32,7 +32,7 @@ class ModelsPanelMixin:
                      ).pack(padx=12, pady=(12, 4), anchor="w")
         ctk.CTkLabel(llm_frame,
                      text="Select the Ollama model used by fleet workers for local inference.",
-                     font=("Segoe UI", 9), text_color=DIM
+                     font=("RuneScape Plain 11", 9), text_color=DIM
                      ).pack(padx=12, pady=(0, 6), anchor="w")
         ctk.CTkButton(llm_frame, text="Open Model Selector", font=FONT_SM,
                       width=160, height=30, fg_color=BG3, hover_color=BG2,
@@ -65,7 +65,7 @@ class ModelsPanelMixin:
         sd15_detail.pack(fill="x", padx=24, pady=(2, 0))
         ctk.CTkLabel(sd15_detail,
                      text="Fast local generation on GPU. Good for iteration and drafts.",
-                     font=("Segoe UI", 9), text_color=DIM
+                     font=("RuneScape Plain 11", 9), text_color=DIM
                      ).pack(anchor="w")
 
         # SDXL toggle
@@ -87,7 +87,7 @@ class ModelsPanelMixin:
         sdxl_detail.pack(fill="x", padx=24, pady=(2, 0))
         ctk.CTkLabel(sdxl_detail,
                      text="Higher quality output on CPU. Slow but no VRAM cost.",
-                     font=("Segoe UI", 9), text_color=DIM
+                     font=("RuneScape Plain 11", 9), text_color=DIM
                      ).pack(anchor="w")
 
         # Default model selector
@@ -133,7 +133,7 @@ class ModelsPanelMixin:
 
         ctk.CTkLabel(up_frame,
                      text="Apply after base 512x512 generation to increase resolution.",
-                     font=("Segoe UI", 9), text_color=DIM
+                     font=("RuneScape Plain 11", 9), text_color=DIM
                      ).pack(padx=12, pady=(10, 6), anchor="w")
 
         # Upscale method
@@ -209,7 +209,7 @@ class ModelsPanelMixin:
         ctk.CTkButton(save_row, text="Save Diffusion Settings", font=FONT_SM,
                       width=160, height=30, fg_color=ACCENT, hover_color=ACCENT_H,
                       command=self._save_diffusion).pack(side="right")
-        self._diff_status = ctk.CTkLabel(save_row, text="", font=("Segoe UI", 9),
+        self._diff_status = ctk.CTkLabel(save_row, text="", font=("RuneScape Plain 11", 9),
                                          text_color=DIM)
         self._diff_status.pack(side="left", padx=8)
 
@@ -219,7 +219,7 @@ class ModelsPanelMixin:
         ctk.CTkLabel(notice,
                      text="Models download from HuggingFace on first use (~5 GB for SD1.5, ~7 GB for SDXL, ~3 GB x4 upscaler).\n"
                           "Requires: pip install diffusers transformers accelerate torch",
-                     font=("Segoe UI", 9), text_color=ORANGE, justify="left"
+                     font=("RuneScape Plain 11", 9), text_color=ORANGE, justify="left"
                      ).pack(padx=12, pady=10, anchor="w")
 
     def _update_pipeline_preview(self):

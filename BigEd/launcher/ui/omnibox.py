@@ -17,8 +17,8 @@ DIM = "#888888"
 ACCENT = "#4fc3f7"
 GREEN = "#66bb6a"
 GOLD = "#ffd54f"
-FONT = ("Segoe UI", 11)
-FONT_SM = ("Segoe UI", 10)
+FONT = ("RuneScape Plain 12", 11)
+FONT_SM = ("RuneScape Plain 11", 10)
 
 
 class OmniBox(ctk.CTkToplevel):
@@ -61,7 +61,7 @@ class OmniBox(ctk.CTkToplevel):
         # Search input
         self._entry = ctk.CTkEntry(
             self, placeholder_text="Type a command, skill, or @agent...",
-            font=("Segoe UI", 14), height=44,
+            font=("RuneScape Plain 12", 14), height=44,
             fg_color=BG2, text_color=TEXT, border_color=ACCENT,
         )
         self._entry.pack(fill="x", padx=12, pady=(12, 6))
@@ -172,7 +172,7 @@ class OmniBox(ctk.CTkToplevel):
                         ).pack(side="left", padx=(8, 4))
 
             # Name
-            ctk.CTkLabel(frame, text=cmd["name"], font=("Segoe UI", 11, "bold"),
+            ctk.CTkLabel(frame, text=cmd["name"], font=("RuneScape Bold 12", 11, "bold"),
                         text_color=TEXT, anchor="w"
                         ).pack(side="left", padx=(0, 8))
 

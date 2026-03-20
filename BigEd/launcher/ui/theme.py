@@ -1,4 +1,32 @@
 """BigEd CC UI Theme — single source of truth for colors and fonts."""
+import ctypes
+import sys
+from pathlib import Path
+
+# ─── Custom Font Loader ──────────────────────────────────────────────────────
+_FONT_DIR = Path(__file__).resolve().parent.parent / "fonts"
+_FONTS_LOADED = False
+
+# Font family names (registered in TTF metadata)
+RS_PLAIN_11 = "RuneScape Plain 11"
+RS_PLAIN_12 = "RuneScape Plain 12"
+RS_BOLD_12  = "RuneScape Bold 12"
+
+def load_custom_fonts():
+    """Load bundled TTF fonts into the Windows font table (private, session-only)."""
+    global _FONTS_LOADED
+    if _FONTS_LOADED or sys.platform != "win32":
+        return
+    try:
+        FR_PRIVATE = 0x10
+        for ttf in _FONT_DIR.glob("*.ttf"):
+            ctypes.windll.gdi32.AddFontResourceExW(str(ttf), FR_PRIVATE, 0)
+        _FONTS_LOADED = True
+    except Exception:
+        pass
+
+# Load fonts at import time
+load_custom_fonts()
 
 # Backgrounds
 BG       = "#1a1a1a"
@@ -21,9 +49,9 @@ RED      = "#f44336"
 
 # Fonts
 MONO     = ("Consolas", 11)
-FONT     = ("Segoe UI", 11)
-FONT_SM  = ("Segoe UI", 10)
-FONT_H   = ("Segoe UI", 13, "bold")
+FONT     = (RS_PLAIN_12, 12)
+FONT_SM  = (RS_PLAIN_11, 11)
+FONT_H   = (RS_BOLD_12, 14, "bold")
 
 # Status colors (counter cards, agent cards)
 BLUE     = "#4fc3f7"
@@ -58,11 +86,11 @@ COUNTER_COLORS = {
 }
 
 # Font hierarchy
-FONT_XS    = ("Consolas", 8)           # timestamps, metadata
-FONT_STAT  = ("Consolas", 10)          # stats, status text
-FONT_MONO  = ("Consolas", 11)          # code, values (same as MONO)
-FONT_BOLD  = ("Segoe UI", 11, "bold")  # agent names, emphasis
-FONT_TITLE = ("Segoe UI", 14, "bold")  # section titles
+FONT_XS    = (RS_PLAIN_11, 9)                # timestamps, metadata
+FONT_STAT  = ("Consolas", 10)                # stats, numbers (keep mono)
+FONT_MONO  = ("Consolas", 11)                # code, values (keep mono)
+FONT_BOLD  = (RS_BOLD_12, 12, "bold")        # agent names, emphasis
+FONT_TITLE = (RS_BOLD_12, 15, "bold")        # section titles
 
 # Dimensions
 CARD_RADIUS   = 8

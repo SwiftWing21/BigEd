@@ -8,7 +8,7 @@ import customtkinter as ctk
 from data_access import DataAccess
 
 BG = BG2 = BG3 = ACCENT = ACCENT_H = GOLD = TEXT = DIM = GREEN = ORANGE = RED = ""
-FONT_SM = ("Segoe UI", 10)
+FONT_SM = ("RuneScape Plain 11", 10)
 
 
 class Module:
@@ -136,7 +136,7 @@ class Module:
         total = done_count = 0
         for cat, items in steps.items():
             lbl = ctk.CTkLabel(self._scroll, text=cat,
-                               font=("Segoe UI", 10, "bold"), text_color=GOLD, anchor="w")
+                               font=("RuneScape Bold 12", 10, "bold"), text_color=GOLD, anchor="w")
             lbl.grid(row=row, column=0, columnspan=2, padx=6, pady=(8, 2), sticky="w")
             self._rows.append(lbl)
             row += 1

@@ -115,16 +115,16 @@ class Uninstaller(ctk.CTk):
                 ctkimg = ctk.CTkImage(light_image=img, dark_image=img, size=(45, 60))
                 ctk.CTkLabel(hdr, image=ctkimg, text="").pack(side="left", padx=(12, 8), pady=5)
             except Exception:
-                ctk.CTkLabel(hdr, text="🧱", font=("Segoe UI", 32)).pack(side="left", padx=(12, 8))
+                ctk.CTkLabel(hdr, text="🧱", font=("RuneScape Plain 12", 32)).pack(side="left", padx=(12, 8))
         else:
-            ctk.CTkLabel(hdr, text="🧱", font=("Segoe UI", 32)).pack(side="left", padx=(12, 8))
+            ctk.CTkLabel(hdr, text="🧱", font=("RuneScape Plain 12", 32)).pack(side="left", padx=(12, 8))
 
         info = ctk.CTkFrame(hdr, fg_color="transparent")
         info.pack(side="left", fill="y", pady=10)
-        ctk.CTkLabel(info, text=APP_NAME, font=("Segoe UI", 16, "bold"),
+        ctk.CTkLabel(info, text=APP_NAME, font=("RuneScape Bold 12", 16, "bold"),
                      text_color=GOLD, anchor="w").pack(anchor="w")
         ctk.CTkLabel(info, text=f"Uninstall  ·  {PUBLISHER}",
-                     font=("Segoe UI", 10), text_color=DIM, anchor="w").pack(anchor="w")
+                     font=("RuneScape Plain 11", 10), text_color=DIM, anchor="w").pack(anchor="w")
 
     # ── Pages ─────────────────────────────────────────────────────────────────
     def _build_pages(self):
@@ -147,7 +147,7 @@ class Uninstaller(ctk.CTk):
     # ── Page: Confirm ─────────────────────────────────────────────────────────
     def _page_confirm(self, parent):
         ctk.CTkLabel(parent, text="Uninstall Big Edge Compute Command",
-                     font=("Segoe UI", 14, "bold"), text_color=GOLD
+                     font=("RuneScape Bold 12", 14, "bold"), text_color=GOLD
                      ).pack(pady=(24, 10))
 
         if self._install_dir:
@@ -166,7 +166,7 @@ class Uninstaller(ctk.CTk):
                 "No files will be deleted."
             )
 
-        ctk.CTkLabel(parent, text=body, font=("Segoe UI", 11),
+        ctk.CTkLabel(parent, text=body, font=("RuneScape Plain 12", 11),
                      text_color=TEXT, justify="left", anchor="w"
                      ).pack(padx=32, pady=4, anchor="w")
 
@@ -184,7 +184,7 @@ class Uninstaller(ctk.CTk):
     # ── Page: Removing ────────────────────────────────────────────────────────
     def _page_removing(self, parent):
         ctk.CTkLabel(parent, text="Uninstalling...",
-                     font=("Segoe UI", 14, "bold"), text_color=GOLD
+                     font=("RuneScape Bold 12", 14, "bold"), text_color=GOLD
                      ).pack(pady=(28, 10))
 
         self._prog = ctk.CTkProgressBar(parent, height=14, corner_radius=4,
@@ -193,7 +193,7 @@ class Uninstaller(ctk.CTk):
         self._prog.pack(fill="x", padx=32, pady=(4, 12))
 
         self._prog_lbl = ctk.CTkLabel(parent, text="Preparing...",
-                                      font=("Segoe UI", 10), text_color=DIM)
+                                      font=("RuneScape Plain 11", 10), text_color=DIM)
         self._prog_lbl.pack(anchor="w", padx=34)
 
         self._log_box = ctk.CTkTextbox(parent, font=("Consolas", 10),
@@ -216,13 +216,13 @@ class Uninstaller(ctk.CTk):
 
     # ── Page: Complete ────────────────────────────────────────────────────────
     def _page_complete(self, parent):
-        ctk.CTkLabel(parent, text="✓", font=("Segoe UI", 52),
+        ctk.CTkLabel(parent, text="✓", font=("RuneScape Plain 12", 52),
                      text_color=GREEN).pack(pady=(20, 4))
         ctk.CTkLabel(parent, text="Uninstall Complete",
-                     font=("Segoe UI", 15, "bold"), text_color=GOLD
+                     font=("RuneScape Bold 12", 15, "bold"), text_color=GOLD
                      ).pack()
         self._complete_note = ctk.CTkLabel(
-            parent, text="", font=("Segoe UI", 10), text_color=DIM)
+            parent, text="", font=("RuneScape Plain 11", 10), text_color=DIM)
         self._complete_note.pack(pady=6)
 
         btn_row = ctk.CTkFrame(parent, fg_color="transparent")

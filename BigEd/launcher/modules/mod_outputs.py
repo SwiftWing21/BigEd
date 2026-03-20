@@ -9,7 +9,7 @@ from pathlib import Path
 import customtkinter as ctk
 
 BG = BG2 = BG3 = ACCENT = ACCENT_H = GOLD = TEXT = DIM = GREEN = ORANGE = RED = ""
-FONT_SM = ("Segoe UI", 10)
+FONT_SM = ("RuneScape Plain 11", 10)
 FLEET_DIR = None
 
 

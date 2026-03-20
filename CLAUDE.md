@@ -100,9 +100,11 @@ python -c "import sys; sys.path.insert(0,'fleet'); from system_info import gener
 - Boot: 7-stage sequence with adaptive timeouts
 
 ## Agent Work Distribution
-- **Default: worktree multi-agent** — `isolation: "worktree"`, 5-10 agents per batch
+- **Default: worktree multi-agent** — `isolation: "worktree"`, agents per batch set in CLAUDE.USER.md
 - Split by feature, not file. Git merge handles overlaps.
 - Clean up: `rm -rf .claude/worktrees; git worktree prune`
+- **Team size**: configured per-environment in CLAUDE.USER.md (default: 0 for GitHub/CI, dev machines set their own)
+- Use `run_in_background` for independent tasks, foreground for sequential dependencies
 
 ## API
 - Throttle 20% of rate limits, 300ms min between requests

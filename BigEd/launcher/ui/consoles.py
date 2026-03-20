@@ -334,7 +334,7 @@ Keep responses concise and action-oriented. Lead with the most important insight
     def _build_model_widget(self, hdr):
         """Place the model indicator in the header. Override for interactive selectors."""
         self._model_lbl = ctk.CTkLabel(
-            hdr, text=self._get_model_display(), font=("Segoe UI", 9), text_color=DIM)
+            hdr, text=self._get_model_display(), font=("RuneScape Plain 11", 9), text_color=DIM)
         self._model_lbl.grid(row=0, column=1, padx=8, sticky="e")
 
     def _get_key_env_name(self) -> str:
@@ -403,22 +403,22 @@ Keep responses concise and action-oriented. Lead with the most important insight
         hdr.grid_propagate(False)
         hdr.grid_columnconfigure(1, weight=1)
         ctk.CTkLabel(hdr, text=self.HEADER_LABEL,
-                     font=("Segoe UI", 13, "bold"), text_color=self.HEADER_TEXT_COLOR
+                     font=("RuneScape Bold 12", 13, "bold"), text_color=self.HEADER_TEXT_COLOR
                      ).grid(row=0, column=0, padx=14, pady=10, sticky="w")
         self._build_model_widget(hdr)
         ctk.CTkButton(
-            hdr, text="🗑 Clear History", font=("Segoe UI", 9), width=100, height=26,
+            hdr, text="🗑 Clear History", font=("RuneScape Plain 11", 9), width=100, height=26,
             fg_color=BG3, hover_color=BG, command=self._clear_history
         ).grid(row=0, column=2, padx=(0, 6))
         if self._get_key_env_name():
             ctk.CTkButton(
-                hdr, text="🔑 Set Key", font=("Segoe UI", 9), width=80, height=26,
+                hdr, text="🔑 Set Key", font=("RuneScape Plain 11", 9), width=80, height=26,
                 fg_color=BG3, hover_color=BG, command=self._set_key_dialog
             ).grid(row=0, column=3, padx=(0, 10))
 
         # Chat history
         self._chat = ctk.CTkTextbox(
-            self, font=("Segoe UI", 11), fg_color=self.CHAT_BG,
+            self, font=("RuneScape Plain 12", 11), fg_color=self.CHAT_BG,
             text_color=TEXT, wrap="word", corner_radius=0)
         self._chat.grid(row=1, column=0, sticky="nsew")
         self._chat.configure(state="disabled")
@@ -427,10 +427,10 @@ Keep responses concise and action-oriented. Lead with the most important insight
         ctx_bar = ctk.CTkFrame(self, fg_color=BG3, height=34, corner_radius=0)
         ctx_bar.grid(row=2, column=0, sticky="ew")
         ctx_bar.grid_propagate(False)
-        ctk.CTkLabel(ctx_bar, text="Inject context:", font=("Segoe UI", 9),
+        ctk.CTkLabel(ctx_bar, text="Inject context:", font=("RuneScape Plain 11", 9),
                      text_color=DIM).grid(row=0, column=0, padx=(10, 6), pady=6)
         for i, (lbl, fn) in enumerate(self._get_context_buttons()):
-            ctk.CTkButton(ctx_bar, text=lbl, font=("Segoe UI", 9), height=22, width=0,
+            ctk.CTkButton(ctx_bar, text=lbl, font=("RuneScape Plain 11", 9), height=22, width=0,
                           fg_color=self.CTX_BTN_FG, hover_color=self.CTX_BTN_HOVER,
                           command=fn).grid(row=0, column=i + 1, padx=3, pady=6)
 
@@ -441,21 +441,21 @@ Keep responses concise and action-oriented. Lead with the most important insight
         bar.grid_columnconfigure(0, weight=1)
 
         self._input = ctk.CTkEntry(
-            bar, font=("Segoe UI", 11), fg_color=BG,
+            bar, font=("RuneScape Plain 12", 11), fg_color=BG,
             border_color="#334", text_color=TEXT,
             placeholder_text="Type a message...")
         self._input.grid(row=0, column=0, padx=(10, 6), pady=10, sticky="ew")
         self._input.bind("<Return>", lambda e: self._send())
 
         self._send_btn = ctk.CTkButton(
-            bar, text="Send", font=("Segoe UI", 11, "bold"),
+            bar, text="Send", font=("RuneScape Bold 12", 11, "bold"),
             width=80, height=32,
             fg_color=self.SEND_BTN_FG, hover_color=self.SEND_BTN_HOVER,
             command=self._send)
         self._send_btn.grid(row=0, column=1, padx=(0, 10), pady=10)
 
         self._thinking_lbl = ctk.CTkLabel(
-            bar, text="", font=("Segoe UI", 9), text_color=DIM)
+            bar, text="", font=("RuneScape Plain 11", 9), text_color=DIM)
         self._thinking_lbl.grid(row=0, column=2, padx=6)
 
     # ── Context injectors ─────────────────────────────────────────────────────
@@ -723,7 +723,7 @@ class ClaudeConsole(_ConsoleBase):
             hdr,
             values=list(self._CLAUDE_MODELS),
             variable=self._model_var,
-            font=("Segoe UI", 9),
+            font=("RuneScape Plain 11", 9),
             fg_color=BG3,
             button_color=BG2,
             button_hover_color=BG,
@@ -910,7 +910,7 @@ class LocalConsole(_ConsoleBase):
 
     def _build_model_widget(self, hdr):
         self._model_lbl = ctk.CTkLabel(
-            hdr, text=self._get_model_display(), font=("Segoe UI", 9), text_color=DIM)
+            hdr, text=self._get_model_display(), font=("RuneScape Plain 11", 9), text_color=DIM)
         self._model_lbl.grid(row=0, column=1, padx=8, sticky="e")
 
     def _set_key_dialog(self):

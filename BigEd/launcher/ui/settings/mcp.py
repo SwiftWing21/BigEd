@@ -62,10 +62,10 @@ class McpPanelMixin:
             )
             sw.grid(row=0, column=0, padx=(0, 8))
 
-            ctk.CTkLabel(row, text=name, font=("Segoe UI", 11, "bold"),
+            ctk.CTkLabel(row, text=name, font=("RuneScape Bold 12", 11, "bold"),
                         text_color=TEXT).grid(row=0, column=1, sticky="w")
 
-            ctk.CTkLabel(row, text=desc, font=("Segoe UI", 9),
+            ctk.CTkLabel(row, text=desc, font=("RuneScape Plain 11", 9),
                         text_color=DIM).grid(row=0, column=2, padx=(8, 0), sticky="w")
 
             # Status dot
@@ -103,9 +103,9 @@ class McpPanelMixin:
 
             ctk.CTkLabel(row, text="●", font=("Consolas", 11),
                         text_color=status_color).grid(row=0, column=0, padx=(0, 6))
-            ctk.CTkLabel(row, text=label, font=("Segoe UI", 11, "bold"),
+            ctk.CTkLabel(row, text=label, font=("RuneScape Bold 12", 11, "bold"),
                         text_color=TEXT).grid(row=0, column=1, sticky="w")
-            ctk.CTkLabel(row, text=desc, font=("Segoe UI", 9),
+            ctk.CTkLabel(row, text=desc, font=("RuneScape Plain 11", 9),
                         text_color=DIM).grid(row=0, column=2, padx=(8, 0), sticky="w")
             ctk.CTkLabel(row, text=status_text, font=("Consolas", 9),
                         text_color=status_color).grid(row=0, column=3, padx=(8, 0))
@@ -215,7 +215,7 @@ class McpPanelMixin:
                 color = GREEN if status == "online" else ORANGE if status == "configured" else RED
                 ctk.CTkLabel(row, text="●", font=("Consolas", 11),
                             text_color=color).grid(row=0, column=0, padx=(0, 6))
-                ctk.CTkLabel(row, text=s["name"], font=("Segoe UI", 10, "bold"),
+                ctk.CTkLabel(row, text=s["name"], font=("RuneScape Bold 12", 10, "bold"),
                             text_color=TEXT).grid(row=0, column=1, sticky="w")
                 ctk.CTkLabel(row, text=s["type"], font=("Consolas", 9),
                             text_color=DIM).grid(row=0, column=2, padx=(8, 0))

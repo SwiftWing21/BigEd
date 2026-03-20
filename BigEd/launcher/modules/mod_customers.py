@@ -8,7 +8,7 @@ import customtkinter as ctk
 from data_access import DataAccess
 
 BG = BG2 = BG3 = ACCENT = ACCENT_H = GOLD = TEXT = DIM = GREEN = ORANGE = RED = ""
-FONT_SM = ("Segoe UI", 10)
+FONT_SM = ("RuneScape Plain 11", 10)
 
 
 class Module:
@@ -87,7 +87,7 @@ class Module:
 
         for col, txt in enumerate(["Customer", "Status", "Last Ping",
                                    "Fleet Ver", "Isolation", ""]):
-            ctk.CTkLabel(self._scroll, text=txt, font=("Segoe UI", 9, "bold"),
+            ctk.CTkLabel(self._scroll, text=txt, font=("RuneScape Bold 12", 9, "bold"),
                          text_color=DIM, anchor="w"
                          ).grid(row=0, column=col, padx=6, pady=(2, 4), sticky="ew")
 

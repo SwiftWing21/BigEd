@@ -11,7 +11,7 @@ from pathlib import Path
 import customtkinter as ctk
 
 BG = BG2 = BG3 = ACCENT = ACCENT_H = GOLD = TEXT = DIM = GREEN = ORANGE = RED = ""
-FONT_SM = ("Segoe UI", 10)
+FONT_SM = ("RuneScape Plain 11", 10)
 FLEET_DIR = None
 
 
@@ -102,16 +102,16 @@ class Module:
 
         sel_bar = ctk.CTkFrame(left, fg_color=BG3, corner_radius=0)
         sel_bar.grid(row=0, column=0, sticky="ew")
-        ctk.CTkButton(sel_bar, text="Select All", font=("Segoe UI", 9),
+        ctk.CTkButton(sel_bar, text="Select All", font=("RuneScape Plain 11", 9),
                       width=70, height=22, fg_color="transparent", hover_color=BG2,
                       text_color=DIM, command=self._select_all
                       ).pack(side="left", padx=4, pady=2)
-        ctk.CTkButton(sel_bar, text="Select None", font=("Segoe UI", 9),
+        ctk.CTkButton(sel_bar, text="Select None", font=("RuneScape Plain 11", 9),
                       width=75, height=22, fg_color="transparent", hover_color=BG2,
                       text_color=DIM, command=self._select_none
                       ).pack(side="left", padx=0, pady=2)
         self._count_lbl = ctk.CTkLabel(
-            sel_bar, text="", font=("Segoe UI", 9), text_color=DIM)
+            sel_bar, text="", font=("RuneScape Plain 11", 9), text_color=DIM)
         self._count_lbl.pack(side="right", padx=8)
 
         self._file_list = ctk.CTkScrollableFrame(
@@ -145,7 +145,7 @@ class Module:
 
         info_frame = ctk.CTkFrame(right, fg_color=BG3, corner_radius=6)
         info_frame.pack(fill="x", padx=12, pady=(8, 4))
-        ctk.CTkLabel(info_frame, text="Supported formats", font=("Segoe UI", 10, "bold"),
+        ctk.CTkLabel(info_frame, text="Supported formats", font=("RuneScape Bold 12", 10, "bold"),
                      text_color=GOLD).pack(padx=10, pady=(8, 2), anchor="w")
         ctk.CTkLabel(info_frame,
                      text="Text:   .md .txt .rst .log .toml .yaml .cfg .ini\n"
@@ -157,7 +157,7 @@ class Module:
                      ).pack(padx=10, pady=(0, 8), anchor="w")
 
         self._btn = ctk.CTkButton(
-            right, text="Ingest Selected", font=("Segoe UI", 11, "bold"),
+            right, text="Ingest Selected", font=("RuneScape Bold 12", 11, "bold"),
             height=36, fg_color=ACCENT, hover_color=ACCENT_H,
             command=self._run_ingest)
         self._btn.pack(padx=12, pady=(8, 4), fill="x")

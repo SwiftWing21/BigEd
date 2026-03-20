@@ -83,7 +83,7 @@ class ReviewDialog(ctk.CTkToplevel):
         hdr.grid(row=0, column=0, sticky="ew")
         hdr.grid_propagate(False)
         ctk.CTkLabel(hdr, text="🧪  REVIEW SETTINGS",
-                     font=("Segoe UI", 13, "bold"), text_color=GOLD
+                     font=("RuneScape Bold 12", 13, "bold"), text_color=GOLD
                      ).grid(row=0, column=0, padx=14, pady=10, sticky="w")
 
         body = ctk.CTkFrame(self, fg_color=BG2, corner_radius=0)
@@ -99,7 +99,7 @@ class ReviewDialog(ctk.CTkToplevel):
                            progress_color=ACCENT, button_color=TEXT)
         sw.grid(row=0, column=1, padx=16, pady=(18, 6), sticky="w")
         ctk.CTkLabel(body, text="When OFF, skill outputs skip review entirely.",
-                     font=("Segoe UI", 9), text_color=DIM
+                     font=("RuneScape Plain 11", 9), text_color=DIM
                      ).grid(row=1, column=0, columnspan=2, padx=16, pady=(0, 10), sticky="w")
 
         # Provider
@@ -120,7 +120,7 @@ class ReviewDialog(ctk.CTkToplevel):
                      text="api — Claude Sonnet via Anthropic API key (billed)\n"
                           "subscription — Gemini 2.0 Flash free tier\n"
                           "local — Ollama model with extended thinking (offline)",
-                     font=("Segoe UI", 9), text_color=DIM, justify="left"
+                     font=("RuneScape Plain 11", 9), text_color=DIM, justify="left"
                      ).pack(padx=10, pady=8, anchor="w")
 
         # Local model options (shown only when provider=local)
@@ -137,7 +137,7 @@ class ReviewDialog(ctk.CTkToplevel):
 
         self._think_var = ctk.BooleanVar(value=self._cfg["local_think"])
         ctk.CTkCheckBox(self._local_frame, text="Extended thinking (/think prefix)",
-                        variable=self._think_var, font=("Segoe UI", 9),
+                        variable=self._think_var, font=("RuneScape Plain 11", 9),
                         text_color=DIM, checkbox_width=16, checkbox_height=16,
                         ).grid(row=1, column=0, columnspan=2, pady=(2, 0), sticky="w")
 
@@ -151,7 +151,7 @@ class ReviewDialog(ctk.CTkToplevel):
         ctk.CTkButton(foot, text="Save", width=90, height=30,
                       fg_color=ACCENT, hover_color=ACCENT_H,
                       command=self._save).grid(row=0, column=0, padx=12, pady=8)
-        self._status = ctk.CTkLabel(foot, text="", font=("Segoe UI", 9), text_color=DIM)
+        self._status = ctk.CTkLabel(foot, text="", font=("RuneScape Plain 11", 9), text_color=DIM)
         self._status.grid(row=0, column=1, padx=8, sticky="w")
 
     def _on_provider_change(self, value: str):

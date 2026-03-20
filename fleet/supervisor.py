@@ -58,6 +58,17 @@ def _json_log(level, event, **kwargs):
 BASE_ROLES = ["researcher", "coder", "archivist", "analyst", "sales", "onboarding", "implementation", "security", "planner", "legal", "account_manager"]
 PYTHON = sys.executable
 
+# ── Dynamic Agent Scaling ──────────────────────────────────────────────────────
+# Core agents — always running (minimal set)
+CORE_AGENTS = {"coder_1", "researcher", "planner", "archivist"}
+# Scale-up order — agents added when queue builds up (generic overflow)
+SCALE_ORDER = ["coder_2", "coder_3", "analyst", "security", "coder"]
+# Scale thresholds
+SCALE_UP_QUEUE_DEPTH = 5      # pending tasks to trigger scale-up
+SCALE_DOWN_IDLE_SECS = 300    # 5 min idle before scale-down
+# Max dynamic instances per base role (e.g. coder_4, researcher_2)
+MAX_DYNAMIC_PER_ROLE = 4
+
 
 def _build_roles(config):
     """Expand BASE_ROLES, replacing 'coder' with coder_1..coder_N and filtering disabled agents."""
@@ -80,6 +91,143 @@ dashboard_proc = None
 worker_procs = {}
 training_active = False
 ollama_evicted_for_training = False
+_last_busy = {}  # agent_name -> timestamp of last task activity
+
+
+def _count_pending_tasks() -> int:
+    """Count pending tasks in the queue."""
+    try:
+        import sqlite3
+        db_path = Path(__file__).parent / "fleet.db"
+        conn = sqlite3.connect(str(db_path), timeout=5)
+        row = conn.execute("SELECT COUNT(*) FROM tasks WHERE status='PENDING'").fetchone()
+        conn.close()
+        return row[0] if row else 0
+    except Exception:
+        return 0
+
+
+def _get_running_workers() -> set:
+    """Get names of currently running worker processes."""
+    running = set()
+    for name, proc in worker_procs.items():
+        if proc and proc.poll() is None:
+            running.add(name)
+    return running
+
+
+def _pending_tasks_by_type() -> dict:
+    """Count pending tasks grouped by type (skill name)."""
+    try:
+        import sqlite3
+        db_path = Path(__file__).parent / "fleet.db"
+        conn = sqlite3.connect(str(db_path), timeout=5)
+        rows = conn.execute(
+            "SELECT type, COUNT(*) as n FROM tasks WHERE status='PENDING' GROUP BY type"
+        ).fetchall()
+        conn.close()
+        return {r[0]: r[1] for r in rows}
+    except Exception:
+        return {}
+
+
+def _skill_to_role(skill: str, affinity_map: dict) -> str | None:
+    """Map a skill/task type to the base role that handles it."""
+    for role, skills in affinity_map.items():
+        if skill in skills:
+            return role
+    return None
+
+
+def _load_affinity_map() -> dict:
+    """Load [affinity] section from fleet.toml."""
+    try:
+        config = load_config()
+        return config.get("affinity", {})
+    except Exception:
+        return {}
+
+
+def _next_instance_name(base_role: str, running: set) -> str:
+    """Generate next available instance name for a role (e.g. coder_4, researcher_2)."""
+    for i in range(1, MAX_DYNAMIC_PER_ROLE + 1):
+        name = f"{base_role}_{i}" if i > 1 or base_role == "coder" else base_role
+        if base_role == "coder":
+            name = f"coder_{i}"
+        if name not in running:
+            return name
+    return None
+
+
+def _should_scale_up(pending: int, running: set) -> list:
+    """Return list of agent names to start based on queue depth and task types.
+
+    Type-aware: analyzes pending task types, maps to roles via affinity,
+    and spins up the right kind of agent. Falls back to generic SCALE_ORDER.
+    """
+    to_start = []
+    if pending < SCALE_UP_QUEUE_DEPTH:
+        return to_start
+
+    max_total = 16
+    if len(running) >= max_total:
+        return to_start
+
+    # Type-aware: check what kinds of tasks are queued
+    by_type = _pending_tasks_by_type()
+    affinity = _load_affinity_map()
+
+    # Count demand per role
+    role_demand = {}
+    for skill, count in by_type.items():
+        role = _skill_to_role(skill, affinity)
+        if role:
+            role_demand[role] = role_demand.get(role, 0) + count
+
+    # Sort by demand (highest first)
+    for role, demand in sorted(role_demand.items(), key=lambda x: -x[1]):
+        if demand < 2:
+            continue  # only scale for meaningful backlog
+        name = _next_instance_name(role, running | set(to_start))
+        if name and name not in running and len(to_start) + len(running) < max_total:
+            to_start.append(name)
+            log.info(f"Type-aware scale: {name} for {demand} pending {role} tasks")
+
+    # Generic fallback if still under threshold
+    if not to_start and pending >= SCALE_UP_QUEUE_DEPTH:
+        for agent in SCALE_ORDER:
+            if agent not in running and len(to_start) + len(running) < max_total:
+                to_start.append(agent)
+                if pending // SCALE_UP_QUEUE_DEPTH <= len(to_start):
+                    break
+
+    return to_start
+
+
+def _should_scale_down(running: set, last_busy: dict) -> list:
+    """Return list of non-core agent names to stop if idle too long."""
+    now = time.time()
+    to_stop = []
+    for name in running:
+        if name in CORE_AGENTS:
+            continue
+        idle_since = last_busy.get(name, now)
+        if now - idle_since > SCALE_DOWN_IDLE_SECS:
+            to_stop.append(name)
+    return to_stop
+
+
+def _stop_worker(role):
+    """Gracefully stop a single worker process."""
+    proc = worker_procs.get(role)
+    if proc and proc.poll() is None:
+        log.info(f"Stopping worker: {role}")
+        proc.terminate()
+        try:
+            proc.wait(timeout=10)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+    worker_procs.pop(role, None)
 
 
 def _find_ollama() -> str:
@@ -88,12 +236,48 @@ def _find_ollama() -> str:
     path = shutil.which("ollama")
     if path:
         return path
-    # Windows: check default install location
+    # Windows: check common install locations
     if sys.platform == "win32":
-        win_path = Path(os.environ.get("LOCALAPPDATA", "")) / "Programs" / "Ollama" / "ollama.exe"
-        if win_path.exists():
-            return str(win_path)
+        for p in [
+            Path(os.environ.get("LOCALAPPDATA", "")) / "Programs" / "Ollama" / "ollama.exe",
+            Path(os.environ.get("LOCALAPPDATA", "")) / "Ollama" / "ollama.exe",
+            Path(os.environ.get("PROGRAMFILES", "")) / "Ollama" / "ollama.exe",
+        ]:
+            if p.exists():
+                return str(p)
     return "ollama"  # fallback — let subprocess try PATH
+
+
+def get_best_available_model() -> str:
+    """Return the best available local model, falling back from configured default."""
+    config = load_config()
+    configured = config.get("models", {}).get("local", "qwen3:8b")
+
+    # Check if configured model is available
+    try:
+        host = config.get("models", {}).get("ollama_host", "http://localhost:11434")
+        with urllib.request.urlopen(f"{host}/api/tags", timeout=3) as r:
+            data = json.loads(r.read())
+        available = [m["name"] for m in data.get("models", [])]
+    except Exception:
+        return configured  # Can't check — use configured and hope
+
+    if configured in available:
+        return configured
+
+    # Fallback: prefer larger models
+    preference = ["qwen3:8b", "qwen3:4b", "qwen3:1.7b", "qwen3:0.6b"]
+    for m in preference:
+        if m in available:
+            log.warning(f"Configured model '{configured}' not available, using fallback '{m}'")
+            return m
+
+    # Last resort: first available
+    if available:
+        log.warning(f"No preferred model available, using '{available[0]}'")
+        return available[0]
+
+    return configured
 
 
 def _find_running_ollama() -> bool:
@@ -372,10 +556,10 @@ def read_hw_state():
 
 
 
-def _ping_ollama_keepalive(config, keep_alive="24h"):
+def _ping_ollama_keepalive(config, keep_alive="24h", model_override=None):
     """Load model into VRAM and keep it there. 24h effectively means never unload."""
     host = config.get("models", {}).get("ollama_host", "http://localhost:11434")
-    model = config.get("models", {}).get("local", "qwen3:8b")
+    model = model_override or config.get("models", {}).get("local", "qwen3:8b")
     body = json.dumps({"model": model, "keep_alive": keep_alive}).encode()
     req = urllib.request.Request(
         f"{host}/api/generate", data=body,
@@ -597,11 +781,12 @@ def main():
 
     ALL_ROLES = _build_roles(config)
     max_workers = config.get("fleet", {}).get("max_workers", 10)
-    # Boot with capped worker count — Dr. Ders can scale up later
-    ROLES = ALL_ROLES[:max_workers]
-    if len(ALL_ROLES) > max_workers:
-        log.info(f"Worker cap: starting {len(ROLES)}/{len(ALL_ROLES)} workers (max_workers={max_workers})")
-        log.info(f"Deferred: {', '.join(ALL_ROLES[max_workers:])}")
+    # Dynamic scaling: only boot core agents — rest scale up on demand
+    disabled = set(config.get("fleet", {}).get("disabled_agents", []))
+    ROLES = [r for r in ALL_ROLES if r in CORE_AGENTS and r not in disabled]
+    dynamic_pool = [r for r in ALL_ROLES if r not in CORE_AGENTS and r not in disabled]
+    log.info(f"Dynamic scaling: booting {len(ROLES)} core agents, {len(dynamic_pool)} on-demand")
+    log.info(f"Core: {', '.join(ROLES)} | Pool: {', '.join(dynamic_pool)}")
 
     signal.signal(signal.SIGINT, shutdown)
     signal.signal(signal.SIGTERM, shutdown)
@@ -609,13 +794,25 @@ def main():
     # Start Ollama — adopts existing instance or starts fresh
     start_ollama(gpu=not config["fleet"]["eco_mode"])
 
+    # Resolve best available model — falls back if configured model isn't installed
+    resolved_model = get_best_available_model()
+    configured_model = config.get("models", {}).get("local", "qwen3:8b")
+    if resolved_model != configured_model:
+        log.info(f"Model fallback: '{configured_model}' -> '{resolved_model}'")
+        _json_log("INFO", "model_fallback", configured=configured_model, resolved=resolved_model)
+    else:
+        log.info(f"Using configured model: {resolved_model}")
+    # Export so workers inherit the resolved model
+    os.environ["FLEET_MODEL_OVERRIDE"] = resolved_model
+
     # Initial keepalive — pre-load worker model into VRAM (Dr. Ders takes over after boot)
     if not air_gap:
-        _ping_ollama_keepalive(config)
+        _ping_ollama_keepalive(config, model_override=resolved_model)
 
-    # Start workers with stagger
+    # Start core workers with stagger (dynamic agents start on demand)
     for role in ROLES:
         start_worker(role, config)
+        _last_busy[role] = time.time()
         time.sleep(1)
 
     # Start services — skip network services when offline/air-gapped
@@ -629,9 +826,11 @@ def main():
     # Dr. Ders checks conductor every ~60s and keepalive every ~240s.
 
     mode_label = " [AIR-GAP]" if air_gap else " [OFFLINE]" if offline else ""
-    log.info(f"Fleet up — {len(ROLES)} workers, eco={config['fleet']['eco_mode']}{mode_label}")
+    log.info(f"Fleet up — {len(ROLES)} core workers (dynamic scaling enabled), "
+             f"eco={config['fleet']['eco_mode']}{mode_label}")
     _json_log("INFO", "supervisor_startup", workers=len(ROLES),
-              eco=config["fleet"]["eco_mode"], mode=mode_label.strip() or "normal")
+              eco=config["fleet"]["eco_mode"], mode=mode_label.strip() or "normal",
+              scaling="dynamic", core=len(ROLES), pool=len(dynamic_pool))
 
     last_status = 0
     last_training_check = 0
@@ -642,10 +841,9 @@ def main():
     last_sup_notes_ts = None  # ISO timestamp of last sup note read
     training_interval = config["fleet"]["training_check_interval_secs"]
     worker_next_start = {}
-    # Dynamic worker scaling — deferred roles that weren't started at boot
-    deferred_roles = ALL_ROLES[max_workers:] if len(ALL_ROLES) > max_workers else []
+    # Dynamic agent scaling state
     last_scale_check = 0
-    scale_interval = config.get("fleet", {}).get("worker_scale_interval_secs", 900)
+    SCALE_CHECK_INTERVAL = 30  # check every 30 seconds
     last_model_recommend = 0
     MODEL_RECOMMEND_INTERVAL = 6 * 3600  # every 6 hours
     # v0.23 S3: Auto-Intelligence — periodic evolution + research dispatch
@@ -657,20 +855,45 @@ def main():
     while True:
         now = time.time()
 
-        # Dynamic worker scaling — start deferred workers if RAM allows (every 15min)
-        if deferred_roles and now - last_scale_check >= scale_interval:
+        # Dynamic agent scaling — scale up/down based on task queue depth (every 30s)
+        if now - last_scale_check >= SCALE_CHECK_INTERVAL:
             last_scale_check = now
             try:
-                import psutil as _ps
-                ram_pct = _ps.virtual_memory().percent
-                if ram_pct < 75:  # enough headroom
-                    role = deferred_roles.pop(0)
-                    log.info(f"Scaling up: starting deferred worker '{role}' (RAM {ram_pct:.0f}%)")
+                pending = _count_pending_tasks()
+                running = _get_running_workers()
+
+                # Update last-busy timestamps for agents with active tasks
+                try:
+                    with db.get_conn() as _conn:
+                        busy_agents = _conn.execute(
+                            "SELECT name FROM agents WHERE status='BUSY' "
+                            "AND (julianday('now') - julianday(last_heartbeat)) * 86400 < 60"
+                        ).fetchall()
+                    for row in busy_agents:
+                        _last_busy[row["name"]] = now
+                except Exception:
+                    pass
+
+                # Scale UP: spin up dynamic agents when queue builds up
+                to_start = _should_scale_up(pending, running)
+                # Respect disabled_agents
+                to_start = [r for r in to_start if r not in disabled and r in dynamic_pool]
+                for role in to_start:
+                    log.info(f"Scaling up: starting {role} ({pending} pending tasks)")
+                    _json_log("INFO", "scale_up", worker=role, pending=pending)
                     start_worker(role, config)
-                elif ram_pct > 85:
-                    log.info(f"Scaling hold: RAM {ram_pct:.0f}% — {len(deferred_roles)} workers deferred")
+                    _last_busy[role] = now
+
+                # Scale DOWN: stop non-core agents idle for 5+ minutes
+                to_stop = _should_scale_down(running, _last_busy)
+                for role in to_stop:
+                    idle_secs = int(now - _last_busy.get(role, now))
+                    log.info(f"Scaling down: stopping {role} (idle {idle_secs // 60}m{idle_secs % 60}s)")
+                    _json_log("INFO", "scale_down", worker=role, idle_secs=idle_secs)
+                    _stop_worker(role)
+                    worker_next_start.pop(role, None)
             except Exception as e:
-                log.debug(f"Scale check error: {e}")
+                log.debug(f"Dynamic scale check error: {e}")
 
         # Restart dead workers with cool-down backoff
         disabled = set(config.get("fleet", {}).get("disabled_agents", []))

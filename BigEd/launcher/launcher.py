@@ -399,6 +399,31 @@ def _fleet_mode() -> str:
     return "online"
 
 
+def _get_version() -> str:
+    """Read version from install marker, git tag, or fallback."""
+    # 1. Installed version file (.bigedcc_version)
+    for d in [Path(sys.executable).parent, Path(__file__).parent / "dist"]:
+        vf = d / ".bigedcc_version"
+        if vf.exists():
+            try:
+                return vf.read_text(encoding="utf-8").strip().lstrip("v")
+            except Exception:
+                pass
+    # 2. Git describe (source dev mode)
+    try:
+        r = subprocess.run(
+            ["git", "describe", "--tags", "--always"],
+            capture_output=True, text=True, timeout=3,
+            cwd=str(Path(__file__).parent.parent.parent),
+            creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0),
+        )
+        if r.returncode == 0 and r.stdout.strip():
+            return r.stdout.strip().lstrip("v")
+    except Exception:
+        pass
+    return "dev"
+
+
 def load_tab_cfg() -> dict:
     """Read [launcher.tabs] from fleet.toml to determine which UI tabs are enabled."""
     defaults = {
@@ -630,7 +655,7 @@ class Tooltip:
         win.wm_geometry(f"+{x}+{y}")
         win.configure(bg="#3a3a3a")
         tk.Label(
-            win, text=self._text, font=("Segoe UI", 9),
+            win, text=self._text, font=("RuneScape Plain 11", 9),
             bg="#3a3a3a", fg="#e2e2e2", padx=8, pady=5,
             justify="left", wraplength=220,
         ).pack()
@@ -714,7 +739,7 @@ class CustomTabBar(ctk.CTkFrame):
         btn = ctk.CTkButton(
             cell,
             text=f"{icon}  {name}",
-            font=("Segoe UI", 11),
+            font=("RuneScape Plain 12", 11),
             fg_color="transparent",
             hover_color=BG3,
             text_color=DIM,
@@ -964,7 +989,7 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
         countdown_var = ctk.StringVar(value=f"{action_text} in 5s...")
 
         ctk.CTkLabel(dlg, textvariable=countdown_var,
-                     font=("Segoe UI", 12, "bold"), text_color=GOLD).pack(pady=(20, 8))
+                     font=("RuneScape Bold 12", 12, "bold"), text_color=GOLD).pack(pady=(20, 8))
 
         btn_row = ctk.CTkFrame(dlg, fg_color="transparent")
         btn_row.pack(side="bottom", fill="x", padx=16, pady=12)
@@ -1018,15 +1043,15 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
         dlg.lift()
 
         ctk.CTkLabel(dlg, text="How should BigEd CC close?",
-                     font=("Segoe UI", 13, "bold"), text_color=GOLD).pack(pady=(16, 4))
+                     font=("RuneScape Bold 12", 13, "bold"), text_color=GOLD).pack(pady=(16, 4))
         ctk.CTkLabel(dlg, text="Stop & Exit gives agents a moment to wrap up.\n"
                      "Keep Running leaves the fleet working in the background.",
-                     font=("Segoe UI", 10), text_color=DIM).pack(pady=(0, 8))
+                     font=("RuneScape Plain 11", 10), text_color=DIM).pack(pady=(0, 8))
 
         # Remember checkbox
         remember_var = ctk.BooleanVar(value=False)
         ctk.CTkCheckBox(dlg, text="Remember my choice (5s countdown next time)",
-                        variable=remember_var, font=("Segoe UI", 10),
+                        variable=remember_var, font=("RuneScape Plain 11", 10),
                         text_color=TEXT, fg_color=BG3, hover_color=BG,
                         checkmark_color=GREEN).pack(pady=(0, 8))
 
@@ -1102,23 +1127,23 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
             ctk.CTkLabel(hdr, image=banner, text="").grid(
                 row=0, column=0, padx=(10, 2), pady=6)
         else:
-            ctk.CTkLabel(hdr, text="🧱", font=("Segoe UI", 22)).grid(
+            ctk.CTkLabel(hdr, text="🧱", font=("RuneScape Plain 12", 22)).grid(
                 row=0, column=0, padx=(10, 2), pady=6)
 
         self._sidebar_btn = ctk.CTkButton(
-            hdr, text="≡", font=("Segoe UI", 16), width=28, height=28,
-            fg_color="transparent", hover_color=BG2, text_color=DIM,
+            hdr, text="≡", font=("RuneScape Bold 12", 28), width=40, height=40,
+            fg_color="transparent", hover_color=BG2, text_color=TEXT,
             corner_radius=4, command=self._toggle_sidebar
         )
-        self._sidebar_btn.grid(row=0, column=1, padx=(0, 4), pady=6)
+        self._sidebar_btn.grid(row=0, column=1, padx=(0, 6), pady=6)
 
         # Title — single line with dim version
         title_frame = ctk.CTkFrame(hdr, fg_color="transparent")
         title_frame.grid(row=0, column=2, padx=(0, 8), pady=6, sticky="w")
         ctk.CTkLabel(title_frame, text="BIGED CC",
-                     font=FONT_TITLE, text_color=GOLD).pack(side="left")
-        ctk.CTkLabel(title_frame, text="  0.31",
-                     font=FONT_XS, text_color=DIM).pack(side="left", pady=(4, 0))
+                     font=("RuneScape Bold 12", 26, "bold"), text_color=GOLD).pack(side="left")
+        ctk.CTkLabel(title_frame, text=f"  {_get_version()}",
+                     font=FONT_XS, text_color=DIM).pack(side="left", pady=(6, 0))
 
         # ── System stats (inline, no container — let them breathe) ────
         stats_frame = ctk.CTkFrame(hdr, fg_color="transparent")
@@ -1146,14 +1171,14 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
         self._status_pills.pack(side="left", padx=(0, 6))
 
         self._action_badge = ctk.CTkLabel(
-            right_frame, text="", font=("Segoe UI", 9, "bold"),
+            right_frame, text="", font=("RuneScape Bold 12", 9, "bold"),
             text_color=BG, fg_color=ORANGE,
             corner_radius=10, width=0, cursor="hand2")
         self._action_badge.pack(side="left", padx=(0, 4))
         self._action_badge.bind("<Button-1>", lambda e: self._navigate_to_comm())
 
         self._update_badge = ctk.CTkButton(
-            right_frame, text="", font=("Segoe UI", 9, "bold"),
+            right_frame, text="", font=("RuneScape Bold 12", 9, "bold"),
             text_color=TEXT, fg_color="transparent",
             hover_color=BG3, corner_radius=10, width=0,
             command=self._launch_auto_update)
@@ -1170,7 +1195,7 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
             badge_text = " OFFLINE "
             badge_fg = ORANGE
         self._mode_badge = ctk.CTkLabel(
-            right_frame, text=badge_text, font=("Segoe UI", 9, "bold"),
+            right_frame, text=badge_text, font=("RuneScape Bold 12", 9, "bold"),
             text_color=BG if badge_text else TEXT,
             fg_color=badge_fg, corner_radius=10, width=0)
         self._mode_badge.pack(side="left")
@@ -1207,7 +1232,7 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
                         w.pack_forget()
             hdr = ctk.CTkButton(
                 sb, text=f"  {'▾' if default_open else '▸'}  {label}",
-                font=("Segoe UI", 10, "bold"),
+                font=("RuneScape Bold 12", 10, "bold"),
                 fg_color="transparent", hover_color=BG3,
                 text_color=DIM, anchor="w", height=26, corner_radius=0,
                 command=toggle,
@@ -1236,8 +1261,18 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
                                       tip="Start Ollama + all fleet workers (or stop everything)")
         btn(s, "↻  Status",      self._check_status,
             tip="Refresh agent status, show Ollama models and fleet log")
-        self._btn_dashboard = btn(s, "📊 Dashboard",   self._open_dashboard, "#1a2a3a", "#253545",
-            tip="Open the Fleet Dashboard in your browser (localhost:5555)")
+        # Dashboard — prominent button (larger, distinct color)
+        self._btn_dashboard = ctk.CTkButton(
+            sb, text="📊  Dashboard", font=("RuneScape Bold 12", 13, "bold"), height=36,
+            fg_color="#1a3a5a", hover_color="#254565",
+            text_color="#7ec8e3", anchor="w", corner_radius=4,
+            command=self._open_dashboard,
+        )
+        self._btn_dashboard.pack(fill="x", padx=10, pady=(4, 2))
+        if not s["open"]:
+            self._btn_dashboard.pack_forget()
+        s["widgets"].append(self._btn_dashboard)
+        Tooltip(self._btn_dashboard, "Open the Fleet Dashboard in your browser (localhost:5555)")
         if _fleet_mode() == "air_gap":
             self._btn_dashboard.configure(state="disabled", text="📊 Dashboard (air-gap)")
 
@@ -1352,7 +1387,7 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
 
         # ── Developer mode indicator ─────────────────────────────────────────
         if DEV_MODE:
-            dev_label = ctk.CTkLabel(sb, text="🔧 Developer Mode", font=("Segoe UI", 8), text_color=DIM)
+            dev_label = ctk.CTkLabel(sb, text="🔧 Developer Mode", font=("RuneScape Plain 11", 8), text_color=DIM)
             dev_label.pack(side="bottom", pady=4)
 
     # ── Main area ─────────────────────────────────────────────────────────────
@@ -1442,7 +1477,7 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
         ollama_frame.grid_columnconfigure(1, weight=1)
 
         ctk.CTkLabel(ollama_frame, text="OLLAMA",
-                     font=("Segoe UI", 8, "bold"), text_color=DIM,
+                     font=("RuneScape Bold 12", 8, "bold"), text_color=DIM,
                      anchor="w").grid(row=0, column=0, padx=(8, 4), pady=4)
 
         self._ollama_dot = ctk.CTkLabel(
@@ -1456,7 +1491,7 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
 
         ctk.CTkButton(
             ollama_frame, text="↺", width=20, height=18,
-            font=("Segoe UI", 9), fg_color=BG3, hover_color=BG,
+            font=("RuneScape Plain 11", 9), fg_color=BG3, hover_color=BG,
             command=self._start_ollama,
         ).grid(row=0, column=3, padx=(3, 6))
 
@@ -1469,7 +1504,7 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
         ag_hdr = ctk.CTkFrame(agents_frame, fg_color="transparent")
         ag_hdr.grid(row=0, column=0, sticky="ew")
         ag_hdr.grid_columnconfigure(1, weight=1)
-        ctk.CTkLabel(ag_hdr, text="AGENTS", font=("Segoe UI", 9, "bold"), text_color=GOLD).grid(row=0, column=0, padx=8, pady=(4, 2), sticky="w")
+        ctk.CTkLabel(ag_hdr, text="AGENTS", font=("RuneScape Bold 12", 9, "bold"), text_color=GOLD).grid(row=0, column=0, padx=8, pady=(4, 2), sticky="w")
         
         self._sup_status_lbl = ctk.CTkLabel(ag_hdr, text="Task Sup: —", font=("Consolas", 9, "bold"), text_color=DIM)
         self._sup_status_lbl.grid(row=0, column=1, padx=8, pady=(4, 2), sticky="e")
@@ -1493,7 +1528,7 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
         act_hdr.grid(row=0, column=0, sticky="ew")
         act_hdr.grid_columnconfigure(2, weight=1)
         ctk.CTkLabel(act_hdr, text="ACTIONS",
-                     font=("Segoe UI", 9, "bold"), text_color=GOLD
+                     font=("RuneScape Bold 12", 9, "bold"), text_color=GOLD
                      ).grid(row=0, column=0, padx=(8, 2), pady=(4, 2), sticky="w")
         ctk.CTkLabel(act_hdr, text="(R to refresh)",
                      font=("Consolas", 8), text_color=DIM
@@ -1527,7 +1562,7 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
         log_frame.grid_columnconfigure(0, weight=1)
 
         self._log_label = ctk.CTkLabel(
-            log_frame, text="LOG — all", font=("Segoe UI", 9, "bold"),
+            log_frame, text="LOG — all", font=("RuneScape Bold 12", 9, "bold"),
             text_color=GOLD, anchor="w")
         self._log_label.grid(row=0, column=0, padx=8, pady=(4, 2), sticky="w")
 
@@ -1543,7 +1578,7 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
         out_frame.grid_columnconfigure(0, weight=1)
 
         ctk.CTkLabel(out_frame, text="OUTPUT",
-                     font=("Segoe UI", 9, "bold"), text_color=GOLD,
+                     font=("RuneScape Bold 12", 9, "bold"), text_color=GOLD,
                      anchor="w").grid(row=0, column=0, padx=8, pady=(4, 2), sticky="w")
 
         self._output_text = ctk.CTkTextbox(
@@ -1552,7 +1587,7 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
         self._output_text.grid(row=1, column=0, sticky="nsew", padx=4, pady=(0, 4))
 
         copy_btn = ctk.CTkButton(out_frame, text="\u2398", width=28, height=24,
-                                  font=("Segoe UI", 10), fg_color=BG3, hover_color=BG2,
+                                  font=("RuneScape Plain 11", 10), fg_color=BG3, hover_color=BG2,
                                   command=self._copy_output)
         copy_btn.place(relx=1.0, x=-4, y=4, anchor="ne")
 
@@ -1591,9 +1626,9 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
             card = ctk.CTkFrame(counter_frame, fg_color=BG2, corner_radius=6, height=60)
             card.grid(row=0, column=i, padx=3, pady=2, sticky="nsew")
             card.grid_propagate(False)
-            ctk.CTkLabel(card, text=label, font=("Segoe UI", 9),
+            ctk.CTkLabel(card, text=label, font=("RuneScape Plain 11", 9),
                          text_color=DIM).place(x=10, y=6)
-            val_lbl = ctk.CTkLabel(card, text="0", font=("Segoe UI", 20, "bold"),
+            val_lbl = ctk.CTkLabel(card, text="0", font=("RuneScape Bold 12", 20, "bold"),
                                    text_color=color)
             val_lbl.place(x=10, y=24)
             self._task_counters[key] = val_lbl
@@ -1862,7 +1897,7 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
                         dcard.grid_propagate(False)
                         ctk.CTkLabel(dcard, text="\u25cf", font=("Consolas", 14),
                                      text_color="#555").place(x=8, y=8)
-                        ctk.CTkLabel(dcard, text=d_name, font=("Segoe UI", 11),
+                        ctk.CTkLabel(dcard, text=d_name, font=("RuneScape Plain 12", 11),
                                      text_color="#666").place(x=26, y=6)
                         ctk.CTkLabel(dcard, text="DISABLED", font=("Consolas", 9),
                                      text_color="#555").place(
@@ -1927,7 +1962,7 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
         dot.place(x=8, y=8)
 
         name_lbl = ctk.CTkLabel(card, text=display_name,
-                                font=("Segoe UI", 11, "bold"), text_color=name_color)
+                                font=("RuneScape Bold 12", 11, "bold"), text_color=name_color)
         name_lbl.place(x=26, y=6)
 
         status_lbl = ctk.CTkLabel(card, text=status_text,
@@ -2113,7 +2148,7 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
         hdr = ctk.CTkFrame(parent, fg_color=BG2, height=32, corner_radius=4)
         hdr.grid(row=0, column=0, sticky="ew", padx=4, pady=(4, 0))
         hdr.grid_propagate(False)
-        ctk.CTkLabel(hdr, text="FLEET COMM", font=("Segoe UI", 10, "bold"),
+        ctk.CTkLabel(hdr, text="FLEET COMM", font=("RuneScape Bold 12", 10, "bold"),
                      text_color=GOLD).pack(side="left", padx=8, pady=4)
         self._comm_status = ctk.CTkLabel(hdr, text="", font=FONT_SM, text_color=DIM)
         self._comm_status.pack(side="left", padx=8)
@@ -2130,7 +2165,7 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
             unselected_color=BG3, unselected_hover_color=BG2,
             width=220, height=24,
         ).pack(side="right", padx=(0, 4), pady=4)
-        ctk.CTkLabel(hdr, text="AI draft:", font=("Segoe UI", 9),
+        ctk.CTkLabel(hdr, text="AI draft:", font=("RuneScape Plain 11", 9),
                      text_color=DIM).pack(side="right", padx=(8, 2), pady=4)
 
         # Scrollable content area
@@ -2239,14 +2274,14 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
                 hdr_left = ctk.CTkFrame(top, fg_color="transparent")
                 hdr_left.pack(side="left")
                 ctk.CTkLabel(hdr_left, text=item.get("type", "task"),
-                             font=("Segoe UI", 10, "bold"), text_color=TEXT).pack(anchor="w")
+                             font=("RuneScape Bold 12", 10, "bold"), text_color=TEXT).pack(anchor="w")
                 ctk.CTkLabel(hdr_left, text=item.get("assigned_to", "?"),
-                             font=("Segoe UI", 8), text_color=DIM).pack(anchor="w")
+                             font=("RuneScape Plain 11", 8), text_color=DIM).pack(anchor="w")
                 # Right side: relative timestamp
                 ago = self._fmt_ago(item.get("created_at"))
                 if ago:
                     ctk.CTkLabel(top, text=ago,
-                                 font=("Segoe UI", 8), text_color=DIM).pack(side="right")
+                                 font=("RuneScape Plain 11", 8), text_color=DIM).pack(side="right")
 
                 # Question
                 ctk.CTkLabel(card, text=item.get("question", ""),
@@ -2273,7 +2308,7 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
                 draft_btn = ctk.CTkButton(
                     reply_frame, text="✨", width=32, height=28,
                     fg_color=BG3, hover_color=BG2,
-                    font=("Segoe UI", 13), text_color=GOLD,
+                    font=("RuneScape Plain 12", 13), text_color=GOLD,
                 )
                 draft_btn.grid(row=0, column=1, padx=(0, 4))
                 draft_btn.configure(
@@ -2296,7 +2331,7 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
                 top = ctk.CTkFrame(card, fg_color="transparent")
                 top.pack(fill="x", padx=8, pady=(8, 0))
                 ctk.CTkLabel(top, text=f"\U0001f512 {adv['title']}",
-                             font=("Segoe UI", 10, "bold"), text_color=ORANGE).pack(side="left")
+                             font=("RuneScape Bold 12", 10, "bold"), text_color=ORANGE).pack(side="left")
                 ctk.CTkButton(
                     top, text="Approve", width=70, height=24,
                     fg_color=GREEN, hover_color="#388e3c",
@@ -2551,7 +2586,7 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
 
         # Header
         ctk.CTkLabel(frame, text="\u26a1 MODEL PERFORMANCE",
-                     font=("Segoe UI", 9, "bold"), text_color=GOLD,
+                     font=("RuneScape Bold 12", 9, "bold"), text_color=GOLD,
                      anchor="w").grid(row=0, column=0, padx=8, pady=(4, 2),
                                       sticky="w", columnspan=5)
 
@@ -2886,7 +2921,7 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
 
                 recover_btn = ctk.CTkButton(
                     row_frame, text="↺", width=22, height=18,
-                    font=("Segoe UI", 9), fg_color=ACCENT, hover_color=ACCENT_H,
+                    font=("RuneScape Plain 11", 9), fg_color=ACCENT, hover_color=ACCENT_H,
                     command=lambda r=role_key: self._recover_agent(r),
                 )
                 if label == "SLEEPING":
@@ -2977,7 +3012,7 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
                 card_hdr.pack(fill="x", padx=6, pady=(4, 0))
                 card_hdr.grid_columnconfigure(0, weight=1)
                 ctk.CTkLabel(card_hdr, text=f"\U0001f916 {agent_name} — Task #{item['id']}",
-                             font=("Segoe UI", 10, "bold"), text_color=GOLD,
+                             font=("RuneScape Bold 12", 10, "bold"), text_color=GOLD,
                              anchor="w").grid(row=0, column=0, sticky="w")
                 rel = _relative_time(item.get("created_at", ""))
                 if rel:
@@ -3004,7 +3039,7 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
                 top.pack(fill="x", padx=6, pady=(4, 4))
                 top.grid_columnconfigure(1, weight=1)
                 ctk.CTkLabel(top, text=f"\U0001f512 {adv['title'][:50]}",
-                             font=("Segoe UI", 10, "bold"), text_color=ORANGE
+                             font=("RuneScape Bold 12", 10, "bold"), text_color=ORANGE
                              ).grid(row=0, column=0, sticky="w")
                 btn_frame = ctk.CTkFrame(top, fg_color="transparent")
                 btn_frame.grid(row=0, column=2, sticky="e")
@@ -3032,7 +3067,7 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
         win.configure(fg_color=BG)
         win.grab_set()
         ctk.CTkLabel(win, text=f"Agent question (Task #{task_id}):",
-                     font=("Segoe UI", 10, "bold"), text_color=GOLD,
+                     font=("RuneScape Bold 12", 10, "bold"), text_color=GOLD,
                      anchor="w").pack(fill="x", padx=14, pady=(12, 4))
         q_text = ctk.CTkTextbox(win, font=FONT_SM, fg_color=BG2,
                                 text_color=TEXT, height=80, wrap="word", corner_radius=4)
@@ -3040,7 +3075,7 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
         q_text.insert("1.0", question)
         q_text.configure(state="disabled")
         ctk.CTkLabel(win, text="Your response:",
-                     font=("Segoe UI", 10, "bold"), text_color=TEXT,
+                     font=("RuneScape Bold 12", 10, "bold"), text_color=TEXT,
                      anchor="w").pack(fill="x", padx=14, pady=(8, 4))
         resp_entry = ctk.CTkEntry(win, font=FONT_SM, fg_color=BG3,
                                   border_color=ACCENT, text_color=TEXT,
@@ -3073,7 +3108,7 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
         win.configure(fg_color=BG)
         win.grab_set()
         ctk.CTkLabel(win, text=adv_path.name,
-                     font=("Segoe UI", 11, "bold"), text_color=ORANGE,
+                     font=("RuneScape Bold 12", 11, "bold"), text_color=ORANGE,
                      anchor="w").pack(fill="x", padx=14, pady=(12, 4))
         text_box = ctk.CTkTextbox(win, font=("Consolas", 10), fg_color=BG2,
                                   text_color=TEXT, wrap="word", corner_radius=4)
@@ -3507,9 +3542,18 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
                     return
                 # Find ollama executable
                 ollama_exe = shutil.which("ollama")
+                if not ollama_exe and sys.platform == "win32":
+                    for _p in [
+                        Path(os.environ.get("LOCALAPPDATA", "")) / "Programs" / "Ollama" / "ollama.exe",
+                        Path(os.environ.get("LOCALAPPDATA", "")) / "Ollama" / "ollama.exe",
+                        Path(os.environ.get("PROGRAMFILES", "")) / "Ollama" / "ollama.exe",
+                    ]:
+                        if _p.exists():
+                            ollama_exe = str(_p)
+                            break
                 if not ollama_exe:
                     if callback:
-                        callback("", "ollama not found on PATH")
+                        callback("", "ollama not found — install from https://ollama.com")
                     return
                 # Set eco mode env if needed
                 env = os.environ.copy()
@@ -3911,7 +3955,7 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
             color = GREEN
         toast = ctk.CTkFrame(self, fg_color=color, corner_radius=8, height=36)
         toast.place(relx=1.0, x=-20, y=60, anchor="ne")
-        ctk.CTkLabel(toast, text=message, font=("Segoe UI", 10), text_color="#ffffff",
+        ctk.CTkLabel(toast, text=message, font=("RuneScape Plain 11", 10), text_color="#ffffff",
                      padx=12, pady=6).pack()
         # Auto-dismiss after duration
         self._safe_after(duration, lambda: toast.place_forget() if toast.winfo_exists() else None)
@@ -4019,10 +4063,10 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
         self._update_banner.grid(row=0, column=0, columnspan=2, sticky="ew")
         self._update_banner.grid_propagate(False)
         ctk.CTkLabel(self._update_banner, text=f"Update available ({msg})",
-                     font=("Segoe UI", 10), text_color="#c8e6c9"
+                     font=("RuneScape Plain 11", 10), text_color="#c8e6c9"
                      ).pack(side="left", padx=12)
         ctk.CTkButton(self._update_banner, text="Update Now", width=90, height=24,
-                      font=("Segoe UI", 10, "bold"), fg_color="#2e7d32",
+                      font=("RuneScape Bold 12", 10, "bold"), fg_color="#2e7d32",
                       hover_color="#388e3c", command=lambda: threading.Thread(
                           target=self._apply_update, daemon=True).start()
                       ).pack(side="right", padx=12, pady=4)

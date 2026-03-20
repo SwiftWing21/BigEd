@@ -177,6 +177,15 @@ class BootManagerMixin:
         except Exception:
             return False
 
+    def _ollama_list_models(self):
+        """Get list of installed model names from Ollama."""
+        try:
+            with urllib.request.urlopen("http://localhost:11434/api/tags", timeout=3) as r:
+                data = json.loads(r.read())
+            return [m["name"] for m in data.get("models", [])]
+        except Exception:
+            return []
+
     def _ollama_get_loaded(self):
         """Get list of currently loaded models."""
         try:
@@ -185,6 +194,134 @@ class BootManagerMixin:
             return [m["name"] for m in data.get("models", [])]
         except Exception:
             return []
+
+    def _pick_fallback_model(self, wanted, available):
+        """Pick best available fallback model. Prefers larger models."""
+        if not available:
+            return None
+        # Preference order: larger models first (better quality)
+        size_order = ["qwen3:8b", "qwen3:4b", "qwen3:1.7b", "qwen3:0.6b"]
+        for m in size_order:
+            if m in available and m != wanted:
+                return m
+        # If none from known tiers, return first available
+        return available[0] if available else None
+
+    def _create_model_recovery_action(self, model, *, fallback=None, available=None):
+        """Add a HITL action card to pull a missing model from the UI.
+
+        When fallback is set, the card shows which model is being used as a
+        stand-in and offers a dropdown to pull the preferred (or any other)
+        model for next boot.
+        """
+        if not hasattr(self, '_action_cards'):
+            return
+        from ui.theme import BG3, GOLD, TEXT, ORANGE, ACCENT, ACCENT_H, FONT_SM
+
+        card = ctk.CTkFrame(self._actions_scroll, fg_color="#1a2a1a", corner_radius=6)
+        card.pack(fill="x", padx=2, pady=(1, 1))
+        self._action_cards.append(card)
+
+        top = ctk.CTkFrame(card, fg_color="transparent")
+        top.pack(fill="x", padx=6, pady=(4, 0))
+
+        if fallback:
+            ctk.CTkLabel(top, text=f"Using fallback: {fallback}",
+                         font=("RuneScape Bold 12", 10, "bold"), text_color=ORANGE,
+                         anchor="w").pack(anchor="w")
+            ctk.CTkLabel(card,
+                         text=f"Using {fallback} as fallback. Pull {model} for full performance.",
+                         font=FONT_SM, text_color=TEXT, anchor="w",
+                         ).pack(fill="x", padx=6, pady=(2, 0))
+        else:
+            ctk.CTkLabel(top, text=f"Missing model: {model}",
+                         font=("RuneScape Bold 12", 10, "bold"), text_color=ORANGE,
+                         anchor="w").pack(anchor="w")
+            ctk.CTkLabel(card, text="No models installed. Click to download and install.",
+                         font=FONT_SM, text_color=TEXT, anchor="w",
+                         ).pack(fill="x", padx=6, pady=(2, 0))
+
+        status_lbl = ctk.CTkLabel(card, text="", font=FONT_SM, text_color="#888")
+        status_lbl.pack(fill="x", padx=6)
+
+        # Build dropdown options: missing model marked with (pull), plus available
+        dropdown_values = [f"{model} (pull)"]
+        if available:
+            for m in available:
+                if m != model:
+                    dropdown_values.append(m)
+        selected_model = ctk.StringVar(value=dropdown_values[0])
+
+        if len(dropdown_values) > 1:
+            # Show a dropdown when there are multiple options
+            dropdown_frame = ctk.CTkFrame(card, fg_color="transparent")
+            dropdown_frame.pack(fill="x", padx=6, pady=(2, 0))
+            ctk.CTkLabel(dropdown_frame, text="Model:", font=FONT_SM,
+                         text_color=TEXT).pack(side="left", padx=(0, 4))
+            ctk.CTkOptionMenu(
+                dropdown_frame, variable=selected_model, values=dropdown_values,
+                width=180, height=24, font=FONT_SM,
+                fg_color="#2a3a2a", button_color=ACCENT, button_hover_color=ACCENT_H,
+            ).pack(side="left")
+
+        def _pull():
+            target = selected_model.get().replace(" (pull)", "")
+            btn.configure(state="disabled", text="Pulling...")
+            status_lbl.configure(text=f"Downloading {target} — this may take a few minutes...")
+
+            def _do_pull():
+                import shutil as _shutil
+                ollama_exe = _shutil.which("ollama")
+                if not ollama_exe and sys.platform == "win32":
+                    for p in [
+                        Path(os.environ.get("LOCALAPPDATA", "")) / "Programs" / "Ollama" / "ollama.exe",
+                        Path(os.environ.get("LOCALAPPDATA", "")) / "Ollama" / "ollama.exe",
+                        Path(os.environ.get("PROGRAMFILES", "")) / "Ollama" / "ollama.exe",
+                    ]:
+                        if p.exists():
+                            ollama_exe = str(p)
+                            break
+                if not ollama_exe:
+                    self._safe_after(0, lambda: status_lbl.configure(
+                        text="Ollama not found", text_color="#f44336"))
+                    self._safe_after(0, lambda: btn.configure(
+                        text="Retry", state="normal"))
+                    return
+                result = subprocess.run(
+                    [ollama_exe, "pull", target],
+                    capture_output=True, text=True, timeout=600,
+                    creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0),
+                )
+                if result.returncode == 0:
+                    self._safe_after(0, lambda: status_lbl.configure(
+                        text=f"{target} ready — restart boot to use it", text_color="#4caf50"))
+                    self._safe_after(0, lambda: btn.configure(
+                        text="Done", state="disabled", fg_color="#2a6a2a"))
+                    self._safe_after(0, lambda: self._log_output(f"Model '{target}' pulled"))
+                else:
+                    self._safe_after(0, lambda: status_lbl.configure(
+                        text=f"Pull failed — try manually: ollama pull {target}",
+                        text_color="#f44336"))
+                    self._safe_after(0, lambda: btn.configure(
+                        text="Retry", state="normal"))
+
+            threading.Thread(target=_do_pull, daemon=True).start()
+
+        btn = ctk.CTkButton(
+            card, text=f"Pull {model}", width=100, height=24, font=FONT_SM,
+            fg_color=ACCENT, hover_color=ACCENT_H, command=_pull)
+        btn.pack(anchor="e", padx=6, pady=(2, 6))
+
+        # Update action count
+        if hasattr(self, '_actions_count_lbl'):
+            try:
+                current = self._actions_count_lbl.cget("text")
+                n = int(current.split()[0]) if current and current[0].isdigit() else 0
+                self._actions_count_lbl.configure(text=f"{n + 1} pending")
+            except Exception:
+                self._actions_count_lbl.configure(text="1 pending")
+        if hasattr(self, '_actions_empty_lbl'):
+            self._actions_empty_lbl.pack_forget()
 
     def _evict_idle_blockers(self, host, target_model):
         """Evict idle VRAM-blocker models before loading a new one.
@@ -209,7 +346,7 @@ class BootManagerMixin:
                 db_path=fleet_dir / "fleet.db",
             )
         except Exception as e:
-            self._log_boot(f"  [warn] evict_idle_blockers: {e}")
+            self._log_output(f"  [warn] evict_idle_blockers: {e}")
             return []
 
     # ── Boot progress UI with live timers ────────────────────────────────
@@ -384,7 +521,7 @@ class BootManagerMixin:
                 self._system_running = False
                 self._safe_after(0, lambda: self._btn_system_toggle.configure(
                     text="▶  Start", fg_color="#1e3a1e", hover_color="#2a4a2a"))
-                self._safe_after(3000, self._hide_boot_progress)
+                # Keep boot progress visible on error — don't auto-hide
                 return
         self._safe_after(0, lambda: self._log_output("System boot complete."))
         self._safe_after(0, lambda: self._show_toast("Fleet online — all systems go", GREEN))
@@ -442,8 +579,17 @@ class BootManagerMixin:
 
         # Find and launch ollama natively
         ollama_exe = shutil.which("ollama")
+        if not ollama_exe and sys.platform == "win32":
+            for p in [
+                Path(os.environ.get("LOCALAPPDATA", "")) / "Programs" / "Ollama" / "ollama.exe",
+                Path(os.environ.get("LOCALAPPDATA", "")) / "Ollama" / "ollama.exe",
+                Path(os.environ.get("PROGRAMFILES", "")) / "Ollama" / "ollama.exe",
+            ]:
+                if p.exists():
+                    ollama_exe = str(p)
+                    break
         if not ollama_exe:
-            raise Exception("ollama not found on PATH")
+            raise Exception("ollama not found — install from https://ollama.com")
 
         # Set eco mode env if needed
         L = _launcher()
@@ -585,23 +731,29 @@ class BootManagerMixin:
         Stability: validate model exists before attempting load.
         Shorter timeout for missing models.
         """
-        # Check model exists first
+        # Check model exists — find fallback if missing, only fail if nothing available
         if not self._ollama_model_exists(model):
-            # Try to find what IS available
-            try:
-                with urllib.request.urlopen("http://localhost:11434/api/tags", timeout=3) as r:
-                    data = json.loads(r.read())
-                available = [m["name"] for m in data.get("models", [])]
-            except Exception:
-                available = []
-            raise Exception(f"'{model}' not installed. Have: {available}")
+            # Find best available fallback
+            available = self._ollama_list_models()
+            fallback = self._pick_fallback_model(model, available)
+            if fallback:
+                self._safe_after(0, lambda m=model, f=fallback: self._log_output(
+                    f"  Model '{m}' not found — using fallback '{f}'"))
+                self._safe_after(0, lambda m=model, f=fallback, a=available:
+                    self._create_model_recovery_action(m, fallback=f, available=a))
+                model = fallback  # continue boot with fallback
+            else:
+                self._safe_after(0, lambda m=model: self._log_output(
+                    f"  No models installed — creating recovery action..."))
+                self._safe_after(0, lambda m=model: self._create_model_recovery_action(m))
+                raise Exception(f"No models installed — use recovery action to pull '{model}'")
 
         # Evict idle blocker models before attempting load
         # (models held in VRAM by keep_alive:"24h" with no active fleet tasks)
         host = "http://localhost:11434"
         evicted = self._evict_idle_blockers(host, model)
         if evicted:
-            self._log_boot(
+            self._log_output(
                 f"  Freed VRAM: evicted {len(evicted)} idle model(s): {', '.join(evicted)}"
             )
 

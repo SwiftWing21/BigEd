@@ -134,7 +134,7 @@ class ModelSelectorDialog(ctk.CTkToplevel):
         hdr.grid_propagate(False)
         hdr.grid_columnconfigure(1, weight=1)
         ctk.CTkLabel(hdr, text="🧠  LLM MODEL SELECTOR",
-                     font=("Segoe UI", 13, "bold"), text_color=GOLD
+                     font=("RuneScape Bold 12", 13, "bold"), text_color=GOLD
                      ).grid(row=0, column=0, padx=14, pady=10, sticky="w")
         gpu_label = self._hw.get("name", "Unknown GPU")
         vram_str = (f"{gpu_label}  |  "
@@ -142,7 +142,7 @@ class ModelSelectorDialog(ctk.CTkToplevel):
                     f"safe limit: {self._vram_safe:.1f} GB  |  "
                     f"grayed = won't fit")
         ctk.CTkLabel(hdr, text=vram_str,
-                     font=("Segoe UI", 9), text_color=DIM
+                     font=("RuneScape Plain 11", 9), text_color=DIM
                      ).grid(row=0, column=1, padx=8, sticky="w")
 
         # Vendor-specific advisory
@@ -161,7 +161,7 @@ class ModelSelectorDialog(ctk.CTkToplevel):
         if warn_text:
             hdr.configure(height=72)
             ctk.CTkLabel(hdr, text=warn_text,
-                         font=("Segoe UI", 8), text_color=ORANGE,
+                         font=("RuneScape Plain 11", 8), text_color=ORANGE,
                          anchor="w"
                          ).grid(row=1, column=0, columnspan=2, padx=14, pady=(0, 6), sticky="w")
 
@@ -170,7 +170,7 @@ class ModelSelectorDialog(ctk.CTkToplevel):
         stack_bar.grid(row=1, column=0, sticky="ew")
         stack_bar.grid_propagate(False)
         stack_bar.grid_columnconfigure(3, weight=1)
-        ctk.CTkLabel(stack_bar, text="Stack Mode:", font=("Segoe UI", 10, "bold"),
+        ctk.CTkLabel(stack_bar, text="Stack Mode:", font=("RuneScape Bold 12", 10, "bold"),
                      text_color=DIM).grid(row=0, column=0, padx=(14, 8), pady=12)
         ctk.CTkSegmentedButton(
             stack_bar,
@@ -186,7 +186,7 @@ class ModelSelectorDialog(ctk.CTkToplevel):
         }
         self._stack_desc = ctk.CTkLabel(
             stack_bar, text=descriptions.get(self._stack_var.get(), ""),
-            font=("Segoe UI", 9), text_color=DIM)
+            font=("RuneScape Plain 11", 9), text_color=DIM)
         self._stack_desc.grid(row=0, column=2, padx=12, sticky="w")
         self._stack_var.trace_add("write", lambda *_: self._stack_desc.configure(
             text=descriptions.get(self._stack_var.get(), "")))
@@ -205,7 +205,7 @@ class ModelSelectorDialog(ctk.CTkToplevel):
             ("",         18), ("Model ID", 0), ("VRAM",  68),
             ("Status",  110), ("Description", 0)
         ]):
-            ctk.CTkLabel(hrow, text=txt, font=("Segoe UI", 9, "bold"),
+            ctk.CTkLabel(hrow, text=txt, font=("RuneScape Bold 12", 9, "bold"),
                          text_color=DIM, width=w, anchor="w"
                          ).grid(row=0, column=col, padx=6, pady=4, sticky="w")
 
@@ -246,10 +246,10 @@ class ModelSelectorDialog(ctk.CTkToplevel):
             ctk.CTkLabel(row, text=f"{vram:.1f} GB", font=("Consolas", 10),
                          text_color=text_col, width=65, anchor="w"
                          ).grid(row=0, column=2, padx=4)
-            ctk.CTkLabel(row, text=status_txt, font=("Segoe UI", 9),
+            ctk.CTkLabel(row, text=status_txt, font=("RuneScape Plain 11", 9),
                          text_color=status_col, width=105, anchor="w"
                          ).grid(row=0, column=3, padx=4)
-            ctk.CTkLabel(row, text=desc, font=("Segoe UI", 9),
+            ctk.CTkLabel(row, text=desc, font=("RuneScape Plain 11", 9),
                          text_color=desc_col, anchor="w"
                          ).grid(row=0, column=4, padx=(4, 8), sticky="w")
 
@@ -277,7 +277,7 @@ class ModelSelectorDialog(ctk.CTkToplevel):
         self._apply_btn = ctk.CTkButton(
             bar, text="✓ Apply", width=100, height=32,
             fg_color=ACCENT, hover_color=ACCENT_H,
-            font=("Segoe UI", 11, "bold"),
+            font=("RuneScape Bold 12", 11, "bold"),
             command=self._apply)
         self._apply_btn.grid(row=0, column=3, padx=(8, 6), pady=9)
 

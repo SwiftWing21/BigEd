@@ -18,8 +18,8 @@ ACCENT = "#4fc3f7"
 RED = "#ef5350"
 GREEN = "#66bb6a"
 GOLD = "#ffd54f"
-FONT = ("Segoe UI", 11)
-FONT_SM = ("Segoe UI", 10)
+FONT = ("RuneScape Plain 12", 11)
+FONT_SM = ("RuneScape Plain 11", 10)
 
 
 def _verify_owner_key() -> bool:
@@ -77,7 +77,7 @@ class Module:
             frame = ctk.CTkFrame(parent, fg_color=BG)
             frame.pack(fill="both", expand=True)
             ctk.CTkLabel(frame, text="OWNER ACCESS REQUIRED",
-                        font=("Segoe UI", 16, "bold"), text_color=RED
+                        font=("RuneScape Bold 12", 16, "bold"), text_color=RED
                         ).pack(pady=(80, 10))
             ctk.CTkLabel(frame, text="Set BIGED_OWNER_KEY in ~/.secrets to access this module.",
                         font=FONT, text_color=DIM
@@ -91,7 +91,7 @@ class Module:
         hdr = ctk.CTkFrame(self._frame, fg_color=BG3, height=44, corner_radius=0)
         hdr.pack(fill="x")
         hdr.pack_propagate(False)
-        ctk.CTkLabel(hdr, text="OWNER DASHBOARD", font=("Segoe UI", 13, "bold"),
+        ctk.CTkLabel(hdr, text="OWNER DASHBOARD", font=("RuneScape Bold 12", 13, "bold"),
                     text_color=GOLD).pack(side="left", padx=14, pady=10)
 
         # Three sections: Customer Fleet, Global Keys, Remote Diagnostics
@@ -110,7 +110,7 @@ class Module:
     def _build_customer_section(self, parent, col):
         frame = ctk.CTkFrame(parent, fg_color=BG2, corner_radius=8)
         frame.grid(row=0, column=col, sticky="nsew", padx=4)
-        ctk.CTkLabel(frame, text="Customer Fleets", font=("Segoe UI", 12, "bold"),
+        ctk.CTkLabel(frame, text="Customer Fleets", font=("RuneScape Bold 12", 12, "bold"),
                     text_color=ACCENT).pack(padx=10, pady=(10, 4))
 
         self._customer_list = ctk.CTkTextbox(frame, font=("Consolas", 10),
@@ -127,7 +127,7 @@ class Module:
     def _build_keys_section(self, parent, col):
         frame = ctk.CTkFrame(parent, fg_color=BG2, corner_radius=8)
         frame.grid(row=0, column=col, sticky="nsew", padx=4)
-        ctk.CTkLabel(frame, text="Global Key Audit", font=("Segoe UI", 12, "bold"),
+        ctk.CTkLabel(frame, text="Global Key Audit", font=("RuneScape Bold 12", 12, "bold"),
                     text_color=ACCENT).pack(padx=10, pady=(10, 4))
 
         self._keys_text = ctk.CTkTextbox(frame, font=("Consolas", 10),
@@ -137,7 +137,7 @@ class Module:
     def _build_diagnostics_section(self, parent, col):
         frame = ctk.CTkFrame(parent, fg_color=BG2, corner_radius=8)
         frame.grid(row=0, column=col, sticky="nsew", padx=4)
-        ctk.CTkLabel(frame, text="Remote Diagnostics", font=("Segoe UI", 12, "bold"),
+        ctk.CTkLabel(frame, text="Remote Diagnostics", font=("RuneScape Bold 12", 12, "bold"),
                     text_color=ACCENT).pack(padx=10, pady=(10, 4))
 
         self._diag_text = ctk.CTkTextbox(frame, font=("Consolas", 10),
