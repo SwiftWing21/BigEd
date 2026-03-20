@@ -449,6 +449,45 @@ Completed 2026-03-20. 11 files, +194/-90 lines:
 - [ ] GITHUB_REPO typo in config.py default vs fleet.toml
 - [ ] No distributed locking for federation mode (db.py:686-711)
 
+### 0.51.00b — Startup Performance & UX Polish [PLANNED]
+
+**Goal:** Sub-700ms window visible, 144Hz-smooth refresh, hide dev scaffolding. Public beta polish.
+
+**CRITICAL: Dr. Ders never respawned by supervisor**
+- [ ] Supervisor must spawn hw_supervisor.py and respawn on crash (supervisor.py — missing entirely)
+- [ ] Dr. Ders model promotion loads CPU models that still consume VRAM → GPU model pushed to CPU
+- [ ] Models loaded without `num_gpu` setting → Ollama auto-assigns, causing VRAM overload (hw_supervisor.py:318, supervisor.py:568)
+
+**Legacy agent cleanup (hide dev scaffolding):**
+- [ ] Hide disabled agents section from launcher Fleet tab (launcher.py:1891-1926) — internal dev modules not user-facing
+- [ ] Worker registers in DB BEFORE disabled check → move check before registration (worker.py:363-371)
+- [ ] Remove affinity config for permanently disabled agents (fleet.toml:132-138)
+- [ ] Disabled agents should never appear in any UI (dashboard, launcher, Fleet tab)
+
+**Startup performance (target: window visible < 700ms):**
+- [ ] Defer pynvml GPU init to first hw read — blocks 200-300ms at import (launcher.py:35-38)
+- [ ] Defer font loading to after window creation — blocks 50-100ms per TTF (theme.py:28-29)
+- [ ] Defer `_refresh_status()` to after window visible — currently blocks before first frame (launcher.py:870)
+- [ ] Lazy-load Fleet Comm + modular tabs on first click — all built upfront currently (launcher.py:1414-1462)
+- [ ] Cache parse_status() for 1-2s — called 3x at startup (launcher.py:486, 870, 2714)
+
+**Refresh cycle smoothing (target: no stalls > 16ms on 144Hz):**
+- [ ] Increase HW stats interval 3s → 5s — human eye can't perceive <100ms changes (launcher.py:3230)
+- [ ] Skip parse_status() when SSE active — redundant I/O every 4s (launcher.py:3288)
+- [ ] SSE client reads 1 byte at a time → read 4KB chunks (sse_client.py:91)
+- [ ] Cache action cards (update-only pattern) instead of destroy/recreate every 4-8s (launcher.py:3010-3016)
+
+**Idle evolution quarantine spiral:**
+- [ ] Check API key availability before dispatching idle evolution tasks (worker.py:495)
+- [ ] Add exponential backoff between failed idle evolution attempts
+- [ ] Auto-clear quarantine after 1 hour of inactivity (worker.py:484-487)
+- [ ] Gate idle evolution on local-only skills when API keys missing
+
+**Dashboard web performance:**
+- [ ] Batch 15 API calls into single `/api/dashboard` endpoint (dashboard.html:618-626)
+- [ ] Reduce 30s polling to 5min for slow-changing data (knowledge, RAG, code stats)
+- [ ] Update Chart.js data instead of destroy/recreate (dashboard.html:449, 477)
+
 ### 0.40.10a — Claude Skills Update + Cowork Integration
 
 - **Goal:** Update all 5 project skills to reflect current architecture (post-cowork refactor + 0.31.x work). Create 3 new skills leveraging installed superpowers plugin patterns.
