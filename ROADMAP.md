@@ -333,13 +333,62 @@ Completed 2026-03-19.
 - Topic diversity fix (weighted random skill selection, per-agent cooldown, cross-worker dedup)
 - Documentation cleanup
 
+### 0.40.10a — Claude Skills Update + Cowork Integration
+
+- **Goal:** Update all 5 project skills to reflect current architecture (post-cowork refactor + 0.31.x work). Create 3 new skills leveraging installed superpowers plugin patterns.
+- **Grading Alignment:** Documentation → S sustain | Code Quality → A sustain | Dynamic Abilities → S sustain
+- **Dependencies:** 0.31.01 (settings split), cowork refactor (launcher.py -1204, dashboard.py -729)
+- **Est. Tokens:** ~20-30k (L)
+- **Status:** [x] Done
+
+#### Existing skill updates
+
+| Skill | File | Update Scope |
+|-------|------|-------------|
+| **fleet-conventions** | `.claude/skills/fleet-conventions/SKILL.md` | Major — refresh full architecture map: add ui/dialogs/, ui/settings/ package, fleet/security.py, mcp_manager.py, system_info.py, dependency_check.py, templates/dashboard.html, model_manager skill. Update file counts and line counts. Add mixin pattern docs. |
+| **fleet-code-review** | `.claude/skills/fleet-code-review/SKILL.md` | Medium — add checks for mixin class patterns, extracted dialog conventions, MCP handler patterns, settings package structure. Reference dependency_check.py for validation. |
+| **fleet-security-audit** | `.claude/skills/fleet-security-audit/SKILL.md` | Medium — add fleet/security.py as authoritative source, MCP server exposure checks (.mcp.json), CLAUDE.USER.md must be gitignored check, templates/ XSS check. |
+| **fleet-skill-draft** | `.claude/skills/fleet-skill-draft/SKILL.md` | Light — add MCP-aware skill pattern (fallback chain: MCP→local→httpx), reference system_info for hardware-aware skills, add model_manager as example. |
+| **fleet-skill-evolve** | `.claude/skills/fleet-skill-evolve/SKILL.md` | Light — add dependency_check.py validation step, note mixin inheritance for settings panels. |
+
+#### New skills to create
+
+| Skill | Dir | Purpose |
+|-------|-----|---------|
+| **fleet-debug** | `.claude/skills/fleet-debug/SKILL.md` | Systematic debugging adapted from superpowers — root cause tracing with fleet context (task queue, worker logs, hw_state.json, DB state). Steps: reproduce → isolate → trace → fix → verify. |
+| **fleet-plan** | `.claude/skills/fleet-plan/SKILL.md` | Implementation planning adapted from superpowers — structured specs with agent batches, fleet.toml impact, grading alignment, verification commands. |
+| **fleet-simplify** | `.claude/skills/fleet-simplify/SKILL.md` | Post-implementation review — check new code for reuse vs existing fleet patterns, theme constant usage, proper DAL access, MCP routing, then fix issues found. |
+
+#### Cowork refactor acknowledgments (already done, capture in skills)
+
+| Change | What Moved | Skills Impact |
+|--------|-----------|---------------|
+| launcher.py -1204 lines | Dialogs → `ui/dialogs/` (thermal, review, model_selector, walkthrough) | fleet-conventions: update file layout |
+| dashboard.py -729 lines | HTML → `fleet/templates/dashboard.html` | fleet-conventions: add templates dir |
+| New `fleet/security.py` | TLS, RBAC, rate-limit, CSRF extracted from dashboard | fleet-security-audit: reference as authoritative |
+| New `fleet/skills/model_manager.py` | Ollama model inventory, install, profile switching | fleet-conventions: add to skill list |
+| consoles.py +228 lines | Absorbed launcher console code | fleet-conventions: note extraction |
+
+#### Execution plan (3 agents, parallel)
+
+| Agent | Creates/Updates |
+|-------|----------------|
+| skill-updates | Update all 5 existing SKILL.md files |
+| skill-new-1 | Create fleet-debug + fleet-plan |
+| skill-new-2 | Create fleet-simplify |
+
+#### Verification
+- All SKILL.md files have valid frontmatter (name, description)
+- `grep -r "fleet/skills/" .claude/skills/` — no references to deleted/moved files
+- Architecture references match current `wc -l` and `ls` output
+
 ### 0.31.01 — Settings Module Split (ui/settings/ package refactor)
 
 - **Goal:** Split 1893-line settings.py into a package of focused modules. Reduce per-module size, enable lazy panel loading, maintain identical UX.
 - **Grading Alignment:** Architecture/SoC → A sustain | Code Quality → A sustain | Performance → A sustain
 - **Dependencies:** None (pure refactor, no feature changes)
 - **Est. Tokens:** ~15-20k (L)
-- **Status:** [ ] Not started
+- **Status:** [x] Done
 
 #### Current file map (settings.py, 1893 lines)
 ```
