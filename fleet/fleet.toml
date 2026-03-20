@@ -193,6 +193,28 @@ auto_manifest = true  # auto-create manifest if missing
 owner = "SwiftWing21"
 repo = "BigEds_Agents"
 
+# v0.31.00: MCP Server Integration — connect external tool servers to fleet skills
+[mcp]
+enabled = true                   # master switch for MCP server routing
+config_path = ".mcp.json"        # path to MCP server definitions (relative to project root)
+
+# Bundled default servers (ship with BigEd CC, no API keys needed)
+[mcp.defaults]
+playwright = true                # browser automation — browser_crawl, web_search fallback
+filesystem = false               # file operations — ingest, rag_index, code_index
+sequential_thinking = false      # multi-step reasoning — plan_workload, lead_research
+memory = false                   # persistent cross-session knowledge — rag_index
+
+# Skill-to-MCP routing: which skills prefer which MCP servers
+[mcp.routing]
+browser_crawl = "playwright"
+web_search = "playwright"        # fallback when direct API unavailable
+ingest = "filesystem"
+rag_index = "filesystem"
+code_index = "filesystem"
+plan_workload = "sequential_thinking"
+lead_research = "sequential_thinking"
+
 # v0.30.00: A2A Federation — peer fleet discovery and task overflow routing
 [federation]
 enabled = false              # enable peer discovery and task forwarding

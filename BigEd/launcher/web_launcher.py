@@ -82,7 +82,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         <span id="conn-status" class="status offline"
               hx-get="/api/ping" hx-trigger="every 5s" hx-swap="innerHTML">Checking...</span>
         <span style="flex:1"></span>
-        <span class="mono" style="color:var(--dim)">Web Launcher v0.04</span>
+        <span class="mono" style="color:var(--dim)">Web Launcher v0.05</span>
     </div>
 
     <div class="container">
@@ -152,6 +152,14 @@ HTML_TEMPLATE = """<!DOCTYPE html>
             <div class="card">
                 <h2>Settings</h2>
                 <div hx-get="/partial/settings" hx-trigger="load" hx-swap="innerHTML">
+                    Loading...
+                </div>
+            </div>
+
+            <!-- MCP Servers -->
+            <div class="card">
+                <h2>MCP Servers</h2>
+                <div hx-get="/partial/mcp" hx-trigger="load, every 30s" hx-swap="innerHTML">
                     Loading...
                 </div>
             </div>
@@ -390,6 +398,29 @@ def partial_console():
         return f'<table><tr><th>ID</th><th>Skill</th><th>Status</th><th>Agent</th><th>Created</th></tr>{rows}</table>'
     except Exception as e:
         return f'<p style="color:var(--dim)">{e}</p>'
+
+
+@app.route("/partial/mcp")
+def partial_mcp():
+    """MCP server status panel."""
+    data = _api("/api/mcp/status")
+    if "error" in data:
+        return '<p style="color:var(--dim)">MCP status unavailable</p>'
+    servers = data.get("servers", [])
+    if not servers:
+        return '<p style="color:var(--dim)">No MCP servers configured</p>'
+
+    rows = ""
+    for s in servers:
+        status = s.get("status", "unknown")
+        color = "var(--green)" if status == "online" else "var(--gold)" if status == "configured" else "var(--red)"
+        dot = "dot-green" if status == "online" else "dot-yellow" if status == "configured" else "dot-red"
+        category = s.get("category", "custom")
+        badge = f'<span style="color:var(--dim);font-size:10px">({category})</span>'
+        rows += f'<tr><td><span class="status-dot {dot}"></span>{s["name"]} {badge}</td><td>{s.get("type","?")}</td><td style="color:{color}">{status.upper()}</td></tr>'
+
+    summary = f'{data.get("online", 0)} online, {data.get("configured", 0)} configured, {data.get("total", 0)} total'
+    return f'<p style="margin-bottom:8px;font-size:12px;color:var(--dim)">{summary}</p><table><tr><th>Server</th><th>Type</th><th>Status</th></tr>{rows}</table>'
 
 
 def main():

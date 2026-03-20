@@ -1161,6 +1161,59 @@ from a2a import a2a_bp
 app.register_blueprint(a2a_bp)
 
 
+# ── MCP Server Status (v0.31.00) ─────────────────────────────────────────────
+
+@app.route("/api/mcp/status")
+def api_mcp_status():
+    """MCP server status — configured servers with health probes."""
+    try:
+        from mcp_manager import get_all_server_status, get_skill_mcp_mapping
+        servers = get_all_server_status()
+        routing = get_skill_mcp_mapping()
+        return jsonify({
+            "servers": servers,
+            "routing": routing,
+            "total": len(servers),
+            "online": sum(1 for s in servers if s.get("status") == "online"),
+            "configured": sum(1 for s in servers if s.get("status") == "configured"),
+        })
+    except Exception as e:
+        return jsonify({"error": str(e), "servers": []}), 500
+
+
+@app.route("/api/mcp/server/<name>/enable", methods=["POST"])
+def api_mcp_enable(name):
+    """Enable a default or integration MCP server."""
+    try:
+        from mcp_manager import enable_default, MCP_INTEGRATIONS, add_server
+        if enable_default(name):
+            return jsonify({"status": "enabled", "server": name})
+        # Try as integration
+        if name in MCP_INTEGRATIONS:
+            server_def = MCP_INTEGRATIONS[name]
+            config = {"type": server_def.get("type", "stdio")}
+            if config["type"] == "stdio":
+                config["command"] = server_def.get("command", "npx")
+                config["args"] = server_def.get("args", [])
+            add_server(name, config)
+            return jsonify({"status": "enabled", "server": name})
+        return jsonify({"error": f"Unknown server: {name}"}), 404
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/mcp/server/<name>/disable", methods=["POST"])
+def api_mcp_disable(name):
+    """Disable (remove) an MCP server."""
+    try:
+        from mcp_manager import disable_server
+        if disable_server(name):
+            return jsonify({"status": "disabled", "server": name})
+        return jsonify({"error": f"Server not found: {name}"}), 404
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
 # ── Audit Log ──────────────────────────────────────────────────────────────
 
 @app.route("/api/audit")

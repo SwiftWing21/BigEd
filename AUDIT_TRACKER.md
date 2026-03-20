@@ -186,6 +186,13 @@
 
 **S-tier path:** Extract `theme.py` (P2-03), complete TECH_DEBT 4.3 (P2-04) and 4.4 (P2-05), split settings.py (P2-09).
 
+**Claude Code Integration & SoC S-Tier Adherence Audit:**
+- **Worktree Isolation:** Claude Code operations heavily utilize `isolation: "worktree"` multi-agent orchestration. This keeps experimental or concurrent AI modifications strictly separated from the main branch, enforcing change-control SoC and preventing codebase pollution.
+- **Context Delegation:** Dev reference documentation is hosted externally via the MCP server, enforcing a strict boundary between operational runtime logic (in-repo) and passive knowledge bases.
+- **Skill Encapsulation:** The headless code analysis capabilities are firmly boxed within `fleet/skills/claude_code.py`, preventing shell execution logic from leaking into the `worker.py` threads or DB layers.
+- **Security / Guardrails:** Automatically generated implementations correctly route through the established high-stakes gate (`REVIEW` status) before deployment.
+- **Conclusion:** Claude Code interactions actively maintain and reinforce S-tier Separation of Concerns through clean structural boundaries and ephemeral Git management.
+
 ---
 
 ### 2. Usability / UX
@@ -319,6 +326,14 @@
 - [ ] TLS cert generated (0.24.00)
 - [ ] RBAC roles configured (0.24.00)
 
+**Claude Code Integration & SOC 2 Compliance S-Tier Audit:**
+- **Security:** The `claude_code.py` skill isolates execution via `subprocess.run` (without `shell=True`), preventing command injection vulnerabilities. Generated high-stakes code continues to route through the fleet's established adversarial `REVIEW` gate.
+- **Availability:** Implements a robust fallback to the `call_complex()` API if the `claude` CLI is uninstalled or inaccessible, ensuring continuous fleet availability. Explicit subprocess timeouts (180s-300s) prevent operations from hanging the worker threads.
+- **Processing Integrity:** Structured execution reliably captures `stdout`, `stderr`, and `exit_code`. Every output is immutably persisted to `knowledge/claude_code/` via `_save_output()` before further action, ensuring full chronological auditability.
+- **Confidentiality:** Inherits the fleet's DLP (Data Loss Prevention) watchdog pipeline. The headless CLI operates without exposing the system's `.secrets` file or sensitive environment variables directly to the generation context.
+- **Privacy:** The payload targets (`file`, `module`, `path`) are strictly scoped to local codebase analysis, refactoring, and test generation. It operates entirely outside of customer data ingestion pathways, adhering to strict data boundaries.
+- **Conclusion:** Claude Code integration successfully aligns with SOC 2 S-tier principles by enforcing strong execution boundaries, graceful degradation, and secure state capture.
+
 ---
 
 ## S-Tier Milestone Readiness
@@ -411,6 +426,8 @@
 | 2026-03-19 | 0.30.01a | Opus | Incremental | Disabled agents, HITL evolution toggle, topic diversity fix, documentation cleanup. |
 | 2026-03-19 | v0.25.00 | Opus | Full S-tier | All 4 S-tier milestones (S1-S4) + Multi-Backend complete. Overall A+. All P1/P2 resolved. |
 | 2026-03-19 | v0.28.00 | Opus | Incremental | UX A→A+ (system detection, setup scripts), Docs A→S (README/CONTRIBUTING/SETUP.md). Zero open issues. |
+| 2026-03-19 | v0.28.00 | Gemini | Claude Code SoC | Audited Claude Code's ability to maintain SOC S-tier. Validated strict isolation via worktrees, MCP server context delegation, and `claude_code.py` skill abstraction. |
+| 2026-03-19 | v0.28.00 | Gemini | Claude Code SOC 2 | Audited Claude Code's compliance with SOC 2 principles (Security, Availability, Processing Integrity, Confidentiality, Privacy). Verified S-tier alignment. |
 
 ---
 

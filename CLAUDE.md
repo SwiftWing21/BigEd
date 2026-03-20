@@ -1,10 +1,18 @@
-# BigEd CC — Alpha
+# BigEd CC — Alpha (0.30.01a)
 
 ## MCP Server
 - **Use the MCP server aggressively** for context, file operations, and tool access
 - Dev reference docs are stored on the MCP server, NOT in this repo
 - Project agent .md files (CLAUDE.md, fleet/CLAUDE.md) stay in-repo as instructions
 
+## Docs (kept as separate files — too large to inline)
+- `AUDIT_TRACKER.md` — grading rubric (12 dimensions), scoreboard, resolved issues
+- `ROADMAP.md` — active plan, version history, audit coverage check
+- `FRAMEWORK_BLUEPRINT.md` — full architecture spec, data schema, 45+ endpoints
+- `OPERATIONS.md` — runbook, CLI reference, troubleshooting, backup/recovery
+- `CROSS_PLATFORM.md` — platform matrix, FleetBridge ABC, migration priorities
+- `CONTRIBUTING.md` — contributor guide, skill authoring, code standards
+- `SETUP.md` — first-time install walkthrough (Windows/Linux/macOS)
 
 ## Roadmap & Blueprint Standards
 
@@ -65,17 +73,17 @@ Always re-read `audit_tracker.md` if it has been updated before generating a new
 - `autoresearch/` — ML training pipeline
 
 ## Fleet Status
-- Skills: 73 | Dashboard: 40+ endpoints | Smoke: 22/22
-- All TECH_DEBT resolved | All parallel tracks complete
+- Skills: 74 | Dashboard: 45+ endpoints | Smoke: 22/22
+- All TECH_DEBT resolved (4.1-4.8) | All parallel tracks complete | Audit: S
+- S-Tiers complete: S1 Reliability, S2 Observability, S3 Auto-Intelligence, S4 Security, S5 Multi-Backend
 - Swarm intelligence: 3 tiers (evolution, research, specialization)
 - Boot: native Windows (no WSL for fleet processes)
 - Security: OWASP B+, 26 controls, GDPR B
+- v0.30.00: remote dashboard, A2A federation, export/import, containerization
+- v0.30.01a: disabled agents, HITL evolution toggle, topic diversity fix
 
-## Machine (RTX 3080 Ti, 12GB VRAM)
-- VRAM safe: 10GB. Default: qwen3:8b (~6.9GB)
-- CPU models: qwen3:4b (conductor), qwen3:0.6b (maintainer)
-- Python: `uv run` in WSL, native `python` on Windows
-- max_workers: 10 (RAM-based scaling to 13)
+## Machine
+See `CLAUDE.USER.md` for hardware, environment, MCP servers, and model routing.
 
 ## Fleet
 - Dual-supervisor: `supervisor.py` + Dr. Ders (`hw_supervisor.py`) (native Windows)
@@ -114,3 +122,22 @@ Always re-read `audit_tracker.md` if it has been updated before generating a new
 - `DEV_MODE = True` during alpha (shows BUILD, debug, idle controls)
 - Production: `BIGED_PRODUCTION=1` env var or `build.py --production`
 - Dev reference files on MCP server, not in repo
+
+## Consolidated Notes (from deleted .md files)
+
+### Tech Debt (was TECH_DEBT.md) — ALL RESOLVED
+4.1 launcher god-object → extracted consoles/settings/boot/modules (-37% lines)
+4.2 aggressive polling → SSE client + 8s fallback
+4.3 string process control → REST endpoints (process_control.py)
+4.4 decentralized DB → data_access.py DAL
+4.5 WSL dependency → NativeWindowsBridge + detect_cli()
+4.6 regex TOML → tomlkit + atomic writes
+4.7 skills bypassing routing → all 12 refactored to call_complex()
+4.8 OS-specific commands → cross-platform branching
+
+### Consolidated History
+- Gemini 3-pass review → dual-supervisor split, crash backoff [15,30,60,120,300]s
+- Beta 1.0 from Alpha 0.30.01a — all 12 audit dimensions A or S, 30+ HITL QA scenarios
+- v0.14-v0.20: thermal, training lock, modular tabs, idle policy, hardening
+- v0.21-v0.30: S1-S5 milestones, module extraction, multi-backend, federation
+- Version map: v0.31→1.0 (pre-1.0) → 0.01→0.20 (post-1.0) → 0.21→0.30 (alpha)

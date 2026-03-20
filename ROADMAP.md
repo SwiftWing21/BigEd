@@ -333,6 +333,77 @@ Completed 2026-03-19.
 - Topic diversity fix (weighted random skill selection, per-agent cooldown, cross-worker dedup)
 - Documentation cleanup
 
+### 0.31.00 — MCP Server Integration UX
+
+- **Goal:** Let operators discover, configure, and manage MCP servers through the launcher GUI with zero config-file editing. Split into default fleet-useful servers vs custom user additions.
+- **Grading Alignment:** Module/Plugin Support → A to S | Usability/UX → A+ sustain | Architecture/SoC → A sustain
+- **Dependencies:** v0.30.00 (web launcher, settings view, containerization)
+- **Est. Tokens:** ~30-50k (L/XL)
+- **Status:** [ ] Not started
+
+#### S-Tier SOC: Default vs Custom MCP Servers
+
+**Bundled Defaults** (ship enabled or one-click activate — no API keys needed):
+
+| Server | Transport | Why Default | Fleet Integration |
+|--------|-----------|-------------|-------------------|
+| **playwright** | HTTP (Docker) | Already shipped, browser_crawl skill depends on it | browser_crawl, web_search fallback |
+| **filesystem** | stdio | File ingestion is core to RAG pipeline | ingest, rag_index, code_index |
+| **sequential-thinking** | stdio | Improves plan_workload and complex reasoning chains | plan_workload, lead_research |
+| **memory** | stdio | Persistent cross-session knowledge for fleet agents | rag_index, knowledge persistence |
+
+**One-Click Add** (need user's API key or service URL — show in "Integrations" panel):
+
+| Server | Transport | Prompt User For | Fleet Integration |
+|--------|-----------|-----------------|-------------------|
+| **github** | stdio | GitHub PAT (already in fleet.toml [github]) | github_sync, code_review |
+| **slack** | stdio | Slack Bot Token | Fleet notifications, comms bridge |
+| **postgres** / **sqlite** | stdio | Connection string | analyze_results, custom data |
+| **brave-search** | stdio | Brave API key | web_search enhancement |
+| **fetch** | stdio | — (no key) | web_crawl, API probing |
+
+**Custom/Advanced** (power users, shown under expandable "Advanced MCP" section):
+
+| Category | Examples |
+|----------|---------|
+| Databases | MySQL, MongoDB, Redis |
+| Cloud | AWS, GCP, Azure resource management |
+| Monitoring | Grafana, Datadog, Sentry |
+| Comms | Discord (already have bridge), Email, Teams |
+| Custom | Any MCP-compatible server via URL or stdio command |
+
+#### UX Flow
+
+**Phase 1: Settings Panel Integration (S, ~5-8k)**
+- New "MCP Servers" card in launcher Settings tab
+- Read `.mcp.json` + `docker-compose.yml` to show current state
+- Status dots: green (connected), red (unreachable), gray (disabled)
+- One-click enable/disable for bundled defaults
+
+**Phase 2: Integration Wizard (M, ~10-15k)**
+- "Add Integration" button → modal with categorized server list
+- Default servers: toggle on, auto-writes `.mcp.json` + starts container if needed
+- Key-gated servers: API key input → validate → enable
+- Custom: URL or `npx` command input → transport auto-detect → test connection
+
+**Phase 3: Fleet Skill Routing (M, ~8-12k)**
+- `fleet.toml [mcp]` section: map MCP servers → fleet skills
+- Skills auto-detect available MCP servers at dispatch time
+- Fallback chain: MCP server → direct API → local → skip gracefully
+- Dashboard: `/api/mcp/status` endpoint showing server health
+
+**Phase 4: Web Launcher + Remote (S, ~5-8k)**
+- Mirror MCP management in web_launcher.py
+- Remote operators can view MCP status, enable defaults
+- Key entry masked (like existing settings security token masking)
+
+#### Security Constraints (SOC alignment)
+- MCP servers run localhost-only by default (same as dashboard bind_address policy)
+- API keys stored in fleet.toml `[security]` section (encrypted at rest when SQLCipher enabled)
+- stdio servers: sandboxed via Docker when `sandbox_enabled = true`
+- Network MCP: require TLS for non-localhost (same safety gate as remote dashboard)
+- Audit: all MCP server add/remove/enable/disable logged to alerts table
+
 ### 0.21.00 — S1: Reliability (99.99% uptime) [DONE]
 
 Completed 2026-03-19. S-Tier 1 reliability milestone — 6 files, all P2-06/07/08 blockers resolved:
