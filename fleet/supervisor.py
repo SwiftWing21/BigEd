@@ -82,33 +82,96 @@ training_active = False
 ollama_evicted_for_training = False
 
 
+def _find_ollama() -> str:
+    """Find the ollama executable — PATH, Windows default, or WSL."""
+    import shutil
+    path = shutil.which("ollama")
+    if path:
+        return path
+    # Windows: check default install location
+    if sys.platform == "win32":
+        win_path = Path(os.environ.get("LOCALAPPDATA", "")) / "Programs" / "Ollama" / "ollama.exe"
+        if win_path.exists():
+            return str(win_path)
+    return "ollama"  # fallback — let subprocess try PATH
+
+
+def _find_running_ollama() -> bool:
+    """Check if Ollama is already running (any process, not just ours)."""
+    try:
+        config = load_config()
+        host = config.get("models", {}).get("ollama_host", "http://localhost:11434")
+        import urllib.request
+        with urllib.request.urlopen(f"{host}/api/tags", timeout=2):
+            return True
+    except Exception:
+        return False
+
+
+def _discover_loaded_models() -> list[str]:
+    """Query Ollama for currently loaded models (from any session)."""
+    try:
+        config = load_config()
+        host = config.get("models", {}).get("ollama_host", "http://localhost:11434")
+        import urllib.request
+        with urllib.request.urlopen(f"{host}/api/ps", timeout=3) as r:
+            data = json.loads(r.read())
+        models = [m["name"] for m in data.get("models", [])]
+        if models:
+            log.info(f"Discovered loaded models: {', '.join(models)}")
+        return models
+    except Exception:
+        return []
+
+
 def start_ollama(gpu=False):
     global ollama_proc
+    # If already running (from previous session, system tray, etc.) — adopt it
+    if _find_running_ollama():
+        loaded = _discover_loaded_models()
+        log.info(f"Ollama already running — adopting ({len(loaded)} models loaded)")
+        _json_log("INFO", "ollama_adopt", models_loaded=len(loaded))
+        return
+
+    ollama_exe = _find_ollama()
     env = os.environ.copy()
     if not gpu:
         env["CUDA_VISIBLE_DEVICES"] = "-1"
     elif "CUDA_VISIBLE_DEVICES" in env:
         del env["CUDA_VISIBLE_DEVICES"]
     mode = "GPU" if gpu else "CPU"
-    log.info(f"Starting Ollama ({mode} mode)")
-    _json_log("INFO", "ollama_start", mode=mode)
-    ollama_proc = subprocess.Popen(
-        ["ollama", "serve"], env=env,
-        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
-    )
-    time.sleep(3)
+    log.info(f"Starting Ollama ({mode} mode) — {ollama_exe}")
+    _json_log("INFO", "ollama_start", mode=mode, exe=ollama_exe)
+    try:
+        ollama_proc = subprocess.Popen(
+            [ollama_exe, "serve"], env=env,
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+        )
+        time.sleep(3)
+    except FileNotFoundError:
+        log.error(f"Ollama not found at '{ollama_exe}' — install from https://ollama.com")
+        _json_log("ERROR", "ollama_not_found", exe=ollama_exe)
+        ollama_proc = None
 
 
 def stop_ollama():
     global ollama_proc
     if ollama_proc and ollama_proc.poll() is None:
-        log.info("Stopping Ollama")
+        log.info("Stopping Ollama (fleet-started)")
         _json_log("INFO", "ollama_stop")
         ollama_proc.terminate()
         try:
             ollama_proc.wait(timeout=5)
         except subprocess.TimeoutExpired:
             ollama_proc.kill()
+    elif not ollama_proc:
+        # We adopted an external Ollama — don't kill it, but unload our models
+        log.info("External Ollama — unloading fleet models only (not stopping process)")
+        try:
+            from hw_supervisor import unload_all_models
+            unload_all_models()
+        except Exception:
+            pass
     ollama_proc = None
 
 
@@ -539,13 +602,8 @@ def main():
     signal.signal(signal.SIGINT, shutdown)
     signal.signal(signal.SIGTERM, shutdown)
 
-    # Start Ollama — skip if already running (launcher may have pre-started it)
-    try:
-        urllib.request.urlopen("http://localhost:11434/api/tags", timeout=2)
-        log.info("Ollama already running — skipping start")
-    except Exception as e:
-        log.debug(f"[main] Ollama not reachable ({e}), starting fresh")
-        start_ollama(gpu=not config["fleet"]["eco_mode"])
+    # Start Ollama — adopts existing instance or starts fresh
+    start_ollama(gpu=not config["fleet"]["eco_mode"])
 
     # Initial keepalive — pre-load worker model into VRAM (Dr. Ders takes over after boot)
     if not air_gap:
