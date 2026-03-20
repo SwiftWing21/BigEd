@@ -241,44 +241,45 @@ def heartbeat(name, status='IDLE', current_task_id=None):
 def claim_task(agent_name, affinity_skills=None):
     """Atomically claim the highest-priority pending task for this agent.
 
-    If affinity_skills is provided, prefer tasks matching those skills first.
-    Falls back to any unassigned task if no affinity match is available.
+    Uses atomic UPDATE...WHERE(SELECT) to eliminate race conditions between
+    the SELECT and UPDATE steps. If affinity_skills is provided, prefer tasks
+    matching those skills first. Falls back to any unassigned task.
     """
     with get_conn() as conn:
-        row = None
-        # Try affinity-matched tasks first
+        # Try affinity-matched tasks first (atomic claim)
         if affinity_skills:
             placeholders = ','.join('?' * len(affinity_skills))
-            row = conn.execute(f"""
-                SELECT id, type, payload_json FROM tasks
-                WHERE status='PENDING' AND (assigned_to=? OR assigned_to IS NULL)
-                  AND type IN ({placeholders})
-                ORDER BY priority DESC, created_at ASC
-                LIMIT 1
-            """, (agent_name, *affinity_skills)).fetchone()
+            conn.execute(f"""
+                UPDATE tasks SET status='RUNNING', assigned_to=?
+                WHERE id = (
+                    SELECT id FROM tasks
+                    WHERE status='PENDING' AND (assigned_to=? OR assigned_to IS NULL)
+                      AND type IN ({placeholders})
+                    ORDER BY priority DESC, created_at ASC LIMIT 1
+                )
+            """, (agent_name, agent_name, *affinity_skills))
+            row = conn.execute(
+                "SELECT id, type, payload_json FROM tasks WHERE status='RUNNING' AND assigned_to=? ORDER BY id DESC LIMIT 1",
+                (agent_name,)
+            ).fetchone()
+            if row:
+                return dict(row)
 
-        # Fall back to any available task
-        if not row:
-            row = conn.execute("""
-                SELECT id, type, payload_json FROM tasks
-                WHERE status='PENDING' AND (assigned_to=? OR assigned_to IS NULL)
-                ORDER BY priority DESC, created_at ASC
-                LIMIT 1
-            """, (agent_name,)).fetchone()
-
-        if not row:
-            return None
+        # Fall back to any available task (atomic claim)
         conn.execute("""
             UPDATE tasks SET status='RUNNING', assigned_to=?
-            WHERE id=? AND status='PENDING'
-        """, (agent_name, row['id']))
-        # Verify we won the race
-        check = conn.execute(
-            "SELECT assigned_to FROM tasks WHERE id=?", (row['id'],)
+            WHERE id = (
+                SELECT id FROM tasks
+                WHERE status='PENDING' AND (assigned_to=? OR assigned_to IS NULL)
+                ORDER BY priority DESC, created_at ASC LIMIT 1
+            )
+        """, (agent_name, agent_name))
+
+        row = conn.execute(
+            "SELECT id, type, payload_json FROM tasks WHERE status='RUNNING' AND assigned_to=? ORDER BY id DESC LIMIT 1",
+            (agent_name,)
         ).fetchone()
-        if check and check['assigned_to'] == agent_name:
-            return dict(row)
-    return None
+        return dict(row) if row else None
 
 
 def complete_task(task_id, result_json):

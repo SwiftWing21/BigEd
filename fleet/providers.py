@@ -329,7 +329,7 @@ def calculate_cost_simple(input_tokens: int, output_tokens: int, model_id: str) 
     return round(cost, 6)
 
 
-def _call_claude(system: str, user: str, models: dict, max_tokens: int, cache_system: bool = False,
+def _call_claude(system: str, user: str, models: dict, max_tokens: int, cache_system: bool = True,
                   skill_name: str = "unknown", task_id=None, agent_name=None) -> str:
     import anthropic
     client = anthropic.Anthropic(api_key=os.environ.get("ANTHROPIC_API_KEY"))

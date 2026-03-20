@@ -977,7 +977,9 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
             self._sse.on("disconnected", lambda d: self.after(0, lambda: setattr(self, '_sse_active', False)))
             self._sse_active = False
             self._sse.start()
-        except Exception:
+        except Exception as e:
+            import sys as _sys
+            print(f"[WARN] SSE client failed, using polling: {e}", file=_sys.stderr)
             self._sse = None
             self._sse_active = False
 
@@ -2704,6 +2706,10 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
         self._task_status = ctk.CTkLabel(
             btn_col, text="", font=FONT_SM, text_color=DIM)
         self._task_status.pack()
+
+        # P3 polish — Ctrl+K hint for command palette discoverability
+        ctk.CTkLabel(bar, text="Ctrl+K  command palette", font=FONT_XS,
+                     text_color=DIM).grid(row=1, column=1, sticky="e", padx=(0, 8), pady=(0, 4))
 
     def _on_task_enter(self, event):
         """Enter dispatches; Shift+Enter inserts newline."""

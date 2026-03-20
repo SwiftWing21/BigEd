@@ -856,6 +856,16 @@ def main():
     # NOTE: Conductor model warmup + ongoing keepalive handled by Dr. Ders.
     # Dr. Ders checks conductor every ~60s and keepalive every ~240s.
 
+    # Start auto-save backup
+    try:
+        from backup_manager import BackupManager
+        _backup = BackupManager(config)
+        _backup.perform_backup(trigger="fleet_startup")
+        _backup.start_auto_save()
+        log.info(f"Auto-save enabled: every {_backup.interval}s to {_backup.location}")
+    except Exception as e:
+        log.warning(f"Backup manager failed to start: {e}")
+
     mode_label = " [AIR-GAP]" if air_gap else " [OFFLINE]" if offline else ""
     log.info(f"Fleet up — {len(ROLES)} core workers (dynamic scaling enabled), "
              f"eco={config['fleet']['eco_mode']}{mode_label}")

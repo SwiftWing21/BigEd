@@ -1,7 +1,7 @@
 # BigEd CC Roadmap
 
 > **Goal of 1.0:** Autonomous, cross-platform, verifiably safe agent fleet.
-> **Goal of 5.0:** Multi-tenant SaaS-ready platform with federated fleet orchestration.
+> **Goal of 0.400.00b:** Multi-tenant SaaS-ready platform with federated fleet orchestration.
 
 ---
 
@@ -10,34 +10,49 @@
 | Era | Format | Example | Notes |
 |-----|--------|---------|-------|
 | Pre-1.0 | `v0.XX` | v0.31, v0.48 | Feature versions — historical, frozen |
-| 1.0 | `1.0` | 1.0 | Production release tag |
-| Post-1.0 | `0.XX.00` | 0.15.00, 0.30.00 | Major infrastructure — historical, frozen |
-| **Beta** | `0.XX.YYb` | 0.50.00b, 0.50.01b | **Current era** — see below |
-| Future | `X.0` | 2.0, 5.0 | Major platform milestones |
+| 1.0 | `1.0` | 1.0 | Production release tag — historical |
+| Post-1.0 | `0.XX.00` | 0.15.00, 0.30.00 | Infrastructure — historical, frozen |
+| **Beta** | `0.XXX.YYb` | 0.050.00b, 0.051.01b | **Current era** — see below |
+| Major | `0.X00.00b` | 0.100.00b, 0.200.00b | Major capability milestones |
 
 ### Beta Versioning (current)
 
 BigEd CC is a **beta product** — fleet runs autonomously, installer/updater pipeline active, dynamic agent scaling operational. Versioning uses tight `.YY` patches within each milestone:
 
-**`0.XX.00b` — Milestones**
-Major capability jumps. Each `0.XX` is a feature theme:
-- 0.42 = Beta release, installer pipeline
-- 0.50 = Model recovery, dynamic scaling, pixel fonts
-- 0.51 = Dashboard refactor, live agents, thermal fallback
+**`0.XXX.00b` — Milestones**
+Major capability jumps. Each `0.XXX` is a feature theme:
+- 0.042 = Beta release, installer pipeline
+- 0.050 = Model recovery, dynamic scaling, pixel fonts
+- 0.051 = Dashboard refactor, live agents, thermal fallback
+- 0.100 = Multi-Fleet & Remote Orchestration (major)
+- 0.200 = Intelligent Orchestration (major)
 
-**`0.XX.YYb` — Patches (tight iteration)**
+**`0.XXX.YYb` — Patches (tight iteration)**
 Small, focused changes within a milestone. Each `.YY` bump is one session or PR:
 - `.01` through `.99` — bug fixes, UX tweaks, config changes, polish
 
+**`0.X00.00b` — Major capability milestones**
+Jumps of 100 in the middle segment mark major platform-level milestones (formerly 2.0/3.0/4.0/5.0):
+- 0.100.00b = Multi-Fleet & Remote Orchestration
+- 0.200.00b = Intelligent Orchestration
+- 0.300.00b = Enterprise & Multi-Tenant
+- 0.400.00b = Platform & SaaS
+
 Example progression:
 ```
-0.50.00b  — Installer overhaul, model recovery, dynamic scaling, pixel fonts
-0.50.01b  — Dashboard live agents, thermal fallback, scaling tuning
-0.50.02b  — Agent naming, Dr. Ders wake-up timer
-0.51.00b  — Task-based agents, dashboard deep refactor
+0.050.00b  — Installer overhaul, model recovery, dynamic scaling
+0.050.01b  — Dashboard live agents, thermal fallback
+0.050.02b  — P0+P1+P2 security hardening
+0.051.00b  — Startup perf, UX polish, Dr. Ders respawn
+0.051.01b  — Task pipeline optimization
+0.052.00b  — Claude Manual Mode Integration
+0.100.00b  — Multi-Fleet & Remote Orchestration (was 2.0)
+0.200.00b  — Intelligent Orchestration (was 3.0)
+0.300.00b  — Enterprise & Multi-Tenant (was 4.0)
+0.400.00b  — Platform & SaaS (was 5.0)
 ```
 
-> **Note for AI assistants (Claude/Gemini):** Use `0.XX.00b` for milestone features and `0.XX.YYb` (YY > 0) for patches. Always include the `b` suffix. Pre-beta versions are frozen history.
+> **Note for AI assistants (Claude/Gemini):** Use `0.XXX.00b` for milestone features and `0.XXX.YYb` (YY > 0) for patches. Always include the `b` suffix. The middle segment is 3 digits (zero-padded). Major milestones use `0.X00.00b`. Pre-beta versions are frozen history.
 
 ---
 
@@ -327,7 +342,7 @@ Completed 2026-03-19.
 - Topic diversity fix (weighted random skill selection, per-agent cooldown, cross-worker dedup)
 - Documentation cleanup
 
-### 0.50.00b — Installer Overhaul + Model Recovery + Dynamic Scaling [DONE]
+### 0.050.00b — Installer Overhaul + Model Recovery + Dynamic Scaling [DONE]
 
 Completed 2026-03-20. Major session — 45 files, +1635/-335 lines:
 
@@ -345,7 +360,7 @@ Completed 2026-03-20. Major session — 45 files, +1635/-335 lines:
 
 **Build:** Runtime counter, step timings, artifact sizes in build.py.
 
-### 0.50.01b — Dashboard Live Agents + Thermal Fallback [DONE]
+### 0.050.01b — Dashboard Live Agents + Thermal Fallback [DONE]
 
 Completed 2026-03-20. 11 files, +194/-90 lines:
 
@@ -359,29 +374,29 @@ Completed 2026-03-20. 11 files, +194/-90 lines:
 
 **CI:** GitHub Actions Node.js 24 compatibility, release workflow brick.ico fix.
 
-### 0.50.02b — P0 Security & Stability Hardening [PLANNED]
+### 0.050.02b — P0 Security & Stability Hardening [DONE]
 
-**10 P0 bugs** identified by 5-agent audit. Must fix before any public beta.
+**10 P0 bugs** identified by 5-agent audit. All fixed in v0.050.02b (35e2e2a).
 
 **Boot/Installer P0s:**
-- [ ] Daemon thread + GUI race condition — threads mutate UI without `_safe_after()` (boot.py:308,478)
-- [ ] Zombie Ollama processes — `subprocess.Popen` without storing process ref (boot.py:603-608)
-- [ ] Hard-coded Ollama port `localhost:11434` in 12+ places — should read from fleet.toml (boot.py, installer.py, updater.py)
+- [x] Daemon thread + GUI race condition — all thread->UI calls now use `_safe_after()` (boot.py: 20+ call sites)
+- [x] Zombie Ollama processes — `_ollama_proc` stored, terminated+killed in cleanup (boot.py:632, 899-905)
+- [x] Hard-coded Ollama port — `_get_ollama_host()` reads fleet.toml `[models].ollama_host`, `OLLAMA_HOST` constant used everywhere (boot.py:106-116)
 
 **Supervisor P0s:**
-- [ ] DB connection leak in `_count_pending_tasks()` — no close on exception path (supervisor.py:96-131)
-- [ ] `_last_busy` dict grows unbounded — never cleaned on agent removal (supervisor.py:93)
-- [ ] Shutdown crash — iterating `worker_procs.items()` without `list()` copy (supervisor.py:653-659)
+- [x] DB connection leak in `_count_pending_tasks()` — try/finally with conn.close() (supervisor.py:100-110)
+- [x] `_last_busy` dict cleaned on agent removal — `_last_busy.pop(role, None)` in stop_worker (supervisor.py:236)
+- [x] Shutdown crash — `list(worker_procs.items())` copy used in all iteration sites (supervisor.py:116, 674, 676, 729, 931)
 
 **Dashboard P0s (XSS):**
-- [ ] Agent names concatenated into HTML via innerHTML (dashboard.html:314-319)
-- [ ] Alert messages injected via innerHTML (dashboard.html:331-334)
-- [ ] 12+ template injection points across all dashboard sections (dashboard.html)
-- [ ] SQL injection pattern in `/api/data_stats` dynamic table names (dashboard.py:806)
+- [x] Agent names escaped via `escapeHTML()` (dashboard.html:327-332)
+- [x] Alert messages escaped via `escapeHTML()` (dashboard.html:343)
+- [x] All 40+ innerHTML injection points now use `escapeHTML()` throughout (dashboard.html)
+- [x] SQL injection blocked — `ALLOWED_FLEET_TABLES` and `ALLOWED_TOOLS_TABLES` frozensets (dashboard.py:797, 813)
 
-### 0.50.03b — P1 Reliability & Error Handling [PLANNED]
+### 0.050.03b — P1 Reliability & Error Handling [PARTIAL]
 
-**19 P1 bugs** — high priority for beta stability.
+**19 P1 bugs** — 12 fixed across v0.50.02b (35e2e2a) and v0.51.00b (24e21d4), 7 remaining.
 
 **Boot/Installer:**
 - [ ] Model load response parsing swallows JSONDecodeError silently (boot.py:778-790)
@@ -391,39 +406,39 @@ Completed 2026-03-20. 11 files, +194/-90 lines:
 - [ ] Build failure error message only shows first 3 words of command (installer.py:794-804)
 
 **Supervisor:**
-- [ ] Worker zombie process leak — `worker_procs[role] = None` instead of `del` (supervisor.py:900-911)
+- [x] Worker zombie process leak — `worker_procs.pop(role, None)` on stop, `del worker_procs[role]` for disabled (supervisor.py:235, 947)
 - [ ] VRAM threshold edge case — `>` vs `>=` causes oscillation at boundary (hw_supervisor.py:965-982)
-- [ ] Dynamic agents never scale down — `_last_busy` defaults to `now` (supervisor.py:877-885)
+- [x] Dynamic agents scale down — `_should_scale_down()` checks `_last_busy` timestamps, `SCALE_DOWN_IDLE_SECS=300` (supervisor.py:212-236, 919-921)
 
 **Dashboard:**
-- [ ] SSE connection leak — clients not cleaned on exception (dashboard.py:1218-1245)
+- [x] SSE connection leak — clients cleaned in finally block and dead client removal (dashboard.py:176-177, 1324-1326)
 - [ ] TOML injection in worker disable/enable — agent name not validated (dashboard.py:1286-1311)
-- [ ] fetchJSON() has no error handling — silent failures across all panels (dashboard.html:227-230)
+- [ ] fetchJSON() has no error handling — silent failures across all panels (dashboard.html:240-243)
 
 **Launcher GUI:**
-- [ ] setattr() from SSE thread bypasses tkinter main thread (launcher.py:875-876)
-- [ ] Unguarded UI updates in `_poll_task_result()` after window close (consoles.py:646-659)
-- [ ] Widget destroy during iteration — memory corruption risk (launcher.py:2239-2244)
-- [ ] Font loading failure silently swallowed (theme.py:15-26)
-- [ ] Window geometry restoration off-screen on multi-monitor (launcher.py:806-812)
+- [x] SSE thread UI safety — all UI updates go through `_safe_after()` with `_alive` guard (launcher.py:920, 1089-1095)
+- [x] Unguarded UI updates in `_poll_task_result()` — `winfo_exists()` checks before all after() calls (consoles.py:646, 652, 659)
+- [x] Widget destroy during iteration — cached `_agent_rows` dict with update-only pattern, no destroy/recreate (launcher.py:933, 3033)
+- [x] Font loading failure properly warned — prints to stderr with [WARN] prefix (theme.py:26)
+- [x] Window geometry bounds-checked — `winfo_screenwidth/height()` validation before restore (launcher.py:905-908)
 
 **Data Layer:**
-- [ ] SQLCipher key SQL injection — f-string PRAGMA (db.py:116-118)
-- [ ] Provider column migration incomplete — NULL backfill needed (db.py:183-184)
+- [x] SQLCipher key SQL injection — `safe_key = key.replace("'", "''")` before PRAGMA (db.py:119-120)
+- [x] Provider column migration complete — backfill for claude/gemini/local on NULL rows (db.py:187-189)
 
-### 0.50.04b — P2 Hardening & Performance [PLANNED]
+### 0.050.04b — P2 Hardening & Performance [PARTIAL]
 
-**27+ P2 bugs** — medium priority, improves robustness.
+**27+ P2 bugs** — 5 key items fixed, remainder still open.
 
 **Key items:**
-- [ ] N+1 query in `/api/status` — should use JOIN for current_task (dashboard.py:249-269)
-- [ ] Missing DB indexes on tasks.status, tasks.assigned_to, agents.name (db.py schema)
-- [ ] Missing foreign key on tasks.parent_id — orphaned DAG chains (db.py:38-50)
+- [x] N+1 query in `/api/status` — uses LEFT JOIN for current_task (dashboard.py:250-253)
+- [x] DB indexes on tasks.status, tasks.assigned_to, tasks.parent_id — `idx_tasks_status`, `idx_tasks_assigned`, `idx_tasks_parent` (db.py:191-193)
+- [ ] Missing foreign key on tasks.parent_id — orphaned DAG chains (PRAGMA foreign_keys=ON set, but no FK constraint in CREATE TABLE)
 - [ ] VRAM threshold mismatch between fleet.toml and hw_supervisor defaults
 - [ ] Config loaded once at import — stale after fleet.toml edits (config.py:27-29)
 - [ ] DB timeout inconsistency (10s vs 2s vs 30s across layers)
-- [ ] Circuit breaker has no exponential backoff — fixed 60s cooldown (providers.py:22-34)
-- [ ] FALLBACK_CHAIN declared but never used — no actual HA failover (providers.py:301)
+- [x] Circuit breaker has exponential backoff — `min(60s * 2^cooldowns, 600s)` with cooldown counter (providers.py:38-52)
+- [x] FALLBACK_CHAIN actively used — `_models.py call_complex()` iterates chain with circuit breaker (skills/_models.py:124-138)
 - [ ] Boot timing file not atomic — concurrent write race (boot.py:119-133)
 - [ ] pip missing --break-system-packages for system Python (installer.py:847-861)
 - [ ] 65+ bare `except: pass` blocks across launcher hiding real errors
@@ -433,7 +448,7 @@ Completed 2026-03-20. 11 files, +194/-90 lines:
 - [ ] Content-Security-Policy header missing on dashboard
 - [ ] Stale task recovery uses time-based detection instead of PID liveness (db.py:657-677)
 
-### 0.50.05b — P3 Polish & Accessibility [PLANNED]
+### 0.050.05b — P3 Polish & Accessibility [PLANNED]
 
 **14+ P3 items** — low priority, UX improvements.
 
@@ -449,38 +464,39 @@ Completed 2026-03-20. 11 files, +194/-90 lines:
 - [ ] GITHUB_REPO typo in config.py default vs fleet.toml
 - [ ] No distributed locking for federation mode (db.py:686-711)
 
-### 0.51.00b — Startup Performance & UX Polish [PLANNED]
+### 0.051.00b — Startup Performance & UX Polish [PARTIAL]
 
 **Goal:** Sub-700ms window visible, 144Hz-smooth refresh, hide dev scaffolding. Public beta polish.
+Partially completed in v0.51.00b (24e21d4). Dr. Ders respawn, startup perf, disabled agents, idle evolution backoff all done. Dashboard web perf and refresh smoothing remain.
 
-**CRITICAL: Dr. Ders never respawned by supervisor**
-- [ ] Supervisor must spawn hw_supervisor.py and respawn on crash (supervisor.py — missing entirely)
-- [ ] Dr. Ders model promotion loads CPU models that still consume VRAM → GPU model pushed to CPU
-- [ ] Models loaded without `num_gpu` setting → Ollama auto-assigns, causing VRAM overload (hw_supervisor.py:318, supervisor.py:568)
+**CRITICAL: Dr. Ders respawn — FIXED**
+- [x] Supervisor spawns hw_supervisor.py via `start_hw_supervisor()` and respawns on crash (supervisor.py:452-458, 967-970)
+- [x] Dr. Ders model promotion uses explicit CPU assignment — `num_gpu=0` for conductor/failsafe (hw_supervisor.py:527-540, 760)
+- [x] Models loaded with explicit `num_gpu` — `_model_gpu_assignment` dict tracks 99=GPU, 0=CPU per model (hw_supervisor.py:313-344)
 
 **Legacy agent cleanup (hide dev scaffolding):**
-- [ ] Hide disabled agents section from launcher Fleet tab (launcher.py:1891-1926) — internal dev modules not user-facing
-- [ ] Worker registers in DB BEFORE disabled check → move check before registration (worker.py:363-371)
-- [ ] Remove affinity config for permanently disabled agents (fleet.toml:132-138)
-- [ ] Disabled agents should never appear in any UI (dashboard, launcher, Fleet tab)
+- [x] Hide disabled agents section from launcher Fleet tab — production hides entirely, dev mode shows collapsed (launcher.py:2005-2058)
+- [x] Worker checks disabled BEFORE DB registration — exits immediately if in `disabled_agents` (worker.py:364-368)
+- [ ] Remove affinity config for permanently disabled agents (fleet.toml:145-150 — sales, onboarding, implementation, legal still present)
+- [x] Disabled agents hidden from dashboard — heartbeat <60s filter excludes non-running agents (dashboard.py:254)
 
 **Startup performance (target: window visible < 700ms):**
-- [ ] Defer pynvml GPU init to first hw read — blocks 200-300ms at import (launcher.py:35-38)
-- [ ] Defer font loading to after window creation — blocks 50-100ms per TTF (theme.py:28-29)
-- [ ] Defer `_refresh_status()` to after window visible — currently blocks before first frame (launcher.py:870)
+- [x] Defer pynvml GPU init — lazy `_ensure_gpu()` on first hw read, not at import (launcher.py:34-49)
+- [x] Defer font loading to after window creation — `load_custom_fonts()` called in `__init__` after `super().__init__()` (launcher.py:889-890)
+- [x] Defer `_refresh_status()` to after window visible — uses `_safe_after(100, ...)` (launcher.py:964)
 - [ ] Lazy-load Fleet Comm + modular tabs on first click — all built upfront currently (launcher.py:1414-1462)
 - [ ] Cache parse_status() for 1-2s — called 3x at startup (launcher.py:486, 870, 2714)
 
 **Refresh cycle smoothing (target: no stalls > 16ms on 144Hz):**
-- [ ] Increase HW stats interval 3s → 5s — human eye can't perceive <100ms changes (launcher.py:3230)
+- [ ] Increase HW stats interval 3s -> 5s — human eye can't perceive <100ms changes (launcher.py:3230)
 - [ ] Skip parse_status() when SSE active — redundant I/O every 4s (launcher.py:3288)
-- [ ] SSE client reads 1 byte at a time → read 4KB chunks (sse_client.py:91)
-- [ ] Cache action cards (update-only pattern) instead of destroy/recreate every 4-8s (launcher.py:3010-3016)
+- [ ] SSE client reads 1 byte at a time -> read 4KB chunks (sse_client.py:91)
+- [x] Cache action cards — `_agent_rows` dict with update-only pattern instead of destroy/recreate (launcher.py:933, 3033-3040)
 
 **Idle evolution quarantine spiral:**
 - [ ] Check API key availability before dispatching idle evolution tasks (worker.py:495)
-- [ ] Add exponential backoff between failed idle evolution attempts
-- [ ] Auto-clear quarantine after 1 hour of inactivity (worker.py:484-487)
+- [x] Exponential backoff between failed idle evolution — `_idle_failures` counter, pauses after 3 consecutive failures (worker.py:397, 512-534)
+- [x] Auto-clear quarantine after 5 minutes of inactivity (worker.py:481-498)
 - [ ] Gate idle evolution on local-only skills when API keys missing
 
 **Dashboard web performance:**
@@ -488,18 +504,18 @@ Completed 2026-03-20. 11 files, +194/-90 lines:
 - [ ] Reduce 30s polling to 5min for slow-changing data (knowledge, RAG, code stats)
 - [ ] Update Chart.js data instead of destroy/recreate (dashboard.html:449, 477)
 
-### 0.51.01b — Task Pipeline Optimization [PLANNED]
+### 0.051.01b — Task Pipeline Optimization [PLANNED]
 
 **Goal:** 30-40% throughput improvement, 15-20% API cost reduction. Addresses 10 bottlenecks from pipeline audit.
 
 **Critical (implement first):**
 - [ ] Atomic task claiming — combine SELECT+UPDATE into single query (db.py:241-281)
-- [ ] Enable prompt caching — `cache_control: ephemeral` on all stable system prompts (providers.py:332-369)
+- [x] Enable prompt caching — `cache_control: ephemeral` on stable system prompts (providers.py:338)
 - [ ] Async usage logging — buffer writes, flush on timer instead of sync per-call (cost_tracking.py:16-33)
 - [ ] Adaptive polling — 100ms/500ms/2s based on queue depth + jitter (worker.py:505)
 
 **Medium priority:**
-- [ ] Global idle evolution dedup — check PENDING+RUNNING before creating task (idle_evolution.py)
+- [x] Global idle evolution dedup — worker checks pending queue before creating idle task (worker.py:513-524)
 - [ ] DAG promotion index — add `idx_tasks_depends` for faster WAITING resolution (db.py:330-382)
 - [ ] API request batching — coalesce simple skills into 10-task batches (skills/_models.py)
 - [ ] Deterministic Tier 2 sampling — by task_id hash, not random (intelligence.py:105)
@@ -508,7 +524,7 @@ Completed 2026-03-20. 11 files, +194/-90 lines:
 - [ ] Cache skill staleness ranking in idle evolution (idle_evolution.py:40-113)
 - [ ] Batch-claim N tasks per poll when queue depth > threshold
 
-### 0.51.02b — Auto-Save & Backup System [PLANNED]
+### 0.051.02b — Auto-Save & Backup System [PLANNED]
 
 **Goal:** Prevent data loss from power outage or crashes. Configurable backup frequency/depth/location.
 
@@ -522,9 +538,9 @@ Completed 2026-03-20. 11 files, +194/-90 lines:
 - [ ] Prune beyond depth — with "do not clean" toggle + disk usage warning
 - [ ] CLI: `lead_client.py backup`, `backup --list`, `backup --restore ID`
 - [ ] Supervisor integration — backup on fleet startup + on skill_deploy completion
-- [ ] Graceful shutdown saves task queue (already implemented in 0.51.00b)
+- [ ] Graceful shutdown saves task queue (already implemented in 0.051.00b)
 
-### 0.51.03b — Intelligence Module + Cost Dashboard [PLANNED]
+### 0.051.03b — Intelligence Module + Cost Dashboard [PLANNED]
 
 **Goal:** System transparency tab for understanding capabilities, model settings, prompt queue, evaluation.
 
@@ -540,7 +556,7 @@ Completed 2026-03-20. 11 files, +194/-90 lines:
 - [ ] Weight adjustment UI for skill complexity routing
 - [ ] Evaluation routine live display (show Tier 1/2 scores as they happen)
 
-### 0.52.00b — Claude Manual Mode Integration (Enterprise) [PLANNED]
+### 0.052.00b — Claude Manual Mode Integration (Enterprise) [PLANNED]
 
 **Goal:** ToS-compliant hybrid system — unattended API automation (Lane 2) + human-guided Claude Code sessions (Lane 1). No lane crossing. Spec: `docs/specs/claude-manual-mode-integration.md`
 
@@ -861,34 +877,33 @@ Completed 2026-03-19. System Detection walkthrough step (hardware probing via ps
 
 Completed 2026-03-19. Dashboard auto-opens in default browser on boot complete (1.5s delay, threaded). Respects air-gap mode, `dashboard.enabled`, and new `dashboard.auto_open` fleet.toml toggle. Console persistence marked done (already working since v0.27.00 via JSONL). Audit tracker synced — UX deep-dive updated.
 
-### 2.0 — Multi-Fleet & Remote Orchestration
+### 0.100.00b — Multi-Fleet & Remote Orchestration [FUTURE]
 
 - Fleet-to-fleet communication (federated supervisor mesh)
 - Remote dashboard access (auth + TLS + public URL)
 - Fleet cloning (deploy identical fleet via config export)
 - Plugin marketplace (community skills via git repos)
 
-### 3.0 — Intelligent Orchestration
+### 0.200.00b — Intelligent Orchestration [FUTURE]
 
 - ML-driven task routing (learn optimal agent→skill mapping from history)
 - Predictive scaling (anticipate load from task patterns)
 - Natural language fleet control ("scale up coders, pause research")
 - Auto-generated SOPs from fleet behavior patterns
 
-### 4.0 — Enterprise & Multi-Tenant
+### 0.300.00b — Enterprise & Multi-Tenant [FUTURE]
 
 - Tenant isolation (separate DBs, configs, knowledge per customer)
 - Role-based access control (RBAC with granular permissions)
 - Full audit logging (who did what, when, with what cost)
 - SLA monitoring (task completion time guarantees)
 
-### 5.0 — Platform
+### 0.400.00b — Platform & SaaS [FUTURE]
 
 - Self-hosted SaaS deployment (Docker Compose / K8s)
 - Web-based launcher (replace desktop GUI with React/Next.js)
 - Federated fleet orchestration (multiple physical machines, single control plane)
 - Marketplace: skill store, model store, template store
-- Version scheme transition: `5.0.0` -> semver
 
 ---
 

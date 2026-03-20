@@ -236,3 +236,21 @@ enabled = false              # enable peer discovery and task forwarding
 peers = []                   # peer fleet URLs (e.g. ["http://192.168.1.50:5555", "http://fleet2.local:5555"])
 overflow_threshold = 0.85    # forward tasks to peers when local queue > 85% capacity
 peer_timeout_secs = 5        # timeout for peer health probes
+
+# v0.51.02b: Auto-save & Backup — periodic snapshots of fleet state
+[backup]
+enabled = true
+interval_secs = 300
+location = "~/BigEd-backups"
+depth = 10
+prune_enabled = true
+warn_disk_usage_pct = 80
+
+[backup.targets]
+fleet_db = true
+rag_db = true
+config = true
+knowledge = true
+
+[backup.safety]
+verify_integrity = true

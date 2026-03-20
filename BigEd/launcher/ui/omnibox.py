@@ -19,6 +19,7 @@ GREEN = "#66bb6a"
 GOLD = "#ffd54f"
 FONT = ("RuneScape Plain 12", 11)
 FONT_SM = ("RuneScape Plain 11", 10)
+FONT_XS = ("RuneScape Plain 11", 9)
 
 
 class OmniBox(ctk.CTkToplevel):
@@ -74,7 +75,11 @@ class OmniBox(ctk.CTkToplevel):
         self._results_frame = ctk.CTkScrollableFrame(
             self, fg_color=BG, corner_radius=0
         )
-        self._results_frame.pack(fill="both", expand=True, padx=12, pady=(0, 12))
+        self._results_frame.pack(fill="both", expand=True, padx=12, pady=(0, 4))
+
+        # P3 polish — badge legend for accessibility
+        ctk.CTkLabel(self, text="SYS = System   SKL = Skill   AGT = Agent",
+                     font=FONT_XS, text_color=DIM).pack(side="bottom", pady=(0, 8))
 
         self._render_results()
 

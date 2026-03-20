@@ -175,6 +175,9 @@ class BootManagerMixin:
         """Read GPU + conductor model names from fleet.toml using tomlkit."""
         L = _launcher()
         try:
+            if not Path(L.FLEET_TOML).exists():
+                self._safe_after(0, lambda: self._log_output(
+                    "  [warn] fleet.toml not found — using defaults"))
             import tomllib
             with open(L.FLEET_TOML, "rb") as f:
                 cfg = tomllib.load(f)
@@ -793,6 +796,10 @@ class BootManagerMixin:
 
         timeout = _get_adaptive_timeout("model_load", model)
         start_time = time.time()
+
+        # Show elapsed time during model load (P3 polish — user feedback)
+        self._safe_after(0, lambda m=model: self._log_output(
+            f"  Loading {m} — this may take a minute..."))
 
         body = json.dumps({
             "model": model, "prompt": "", "keep_alive": "24h",

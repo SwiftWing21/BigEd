@@ -6,6 +6,7 @@ import importlib
 import json
 import logging
 import os
+import random
 import signal
 import subprocess
 import sys
@@ -509,16 +510,30 @@ def main():
             cooldown_ok = (now - _last_idle_run) >= idle_cooldown
             if idle_count >= IDLE_THRESHOLD and config.get("idle", {}).get("enabled", False) and cooldown_ok:
                 if _idle_failures < 3:  # Stop after 3 consecutive failures
+                    # Global dedup: skip idle evolution if queue already has pending work
+                    pending = 0
                     try:
-                        _run_idle_evolution(role, config)
-                        _idle_failures = 0
-                        _last_idle_run = now
-                    except Exception as e:
-                        _idle_failures += 1
-                        _last_idle_run = now  # Cooldown on failure too
-                        log.warning(f"Idle evolution failed ({_idle_failures}/3): {e}")
-                        if _idle_failures >= 3:
-                            log.info("Idle evolution paused — too many failures. Resumes after successful task.")
+                        import sqlite3 as _sq
+                        _c = _sq.connect(str(FLEET_DIR / "fleet.db"), timeout=2)
+                        try:
+                            pending = _c.execute("SELECT COUNT(*) FROM tasks WHERE status='PENDING'").fetchone()[0]
+                        finally:
+                            _c.close()
+                    except Exception:
+                        pass
+                    if pending < 3:  # Only evolve if queue is nearly empty
+                        try:
+                            _run_idle_evolution(role, config)
+                            _idle_failures = 0
+                            _last_idle_run = now
+                        except Exception as e:
+                            _idle_failures += 1
+                            _last_idle_run = now  # Cooldown on failure too
+                            log.warning(f"Idle evolution failed ({_idle_failures}/3): {e}")
+                            if _idle_failures >= 3:
+                                log.info("Idle evolution paused — too many failures. Resumes after successful task.")
+                    else:
+                        idle_count = 0  # Reset — real work is available, re-poll soon
                 idle_count = 0
         if task:
             idle_count = 0  # reset on task claim
@@ -621,7 +636,7 @@ def main():
                 db.heartbeat(role, status='IDLE')
             except Exception:
                 pass
-            time.sleep(1)
+            time.sleep(0.1)  # Adaptive: just completed a task — check for more quickly
             continue
 
         # Idle curriculum — planner always runs it; others require idle_enabled=true
@@ -638,7 +653,13 @@ def main():
                 log.warning(f"Idle task failed: {e}")
             last_task_time = time.time()
 
-        time.sleep(1)
+        # Adaptive polling: fast when busy, slow when idle
+        if task:
+            time.sleep(0.1)  # Just completed a task — check immediately for more
+        elif idle_count < 3:
+            time.sleep(0.5 + random.uniform(0, 0.1))  # Recently active — moderate poll
+        else:
+            time.sleep(2 + random.uniform(0, 0.5))  # Idle — slow poll with jitter
 
     log.info("Stopped")
 
