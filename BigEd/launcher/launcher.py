@@ -17,6 +17,8 @@ import time
 from datetime import datetime, timezone
 from pathlib import Path
 
+import urllib.request
+
 import tkinter as tk
 import customtkinter as ctk
 from PIL import Image
@@ -1095,26 +1097,26 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
         banner = self._load_banner()
         if banner:
             ctk.CTkLabel(hdr, image=banner, text="").grid(
-                row=0, column=0, padx=(10, 2), pady=(4, 0))
+                row=0, column=0, padx=(10, 2), pady=(6, 0))
         else:
             ctk.CTkLabel(hdr, text="🧱", font=("Segoe UI", 22)).grid(
-                row=0, column=0, padx=(10, 2), pady=(4, 0))
+                row=0, column=0, padx=(10, 2), pady=(6, 0))
 
         self._sidebar_btn = ctk.CTkButton(
             hdr, text="≡", font=("Segoe UI", 16), width=30, height=30,
             fg_color="transparent", hover_color=BG2, text_color=TEXT,
             command=self._toggle_sidebar
         )
-        self._sidebar_btn.grid(row=0, column=1, padx=(2, 6), pady=(4, 0))
+        self._sidebar_btn.grid(row=0, column=1, padx=(2, 6), pady=(6, 0))
 
         ctk.CTkLabel(hdr, text="BIGED CC",
                      font=("Segoe UI", 14, "bold"),
-                     text_color=GOLD).grid(row=0, column=2, padx=4, pady=(4, 0), sticky="w")
+                     text_color=GOLD).grid(row=0, column=2, padx=4, pady=(6, 0), sticky="w")
 
         # Inline stats
         stats_frame = ctk.CTkFrame(hdr, fg_color="transparent")
-        stats_frame.grid(row=0, column=3, sticky="w", padx=(8, 0), pady=(10, 0))
-        kw = dict(font=("Consolas", 11), text_color=DIM)
+        stats_frame.grid(row=0, column=3, sticky="w", padx=(8, 0), pady=(8, 0))
+        kw = dict(font=("Consolas", 10), text_color=DIM)
         self._stat_cpu = ctk.CTkLabel(stats_frame, text="CPU —", **kw)
         self._stat_ram = ctk.CTkLabel(stats_frame, text="RAM —", **kw)
         self._stat_gpu = ctk.CTkLabel(stats_frame, text="GPU —", **kw)
@@ -1127,11 +1129,11 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
         # Dr. Ders status (always-on hw monitor)
         self._dr_ders_hdr = ctk.CTkLabel(
             hdr, text="Dr.Ders —", font=("Consolas", 10), text_color=DIM)
-        self._dr_ders_hdr.grid(row=0, column=4, padx=(4, 2), pady=(10, 0), sticky="e")
+        self._dr_ders_hdr.grid(row=0, column=4, padx=(4, 2), pady=(8, 0), sticky="e")
 
         self._status_pills = ctk.CTkLabel(
             hdr, text="● loading...", font=("Consolas", 11), text_color=DIM)
-        self._status_pills.grid(row=0, column=5, padx=8, pady=(10, 0), sticky="e")
+        self._status_pills.grid(row=0, column=5, padx=8, pady=(8, 0), sticky="e")
 
         self._action_badge = ctk.CTkLabel(
             hdr, text="", font=("Segoe UI", 9, "bold"),
@@ -1143,7 +1145,7 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
         self._update_badge = ctk.CTkButton(
             hdr, text="", font=("Segoe UI", 9, "bold"),
             text_color=TEXT, fg_color="transparent",
-            hover_color="#2a4a2a", corner_radius=8, width=0,
+            hover_color=BG3, corner_radius=8, width=0,
             command=self._launch_auto_update)
         self._update_badge.grid(row=0, column=7, padx=(0, 4), pady=(8, 0))
 
@@ -1205,7 +1207,7 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
 
         def btn(s, label, cmd, color=BG3, hover=None, tip=None):
             b = ctk.CTkButton(
-                sb, text=label, font=FONT_SM, height=30,
+                sb, text=label, font=FONT_SM, height=28,
                 fg_color=color, hover_color=hover or BG,
                 text_color=TEXT, anchor="w", corner_radius=4, command=cmd,
             )
@@ -2093,6 +2095,10 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
         parent.grid_rowconfigure(1, weight=1)
         parent.grid_columnconfigure(0, weight=1)
 
+        # Persist provider selection across refreshes (default: Local — always available)
+        if not hasattr(self, "_comm_provider_var"):
+            self._comm_provider_var = ctk.StringVar(value="⚡ Local")
+
         # Header
         hdr = ctk.CTkFrame(parent, fg_color=BG2, height=32, corner_radius=4)
         hdr.grid(row=0, column=0, sticky="ew", padx=4, pady=(4, 0))
@@ -2104,6 +2110,18 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
         ctk.CTkButton(hdr, text="Refresh", width=60, height=24, font=FONT_SM,
                       fg_color=BG3, hover_color=BG,
                       command=self._refresh_comm).pack(side="right", padx=8, pady=4)
+        # AI draft provider toggle — right side of header, left of Refresh
+        ctk.CTkSegmentedButton(
+            hdr,
+            values=["🤖 Claude", "✦ Gemini", "⚡ Local"],
+            variable=self._comm_provider_var,
+            font=FONT_SM,
+            selected_color=ACCENT, selected_hover_color=ACCENT_H,
+            unselected_color=BG3, unselected_hover_color=BG2,
+            width=220, height=24,
+        ).pack(side="right", padx=(0, 4), pady=4)
+        ctk.CTkLabel(hdr, text="AI draft:", font=("Segoe UI", 9),
+                     text_color=DIM).pack(side="right", padx=(8, 2), pady=4)
 
         # Scrollable content area
         self._comm_scroll = ctk.CTkScrollableFrame(parent, fg_color=BG, corner_radius=0)
@@ -2225,7 +2243,7 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
                              font=FONT, text_color=TEXT, wraplength=600,
                              anchor="w", justify="left").pack(fill="x", padx=8, pady=(4, 0))
 
-                # Reply field + send button
+                # Reply field + Draft + Send
                 reply_frame = ctk.CTkFrame(card, fg_color="transparent")
                 reply_frame.pack(fill="x", padx=8, pady=(4, 8))
                 reply_frame.grid_columnconfigure(0, weight=1)
@@ -2233,16 +2251,30 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
                 reply_var = ctk.StringVar()
                 entry = ctk.CTkEntry(reply_frame, textvariable=reply_var,
                                      font=FONT_SM, fg_color=BG3, border_color=ACCENT,
-                                     placeholder_text="Type your response...")
+                                     placeholder_text="Type your response or click ✨ to AI-draft…")
                 entry.grid(row=0, column=0, sticky="ew", padx=(0, 4))
 
                 tid = item["id"]
+                question = item.get("question", "")
+                agent_name = item.get("assigned_to", "agent")
                 entry.bind("<Return>", lambda e, t=tid, v=reply_var: self._send_human_response(t, v.get()))
+
+                # ✨ Draft button — filled by AI, uses selected provider
+                draft_btn = ctk.CTkButton(
+                    reply_frame, text="✨", width=32, height=28,
+                    fg_color=BG3, hover_color=BG2,
+                    font=("Segoe UI", 13), text_color=GOLD,
+                )
+                draft_btn.grid(row=0, column=1, padx=(0, 4))
+                draft_btn.configure(
+                    command=lambda q=question, ag=agent_name, en=entry, db=draft_btn:
+                        self._draft_comm_response(q, ag, en, db))
+
                 ctk.CTkButton(
                     reply_frame, text="Send", width=60, height=28,
                     fg_color=ACCENT, hover_color=ACCENT_H,
                     command=lambda t=tid, v=reply_var: self._send_human_response(t, v.get()),
-                ).grid(row=0, column=1)
+                ).grid(row=0, column=2)
 
             # Render security advisories
             for adv in advisories:
@@ -2316,6 +2348,116 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
             except Exception as e:
                 self._safe_after(0, lambda: self._log_output(f"Send error: {e}"))
         threading.Thread(target=_bg, daemon=True).start()
+
+    # ── Fleet Comm — AI-assisted response drafting ───────────────────────────
+
+    def _draft_comm_response(self, question: str, agent: str,
+                             entry: ctk.CTkEntry, btn: ctk.CTkButton) -> None:
+        """Route ✨ Draft to whichever AI provider the operator has selected."""
+        provider = getattr(self, "_comm_provider_var", None)
+        provider = provider.get() if provider else "⚡ Local"
+
+        prompt = (
+            f"You are BigEd — an AI fleet management system.\n"
+            f"An autonomous agent named '{agent}' is waiting for operator input.\n\n"
+            f"Agent's question:\n{question}\n\n"
+            f"Draft a concise, actionable response the operator can send back. "
+            f"1-3 sentences maximum. Output only the draft text — no preamble or sign-off."
+        )
+
+        btn.configure(text="…", state="disabled")
+
+        def _on_result(text: str) -> None:
+            self._safe_after(0, lambda: (
+                entry.delete(0, "end"),
+                entry.insert(0, text.strip()),
+                btn.configure(text="✨", state="normal"),
+            ))
+
+        def _on_error(err: str) -> None:
+            self._safe_after(0, lambda: (
+                self._log_output(f"AI draft error ({provider}): {err}"),
+                btn.configure(text="✨", state="normal"),
+            ))
+
+        if "Claude" in provider:
+            threading.Thread(target=self._draft_via_claude,
+                             args=(prompt, _on_result, _on_error), daemon=True).start()
+        elif "Gemini" in provider:
+            threading.Thread(target=self._draft_via_gemini,
+                             args=(prompt, _on_result, _on_error), daemon=True).start()
+        else:
+            threading.Thread(target=self._draft_via_local,
+                             args=(prompt, _on_result, _on_error), daemon=True).start()
+
+    def _draft_via_claude(self, prompt: str, on_result, on_error) -> None:
+        try:
+            key = os.environ.get("ANTHROPIC_API_KEY", "")
+            if not key:
+                try:
+                    out, _ = self.wsl("echo $ANTHROPIC_API_KEY", capture=True)
+                    key = out.strip()
+                except Exception:
+                    pass
+            if not key or key.startswith("$"):
+                on_error("ANTHROPIC_API_KEY not set — open Claude Console to configure it.")
+                return
+            import anthropic
+            mcfg = load_model_cfg()
+            model = mcfg.get("claude_model", "claude-haiku-4-5")
+            client = anthropic.Anthropic(api_key=key)
+            msg = client.messages.create(
+                model=model,
+                max_tokens=256,
+                messages=[{"role": "user", "content": prompt}],
+            )
+            on_result(msg.content[0].text)
+        except Exception as e:
+            on_error(str(e))
+
+    def _draft_via_gemini(self, prompt: str, on_result, on_error) -> None:
+        try:
+            key = os.environ.get("GEMINI_API_KEY", "")
+            if not key:
+                try:
+                    out, _ = self.wsl("echo $GEMINI_API_KEY", capture=True)
+                    key = out.strip()
+                except Exception:
+                    pass
+            if not key or key.startswith("$"):
+                on_error("GEMINI_API_KEY not set — open Gemini Console to configure it.")
+                return
+            from google import genai
+            mcfg = load_model_cfg()
+            client = genai.Client(api_key=key)
+            resp = client.models.generate_content(
+                model=mcfg.get("gemini_model", "gemini-2.0-flash"),
+                contents=prompt,
+            )
+            on_result(resp.text)
+        except Exception as e:
+            on_error(str(e))
+
+    def _draft_via_local(self, prompt: str, on_result, on_error) -> None:
+        try:
+            mcfg = load_model_cfg()
+            host  = mcfg.get("ollama_host", "http://localhost:11434")
+            model = mcfg.get("local", "qwen3:8b")
+            body = json.dumps({
+                "model": model,
+                "prompt": prompt,
+                "stream": False,
+                "keep_alive": "5m",
+            }).encode()
+            req = urllib.request.Request(
+                f"{host}/api/generate", data=body,
+                headers={"Content-Type": "application/json"}, method="POST",
+            )
+            with urllib.request.urlopen(req, timeout=60) as r:
+                data = json.loads(r.read())
+            on_result(data.get("response", "(empty response)"))
+        except Exception as e:
+            on_error(str(e))
 
     def _approve_advisory(self, path):
         """Approve a security advisory — dispatch security_apply."""

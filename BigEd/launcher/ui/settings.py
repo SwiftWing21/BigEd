@@ -98,7 +98,7 @@ class SettingsDialog(ctk.CTkToplevel):
         self.grid_rowconfigure(1, weight=1)
 
         # ── Gradient header ──────────────────────────────────────────────
-        hdr = ctk.CTkFrame(self, fg_color="#111118", height=50, corner_radius=0)
+        hdr = ctk.CTkFrame(self, fg_color=_GLASS_BG, height=50, corner_radius=0)
         hdr.grid(row=0, column=0, columnspan=2, sticky="ew")
         hdr.grid_propagate(False)
         hdr.grid_columnconfigure(1, weight=1)
@@ -106,7 +106,7 @@ class SettingsDialog(ctk.CTkToplevel):
                      font=("Segoe UI", 15, "bold"), text_color=GOLD
                      ).grid(row=0, column=0, padx=18, pady=12, sticky="w")
         ctk.CTkLabel(hdr, text="BigEd CC configuration",
-                     font=("Segoe UI", 9), text_color="#555555"
+                     font=("Segoe UI", 9), text_color=DIM
                      ).grid(row=0, column=1, padx=8, sticky="w")
 
         # ── Left nav ────────────────────────────────────────────────────
@@ -116,9 +116,9 @@ class SettingsDialog(ctk.CTkToplevel):
 
         for i, (label, key) in enumerate(_SETTINGS_NAV):
             b = ctk.CTkButton(
-                nav, text=f"  {label}", font=("Segoe UI", 11),
+                nav, text=f"  {label}", font=FONT,
                 fg_color="transparent", hover_color=_GLASS_HOVER,
-                text_color=DIM, anchor="w", height=38, corner_radius=0,
+                text_color=DIM, anchor="w", height=36, corner_radius=0,
                 command=lambda k=key: self._show_section(k),
             )
             b.pack(fill="x", padx=0, pady=(1 if i else 8, 0))
@@ -182,7 +182,7 @@ class SettingsDialog(ctk.CTkToplevel):
 
         ctk.CTkLabel(theme_frame,
                      text="Themes change how agent roles are displayed throughout the UI.",
-                     font=("Segoe UI", 9), text_color="#555555"
+                     font=("Segoe UI", 9), text_color=DIM
                      ).grid(row=1, column=0, columnspan=2, padx=12, pady=(0, 10), sticky="w")
 
         # Section: Custom Agent Names
@@ -208,7 +208,7 @@ class SettingsDialog(ctk.CTkToplevel):
             ctk.CTkLabel(names_frame, text=f"{role}:", font=("Consolas", 10),
                          text_color=DIM, anchor="e", width=110
                          ).grid(row=i, column=0, padx=(10, 6), pady=2, sticky="e")
-            entry = ctk.CTkEntry(names_frame, font=FONT_SM, fg_color="#111111",
+            entry = ctk.CTkEntry(names_frame, font=FONT_SM, fg_color=_GLASS_BG,
                                  border_color=_GLASS_BORDER, text_color=TEXT,
                                  placeholder_text=theme_default, height=28)
             entry.grid(row=i, column=1, sticky="ew", padx=(0, 10), pady=2)
@@ -246,7 +246,7 @@ class SettingsDialog(ctk.CTkToplevel):
         ).pack(padx=12, pady=(12, 4), anchor="w")
         ctk.CTkLabel(behavior_frame,
                      text="When ON, complex analysis routes through Claude API instead of local LLM.",
-                     font=("Segoe UI", 9), text_color="#555555"
+                     font=("Segoe UI", 9), text_color=DIM
                      ).pack(padx=12, pady=(0, 12), anchor="w")
 
         # Section: Ingestion
@@ -262,7 +262,7 @@ class SettingsDialog(ctk.CTkToplevel):
                      text_color=TEXT).grid(row=0, column=0, padx=12, pady=(12, 4), sticky="w")
         self._ingest_path_var = ctk.StringVar(value=ingest_path)
         ctk.CTkEntry(ingest_frame, textvariable=self._ingest_path_var,
-                     font=("Consolas", 9), fg_color="#111111",
+                     font=("Consolas", 9), fg_color=_GLASS_BG,
                      border_color=_GLASS_BORDER, text_color=TEXT, height=28
                      ).grid(row=1, column=0, columnspan=2, sticky="ew",
                             padx=12, pady=(0, 4))
@@ -281,7 +281,7 @@ class SettingsDialog(ctk.CTkToplevel):
 
         ctk.CTkLabel(ingest_frame,
                      text="Files from this folder appear in the Ingestion tab for import into RAG.",
-                     font=("Segoe UI", 9), text_color="#555555"
+                     font=("Segoe UI", 9), text_color=DIM
                      ).grid(row=3, column=0, columnspan=2, padx=12, pady=(0, 10), sticky="w")
 
         # Section: Visible Tabs
@@ -432,7 +432,7 @@ class SettingsDialog(ctk.CTkToplevel):
                      ).pack(padx=12, pady=(12, 4), anchor="w")
         ctk.CTkLabel(llm_frame,
                      text="Select the Ollama model used by fleet workers for local inference.",
-                     font=("Segoe UI", 9), text_color="#555555"
+                     font=("Segoe UI", 9), text_color=DIM
                      ).pack(padx=12, pady=(0, 6), anchor="w")
         ctk.CTkButton(llm_frame, text="Open Model Selector", font=FONT_SM,
                       width=160, height=30, fg_color=BG3, hover_color=BG2,
@@ -458,14 +458,14 @@ class SettingsDialog(ctk.CTkToplevel):
             progress_color=GREEN, button_color=TEXT,
         ).grid(row=0, column=0, sticky="w")
         ctk.CTkLabel(sd15_row, text="~4 GB VRAM  |  ~30s/image  |  512x512",
-                     font=("Consolas", 9), text_color="#555555"
+                     font=("Consolas", 9), text_color=DIM
                      ).grid(row=0, column=1, padx=(12, 0), sticky="w")
 
         sd15_detail = ctk.CTkFrame(diff_frame, fg_color="transparent")
         sd15_detail.pack(fill="x", padx=24, pady=(2, 0))
         ctk.CTkLabel(sd15_detail,
                      text="Fast local generation on GPU. Good for iteration and drafts.",
-                     font=("Segoe UI", 9), text_color="#444444"
+                     font=("Segoe UI", 9), text_color=DIM
                      ).pack(anchor="w")
 
         # SDXL toggle
@@ -480,14 +480,14 @@ class SettingsDialog(ctk.CTkToplevel):
             progress_color=ORANGE, button_color=TEXT,
         ).grid(row=0, column=0, sticky="w")
         ctk.CTkLabel(sdxl_row, text="~12 GB RAM  |  ~10-15 min/image  |  768x768",
-                     font=("Consolas", 9), text_color="#555555"
+                     font=("Consolas", 9), text_color=DIM
                      ).grid(row=0, column=1, padx=(12, 0), sticky="w")
 
         sdxl_detail = ctk.CTkFrame(diff_frame, fg_color="transparent")
         sdxl_detail.pack(fill="x", padx=24, pady=(2, 0))
         ctk.CTkLabel(sdxl_detail,
                      text="Higher quality output on CPU. Slow but no VRAM cost.",
-                     font=("Segoe UI", 9), text_color="#444444"
+                     font=("Segoe UI", 9), text_color=DIM
                      ).pack(anchor="w")
 
         # Default model selector
@@ -513,7 +513,7 @@ class SettingsDialog(ctk.CTkToplevel):
         self._diff_steps_var = ctk.StringVar(
             value=str(diff_settings.get("default_steps", 30)))
         ctk.CTkEntry(params_row, textvariable=self._diff_steps_var,
-                     font=FONT_SM, fg_color="#111111", border_color=_GLASS_BORDER,
+                     font=FONT_SM, fg_color=_GLASS_BG, border_color=_GLASS_BORDER,
                      text_color=TEXT, width=50, height=28
                      ).pack(side="left", padx=(4, 16))
 
@@ -522,7 +522,7 @@ class SettingsDialog(ctk.CTkToplevel):
         self._diff_guidance_var = ctk.StringVar(
             value=str(diff_settings.get("default_guidance", 7.5)))
         ctk.CTkEntry(params_row, textvariable=self._diff_guidance_var,
-                     font=FONT_SM, fg_color="#111111", border_color=_GLASS_BORDER,
+                     font=FONT_SM, fg_color=_GLASS_BG, border_color=_GLASS_BORDER,
                      text_color=TEXT, width=50, height=28
                      ).pack(side="left", padx=(4, 0))
 
@@ -533,7 +533,7 @@ class SettingsDialog(ctk.CTkToplevel):
 
         ctk.CTkLabel(up_frame,
                      text="Apply after base 512x512 generation to increase resolution.",
-                     font=("Segoe UI", 9), text_color="#555555"
+                     font=("Segoe UI", 9), text_color=DIM
                      ).pack(padx=12, pady=(10, 6), anchor="w")
 
         # Upscale method
@@ -550,13 +550,13 @@ class SettingsDialog(ctk.CTkToplevel):
         ).pack(side="left", padx=(8, 0))
 
         # Method descriptions
-        desc_frame = ctk.CTkFrame(up_frame, fg_color="#111111", corner_radius=4)
+        desc_frame = ctk.CTkFrame(up_frame, fg_color=_GLASS_BG, corner_radius=4)
         desc_frame.pack(fill="x", padx=12, pady=(4, 8))
         ctk.CTkLabel(desc_frame,
                      text="none     — output at base resolution (512x512)\n"
                           "refine   — img2img re-pass at higher res (~30s/pass, same model)\n"
                           "x4       — SD upscaler 512→2048 (~90s, ~3 GB extra download)",
-                     font=("Consolas", 9), text_color="#555555", justify="left"
+                     font=("Consolas", 9), text_color=DIM, justify="left"
                      ).pack(padx=10, pady=8, anchor="w")
 
         # Refine params
@@ -568,7 +568,7 @@ class SettingsDialog(ctk.CTkToplevel):
         self._upscale_passes_var = ctk.StringVar(
             value=str(diff_settings.get("default_upscale_passes", 1)))
         ctk.CTkEntry(refine_row, textvariable=self._upscale_passes_var,
-                     font=FONT_SM, fg_color="#111111", border_color=_GLASS_BORDER,
+                     font=FONT_SM, fg_color=_GLASS_BG, border_color=_GLASS_BORDER,
                      text_color=TEXT, width=40, height=28
                      ).pack(side="left", padx=(4, 14))
 
@@ -577,7 +577,7 @@ class SettingsDialog(ctk.CTkToplevel):
         self._upscale_factor_var = ctk.StringVar(
             value=str(diff_settings.get("default_upscale_factor", 1.5)))
         ctk.CTkEntry(refine_row, textvariable=self._upscale_factor_var,
-                     font=FONT_SM, fg_color="#111111", border_color=_GLASS_BORDER,
+                     font=FONT_SM, fg_color=_GLASS_BG, border_color=_GLASS_BORDER,
                      text_color=TEXT, width=50, height=28
                      ).pack(side="left", padx=(4, 14))
 
@@ -586,12 +586,12 @@ class SettingsDialog(ctk.CTkToplevel):
         self._upscale_strength_var = ctk.StringVar(
             value=str(diff_settings.get("default_upscale_strength", 0.35)))
         ctk.CTkEntry(refine_row, textvariable=self._upscale_strength_var,
-                     font=FONT_SM, fg_color="#111111", border_color=_GLASS_BORDER,
+                     font=FONT_SM, fg_color=_GLASS_BG, border_color=_GLASS_BORDER,
                      text_color=TEXT, width=50, height=28
                      ).pack(side="left", padx=(4, 0))
 
         # Pipeline preview
-        preview_frame = ctk.CTkFrame(up_frame, fg_color="#111111", corner_radius=4)
+        preview_frame = ctk.CTkFrame(up_frame, fg_color=_GLASS_BG, corner_radius=4)
         preview_frame.pack(fill="x", padx=12, pady=(4, 10))
         self._pipeline_preview = ctk.CTkLabel(
             preview_frame, text="", font=("Consolas", 9), text_color=GOLD, anchor="w")
@@ -636,7 +636,7 @@ class SettingsDialog(ctk.CTkToplevel):
         gpu_frame.grid(row=1, column=0, sticky="ew", padx=16, pady=(0, 8))
         ctk.CTkLabel(gpu_frame,
                      text="Control GPU power limits and monitor thermals.",
-                     font=("Segoe UI", 9), text_color="#555555"
+                     font=("Segoe UI", 9), text_color=DIM
                      ).pack(padx=12, pady=(10, 4), anchor="w")
         ctk.CTkButton(gpu_frame, text="Open GPU Power Manager", font=FONT_SM,
                       width=180, height=30, fg_color=BG3, hover_color=BG2,
@@ -682,7 +682,7 @@ class SettingsDialog(ctk.CTkToplevel):
         ctk.CTkLabel(inner,
                      text="Add, rotate, and manage API keys for Anthropic, Gemini,\n"
                           "Stability AI, Replicate, and other services.",
-                     font=("Segoe UI", 10), text_color="#555555", justify="center"
+                     font=("Segoe UI", 10), text_color=DIM, justify="center"
                      ).pack(padx=24, pady=(0, 12))
         ctk.CTkButton(inner, text="Open Key Manager", font=("Segoe UI", 11),
                       width=160, height=34, fg_color=ACCENT, hover_color=ACCENT_H,
@@ -708,7 +708,7 @@ class SettingsDialog(ctk.CTkToplevel):
         ctk.CTkLabel(inner,
                      text="Configure the evaluator-optimizer review pass.\n"
                           "Enable/disable reviews and choose provider (API, subscription, local).",
-                     font=("Segoe UI", 10), text_color="#555555", justify="center"
+                     font=("Segoe UI", 10), text_color=DIM, justify="center"
                      ).pack(padx=24, pady=(0, 12))
         ctk.CTkButton(inner, text="Open Review Settings", font=("Segoe UI", 11),
                       width=170, height=34, fg_color=ACCENT, hover_color=ACCENT_H,
@@ -728,7 +728,7 @@ class SettingsDialog(ctk.CTkToplevel):
                           anchor="w", command=cmd).pack(side="left")
             if desc:
                 ctk.CTkLabel(frame, text=desc, font=("Segoe UI", 9),
-                             text_color="#555555").pack(side="left", padx=(10, 0))
+                             text_color=DIM).pack(side="left", padx=(10, 0))
 
         # Fleet Recovery
         self._section_header(panel, "Fleet Recovery")
