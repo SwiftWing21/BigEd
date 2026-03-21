@@ -69,7 +69,7 @@ Each skill is a single Python file in `fleet/skills/`. Skills are auto-discovere
 SKILL_NAME = "my_skill"
 DESCRIPTION = "What this skill does in one sentence."
 
-def execute(task, context):
+def run(payload: dict, config: dict) -> dict:
     """Main entry point. Returns a result dict."""
     ...
 ```

@@ -1005,6 +1005,7 @@ def main():
     backup_parser = subparsers.add_parser("backup", help="Manual backup")
     backup_parser.add_argument("--list", action="store_true", help="List recent backups")
     backup_parser.add_argument("--restore", metavar="ID", help="Restore from backup ID")
+    backup_parser.add_argument("--confirm", action="store_true", help="Confirm destructive restore")
 
     args = parser.parse_args()
 
@@ -1086,7 +1087,31 @@ def main():
                 size = b.get("total_size_bytes", 0) / 1024 / 1024
                 print(f"  {b['id']}  {b.get('trigger', '?'):<12}  {size:.1f} MB")
         elif args.restore:
-            print(f"Restore from {args.restore} — not yet implemented (manual copy from ~/BigEd-backups/{args.restore}/)")
+            import shutil
+            from pathlib import Path
+            backup_root = os.path.expanduser("~/BigEd-backups")
+            src = os.path.join(backup_root, args.restore)
+            if not os.path.isdir(src):
+                print(f"Backup not found: {src}")
+                sys.exit(1)
+            if not args.confirm:
+                print(f"This will overwrite fleet.db, rag.db, fleet.toml, and knowledge/ with backup '{args.restore}'.")
+                print("Re-run with --confirm to proceed.")
+                sys.exit(0)
+            fleet_root = Path(__file__).parent
+            for fname in ["fleet.db", "rag.db", "fleet.toml"]:
+                s = os.path.join(src, fname)
+                if os.path.exists(s):
+                    shutil.copy2(s, fleet_root / fname)
+                    print(f"  Restored {fname}")
+            knowledge_src = os.path.join(src, "knowledge")
+            if os.path.isdir(knowledge_src):
+                dest = fleet_root / "knowledge"
+                if dest.exists():
+                    shutil.rmtree(dest)
+                shutil.copytree(knowledge_src, dest)
+                print("  Restored knowledge/")
+            print("Restore complete. Restart the fleet.")
         else:
             result = bm.perform_backup(trigger="cli")
             size = result.get("total_size_bytes", 0) / 1024 / 1024

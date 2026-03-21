@@ -2,7 +2,7 @@
 
 > One-click local AI fleet deployment. No terminal required.
 
-BigEd CC eliminates manual CLI setup for local AI. Deploy Ollama models and a 74-skill agent fleet with one click. Use OAuth Manual Mode (Claude Code / Gemini) with pre-loaded context from agent requests, or let the fleet work autonomously via API.
+BigEd CC eliminates manual CLI setup for local AI. Deploy Ollama models and a 80-skill agent fleet with one click. Use OAuth Manual Mode (Claude Code / Gemini) with pre-loaded context from agent requests, or let the fleet work autonomously via API.
 
 **All platforms. Enterprise-ready. SOC 2 aligned.**
 
@@ -11,7 +11,7 @@ BigEd CC eliminates manual CLI setup for local AI. Deploy Ollama models and a 74
 ## Features
 
 - **One-Click Setup** — Auto-installs Python, Ollama, models, and dependencies
-- **74+ AI Skills** — Code review, security audit, web research, ML training, and more
+- **80+ AI Skills** — Code review, security audit, web research, ML training, and more
 - **Dynamic Agent Scaling** — 4 core agents + demand-based scaling (up to 16)
 - **Multi-Model Support** — Ollama (local), Claude, Gemini, MiniMax M2.5
 - **Manual Mode** — OAuth integration for Claude Code and Gemini sessions
@@ -45,12 +45,12 @@ BigEd CC
 │   ├── ui/             — Boot sequence, settings, consoles, dialogs
 │   ├── modules/        — Intelligence, Ingestion, Outputs (pluggable)
 │   └── fonts/          — Custom pixel fonts
-├── fleet/              — 74-skill AI worker fleet
+├── fleet/              — 80-skill AI worker fleet
 │   ├── supervisor.py   — Process lifecycle + dynamic scaling
 │   ├── hw_supervisor.py — Dr. Ders (thermal + model management)
 │   ├── dashboard.py    — Web dashboard (localhost:5555)
 │   ├── worker.py       — Generic task executor
-│   ├── skills/         — 74 registered skills
+│   ├── skills/         — 80 registered skills
 │   └── knowledge/      — Agent-generated artifacts
 ├── autoresearch/       — ML training pipeline (inspired by Karpathy)
 ├── scripts/            — Setup scripts (Windows/Linux/macOS)
