@@ -953,8 +953,13 @@ class CustomTabBar(ctk.CTkFrame):
             _widget.bind("<Button-4>", self._on_mousewheel)
             _widget.bind("<Button-5>", self._on_mousewheel)
 
-        # Recalculate visible tabs when bar actually gets its real size
-        self._bar.bind("<Configure>", lambda e: self._scroll_tabs(0))
+        # Recalculate visible tabs when bar gets its real size (debounced)
+        self._configure_after_id = None
+        def _on_bar_configure(e):
+            if self._configure_after_id:
+                self.after_cancel(self._configure_after_id)
+            self._configure_after_id = self.after(100, lambda: self._scroll_tabs(0))
+        self._bar.bind("<Configure>", _on_bar_configure)
 
         # Full-width 1-px separator beneath the strip
         self._sep = ctk.CTkFrame(self, fg_color=BG3, height=1, corner_radius=0)
