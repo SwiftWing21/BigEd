@@ -76,7 +76,9 @@ HALLUCINATION_MARKERS = [
 ]
 
 
-def run(payload: dict, config: dict) -> dict:
+def run(payload: dict, config: dict, log=None) -> dict:
+    if log is None:
+        log = logging.getLogger(__name__)
     action = payload.get("action", "audit")
 
     if action == "audit":

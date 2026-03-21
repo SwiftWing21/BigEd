@@ -193,6 +193,12 @@ def test_usage_tracking():
         cache_read_tokens=500, cache_create_tokens=0,
         cost_usd=0.006, task_id=None, agent="smoke_agent",
     )
+    # Flush async usage queue before checking
+    try:
+        from cost_tracking import flush_usage_queue
+        flush_usage_queue(timeout=3)
+    except Exception:
+        import time; time.sleep(1)
     summary = db.get_usage_summary(period="day", group_by="skill")
     found = any(r["skill"] == "smoke_usage_test" for r in summary)
     if not found:

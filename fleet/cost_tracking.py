@@ -49,6 +49,14 @@ def _start_usage_logger():
     t.start()
 
 
+def flush_usage_queue(timeout=5):
+    """Block until the usage queue is empty (for testing/shutdown)."""
+    import time
+    deadline = time.time() + timeout
+    while not _usage_queue.empty() and time.time() < deadline:
+        time.sleep(0.1)
+
+
 def _log_usage_sync(skill, model, input_tokens, output_tokens,
                     cache_read_tokens=0, cache_create_tokens=0,
                     cost_usd=0.0, task_id=None, agent=None,
