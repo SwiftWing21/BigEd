@@ -529,6 +529,21 @@ def main():
                 elif msg_type == "human_response":
                     tid = body.get("task_id")
                     log.info(f"Human response received for task {tid}")
+                    # 0.060.00b: DITL — log HITL review to PHI audit if enabled
+                    try:
+                        if config.get("ditl", {}).get("enabled") and config.get("ditl", {}).get("audit_all_phi_access"):
+                            import sqlite3 as _sqlite3
+                            _phi_conn = _sqlite3.connect(str(FLEET_DIR / "fleet.db"), timeout=5)
+                            try:
+                                _phi_conn.execute(
+                                    "INSERT INTO phi_audit (user_id, action, data_scope, model_used) VALUES (?, ?, ?, ?)",
+                                    ("operator", "hitl_review", f"task_{tid}", config.get("models", {}).get("local", ""))
+                                )
+                                _phi_conn.commit()
+                            finally:
+                                _phi_conn.close()
+                    except Exception:
+                        pass  # PHI audit logging must never block task processing
                 elif msg_type == "config_reload":
                     log.info("Reloading config")
                     config = load_config()

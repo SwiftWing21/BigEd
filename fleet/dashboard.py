@@ -68,6 +68,8 @@ _alert_lock = threading.Lock()
 _sse_clients = []
 _monitor_start_time = time.time()
 
+# Federation state — peer heartbeats tracked in memory
+_federation_peers = {}
 
 # ── In-memory rate limiter for expensive endpoints ────────────────────────
 _rate_limits = {}  # endpoint -> (last_call_time, count)
@@ -1627,6 +1629,69 @@ def worker_enable(name):
         return jsonify({"error": str(e)}), 500
 
 
+# ── System Recommendations (0.052.00b) ────────────────────────────────────────
+
+@app.route("/api/recommendations")
+def api_recommendations():
+    """System optimization recommendations (never auto-applied)."""
+    recs = []
+    try:
+        conn = get_conn()
+        # Rec 1: Cost optimization — flag expensive skills
+        try:
+            expensive = conn.execute("""
+                SELECT skill, AVG(cost_usd) as avg_cost, COUNT(*) as calls
+                FROM usage WHERE created_at >= datetime('now', '-7 days')
+                GROUP BY skill HAVING avg_cost > 0.01 ORDER BY avg_cost DESC LIMIT 3
+            """).fetchall()
+            for r in expensive:
+                recs.append({
+                    "type": "cost", "skill": r["skill"],
+                    "message": f"'{r['skill']}' costs ${r['avg_cost']:.3f}/call ({r['calls']} calls/week). Consider routing to cheaper model.",
+                    "action": "review_model_tier",
+                })
+        except Exception:
+            pass
+
+        # Rec 2: Idle agent optimization — too many agents sitting idle
+        try:
+            idle = conn.execute("""
+                SELECT name, last_heartbeat FROM agents
+                WHERE status='IDLE' AND last_heartbeat < datetime('now', '-1 hour')
+            """).fetchall()
+            if len(idle) > 3:
+                recs.append({
+                    "type": "scaling",
+                    "message": f"{len(idle)} agents idle >1 hour. Consider scaling down.",
+                    "action": "scale_down",
+                })
+        except Exception:
+            pass
+
+        # Rec 3: Stale prompts — skills with no usage in 30 days
+        try:
+            stale = conn.execute("""
+                SELECT skill, MAX(created_at) as last_used
+                FROM usage
+                GROUP BY skill
+                HAVING last_used < datetime('now', '-30 days')
+                ORDER BY last_used ASC LIMIT 5
+            """).fetchall()
+            for r in stale:
+                recs.append({
+                    "type": "frequency",
+                    "message": f"'{r['skill']}' hasn't been used since {r['last_used'][:10]}. Review if still needed.",
+                    "action": "review_frequency",
+                })
+        except Exception:
+            pass
+
+        conn.close()
+    except Exception:
+        pass
+    return jsonify({"recommendations": recs, "auto_apply": False})
+
+
 def _update_fleet_toml_disabled(disabled_list):
     """Update the disabled_agents list in fleet.toml."""
     toml_path = FLEET_DIR / "fleet.toml"
@@ -1638,6 +1703,30 @@ def _update_fleet_toml_disabled(disabled_list):
         content, count=1, flags=re.MULTILINE
     )
     toml_path.write_text(new_content, encoding="utf-8")
+
+
+# ── Federation (0.085.00b) ─────────────────────────────────────────────────
+
+@app.route("/api/federation/heartbeat", methods=["POST"])
+def api_federation_heartbeat():
+    """Receive heartbeat from peer fleet."""
+    data = request.get_json(silent=True) or {}
+    fleet_id = data.get("fleet_id") or "unknown"
+    _federation_peers[fleet_id] = {
+        "agents": data.get("agents", 0),
+        "pending": data.get("pending", 0),
+        "last_seen": time.time(),
+    }
+    return jsonify({"ok": True})
+
+
+@app.route("/api/federation/peers")
+def api_federation_peers():
+    """List known federation peers and their online status."""
+    now = time.time()
+    peers = {k: {**v, "online": now - v["last_seen"] < 120}
+             for k, v in _federation_peers.items()}
+    return jsonify(peers)
 
 
 # ── Entry ────────────────────────────────────────────────────────────────────

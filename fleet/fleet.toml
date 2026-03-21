@@ -40,6 +40,7 @@ require_baa = true
 disable_at_own_risk = false
 audit_all_phi_access = true
 ai_disclaimer = true
+state_disclosure = ""  # TX | CA | none — state-specific AI disclosure requirements
 
 [ditl.baa]
 anthropic = false
@@ -322,6 +323,8 @@ config = {path = "fleet/fleet.toml", access = "read"}
 backups = {path = "~/BigEd-backups", access = "full"}
 workspace = {path = "fleet/knowledge/code_writes/workspace", access = "full"}
 screenshots = {path = "fleet/knowledge/screenshots", access = "read_write"}
+ditl_records = {path = "fleet/knowledge/ditl", access = "read_write"}
+ditl_audit = {path = "fleet/logs/phi_audit", access = "read"}
 
 [filesystem.overrides]
 deploy_skill = {zones = ["skills"], access = "full"}

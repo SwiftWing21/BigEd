@@ -11,6 +11,7 @@ Actions:
   grade       — show quality grade report (A-F scale per skill/agent)
   track       — add tracking notes for a specific task/skill
   hallcheck   — deep hallucination check on a specific task result
+  sop         — generate Standard Operating Procedures from fleet behavior patterns
 
 Grading Scale:
   A: avg IQ >= 0.85 (excellent, consistent quality)
@@ -86,6 +87,8 @@ def run(payload: dict, config: dict) -> dict:
         return _track_note(payload, config, log)
     elif action == "hallcheck":
         return _hallucination_check(payload, config, log)
+    elif action == "sop":
+        return _generate_sop(config, log)
     else:
         return {"error": f"Unknown action: {action}"}
 
@@ -408,6 +411,56 @@ def _hallucination_check(payload, config, log) -> dict:
         "deep_findings": deep_findings,
         "result_preview": result[:200],
     }
+
+
+def _generate_sop(config, log) -> dict:
+    """Generate Standard Operating Procedures from fleet behavior patterns.
+
+    Analyzes parent→child task sequences in the DB to discover common workflows.
+    Sequences observed >= 3 times are captured as SOPs and saved to a markdown
+    report in knowledge/reports/.
+    """
+    conn = _get_conn()
+    conn.row_factory = sqlite3.Row
+
+    # Analyze common task sequences (parent → child)
+    sequences = conn.execute("""
+        SELECT t1.type as step1, t2.type as step2, COUNT(*) as frequency
+        FROM tasks t1 JOIN tasks t2 ON t1.id = t2.parent_id
+        WHERE t1.status = 'DONE' AND t2.status = 'DONE'
+        GROUP BY t1.type, t2.type
+        HAVING frequency >= 3
+        ORDER BY frequency DESC LIMIT 10
+    """).fetchall()
+
+    sops = []
+    for seq in sequences:
+        sops.append({
+            "workflow": f"{seq['step1']} -> {seq['step2']}",
+            "frequency": seq["frequency"],
+            "description": (
+                f"When {seq['step1']} completes, {seq['step2']} typically follows "
+                f"({seq['frequency']} times observed)"
+            ),
+        })
+
+    conn.close()
+
+    # Save SOP report
+    report_dir = FLEET_DIR / "knowledge" / "reports"
+    report_dir.mkdir(parents=True, exist_ok=True)
+    ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+    report = report_dir / f"sop_{ts}.md"
+    md = "# Auto-Generated SOPs\n\n"
+    if sops:
+        for s in sops:
+            md += f"## {s['workflow']}\n{s['description']}\n\n"
+    else:
+        md += "_No recurring task sequences found (need >= 3 occurrences of parent->child patterns)._\n"
+    report.write_text(md, encoding="utf-8")
+
+    log.info(f"SOP generation: {len(sops)} workflows found, saved to {report.name}")
+    return {"sops": sops, "report": str(report)}
 
 
 def _scan_for_hallucinations(text: str) -> list:

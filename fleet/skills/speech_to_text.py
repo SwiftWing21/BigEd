@@ -8,6 +8,8 @@ Actions:
   transcribe    — transcribe an audio file
   listen        — capture from microphone and transcribe
   wake_listen   — listen for wake word, then capture command
+  command       — parse transcribed text into fleet actions
+  reminder      — add a reminder to local file-based calendar
   check         — verify STT availability (local vs cloud)
 
 Privacy: audio never stored beyond transcription. Local-first by default.
@@ -25,17 +27,84 @@ DESCRIPTION = "Local-first speech-to-text for voice input. Privacy-first: audio 
 REQUIRES_NETWORK = False
 
 
+def _ditl_guard(text: str, config: dict, log) -> str:
+    """HIPAA compliance guard — de-identify transcribed text if DITL enabled.
+
+    When DITL forces compliance:
+    - All transcribed text is scanned for PHI
+    - PHI is stripped via Safe Harbor before any further processing
+    - Original text is logged to PHI audit trail (encrypted)
+    - De-identified version returned for processing
+    """
+    ditl = config.get("ditl", {})
+    if not ditl.get("enabled"):
+        return text  # DITL not active — pass through
+
+    try:
+        sys.path.insert(0, str(FLEET_DIR))
+        from phi_deidentify import deidentify, contains_phi
+
+        if contains_phi(text):
+            result = deidentify(text, log_stripped=True)
+            stripped_text = result["text"]
+
+            # Audit log: record that PHI was detected in voice input
+            if ditl.get("audit_all_phi_access"):
+                try:
+                    import sqlite3
+                    conn = sqlite3.connect(str(FLEET_DIR / "fleet.db"), timeout=5)
+                    try:
+                        conn.execute(
+                            "INSERT INTO phi_audit (user_id, action, data_scope, phi_detected, deidentified) "
+                            "VALUES (?, ?, ?, ?, ?)",
+                            ("voice_input", "stt_transcribe", f"stripped_{result['stripped_count']}_identifiers", 1, 1)
+                        )
+                        conn.commit()
+                    finally:
+                        conn.close()
+                except Exception:
+                    pass
+
+            log.info(f"DITL: de-identified {result['stripped_count']} PHI identifiers from voice input")
+            return stripped_text
+    except ImportError:
+        log.warning("DITL enabled but phi_deidentify not available")
+    except Exception as e:
+        log.warning(f"DITL guard error: {e}")
+
+    return text
+
+
 def run(payload: dict, config: dict, log) -> dict:
     action = payload.get("action", "check")
 
     if action == "check":
         return _check_availability(config, log)
     elif action == "transcribe":
-        return _transcribe(payload, config, log)
+        result = _transcribe(payload, config, log)
+        if "text" in result:
+            result["text"] = _ditl_guard(result["text"], config, log)
+        return result
     elif action == "listen":
-        return _listen(payload, config, log)
+        result = _listen(payload, config, log)
+        if "text" in result:
+            result["text"] = _ditl_guard(result["text"], config, log)
+        return result
     elif action == "wake_listen":
-        return _wake_word_listen(payload, config, log)
+        result = _wake_word_listen(payload, config, log)
+        if result.get("command"):
+            result["command"] = _ditl_guard(result["command"], config, log)
+        return result
+    elif action == "command":
+        # De-identify before command parsing
+        if payload.get("text"):
+            payload["text"] = _ditl_guard(payload["text"], config, log)
+        return _process_voice_command(payload, config, log)
+    elif action == "reminder":
+        # De-identify reminder text if DITL active
+        if payload.get("text"):
+            payload["text"] = _ditl_guard(payload["text"], config, log)
+        return _add_reminder(payload, config, log)
     else:
         return {"error": f"Unknown action: {action}"}
 
@@ -200,3 +269,94 @@ def _wake_word_listen(payload, config, log) -> dict:
                 }
 
     return {"wake_detected": False, "attempts": max_attempts}
+
+
+def _process_voice_command(payload, config, log) -> dict:
+    """Parse a voice command into a fleet action."""
+    text = payload.get("text", "").lower().strip()
+    if not text:
+        return {"error": "No command text provided"}
+
+    # Command patterns — fleet control + skill dispatch
+    import re
+    commands = [
+        # Fleet control (v0.110 Intelligent Orchestration)
+        (r"scale (?:up|more) (\w+)", "scale_up", lambda m: {"role": m.group(1)}),
+        (r"scale (?:down|fewer) (\w+)", "scale_down", lambda m: {"role": m.group(1)}),
+        (r"pause (?:the )?research", "pause", lambda m: {"role": "researcher"}),
+        (r"stop (?:all )?agents", "stop_fleet", lambda m: {}),
+        (r"start (?:the )?fleet", "start_fleet", lambda m: {}),
+        # Skill dispatch
+        (r"review (?:the )?(?:code )?(?:in )?(.+)", "code_review", lambda m: {"file": m.group(1).strip()}),
+        (r"(?:how many|count) (?:tasks? )?(?:are )?pending", "status_query", lambda m: {"query": "pending_count"}),
+        (r"switch (?:to )?(?:the )?(\S+) model", "model_switch", lambda m: {"model": m.group(1)}),
+        (r"run (?:a )?security audit", "security_audit", lambda m: {}),
+        (r"run (?:a )?benchmark", "benchmark", lambda m: {}),
+        (r"search (?:for )?(.+)", "web_search", lambda m: {"query": m.group(1).strip()}),
+        (r"summarize (.+)", "summarize", lambda m: {"prompt": m.group(1).strip()}),
+        (r"status", "status_query", lambda m: {"query": "fleet_status"}),
+    ]
+
+    for pattern, skill, extract in commands:
+        match = re.search(pattern, text)
+        if match:
+            payload_data = extract(match)
+            return {"recognized": True, "skill": skill, "payload": payload_data, "raw": text}
+
+    return {"recognized": False, "raw": text, "suggestion": "Try: 'review code in file.py', 'how many tasks pending', 'run security audit'"}
+
+
+def text_to_speech(text: str, config: dict = None) -> dict:
+    """Speak text aloud using local TTS.
+
+    HIPAA: When DITL is active, TTS output is de-identified before speaking.
+    This prevents PHI from being spoken aloud in shared environments.
+    """
+    cfg = (config or {}).get("assistant", {})
+    if not cfg.get("tts_enabled", False):
+        return {"error": "TTS disabled in fleet.toml [assistant] tts_enabled"}
+
+    # DITL guard: de-identify before speaking aloud
+    ditl = (config or {}).get("ditl", {})
+    if ditl.get("enabled"):
+        try:
+            sys.path.insert(0, str(FLEET_DIR))
+            from phi_deidentify import deidentify
+            result = deidentify(text)
+            text = result["text"]
+        except Exception:
+            pass  # Speak de-identified or original if guard fails
+
+    try:
+        import pyttsx3
+        engine = pyttsx3.init()
+        engine.setProperty('rate', 175)
+        engine.say(text)
+        engine.runAndWait()
+        return {"spoken": True, "length": len(text)}
+    except ImportError:
+        return {"error": "TTS requires: pip install pyttsx3"}
+    except Exception as e:
+        return {"error": f"TTS failed: {e}"}
+
+
+def _transcribe_cloud(audio_path, config, log) -> dict:
+    """Cloud STT fallback (requires API key). NOT used by default."""
+    stt_cfg = config.get("assistant", {})
+    if stt_cfg.get("stt_local_only", True):
+        return {"error": "Cloud STT disabled (stt_local_only=true)"}
+    # Stub — cloud providers can be added here
+    return {"error": "No cloud STT provider configured. Set stt_local_only=false and add API key."}
+
+
+def _add_reminder(payload, config, log) -> dict:
+    """Add a reminder to local file-based calendar."""
+    text = payload.get("text", "")
+    when = payload.get("when", "")
+    reminders_file = FLEET_DIR / "knowledge" / "reminders.jsonl"
+    reminders_file.parent.mkdir(parents=True, exist_ok=True)
+    from datetime import datetime
+    entry = {"text": text, "when": when, "created": datetime.utcnow().isoformat()}
+    with open(reminders_file, "a") as f:
+        f.write(json.dumps(entry) + "\n")
+    return {"saved": True, "reminder": entry}

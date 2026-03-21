@@ -226,6 +226,36 @@ def _next_instance_name(base_role: str, running: set) -> str:
     return None
 
 
+def _predict_queue_growth() -> int:
+    """Predict queue growth based on recent task creation rate.
+
+    Compares task creation in the last 5 minutes vs the prior 5 minutes.
+    If acceleration is detected (>1.5x increase and >3 tasks), predicts
+    additional tasks to inform proactive scaling decisions.
+    """
+    try:
+        import sqlite3
+        db_path = Path(__file__).parent / "fleet.db"
+        conn = sqlite3.connect(str(db_path), timeout=5)
+        try:
+            # Tasks created in last 5 min vs 5 min before that
+            recent = conn.execute(
+                "SELECT COUNT(*) FROM tasks WHERE created_at >= datetime('now', '-5 minutes')"
+            ).fetchone()[0]
+            prior = conn.execute(
+                "SELECT COUNT(*) FROM tasks WHERE created_at >= datetime('now', '-10 minutes') "
+                "AND created_at < datetime('now', '-5 minutes')"
+            ).fetchone()[0]
+        finally:
+            conn.close()
+        # If acceleration detected, predict growth
+        if recent > prior * 1.5 and recent > 3:
+            return recent - prior  # Predicted additional tasks
+    except Exception:
+        pass
+    return 0
+
+
 def _should_scale_up(pending: int, running: set) -> list:
     """Return list of agent names to start based on queue depth and task types.
 
@@ -952,6 +982,7 @@ def main():
     last_sched_check = 0  # Manual Mode scheduler — poll at most once per minute
     last_config_reload = 0
     CONFIG_RELOAD_INTERVAL = 300  # reload fleet.toml every 5 minutes
+    last_federation_heartbeat = 0  # federation peer broadcast
     # v0.23 S3: Auto-Intelligence — periodic evolution + research dispatch
     # Intervals defined at module level: RESEARCH_INTERVAL (24h), EVOLUTION_INTERVAL (7d)
     global _last_research_trigger, _last_evolution_trigger, _last_results_mtime
@@ -977,6 +1008,12 @@ def main():
                         _last_busy[row["name"]] = now
                 except Exception:
                     pass
+
+                # Predictive scaling: inflate pending count if task creation is accelerating
+                predicted = _predict_queue_growth()
+                if predicted > 0:
+                    log.info(f"Predictive scaling: {predicted} additional tasks expected")
+                    pending += predicted  # Inflate pending count for scaling decision
 
                 # Scale UP: spin up dynamic agents when queue builds up
                 to_start = _should_scale_up(pending, running)
@@ -1298,6 +1335,30 @@ def main():
             try:
                 from config import reload_config
                 reload_config()
+            except Exception:
+                pass
+
+        # Federation: broadcast status to peers (every 60s)
+        if now - last_federation_heartbeat >= 60:
+            last_federation_heartbeat = now
+            try:
+                federation_cfg = config.get("federation", {})
+                if federation_cfg.get("enabled"):
+                    peers = federation_cfg.get("peers", [])
+                    for peer_url in peers:
+                        try:
+                            status = {"fleet_id": config.get("naming", {}).get("device_name", ""),
+                                      "agents": len(_get_running_workers()),
+                                      "pending": _count_pending_tasks(),
+                                      "timestamp": time.time()}
+                            body = json.dumps(status).encode()
+                            req = urllib.request.Request(
+                                f"{peer_url}/api/federation/heartbeat",
+                                data=body, method="POST",
+                                headers={"Content-Type": "application/json"})
+                            urllib.request.urlopen(req, timeout=3)
+                        except Exception:
+                            pass
             except Exception:
                 pass
 

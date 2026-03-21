@@ -370,6 +370,42 @@ def get_local_model_for_skill(skill_name: str, config: dict) -> str:
     return config.get("models", {}).get("local", "qwen3:8b")
 
 
+# ── v0.110 S1: ML-lite Task Routing (Intelligent Orchestration) ───────────────
+
+def get_optimal_agent_for_skill(skill_name: str, config: dict) -> str | None:
+    """ML-lite routing: recommend best agent for a skill based on historical IQ scores.
+
+    Analyzes the last 30 days of task history to find the agent with the highest
+    average intelligence_score for a given skill type. Requires at least 5 completed
+    tasks to avoid noisy recommendations. Returns the agent name or None if
+    insufficient data.
+    """
+    try:
+        import sqlite3
+        from pathlib import Path as _P
+        db_path = _P(__file__).parent / "fleet.db"
+        conn = sqlite3.connect(str(db_path), timeout=5)
+        try:
+            # Find agent with highest avg IQ for this skill type
+            row = conn.execute("""
+                SELECT assigned_to, AVG(intelligence_score) as avg_iq, COUNT(*) as tasks
+                FROM tasks
+                WHERE type = ? AND intelligence_score IS NOT NULL
+                AND created_at >= datetime('now', '-30 days')
+                AND assigned_to IS NOT NULL
+                GROUP BY assigned_to
+                HAVING tasks >= 5
+                ORDER BY avg_iq DESC LIMIT 1
+            """, (skill_name,)).fetchone()
+            if row:
+                return row[0]  # Best performing agent for this skill
+        finally:
+            conn.close()
+    except Exception:
+        pass
+    return None
+
+
 # v0.45: HA fallback cascade — if primary fails, try next provider
 FALLBACK_CHAIN = ["claude", "gemini", "minimax", "local"]
 
