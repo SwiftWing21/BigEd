@@ -4,13 +4,13 @@ Intelligence Module — System transparency, model controls, prompt queue, and e
 Panels:
   1. System Overview    — what BigEd CC can do, how skills/weights work
   2. Model Settings     — active model, keep_alive, tier preferences
-  3. Prompt Queue       — unattended round-robin prompt list (with scheduling + cost estimate)
+  3. Prompt Queue       — unattended round-robin prompt list
   4. Evaluation Display — how Claude/Gemini evaluation routines score outputs
   5. Cost Intelligence  — live spend, optimization recommendations
 """
-import datetime
 import json
 import os
+import sys
 import threading
 import time
 from pathlib import Path
@@ -24,6 +24,17 @@ try:
 except ImportError:
     FLEET_DIR = Path(__file__).resolve().parent.parent.parent.parent / "fleet"
 FLEET_TOML = FLEET_DIR / "fleet.toml"
+
+# Launcher dir — anchored to this file, not cwd
+_LAUNCHER_DIR = Path(__file__).resolve().parent.parent  # BigEd/launcher/
+if str(_LAUNCHER_DIR) not in sys.path:
+    sys.path.insert(0, str(_LAUNCHER_DIR))
+if str(FLEET_DIR) not in sys.path:
+    sys.path.insert(0, str(FLEET_DIR))
+try:
+    from data_access import FleetDB
+except ImportError:
+    FleetDB = None
 
 LABEL = "Intelligence"
 
@@ -49,13 +60,9 @@ class Module:
     """Intelligence module — system transparency + model controls + prompt queue."""
 
     LABEL = "Intelligence"
-    VERSION = "0.052"
+    VERSION = "0.051"
     DEFAULT_ENABLED = True
     DEPENDS_ON = []
-
-    # Schedule options and their interval in seconds (0 = immediate)
-    SCHEDULE_OPTIONS = ["Now", "Every 1h", "Every 4h", "Every 24h"]
-    SCHEDULE_INTERVALS = {"Now": 0, "Every 1h": 3600, "Every 4h": 14400, "Every 24h": 86400}
 
     def __init__(self, app):
         self._app = app
@@ -63,7 +70,6 @@ class Module:
         self._queue_running = False
         self._queue_loop_count = 0
         self._queue_max_loops = 1
-        self._queue_results_log = []  # recent task completion messages
 
     def build_tab(self, parent):
         """Build the Intelligence tab UI."""
@@ -119,126 +125,31 @@ class Module:
         models = config.get("models", {})
         tiers = config.get("models", {}).get("tiers", {})
 
-        # Editable fields: (label, toml_key_path, current_value)
-        field_defs = [
-            ("Active GPU Model", ("models", "local"),             models.get("local", "qwen3:8b")),
-            ("Conductor (CPU)",  ("models", "conductor_model"),   models.get("conductor_model", "qwen3:4b")),
-            ("Keep Alive (mins)",("models", "keep_alive_mins"),   str(models.get("keep_alive_mins", 30))),
-            ("Tier Default",     ("models", "tiers", "default"),  tiers.get("default", "qwen3:8b")),
-            ("Tier Low",         ("models", "tiers", "low"),      tiers.get("low", "qwen3:1.7b")),
-            ("Tier Critical",    ("models", "tiers", "critical"), tiers.get("critical", "qwen3:0.6b")),
-        ]
-
+        # Current model
         settings_grid = ctk.CTkFrame(card, fg_color="transparent")
         settings_grid.pack(fill="x", padx=12, pady=4)
         settings_grid.grid_columnconfigure(1, weight=1)
 
-        self._model_entry_vars = {}
-        for i, (label, key_path, value) in enumerate(field_defs):
+        fields = [
+            ("Active GPU Model", models.get("local", "qwen3:8b")),
+            ("Conductor (CPU)", models.get("conductor_model", "qwen3:4b")),
+            ("Keep Alive", f"{models.get('keep_alive_mins', 30)} minutes"),
+            ("Tier Default", tiers.get("default", "qwen3:8b")),
+            ("Tier Low", tiers.get("low", "qwen3:1.7b")),
+            ("Tier Critical", tiers.get("critical", "qwen3:0.6b")),
+        ]
+
+        for i, (label, value) in enumerate(fields):
             ctk.CTkLabel(settings_grid, text=label, font=FONT_SM, text_color=DIM,
                          anchor="w").grid(row=i, column=0, padx=(0, 12), pady=2, sticky="w")
-            var = ctk.StringVar(value=value)
-            self._model_entry_vars[key_path] = var
-            ctk.CTkEntry(settings_grid, textvariable=var, font=FONT_STAT,
-                         fg_color=BG3, border_color=BG3, text_color=TEXT,
-                         height=26, width=160
-                         ).grid(row=i, column=1, pady=2, sticky="w")
+            ctk.CTkLabel(settings_grid, text=value, font=FONT_STAT, text_color=TEXT,
+                         anchor="w").grid(row=i, column=1, pady=2, sticky="w")
 
-        # Save button
-        save_row = ctk.CTkFrame(card, fg_color="transparent")
-        save_row.pack(fill="x", padx=12, pady=(4, 8))
-        self._model_save_status = ctk.CTkLabel(save_row, text="", font=FONT_XS, text_color=DIM)
-        self._model_save_status.pack(side="left", padx=4)
-        ctk.CTkButton(save_row, text="Save Model Settings", width=150, height=28,
-                      font=FONT_SM, fg_color=ACCENT, hover_color=ACCENT_H,
-                      command=self._save_model_settings).pack(side="right")
-
-        # ── Skill Complexity Routing ──
+        # Weight adjustment
         ctk.CTkLabel(card, text="Skill Complexity Routing", font=FONT_BOLD,
                      text_color=GOLD, anchor="w").pack(fill="x", padx=12, pady=(8, 2))
-        ctk.CTkLabel(card,
-                     text="Simple → Haiku ($0.80/M)  |  Medium → Sonnet ($3/M)  |  Complex → Opus ($15/M)",
-                     font=FONT_XS, text_color=DIM, anchor="w").pack(fill="x", padx=16, pady=(0, 4))
-
-        # Build editable tier dropdowns from SKILL_COMPLEXITY
-        try:
-            import sys
-            sys.path.insert(0, str(FLEET_DIR))
-            from providers import SKILL_COMPLEXITY
-        except Exception:
-            SKILL_COMPLEXITY = {}
-
-        complexity_scroll = ctk.CTkScrollableFrame(card, fg_color=BG3, corner_radius=4, height=160)
-        complexity_scroll.pack(fill="x", padx=12, pady=(0, 4))
-        complexity_scroll.grid_columnconfigure(1, weight=1)
-
-        self._skill_tier_vars = {}
-        for row_i, (skill, tier) in enumerate(sorted(SKILL_COMPLEXITY.items())):
-            ctk.CTkLabel(complexity_scroll, text=skill, font=FONT_XS, text_color=DIM,
-                         anchor="w").grid(row=row_i, column=0, padx=(6, 8), pady=1, sticky="w")
-            var = ctk.StringVar(value=tier)
-            self._skill_tier_vars[skill] = var
-            ctk.CTkOptionMenu(
-                complexity_scroll, variable=var,
-                values=["simple", "medium", "complex"],
-                font=FONT_XS, height=22, width=90,
-                fg_color=BG2, button_color=BG3, button_hover_color=BG,
-            ).grid(row=row_i, column=1, pady=1, sticky="w")
-
-        skill_save_row = ctk.CTkFrame(card, fg_color="transparent")
-        skill_save_row.pack(fill="x", padx=12, pady=(2, 10))
-        self._skill_save_status = ctk.CTkLabel(skill_save_row, text="", font=FONT_XS, text_color=DIM)
-        self._skill_save_status.pack(side="left", padx=4)
-        ctk.CTkButton(skill_save_row, text="Save Routing", width=120, height=28,
-                      font=FONT_SM, fg_color=ACCENT, hover_color=ACCENT_H,
-                      command=self._save_skill_complexity).pack(side="right")
-
-    def _save_model_settings(self):
-        """Write changed model values back to fleet.toml using tomlkit."""
-        try:
-            import tomlkit
-            with open(FLEET_TOML, "r", encoding="utf-8") as f:
-                doc = tomlkit.load(f)
-
-            for key_path, var in self._model_entry_vars.items():
-                val = var.get().strip()
-                if not val:
-                    continue
-                # Navigate nested key path and set value
-                node = doc
-                for k in key_path[:-1]:
-                    node = node[k]
-                last_key = key_path[-1]
-                # Preserve int type for numeric fields
-                try:
-                    node[last_key] = int(val)
-                except (ValueError, TypeError):
-                    node[last_key] = val
-
-            with open(FLEET_TOML, "w", encoding="utf-8") as f:
-                f.write(tomlkit.dumps(doc))
-            self._model_save_status.configure(text="Saved.", text_color=GREEN)
-        except Exception as e:
-            self._model_save_status.configure(text=f"Error: {e}", text_color=RED)
-
-    def _save_skill_complexity(self):
-        """Write skill tier assignments to fleet.toml [skill_complexity]."""
-        try:
-            import tomlkit
-            with open(FLEET_TOML, "r", encoding="utf-8") as f:
-                doc = tomlkit.load(f)
-
-            # Write/overwrite [skill_complexity] table
-            tbl = tomlkit.table()
-            for skill, var in self._skill_tier_vars.items():
-                tbl[skill] = var.get()
-            doc["skill_complexity"] = tbl
-
-            with open(FLEET_TOML, "w", encoding="utf-8") as f:
-                f.write(tomlkit.dumps(doc))
-            self._skill_save_status.configure(text="Saved. Restart fleet to apply.", text_color=GREEN)
-        except Exception as e:
-            self._skill_save_status.configure(text=f"Error: {e}", text_color=RED)
+        ctk.CTkLabel(card, text="Simple tasks → Haiku ($0.80/M)  |  Standard → Sonnet ($3/M)  |  Complex → Opus ($15/M)",
+                     font=FONT_XS, text_color=DIM, anchor="w").pack(fill="x", padx=16, pady=(0, 8))
 
     # ── Panel 3: Prompt Queue ────────────────────────────────────────────────
 
@@ -284,28 +195,13 @@ class Module:
 
         # Controls
         ctrl_row = ctk.CTkFrame(card, fg_color="transparent")
-        ctrl_row.pack(fill="x", padx=12, pady=(2, 4))
+        ctrl_row.pack(fill="x", padx=12, pady=(2, 8))
 
         ctk.CTkLabel(ctrl_row, text="Loops:", font=FONT_SM, text_color=DIM).pack(side="left")
         self._loop_var = ctk.StringVar(value="1")
         ctk.CTkEntry(ctrl_row, textvariable=self._loop_var, width=40, height=28,
                      font=FONT_SM, fg_color=BG).pack(side="left", padx=4)
         ctk.CTkLabel(ctrl_row, text="(0 = infinite)", font=FONT_XS, text_color=DIM).pack(side="left", padx=4)
-
-        # Schedule dropdown — Phase 1: Claude Manual Mode Integration
-        ctk.CTkLabel(ctrl_row, text="Schedule:", font=FONT_SM, text_color=DIM).pack(side="left", padx=(8, 2))
-        self._schedule_var = ctk.StringVar(value="Now")
-        ctk.CTkOptionMenu(
-            ctrl_row, variable=self._schedule_var,
-            values=self.SCHEDULE_OPTIONS,
-            font=FONT_SM, width=100, height=28,
-            fg_color=BG3,
-            command=lambda _: self._update_cost_estimate(),
-        ).pack(side="left", padx=2)
-
-        # Cost estimate label — shows before user clicks Start
-        self._cost_estimate = ctk.CTkLabel(ctrl_row, text="", font=FONT_XS, text_color=DIM)
-        self._cost_estimate.pack(side="left", padx=4)
 
         self._start_btn = ctk.CTkButton(ctrl_row, text="Start Queue", width=100, height=28,
                                         font=FONT_SM, fg_color="#1e3a1e", hover_color="#2a4a2a",
@@ -320,14 +216,6 @@ class Module:
         self._queue_status = ctk.CTkLabel(ctrl_row, text="", font=FONT_XS, text_color=DIM)
         self._queue_status.pack(side="right", padx=8)
 
-        # Recent Results panel — Phase 1: audit result viewer
-        ctk.CTkLabel(card, text="Recent Results", font=FONT_BOLD, text_color=GOLD,
-                     anchor="w").pack(fill="x", padx=12, pady=(4, 0))
-        self._queue_results = ctk.CTkTextbox(card, font=("Consolas", 10), fg_color=BG,
-                                             height=80, corner_radius=4)
-        self._queue_results.pack(fill="x", padx=12, pady=(4, 8))
-        self._queue_results.configure(state="disabled")
-
     def _add_prompt(self):
         text = self._prompt_entry.get().strip()
         if not text:
@@ -335,7 +223,6 @@ class Module:
         self._prompt_queue.append({"prompt": text, "skill": self._queue_skill_var.get()})
         self._prompt_entry.delete(0, "end")
         self._refresh_queue_display()
-        self._update_cost_estimate()
 
     def _refresh_queue_display(self):
         for w in self._queue_frame.winfo_children():
@@ -361,7 +248,6 @@ class Module:
         if 0 <= idx < len(self._prompt_queue):
             self._prompt_queue.pop(idx)
             self._refresh_queue_display()
-            self._update_cost_estimate()
 
     def _start_queue(self):
         if not self._prompt_queue:
@@ -375,15 +261,7 @@ class Module:
         self._queue_running = True
         self._start_btn.configure(state="disabled")
         self._stop_btn.configure(state="normal")
-
-        schedule = self._schedule_var.get()
-        if schedule != "Now":
-            # Persist schedule to fleet.toml for supervisor pickup
-            self._save_schedule_config(schedule, loops)
-            self._queue_status.configure(text=f"Scheduled: {schedule}")
-            threading.Thread(target=self._run_scheduled_queue, daemon=True).start()
-        else:
-            threading.Thread(target=self._run_queue, daemon=True).start()
+        threading.Thread(target=self._run_queue, daemon=True).start()
 
     def _stop_queue(self):
         self._queue_running = False
@@ -392,9 +270,7 @@ class Module:
         self._queue_status.configure(text="Stopped")
 
     def _run_queue(self):
-        """Background thread: dispatch prompts round-robin (immediate mode)."""
-        import sys
-        sys.path.insert(0, str(FLEET_DIR))
+        """Background thread: dispatch prompts round-robin."""
         try:
             import db
         except ImportError:
@@ -407,17 +283,15 @@ class Module:
                 break
             item = self._prompt_queue[idx % len(self._prompt_queue)]
             # Dispatch as a task
-            ts = datetime.datetime.now().strftime("%H:%M:%S")
             try:
                 db.post_task(item['skill'], json.dumps({"prompt": item['prompt']}))
                 status = f"Loop {self._queue_loop_count+1}, [{item['skill']}] {idx+1}/{len(self._prompt_queue)}"
-                self._append_result(f"[{ts}] Dispatched [{item['skill']}]: {item['prompt'][:50]}")
                 try:
                     self._queue_status.configure(text=status)
                 except Exception:
                     pass
-            except Exception as exc:
-                self._append_result(f"[{ts}] FAILED [{item['skill']}]: {exc}")
+            except Exception:
+                pass
 
             idx += 1
             if idx % len(self._prompt_queue) == 0:
@@ -428,165 +302,12 @@ class Module:
             time.sleep(2)  # Pace between dispatches
 
         self._queue_running = False
-        ts = datetime.datetime.now().strftime("%H:%M:%S")
-        self._append_result(f"[{ts}] Queue complete ({self._queue_loop_count} loops)")
         try:
             self._start_btn.configure(state="normal")
             self._stop_btn.configure(state="disabled")
             self._queue_status.configure(text=f"Complete ({self._queue_loop_count} loops)")
         except Exception:
             pass
-
-    def _run_scheduled_queue(self):
-        """Background thread: recurring scheduled dispatch."""
-        schedule = self._schedule_var.get()
-        interval = self.SCHEDULE_INTERVALS.get(schedule, 0)
-        if interval <= 0:
-            return
-
-        while self._queue_running:
-            # Run one full pass through the queue
-            self._run_queue_once_pass()
-
-            # Wait for next scheduled interval
-            ts = datetime.datetime.now().strftime("%H:%M:%S")
-            next_run = datetime.datetime.now() + datetime.timedelta(seconds=interval)
-            next_str = next_run.strftime("%H:%M:%S")
-            self._append_result(f"[{ts}] Next run at {next_str} ({schedule})")
-            try:
-                self._queue_status.configure(text=f"Next: {next_str}")
-            except Exception:
-                pass
-
-            # Sleep in small chunks so stop is responsive
-            elapsed = 0
-            while elapsed < interval and self._queue_running:
-                time.sleep(min(5, interval - elapsed))
-                elapsed += 5
-
-        self._queue_running = False
-        try:
-            self._start_btn.configure(state="normal")
-            self._stop_btn.configure(state="disabled")
-            self._queue_status.configure(text="Schedule stopped")
-        except Exception:
-            pass
-
-    def _run_queue_once_pass(self):
-        """Execute one full pass through the prompt queue."""
-        import sys
-        sys.path.insert(0, str(FLEET_DIR))
-        try:
-            import db
-        except ImportError:
-            return
-
-        for i, item in enumerate(self._prompt_queue):
-            if not self._queue_running:
-                break
-            ts = datetime.datetime.now().strftime("%H:%M:%S")
-            try:
-                db.post_task(item['skill'], json.dumps({"prompt": item['prompt']}))
-                self._append_result(f"[{ts}] Dispatched [{item['skill']}]: {item['prompt'][:50]}")
-                try:
-                    self._queue_status.configure(
-                        text=f"[{item['skill']}] {i+1}/{len(self._prompt_queue)}")
-                except Exception:
-                    pass
-            except Exception as exc:
-                self._append_result(f"[{ts}] FAILED [{item['skill']}]: {exc}")
-            time.sleep(2)
-
-    # ── Cost estimate ─────────────────────────────────────────────────────
-
-    def _update_cost_estimate(self):
-        """Recalculate and display estimated cost for the current queue config."""
-        n = len(self._prompt_queue)
-        try:
-            loops = int(self._loop_var.get() or 1)
-        except (ValueError, TypeError):
-            loops = 1
-        total_calls = n * max(loops, 1)
-        if total_calls == 0:
-            self._cost_estimate.configure(text="")
-            return
-        # Rough estimate: ~500 input + 200 output tokens per call
-        est_tokens = total_calls * 700
-        # Use cheapest model pricing (Gemini Flash rate)
-        est_cost = est_tokens * 0.10 / 1_000_000
-        self._cost_estimate.configure(
-            text=f"~{total_calls} calls, ~{est_tokens:,} tokens, ~${est_cost:.4f}")
-
-    # ── Results panel helpers ─────────────────────────────────────────────
-
-    def _append_result(self, message: str):
-        """Thread-safe append to the Recent Results textbox."""
-        self._queue_results_log.append(message)
-        # Keep only the last 50 entries
-        if len(self._queue_results_log) > 50:
-            self._queue_results_log = self._queue_results_log[-50:]
-        try:
-            self._queue_results.configure(state="normal")
-            self._queue_results.insert("end", message + "\n")
-            self._queue_results.see("end")
-            self._queue_results.configure(state="disabled")
-        except Exception:
-            pass  # Widget may be destroyed
-
-    # ── Schedule persistence ──────────────────────────────────────────────
-
-    def _save_schedule_config(self, schedule: str, loops: int):
-        """Persist prompt queue schedule to fleet.toml [prompt_queue] for supervisor pickup."""
-        interval = self.SCHEDULE_INTERVALS.get(schedule, 0)
-        queue_data = {
-            "schedule": schedule,
-            "interval_secs": interval,
-            "loops_per_run": loops,
-            "prompts": [
-                {"prompt": item["prompt"], "skill": item["skill"]}
-                for item in self._prompt_queue
-            ],
-            "updated_at": datetime.datetime.now().isoformat(),
-        }
-        try:
-            # Read existing TOML, append/update [prompt_queue] section
-            toml_path = str(FLEET_TOML)
-            lines = []
-            if os.path.exists(toml_path):
-                with open(toml_path, "r", encoding="utf-8") as f:
-                    lines = f.readlines()
-
-            # Remove existing [prompt_queue] section if present
-            new_lines = []
-            in_pq_section = False
-            for line in lines:
-                stripped = line.strip()
-                if stripped == "[prompt_queue]":
-                    in_pq_section = True
-                    continue
-                if in_pq_section and stripped.startswith("[") and stripped != "[prompt_queue]":
-                    in_pq_section = False
-                if not in_pq_section:
-                    new_lines.append(line)
-
-            # Ensure trailing newline before new section
-            if new_lines and not new_lines[-1].endswith("\n"):
-                new_lines.append("\n")
-
-            # Append new [prompt_queue] section
-            new_lines.append("\n[prompt_queue]\n")
-            new_lines.append(f'schedule = "{schedule}"\n')
-            new_lines.append(f"interval_secs = {interval}\n")
-            new_lines.append(f"loops_per_run = {loops}\n")
-            new_lines.append(f'updated_at = "{queue_data["updated_at"]}"\n')
-            # Store prompts as JSON string (TOML-safe)
-            prompts_json = json.dumps(queue_data["prompts"])
-            new_lines.append(f"prompts_json = '{prompts_json}'\n")
-
-            with open(toml_path, "w", encoding="utf-8") as f:
-                f.writelines(new_lines)
-        except Exception:
-            pass  # Non-fatal — queue still runs in-memory
 
     # ── Panel 4: Evaluation Display ──────────────────────────────────────────
 
@@ -622,95 +343,6 @@ class Module:
                          ).pack(fill="x", padx=8, pady=(2, 6))
 
         ctk.CTkLabel(card, text="", font=FONT_XS).pack(pady=(0, 4))
-
-        # ── Live score feed ──
-        live_hdr = ctk.CTkFrame(card, fg_color="transparent")
-        live_hdr.pack(fill="x", padx=12, pady=(4, 2))
-        ctk.CTkLabel(live_hdr, text="Recent Scores", font=FONT_BOLD,
-                     text_color=GOLD, anchor="w").pack(side="left")
-        self._eval_refresh_btn = ctk.CTkButton(
-            live_hdr, text="↺", width=24, height=22, font=FONT_SM,
-            fg_color=BG3, hover_color=BG2,
-            command=self._refresh_eval_scores)
-        self._eval_refresh_btn.pack(side="right")
-
-        self._eval_scores_frame = ctk.CTkScrollableFrame(
-            card, fg_color=BG3, corner_radius=4, height=140)
-        self._eval_scores_frame.pack(fill="x", padx=12, pady=(0, 8))
-        self._eval_scores_frame.grid_columnconfigure(0, weight=0)
-        self._eval_scores_frame.grid_columnconfigure(1, weight=1)
-        self._eval_scores_frame.grid_columnconfigure(2, weight=0)
-        self._eval_scores_frame.grid_columnconfigure(3, weight=0)
-
-        self._eval_empty_lbl = ctk.CTkLabel(
-            self._eval_scores_frame, text="No scored tasks yet",
-            font=FONT_SM, text_color=DIM)
-        self._eval_empty_lbl.pack(pady=8)
-
-        # Auto-refresh every 10s via on_refresh
-        self._eval_refresh_after = None
-        self._schedule_eval_refresh()
-
-    def _schedule_eval_refresh(self):
-        """Schedule periodic eval score refresh via the app's after() mechanism."""
-        try:
-            self._eval_refresh_after = self._app.after(10000, self._schedule_eval_refresh)
-        except Exception:
-            pass
-        self._refresh_eval_scores()
-
-    def _refresh_eval_scores(self):
-        """Fetch recent eval scores from DB in a background thread and update UI."""
-        def _fetch():
-            try:
-                import sys
-                sys.path.insert(0, str(FLEET_DIR.parent / "BigEd" / "launcher"))
-                from data_access import FleetDB
-                return FleetDB.recent_eval_scores(FLEET_DIR / "fleet.db", limit=20)
-            except Exception:
-                return []
-
-        def _render(rows):
-            for w in self._eval_scores_frame.winfo_children():
-                w.destroy()
-            if not rows:
-                ctk.CTkLabel(self._eval_scores_frame, text="No scored tasks yet",
-                             font=FONT_SM, text_color=DIM).pack(pady=8)
-                return
-            # Column headers
-            headers = ["Task", "Skill", "Agent", "Score"]
-            for col, h in enumerate(headers):
-                ctk.CTkLabel(self._eval_scores_frame, text=h,
-                             font=FONT_XS, text_color=DIM, anchor="w"
-                             ).grid(row=0, column=col, padx=(6, 4), pady=(2, 0), sticky="w")
-            for row_i, r in enumerate(rows, start=1):
-                score = r.get("intelligence_score") or 0.0
-                # Colour by score tier
-                if score >= 0.8:
-                    score_color = GREEN
-                elif score >= 0.5:
-                    score_color = GOLD
-                else:
-                    score_color = ORANGE
-                ctk.CTkLabel(self._eval_scores_frame, text=f"#{r['id']}",
-                             font=FONT_XS, text_color=DIM, anchor="w",
-                             ).grid(row=row_i, column=0, padx=(6, 4), pady=1, sticky="w")
-                ctk.CTkLabel(self._eval_scores_frame,
-                             text=(r.get("type") or "")[:18],
-                             font=FONT_XS, text_color=TEXT, anchor="w",
-                             ).grid(row=row_i, column=1, padx=(0, 4), pady=1, sticky="w")
-                ctk.CTkLabel(self._eval_scores_frame,
-                             text=(r.get("assigned_to") or "")[:14],
-                             font=FONT_XS, text_color=DIM, anchor="w",
-                             ).grid(row=row_i, column=2, padx=(0, 8), pady=1, sticky="w")
-                ctk.CTkLabel(self._eval_scores_frame,
-                             text=f"{score:.3f}",
-                             font=("Consolas", 9, "bold"), text_color=score_color, anchor="e",
-                             ).grid(row=row_i, column=3, padx=(0, 6), pady=1, sticky="e")
-
-        import threading
-        threading.Thread(target=lambda: self._app.after(0, lambda: _render(_fetch())),
-                         daemon=True).start()
 
     # ── Panel 5: Cost Intelligence ───────────────────────────────────────────
 
@@ -748,14 +380,7 @@ class Module:
             return {}
 
     def on_refresh(self):
-        """Refresh live eval scores when Intelligence tab is active."""
-        if hasattr(self, '_eval_scores_frame'):
-            self._refresh_eval_scores()
+        pass  # Static panels — no periodic refresh needed
 
     def on_close(self):
         self._queue_running = False
-        if getattr(self, '_eval_refresh_after', None):
-            try:
-                self._app.after_cancel(self._eval_refresh_after)
-            except Exception:
-                pass
