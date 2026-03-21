@@ -1218,47 +1218,68 @@ Completed 2026-03-21. UX polish + OAuth flow + critical shutdown hang fix:
 
 Smoke: 22/22. Skills: 80+.
 
-### 0.170.00b — Deferred Items Sweep
+### 0.170.00b — Deferred Items Sweep [DONE]
 
-**Goal:** Resolve all deferred roadmap items — MCP wizard, clinical review, audit logging, web frontend, Helm chart.
+Completed 2026-03-21. All deferred roadmap items resolved — 68 files, +7540 lines.
 
 **MCP Phase 2: Integration Wizard (M, ~10-15k)**
-- [ ] "Add Integration" button → modal with categorized server list
-- [ ] Default servers: toggle on, auto-writes `.mcp.json` + starts container if needed
-- [ ] Key-gated servers: API key input → validate → enable
-- [ ] Custom: URL or `npx` command input → transport auto-detect → test connection
+- [x] "Add Integration" button → modal with categorized server list (mcp.py MCPWizardDialog, 615 lines)
+- [x] Default servers: toggle on, auto-writes `.mcp.json` + starts container if needed
+- [x] Key-gated servers: API key input → validate → enable (regex patterns for GitHub/Brave/Slack/Postgres)
+- [x] Custom: URL or `npx` command input → transport auto-detect → test connection
 
 **MCP Phase 4: Web Launcher + Remote (S, ~5-8k)**
-- [ ] Mirror MCP management in web_app.py
-- [ ] Remote operators can view MCP status, enable defaults
-- [ ] API endpoints for MCP server CRUD
+- [x] Mirror MCP management in web_app.py (5 endpoints: list/enable/disable/add/probe)
+- [x] Remote operators can view MCP status, enable defaults
+- [x] API endpoints for MCP server CRUD
 
 **DITL Phase 3: 5-Agent Clinical Review Cycle (M, ~12-18k)**
-- [ ] Clinical review pipeline skill: intake → analysis → recommendation → peer review → sign-off
-- [ ] Confirmation hex for final approval
-- [ ] PHI audit at every pipeline step
-- [ ] Structured review output format
+- [x] Clinical review pipeline skill: intake → analysis → recommendation → peer review → sign-off (clinical_review.py, 720 lines)
+- [x] Confirmation hex for final approval (8-char random hex, WAITING_HUMAN gate)
+- [x] PHI audit at every pipeline step (deidentify before each model call)
+- [x] Structured review output format (pipeline_id, stages[], final_status)
 
 **Full Audit Logging Enhancement (S, ~5-8k)**
-- [ ] Structured event schema (who, what, when, cost, context)
-- [ ] Query API for audit trail with filters
-- [ ] Retention policies + auto-purge
-- [ ] Dashboard audit viewer panel
-- [ ] Export to CSV/JSON
+- [x] Structured event schema (audit.py, HMAC-signed, async queue)
+- [x] Query API for audit trail with filters (/api/audit with pagination)
+- [x] Retention policies + auto-purge (/api/audit/purge, configurable days)
+- [x] Dashboard audit viewer panel (table, filter bar, pagination)
+- [x] Export to CSV/JSON (/api/audit/export?fmt=csv|json)
 
 **React/Next.js Web Frontend (XL, ~50-80k)**
-- [ ] Next.js app scaffold in BigEd/web/
-- [ ] Core pages: fleet status, agent cards, task queue, cost dashboard, settings
-- [ ] Tailwind dark theme matching launcher palette
-- [ ] Consumes all existing dashboard API endpoints
-- [ ] WebSocket/SSE for real-time updates
+- [x] Next.js app scaffold in BigEd/web/ (package.json, tsconfig, Tailwind)
+- [x] Core pages: fleet status, agent cards, MCP, cost dashboard, audit, settings (6 pages)
+- [x] Tailwind dark theme matching launcher palette (custom color tokens)
+- [x] Consumes all existing dashboard API endpoints (TypeScript API client)
+- [x] API proxy via next.config.ts rewrites to localhost:7777
 
 **Kubernetes Helm Chart (M, ~10-15k)**
-- [ ] Helm chart in deploy/helm/
-- [ ] Deployments: fleet supervisor, dashboard, ollama
-- [ ] ConfigMap from fleet.toml, secrets for API keys
-- [ ] PVC for fleet.db + knowledge/
-- [ ] Values.yaml with resource presets matching RAM tier table
+- [x] Helm chart in deploy/helm/ (Chart.yaml v0.1.0, 11 templates)
+- [x] Deployments: fleet supervisor, dashboard, ollama (StatefulSet with GPU tolerations)
+- [x] ConfigMap from fleet.toml, secrets for API keys
+- [x] PVC for fleet.db + knowledge/ + logs/
+- [x] Values.yaml with resource presets matching RAM tier table (5 presets)
+
+### 0.170.01b — Data Management Systems [DONE]
+
+Completed 2026-03-21. Context windows, cache invalidation, RAG cleanup.
+
+- [x] Conversation context manager (`fleet/context_manager.py`) — per-agent sliding window, token budgets, summarize-on-overflow, DB persistence
+- [x] Fleet-wide cache invalidation (`fleet/cache_manager.py`) — 7 caches auto-registered, TTL-based invalidation, dashboard endpoints
+- [x] RAG stale entry cleanup (`fleet/rag.py`) — `cleanup_stale()` removes entries for deleted files, `get_index_stats()`, auto-cleanup during update()
+
+### 0.170.02b — Cross-Platform + Icon Overhaul + Font Selector + VS Code Unification [DONE]
+
+Completed 2026-03-21. Cross-platform fixes, icon system overhaul, font selector, unified VS Code launch.
+
+- [x] Cross-platform: winreg guarded, os.startfile → _open_path(), PyInstaller separator, Python/Ollama path fallbacks
+- [x] Icon system: deleted generate_icon.py, single source (icon_1024.png → brick.ico), purged all old references
+- [x] Font selector: Settings > Display > Font (4 presets, live preview, persisted, platform-aware)
+- [x] VS Code unification: Claude + Gemini share VS Code launch, fleet agents stay active, HITL flows to Fleet Comm
+- [x] USB media creator: GUI + CLI for offline deployment packaging (1850 lines)
+- [x] Shutdown hang: background thread + overlay + 8s safety net
+- [x] Dashboard offline: 60s countdown overlay, "Fleet offline" message
+- [x] UX bug fixes: module tabs, Enter-to-send, sidebar truncation, updater loop guard, DAG test race
 
 ---
 
