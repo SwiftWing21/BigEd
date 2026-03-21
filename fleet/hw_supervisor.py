@@ -458,6 +458,15 @@ def detect_gpu_config() -> dict:
         except Exception:
             pass
 
+    # DGX Spark / NVIDIA unified memory (high VRAM + high RAM = unified system)
+    if config["gpu_count"] > 0 and config["total_vram_gb"] > 100:
+        config["memory_mode"] = "unified"
+
+    # Single-rig multi-GPU: annotate availability for Ollama model splitting
+    if config["gpu_count"] > 1:
+        config["multi_gpu_mode"] = "available"
+        config["note"] = "Ollama handles model splitting automatically across GPUs"
+
     return config
 
 

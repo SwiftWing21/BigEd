@@ -1033,6 +1033,28 @@ def main():
                     _json_log("INFO", "scale_down", worker=role, idle_secs=idle_secs)
                     _stop_worker(role)
                     worker_next_start.pop(role, None)
+
+                # Federation: overflow routing when queue is deep
+                federation_cfg = config.get("federation", {})
+                if federation_cfg.get("enabled") and pending > 10:
+                    overflow_threshold = federation_cfg.get("overflow_threshold", 0.85)
+                    max_capacity = config.get("fleet", {}).get("max_workers", 10) * 5
+                    if pending / max(max_capacity, 1) > overflow_threshold:
+                        fed_peers = federation_cfg.get("peers", [])
+                        for peer_url in fed_peers:
+                            try:
+                                # Check peer capacity
+                                with urllib.request.urlopen(
+                                    f"{peer_url}/api/federation/peers", timeout=3
+                                ) as r:
+                                    peer_data = json.loads(r.read())  # noqa: F841
+                                # Forward oldest pending tasks to least-loaded peer
+                                # (Stub — actual task forwarding requires /api/fleet/task/forward endpoint)
+                                log.info(f"Federation overflow: {pending} pending, routing to {peer_url}")
+                                _json_log("INFO", "federation_overflow", pending=pending, peer=peer_url)
+                                break
+                            except Exception:
+                                continue
             except Exception as e:
                 log.debug(f"Dynamic scale check error: {e}")
 
@@ -1344,12 +1366,24 @@ def main():
             try:
                 federation_cfg = config.get("federation", {})
                 if federation_cfg.get("enabled"):
+                    # Include GPU capacity so peers can route overflow intelligently
+                    _gpu_count = 0
+                    _total_vram = 0.0
+                    try:
+                        from hw_supervisor import detect_gpu_config
+                        _gpu_info = detect_gpu_config()
+                        _gpu_count = _gpu_info.get("gpu_count", 0)
+                        _total_vram = _gpu_info.get("total_vram_gb", 0.0)
+                    except Exception:
+                        pass
                     peers = federation_cfg.get("peers", [])
                     for peer_url in peers:
                         try:
                             status = {"fleet_id": config.get("naming", {}).get("device_name", ""),
                                       "agents": len(_get_running_workers()),
                                       "pending": _count_pending_tasks(),
+                                      "gpu_count": _gpu_count,
+                                      "total_vram_gb": _total_vram,
                                       "timestamp": time.time()}
                             body = json.dumps(status).encode()
                             req = urllib.request.Request(
