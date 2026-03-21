@@ -1102,6 +1102,35 @@ Completed 2026-03-19. System Detection walkthrough step (hardware probing via ps
 
 Completed 2026-03-19. Dashboard auto-opens in default browser on boot complete (1.5s delay, threaded). Respects air-gap mode, `dashboard.enabled`, and new `dashboard.auto_open` fleet.toml toggle. Console persistence marked done (already working since v0.27.00 via JSONL). Audit tracker synced — UX deep-dive updated.
 
+### 0.060.00b — Doctor in the Loop (DITL) — HIPAA Compliance Framework [PLANNED]
+
+**Goal:** HIPAA-compliant mode for healthcare. Multi-turn agent response with clinical review. Local-first PHI.
+**Spec:** `docs/specs/DITL_compliance_spec.md`
+
+**Architecture:** Normal HITL UX for ALL users. DITL adds compliance enforcement (opt-in, forced for enterprise).
+- "Disable at own risk" available with explicit ack + audit entry + persistent warning
+
+**Phase 1: Compliance Framework**
+- [ ] fleet.toml [ditl] config (enabled, compliance_level, force_local_phi, retention)
+- [ ] DITL mode toggle in Settings (hipaa/soc2/none)
+- [ ] PHI audit table (who/when/what/action, AES-256, 6-year retention)
+- [ ] AI disclaimer injection ("AI-generated, not clinical advice")
+- [ ] Human review logging for every recommendation
+- [ ] force_local_phi: PHI → Ollama only (no cloud without BAA)
+- [ ] "Disable at own risk" dialog + warning banner + audit
+
+**Phase 2: Data Handling**
+- [ ] Safe Harbor de-identification (auto-strip 18 identifiers before cloud API)
+- [ ] Retention engine (auto-purge + secure deletion + destruction audit)
+- [ ] PHI-scoped FileSystemGuard zones
+- [ ] BAA tracking per provider (fleet.toml [ditl.baa])
+
+**Phase 3: Enhanced Review [REQUIRES CONFIRMATION HEX]**
+- [ ] 5-agent clinical review cycle
+- [ ] Voice/STT (local Whisper, HIPAA-compliant)
+- [ ] State disclosure compliance (TX TRAIGA, CA requirements)
+- [ ] BAA management UI
+
 ### 0.100.00b — Multi-Fleet & Remote Orchestration [FUTURE]
 
 - Fleet-to-fleet communication (federated supervisor mesh)
