@@ -256,6 +256,14 @@ cooldown_secs = 60    # minimum seconds between idle evolution runs per agent
 skills = ["code_quality", "benchmark", "skill_evolve", "code_review", "summarize"]
 # Note: skill_test removed from idle rotation — was 96% of all tasks (28k+ flood)
 
+# v0.052.00b: Conversation context window manager — per-agent multi-turn context
+[context]
+max_turns = 5                    # sliding window: keep last N turns per agent
+max_tokens = 4096                # token budget for total context (local models)
+summarize_on_overflow = true     # summarize evicted turns instead of dropping them
+persist_to_db = true             # save/load context to fleet.db for crash recovery
+stale_hours = 24                 # clear contexts older than this (0 = never)
+
 # 0.14: Knowledge integrity verification
 [integrity]
 enabled = true

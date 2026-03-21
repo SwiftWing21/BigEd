@@ -1,6 +1,7 @@
 """0.10.00: Knowledge pruning — detect bloat and archive stale knowledge files."""
 import json
 import shutil
+import sys
 from datetime import datetime, timedelta
 from pathlib import Path
 
@@ -51,7 +52,7 @@ def _scan_for_bloat(stale_days):
     return json.dumps({"status": "ok", "findings": findings, "stale_threshold_days": stale_days})
 
 def _archive_stale(stale_days, dry_run=True):
-    """Move stale files to _archive directory."""
+    """Move stale files to _archive directory, then clean stale RAG entries."""
     cutoff = datetime.now().timestamp() - (stale_days * 86400)
     archived = []
 
@@ -68,7 +69,23 @@ def _archive_stale(stale_days, dry_run=True):
                     shutil.move(str(f), str(dest))
                     archived.append({"file": str(f.relative_to(KNOWLEDGE_DIR)), "action": "archived"})
 
-    return json.dumps({"status": "ok", "dry_run": dry_run, "archived": len(archived), "files": archived[:20]})
+    # After archiving (which moves files off disk), clean stale RAG index entries
+    rag_cleaned = 0
+    if not dry_run and archived:
+        try:
+            sys.path.insert(0, str(FLEET_DIR))
+            from rag import RAGIndex
+            idx = RAGIndex()
+            rag_result = idx.cleanup_stale()
+            rag_cleaned = rag_result["stale_removed"]
+        except Exception:
+            pass  # RAG cleanup is best-effort
+
+    return json.dumps({
+        "status": "ok", "dry_run": dry_run,
+        "archived": len(archived), "rag_stale_cleaned": rag_cleaned,
+        "files": archived[:20],
+    })
 
 def _knowledge_stats():
     """Overall knowledge directory statistics."""

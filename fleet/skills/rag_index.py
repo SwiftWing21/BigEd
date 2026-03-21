@@ -1,11 +1,12 @@
 """
-RAG index skill — rebuilds or incrementally updates the RAG search index.
+RAG index skill — rebuilds, updates, or cleans up the RAG search index.
 
 Scans all .md files across the project and indexes them into SQLite FTS5
 for retrieval-augmented generation by fleet agents.
 
 Payload:
   mode    str   "update" (incremental, default) | "rebuild" (full re-index)
+                | "cleanup" (remove stale entries) | "stats" (index stats)
 
 Returns: {files_indexed, total_chunks, ...}
 """
@@ -37,6 +38,12 @@ def run(payload, config):
     if mode == "rebuild":
         result = idx.rebuild()
         return {"action": "rebuild", **result}
+    elif mode == "cleanup":
+        result = idx.cleanup_stale()
+        return {"action": "cleanup", **result}
+    elif mode == "stats":
+        result = idx.get_index_stats()
+        return {"action": "stats", **result}
     else:
         result = idx.update()
         return {"action": "update", **result}

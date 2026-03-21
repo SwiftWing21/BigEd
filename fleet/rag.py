@@ -13,6 +13,7 @@ Usage:
     results = idx.search("fleet GPU")    # BM25-ranked chunks
 """
 import hashlib
+import os
 import re
 import sqlite3
 import time
@@ -260,11 +261,16 @@ class RAGIndex:
                     (rel, current_hash, datetime.utcnow().isoformat(), len(chunks)),
                 )
 
+        # Clean up entries whose source files no longer exist on disk
+        stale_result = self.cleanup_stale()
+        stale_removed = stale_result["stale_removed"]
+
         with self._get_conn() as conn:
             total = conn.execute("SELECT COUNT(*) FROM chunks_meta").fetchone()[0]
 
         return {
             "new": new, "updated": updated, "removed": removed,
+            "stale_removed": stale_removed,
             "total_chunks": total, "unchanged": len(file_map) - new - updated,
         }
 
@@ -330,4 +336,77 @@ class RAGIndex:
             "files": files,
             "chunks": chunks,
             "sources": [dict(r) for r in sources],
+        }
+
+    def cleanup_stale(self) -> dict:
+        """Remove index entries for files that no longer exist on disk.
+
+        Walks every distinct source path in the index, resolves it against
+        PROJECT_DIR, and deletes all chunks + metadata for missing files.
+        Returns a summary with the count and list of cleaned paths.
+        """
+        cleaned = []
+
+        with self._get_conn() as conn:
+            indexed_paths = conn.execute(
+                "SELECT path FROM files"
+            ).fetchall()
+
+            for row in indexed_paths:
+                rel = row["path"]
+                abs_path = PROJECT_DIR / rel
+                if not abs_path.exists():
+                    self._remove_file(conn, rel)
+                    cleaned.append(rel)
+
+        return {
+            "stale_removed": len(cleaned),
+            "cleaned_paths": cleaned,
+        }
+
+    def get_index_stats(self) -> dict:
+        """Extended index statistics including staleness and disk usage.
+
+        Returns:
+            total_entries: number of chunks in the index
+            unique_files: number of distinct indexed files
+            stale_entries: number of indexed files missing from disk
+            stale_paths: list of missing source paths
+            index_size_bytes: rag.db file size on disk
+            last_indexed: ISO timestamp of the most recently indexed file
+        """
+        with self._get_conn() as conn:
+            total_entries = conn.execute(
+                "SELECT COUNT(*) FROM chunks_meta"
+            ).fetchone()[0]
+            unique_files = conn.execute(
+                "SELECT COUNT(*) FROM files"
+            ).fetchone()[0]
+            indexed_paths = conn.execute(
+                "SELECT path FROM files"
+            ).fetchall()
+            last_row = conn.execute(
+                "SELECT indexed FROM files ORDER BY indexed DESC LIMIT 1"
+            ).fetchone()
+
+        # Check each indexed path against disk
+        stale_paths = []
+        for row in indexed_paths:
+            rel = row["path"]
+            if not (PROJECT_DIR / rel).exists():
+                stale_paths.append(rel)
+
+        # DB file size
+        try:
+            index_size_bytes = os.path.getsize(self.db_path)
+        except OSError:
+            index_size_bytes = 0
+
+        return {
+            "total_entries": total_entries,
+            "unique_files": unique_files,
+            "stale_entries": len(stale_paths),
+            "stale_paths": stale_paths,
+            "index_size_bytes": index_size_bytes,
+            "last_indexed": last_row["indexed"] if last_row else None,
         }

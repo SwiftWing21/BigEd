@@ -1976,6 +1976,61 @@ def api_sla():
         return jsonify({"error": str(e)}), 500
 
 
+# ── Cache Management (fleet-wide invalidation) ───────────────────────────────
+
+@app.route("/api/cache/stats")
+def api_cache_stats():
+    """List all registered caches with age, TTL, and staleness."""
+    try:
+        from cache_manager import get_cache_stats, get_cache_count
+        stats = get_cache_stats()
+        return jsonify({
+            "caches": stats,
+            "total": get_cache_count(),
+            "stale": sum(1 for s in stats if s["is_stale"]),
+        })
+    except Exception as e:
+        return jsonify({"error": _safe_error(e)}), 500
+
+
+@app.route("/api/cache/invalidate", methods=["POST"])
+@_require_role("operator")
+def api_cache_invalidate():
+    """Invalidate all caches, or a specific one via ?name=X or JSON body."""
+    try:
+        from cache_manager import invalidate, invalidate_all
+        # Check for specific cache name in query param or JSON body
+        name = request.args.get("name")
+        if not name:
+            body = request.get_json(silent=True) or {}
+            name = body.get("name")
+
+        if name:
+            ok = invalidate(name)
+            if not ok:
+                return jsonify({"error": f"Unknown cache: {name}"}), 404
+            return jsonify({"invalidated": name, "success": True})
+        else:
+            count = invalidate_all()
+            return jsonify({"invalidated": "all", "count": count, "success": True})
+    except Exception as e:
+        return jsonify({"error": _safe_error(e)}), 500
+
+
+@app.route("/api/cache/invalidate/<name>", methods=["POST"])
+@_require_role("operator")
+def api_cache_invalidate_named(name):
+    """Invalidate a specific cache by name."""
+    try:
+        from cache_manager import invalidate
+        ok = invalidate(name)
+        if not ok:
+            return jsonify({"error": f"Unknown cache: {name}"}), 404
+        return jsonify({"invalidated": name, "success": True})
+    except Exception as e:
+        return jsonify({"error": _safe_error(e)}), 500
+
+
 # ── Entry ────────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
