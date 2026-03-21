@@ -946,6 +946,7 @@ class CustomTabBar(ctk.CTkFrame):
         self._all_tab_cells: list = []
         self._tab_names_order: list[str] = []
         self._tab_widths: dict[str, int] = {}  # actual tab widths stored at creation time
+        self._tabs_ready = False  # set True after all tabs registered — prevents premature scroll
 
         # Mouse-wheel horizontal scroll (Windows + Linux)
         for _widget in (self._bar, bar_container):
@@ -953,9 +954,11 @@ class CustomTabBar(ctk.CTkFrame):
             _widget.bind("<Button-4>", self._on_mousewheel)
             _widget.bind("<Button-5>", self._on_mousewheel)
 
-        # Recalculate visible tabs when bar gets its real size (debounced)
+        # Recalculate visible tabs when bar gets its real size (debounced, only after ready)
         self._configure_after_id = None
         def _on_bar_configure(e):
+            if not self._tabs_ready:
+                return  # tabs still being added — don't scroll yet
             if self._configure_after_id:
                 self.after_cancel(self._configure_after_id)
             self._configure_after_id = self.after(100, lambda: self._scroll_tabs(0))
@@ -993,7 +996,7 @@ class CustomTabBar(ctk.CTkFrame):
         btn = ctk.CTkButton(
             cell,
             text=f"{icon}  {name}",
-            font=("RuneScape Plain 12", 11),
+            font=FONT_SM,
             fg_color="transparent",
             hover_color=BG3,
             text_color=DIM,
@@ -1033,7 +1036,8 @@ class CustomTabBar(ctk.CTkFrame):
         self._tab_names_order.append(name)
         self._tab_widths[name] = max(70, len(name) * 7 + 24)  # matches button width formula
         self._col += 1
-        self._scroll_tabs(0)  # Refresh chevron visibility
+        # Don't scroll during add() — all tabs are visible by default.
+        # Scroll only happens on user click, chevron press, or after init via Configure.
 
     def set_badge(self, name: str, count: int) -> None:
         """Show/hide a red count badge on a tab. count=0 hides it."""
@@ -1859,6 +1863,9 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
                 self._safe_after(500, lambda n=name, err=str(e):
                     self._log_output(f"\u26a0 Module '{n}' failed: {err}"))
 
+        # All tabs registered — enable scroll system and show initial tab
+        tabs._tabs_ready = True
+        tabs._scroll_tabs(0)  # initial layout with all tabs present
         tabs.set("Command Center")
 
     def _make_module_builder(self, mod, label, deprecated, meta):
