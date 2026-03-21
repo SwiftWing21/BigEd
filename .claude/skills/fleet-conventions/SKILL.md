@@ -25,12 +25,25 @@ Payload is untrusted (from task queue). Config comes from `fleet.toml`.
 | archivist | flashcard, rag_index, rag_query, ingest |
 | analyst | analyze_results, benchmark, synthesize |
 | security | security_audit, pen_test, security_review, security_apply |
+| planner | plan_workload (queues 5-500 tasks by fleet state) |
+| sales | lead_research, marketing |
+| onboarding | client onboarding checklists |
+| implementation | local AI deployment specs |
+| legal | legal_draft, compliance |
+| account_manager | account_review |
+
+**Disabled by default** (`disabled_agents` in `fleet.toml [fleet]`): sales, onboarding, implementation, legal, account_manager.
 
 ## Model Routing
 
 - **Simple** (Haiku/qwen3:4b): flashcard, rag_query, summarize, ingest
 - **Medium** (Sonnet/qwen3:8b): code_review, discuss, security_audit, analyze_results
 - **Complex** (Opus/qwen3:8b): plan_workload, lead_research, skill_evolve, legal_draft
+- **Failsafe** (qwen3:0.6b, CPU-only): last resort when GPU/conductor unavailable
+
+Routing is centralised in `providers.py` — `SKILL_COMPLEXITY` dict maps skill names to tiers;
+`COMPLEXITY_ROUTING` / `LOCAL_COMPLEXITY_ROUTING` map tiers to model IDs. Skills do **not**
+declare their own complexity tier.
 
 For LLM calls in skills: `from skills._models import call_complex`
 
@@ -41,7 +54,7 @@ inspect models. Use it as a reference for a well-structured skill with multiple 
 
 ### Core Fleet
 
-- `fleet/skills/` — skill modules (75 total, including model_manager.py)
+- `fleet/skills/` — skill modules (80 public skills as of v0.053; check `ls fleet/skills/*.py | grep -v "^_\|__init__"` for current count)
 - `fleet/skills/_models.py` — shared model routing, budget checking
 - `fleet/skills/_security.py` — path traversal prevention, sanitization
 - `fleet/skills/_watchdog.py` — health monitoring, DLP scrubbing
@@ -54,6 +67,11 @@ inspect models. Use it as a reference for a well-structured skill with multiple 
 - `fleet/system_info.py` — `detect_system()`, `get_worker_limits()`, `generate_user_md()` for hardware-aware behavior
 - `fleet/dependency_check.py` — validates runtime prerequisites, run with `--json` for machine-readable output
 - `fleet/templates/dashboard.html` — extracted dashboard HTML template (was inline in dashboard.py)
+- `fleet/providers.py` — multi-backend ABC (Ollama, llama.cpp, llamafile) + `SKILL_COMPLEXITY` / `COMPLEXITY_ROUTING` / `LOCAL_COMPLEXITY_ROUTING` dicts
+- `fleet/db.py` — schema init and low-level DB helpers; use `data_access.py` for queries
+- `fleet/idle_evolution.py` — weighted random skill selection, per-agent cooldown, cross-worker dedup
+- `fleet/discord_bot.py` — Discord bridge (`discord_bot_enabled` in fleet.toml) — routes `biged-fleetchat` to fleet
+- `fleet/fleet_bridge.py` — SSE reactive comms bridge (`fleet_bridge_enabled` in fleet.toml)
 
 ### Launcher GUI (BigEd)
 
@@ -94,6 +112,15 @@ is available in the running fleet.
 - High-stakes skills get adversarial review: code_write, legal_draft, security_audit, pen_test, deploy_skill
 - Drafts NEVER auto-deploy — must go through `skill_promote` -> `deploy_skill`
 - TLS, RBAC, rate-limit, and CSRF are handled centrally in `fleet/security.py`
+
+## Offline / Air-Gap Modes
+
+Controlled by `fleet.toml [fleet]`:
+
+- **`offline_mode = true`**: external API calls rejected; local Ollama works; Discord/OpenClaw bridges skipped; skills with `REQUIRES_NETWORK = True` will not be dispatched.
+- **`air_gap_mode = true`**: implies offline + dashboard disabled, secrets not loaded, deny-by-default whitelist enforced. Use `config.is_air_gap()` to gate any network behaviour.
+
+Always check `config.is_offline()` / `config.is_air_gap()` before making external calls.
 
 ## Draft Workflow
 

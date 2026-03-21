@@ -16,10 +16,11 @@ Before guessing, collect facts:
 1. **Check worker logs**: `fleet/logs/<worker_name>.log` — look for the most recent ERROR/WARNING
 2. **Check supervisor log**: `fleet/logs/supervisor.log` — boot failures, respawn loops, Ollama issues
 3. **Check hw_state.json**: `fleet/hw_state.json` — is Dr. Ders reporting degraded/transitioning?
-4. **Check task queue**: Query fleet.db for recent FAILED tasks:
+4. **Check task queue**: Query fleet.db for recent FAILED tasks (read-only diagnostic — do not modify the DB directly; use `data_access.py` for writes):
    ```bash
    python -c "import sqlite3; c=sqlite3.connect('fleet/fleet.db'); [print(dict(r)) for r in c.execute('SELECT id,type,status,error,assigned_to FROM tasks WHERE status=\"FAILED\" ORDER BY id DESC LIMIT 5')]"
    ```
+   Run from the project root so `fleet/fleet.db` resolves correctly.
 5. **Check dependency state**: `python fleet/dependency_check.py --json`
 6. **Check fleet.toml**: Has config been modified recently? `git diff fleet/fleet.toml`
 
@@ -55,10 +56,11 @@ Fleet bugs live in one of these layers — identify which:
 ## Step 4: Fix & Verify
 
 1. Make the minimal fix
-2. Run: `python fleet/smoke_test.py --fast`
-3. If fleet was running: restart supervisor to pick up changes
-4. Check the specific failure scenario again
-5. Run: `python fleet/dependency_check.py` — all checks should pass
+2. Run: `python fleet/smoke_test.py --fast` — all 22 must pass
+3. Run: `python fleet/smoke_test.py` (soak) — all 13 soak tests must pass for stability-gate changes
+4. If fleet was running: restart supervisor to pick up changes
+5. Check the specific failure scenario again
+6. Run: `python fleet/dependency_check.py` — all checks should pass
 
 ## Anti-Patterns (don't do these)
 

@@ -51,6 +51,13 @@ When reviewing, specifically check for:
 - Unused imports
 - TODO/FIXME/HACK markers
 
+### Windows-Specific Checks
+
+- **No shell process commands** (`pkill`, `pgrep`, `kill`) — must use `psutil` for process management
+- **TOML writes** — must use `tomlkit` (not `toml` or raw string writes) to preserve comments and formatting
+- **subprocess.Popen** — must include `creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0)` to suppress console flash
+- **No `uv run`** — use native `python` on Windows; `uv run` is WSL-only
+
 ## Fleet-Specific Checks
 
 - Does `run()` validate all payload keys?
@@ -88,4 +95,4 @@ When reviewing, specifically check for:
 
 ## After Review
 
-Save the review to `fleet/knowledge/code_reviews/<filename>_review_<date>.md` using the format above, so the fleet's `skill_evolve` can consume it later.
+Save the review to `fleet/knowledge/code_reviews/<filename>_review_<date>_<agent>.md` using the format above (include the agent name suffix per fleet/CLAUDE.md convention), so the fleet's `skill_evolve` can consume it later.
