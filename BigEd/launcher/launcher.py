@@ -758,7 +758,7 @@ def count_waiting_human() -> int:
 
 
 def _ctx_preview_confirm(parent, model: str, file_list: str) -> bool:
-    """Show a modal confirmation dialog listing context files and ToS before OAuth launch.
+    """Show a modal confirmation dialog listing context files and ToS before VS Code launch.
 
     Returns True if the user clicks Proceed, False if they click Cancel.
     """
@@ -2661,8 +2661,8 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
         self._manual_model_var = ctk.StringVar(value="Local (Ollama)")
         ctk.CTkOptionMenu(
             chat_hdr, variable=self._manual_model_var,
-            values=["Local (Ollama)", "Claude Code (OAuth)", "Gemini (OAuth)"],
-            font=FONT_SM, width=160, height=26,
+            values=["Local (Ollama)", "Claude Code (VS Code)", "Gemini CLI (VS Code)"],
+            font=FONT_SM, width=180, height=26,
             fg_color=BG3,
             command=self._on_manual_model_change,
         ).pack(side="right", padx=8, pady=5)
@@ -2733,33 +2733,41 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
     # ── Manual Chat helpers ──────────────────────────────────────────────
 
     def _on_manual_model_change(self, choice):
-        """Show guidance when user switches to an OAuth model."""
-        if "OAuth" not in choice:
+        """Show guidance when user switches to a VS Code model."""
+        if "VS Code" not in choice:
             return
         if "Claude" in choice:
             guidance = (
-                "━━━ Claude Code (OAuth) ━━━\n"
+                "━━━ Claude Code (VS Code) ━━━\n"
                 "How it works:\n"
                 "  1. Type your task in the chat box and press Send\n"
-                "  2. BigEd writes a task-briefing.md with your request + fleet context\n"
-                "  3. VS Code opens to the project directory\n"
-                "  4. Claude Code starts automatically with your task pre-loaded\n\n"
+                "  2. BigEd writes task-briefing.md with your request + fleet context\n"
+                "  3. VS Code opens to the project with task-briefing.md visible\n"
+                "  4. Claude Code starts with your task pre-loaded (if CLI available)\n\n"
+                "Agent interaction:\n"
+                "  • Fleet agents remain active — HITL requests flow to Fleet Comm\n"
+                "  • Claude Code reads fleet knowledge, CLAUDE.md, and MCP tools\n"
+                "  • Results from Claude Code are visible to fleet agents via shared files\n\n"
                 "Terms of Service:\n"
-                "  • Uses Anthropic's Claude API via OAuth — your prompt is sent to Anthropic\n"
-                "  • Subject to Anthropic's Terms of Service and Usage Policy\n"
+                "  • Prompts sent to Anthropic — subject to Anthropic ToS\n"
                 "  • Do not include PHI, credentials, or secrets in your prompt\n\n"
                 "Type your task below and press Send to begin.\n"
             )
         else:
             guidance = (
-                "━━━ Gemini (OAuth) ━━━\n"
+                "━━━ Gemini CLI (VS Code) ━━━\n"
                 "How it works:\n"
                 "  1. Type your task in the chat box and press Send\n"
-                "  2. BigEd writes a task-briefing.md with your request + fleet context\n"
-                "  3. Google AI Studio opens in your browser\n\n"
+                "  2. BigEd writes task-briefing.md with your request + fleet context\n"
+                "  3. VS Code opens to the project with task-briefing.md visible\n"
+                "  4. Use Gemini CLI in the VS Code terminal: gemini\n\n"
+                "Agent interaction:\n"
+                "  • Fleet agents remain active — HITL requests flow to Fleet Comm\n"
+                "  • Gemini reads the same project context as Claude Code\n"
+                "  • Toggle agent mode: approval-gated writes (default) or un-gated\n"
+                "    In Gemini CLI: /agent-mode to toggle autonomous writes\n\n"
                 "Terms of Service:\n"
-                "  • Uses Google's Gemini API — your prompt is sent to Google\n"
-                "  • Subject to Google's Terms of Service and AI Principles\n"
+                "  • Prompts sent to Google — subject to Google ToS\n"
                 "  • Do not include PHI, credentials, or secrets in your prompt\n\n"
                 "Type your task below and press Send to begin.\n"
             )
@@ -2808,9 +2816,9 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
             # Refresh comm to update badge/card list after HITL close
             self._safe_after(500, self._refresh_comm)
 
-        if "OAuth" in model:
+        if "VS Code" in model:
             # If HITL is active, do NOT auto-close the HITL loop yet —
-            # the operator will send the final response after reviewing OAuth output.
+            # the operator will send the final response after reviewing VS Code output.
             # Restore the HITL context so it stays armed.
             if hitl_id is not None:
                 self._active_hitl_task_id = hitl_id
@@ -2819,8 +2827,8 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
                 self._manual_chat_display.delete("end-3l", "end")  # remove premature close msg
                 self._manual_chat_display.insert(
                     "end",
-                    f"\n─── Launching OAuth for analysis — HITL #{hitl_id} still active ───\n"
-                    f"Send your final response after reviewing the OAuth output.\n"
+                    f"\n─── Launching VS Code for analysis — HITL #{hitl_id} still active ───\n"
+                    f"Send your final response after reviewing the VS Code output.\n"
                 )
                 self._manual_chat_display.configure(state="disabled")
                 self._manual_chat_display.see("end")
@@ -2892,7 +2900,7 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
         threading.Thread(target=_record, daemon=True).start()
 
     def _launch_oauth_session(self, model, context):
-        """Write context files and launch OAuth session (Claude Code or Gemini)."""
+        """Write context files and launch VS Code session (Claude Code or Gemini CLI)."""
         # Context preview — show files to be written before proceeding
         briefing = FLEET_DIR / "task-briefing.md"
         files_preview = [str(briefing)]
@@ -2950,7 +2958,7 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
 
         ditl_line = f"- DITL: {'enabled' if ditl_enabled else 'disabled'}"
 
-        # DITL compliance: filter PHI from context sent to external OAuth providers
+        # DITL compliance: filter PHI from context sent to external providers
         if ditl_enabled:
             try:
                 if str(FLEET_DIR) not in sys.path:
@@ -3033,76 +3041,93 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
                 encoding="utf-8",
             )
 
-        if "Claude" in model:
-            # Find VS Code: try multiple paths
-            import shutil
-            code_exe = shutil.which("code")
-            if not code_exe and sys.platform == "win32":
-                for p in [
-                    Path(os.environ.get("LOCALAPPDATA", "")) / "Programs" / "Microsoft VS Code" / "Code.exe",
-                    Path(os.environ.get("PROGRAMFILES", "")) / "Microsoft VS Code" / "Code.exe",
-                    Path(os.environ.get("USERPROFILE", "")) / "AppData" / "Local" / "Programs" / "Microsoft VS Code" / "Code.exe",
-                ]:
-                    if p.exists():
-                        code_exe = str(p)
-                        break
-            if not code_exe and sys.platform == "darwin":
-                for p in [
-                    Path("/Applications/Visual Studio Code.app/Contents/Resources/app/bin/code"),
-                    Path.home() / "Applications" / "Visual Studio Code.app" / "Contents" / "Resources" / "app" / "bin" / "code",
-                ]:
-                    if p.exists():
-                        code_exe = str(p)
-                        break
-            if not code_exe and sys.platform == "linux":
-                for p in [
-                    Path("/usr/bin/code"),
-                    Path("/usr/share/code/bin/code"),
-                    Path("/snap/bin/code"),
-                    Path.home() / ".local" / "bin" / "code",
-                ]:
-                    if p.exists():
-                        code_exe = str(p)
-                        break
-            if code_exe:
-                try:
-                    # Open VS Code to project dir + auto-open the briefing file
-                    subprocess.Popen(
-                        [code_exe, str(FLEET_DIR.parent),
-                         "--goto", str(briefing)],
-                        creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
-                    # Try to launch Claude Code CLI with the task pre-loaded
-                    claude_exe = shutil.which("claude")
-                    if claude_exe:
-                        # Launch Claude Code with the task context auto-fed via --print
-                        escaped = context.replace('"', '\\"')
-                        subprocess.Popen(
-                            [claude_exe, "--print",
-                             f"Read fleet/task-briefing.md and execute the task described in it. "
-                             f"User request: {escaped}"],
-                            cwd=str(FLEET_DIR.parent),
-                            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
-                        self._append_chat_response(
-                            "VS Code opened with task-briefing.md.\n"
-                            "Claude Code session started with your task pre-loaded.")
-                    else:
-                        self._append_chat_response(
-                            "VS Code opened with task-briefing.md.\n"
-                            "Start Claude Code: Ctrl+Shift+P → 'Claude: Open'\n"
-                            "Claude will see your task in task-briefing.md automatically.")
-                except Exception as e:
-                    self._append_chat_response(f"Could not open VS Code: {e}")
-            else:
-                import webbrowser
-                webbrowser.open("https://vscode.dev")
-                self._append_chat_response(
-                    "VS Code not found locally. Opened vscode.dev in browser.\n"
-                    "Context written to task-briefing.md.")
-        elif "Gemini" in model:
+        # ── Both Claude and Gemini share VS Code as the launch environment ──
+        import shutil
+        code_exe = shutil.which("code")
+        if not code_exe and sys.platform == "win32":
+            for p in [
+                Path(os.environ.get("LOCALAPPDATA", "")) / "Programs" / "Microsoft VS Code" / "Code.exe",
+                Path(os.environ.get("PROGRAMFILES", "")) / "Microsoft VS Code" / "Code.exe",
+                Path(os.environ.get("USERPROFILE", "")) / "AppData" / "Local" / "Programs" / "Microsoft VS Code" / "Code.exe",
+            ]:
+                if p.exists():
+                    code_exe = str(p)
+                    break
+        if not code_exe and sys.platform == "darwin":
+            for p in [
+                Path("/Applications/Visual Studio Code.app/Contents/Resources/app/bin/code"),
+                Path.home() / "Applications" / "Visual Studio Code.app" / "Contents" / "Resources" / "app" / "bin" / "code",
+            ]:
+                if p.exists():
+                    code_exe = str(p)
+                    break
+        if not code_exe and sys.platform == "linux":
+            for p in [
+                Path("/usr/bin/code"),
+                Path("/usr/share/code/bin/code"),
+                Path("/snap/bin/code"),
+                Path.home() / ".local" / "bin" / "code",
+            ]:
+                if p.exists():
+                    code_exe = str(p)
+                    break
+
+        if not code_exe:
             import webbrowser
-            webbrowser.open("https://aistudio.google.com")
+            webbrowser.open("https://vscode.dev")
             self._append_chat_response(
-                "Opened Google AI Studio. Context written to task-briefing.md.")
+                "VS Code not found locally. Opened vscode.dev in browser.\n"
+                "Context written to task-briefing.md.")
+            return
+
+        try:
+            # Open VS Code to project dir + auto-open the briefing file
+            subprocess.Popen(
+                [code_exe, str(FLEET_DIR.parent), "--goto", str(briefing)],
+                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+        except Exception as e:
+            self._append_chat_response(f"Could not open VS Code: {e}")
+            return
+
+        if "Claude" in model:
+            # Try to auto-start Claude Code CLI
+            claude_exe = shutil.which("claude")
+            if claude_exe:
+                escaped = context.replace('"', '\\"')
+                subprocess.Popen(
+                    [claude_exe, "--print",
+                     f"Read fleet/task-briefing.md and execute the task described in it. "
+                     f"User request: {escaped}"],
+                    cwd=str(FLEET_DIR.parent),
+                    creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+                self._append_chat_response(
+                    "VS Code opened with task-briefing.md.\n"
+                    "Claude Code started with your task pre-loaded.\n"
+                    "Fleet agents are listening — HITL requests will appear in Fleet Comm.")
+            else:
+                self._append_chat_response(
+                    "VS Code opened with task-briefing.md.\n"
+                    "Start Claude Code: Ctrl+Shift+P → 'Claude: Open'\n"
+                    "Fleet agents are listening — HITL requests will appear in Fleet Comm.")
+        elif "Gemini" in model:
+            # Gemini uses the same VS Code environment
+            gemini_exe = shutil.which("gemini")
+            if gemini_exe:
+                subprocess.Popen(
+                    [gemini_exe],
+                    cwd=str(FLEET_DIR.parent),
+                    creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+                self._append_chat_response(
+                    "VS Code opened with task-briefing.md.\n"
+                    "Gemini CLI started in the project directory.\n"
+                    "Toggle agent mode: /agent-mode (approval-gated ↔ autonomous)\n"
+                    "Fleet agents are listening — HITL requests will appear in Fleet Comm.")
+            else:
+                self._append_chat_response(
+                    "VS Code opened with task-briefing.md.\n"
+                    "Start Gemini: open VS Code terminal → run 'gemini'\n"
+                    "Toggle agent mode: /agent-mode (approval-gated ↔ autonomous)\n"
+                    "Fleet agents are listening — HITL requests will appear in Fleet Comm.")
 
     # ── Fleet Comm — data refresh ────────────────────────────────────────
 
