@@ -27,7 +27,12 @@ Skip: `.db`, `.pyc`, `.png`, `.jpg`, `.bin`, `.jsonl` files.
 
 ### 2. Gitignore Gap Check
 
-Verify `.gitignore` covers: `.secrets`, `*.env`, `*.pem`, `*.key`, `fleet.db`, `*.jsonl`
+Verify `.gitignore` covers:
+- Secrets/credentials: `.secrets`, `*.secrets`, `.env`, `.env.*`
+- Databases: `fleet/fleet.db` (and WAL files), `fleet/rag.db` (and WAL files)
+- Knowledge artifacts: `fleet/knowledge/*.jsonl` or `*.jsonl` wildcards
+- TLS certs: `fleet/certs/` directory (project uses directory-level exclusion, not `*.pem`/`*.key` wildcards)
+- User config: `CLAUDE.USER.md` (machine-specific info, must not be committed)
 
 ### 3. File Permission Check (if on Linux/WSL)
 
@@ -68,7 +73,14 @@ Check these paths have restricted permissions:
 - Look for raw variable interpolation (`${...}`, `{{ ... | safe }}`, or f-string injection)
 - All dynamic content should be escaped or sanitized before rendering
 
-### 9. CREATE_NO_WINDOW Check (Windows)
+### 9. `_security.py` Usage Check
+
+`fleet/skills/_security.py` exports shared security helpers. Verify:
+- Skills that accept file paths from payloads call `_security.safe_path()` rather than using raw path strings
+- Skills that return user-facing filenames call `_security.sanitize_filename()`
+- No skill duplicates path-validation logic that belongs in `_security.py`
+
+### 10. CREATE_NO_WINDOW Check (Windows)
 
 - All `subprocess.Popen` calls on Windows must include `creationflags=CREATE_NO_WINDOW`
 - This prevents console windows from flashing during background operations
@@ -89,5 +101,5 @@ Check these paths have restricted permissions:
   - Fix: `<remediation command or code change>`
 ```
 
-Save the advisory to `fleet/knowledge/security/pending/advisory_<id>.md`.
+Save the advisory to `fleet/knowledge/security/pending/advisory_<YYYYMMDD>_<NNN>.md` (e.g. `advisory_20260320_001.md`).
 The user must approve before any fixes are applied via `security_apply`.
