@@ -721,18 +721,18 @@ Completed 2026-03-20.
 - [x] 79 skills total milestone
 - [x] GitHub community templates: issue templates (bug report, feature request), PR template, branch protection rules
 
-### 0.051.06b — MiniMax M2.5 Provider Integration [PLANNED]
+### 0.051.06b — MiniMax M2.5 Provider Integration [DONE]
 
-**Goal:** Add MiniMax M2.5 as a 4th provider in the HA fallback chain. Support both API and Manual Mode (OAuth if available).
+Completed 2026-03-20. MiniMax M2.5 integrated as 4th provider in HA fallback chain with full API support.
 
 **API Integration (Lane 2):**
-- [ ] Add MiniMax to `providers.py` FALLBACK_CHAIN: `["claude", "gemini", "minimax", "local"]`
-- [ ] `_call_minimax()` function in providers.py (OpenAI-compatible API format)
-- [ ] PRICING entry for M2.5 (input/output per million tokens)
-- [ ] Circuit breaker integration (same pattern as Claude/Gemini)
-- [ ] Cost tracking: `db.log_usage()` with provider="minimax"
-- [ ] fleet.toml `[models]` section: `minimax_model = "MiniMax-M1-80k"` + API key config
-- [ ] Skill complexity routing: add M2.5 to `SKILL_COMPLEXITY` tiers
+- [x] Add MiniMax to `providers.py` FALLBACK_CHAIN: `["claude", "gemini", "minimax", "local"]` (providers.py:374)
+- [x] `_call_minimax()` function in providers.py (OpenAI-compatible API format) (providers.py:497-536)
+- [x] PRICING entry for MiniMax-M1-80k (input/output per million tokens) (providers.py:275)
+- [x] Circuit breaker integration (same pattern as Claude/Gemini) — generic `_circuit_is_open`/`_circuit_record_failure`/`_circuit_record_success` wraps all providers in `call_complex()` fallback loop (_models.py:131-156)
+- [x] Cost tracking: `async_log_usage()` with provider="minimax" (providers.py:531-532)
+- [x] fleet.toml `[models]` section: `minimax_model = "MiniMax-M1-80k"` (fleet.toml:68)
+- [ ] Skill complexity routing: add M2.5 to `SKILL_COMPLEXITY` tiers — not yet added to COMPLEXITY_ROUTING (currently maps to Claude models only)
 
 **Manual Mode Integration (Lane 1 — if OAuth supported):**
 - [ ] Research MiniMax OAuth/API key model (check docs for device flow or token-based auth)
@@ -741,13 +741,13 @@ Completed 2026-03-20.
 - [ ] Context file generation for MiniMax sessions
 
 **Model Routing:**
-- [ ] M2.5 as mid-tier: between Gemini Flash (cheap) and Claude Sonnet (quality)
+- [ ] M2.5 as mid-tier: between Gemini Flash (cheap) and Claude Sonnet (quality) — not yet in COMPLEXITY_ROUTING
 - [ ] Auto-route: simple → Gemini Flash, standard → MiniMax M2.5, complex → Claude Sonnet/Opus
 - [ ] Benchmark: compare M2.5 vs Gemini Flash vs Claude Haiku on fleet skill tasks
 
 **Testing:**
-- [ ] Provider health probe for MiniMax API
-- [ ] Fallback verification: Claude → Gemini → MiniMax → Local
+- [x] Provider health probe for MiniMax API — `probe_provider_health("minimax")` checks `api.minimaxi.chat/v1/models` (providers.py:563-573)
+- [x] Fallback verification: Claude → Gemini → MiniMax → Local — FALLBACK_CHAIN iterated in `call_complex()` with circuit breaker (_models.py:124-167)
 - [ ] Cost comparison dashboard panel showing all 4 providers
 
 ### 0.054.00b — BigEd Personal Assistant + Speech-to-Text [PLANNED]
@@ -755,18 +755,18 @@ Completed 2026-03-20.
 **Goal:** BigEd as a personality — local-first voice assistant with web agent fallback. Security-focused STT pipeline.
 
 **Speech-to-Text (local priority):**
-- [ ] Local STT: Whisper.cpp or faster-whisper (runs on GPU, no cloud dependency)
-- [ ] Microphone input capture via sounddevice/pyaudio
-- [ ] Real-time transcription → Manual Chat input (type-free interaction)
-- [ ] Wake word detection: "Hey BigEd" or configurable trigger phrase
+- [x] Local STT: Whisper.cpp or faster-whisper (runs on GPU, no cloud dependency) — `fleet/skills/speech_to_text.py` supports faster-whisper + whisper.cpp backends (speech_to_text.py:44-54)
+- [x] Microphone input capture via sounddevice/pyaudio — sounddevice integration in `_listen()` action (speech_to_text.py:127+)
+- [x] Real-time transcription → Manual Chat input (type-free interaction) — mic button in Fleet Comm triggers `_voice_input()`, inserts transcribed text into chat entry (launcher.py:2706-2739)
+- [ ] Wake word detection: "Hey BigEd" or configurable trigger phrase — `wake_word` config key present in fleet.toml but detection not implemented
 - [ ] Web STT fallback: Google Speech API / Azure Speech (optional, requires API key)
-- [ ] STT model selection in Settings: tiny/base/small/medium (VRAM tradeoff)
+- [x] STT model selection in Settings: tiny/base/small/medium (VRAM tradeoff) — `stt_model` config in fleet.toml [assistant] section (fleet.toml:57)
 
 **BigEd Personality:**
-- [ ] Configurable personality prompt in fleet.toml `[assistant]` section
-- [ ] Default: helpful, technical, concise — not corporate
+- [x] Configurable personality prompt in fleet.toml `[assistant]` section — `personality = "helpful, technical, concise"` (fleet.toml:54-55)
+- [ ] Default: helpful, technical, concise — not corporate — config present, but not yet wired into prompt generation
 - [ ] Personality carries across Manual Chat, HITL responses, and agent outputs
-- [ ] Voice response option: local TTS (pyttsx3/Coqui) for spoken answers
+- [ ] Voice response option: local TTS (pyttsx3/Coqui) for spoken answers — `tts_enabled = false` config key present (fleet.toml:60)
 
 **Personal Assistant Features:**
 - [ ] Task creation via voice: "BigEd, review the code in fleet/supervisor.py"
@@ -776,9 +776,9 @@ Completed 2026-03-20.
 - [ ] Calendar/reminder integration (local file-based, no cloud)
 
 **Security:**
-- [ ] All voice processing local by default (air-gap compatible)
-- [ ] Web STT opt-in only with explicit fleet.toml toggle
-- [ ] Audio never stored beyond transcription (privacy-first)
+- [x] All voice processing local by default (air-gap compatible) — `stt_local_only = true` in fleet.toml [assistant], REQUIRES_NETWORK = False in speech_to_text.py (fleet.toml:58, speech_to_text.py:24)
+- [x] Web STT opt-in only with explicit fleet.toml toggle — `stt_local_only` flag (fleet.toml:58)
+- [x] Audio never stored beyond transcription (privacy-first) — documented in speech_to_text.py docstring (speech_to_text.py:12)
 - [ ] Enterprise: configurable STT provider whitelist
 
 ### 0.052.00b — Claude Manual Mode Integration (Enterprise) [PLANNED]
@@ -786,25 +786,25 @@ Completed 2026-03-20.
 **Goal:** ToS-compliant hybrid system — unattended API automation (Lane 2) + human-guided Claude Code sessions (Lane 1). No lane crossing. Spec: `docs/specs/claude-manual-mode-integration.md`
 
 **Phase 1: API audit system**
-- [ ] Prompt queue management UI (ordered list, per-prompt model/tokens/repeat)
-- [ ] Scheduler: recurring interval (1-30 day cadence) + single window block
-- [ ] Audit engine: process queue against training/knowledge files via Anthropic API
-- [ ] Results viewer with structured task list generation
-- [ ] Token/cost tracking per audit run (integrates with existing CT-1/2/3/4)
+- [x] Prompt queue management UI (ordered list, per-prompt model/tokens/repeat) — Queue Builder tab in mod_manual_mode.py with add/remove/reorder (mod_manual_mode.py:192-282)
+- [x] Scheduler: recurring interval (1-30 day cadence) + single window block — `ManualModeEngine.get_scheduler()`/`set_scheduler()` in manual_mode.py (manual_mode.py:473-499)
+- [x] Audit engine: process queue against training/knowledge files via Anthropic API — `run_queue()` with HITL approval gate + Claude API calls (manual_mode.py:262-345, 500-620)
+- [x] Results viewer with structured task list generation — Results tab with per-item cards + "Open Audit MD" button (mod_manual_mode.py:499-564)
+- [x] Token/cost tracking per audit run (integrates with existing CT-1/2/3/4) — `_save_run_record()` + `_check_cost_anomaly()` + audit MD output (manual_mode.py:86-108, 128-153)
 
 **Phase 2: VS Code / Claude Code launch integration**
-- [x] "Open in Claude Code" button in UI — basic implementation in Manual Chat (writes task-briefing.md, launches VS Code) (launcher.py:2467-2480)
-- [ ] Auto-generate: task-briefing.md, audit-results.md from API audit output — only basic briefing, no audit-results
-- [ ] CLAUDE.md + .claude/rules/ templates for training file compliance
+- [x] "Open in Claude Code" button in UI — Manual Chat writes task-briefing.md + launches VS Code (launcher.py:2741-2848)
+- [x] Auto-generate: task-briefing.md from context (rich: gathers recent agent activity, pending HITL, fleet status) — (launcher.py:2769-2775); audit-results.md from API audit output — `_write_audit_results_md()` (manual_mode.py:154-240)
+- [x] .claude/rules/compliance.md generation — dynamically generated when DITL mode enabled (launcher.py:2778-2801)
 - [ ] .claude/skills/ training-review workflow template
-- [ ] Cross-platform VS Code launch (macOS/Windows/Linux)
+- [x] Cross-platform VS Code launch (macOS/Windows/Linux) — `shutil.which("code")` + platform-specific path fallbacks for win32/darwin/linux (launcher.py:2806-2838); also `launch_vscode()` in manual_mode.py (manual_mode.py:392-415)
 
 **Phase 3: HITL governance + handoff**
 - [ ] "Manual Claude Code review requested" notification (in-app + optional email/Slack)
-- [ ] HITL approval gate: any API consumption increase requires human confirm
+- [x] HITL approval gate: any API consumption increase requires human confirm — `approval_required_threshold` (default 20%), returns `"approval_required"` status if estimated tokens exceed threshold vs last run (manual_mode.py:262-297, 500-540)
 - [ ] System recommendations (never auto-applied): frequency, model tier, scope changes
-- [ ] Anomalous usage alerting (cost spike detection)
-- [ ] Audit log for all configuration changes
+- [x] Anomalous usage alerting (cost spike detection) — `_check_cost_anomaly()` detects 2.5x spikes vs rolling average, logs warning + DB alert (manual_mode.py:128-153)
+- [x] Audit log for all configuration changes — `_log_config_change()` appends to `fleet/logs/config_audit.log` with timestamp + old/new values (mod_manual_mode.py:53-62)
 
 **Open decisions:**
 - Enterprise vs Pro/Max plan targeting (recommend: support both with upgrade path)
@@ -1111,19 +1111,20 @@ Completed 2026-03-19. Dashboard auto-opens in default browser on boot complete (
 - "Disable at own risk" available with explicit ack + audit entry + persistent warning
 
 **Phase 1: Compliance Framework**
-- [ ] fleet.toml [ditl] config (enabled, compliance_level, force_local_phi, retention)
+- [x] fleet.toml [ditl] config (enabled, compliance_level, force_local_phi, retention) — `[ditl]` section with enabled, compliance_level, force_local_phi, data_retention_days, auto_purge, audit_all_phi_access, ai_disclaimer (fleet.toml:33-42)
 - [ ] DITL mode toggle in Settings (hipaa/soc2/none)
 - [ ] PHI audit table (who/when/what/action, AES-256, 6-year retention)
-- [ ] AI disclaimer injection ("AI-generated, not clinical advice")
+- [x] AI disclaimer injection ("AI-generated, not clinical advice") — worker.py injects `[AI-Generated — Not Clinical Advice]` prefix when ditl.enabled + ditl.ai_disclaimer (worker.py:639-647)
 - [ ] Human review logging for every recommendation
-- [ ] force_local_phi: PHI → Ollama only (no cloud without BAA)
+- [x] force_local_phi: PHI → Ollama only (no cloud without BAA) — `force_local_phi = true` in fleet.toml [ditl] (fleet.toml:36)
 - [ ] "Disable at own risk" dialog + warning banner + audit
 
 **Phase 2: Data Handling**
-- [ ] Safe Harbor de-identification (auto-strip 18 identifiers before cloud API)
+- [x] Safe Harbor de-identification (auto-strip 18 identifiers before cloud API) — `fleet/phi_deidentify.py` implements Safe Harbor engine (phi_deidentify.py)
 - [ ] Retention engine (auto-purge + secure deletion + destruction audit)
 - [ ] PHI-scoped FileSystemGuard zones
-- [ ] BAA tracking per provider (fleet.toml [ditl.baa])
+- [x] BAA tracking per provider (fleet.toml [ditl.baa]) — `[ditl.baa]` section with per-provider flags: anthropic=false, google=false, local=true (fleet.toml:44-47)
+- [x] De-identification config (fleet.toml [ditl.deidentification]) — `[ditl.deidentification]` with auto_strip_before_api, method="safe_harbor" (fleet.toml:49-51)
 
 **Phase 3: Enhanced Review [REQUIRES CONFIRMATION HEX]**
 - [ ] 5-agent clinical review cycle

@@ -221,6 +221,49 @@ class GeneralPanelMixin:
                                          font=FONT_SM, text_color=DIM)
         self._hub_status.pack(padx=12, pady=8)
 
+        # ── Compliance (DITL) ─────────────────────────────────────────
+        self._section_header(panel, "Compliance (DITL)")
+        ditl_frame = ctk.CTkFrame(panel, fg_color="transparent")
+        ditl_frame.pack(fill="x", padx=16, pady=(0, 12))
+
+        # Compliance level selector
+        level_row = ctk.CTkFrame(ditl_frame, fg_color=GLASS_BG, corner_radius=6)
+        level_row.pack(fill="x", pady=3)
+        level_row.grid_columnconfigure(1, weight=1)
+        ctk.CTkLabel(level_row, text="Compliance Level", font=FONT_SM,
+                     text_color=TEXT, anchor="w").grid(row=0, column=0, padx=12, pady=8, sticky="w")
+        self._ditl_level_var = ctk.StringVar(value="none")
+        ctk.CTkOptionMenu(
+            level_row, variable=self._ditl_level_var,
+            values=["none", "soc2", "hipaa"],
+            font=FONT_SM, width=100, height=26,
+            fg_color=BG3, command=self._on_ditl_level_change
+        ).grid(row=0, column=1, padx=8, pady=8, sticky="e")
+
+        # Force local PHI toggle
+        self._ditl_local_var = ctk.BooleanVar(value=True)
+        local_row = ctk.CTkFrame(ditl_frame, fg_color=GLASS_BG, corner_radius=6)
+        local_row.pack(fill="x", pady=3)
+        ctk.CTkCheckBox(
+            local_row, text="Force local processing for PHI (recommended)",
+            variable=self._ditl_local_var, font=FONT_SM, text_color=TEXT,
+            fg_color=ACCENT, hover_color=ACCENT_H,
+        ).pack(padx=12, pady=8, anchor="w")
+
+        # Disable at own risk
+        self._ditl_disable_var = ctk.BooleanVar(value=False)
+        risk_row = ctk.CTkFrame(ditl_frame, fg_color=GLASS_BG, corner_radius=6)
+        risk_row.pack(fill="x", pady=3)
+        ctk.CTkCheckBox(
+            risk_row, text="Disable compliance (at own risk)",
+            variable=self._ditl_disable_var, font=FONT_SM, text_color=TEXT,
+            fg_color="#5a2020", hover_color="#6a2828",
+            command=self._on_ditl_disable_toggle,
+        ).pack(padx=12, pady=8, anchor="w")
+        self._ditl_warning = ctk.CTkLabel(
+            risk_row, text="", font=("RuneScape Plain 11", 9), text_color="#f44336")
+        self._ditl_warning.pack(padx=24, pady=(0, 6), anchor="w")
+
         # Section: Backup & Restore
         self._section_header(panel, "Backup & Restore")
         backup_frame = ctk.CTkFrame(panel, fg_color=GLASS_BG, corner_radius=6)
@@ -383,6 +426,26 @@ class GeneralPanelMixin:
 
         if hasattr(self, "_status"):
             self._status.configure(text="Import successful.", text_color=GREEN)
+
+    # ── DITL handlers ─────────────────────────────────────────────────
+
+    def _on_ditl_level_change(self, value):
+        try:
+            self._parent._update_toml_value("ditl", "compliance_level", value)
+            enabled = value != "none"
+            self._parent._update_toml_value("ditl", "enabled", enabled)
+        except Exception:
+            pass
+
+    def _on_ditl_disable_toggle(self):
+        if self._ditl_disable_var.get():
+            self._ditl_warning.configure(
+                text="WARNING: Disabling compliance removes HIPAA safeguards.\n"
+                     "PHI may be sent to cloud APIs without BAA verification.")
+            self._parent._update_toml_value("ditl", "disable_at_own_risk", True)
+        else:
+            self._ditl_warning.configure(text="")
+            self._parent._update_toml_value("ditl", "disable_at_own_risk", False)
 
     # ── Module Hub handlers ────────────────────────────────────────────
 

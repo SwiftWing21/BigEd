@@ -2596,6 +2596,13 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
             command=self._send_manual_chat,
         ).grid(row=0, column=1)
 
+        # Microphone button (voice input)
+        self._mic_btn = ctk.CTkButton(
+            input_row, text="\U0001f3a4", width=36, height=30, font=("Segoe UI", 14),
+            fg_color=BG3, hover_color=BG2,
+            command=self._voice_input)
+        self._mic_btn.grid(row=0, column=2, padx=(4, 0))
+
     def _toggle_comm_requests(self):
         """Toggle collapsible Agent Requests panel."""
         self._comm_requests_collapsed = not self._comm_requests_collapsed
@@ -2694,6 +2701,42 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
         self._manual_chat_display.insert("end", f"\nAssistant: {text}\n")
         self._manual_chat_display.configure(state="disabled")
         self._manual_chat_display.see("end")
+
+    def _voice_input(self):
+        """Capture voice and transcribe to chat input."""
+        self._mic_btn.configure(text="\u23fa", fg_color="#5a2020")
+        self._append_chat_response("[Listening... 5 seconds]")
+
+        def _record():
+            try:
+                import sys as _sys
+                if str(FLEET_DIR) not in _sys.path:
+                    _sys.path.insert(0, str(FLEET_DIR))
+                from skills.speech_to_text import run as stt_run
+                config = {}
+                try:
+                    from config import load_config
+                    config = load_config()
+                except Exception:
+                    pass
+
+                import logging
+                log = logging.getLogger("stt")
+                result = stt_run({"action": "listen", "duration_secs": 5}, config, log)
+
+                if "text" in result and result["text"]:
+                    self._safe_after(0, lambda t=result["text"]: self._manual_chat_entry.insert(0, t))
+                    self._safe_after(0, lambda: self._append_chat_response(
+                        f"[Transcribed: {result.get('backend', '?')}]"))
+                else:
+                    self._safe_after(0, lambda: self._append_chat_response(
+                        f"[STT: {result.get('error', 'no text')}]"))
+            except Exception as e:
+                self._safe_after(0, lambda e=str(e): self._append_chat_response(f"[Voice error: {e}]"))
+            finally:
+                self._safe_after(0, lambda: self._mic_btn.configure(text="\U0001f3a4", fg_color=BG3))
+
+        threading.Thread(target=_record, daemon=True).start()
 
     def _launch_oauth_session(self, model, context):
         """Write context files and launch OAuth session (Claude Code or Gemini)."""

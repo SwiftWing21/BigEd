@@ -231,6 +231,20 @@ def init_db():
         # DAG promotion: index for dependency lookups and status+type queries
         conn.execute("CREATE INDEX IF NOT EXISTS idx_tasks_depends ON tasks(depends_on) WHERE depends_on IS NOT NULL")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_tasks_status_type ON tasks(status, type)")
+        # PHI audit table — DITL Phase 2 compliance tracking
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS phi_audit (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id TEXT,
+                action TEXT NOT NULL,
+                data_scope TEXT,
+                model_used TEXT,
+                phi_detected BOOLEAN DEFAULT 0,
+                deidentified BOOLEAN DEFAULT 0,
+                created_at TEXT DEFAULT (datetime('now'))
+            )
+        """)
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_phi_audit_date ON phi_audit(created_at)")
 
 
 def update_intelligence_score(task_id, score):

@@ -82,6 +82,7 @@ class Module:
         self._build_prompt_queue(scroll)
         self._build_evaluation(scroll)
         self._build_cost_panel(scroll)
+        self._build_stt_panel(scroll)
 
     def _card(self, parent, title):
         """Create a styled card frame with title."""
@@ -509,6 +510,45 @@ class Module:
         self._weight_status.pack(side="left", padx=8)
 
         ctk.CTkLabel(card, text="", font=FONT_XS).pack(pady=(0, 6))
+
+    # ── Panel 6: STT Settings ────────────────────────────────────────────────
+
+    def _build_stt_panel(self, parent):
+        """Voice Input (Speech-to-Text) settings panel."""
+        card = self._card(parent, "Voice Input (Speech-to-Text)")
+
+        config = self._load_config()
+        asst = config.get("assistant", {})
+
+        # STT status
+        status_text = "Enabled" if asst.get("stt_enabled") else "Disabled (enable in fleet.toml)"
+        ctk.CTkLabel(card, text=f"Status: {status_text}", font=FONT_SM,
+                     text_color=GREEN if asst.get("stt_enabled") else DIM,
+                     anchor="w").pack(padx=12, pady=(0, 4), anchor="w")
+
+        # Model selection
+        model_row = ctk.CTkFrame(card, fg_color="transparent")
+        model_row.pack(fill="x", padx=12, pady=2)
+        ctk.CTkLabel(model_row, text="STT Model:", font=FONT_SM, text_color=DIM).pack(side="left")
+        models = ["tiny", "base", "small", "medium"]
+        current = asst.get("stt_model", "base")
+        ctk.CTkLabel(model_row, text=current, font=FONT_STAT, text_color=TEXT).pack(side="left", padx=8)
+
+        sizes = {"tiny": "~75MB, fastest", "base": "~150MB, good balance",
+                 "small": "~500MB, better accuracy", "medium": "~1.5GB, best accuracy"}
+        ctk.CTkLabel(card, text=f"  {sizes.get(current, '')}", font=FONT_XS,
+                     text_color=DIM, anchor="w").pack(padx=12, anchor="w")
+
+        # Wake word
+        wake = asst.get("wake_word", "")
+        ctk.CTkLabel(card, text=f"Wake word: {wake or 'disabled'}", font=FONT_SM,
+                     text_color=TEXT if wake else DIM, anchor="w"
+                     ).pack(padx=12, pady=(4, 2), anchor="w")
+
+        # Personality
+        personality = asst.get("personality", "helpful, technical, concise")
+        ctk.CTkLabel(card, text=f"Personality: {personality}", font=FONT_XS,
+                     text_color=DIM, anchor="w").pack(padx=12, pady=(0, 8), anchor="w")
 
     # ── Helpers ──────────────────────────────────────────────────────────────
 

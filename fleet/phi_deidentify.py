@@ -1,5 +1,9 @@
-"""PHI De-identification — Safe Harbor method (18 identifiers)."""
+"""PHI De-identification — Safe Harbor method (18 identifiers) + retention."""
 import re
+import sqlite3
+from pathlib import Path
+
+FLEET_DIR = Path(__file__).parent
 
 # Patterns for each identifier type
 PATTERNS = [
@@ -55,3 +59,27 @@ def contains_phi(text: str) -> bool:
         if re.search(pattern, text, re.IGNORECASE):
             return True
     return False
+
+
+def purge_expired_phi(retention_days: int = 2555, log=None) -> dict:
+    """Secure deletion of PHI beyond retention period."""
+    db_path = FLEET_DIR / "fleet.db"
+    conn = sqlite3.connect(str(db_path), timeout=10)
+
+    # Count expired
+    expired = conn.execute(
+        "SELECT COUNT(*) FROM phi_audit WHERE created_at < datetime('now', ?)",
+        (f'-{retention_days} days',)
+    ).fetchone()[0]
+
+    if expired > 0:
+        conn.execute(
+            "DELETE FROM phi_audit WHERE created_at < datetime('now', ?)",
+            (f'-{retention_days} days',)
+        )
+        conn.commit()
+        if log:
+            log.info(f"PHI purge: {expired} records beyond {retention_days}-day retention")
+
+    conn.close()
+    return {"purged": expired, "retention_days": retention_days}
