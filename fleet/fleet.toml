@@ -282,6 +282,18 @@ deploy_skill = {zones = ["skills"], access = "full"}
 code_write = {zones = ["workspace", "code_drafts"], access = "full"}
 ingest = {zones = ["knowledge"], access = "read_write"}
 
+# v0.052.00b: Manual Mode — operator-controlled audit queue + scheduler
+[manual_mode]
+# queue items: {prompt, model, max_tokens, repeat}
+queue = []
+
+[manual_mode.scheduler]
+enabled       = false
+mode          = "one-time"   # "one-time" | "recurring"
+run_at        = ""           # one-time: "YYYY-MM-DD HH:MM"
+interval_days = 1            # recurring: 1-30 days
+next_run      = ""           # computed; read-only display
+
 # v0.050.03b: Configurable boot timeouts — used by adaptive timeout in boot.py
 [boot]
 model_load_timeout = 300         # first-boot default timeout (seconds) for model loading
