@@ -681,7 +681,7 @@ log_all_access = true    # SOC 2 audit trail for file operations
 - [x] Hover/click expands: shows each request with dynamic scroll area (launcher.py:2310-2311, 2404-2417)
 - [x] Pinned view: pin button holds list expanded until unpinned (launcher.py:2398-2402)
 
-### 0.053.00b — Module Hub + Scrollable Tab Bar [PLANNED]
+### 0.053.00b — Module Hub + Scrollable Tab Bar [PARTIAL]
 
 **Goal:** GitHub-based module repository with download/install UX + scrollable tab bar for unlimited modules.
 
@@ -695,17 +695,27 @@ log_all_access = true    # SOC 2 audit trail for file operations
 - [ ] Minimum tab width to keep text readable
 
 **Module Hub core:**
-- [ ] registry.json catalog (name, version, checksum, tags, enterprise_only)
-- [ ] Module download from GitHub raw URL with SHA-256 verification
-- [ ] Module install: copy to modules/, update manifest, add to fleet.toml
-- [ ] Module Hub section in Settings (install/enable/disable/update cards)
-- [ ] Version checking: installed vs available
+- [ ] registry.json catalog (name, version, checksum, tags, enterprise_only) — external hub repo
+- [x] Module download from GitHub raw URL with SHA-256 verification (`hub.py:install_module()`)
+- [x] Module install: copy to modules/, update manifest.json (`hub.py:_update_local_manifest()`)
+- [ ] Add to fleet.toml [launcher.tabs] on install — not yet wired
+- [ ] Module Hub section in Settings (install/enable/disable/update cards) — Phase 2
+- [x] Version checking: installed vs available (`hub.py:get_update_available()`)
 
 **Enterprise:**
-- [ ] Private hub URL in fleet.toml `[modules] enterprise_hub_url`
+- [x] Private hub URL in fleet.toml `[modules] enterprise_hub_url` (`hub.py` reads config)
 - [ ] Federation auto-selects from enterprise hub
 - [ ] Enterprise-only module gating
 - [ ] Agent-generated module recommendations (HITL)
+
+### 0.053.01b — Skills Milestone 79 + GitHub Community [DONE]
+
+Completed 2026-03-20.
+
+- [x] `fleet/skills/regression_detector.py` — quality grade tracking, regression + hallucination detection (A-F scale per skill/agent)
+- [x] `fleet/skills/packet_optimizer.py` — audit + optimize packet sizes across Ollama/Claude/Gemini/SSE calls
+- [x] 79 skills total milestone
+- [x] GitHub community templates: issue templates (bug report, feature request), PR template, branch protection rules
 
 ### 0.051.06b — MiniMax M2.5 Provider Integration [PLANNED]
 

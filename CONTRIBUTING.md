@@ -69,8 +69,13 @@ Each skill is a single Python file in `fleet/skills/`. Skills are auto-discovere
 SKILL_NAME = "my_skill"
 DESCRIPTION = "What this skill does in one sentence."
 
-def execute(task, context):
-    """Main entry point. Returns a result dict."""
+def run(payload: dict, config: dict, log) -> dict:
+    """
+    Main entry point. Returns a result dict.
+    payload — JSON parsed from task's payload_json
+    config  — fleet.toml dict from config.load_config()
+    log     — worker logger (use log.info/warning/error)
+    """
     ...
 ```
 

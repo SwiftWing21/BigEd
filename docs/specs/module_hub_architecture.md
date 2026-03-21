@@ -1,7 +1,8 @@
 # BigEd CC — Module Hub Architecture
 
-**Status:** Planning
+**Status:** Phase 1 backend complete — UX (Phase 2) pending
 **Repo:** https://github.com/SwiftWing21/BigEd-ModuleHub
+**Implementation:** `BigEd/launcher/modules/hub.py`
 **Purpose:** Community and enterprise plugin repository for BigEd CC modules
 
 ---
@@ -131,12 +132,12 @@ The launcher gets a **Module Hub** tab (or section in Settings → Modules):
 ### Install Flow
 
 1. User clicks **[Install]** on a module card
-2. BigEd downloads `manifest.json` from the hub repo
-3. Verifies: checksum, min version, SOC 2 flag, enterprise gate
+2. BigEd fetches `registry.json` from the hub repo (cached)
+3. Verifies: checksum (SHA-256), min version, SOC 2 flag, enterprise gate
 4. Downloads module `.py` file(s) to `BigEd/launcher/modules/`
 5. Updates local `manifest.json` with new module entry
-6. Adds to `fleet.toml [launcher.tabs]`
-7. Tab appears immediately (lazy-loaded on first click)
+6. <!-- TODO: verify --> Adds to `fleet.toml [launcher.tabs]` — **not yet implemented in hub.py**; requires manual edit + restart
+7. Tab appears after launcher restart (lazy-load on first click is Phase 2)
 
 ### Enterprise Flow
 
@@ -190,11 +191,15 @@ BigEd CC maintains SOC 2 compliance via:
 ## Implementation Phases
 
 ### Phase 1: Core Module Hub (0.053.00b)
-- [ ] Restructure BigEd-ModuleHub repo with registry.json
-- [ ] Move current modules from BigEd main repo to hub
-- [ ] Module download/install function in BigEd launcher
-- [ ] Module Hub section in Settings → Modules panel
-- [ ] Checksum verification on download
+- [ ] Restructure BigEd-ModuleHub repo with registry.json (external repo — not yet done)
+- [ ] Move current modules from BigEd main repo to hub (external repo — not yet done)
+- [x] Module download/install function in BigEd launcher (`hub.py:install_module()`)
+- [x] Checksum verification on download (SHA-256, `hub.py:96-100`)
+- [x] Local manifest tracking (`hub.py:_update_local_manifest()`)
+- [x] Version comparison: installed vs hub (`hub.py:get_update_available()`)
+- [x] Uninstall support (`hub.py:uninstall_module()`)
+- [ ] Module Hub section in Settings → Modules panel (Phase 2)
+- [ ] Auto-add to fleet.toml [launcher.tabs] on install (not yet wired)
 
 ### Phase 2: Module Hub UX (0.053.01b)
 - [ ] Dedicated Module Hub tab or Settings panel
@@ -223,12 +228,14 @@ BigEd CC maintains SOC 2 compliance via:
 
 ```toml
 [modules]
-hub_url = "https://github.com/SwiftWing21/BigEd-ModuleHub"
-enterprise_hub_url = ""           # Private org repo (empty = use public)
-auto_update = false               # Check for module updates on boot
-check_interval_hours = 24         # How often to check for updates
-verify_checksums = true           # SHA-256 verification on download
-allow_community = true            # Allow non-core modules (enterprise may disable)
+hub_url              = "https://github.com/SwiftWing21/BigEd-ModuleHub"
+enterprise_hub_url   = ""      # Private org repo (empty = use public hub)
+verify_checksums     = true    # SHA-256 verification on download (hub.py:96-100)
+
+# Planned (not yet read by hub.py):
+# auto_update          = false   # Check for module updates on boot
+# check_interval_hours = 24      # How often to check for updates
+# allow_community      = true    # Allow non-core modules (enterprise may disable)
 ```
 
 ---
@@ -260,9 +267,10 @@ BigEd CC (main repo)
 
 ```
 [Hub Registry] → [Download] → [Verify Checksum] → [Install to modules/]
-       → [Update manifest.json] → [Add to fleet.toml tabs]
-       → [Lazy-load on first tab click] → [on_refresh() polling]
-       → [on_close() cleanup]
+       → [Update manifest.json]
+       → [Manual: add to fleet.toml tabs + restart]  ← Phase 1 gap
+       → [Lazy-load on first tab click]               ← Phase 2
+       → [on_refresh() polling] → [on_close() cleanup]
 ```
 
 ### Enterprise Module Flow
@@ -272,3 +280,15 @@ BigEd CC (main repo)
        → [FileSystemGuard validates zones] → [SOC 2 audit check]
        → [Install with enterprise flags] → [Audit logged]
 ```
+
+---
+
+## Implementation vs Spec Divergences (hub.py audit — v0.053.00b)
+
+| Spec item | Implementation status | Notes |
+|-----------|----------------------|-------|
+| `install_module()` adds to `fleet.toml [launcher.tabs]` | ✗ Not implemented | Only updates `manifest.json`. Tab registration requires manual fleet.toml edit + launcher restart. |
+| `get_update_available()` returns only newer-version modules | ✗ Partial — also returns uninstalled modules | Line 69: `updates.append(mod)` for any module not in installed dict. Rename to `get_available_or_updates()` or split into two methods. |
+| `auto_update`, `check_interval_hours`, `allow_community` config keys | ✗ Not read by hub.py | Keys are in the spec's fleet.toml section but hub.py only reads `hub_url`, `enterprise_hub_url`, `verify_checksums`. |
+| Install flow step 7: "Tab appears immediately (lazy-loaded)" | ✗ Not implemented | Phase 2 — requires Module Hub Settings UX panel. |
+| Checksum: `actual.startswith(expected)` comparison | ⚠ Asymmetric check | `hub.py:99-100` uses `startswith` in both directions. Full hex equality preferred. <!-- TODO: verify --> |
