@@ -2700,6 +2700,20 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
         # Context preview — show files to be written before proceeding
         briefing = FLEET_DIR / "task-briefing.md"
         files_preview = [str(briefing)]
+
+        # Check DITL mode for compliance rules file
+        ditl_enabled = False
+        try:
+            import tomllib
+            with open(FLEET_TOML, "rb") as f:
+                toml_data = tomllib.load(f)
+            ditl_enabled = toml_data.get("ditl", {}).get("enabled", False)
+        except Exception:
+            pass
+        compliance_rule = FLEET_DIR.parent / ".claude" / "rules" / "compliance.md"
+        if ditl_enabled:
+            files_preview.append(str(compliance_rule))
+
         # If an active HITL task is loaded, note the response will also be sent back
         hitl_id = getattr(self, '_active_hitl_task_id', None)
         if hitl_id:
@@ -2708,8 +2722,76 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
         confirm = _ctx_preview_confirm(self, model, file_list)
         if not confirm:
             return
-        # Write task-briefing.md
-        briefing.write_text(f"# Manual Chat Session\n\n{context}\n", encoding="utf-8")
+
+        # ── Write rich task-briefing.md ──────────────────────────────────
+        ts = time.strftime("%Y-%m-%dT%H:%M:%SZ")
+
+        # Gather recent agent activity for context
+        recent = ""
+        try:
+            import sqlite3
+            db_path = FLEET_DIR / "fleet.db"
+            if db_path.exists():
+                conn = sqlite3.connect(str(db_path), timeout=5)
+                try:
+                    rows = conn.execute(
+                        "SELECT type, status, result_json FROM tasks "
+                        "WHERE status='DONE' "
+                        "AND created_at >= datetime('now', '-1 hour') "
+                        "ORDER BY created_at DESC LIMIT 5"
+                    ).fetchall()
+                    if rows:
+                        recent = "\n## Recent Agent Activity\n"
+                        for r in rows:
+                            recent += f"- {r[0]}: {r[1]}\n"
+                finally:
+                    conn.close()
+        except Exception:
+            pass
+
+        fleet_status = "running" if self._system_running else "stopped"
+        selected_model = self._manual_model_var.get()
+
+        ditl_line = f"- DITL: {'enabled' if ditl_enabled else 'disabled'}"
+
+        content = (
+            f"# Manual Chat Session Briefing\n"
+            f"Generated: {ts} by BigEd CC\n\n"
+            f"## User Request\n{context}\n\n"
+            f"## System Context\n"
+            f"- Fleet: {fleet_status}\n"
+            f"- Model: {selected_model}\n"
+            f"{ditl_line}\n"
+            f"{recent}\n"
+            f"## Suggested Approach\n"
+            f"Review the request above and use the fleet knowledge base for context.\n"
+        )
+        briefing.write_text(content, encoding="utf-8")
+
+        # ── Write .claude/rules/compliance.md if DITL mode enabled ───────
+        if ditl_enabled:
+            compliance_rule.parent.mkdir(parents=True, exist_ok=True)
+            compliance_rule.write_text(
+                "---\n"
+                "paths:\n"
+                '  - "training-files/**/*.md"\n'
+                '  - "training-files/**/*.pdf"\n'
+                '  - "training-files/**/*.docx"\n'
+                "---\n"
+                "# Training file compliance rules\n\n"
+                "- Every training file MUST contain: title, version, effective date,\n"
+                "  review date, author, and learning objectives\n"
+                '- Flag files where review date is in the past as "OVERDUE REVIEW"\n'
+                '- Flag files missing any required metadata as "INCOMPLETE METADATA"\n'
+                "- Check that all external links are formatted correctly\n"
+                "- Verify assessment criteria match stated learning objectives\n"
+                "- Output findings in this format:\n\n"
+                "  ## [filename]\n"
+                "  - **Status:** Compliant / Non-compliant / Needs review\n"
+                "  - **Issues:** [list specific problems]\n"
+                "  - **Suggested actions:** [concrete next steps]\n",
+                encoding="utf-8",
+            )
 
         if "Claude" in model:
             # Find VS Code: try multiple paths
@@ -2722,6 +2804,28 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
                     Path(os.environ.get("PROGRAMFILES", "")) / "Microsoft VS Code" / "Code.exe",
                     Path(os.environ.get("USERPROFILE", "")) / "AppData" / "Local" / "Programs" / "Microsoft VS Code" / "Code.exe",
                 ]:
+                    if p.exists():
+                        code_exe = str(p)
+                        break
+            if not code_exe and sys.platform == "darwin":
+                # Common macOS VS Code paths
+                mac_paths = [
+                    Path("/Applications/Visual Studio Code.app/Contents/Resources/app/bin/code"),
+                    Path.home() / "Applications" / "Visual Studio Code.app" / "Contents" / "Resources" / "app" / "bin" / "code",
+                ]
+                for p in mac_paths:
+                    if p.exists():
+                        code_exe = str(p)
+                        break
+            if not code_exe and sys.platform == "linux":
+                # Common Linux VS Code paths
+                linux_paths = [
+                    Path("/usr/bin/code"),
+                    Path("/usr/share/code/bin/code"),
+                    Path("/snap/bin/code"),
+                    Path.home() / ".local" / "bin" / "code",
+                ]
+                for p in linux_paths:
                     if p.exists():
                         code_exe = str(p)
                         break

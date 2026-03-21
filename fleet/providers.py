@@ -271,6 +271,8 @@ PRICING = {
     "gemini-2.0-flash-lite": {"input": 0.0, "output": 0.0, "cache_read": 0.0, "cache_create": 0.0},  # free tier
     "gemini-2.5-pro": {"input": 1.25, "output": 10.00, "cache_read": 0.31, "cache_create": 4.50},
     "gemini-2.5-flash": {"input": 0.15, "output": 0.60, "cache_read": 0.0375, "cache_create": 0.0375},
+    # MiniMax models
+    "MiniMax-M1-80k": {"input": 0.50, "output": 2.00, "cache_read": 0.05, "cache_create": 0.50},
     # Local models (Ollama — zero API cost, but track for comparison)
     "qwen3:8b": {"input": 0.0, "output": 0.0, "cache_read": 0.0, "cache_create": 0.0},
     "qwen3:4b": {"input": 0.0, "output": 0.0, "cache_read": 0.0, "cache_create": 0.0},
@@ -369,7 +371,7 @@ def get_local_model_for_skill(skill_name: str, config: dict) -> str:
 
 
 # v0.45: HA fallback cascade — if primary fails, try next provider
-FALLBACK_CHAIN = ["claude", "gemini", "local"]
+FALLBACK_CHAIN = ["claude", "gemini", "minimax", "local"]
 
 
 def calculate_cost(usage, model_id: str) -> float:
@@ -492,6 +494,51 @@ def _call_gemini(system: str, user: str, models: dict, max_tokens: int,
     return resp.text
 
 
+def _call_minimax(system: str, user: str, config: dict, max_tokens: int = 2048,
+                   skill_name: str = "unknown", task_id=None, agent_name=None) -> str:
+    """Call MiniMax API (OpenAI-compatible format)."""
+    import json, urllib.request
+    api_key = os.environ.get("MINIMAX_API_KEY", "")
+    if not api_key:
+        raise RuntimeError("MINIMAX_API_KEY not set")
+
+    model = config.get("models", {}).get("minimax_model", "MiniMax-M1-80k")
+    host = "https://api.minimaxi.chat/v1"
+
+    body = json.dumps({
+        "model": model,
+        "messages": [
+            {"role": "system", "content": system},
+            {"role": "user", "content": user},
+        ],
+        "max_tokens": max_tokens,
+    }).encode()
+
+    req = urllib.request.Request(
+        f"{host}/chat/completions", data=body, method="POST",
+        headers={
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {api_key}",
+        })
+
+    with urllib.request.urlopen(req, timeout=120) as r:
+        data = json.loads(r.read())
+
+    response = data["choices"][0]["message"]["content"]
+    usage = data.get("usage", {})
+
+    # Log usage
+    async_log_usage(
+        skill=skill_name, model=model, provider="minimax",
+        input_tokens=usage.get("prompt_tokens", 0),
+        output_tokens=usage.get("completion_tokens", 0),
+        cost_usd=calculate_cost_simple(usage.get("prompt_tokens", 0), usage.get("completion_tokens", 0), model),
+        task_id=task_id, agent=agent_name,
+    )
+
+    return response
+
+
 _provider_health = {}  # provider -> {"healthy": bool, "last_check": float, "latency_ms": float}
 
 
@@ -510,6 +557,17 @@ def probe_provider_health(provider: str) -> dict:
                 "https://generativelanguage.googleapis.com/v1beta/models?key=" +
                 os.environ.get("GEMINI_API_KEY", ""),
                 method="GET"
+            )
+            with _ur.urlopen(req, timeout=5):
+                pass
+        elif provider == "minimax":
+            import urllib.request as _ur
+            _minimax_key = os.environ.get("MINIMAX_API_KEY", "")
+            if not _minimax_key:
+                raise RuntimeError("MINIMAX_API_KEY not set")
+            req = _ur.Request(
+                "https://api.minimaxi.chat/v1/models",
+                headers={"Authorization": f"Bearer {_minimax_key}"},
             )
             with _ur.urlopen(req, timeout=5):
                 pass

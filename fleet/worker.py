@@ -636,6 +636,15 @@ def main():
                     pass  # input scanning must never block task execution
                 result = run_skill(task['type'], payload, config, log)
                 # Evaluator-Optimizer: route high-stakes skills through review
+                # DITL: inject AI disclaimer if compliance mode enabled
+                try:
+                    if config.get("ditl", {}).get("enabled") and config.get("ditl", {}).get("ai_disclaimer"):
+                        if isinstance(result, str):
+                            result = "[AI-Generated — Not Clinical Advice]\n\n" + result
+                        elif isinstance(result, dict) and "response" in result:
+                            result["response"] = "[AI-Generated — Not Clinical Advice]\n\n" + result["response"]
+                except Exception:
+                    pass
                 if _should_review(task['type'], config, payload):
                     verdict = _run_review(task['type'], payload, result, config, log)
                     if verdict.get("verdict") == "FAIL":

@@ -29,12 +29,43 @@ device_name = ""                 # this device's identity in federation (empty =
 # schema = "federation"          # use federation-assigned names
 # prefix = "HQ"                  # prefix all agent names: HQ-Coder-1, HQ-Researcher
 
+# v0.060.00b: Doctor in the Loop — HIPAA compliance mode
+[ditl]
+enabled = false
+compliance_level = "none"        # none | soc2 | hipaa
+force_local_phi = true
+data_retention_days = 2555       # ~7 years
+auto_purge = true
+require_baa = true
+disable_at_own_risk = false
+audit_all_phi_access = true
+ai_disclaimer = true
+
+[ditl.baa]
+anthropic = false
+google = false
+local = true
+
+[ditl.deidentification]
+auto_strip_before_api = true
+method = "safe_harbor"
+
+# v0.054.00b: BigEd Personal Assistant
+[assistant]
+personality = "helpful, technical, concise"
+stt_enabled = false
+stt_model = "base"                   # tiny | base | small | medium (VRAM tradeoff)
+stt_local_only = true                # Never send audio to cloud APIs
+wake_word = ""                       # Empty = disabled. Set to "hey biged" etc.
+tts_enabled = false                  # Local text-to-speech responses
+
 [models]
 local = "qwen3:8b"
 complex = "qwen3:8b"
 complex_provider = "local"    # "claude" | "gemini" | "local"
 conductor_model = "qwen3:4b"  # CPU-pinned user chat model (num_gpu=0, ~2-3GB RAM, 0 VRAM)
 vision_model = "llava"        # local multimodal model for image analysis (llava, minicpm-v, qwen-vl)
+minimax_model = "MiniMax-M1-80k"
 ollama_host = "http://localhost:11434"
 keep_alive_mins = 30             # model stay loaded (auto-refreshed while app runs)
 
