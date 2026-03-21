@@ -68,6 +68,35 @@ vram_target_gb         = 8.4
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# HYBRID  — autoresearch + Ollama BOTH on GPU (smaller Ollama model)
+# Designed for: training while fleet stays responsive (no CPU fallback)
+# Split: qwen3:4b (~2.5GB GPU) + training (~8GB) = ~10.5GB total
+# Workers get ~80 tok/s on 4b (vs 8 tok/s on CPU)
+# ─────────────────────────────────────────────────────────────────────────────
+[profiles.hybrid]
+description      = "Training + Ollama both on GPU — 4b model, ~80 tok/s"
+
+ollama_mode      = "gpu"
+ollama_model     = "qwen3:4b"
+
+DEPTH            = 6
+model_dim        = 384
+HEAD_DIM         = 128
+ASPECT_RATIO     = 64
+
+DEVICE_BATCH_SIZE  = 16
+TOTAL_BATCH_SIZE   = 65536
+MATRIX_LR          = 0.04
+SCALAR_LR          = 0.85
+WEIGHT_DECAY       = 0.05
+WARMDOWN_RATIO     = 0.5
+
+gradient_checkpointing = true
+cpu_offload            = false
+vram_target_gb         = 8.0
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # FLAT_OUT  — maximum VRAM, system RAM overflow enabled
 # Designed for: pushing capacity limits, larger architecture experiments
 # VRAM budget: up to 95% = 11.4GB  (5% = ~0.6GB headroom for CUDA context/loading)
