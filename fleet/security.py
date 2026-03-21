@@ -52,6 +52,26 @@ RBAC_ROLES = {
     "viewer": {"read"},
 }
 
+# ── Granular RBAC permissions (0.135.00b — Enterprise & Multi-Tenant) ────
+
+PERMISSIONS = {
+    "admin": {"read", "write", "delete", "configure", "deploy", "audit", "manage_users"},
+    "operator": {"read", "write", "deploy", "audit"},
+    "developer": {"read", "write", "deploy"},
+    "viewer": {"read", "audit"},
+    "auditor": {"read", "audit"},
+}
+
+
+def check_permission(role: str, action: str) -> bool:
+    """Check if a role has permission for an action.
+
+    Uses the granular PERMISSIONS table (0.135.00b). Roles not in the table
+    have no permissions (deny by default).
+    """
+    perms = PERMISSIONS.get(role, set())
+    return action in perms
+
 
 def get_request_role(config_loader, req=None):
     """Determine role from request token.

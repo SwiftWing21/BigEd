@@ -87,8 +87,16 @@ local_model = "qwen3:8b"       # local reviewer; prefixed with /think for extend
 local_ctx = 16384              # extended context window for deeper review passes
 local_think = true             # prepend /think to prompt (enables CoT on supported models)
 
+# v0.165.00b: Multi-GPU & Unified Memory Support
 [gpu]
-mode = "eco"  # "eco" = CPU-only Ollama, "full" = GPU
+mode = "eco"                         # "eco" = CPU-only Ollama, "full" = GPU
+multi_gpu = false                    # Enable multi-GPU model splitting
+gpu_count = 1                        # Number of GPUs (auto-detected if 0)
+memory_mode = "discrete"             # discrete | unified (Mac Studio/DGX Spark)
+cluster_enabled = false              # Enable networked GPU cluster
+cluster_peers = []                   # Peer URLs for GPU cluster: ["http://rig2:11434"]
+vram_aggregation = false             # Aggregate VRAM across GPUs for model selection
+model_parallelism = "none"           # none | tensor | pipeline (Ollama handles this)
 
 [thermal]
 # Softened thresholds — only react to actual danger, not normal load
@@ -334,6 +342,12 @@ ingest = {zones = ["knowledge"], access = "read_write"}
 # v0.052.00b: Manual Mode — operator-driven Claude compliance audit settings
 [manual_mode]
 approval_required_threshold = 0.20  # HITL gate: require approval when token estimate increases >20% vs last run
+
+# v0.135.00b: Enterprise & Multi-Tenant — tenant isolation, granular RBAC, SLA monitoring
+[enterprise]
+multi_tenant = false
+tenant_id = ""                    # This instance's tenant ID (empty = single-tenant)
+tenant_isolation = "database"     # database | schema | none
 
 # v0.050.03b: Configurable boot timeouts — used by adaptive timeout in boot.py
 [boot]

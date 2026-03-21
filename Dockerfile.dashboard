@@ -1,0 +1,31 @@
+# BigEd CC — Dashboard-only Container Image
+# Lightweight image serving just the web dashboard + web launcher.
+# Used by docker-compose.yml 'dashboard' service for horizontal scaling.
+#
+# Build: docker build -f Dockerfile.dashboard -t biged-dashboard .
+# Run:   docker run -p 5555:5555 biged-dashboard
+
+FROM python:3.12-slim
+
+# System deps
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    openssl curl && \
+    rm -rf /var/lib/apt/lists/*
+
+RUN pip install --no-cache-dir uv
+
+WORKDIR /app
+
+# Copy only fleet code (no BigEd GUI needed for dashboard)
+COPY fleet/ ./fleet/
+COPY requirements*.txt ./
+
+RUN if [ -f requirements.txt ]; then uv pip install --system -r requirements.txt; fi
+
+EXPOSE 5555
+
+HEALTHCHECK --interval=30s --timeout=5s --retries=3 \
+    CMD curl -f http://localhost:5555/api/fleet/health || exit 1
+
+# Start web app (dashboard + web launcher)
+CMD ["python", "fleet/web_app.py"]

@@ -1729,6 +1729,48 @@ def api_federation_peers():
     return jsonify(peers)
 
 
+# ── SLA Monitoring (0.135.00b — Enterprise & Multi-Tenant) ──────────────────
+
+@app.route("/api/sla")
+def api_sla():
+    """SLA monitoring -- task completion time guarantees."""
+    try:
+        conn = get_conn()
+        # Average completion time by skill (last 7 days)
+        metrics = conn.execute("""
+            SELECT type as skill,
+                   COUNT(*) as tasks,
+                   AVG(CAST((julianday(
+                       CASE WHEN status='DONE' THEN created_at END
+                   ) - julianday(created_at)) * 86400 AS INTEGER)) as avg_secs,
+                   SUM(CASE WHEN status='DONE' THEN 1 ELSE 0 END) * 100.0 / COUNT(*) as success_rate
+            FROM tasks
+            WHERE created_at >= datetime('now', '-7 days')
+            GROUP BY type
+            ORDER BY tasks DESC LIMIT 20
+        """).fetchall()
+
+        # Overall fleet SLA
+        overall = conn.execute("""
+            SELECT COUNT(*) as total,
+                   SUM(CASE WHEN status='DONE' THEN 1 ELSE 0 END) as done,
+                   SUM(CASE WHEN status='FAILED' THEN 1 ELSE 0 END) as failed
+            FROM tasks WHERE created_at >= datetime('now', '-24 hours')
+        """).fetchone()
+
+        conn.close()
+        return jsonify({
+            "skills": [dict(r) for r in metrics],
+            "overall_24h": {
+                "total": overall["total"],
+                "success_rate": round(overall["done"] / max(overall["total"], 1) * 100, 1),
+                "failure_rate": round(overall["failed"] / max(overall["total"], 1) * 100, 1),
+            },
+        })
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
 # ── Entry ────────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":

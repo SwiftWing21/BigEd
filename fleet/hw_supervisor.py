@@ -187,7 +187,7 @@ def _memory_self_check(poll_count):
 
 # ── State ─────────────────────────────────────────────────────────────────────
 
-def write_state(status, model, thermal=None, models_loaded=None, conductor_status=None, memory_stats=None):
+def write_state(status, model, thermal=None, models_loaded=None, conductor_status=None, memory_stats=None, gpu_config=None):
     """Write expanded hw_state.json for supervisor/worker/dashboard/launcher."""
     try:
         state = {
@@ -203,6 +203,8 @@ def write_state(status, model, thermal=None, models_loaded=None, conductor_statu
             state["conductor"] = conductor_status  # "loaded" | "unloaded" | "warming"
         if memory_stats:
             state["memory"] = memory_stats
+        if gpu_config:
+            state["gpu_config"] = gpu_config  # v0.165.00b: multi-GPU topology
         # Atomic write: temp file then rename
         tmp_fd, tmp_path = tempfile.mkstemp(dir=str(FLEET_DIR), suffix='.json')
         with os.fdopen(tmp_fd, 'w', encoding='utf-8') as f:
@@ -415,6 +417,48 @@ def read_gpu_thermal():
     if not _HAS_GPU:
         return None
     return _gpu_read_telemetry(_gpu_backend)
+
+
+def detect_gpu_config() -> dict:
+    """Detect GPU configuration: count, total VRAM, unified memory."""
+    config = {"gpu_count": 0, "total_vram_gb": 0, "memory_mode": "discrete", "gpus": []}
+    try:
+        import pynvml
+        pynvml.nvmlInit()
+        count = pynvml.nvmlDeviceGetCount()
+        config["gpu_count"] = count
+        for i in range(count):
+            h = pynvml.nvmlDeviceGetHandleByIndex(i)
+            mem = pynvml.nvmlDeviceGetMemoryInfo(h)
+            name = pynvml.nvmlDeviceGetName(h)
+            gpu = {
+                "index": i,
+                "name": name if isinstance(name, str) else name.decode(),
+                "vram_total_gb": round(mem.total / 1024**3, 1),
+                "vram_used_gb": round(mem.used / 1024**3, 1),
+            }
+            config["gpus"].append(gpu)
+            config["total_vram_gb"] += gpu["vram_total_gb"]
+        pynvml.nvmlShutdown()
+    except Exception:
+        pass
+
+    # Check for unified memory (Mac/DGX)
+    if sys.platform == "darwin":
+        config["memory_mode"] = "unified"
+        try:
+            import subprocess
+            r = subprocess.run(["sysctl", "-n", "hw.memsize"], capture_output=True, text=True)
+            if r.returncode == 0:
+                total_bytes = int(r.stdout.strip())
+                config["total_vram_gb"] = round(total_bytes / 1024**3, 1)
+                config["gpu_count"] = 1
+                config["gpus"] = [{"index": 0, "name": "Apple Silicon (unified)",
+                                   "vram_total_gb": config["total_vram_gb"]}]
+        except Exception:
+            pass
+
+    return config
 
 
 def read_cpu_thermal():
@@ -726,6 +770,10 @@ def main():
         failed = [k for k, v in startup_checks.items() if not v]
         log.warning(f"Startup checks: {passed}/{total} passed. Failed: {failed}")
         write_state("degraded", get_current_local_model())
+
+    # ── Multi-GPU detection (v0.165.00b) ────────────────────────────────────
+    gpu_config = detect_gpu_config()
+    log.info(f"GPU config: {gpu_config['gpu_count']} GPU(s), {gpu_config['total_vram_gb']}GB total, mode={gpu_config['memory_mode']}")
 
     # ── Dr. Ders model promotion ──────────────────────────────────────────
     # Boot fast on smallest model, then promote to best available CPU-bound
@@ -1129,7 +1177,7 @@ def main():
                     except Exception:
                         pass
 
-                write_state("ready", current_model, thermal, models_loaded, conductor_status, mem_stats)
+                write_state("ready", current_model, thermal, models_loaded, conductor_status, mem_stats, gpu_config)
 
                 # ── Adaptive wake-up interval ────────────────────────
                 # Speed up when something is happening, slow down when idle

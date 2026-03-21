@@ -20,6 +20,23 @@ def utc_to_local(utc_str: str | None) -> str:
 
 DB_PATH = Path(__file__).parent / "fleet.db"
 
+
+def get_tenant_db_path(tenant_id: str = None) -> Path:
+    """Get DB path for a tenant. None = default (single-tenant mode).
+
+    In multi-tenant mode (enterprise.multi_tenant = true in fleet.toml),
+    each tenant gets an isolated database under fleet/tenants/<tenant_id>/.
+    The directory is auto-created if it doesn't exist.
+
+    Returns fleet/fleet.db for single-tenant (default) mode.
+    """
+    base = Path(__file__).parent
+    if not tenant_id:
+        return base / "fleet.db"
+    tenant_dir = base / "tenants" / tenant_id
+    tenant_dir.mkdir(parents=True, exist_ok=True)
+    return tenant_dir / "fleet.db"
+
 SCHEMA = """
 PRAGMA journal_mode=WAL;
 PRAGMA synchronous=NORMAL;
