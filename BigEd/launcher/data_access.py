@@ -486,3 +486,29 @@ class FleetDB:
                 conn.close()
         except Exception:
             return []
+
+    @staticmethod
+    def recent_eval_scores(db_path, limit: int = 20) -> list[dict]:
+        """Return last N tasks that have an intelligence_score, most recent first.
+
+        Returns list of dicts: id, type, assigned_to, created_at, intelligence_score.
+        """
+        try:
+            if not Path(db_path).exists():
+                return []
+            conn = FleetDB._connect(db_path)
+            try:
+                rows = conn.execute("""
+                    SELECT id, type, assigned_to, created_at,
+                           ROUND(intelligence_score, 3) as intelligence_score
+                    FROM tasks
+                    WHERE intelligence_score IS NOT NULL
+                    ORDER BY id DESC LIMIT ?
+                """, (limit,)).fetchall()
+                return [dict(r) for r in rows]
+            except sqlite3.OperationalError:
+                return []
+            finally:
+                conn.close()
+        except Exception:
+            return []

@@ -113,31 +113,126 @@ class Module:
         models = config.get("models", {})
         tiers = config.get("models", {}).get("tiers", {})
 
-        # Current model
+        # Editable fields: (label, toml_key_path, current_value)
+        field_defs = [
+            ("Active GPU Model", ("models", "local"),             models.get("local", "qwen3:8b")),
+            ("Conductor (CPU)",  ("models", "conductor_model"),   models.get("conductor_model", "qwen3:4b")),
+            ("Keep Alive (mins)",("models", "keep_alive_mins"),   str(models.get("keep_alive_mins", 30))),
+            ("Tier Default",     ("models", "tiers", "default"),  tiers.get("default", "qwen3:8b")),
+            ("Tier Low",         ("models", "tiers", "low"),      tiers.get("low", "qwen3:1.7b")),
+            ("Tier Critical",    ("models", "tiers", "critical"), tiers.get("critical", "qwen3:0.6b")),
+        ]
+
         settings_grid = ctk.CTkFrame(card, fg_color="transparent")
         settings_grid.pack(fill="x", padx=12, pady=4)
         settings_grid.grid_columnconfigure(1, weight=1)
 
-        fields = [
-            ("Active GPU Model", models.get("local", "qwen3:8b")),
-            ("Conductor (CPU)", models.get("conductor_model", "qwen3:4b")),
-            ("Keep Alive", f"{models.get('keep_alive_mins', 30)} minutes"),
-            ("Tier Default", tiers.get("default", "qwen3:8b")),
-            ("Tier Low", tiers.get("low", "qwen3:1.7b")),
-            ("Tier Critical", tiers.get("critical", "qwen3:0.6b")),
-        ]
-
-        for i, (label, value) in enumerate(fields):
+        self._model_entry_vars = {}
+        for i, (label, key_path, value) in enumerate(field_defs):
             ctk.CTkLabel(settings_grid, text=label, font=FONT_SM, text_color=DIM,
                          anchor="w").grid(row=i, column=0, padx=(0, 12), pady=2, sticky="w")
-            ctk.CTkLabel(settings_grid, text=value, font=FONT_STAT, text_color=TEXT,
-                         anchor="w").grid(row=i, column=1, pady=2, sticky="w")
+            var = ctk.StringVar(value=value)
+            self._model_entry_vars[key_path] = var
+            ctk.CTkEntry(settings_grid, textvariable=var, font=FONT_STAT,
+                         fg_color=BG3, border_color=BG3, text_color=TEXT,
+                         height=26, width=160
+                         ).grid(row=i, column=1, pady=2, sticky="w")
 
-        # Weight adjustment
+        # Save button
+        save_row = ctk.CTkFrame(card, fg_color="transparent")
+        save_row.pack(fill="x", padx=12, pady=(4, 8))
+        self._model_save_status = ctk.CTkLabel(save_row, text="", font=FONT_XS, text_color=DIM)
+        self._model_save_status.pack(side="left", padx=4)
+        ctk.CTkButton(save_row, text="Save Model Settings", width=150, height=28,
+                      font=FONT_SM, fg_color=ACCENT, hover_color=ACCENT_H,
+                      command=self._save_model_settings).pack(side="right")
+
+        # ── Skill Complexity Routing ──
         ctk.CTkLabel(card, text="Skill Complexity Routing", font=FONT_BOLD,
                      text_color=GOLD, anchor="w").pack(fill="x", padx=12, pady=(8, 2))
-        ctk.CTkLabel(card, text="Simple tasks → Haiku ($0.80/M)  |  Standard → Sonnet ($3/M)  |  Complex → Opus ($15/M)",
-                     font=FONT_XS, text_color=DIM, anchor="w").pack(fill="x", padx=16, pady=(0, 8))
+        ctk.CTkLabel(card,
+                     text="Simple → Haiku ($0.80/M)  |  Medium → Sonnet ($3/M)  |  Complex → Opus ($15/M)",
+                     font=FONT_XS, text_color=DIM, anchor="w").pack(fill="x", padx=16, pady=(0, 4))
+
+        # Build editable tier dropdowns from SKILL_COMPLEXITY
+        try:
+            import sys
+            sys.path.insert(0, str(FLEET_DIR))
+            from providers import SKILL_COMPLEXITY
+        except Exception:
+            SKILL_COMPLEXITY = {}
+
+        complexity_scroll = ctk.CTkScrollableFrame(card, fg_color=BG3, corner_radius=4, height=160)
+        complexity_scroll.pack(fill="x", padx=12, pady=(0, 4))
+        complexity_scroll.grid_columnconfigure(1, weight=1)
+
+        self._skill_tier_vars = {}
+        for row_i, (skill, tier) in enumerate(sorted(SKILL_COMPLEXITY.items())):
+            ctk.CTkLabel(complexity_scroll, text=skill, font=FONT_XS, text_color=DIM,
+                         anchor="w").grid(row=row_i, column=0, padx=(6, 8), pady=1, sticky="w")
+            var = ctk.StringVar(value=tier)
+            self._skill_tier_vars[skill] = var
+            ctk.CTkOptionMenu(
+                complexity_scroll, variable=var,
+                values=["simple", "medium", "complex"],
+                font=FONT_XS, height=22, width=90,
+                fg_color=BG2, button_color=BG3, button_hover_color=BG,
+            ).grid(row=row_i, column=1, pady=1, sticky="w")
+
+        skill_save_row = ctk.CTkFrame(card, fg_color="transparent")
+        skill_save_row.pack(fill="x", padx=12, pady=(2, 10))
+        self._skill_save_status = ctk.CTkLabel(skill_save_row, text="", font=FONT_XS, text_color=DIM)
+        self._skill_save_status.pack(side="left", padx=4)
+        ctk.CTkButton(skill_save_row, text="Save Routing", width=120, height=28,
+                      font=FONT_SM, fg_color=ACCENT, hover_color=ACCENT_H,
+                      command=self._save_skill_complexity).pack(side="right")
+
+    def _save_model_settings(self):
+        """Write changed model values back to fleet.toml using tomlkit."""
+        try:
+            import tomlkit
+            with open(FLEET_TOML, "r", encoding="utf-8") as f:
+                doc = tomlkit.load(f)
+
+            for key_path, var in self._model_entry_vars.items():
+                val = var.get().strip()
+                if not val:
+                    continue
+                # Navigate nested key path and set value
+                node = doc
+                for k in key_path[:-1]:
+                    node = node[k]
+                last_key = key_path[-1]
+                # Preserve int type for numeric fields
+                try:
+                    node[last_key] = int(val)
+                except (ValueError, TypeError):
+                    node[last_key] = val
+
+            with open(FLEET_TOML, "w", encoding="utf-8") as f:
+                f.write(tomlkit.dumps(doc))
+            self._model_save_status.configure(text="Saved.", text_color=GREEN)
+        except Exception as e:
+            self._model_save_status.configure(text=f"Error: {e}", text_color=RED)
+
+    def _save_skill_complexity(self):
+        """Write skill tier assignments to fleet.toml [skill_complexity]."""
+        try:
+            import tomlkit
+            with open(FLEET_TOML, "r", encoding="utf-8") as f:
+                doc = tomlkit.load(f)
+
+            # Write/overwrite [skill_complexity] table
+            tbl = tomlkit.table()
+            for skill, var in self._skill_tier_vars.items():
+                tbl[skill] = var.get()
+            doc["skill_complexity"] = tbl
+
+            with open(FLEET_TOML, "w", encoding="utf-8") as f:
+                f.write(tomlkit.dumps(doc))
+            self._skill_save_status.configure(text="Saved. Restart fleet to apply.", text_color=GREEN)
+        except Exception as e:
+            self._skill_save_status.configure(text=f"Error: {e}", text_color=RED)
 
     # ── Panel 3: Prompt Queue ────────────────────────────────────────────────
 
@@ -334,6 +429,95 @@ class Module:
 
         ctk.CTkLabel(card, text="", font=FONT_XS).pack(pady=(0, 4))
 
+        # ── Live score feed ──
+        live_hdr = ctk.CTkFrame(card, fg_color="transparent")
+        live_hdr.pack(fill="x", padx=12, pady=(4, 2))
+        ctk.CTkLabel(live_hdr, text="Recent Scores", font=FONT_BOLD,
+                     text_color=GOLD, anchor="w").pack(side="left")
+        self._eval_refresh_btn = ctk.CTkButton(
+            live_hdr, text="↺", width=24, height=22, font=FONT_SM,
+            fg_color=BG3, hover_color=BG2,
+            command=self._refresh_eval_scores)
+        self._eval_refresh_btn.pack(side="right")
+
+        self._eval_scores_frame = ctk.CTkScrollableFrame(
+            card, fg_color=BG3, corner_radius=4, height=140)
+        self._eval_scores_frame.pack(fill="x", padx=12, pady=(0, 8))
+        self._eval_scores_frame.grid_columnconfigure(0, weight=0)
+        self._eval_scores_frame.grid_columnconfigure(1, weight=1)
+        self._eval_scores_frame.grid_columnconfigure(2, weight=0)
+        self._eval_scores_frame.grid_columnconfigure(3, weight=0)
+
+        self._eval_empty_lbl = ctk.CTkLabel(
+            self._eval_scores_frame, text="No scored tasks yet",
+            font=FONT_SM, text_color=DIM)
+        self._eval_empty_lbl.pack(pady=8)
+
+        # Auto-refresh every 10s via on_refresh
+        self._eval_refresh_after = None
+        self._schedule_eval_refresh()
+
+    def _schedule_eval_refresh(self):
+        """Schedule periodic eval score refresh via the app's after() mechanism."""
+        try:
+            self._eval_refresh_after = self._app.after(10000, self._schedule_eval_refresh)
+        except Exception:
+            pass
+        self._refresh_eval_scores()
+
+    def _refresh_eval_scores(self):
+        """Fetch recent eval scores from DB in a background thread and update UI."""
+        def _fetch():
+            try:
+                import sys
+                sys.path.insert(0, str(FLEET_DIR.parent / "BigEd" / "launcher"))
+                from data_access import FleetDB
+                return FleetDB.recent_eval_scores(FLEET_DIR / "fleet.db", limit=20)
+            except Exception:
+                return []
+
+        def _render(rows):
+            for w in self._eval_scores_frame.winfo_children():
+                w.destroy()
+            if not rows:
+                ctk.CTkLabel(self._eval_scores_frame, text="No scored tasks yet",
+                             font=FONT_SM, text_color=DIM).pack(pady=8)
+                return
+            # Column headers
+            headers = ["Task", "Skill", "Agent", "Score"]
+            for col, h in enumerate(headers):
+                ctk.CTkLabel(self._eval_scores_frame, text=h,
+                             font=FONT_XS, text_color=DIM, anchor="w"
+                             ).grid(row=0, column=col, padx=(6, 4), pady=(2, 0), sticky="w")
+            for row_i, r in enumerate(rows, start=1):
+                score = r.get("intelligence_score") or 0.0
+                # Colour by score tier
+                if score >= 0.8:
+                    score_color = GREEN
+                elif score >= 0.5:
+                    score_color = GOLD
+                else:
+                    score_color = ORANGE
+                ctk.CTkLabel(self._eval_scores_frame, text=f"#{r['id']}",
+                             font=FONT_XS, text_color=DIM, anchor="w",
+                             ).grid(row=row_i, column=0, padx=(6, 4), pady=1, sticky="w")
+                ctk.CTkLabel(self._eval_scores_frame,
+                             text=(r.get("type") or "")[:18],
+                             font=FONT_XS, text_color=TEXT, anchor="w",
+                             ).grid(row=row_i, column=1, padx=(0, 4), pady=1, sticky="w")
+                ctk.CTkLabel(self._eval_scores_frame,
+                             text=(r.get("assigned_to") or "")[:14],
+                             font=FONT_XS, text_color=DIM, anchor="w",
+                             ).grid(row=row_i, column=2, padx=(0, 8), pady=1, sticky="w")
+                ctk.CTkLabel(self._eval_scores_frame,
+                             text=f"{score:.3f}",
+                             font=("Consolas", 9, "bold"), text_color=score_color, anchor="e",
+                             ).grid(row=row_i, column=3, padx=(0, 6), pady=1, sticky="e")
+
+        import threading
+        threading.Thread(target=lambda: self._app.after(0, lambda: _render(_fetch())),
+                         daemon=True).start()
+
     # ── Panel 5: Cost Intelligence ───────────────────────────────────────────
 
     def _build_cost_panel(self, parent):
@@ -370,7 +554,14 @@ class Module:
             return {}
 
     def on_refresh(self):
-        pass  # Static panels — no periodic refresh needed
+        """Refresh live eval scores when Intelligence tab is active."""
+        if hasattr(self, '_eval_scores_frame'):
+            self._refresh_eval_scores()
 
     def on_close(self):
         self._queue_running = False
+        if getattr(self, '_eval_refresh_after', None):
+            try:
+                self._app.after_cancel(self._eval_refresh_after)
+            except Exception:
+                pass

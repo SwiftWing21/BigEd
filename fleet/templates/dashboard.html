@@ -83,7 +83,10 @@
   .badge-idle { background: #1b2a3d; color: var(--blue); }
   .badge-busy { background: #3d2e0e; color: var(--orange); }
   .badge-offline { background: #2d2d2d; color: var(--dim); }
+  .badge-online { background: #1b3d1b; color: var(--green); }
+  .badge-error { background: #3d1b1b; color: var(--red); }
   .badge-info { background: #1b2a3d; color: var(--blue); }
+  .badge-unknown { background: #2d2d2d; color: var(--dim); }
 
   .chart-container { position: relative; height: 260px; }
 
@@ -258,9 +261,15 @@ async function fetchJSON(url) {
   }
 }
 
+const BADGE_WHITELIST = new Set([
+  'done', 'failed', 'running', 'pending', 'idle', 'busy',
+  'offline', 'online', 'error', 'info'
+]);
+
 function badge(status) {
   const s = (status || '').toLowerCase();
-  return `<span class="badge badge-${escapeHTML(s)}">${escapeHTML(status)}</span>`;
+  const cls = BADGE_WHITELIST.has(s) ? s : 'unknown';
+  return `<span class="badge badge-${cls}">${escapeHTML(status)}</span>`;
 }
 
 function timeAgo(dateStr) {
@@ -617,7 +626,7 @@ async function loadAgentActivity() {
     agent.textContent = e.agent;
     var statusBadge = document.createElement('span');
     var s = (e.status || '').toLowerCase();
-    statusBadge.className = 'badge badge-' + s;
+    statusBadge.className = 'badge badge-' + (BADGE_WHITELIST.has(s) ? s : 'unknown');
     statusBadge.textContent = e.status || '';
     var detail = document.createElement('span');
     detail.textContent = ' ' + (e.detail || '');
