@@ -224,14 +224,13 @@ def run(payload: dict, config: dict) -> str:
         for entry in entries:
             f.write(json.dumps(entry) + "\n")
 
-    # Optional: copy training data to autoresearch pipeline
+    # Auto-routes to autoresearch pipeline per 0.051.04b
+    import shutil
     autoresearch_dir = FLEET_DIR.parent / "autoresearch" / "data"
-    copied_to_autoresearch = False
-    if autoresearch_dir.exists():
-        import shutil
-        shutil.copy2(output_path, autoresearch_dir / output_path.name)
-        print(f"[dataset_synthesize] Copied training data to autoresearch: {output_path.name}", file=sys.stderr)
-        copied_to_autoresearch = True
+    autoresearch_dir.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(output_path, autoresearch_dir / output_path.name)
+    print(f"[dataset_synthesize] Copied training data to autoresearch: {output_path.name}", file=sys.stderr)
+    copied_to_autoresearch = True
 
     return json.dumps({
         "status": "ok",

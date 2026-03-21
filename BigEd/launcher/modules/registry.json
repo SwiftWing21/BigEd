@@ -1,0 +1,110 @@
+{
+  "registry_version": "1.0",
+  "updated": "2026-03-20",
+  "modules": [
+    {
+      "name": "crm",
+      "version": "0.22",
+      "sha256": "",
+      "tags": ["crm", "contacts"],
+      "enterprise_only": false,
+      "download_url": "",
+      "description": "Customer relationship management, contact tracking, interaction history",
+      "file": "mod_crm.py",
+      "author": "BigEd Core",
+      "license": "Apache-2.0",
+      "min_biged_version": "0.050.00b"
+    },
+    {
+      "name": "accounts",
+      "version": "0.22",
+      "sha256": "",
+      "tags": ["accounts", "billing"],
+      "enterprise_only": false,
+      "download_url": "",
+      "description": "Account management, organization profiles, billing integration",
+      "file": "mod_accounts.py",
+      "author": "BigEd Core",
+      "license": "Apache-2.0",
+      "min_biged_version": "0.050.00b"
+    },
+    {
+      "name": "onboarding",
+      "version": "0.23",
+      "sha256": "",
+      "tags": ["onboarding", "setup"],
+      "enterprise_only": false,
+      "download_url": "",
+      "description": "Guided onboarding workflows, setup wizards, first-run configuration",
+      "file": "mod_onboarding.py",
+      "author": "BigEd Core",
+      "license": "Apache-2.0",
+      "min_biged_version": "0.050.00b"
+    },
+    {
+      "name": "customers",
+      "version": "0.23",
+      "sha256": "",
+      "tags": ["customers", "analytics"],
+      "enterprise_only": false,
+      "download_url": "",
+      "description": "Customer data views, segmentation, engagement analytics",
+      "file": "mod_customers.py",
+      "author": "BigEd Core",
+      "license": "Apache-2.0",
+      "min_biged_version": "0.050.00b"
+    },
+    {
+      "name": "ingestion",
+      "version": "0.23",
+      "sha256": "",
+      "tags": ["ingest", "rag", "core"],
+      "enterprise_only": false,
+      "download_url": "",
+      "description": "Data ingestion pipeline, file upload, RAG indexing, format conversion",
+      "file": "mod_ingestion.py",
+      "author": "BigEd Core",
+      "license": "Apache-2.0",
+      "min_biged_version": "0.050.00b"
+    },
+    {
+      "name": "outputs",
+      "version": "0.23",
+      "sha256": "",
+      "tags": ["outputs", "export", "core"],
+      "enterprise_only": false,
+      "download_url": "",
+      "description": "Task output viewer, export controls, result history and formatting",
+      "file": "mod_outputs.py",
+      "author": "BigEd Core",
+      "license": "Apache-2.0",
+      "min_biged_version": "0.050.00b"
+    },
+    {
+      "name": "intelligence",
+      "version": "0.051",
+      "sha256": "",
+      "tags": ["intelligence", "models", "core"],
+      "enterprise_only": false,
+      "download_url": "",
+      "description": "System transparency, model controls, prompt queue, evaluation display",
+      "file": "mod_intelligence.py",
+      "author": "BigEd Core",
+      "license": "Apache-2.0",
+      "min_biged_version": "0.050.00b"
+    },
+    {
+      "name": "owner_core",
+      "version": "0.47",
+      "sha256": "",
+      "tags": ["owner", "admin", "governance"],
+      "enterprise_only": false,
+      "download_url": "",
+      "description": "Owner administration panel, system configuration, fleet governance",
+      "file": "mod_owner_core.py",
+      "author": "BigEd Core",
+      "license": "Apache-2.0",
+      "min_biged_version": "0.050.00b"
+    }
+  ]
+}

@@ -892,6 +892,12 @@ class CustomTabBar(ctk.CTkFrame):
         self._all_tab_cells: list = []
         self._tab_names_order: list[str] = []
 
+        # Mouse-wheel horizontal scroll (Windows + Linux)
+        for _widget in (self._bar, bar_container):
+            _widget.bind("<MouseWheel>", self._on_mousewheel)
+            _widget.bind("<Button-4>", self._on_mousewheel)
+            _widget.bind("<Button-5>", self._on_mousewheel)
+
         # Full-width 1-px separator beneath the strip
         self._sep = ctk.CTkFrame(self, fg_color=BG3, height=1, corner_radius=0)
         self._sep.grid(row=1, column=0, sticky="ew")
@@ -929,6 +935,7 @@ class CustomTabBar(ctk.CTkFrame):
             hover_color=BG3,
             text_color=DIM,
             corner_radius=0,
+            width=max(80, len(name) * 8 + 30),  # min 80px so short names stay readable
             height=38,
             anchor="center",
             command=lambda n=name: self.set(n),
@@ -1029,6 +1036,13 @@ class CustomTabBar(ctk.CTkFrame):
             text_color=TEXT if self._tab_scroll_offset > 0 else BG2)
         self._scroll_right_btn.configure(
             text_color=TEXT if self._tab_scroll_offset < max_offset else BG2)
+
+    def _on_mousewheel(self, event) -> None:
+        """Scroll tab bar on mouse wheel (Windows <MouseWheel>, Linux <Button-4/5>)."""
+        if event.num == 4 or (hasattr(event, "delta") and event.delta > 0):
+            self._scroll_tabs(-1)
+        elif event.num == 5 or (hasattr(event, "delta") and event.delta < 0):
+            self._scroll_tabs(1)
 
 
 # ─── Main App ─────────────────────────────────────────────────────────────────

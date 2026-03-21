@@ -200,6 +200,22 @@
   </div>
 
   <div class="card wide">
+    <h2>File Access Log <span style="font-size:11px;color:var(--dim);font-weight:normal">v0.051.07b — SOC 2 audit trail</span></h2>
+    <div id="fsAuditNote" style="color:var(--dim);font-size:11px;margin-bottom:8px"></div>
+    <table style="width:100%;font-size:12px">
+      <thead><tr>
+        <th style="text-align:left;padding:4px 8px;color:var(--dim)">Time</th>
+        <th style="text-align:left;padding:4px 8px;color:var(--dim)">Status</th>
+        <th style="text-align:left;padding:4px 8px;color:var(--dim)">Agent</th>
+        <th style="text-align:left;padding:4px 8px;color:var(--dim)">Skill</th>
+        <th style="text-align:left;padding:4px 8px;color:var(--dim)">Action</th>
+        <th style="text-align:left;padding:4px 8px;color:var(--dim)">Path</th>
+      </tr></thead>
+      <tbody id="fsAuditTable"></tbody>
+    </table>
+  </div>
+
+  <div class="card wide">
     <h2>API Cost Tracker</h2>
     <div class="stat-row" id="costSummary"></div>
     <div id="costDetails" style="margin-top:12px"></div>
@@ -818,6 +834,35 @@ async function loadEvolution() {
     }
 }
 
+async function loadFilesystemAudit() {
+  try {
+    const d = await fetch('/api/filesystem/audit?limit=20').then(r => r.json());
+    const note = document.getElementById('fsAuditNote');
+    const tbody = document.getElementById('fsAuditTable');
+    if (!d.log_exists) {
+      note.textContent = 'Audit log not found — enable log_all_access in fleet.toml [filesystem] to start recording.';
+      tbody.innerHTML = '';
+      return;
+    }
+    note.textContent = d.entries.length === 0
+      ? 'No entries yet.' : 'Showing ' + d.entries.length + ' most recent entries (newest first).';
+    // Build rows using escapeHTML to prevent XSS on path/agent values
+    var rows = '';
+    d.entries.forEach(function(e) {
+      var color = e.status === 'DENY' ? 'var(--red)' : 'var(--green)';
+      rows += '<tr>'
+        + '<td style="padding:3px 8px;color:var(--dim);white-space:nowrap">' + escapeHTML((e.timestamp||'').replace('T',' ')) + '</td>'
+        + '<td style="padding:3px 8px;color:' + color + ';font-weight:bold">' + escapeHTML(e.status||'?') + '</td>'
+        + '<td style="padding:3px 8px">' + escapeHTML(e.agent||'') + '</td>'
+        + '<td style="padding:3px 8px;color:var(--dim)">' + escapeHTML(e.skill||'') + '</td>'
+        + '<td style="padding:3px 8px">' + escapeHTML(e.action||'') + '</td>'
+        + '<td style="padding:3px 8px;font-size:11px;word-break:break-all">' + escapeHTML(e.path||e.raw||'') + '</td>'
+        + '</tr>';
+    });
+    tbody.innerHTML = rows;
+  } catch(ex) { console.error('Filesystem audit load error:', ex); }
+}
+
 async function loadAll() {
   // Pre-fetch aggregate to collapse 11 API calls into 1; fetchJSON() serves from cache
   try {
@@ -831,7 +876,7 @@ async function loadAll() {
     loadActivity(), loadSkills(), loadDiscussions(), loadModules(),
     loadReviews(), loadKnowledge(), loadRAG(), loadTimeline(),
     loadDataStats(), loadAlerts(), loadAgentActivity(), loadCostTracker(),
-    loadEvolution(),
+    loadEvolution(), loadFilesystemAudit(),
   ]);
   _dashCache = null; // release cache after all loaders consumed it
   document.getElementById('lastUpdate').textContent = 'Updated: ' + new Date().toLocaleTimeString();
@@ -854,6 +899,7 @@ setInterval(async () => {
     loadModules(), loadReviews(), loadKnowledge(), loadRAG(),
     loadTimeline(), loadDataStats(), loadCodeStats(), loadAlerts(),
     loadAgentActivity(), loadCostTracker(), loadEvolution(),
+    loadFilesystemAudit(),
   ]);
   _dashCache = null;
 }, 30000);

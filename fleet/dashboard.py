@@ -889,6 +889,60 @@ def api_modules():
     return jsonify({"modules": modules, "profile": profile})
 
 
+@app.route("/api/filesystem/audit")
+def api_filesystem_audit():
+    """Recent FileSystemGuard audit log entries (last 20 by default).
+
+    v0.051.07b: SOC 2 file access audit trail viewer.
+    Query params:
+        limit  int  Max entries to return (default 20, max 200).
+    """
+    try:
+        limit = min(int(request.args.get("limit", 20)), 200)
+    except (ValueError, TypeError):
+        limit = 20
+
+    log_path = FLEET_DIR / "logs" / "fs_access.log"
+    entries = []
+
+    if log_path.exists():
+        try:
+            lines = log_path.read_text(encoding="utf-8", errors="replace").splitlines()
+            for line in lines[-limit:]:
+                line = line.strip()
+                if not line:
+                    continue
+                # Parse log format: "TIMESTAMP [ALLOW|DENY] agent=... action=... path=..."
+                entry = {"raw": line}
+                import re as _re
+                m = _re.match(
+                    r"^(\S+)\s+\[(ALLOW|DENY)\]\s+agent=(\S+)(.*?)\s+action=(\S+)\s+path=(.+)$",
+                    line,
+                )
+                if m:
+                    entry = {
+                        "timestamp": m.group(1),
+                        "status": m.group(2),
+                        "agent": m.group(3),
+                        "action": m.group(5),
+                        "path": m.group(6),
+                    }
+                    # Extract optional skill= tag
+                    skill_m = _re.search(r"skill=(\S+)", m.group(4))
+                    if skill_m:
+                        entry["skill"] = skill_m.group(1)
+                entries.append(entry)
+        except OSError:
+            pass
+
+    return jsonify({
+        "entries": list(reversed(entries)),  # newest first
+        "total": len(entries),
+        "log_path": str(log_path),
+        "log_exists": log_path.exists(),
+    })
+
+
 @app.route("/api/data_stats")
 def api_data_stats():
     """Per-module data size and growth metrics."""
