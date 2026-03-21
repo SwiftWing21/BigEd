@@ -693,6 +693,17 @@ def _call_local(system: str, user: str, models: dict, max_tokens: int,
             system = f"[Personality: {personality}]\n\n{system}"
     except Exception:
         pass
+    # v0.170.01b: Prepend conversation context for multi-turn continuity (local only)
+    try:
+        ctx_cfg = config.get("context", {}) if config else {}
+        if ctx_cfg.get("persist_to_db", True):
+            from context_manager import get_context
+            agent = agent_name or "default"
+            ctx = get_context(agent)
+            if ctx.get_context():  # has prior turns
+                user = ctx.get_prompt_with_context(user)
+    except Exception:
+        pass  # context is optional — never break inference
     prompt = f"{system}\n\n{user}"
     body = json.dumps({
         "model": model,

@@ -1260,15 +1260,14 @@ Completed 2026-03-21. All deferred roadmap items resolved — 68 files, +7540 li
 - [x] PVC for fleet.db + knowledge/ + logs/
 - [x] Values.yaml with resource presets matching RAM tier table (5 presets)
 
-### 0.170.01b — Data Management Systems
+### 0.170.01b — Data Management Systems [DONE]
 
-**Goal:** Wire context windows, cache invalidation, and RAG cleanup into the active workflow.
-**Status:** Modules created, integration pending.
+Completed 2026-03-21. Modules created and wired into active workflow.
 
-- [ ] Conversation context manager — wire `context_manager.get_context()` into `worker.py` and `providers._call_local()` for multi-turn agent conversations
-- [ ] Fleet-wide cache invalidation — wire `cache_manager.invalidate_stale()` into supervisor main loop (periodic call)
-- [ ] RAG stale entry cleanup — verify `rag.update()` auto-cleanup works in production, add to supervisor idle cycle
-- [ ] Module files exist: `fleet/context_manager.py`, `fleet/cache_manager.py`, `fleet/rag.py` (updated)
+- [x] Conversation context manager — `worker.py` stores prompt+result turns, `providers._call_local()` prepends context window, `supervisor.py` clears stale contexts every 30min
+- [x] Fleet-wide cache invalidation — `supervisor.py` calls `invalidate_stale()` every 5min (7 caches: cpu_temp, provider_health, circuit_state, federation_peers, alerts, hw_state, rate_limits)
+- [x] RAG stale entry cleanup — `supervisor.py` calls `rag.cleanup_stale()` every 30min, `rag.update()` auto-cleans during incremental pass
+- [x] All integrations fail-safe (try/except), lazy imports, config-gated
 
 ### 0.170.02b — Cross-Platform + Icon Overhaul + Font Selector + VS Code Unification
 

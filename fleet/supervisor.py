@@ -994,6 +994,7 @@ def main():
     last_status = 0
     last_training_check = 0
     last_stale_check = 0
+    last_context_cleanup = 0
     last_watchdog = 0
     last_watchdog_full = 0
     last_memory_watchdog = 0
@@ -1009,6 +1010,8 @@ def main():
     last_config_reload = 0
     CONFIG_RELOAD_INTERVAL = 300  # reload fleet.toml every 5 minutes
     last_federation_heartbeat = 0  # federation peer broadcast
+    last_cache_cleanup = 0         # cache_manager stale invalidation
+    last_rag_cleanup = 0           # RAG index stale entry cleanup
     # v0.23 S3: Auto-Intelligence — periodic evolution + research dispatch
     # Intervals defined at module level: RESEARCH_INTERVAL (24h), EVOLUTION_INTERVAL (7d)
     global _last_research_trigger, _last_evolution_trigger, _last_results_mtime
@@ -1253,6 +1256,17 @@ def main():
                 except Exception as e:
                     log.warning(f"[stale-recovery] failed to post recovery note: {e}")
 
+        # v0.170.01b: Clear stale agent conversation contexts (every 30 min)
+        if now - last_context_cleanup >= 1800:
+            last_context_cleanup = now
+            try:
+                from context_manager import clear_stale_contexts
+                cleared = clear_stale_contexts()
+                if cleared:
+                    log.info(f"Cleared {cleared} stale agent contexts")
+            except Exception:
+                pass  # context cleanup must never block supervisor
+
         # Semantic watchdog — failure detection, stuck reviews, DLP
         if now - last_watchdog >= WATCHDOG_INTERVAL:
             last_watchdog = now
@@ -1376,6 +1390,30 @@ def main():
         if now - last_sched_check >= _SCHED_CHECK_INTERVAL:
             last_sched_check = now
             _check_manual_mode_schedule()
+
+        # Cache invalidation — clear stale in-memory caches (every 5 min)
+        if now - last_cache_cleanup >= 300:
+            last_cache_cleanup = now
+            try:
+                from cache_manager import invalidate_stale
+                stale = invalidate_stale()
+                if stale:
+                    log.debug(f"Cache: invalidated {stale} stale caches")
+            except Exception:
+                pass
+
+        # RAG stale cleanup — remove index entries for deleted files (every 30 min)
+        if now - last_rag_cleanup >= 1800:
+            last_rag_cleanup = now
+            try:
+                from rag import RAGIndex
+                idx = RAGIndex()
+                result = idx.cleanup_stale()
+                removed = result.get("stale_removed", 0)
+                if removed:
+                    log.info(f"RAG: cleaned {removed} stale index entries")
+            except Exception:
+                pass
 
         # Reload config every 5 min to pick up fleet.toml changes
         if now - last_config_reload >= CONFIG_RELOAD_INTERVAL:

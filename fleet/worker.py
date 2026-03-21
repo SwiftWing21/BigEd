@@ -650,6 +650,24 @@ def main():
                 except Exception:
                     pass  # input scanning must never block task execution
                 result = run_skill(task['type'], payload, config, log)
+                # v0.170.01b: Store prompt+response as context turns for this agent
+                try:
+                    ctx_cfg = config.get("context", {})
+                    if ctx_cfg.get("persist_to_db", True):
+                        from context_manager import get_context
+                        ctx = get_context(role)
+                        # Store the task prompt (payload summary)
+                        task_prompt = task.get("payload_json", "") or ""
+                        if len(task_prompt) > 2000:
+                            task_prompt = task_prompt[:2000] + "..."
+                        ctx.add_turn("user", f"[{task['type']}] {task_prompt}")
+                        # Store the result summary
+                        result_str = json.dumps(result) if not isinstance(result, str) else result
+                        if len(result_str) > 2000:
+                            result_str = result_str[:2000] + "..."
+                        ctx.add_turn("assistant", result_str)
+                except Exception:
+                    pass  # context is optional — never block task processing
                 # Evaluator-Optimizer: route high-stakes skills through review
                 # DITL: inject AI disclaimer if compliance mode enabled
                 try:
