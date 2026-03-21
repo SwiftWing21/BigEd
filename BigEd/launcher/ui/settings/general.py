@@ -7,7 +7,7 @@ from pathlib import Path
 
 from ui.theme import (
     BG2, BG3, ACCENT, ACCENT_H, TEXT, DIM,
-    GREEN, RED, FONT_SM,
+    GREEN, RED, FONT_SM, FONT_BOLD,
     GLASS_BG, GLASS_PANEL, GLASS_BORDER,
 )
 
@@ -179,6 +179,35 @@ class GeneralPanelMixin:
         self._tabs_status = ctk.CTkLabel(btn_row_tabs, text="", font=("RuneScape Plain 11", 9), text_color=DIM)
         self._tabs_status.pack(side="left", padx=8)
 
+        # ── Module Hub ──────────────────────────────────────────────────
+        self._section_header(panel, "Module Hub")
+        hub_frame = ctk.CTkFrame(panel, fg_color="transparent")
+        hub_frame.pack(fill="x", padx=16, pady=(0, 12))
+
+        # Hub URL display
+        url_row = ctk.CTkFrame(hub_frame, fg_color=GLASS_BG, corner_radius=6)
+        url_row.pack(fill="x", pady=3)
+        url_row.grid_columnconfigure(1, weight=1)
+        ctk.CTkLabel(url_row, text="Hub", font=FONT_SM, text_color=DIM,
+                     anchor="w").grid(row=0, column=0, padx=12, pady=8, sticky="w")
+        self._hub_url_label = ctk.CTkLabel(
+            url_row, text="github.com/SwiftWing21/BigEd-ModuleHub",
+            font=("Consolas", 9), text_color=DIM, anchor="w")
+        self._hub_url_label.grid(row=0, column=1, padx=4, pady=8, sticky="w")
+
+        # Check for updates button
+        ctk.CTkButton(url_row, text="Check Updates", font=FONT_SM,
+                      width=100, height=26, fg_color=BG3, hover_color=BG2,
+                      command=self._check_hub_updates
+                      ).grid(row=0, column=2, padx=(4, 12), pady=8)
+
+        # Available modules list
+        self._hub_modules_frame = ctk.CTkFrame(hub_frame, fg_color=GLASS_BG, corner_radius=6)
+        self._hub_modules_frame.pack(fill="x", pady=3)
+        self._hub_status = ctk.CTkLabel(self._hub_modules_frame, text="Click 'Check Updates' to browse",
+                                         font=FONT_SM, text_color=DIM)
+        self._hub_status.pack(padx=12, pady=8)
+
         # Section: Backup & Restore
         self._section_header(panel, "Backup & Restore")
         backup_frame = ctk.CTkFrame(panel, fg_color=GLASS_BG, corner_radius=6)
@@ -341,3 +370,77 @@ class GeneralPanelMixin:
 
         if hasattr(self, "_status"):
             self._status.configure(text="Import successful.", text_color=GREEN)
+
+    # ── Module Hub handlers ────────────────────────────────────────────
+
+    def _check_hub_updates(self):
+        """Fetch available modules from the hub."""
+        import threading
+        def _fetch():
+            try:
+                import sys
+                sys.path.insert(0, str(Path(__file__).parent.parent))
+                from modules.hub import ModuleHub
+                hub = ModuleHub()  # reads config from fleet.toml
+                available = hub.list_available()
+                installed = {m["name"] for m in hub.list_installed()}
+
+                self._hub_status.configure(text=f"Found {len(available)} modules")
+
+                # Clear old content
+                for w in self._hub_modules_frame.winfo_children():
+                    if w != self._hub_status:
+                        w.destroy()
+
+                for mod in available:
+                    row = ctk.CTkFrame(self._hub_modules_frame, fg_color="transparent")
+                    row.pack(fill="x", padx=8, pady=2)
+                    row.grid_columnconfigure(1, weight=1)
+
+                    name = mod.get("name", "?")
+                    is_installed = name in installed
+
+                    ctk.CTkLabel(row, text=name, font=FONT_BOLD,
+                                 text_color=TEXT, anchor="w"
+                                 ).grid(row=0, column=0, padx=(4, 8), sticky="w")
+                    ctk.CTkLabel(row, text=mod.get("description", "")[:50],
+                                 font=("Consolas", 9), text_color=DIM, anchor="w"
+                                 ).grid(row=0, column=1, sticky="w")
+
+                    if is_installed:
+                        ctk.CTkLabel(row, text="Installed", font=FONT_SM,
+                                     text_color="#4caf50"
+                                     ).grid(row=0, column=2, padx=(4, 8))
+                    else:
+                        ctk.CTkButton(row, text="Install", font=FONT_SM,
+                                      width=60, height=22, fg_color="#1e3a1e",
+                                      hover_color="#2a4a2a",
+                                      command=lambda n=name: self._install_module(n)
+                                      ).grid(row=0, column=2, padx=(4, 8))
+            except Exception as e:
+                self._hub_status.configure(text=f"Hub error: {e}", text_color="#f44336")
+
+        self._hub_status.configure(text="Checking hub...", text_color=DIM)
+        threading.Thread(target=_fetch, daemon=True).start()
+
+    def _install_module(self, name):
+        """Install a module from the hub."""
+        import threading
+        def _do_install():
+            try:
+                import sys
+                sys.path.insert(0, str(Path(__file__).parent.parent))
+                from modules.hub import ModuleHub
+                hub = ModuleHub()
+                result = hub.install_module(name)
+                if result.get("installed"):
+                    self._hub_status.configure(
+                        text=f"Installed {name} v{result.get('version')}. Restart to activate.",
+                        text_color="#4caf50")
+                else:
+                    self._hub_status.configure(
+                        text=f"Install failed: {result.get('error', 'unknown')}",
+                        text_color="#f44336")
+            except Exception as e:
+                self._hub_status.configure(text=f"Install error: {e}", text_color="#f44336")
+        threading.Thread(target=_do_install, daemon=True).start()

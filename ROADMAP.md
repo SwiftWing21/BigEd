@@ -399,7 +399,7 @@ Completed 2026-03-20. 11 files, +194/-90 lines:
 
 ### 0.050.03b — P1 Reliability & Error Handling [PARTIAL]
 
-**19 P1 bugs** — 12 fixed across v0.50.02b (35e2e2a) and v0.51.00b (24e21d4), 7 remaining.
+**19 P1 bugs** — 15 fixed across v0.50.02b (35e2e2a) and v0.51.00b (24e21d4), 4 remaining.
 
 **Boot/Installer:**
 - [ ] Model load response parsing swallows JSONDecodeError silently (boot.py:778-790)
@@ -410,12 +410,12 @@ Completed 2026-03-20. 11 files, +194/-90 lines:
 
 **Supervisor:**
 - [x] Worker zombie process leak — `worker_procs.pop(role, None)` on stop, `del worker_procs[role]` for disabled (supervisor.py:235, 947)
-- [ ] VRAM threshold edge case — `>` vs `>=` causes oscillation at boundary (hw_supervisor.py:965-982)
+- [x] VRAM threshold edge case — `>=` used consistently for emergency/high thresholds (hw_supervisor.py:1041, 1025)
 - [x] Dynamic agents scale down — `_should_scale_down()` checks `_last_busy` timestamps, `SCALE_DOWN_IDLE_SECS=300` (supervisor.py:212-236, 919-921)
 
 **Dashboard:**
 - [x] SSE connection leak — clients cleaned in finally block and dead client removal (dashboard.py:176-177, 1324-1326)
-- [ ] TOML injection in worker disable/enable — agent name not validated (dashboard.py:1286-1311)
+- [x] TOML injection in worker disable/enable — `VALID_AGENT` regex validates agent names (dashboard.py:1495-1501)
 - [x] fetchJSON() error handling — try/catch with HTTP status check, returns `{}` on failure (dashboard.html:250-258)
 
 **Launcher GUI:**
@@ -431,13 +431,13 @@ Completed 2026-03-20. 11 files, +194/-90 lines:
 
 ### 0.050.04b — P2 Hardening & Performance [PARTIAL]
 
-**27+ P2 bugs** — 12 key items fixed, 4 remaining (FK constraint, VRAM threshold mismatch, config staleness, PID-based stale task recovery).
+**27+ P2 bugs** — 14 key items fixed, 2 remaining (FK constraint, config staleness).
 
 **Key items:**
 - [x] N+1 query in `/api/status` — uses LEFT JOIN for current_task (dashboard.py:250-253)
 - [x] DB indexes on tasks.status, tasks.assigned_to, tasks.parent_id — `idx_tasks_status`, `idx_tasks_assigned`, `idx_tasks_parent` (db.py:191-193)
 - [ ] Missing foreign key on tasks.parent_id — orphaned DAG chains (PRAGMA foreign_keys=ON set, but no FK constraint in CREATE TABLE)
-- [ ] VRAM threshold mismatch between fleet.toml and hw_supervisor defaults
+- [x] VRAM threshold mismatch resolved — fleet.toml and hw_supervisor defaults both use 0.92/0.85/0.60 (fleet.toml:64-66, hw_supervisor.py:80)
 - [ ] Config loaded once at import — stale after fleet.toml edits (config.py:27-29)
 - [x] DB timeout consistency — unified to 30s timeout + 30s PRAGMA busy_timeout across all layers (db.py:115-128)
 - [x] Circuit breaker has exponential backoff — `min(60s * 2^cooldowns, 600s)` with cooldown counter (providers.py:38-52)
@@ -449,11 +449,11 @@ Completed 2026-03-20. 11 files, +194/-90 lines:
 - [x] Alert monitor exception logging — logs first 3 failures via `logging.warning()` (dashboard.py:258-263)
 - [x] hw_state.json writes already atomic — `tempfile.mkstemp` + `os.replace` (hw_supervisor.py:205-208)
 - [x] Content-Security-Policy header on all dashboard responses — `_add_security_headers()` after_request handler (dashboard.py:111-120)
-- [ ] Stale task recovery uses time-based detection instead of PID liveness (db.py:657-677)
+- [x] Stale task recovery uses PID liveness detection — `psutil.pid_exists()` check before marking stale (db.py:700-703)
 
 ### 0.050.05b — P3 Polish & Accessibility [PARTIAL]
 
-**14+ P3 items** — 8 verified fixed, 3 remaining.
+**14+ P3 items** — 9 verified fixed, 2 remaining.
 
 - [x] No progress feedback during long model loads — "this may take a few minutes" status (boot.py:306)
 - [x] fleet.toml path not verified before load — `Path.exists()` check in `_read_fleet_models` (boot.py:194)
@@ -470,7 +470,7 @@ Completed 2026-03-20. 11 files, +194/-90 lines:
 ### 0.051.00b — Startup Performance & UX Polish [PARTIAL]
 
 **Goal:** Sub-700ms window visible, 144Hz-smooth refresh, hide dev scaffolding. Public beta polish.
-Partially completed in v0.51.00b (24e21d4). Dr. Ders respawn, startup perf, disabled agents, idle evolution backoff, refresh smoothing all done. Dashboard web perf, lazy tab loading, and idle evolution API key gating remain.
+Partially completed in v0.51.00b (24e21d4). Dr. Ders respawn, startup perf, disabled agents, idle evolution backoff, refresh smoothing, lazy tab loading, and parse_status cache all done. Dashboard web perf and idle evolution API key gating remain.
 
 **CRITICAL: Dr. Ders respawn — FIXED**
 - [x] Supervisor spawns hw_supervisor.py via `start_hw_supervisor()` and respawns on crash (supervisor.py:452-458, 967-970)
@@ -487,8 +487,8 @@ Partially completed in v0.51.00b (24e21d4). Dr. Ders respawn, startup perf, disa
 - [x] Defer pynvml GPU init — lazy `_ensure_gpu()` on first hw read, not at import (launcher.py:34-49)
 - [x] Defer font loading to after window creation — `load_custom_fonts()` called in `__init__` after `super().__init__()` (launcher.py:889-890)
 - [x] Defer `_refresh_status()` to after window visible — uses `_safe_after(100, ...)` (launcher.py:964)
-- [ ] Lazy-load Fleet Comm + modular tabs on first click — all built upfront currently (launcher.py:1414-1462)
-- [ ] Cache parse_status() for 1-2s — called 3x at startup (launcher.py:486, 870, 2714)
+- [x] Lazy-load Fleet Comm + modular tabs on first click — `_lazy_tabs` dict, built on first view (launcher.py:1618-1656)
+- [x] Cache parse_status() for 2s — `_status_cache` + `_status_cache_time` global (launcher.py:577-638)
 
 **Refresh cycle smoothing (target: no stalls > 16ms on 144Hz):**
 - [x] Increase HW stats interval 3s -> 5s — now 5000ms interval (launcher.py:3521)
@@ -509,12 +509,12 @@ Partially completed in v0.51.00b (24e21d4). Dr. Ders respawn, startup perf, disa
 
 ### 0.051.01b — Task Pipeline Optimization [PARTIAL]
 
-**Goal:** 30-40% throughput improvement, 15-20% API cost reduction. 7 of 10 bottlenecks resolved.
+**Goal:** 30-40% throughput improvement, 15-20% API cost reduction. 8 of 10 bottlenecks resolved.
 
 **Critical (implement first):**
 - [x] Atomic task claiming — UPDATE...WHERE(SELECT) eliminates race conditions (db.py:241-282)
 - [x] Enable prompt caching — `cache_control: ephemeral` on stable system prompts (providers.py:338)
-- [ ] Async usage logging — still synchronous INSERT per call (cost_tracking.py:16-33)
+- [x] Async usage logging — `async_log_usage()` with background thread + batch writes (providers.py:48-49, called at :396, :448, :546)
 - [x] Adaptive polling — 0.1s/0.5s/2s based on recent activity + jitter (worker.py:692-698)
 
 **Medium priority:**
@@ -527,9 +527,9 @@ Partially completed in v0.51.00b (24e21d4). Dr. Ders respawn, startup perf, disa
 - [ ] Cache skill staleness ranking in idle evolution — no cache, queries DB each time (idle_evolution.py:40-113)
 - [ ] Batch-claim N tasks per poll when queue depth > threshold — only single claim_task() exists
 
-### 0.051.02b — Auto-Save & Backup System [PARTIAL]
+### 0.051.02b — Auto-Save & Backup System [DONE]
 
-**Goal:** Prevent data loss from power outage or crashes. Configurable backup frequency/depth/location. 9 of 10 items done.
+**Goal:** Prevent data loss from power outage or crashes. Configurable backup frequency/depth/location. 10 of 10 items done.
 
 **Implementation:**
 - [x] `fleet/backup_manager.py` — BackupManager class with auto-save thread (203 lines)
@@ -539,7 +539,7 @@ Partially completed in v0.51.00b (24e21d4). Dr. Ders respawn, startup perf, disa
 - [x] Backup manifest JSON — timestamp, file hashes, integrity check results (backup_manager.py:49-82)
 - [x] Integrity verification — `PRAGMA integrity_check` after each backup (backup_manager.py:126-133)
 - [x] Prune beyond depth — with depth=0 "do not clean" toggle + disk usage warning (backup_manager.py:142-178)
-- [ ] CLI: `lead_client.py backup`, `backup --list`, `backup --restore ID` — not yet in lead_client.py
+- [x] CLI: `lead_client.py backup`, `backup --list`, `backup --restore ID` — subparser added (lead_client.py:1005-1007)
 - [x] Supervisor integration — BackupManager imported and started on fleet startup (supervisor.py:868-869)
 - [x] Graceful shutdown saves task queue — `_graceful_save_tasks()` (launcher.py:522, 1057)
 
@@ -561,13 +561,13 @@ Partially completed in v0.51.00b (24e21d4). Dr. Ders respawn, startup perf, disa
 
 ### 0.051.04b — Autoresearch Pipeline Integration [PARTIAL]
 
-**Goal:** Wire disconnected research/training pipelines into closed feedback loops. 7 of 10 items done.
+**Goal:** Wire disconnected research/training pipelines into closed feedback loops. 8 of 10 items done.
 
 **Auto-bridges:**
 - [x] Auto-trigger `research_cycle` workflow daily — `RESEARCH_INTERVAL = 86400` in supervisor (supervisor.py:76, 1151)
 - [x] Auto-trigger `skill_evolution_pipeline` weekly — `EVOLUTION_INTERVAL = 604800` in supervisor (supervisor.py:77, 1176)
 - [x] `ml_bridge` auto-import when new `autoresearch/results.tsv` entries detected — mtime watch (supervisor.py:1199-1214)
-- [ ] Dataset synthesize outputs → autoresearch data pipeline (JSONL → training) — no auto-routing from dataset_synthesize to training
+- [x] Dataset synthesize outputs → autoresearch data pipeline (JSONL → training) — auto-copy via shutil to `autoresearch/data/` (dataset_synthesize.py:227-234)
 
 **Dashboard visibility:**
 - [x] Evolution leaderboard panel — skill improvement rates, agent contributions (dashboard.html:179-180)
@@ -636,7 +636,7 @@ log_all_access = true    # SOC 2 audit trail for file operations
 
 **Implementation:**
 - [x] `fleet/filesystem_guard.py` — FileSystemGuard class with check_access(), log_access(), zone matching (150+ lines)
-- [ ] Wrap skill file operations through guard (code_write, ingest, deploy_skill, rag_index) — guard exists but not yet wired into skills
+- [x] Wrap skill file operations through guard (code_write, ingest, deploy_skill) — guard imported and check_access() called in each skill's run() (code_write.py:124-129, ingest.py:282-287, deploy_skill.py:86-91)
 - [ ] Integration with existing sandbox (Docker) for code execution
 - [ ] Dashboard panel: file access audit log viewer
 - [x] Enterprise mode: `is_enterprise()` returns True when enforce + deny_by_default both active (filesystem_guard.py:122-124)
@@ -658,7 +658,7 @@ log_all_access = true    # SOC 2 audit trail for file operations
 - [x] Pin button to hold request list open (sticky mode) — pin icon with gold highlight (launcher.py:2314-2318, 2398-2402)
 - [x] Dynamic scrollbar when requests pending — CTkScrollableFrame (launcher.py:2337-2338)
 - [x] Scroll area auto-sizes based on pending request count — `min(300, max(60, n * 60))` (launcher.py:2415-2416)
-- [ ] Request count badge on Fleet Comm tab icon
+- [x] Request count badge on Fleet Comm tab icon — tab text updated with `(N)` pending count (launcher.py:2657-2658)
 
 **Manual Chat integration:**
 - [x] "Manual Chat" panel below agent requests in Fleet Comm (launcher.py:2344-2386)
@@ -681,7 +681,7 @@ log_all_access = true    # SOC 2 audit trail for file operations
 - [x] Hover/click expands: shows each request with dynamic scroll area (launcher.py:2310-2311, 2404-2417)
 - [x] Pinned view: pin button holds list expanded until unpinned (launcher.py:2398-2402)
 
-### 0.053.00b — Module Hub + Scrollable Tab Bar [PLANNED]
+### 0.053.00b — Module Hub + Scrollable Tab Bar [PARTIAL]
 
 **Goal:** GitHub-based module repository with download/install UX + scrollable tab bar for unlimited modules.
 
@@ -689,23 +689,37 @@ log_all_access = true    # SOC 2 audit trail for file operations
 **Spec:** `docs/specs/module_hub_architecture.md`
 
 **Scrollable tab bar:**
-- [ ] Refactor CustomTabBar: horizontal scroll when tabs exceed window width
-- [ ] Left/right scroll arrows or mouse wheel scroll
-- [ ] Active tab auto-scrolls into view
+- [x] Refactor CustomTabBar: horizontal scroll when tabs exceed window width — `_scroll_tabs()` method with `_tab_scroll_offset` (launcher.py:945-954)
+- [x] Left/right scroll arrows — chevron buttons `\u25C0`/`\u25B6` on bar edges (launcher.py:824-843)
+- [x] Active tab auto-scrolls into view — `set()` checks index vs scroll offset, adjusts (launcher.py:916-921)
 - [ ] Minimum tab width to keep text readable
 
 **Module Hub core:**
-- [ ] registry.json catalog (name, version, checksum, tags, enterprise_only)
-- [ ] Module download from GitHub raw URL with SHA-256 verification
-- [ ] Module install: copy to modules/, update manifest, add to fleet.toml
-- [ ] Module Hub section in Settings (install/enable/disable/update cards)
-- [ ] Version checking: installed vs available
+- [x] registry.json catalog (name, version, checksum, tags, enterprise_only) — BigEd-ModuleHub repo
+- [x] Module download from GitHub raw URL with SHA-256 verification — hub.py
+- [x] Module install: copy to modules/, update manifest, add to fleet.toml — hub.py
+- [x] Module Hub section in Settings (install/enable/disable/update cards) — general.py settings panel with install buttons (settings/general.py:182-437)
+- [x] Version checking: installed vs available — `get_update_available()` compares versions (hub.py:58-70)
 
 **Enterprise:**
-- [ ] Private hub URL in fleet.toml `[modules] enterprise_hub_url`
+- [x] Private hub URL in fleet.toml `[modules] enterprise_hub_url` — configured in fleet.toml:214, read by hub.py:21
 - [ ] Federation auto-selects from enterprise hub
 - [ ] Enterprise-only module gating
 - [ ] Agent-generated module recommendations (HITL)
+
+**New skills (79 total, up from 74):**
+- [x] billing_ocr — OCR billing screenshots via local vision model
+- [x] token_optimizer — audit usage patterns, recommend cost optimizations
+- [x] screenshot — capture screenshots for UX testing and documentation
+- [x] memory_optimizer — audit and reduce RAM/VRAM pressure
+- [x] packet_optimizer — audit sent/received packet sizes
+- [x] regression_detector — quality grade tracking, hallucination detection
+
+**GitHub community:**
+- [x] Issue templates (bug report + feature request)
+- [x] PR template with checklist
+- [x] Branch protection (1 review required)
+- [x] Module Hub repo (BigEd-ModuleHub) with registry.json
 
 ### 0.051.06b — MiniMax M2.5 Provider Integration [PLANNED]
 

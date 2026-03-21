@@ -4,10 +4,11 @@ Intelligence Module — System transparency, model controls, prompt queue, and e
 Panels:
   1. System Overview    — what BigEd CC can do, how skills/weights work
   2. Model Settings     — active model, keep_alive, tier preferences
-  3. Prompt Queue       — unattended round-robin prompt list
+  3. Prompt Queue       — unattended round-robin prompt list (with scheduling + cost estimate)
   4. Evaluation Display — how Claude/Gemini evaluation routines score outputs
   5. Cost Intelligence  — live spend, optimization recommendations
 """
+import datetime
 import json
 import os
 import threading
@@ -48,9 +49,13 @@ class Module:
     """Intelligence module — system transparency + model controls + prompt queue."""
 
     LABEL = "Intelligence"
-    VERSION = "0.051"
+    VERSION = "0.052"
     DEFAULT_ENABLED = True
     DEPENDS_ON = []
+
+    # Schedule options and their interval in seconds (0 = immediate)
+    SCHEDULE_OPTIONS = ["Now", "Every 1h", "Every 4h", "Every 24h"]
+    SCHEDULE_INTERVALS = {"Now": 0, "Every 1h": 3600, "Every 4h": 14400, "Every 24h": 86400}
 
     def __init__(self, app):
         self._app = app
@@ -58,6 +63,7 @@ class Module:
         self._queue_running = False
         self._queue_loop_count = 0
         self._queue_max_loops = 1
+        self._queue_results_log = []  # recent task completion messages
 
     def build_tab(self, parent):
         """Build the Intelligence tab UI."""
@@ -183,13 +189,28 @@ class Module:
 
         # Controls
         ctrl_row = ctk.CTkFrame(card, fg_color="transparent")
-        ctrl_row.pack(fill="x", padx=12, pady=(2, 8))
+        ctrl_row.pack(fill="x", padx=12, pady=(2, 4))
 
         ctk.CTkLabel(ctrl_row, text="Loops:", font=FONT_SM, text_color=DIM).pack(side="left")
         self._loop_var = ctk.StringVar(value="1")
         ctk.CTkEntry(ctrl_row, textvariable=self._loop_var, width=40, height=28,
                      font=FONT_SM, fg_color=BG).pack(side="left", padx=4)
         ctk.CTkLabel(ctrl_row, text="(0 = infinite)", font=FONT_XS, text_color=DIM).pack(side="left", padx=4)
+
+        # Schedule dropdown — Phase 1: Claude Manual Mode Integration
+        ctk.CTkLabel(ctrl_row, text="Schedule:", font=FONT_SM, text_color=DIM).pack(side="left", padx=(8, 2))
+        self._schedule_var = ctk.StringVar(value="Now")
+        ctk.CTkOptionMenu(
+            ctrl_row, variable=self._schedule_var,
+            values=self.SCHEDULE_OPTIONS,
+            font=FONT_SM, width=100, height=28,
+            fg_color=BG3,
+            command=lambda _: self._update_cost_estimate(),
+        ).pack(side="left", padx=2)
+
+        # Cost estimate label — shows before user clicks Start
+        self._cost_estimate = ctk.CTkLabel(ctrl_row, text="", font=FONT_XS, text_color=DIM)
+        self._cost_estimate.pack(side="left", padx=4)
 
         self._start_btn = ctk.CTkButton(ctrl_row, text="Start Queue", width=100, height=28,
                                         font=FONT_SM, fg_color="#1e3a1e", hover_color="#2a4a2a",
@@ -204,6 +225,14 @@ class Module:
         self._queue_status = ctk.CTkLabel(ctrl_row, text="", font=FONT_XS, text_color=DIM)
         self._queue_status.pack(side="right", padx=8)
 
+        # Recent Results panel — Phase 1: audit result viewer
+        ctk.CTkLabel(card, text="Recent Results", font=FONT_BOLD, text_color=GOLD,
+                     anchor="w").pack(fill="x", padx=12, pady=(4, 0))
+        self._queue_results = ctk.CTkTextbox(card, font=("Consolas", 10), fg_color=BG,
+                                             height=80, corner_radius=4)
+        self._queue_results.pack(fill="x", padx=12, pady=(4, 8))
+        self._queue_results.configure(state="disabled")
+
     def _add_prompt(self):
         text = self._prompt_entry.get().strip()
         if not text:
@@ -211,6 +240,7 @@ class Module:
         self._prompt_queue.append({"prompt": text, "skill": self._queue_skill_var.get()})
         self._prompt_entry.delete(0, "end")
         self._refresh_queue_display()
+        self._update_cost_estimate()
 
     def _refresh_queue_display(self):
         for w in self._queue_frame.winfo_children():
@@ -236,6 +266,7 @@ class Module:
         if 0 <= idx < len(self._prompt_queue):
             self._prompt_queue.pop(idx)
             self._refresh_queue_display()
+            self._update_cost_estimate()
 
     def _start_queue(self):
         if not self._prompt_queue:
@@ -249,7 +280,15 @@ class Module:
         self._queue_running = True
         self._start_btn.configure(state="disabled")
         self._stop_btn.configure(state="normal")
-        threading.Thread(target=self._run_queue, daemon=True).start()
+
+        schedule = self._schedule_var.get()
+        if schedule != "Now":
+            # Persist schedule to fleet.toml for supervisor pickup
+            self._save_schedule_config(schedule, loops)
+            self._queue_status.configure(text=f"Scheduled: {schedule}")
+            threading.Thread(target=self._run_scheduled_queue, daemon=True).start()
+        else:
+            threading.Thread(target=self._run_queue, daemon=True).start()
 
     def _stop_queue(self):
         self._queue_running = False
@@ -258,7 +297,7 @@ class Module:
         self._queue_status.configure(text="Stopped")
 
     def _run_queue(self):
-        """Background thread: dispatch prompts round-robin."""
+        """Background thread: dispatch prompts round-robin (immediate mode)."""
         import sys
         sys.path.insert(0, str(FLEET_DIR))
         try:
@@ -273,15 +312,17 @@ class Module:
                 break
             item = self._prompt_queue[idx % len(self._prompt_queue)]
             # Dispatch as a task
+            ts = datetime.datetime.now().strftime("%H:%M:%S")
             try:
                 db.post_task(item['skill'], json.dumps({"prompt": item['prompt']}))
                 status = f"Loop {self._queue_loop_count+1}, [{item['skill']}] {idx+1}/{len(self._prompt_queue)}"
+                self._append_result(f"[{ts}] Dispatched [{item['skill']}]: {item['prompt'][:50]}")
                 try:
                     self._queue_status.configure(text=status)
                 except Exception:
                     pass
-            except Exception:
-                pass
+            except Exception as exc:
+                self._append_result(f"[{ts}] FAILED [{item['skill']}]: {exc}")
 
             idx += 1
             if idx % len(self._prompt_queue) == 0:
@@ -292,12 +333,165 @@ class Module:
             time.sleep(2)  # Pace between dispatches
 
         self._queue_running = False
+        ts = datetime.datetime.now().strftime("%H:%M:%S")
+        self._append_result(f"[{ts}] Queue complete ({self._queue_loop_count} loops)")
         try:
             self._start_btn.configure(state="normal")
             self._stop_btn.configure(state="disabled")
             self._queue_status.configure(text=f"Complete ({self._queue_loop_count} loops)")
         except Exception:
             pass
+
+    def _run_scheduled_queue(self):
+        """Background thread: recurring scheduled dispatch."""
+        schedule = self._schedule_var.get()
+        interval = self.SCHEDULE_INTERVALS.get(schedule, 0)
+        if interval <= 0:
+            return
+
+        while self._queue_running:
+            # Run one full pass through the queue
+            self._run_queue_once_pass()
+
+            # Wait for next scheduled interval
+            ts = datetime.datetime.now().strftime("%H:%M:%S")
+            next_run = datetime.datetime.now() + datetime.timedelta(seconds=interval)
+            next_str = next_run.strftime("%H:%M:%S")
+            self._append_result(f"[{ts}] Next run at {next_str} ({schedule})")
+            try:
+                self._queue_status.configure(text=f"Next: {next_str}")
+            except Exception:
+                pass
+
+            # Sleep in small chunks so stop is responsive
+            elapsed = 0
+            while elapsed < interval and self._queue_running:
+                time.sleep(min(5, interval - elapsed))
+                elapsed += 5
+
+        self._queue_running = False
+        try:
+            self._start_btn.configure(state="normal")
+            self._stop_btn.configure(state="disabled")
+            self._queue_status.configure(text="Schedule stopped")
+        except Exception:
+            pass
+
+    def _run_queue_once_pass(self):
+        """Execute one full pass through the prompt queue."""
+        import sys
+        sys.path.insert(0, str(FLEET_DIR))
+        try:
+            import db
+        except ImportError:
+            return
+
+        for i, item in enumerate(self._prompt_queue):
+            if not self._queue_running:
+                break
+            ts = datetime.datetime.now().strftime("%H:%M:%S")
+            try:
+                db.post_task(item['skill'], json.dumps({"prompt": item['prompt']}))
+                self._append_result(f"[{ts}] Dispatched [{item['skill']}]: {item['prompt'][:50]}")
+                try:
+                    self._queue_status.configure(
+                        text=f"[{item['skill']}] {i+1}/{len(self._prompt_queue)}")
+                except Exception:
+                    pass
+            except Exception as exc:
+                self._append_result(f"[{ts}] FAILED [{item['skill']}]: {exc}")
+            time.sleep(2)
+
+    # ── Cost estimate ─────────────────────────────────────────────────────
+
+    def _update_cost_estimate(self):
+        """Recalculate and display estimated cost for the current queue config."""
+        n = len(self._prompt_queue)
+        try:
+            loops = int(self._loop_var.get() or 1)
+        except (ValueError, TypeError):
+            loops = 1
+        total_calls = n * max(loops, 1)
+        if total_calls == 0:
+            self._cost_estimate.configure(text="")
+            return
+        # Rough estimate: ~500 input + 200 output tokens per call
+        est_tokens = total_calls * 700
+        # Use cheapest model pricing (Gemini Flash rate)
+        est_cost = est_tokens * 0.10 / 1_000_000
+        self._cost_estimate.configure(
+            text=f"~{total_calls} calls, ~{est_tokens:,} tokens, ~${est_cost:.4f}")
+
+    # ── Results panel helpers ─────────────────────────────────────────────
+
+    def _append_result(self, message: str):
+        """Thread-safe append to the Recent Results textbox."""
+        self._queue_results_log.append(message)
+        # Keep only the last 50 entries
+        if len(self._queue_results_log) > 50:
+            self._queue_results_log = self._queue_results_log[-50:]
+        try:
+            self._queue_results.configure(state="normal")
+            self._queue_results.insert("end", message + "\n")
+            self._queue_results.see("end")
+            self._queue_results.configure(state="disabled")
+        except Exception:
+            pass  # Widget may be destroyed
+
+    # ── Schedule persistence ──────────────────────────────────────────────
+
+    def _save_schedule_config(self, schedule: str, loops: int):
+        """Persist prompt queue schedule to fleet.toml [prompt_queue] for supervisor pickup."""
+        interval = self.SCHEDULE_INTERVALS.get(schedule, 0)
+        queue_data = {
+            "schedule": schedule,
+            "interval_secs": interval,
+            "loops_per_run": loops,
+            "prompts": [
+                {"prompt": item["prompt"], "skill": item["skill"]}
+                for item in self._prompt_queue
+            ],
+            "updated_at": datetime.datetime.now().isoformat(),
+        }
+        try:
+            # Read existing TOML, append/update [prompt_queue] section
+            toml_path = str(FLEET_TOML)
+            lines = []
+            if os.path.exists(toml_path):
+                with open(toml_path, "r", encoding="utf-8") as f:
+                    lines = f.readlines()
+
+            # Remove existing [prompt_queue] section if present
+            new_lines = []
+            in_pq_section = False
+            for line in lines:
+                stripped = line.strip()
+                if stripped == "[prompt_queue]":
+                    in_pq_section = True
+                    continue
+                if in_pq_section and stripped.startswith("[") and stripped != "[prompt_queue]":
+                    in_pq_section = False
+                if not in_pq_section:
+                    new_lines.append(line)
+
+            # Ensure trailing newline before new section
+            if new_lines and not new_lines[-1].endswith("\n"):
+                new_lines.append("\n")
+
+            # Append new [prompt_queue] section
+            new_lines.append("\n[prompt_queue]\n")
+            new_lines.append(f'schedule = "{schedule}"\n')
+            new_lines.append(f"interval_secs = {interval}\n")
+            new_lines.append(f"loops_per_run = {loops}\n")
+            new_lines.append(f'updated_at = "{queue_data["updated_at"]}"\n')
+            # Store prompts as JSON string (TOML-safe)
+            prompts_json = json.dumps(queue_data["prompts"])
+            new_lines.append(f"prompts_json = '{prompts_json}'\n")
+
+            with open(toml_path, "w", encoding="utf-8") as f:
+                f.writelines(new_lines)
+        except Exception:
+            pass  # Non-fatal — queue still runs in-memory
 
     # ── Panel 4: Evaluation Display ──────────────────────────────────────────
 
