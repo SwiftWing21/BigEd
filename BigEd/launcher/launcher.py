@@ -891,6 +891,7 @@ class CustomTabBar(ctk.CTkFrame):
         self._tab_scroll_offset = 0
         self._all_tab_cells: list = []
         self._tab_names_order: list[str] = []
+        self._min_tab_width = 80  # minimum tab width (px) used to compute visible count dynamically
 
         # Mouse-wheel horizontal scroll (Windows + Linux)
         for _widget in (self._bar, bar_container):
@@ -993,7 +994,9 @@ class CustomTabBar(ctk.CTkFrame):
         # Auto-scroll tab bar to keep the selected tab visible
         if name in self._tab_names_order:
             idx = self._tab_names_order.index(name)
-            if idx < self._tab_scroll_offset or idx >= self._tab_scroll_offset + 5:
+            bar_width = self._bar.winfo_width()
+            _vc = 5 if bar_width <= 1 else max(1, bar_width // self._min_tab_width)
+            if idx < self._tab_scroll_offset or idx >= self._tab_scroll_offset + _vc:
                 self._tab_scroll_offset = max(0, idx - 2)
                 self._scroll_tabs(0)
         # Build lazy tab content on first view
@@ -1021,7 +1024,11 @@ class CustomTabBar(ctk.CTkFrame):
 
     def _scroll_tabs(self, direction: int) -> None:
         """Scroll tab bar left (-1) or right (+1). 0 = refresh in place."""
-        visible_count = 5
+        bar_width = self._bar.winfo_width()
+        if bar_width <= 1:
+            visible_count = 5  # fallback during init before widget is drawn
+        else:
+            visible_count = max(1, bar_width // self._min_tab_width)
         max_offset = max(0, len(self._all_tab_cells) - visible_count)
         self._tab_scroll_offset = max(0, min(
             self._tab_scroll_offset + direction, max_offset))

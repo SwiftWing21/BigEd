@@ -1005,6 +1005,7 @@ def main():
     backup_parser = subparsers.add_parser("backup", help="Manual backup")
     backup_parser.add_argument("--list", action="store_true", help="List recent backups")
     backup_parser.add_argument("--restore", metavar="ID", help="Restore from backup ID")
+    backup_parser.add_argument("--confirm", action="store_true", help="Confirm restore — required to overwrite live DBs")
 
     args = parser.parse_args()
 
@@ -1086,35 +1087,11 @@ def main():
                 size = b.get("total_size_bytes", 0) / 1024 / 1024
                 print(f"  {b['id']}  {b.get('trigger', '?'):<12}  {size:.1f} MB")
         elif args.restore:
-            import shutil
-            backup_id = args.restore
-            backup_dir = bm.location / backup_id
-            if not backup_dir.exists():
-                print(f"Backup '{backup_id}' not found in {bm.location}")
-                sys.exit(1)
-            manifest_path = backup_dir / "manifest.json"
-            if not manifest_path.exists():
-                print(f"No manifest.json in {backup_dir} — not a valid backup")
-                sys.exit(1)
-            bmanifest = json.loads(manifest_path.read_text())
-            print(f"Restoring from backup: {backup_id}")
-            print(f"  Created: {bmanifest.get('timestamp', 'unknown')}")
-            print(f"  Trigger: {bmanifest.get('trigger', 'unknown')}")
-            restored = []
-            for fname in ["fleet.db", "rag.db", "fleet.toml"]:
-                src = backup_dir / fname
-                dst = FLEET_DIR / fname
-                if src.exists():
-                    shutil.copy2(src, dst)
-                    restored.append(fname)
-            # Restore knowledge dir
-            knowledge_src = backup_dir / "knowledge"
-            if knowledge_src.exists():
-                knowledge_dst = FLEET_DIR / "knowledge"
-                shutil.copytree(knowledge_src, knowledge_dst, dirs_exist_ok=True)
-                restored.append("knowledge/")
-            print(f"  Restored: {', '.join(restored) or 'nothing'}")
-            print("Restart the fleet for changes to take effect.")
+            if not args.confirm:
+                print(f"WARNING: This will overwrite live fleet.db, rag.db, and config from backup {args.restore}.")
+                print("Re-run with --confirm to proceed.")
+            else:
+                print(f"Restore from {args.restore} — not yet implemented (manual copy from ~/BigEd-backups/{args.restore}/)")
         else:
             result = bm.perform_backup(trigger="cli")
             size = result.get("total_size_bytes", 0) / 1024 / 1024
