@@ -1716,8 +1716,9 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
         tabs.add("Command Center")
         self._build_tab_cc(tabs.tab("Command Center"))
 
+        # Fleet — deferred until first click
         tabs.add("Fleet")
-        self._build_tab_agents(tabs.tab("Fleet"))
+        self._lazy_tabs["Fleet"] = lambda p: self._build_tab_agents(p)
 
         # Fleet Comm — deferred until first click
         tabs.add("Fleet Comm")

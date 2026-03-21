@@ -141,6 +141,42 @@ def _retry_write(fn, retries=8):
             time.sleep(0.2 * (2 ** attempt) + random.uniform(0, 0.1))
 
 
+def acquire_fleet_lock(conn, timeout_ms=5000):
+    """Acquire an exclusive SQLite advisory lock for federation write serialization.
+
+    Issues BEGIN EXCLUSIVE which prevents any other reader or writer from accessing
+    the database until the transaction is committed or rolled back. When multiple
+    fleet nodes share the same SQLite file on a network mount, this serializes
+    conflicting write operations.
+
+    Retries with exponential backoff until timeout_ms is exhausted.
+    Returns True on success, False if timeout exceeded without acquiring the lock.
+    """
+    deadline = time.monotonic() + timeout_ms / 1000.0
+    attempt = 0
+    while True:
+        try:
+            conn.execute("BEGIN EXCLUSIVE")
+            return True
+        except sqlite3.OperationalError as e:
+            if "locked" not in str(e).lower():
+                raise
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                return False
+            wait = min(0.05 * (2 ** attempt) + random.uniform(0, 0.01), remaining)
+            time.sleep(wait)
+            attempt += 1
+
+
+def release_fleet_lock(conn, commit=True):
+    """Release the exclusive fleet lock — commit writes on success, roll back on error."""
+    try:
+        conn.execute("COMMIT" if commit else "ROLLBACK")
+    except sqlite3.OperationalError:
+        pass  # Transaction already completed
+
+
 # ── Channel Constants (extracted to comms.py) ─────────────────────────────────
 from comms import CH_SUP, CH_AGENT, CH_FLEET, CH_POOL
 
@@ -697,36 +733,49 @@ def recover_stale_tasks(timeout_secs=900):
 
     Also verifies the assigned agent's PID is actually dead via psutil
     before requeuing — avoids false recovery when heartbeat is merely delayed.
+
+    Uses BEGIN EXCLUSIVE for federation-mode safety: when multiple fleet nodes share
+    the same SQLite file, this prevents two nodes from both recovering the same task.
     """
     recovered = []
     def _do():
-        with get_conn() as conn:
-            rows = conn.execute("""
-                SELECT t.id, t.assigned_to, t.type
-                FROM tasks t
-                LEFT JOIN agents a ON t.assigned_to = a.name
-                WHERE t.status = 'RUNNING'
-                  AND (a.last_heartbeat IS NULL
-                       OR (julianday('now') - julianday(a.last_heartbeat)) * 86400 > ?)
-            """, (timeout_secs,)).fetchall()
-            for r in rows:
-                # Verify the assigned agent's PID is dead before requeuing
-                try:
-                    import psutil
-                    agent_row = conn.execute(
-                        "SELECT pid FROM agents WHERE name=?",
-                        (r["assigned_to"],)
-                    ).fetchone()
-                    if agent_row and agent_row["pid"]:
-                        if psutil.pid_exists(agent_row["pid"]):
-                            continue  # Agent is alive, task isn't stale
-                except Exception:
-                    pass
-                conn.execute(
-                    "UPDATE tasks SET status='PENDING', assigned_to=NULL WHERE id=?",
-                    (r['id'],)
-                )
-                recovered.append(dict(r))
+        conn = get_conn()
+        try:
+            if not acquire_fleet_lock(conn, timeout_ms=5000):
+                raise sqlite3.OperationalError("database is locked")
+            try:
+                rows = conn.execute("""
+                    SELECT t.id, t.assigned_to, t.type
+                    FROM tasks t
+                    LEFT JOIN agents a ON t.assigned_to = a.name
+                    WHERE t.status = 'RUNNING'
+                      AND (a.last_heartbeat IS NULL
+                           OR (julianday('now') - julianday(a.last_heartbeat)) * 86400 > ?)
+                """, (timeout_secs,)).fetchall()
+                for r in rows:
+                    # Verify the assigned agent's PID is dead before requeuing
+                    try:
+                        import psutil
+                        agent_row = conn.execute(
+                            "SELECT pid FROM agents WHERE name=?",
+                            (r["assigned_to"],)
+                        ).fetchone()
+                        if agent_row and agent_row["pid"]:
+                            if psutil.pid_exists(agent_row["pid"]):
+                                continue  # Agent is alive, task isn't stale
+                    except Exception:
+                        pass
+                    conn.execute(
+                        "UPDATE tasks SET status='PENDING', assigned_to=NULL WHERE id=?",
+                        (r['id'],)
+                    )
+                    recovered.append(dict(r))
+                release_fleet_lock(conn, commit=True)
+            except Exception:
+                release_fleet_lock(conn, commit=False)
+                raise
+        finally:
+            conn.close()
     _retry_write(_do)
     return recovered
 

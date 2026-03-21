@@ -885,7 +885,8 @@ async function loadAll() {
 // Initial load + SSE connection
 loadAll();
 connectSSE();
-// Fallback polling for non-SSE data (charts, knowledge, etc) every 30s
+
+// Hot data — agent status, thermal, alerts, timeline — poll every 30s
 setInterval(async () => {
   // Pre-fetch aggregate to reduce connections; fetchJSON() serves from cache
   try {
@@ -896,13 +897,21 @@ setInterval(async () => {
   }
   await Promise.all([
     loadThermal(), loadTraining(), loadActivity(), loadSkills(),
-    loadModules(), loadReviews(), loadKnowledge(), loadRAG(),
-    loadTimeline(), loadDataStats(), loadCodeStats(), loadAlerts(),
+    loadReviews(), loadTimeline(), loadAlerts(),
     loadAgentActivity(), loadCostTracker(), loadEvolution(),
     loadFilesystemAudit(),
   ]);
   _dashCache = null;
 }, 30000);
+
+// Cold data — knowledge, RAG, code stats, modules — changes rarely; poll every 5min
+async function loadColdData() {
+  await Promise.all([
+    loadKnowledge(), loadRAG(), loadCodeStats(), loadDataStats(), loadModules(),
+  ]);
+}
+loadColdData();  // fire once immediately on page load
+setInterval(loadColdData, 300000);
 </script>
 </body>
 </html>
