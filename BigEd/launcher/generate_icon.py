@@ -2,10 +2,13 @@
 BigEd CC — Icon and banner generator.
 
 Design language:
-  - TOP: Neural network (AI/fleet intelligence) — nodes, connections, data flow
-  - BOTTOM: Brick wall (security foundation) — SOC 2, DLP, access control
-  - TEXT: "BE" or "BigEd" — brand identity
-  - COLORS: Gold nodes, green accents, dark red bricks, dark background
+  - TOP: Circuit/data flow pattern (clean, modern — not cluttered nodes)
+  - BOTTOM: Brick wall (security foundation)
+  - TEXT: "BE" on small icons, "BigEd" on banner
+  - COLORS: Teal/cyan (#00bcd4) primary, green (#4caf50) accents, dark red bricks
+  - NO YELLOW/GOLD on icons — clean tech aesthetic
+
+BigEd as a personality: approachable AI assistant, not a corporate tool.
 
 Usage: python generate_icon.py
 """
@@ -14,24 +17,31 @@ import random
 from pathlib import Path
 from PIL import Image, ImageDraw, ImageFont
 
+# ── Color palette ────────────────────────────────────────────────────────────
+TEAL = "#00bcd4"
+TEAL_DIM = "#00838f"
+GREEN = "#4caf50"
+GREEN_DIM = "#2e7d32"
+WHITE = "#e0e0e0"
+BG_DARK = "#121212"
+BRICK_MORTAR = "#1a1a1a"
+BORDER = "#00bcd4"
 
-def draw_brick_wall(draw, width, y_start, y_end, seed=7):
-    """Draw brick wall in the LOWER portion — security foundation."""
+BRICK_PALETTE = [
+    "#8B1A1A", "#9B2020", "#7B1010",
+    "#A02828", "#8A1818", "#6B0F0F",
+    "#952020", "#7A1515",
+]
+
+
+def draw_bricks(draw, width, y_start, y_end, seed=7):
+    """Brick wall in lower portion — security foundation."""
     rng = random.Random(seed)
-
-    bw = max(12, width // 8)
-    bh = max(6, (y_end - y_start) // 8)
+    bw = max(10, width // 8)
+    bh = max(5, (y_end - y_start) // 8)
     mortar = max(1, width // 64)
-    mortar_color = "#2d2d2d"
 
-    brick_palette = [
-        "#8B1A1A", "#9B2020", "#7B1010",
-        "#A02828", "#8A1818", "#6B0F0F",
-        "#952020", "#7A1515",
-    ]
-
-    # Fill mortar base in brick region only
-    draw.rectangle([0, y_start, width - 1, y_end - 1], fill=mortar_color)
+    draw.rectangle([0, y_start, width - 1, y_end - 1], fill=BRICK_MORTAR)
 
     row = 0
     y = y_start
@@ -39,133 +49,116 @@ def draw_brick_wall(draw, width, y_start, y_end, seed=7):
         offset = (bw // 2) if row % 2 else 0
         x = -offset
         while x < width:
-            color = brick_palette[rng.randint(0, len(brick_palette) - 1)]
-            x1 = x + mortar
-            y1 = y + mortar
-            x2 = x + bw - mortar - 1
-            y2 = y + bh - mortar - 1
+            color = BRICK_PALETTE[rng.randint(0, len(BRICK_PALETTE) - 1)]
+            x1, y1 = x + mortar, y + mortar
+            x2, y2 = x + bw - mortar - 1, y + bh - mortar - 1
             if x2 > x1 and y2 > y1 and y1 >= y_start:
                 draw.rectangle([x1, y1, x2, y2], fill=color)
                 draw.line([x1, y1, x2, y1], fill="#B02020", width=1)
                 draw.line([x1, y2, x2, y2], fill="#5B0808", width=1)
-                for _ in range(rng.randint(0, 2)):
-                    tx = rng.randint(x1, x2)
-                    ty = rng.randint(y1, y2)
-                    draw.point((tx, ty), fill="#6B1010")
             x += bw
         y += bh
         row += 1
 
 
-def draw_network(draw, width, height, seed=42):
-    """Draw neural network in the UPPER portion — AI intelligence."""
+def draw_circuit(draw, width, height, seed=42):
+    """Clean circuit pattern — data flow lines with endpoint dots."""
     rng = random.Random(seed)
-    node_color = "#c8a84b"
-    line_color = "#5a4a1a"
-    glow_color = "#4caf50"
+    line_color = TEAL_DIM
+    node_color = TEAL
+    active_color = GREEN
 
-    # Place nodes in upper region
-    nodes = []
-    margin = width // 8
-    n_nodes = max(8, width // 14)
-    for _ in range(n_nodes):
+    margin = width // 6
+    # Horizontal + vertical circuit lines (grid-like, not messy)
+    n_lines = max(4, width // 20)
+    points = []
+
+    for _ in range(n_lines):
         x = rng.randint(margin, width - margin)
         y = rng.randint(margin, height - margin)
-        nodes.append((x, y))
+        points.append((x, y))
 
-    # Draw connections (thinner, more subtle)
-    for i, (x1, y1) in enumerate(nodes):
-        for j, (x2, y2) in enumerate(nodes):
-            if i >= j:
-                continue
-            dist = math.sqrt((x2 - x1) ** 2 + (y2 - y1) ** 2)
-            if dist < width * 0.5 and rng.random() > 0.5:
-                draw.line([(x1, y1), (x2, y2)], fill=line_color,
-                         width=max(1, width // 80))
+    # Draw clean L-shaped connections (horizontal then vertical)
+    for i in range(len(points) - 1):
+        x1, y1 = points[i]
+        x2, y2 = points[i + 1]
+        mid_x = (x1 + x2) // 2
+        lw = max(1, width // 48)
+        # Horizontal segment
+        draw.line([(x1, y1), (mid_x, y1)], fill=line_color, width=lw)
+        # Vertical segment
+        draw.line([(mid_x, y1), (mid_x, y2)], fill=line_color, width=lw)
+        # Horizontal to destination
+        draw.line([(mid_x, y2), (x2, y2)], fill=line_color, width=lw)
 
-    # Draw nodes
+    # Draw endpoint nodes
     r = max(2, width // 28)
-    for i, (x, y) in enumerate(nodes):
-        # First 3 nodes are green (active agents)
-        color = glow_color if i < 3 else node_color
-        # Outer glow for active nodes
-        if i < 3 and width >= 64:
-            draw.ellipse([x - r - 2, y - r - 2, x + r + 2, y + r + 2],
-                        fill=None, outline="#2a5a2a", width=1)
-        draw.ellipse([x - r, y - r, x + r, y + r],
-                    fill=color, outline="#1a1a1a")
+    for i, (x, y) in enumerate(points):
+        color = active_color if i < 2 else node_color
+        draw.ellipse([x - r, y - r, x + r, y + r], fill=color, outline=BG_DARK)
 
 
 def make_icon(size=64):
-    """Square icon: network top + brick wall bottom + BE text."""
-    img = Image.new("RGB", (size, size), "#1a1a1a")
+    """Square icon: circuit top + bricks bottom + BE text."""
+    img = Image.new("RGB", (size, size), BG_DARK)
     draw = ImageDraw.Draw(img)
 
-    # Split: upper 55% = network, lower 45% = bricks
     split = int(size * 0.55)
 
-    # Draw network in upper portion
-    draw_network(draw, size, split, seed=42)
+    # Circuit pattern (upper)
+    draw_circuit(draw, size, split, seed=42)
 
-    # Draw bricks in lower portion
-    draw_brick_wall(draw, size, split, size, seed=7)
+    # Bricks (lower)
+    draw_bricks(draw, size, split, size, seed=7)
 
-    # Horizontal divider line (gold) at the split
-    draw.line([(0, split), (size, split)], fill="#c8a84b", width=max(1, size // 32))
+    # Teal divider
+    draw.line([(0, split), (size, split)], fill=TEAL, width=max(1, size // 32))
 
-    # Gold border
-    border_w = max(1, size // 24)
-    draw.rectangle([0, 0, size - 1, size - 1], outline="#B8860B", width=border_w)
+    # Border
+    bw = max(1, size // 24)
+    draw.rectangle([0, 0, size - 1, size - 1], outline=BORDER, width=bw)
 
-    # "BE" text centered
+    # "BE" text
     if size >= 48:
         try:
-            font_size = size // 3
-            font = ImageFont.truetype("arial.ttf", font_size)
+            font = ImageFont.truetype("arial.ttf", size // 3)
         except Exception:
             font = ImageFont.load_default()
 
         text = "BE"
         bbox = draw.textbbox((0, 0), text, font=font)
-        tw = bbox[2] - bbox[0]
-        th = bbox[3] - bbox[1]
+        tw, th = bbox[2] - bbox[0], bbox[3] - bbox[1]
         tx = (size - tw) // 2
-        ty = (size - th) // 2 - size // 20
+        ty = (size - th) // 2 - size // 16
 
-        # Dark shadow for readability
+        # Shadow
         for dx, dy in [(-1, -1), (-1, 1), (1, -1), (1, 1), (0, 2)]:
             draw.text((tx + dx, ty + dy), text, fill="#000000", font=font)
-        # Gold text
-        draw.text((tx, ty), text, fill="#c8a84b", font=font)
+        # White text (clean, no yellow)
+        draw.text((tx, ty), text, fill=WHITE, font=font)
 
     return img
 
 
 def make_banner(width=120, height=160):
-    """120x160 banner: network top + bricks bottom + BigEd text."""
-    img = Image.new("RGB", (width, height), "#1a1a1a")
+    """Banner: circuit top + bricks bottom + BigEd text."""
+    img = Image.new("RGB", (width, height), BG_DARK)
     draw = ImageDraw.Draw(img)
 
-    # Split: upper 60% = network, lower 40% = bricks
     split = int(height * 0.60)
 
-    # Network in upper portion
-    draw_network(draw, width, split - 10, seed=42)
+    draw_circuit(draw, width, split - 10, seed=42)
+    draw_bricks(draw, width, split, height, seed=7)
+    draw.line([(0, split), (width, split)], fill=TEAL, width=2)
 
-    # Bricks in lower portion
-    draw_brick_wall(draw, width, split, height, seed=7)
-
-    # Gold divider
-    draw.line([(0, split), (width, split)], fill="#c8a84b", width=2)
-
-    # Dark overlay for text area
+    # Dark overlay for text
     overlay = Image.new("RGBA", (width, 36), (0, 0, 0, 200))
     img_rgba = img.convert("RGBA")
     img_rgba.paste(overlay, (0, split - 36), overlay)
     img = img_rgba.convert("RGB")
     draw = ImageDraw.Draw(img)
 
-    # "BigEd" text at the split line
+    # "BigEd" text
     try:
         font = ImageFont.truetype("arial.ttf", 18)
     except Exception:
@@ -178,14 +171,14 @@ def make_banner(width=120, height=160):
     ty = split - 30
 
     draw.text((tx + 1, ty + 1), text, fill="#000000", font=font)
-    draw.text((tx, ty), text, fill="#c8a84b", font=font)
+    draw.text((tx, ty), text, fill=WHITE, font=font)
 
-    # Small "CC" subtitle
+    # "CC" subtitle in teal
     try:
         font_sm = ImageFont.truetype("arial.ttf", 10)
     except Exception:
         font_sm = ImageFont.load_default()
-    draw.text((tx + tw + 4, ty + 8), "CC", fill="#888888", font=font_sm)
+    draw.text((tx + tw + 4, ty + 8), "CC", fill=TEAL, font=font_sm)
 
     return img
 
@@ -196,23 +189,19 @@ def main():
 
     banner = make_banner(120, 160)
     banner.save(out / "brick_banner.png")
-    print("Saved brick_banner.png (120x160)")
+    print("Saved brick_banner.png")
 
     sizes = [16, 32, 48, 64, 128, 256]
     icons = [make_icon(s) for s in sizes]
     icons[0].save(
-        out / "brick.ico",
-        format="ICO",
-        sizes=[(s, s) for s in sizes],
-        append_images=icons[1:],
+        out / "brick.ico", format="ICO",
+        sizes=[(s, s) for s in sizes], append_images=icons[1:],
     )
-    print("Saved brick.ico (multi-size)")
+    print("Saved brick.ico")
 
     make_icon(64).save(out / "brick_64.png")
-    print("Saved brick_64.png")
-
     make_icon(256).save(out / "brick_256.png")
-    print("Saved brick_256.png (preview)")
+    print("Saved brick_64.png + brick_256.png")
 
 
 if __name__ == "__main__":

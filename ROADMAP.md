@@ -746,6 +746,37 @@ Completed 2026-03-20.
 - [ ] Fallback verification: Claude → Gemini → MiniMax → Local
 - [ ] Cost comparison dashboard panel showing all 4 providers
 
+### 0.054.00b — BigEd Personal Assistant + Speech-to-Text [PLANNED]
+
+**Goal:** BigEd as a personality — local-first voice assistant with web agent fallback. Security-focused STT pipeline.
+
+**Speech-to-Text (local priority):**
+- [ ] Local STT: Whisper.cpp or faster-whisper (runs on GPU, no cloud dependency)
+- [ ] Microphone input capture via sounddevice/pyaudio
+- [ ] Real-time transcription → Manual Chat input (type-free interaction)
+- [ ] Wake word detection: "Hey BigEd" or configurable trigger phrase
+- [ ] Web STT fallback: Google Speech API / Azure Speech (optional, requires API key)
+- [ ] STT model selection in Settings: tiny/base/small/medium (VRAM tradeoff)
+
+**BigEd Personality:**
+- [ ] Configurable personality prompt in fleet.toml `[assistant]` section
+- [ ] Default: helpful, technical, concise — not corporate
+- [ ] Personality carries across Manual Chat, HITL responses, and agent outputs
+- [ ] Voice response option: local TTS (pyttsx3/Coqui) for spoken answers
+
+**Personal Assistant Features:**
+- [ ] Task creation via voice: "BigEd, review the code in fleet/supervisor.py"
+- [ ] Status queries: "BigEd, how many tasks are pending?"
+- [ ] Model control: "BigEd, switch to the 4b model"
+- [ ] Quick actions: "BigEd, run a security audit"
+- [ ] Calendar/reminder integration (local file-based, no cloud)
+
+**Security:**
+- [ ] All voice processing local by default (air-gap compatible)
+- [ ] Web STT opt-in only with explicit fleet.toml toggle
+- [ ] Audio never stored beyond transcription (privacy-first)
+- [ ] Enterprise: configurable STT provider whitelist
+
 ### 0.052.00b — Claude Manual Mode Integration (Enterprise) [PLANNED]
 
 **Goal:** ToS-compliant hybrid system — unattended API automation (Lane 2) + human-guided Claude Code sessions (Lane 1). No lane crossing. Spec: `docs/specs/claude-manual-mode-integration.md`
