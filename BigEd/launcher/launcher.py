@@ -732,6 +732,52 @@ def count_waiting_human() -> int:
     from data_access import FleetDB
     return FleetDB.count_waiting_human(FLEET_DIR / "fleet.db")
 
+
+def _ctx_preview_confirm(parent, model: str, file_list: str) -> bool:
+    """Show a modal confirmation dialog listing context files to be written.
+
+    Returns True if the user clicks Proceed, False if they click Cancel.
+    """
+    result = [False]
+    dlg = ctk.CTkToplevel(parent)
+    dlg.title("Launch Session — Context Preview")
+    dlg.geometry("420x240")
+    dlg.resizable(False, False)
+    dlg.configure(fg_color="#1e1e1e")
+    dlg.transient(parent)
+    dlg.grab_set()
+
+    ctk.CTkLabel(dlg, text=f"Launch {model} session",
+                 font=("RuneScape Bold 12", 12, "bold"),
+                 text_color="#c8a84b", anchor="w").pack(fill="x", padx=16, pady=(14, 4))
+    ctk.CTkLabel(dlg, text="The following context files will be written:",
+                 font=("Consolas", 9), text_color="#888888", anchor="w"
+                 ).pack(fill="x", padx=16)
+
+    files_frame = ctk.CTkFrame(dlg, fg_color="#242424", corner_radius=6)
+    files_frame.pack(fill="x", padx=16, pady=6)
+    ctk.CTkLabel(files_frame, text=file_list, font=("Consolas", 9),
+                 text_color="#c8c8c8", anchor="w", justify="left"
+                 ).pack(padx=10, pady=8, anchor="w")
+
+    btn_row = ctk.CTkFrame(dlg, fg_color="transparent")
+    btn_row.pack(fill="x", padx=16, pady=(4, 14))
+
+    def proceed():
+        result[0] = True
+        dlg.destroy()
+
+    ctk.CTkButton(btn_row, text="Proceed", width=100, height=30,
+                  fg_color="#b22222", hover_color="#8b0000", text_color="white",
+                  font=("Consolas", 10), command=proceed).pack(side="right")
+    ctk.CTkButton(btn_row, text="Cancel", width=80, height=30,
+                  fg_color="#2d2d2d", hover_color="#3a3a3a", text_color="#888888",
+                  font=("Consolas", 10), command=dlg.destroy).pack(side="right", padx=(0, 8))
+
+    parent.wait_window(dlg)
+    return result[0]
+
+
 # ─── Tooltip ──────────────────────────────────────────────────────────────────
 class Tooltip:
     """Hover tooltip for any tkinter/CTk widget. Shows after 500 ms, right of widget."""
@@ -859,6 +905,8 @@ class CustomTabBar(ctk.CTkFrame):
         self._tab_frames:    dict[str, ctk.CTkFrame]  = {}
         self._tab_buttons:   dict[str, ctk.CTkButton] = {}
         self._tab_indicators: dict[str, ctk.CTkFrame] = {}
+        self._tab_badges:    dict[str, ctk.CTkLabel]  = {}
+        self._tab_cells:     dict[str, ctk.CTkFrame]  = {}
         self._active: str = ""
         self._col: int = 0
 
@@ -900,10 +948,32 @@ class CustomTabBar(ctk.CTkFrame):
         self._tab_frames[name]     = content
         self._tab_buttons[name]    = btn
         self._tab_indicators[name] = indicator
+        self._tab_cells[name]      = cell
+
+        # Badge overlay (hidden by default) — shows pending HITL count
+        badge_lbl = ctk.CTkLabel(
+            cell, text="",
+            font=("Consolas", 7, "bold"),
+            text_color="white", fg_color="#d32f2f",
+            corner_radius=8, width=16, height=16)
+        self._tab_badges[name] = badge_lbl
+        # Not placed yet — shown only when count > 0
+
         self._all_tab_cells.append(cell)
         self._tab_names_order.append(name)
         self._col += 1
         self._scroll_tabs(0)  # Refresh chevron visibility
+
+    def set_badge(self, name: str, count: int) -> None:
+        """Show/hide a red count badge on a tab. count=0 hides it."""
+        lbl = self._tab_badges.get(name)
+        if not lbl:
+            return
+        if count > 0:
+            lbl.configure(text=str(count) if count < 100 else "99+")
+            lbl.place(relx=1.0, rely=0.0, x=-12, y=4, anchor="ne")
+        else:
+            lbl.place_forget()
 
     def tab(self, name: str) -> ctk.CTkFrame:
         """Return the content frame for a tab (used when building tab contents)."""
@@ -2528,6 +2598,13 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
         self._manual_chat_display.configure(state="disabled")
         self._manual_chat_display.see("end")
 
+        # If a HITL task is loaded, route the response back to the waiting agent
+        hitl_id = getattr(self, '_active_hitl_task_id', None)
+        if hitl_id is not None:
+            self._send_human_response(hitl_id, text)
+            self._active_hitl_task_id = None
+            self._active_hitl_agent = None
+
         if "OAuth" in model:
             self._launch_oauth_session(model, text)
         else:
@@ -2562,8 +2639,18 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
 
     def _launch_oauth_session(self, model, context):
         """Write context files and launch OAuth session (Claude Code or Gemini)."""
-        # Write task-briefing.md
+        # Context preview — show files to be written before proceeding
         briefing = FLEET_DIR / "task-briefing.md"
+        files_preview = [str(briefing)]
+        # If an active HITL task is loaded, note the response will also be sent back
+        hitl_id = getattr(self, '_active_hitl_task_id', None)
+        if hitl_id:
+            files_preview.append(f"  → HITL task #{hitl_id} response will be sent on submit")
+        file_list = "\n".join(f"  • {f}" for f in files_preview)
+        confirm = _ctx_preview_confirm(self, model, file_list)
+        if not confirm:
+            return
+        # Write task-briefing.md
         briefing.write_text(f"# Manual Chat Session\n\n{context}\n", encoding="utf-8")
 
         if "Claude" in model:
@@ -2721,6 +2808,15 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
                     command=lambda t=tid, v=reply_var: self._send_human_response(t, v.get()),
                 ).grid(row=0, column=2)
 
+                # "Load to Chat" button: pre-fills Manual Chat and sets active HITL context
+                task_type = item.get("type", "task")
+                ctk.CTkButton(
+                    card, text="↓ Load to Chat", width=110, height=22,
+                    fg_color=BG3, hover_color=BG2, font=FONT_XS, text_color=DIM,
+                    command=lambda t=tid, q=question, ag=agent_name, tt=task_type:
+                        self._load_hitl_to_chat(t, q, ag, tt),
+                ).pack(anchor="e", padx=8, pady=(0, 6))
+
             # Render security advisories
             for adv in advisories:
                 card = ctk.CTkFrame(scroll, fg_color="#2a1a1a", corner_radius=6)
@@ -2794,6 +2890,31 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
             except Exception as e:
                 self._safe_after(0, lambda: self._log_output(f"Send error: {e}"))
         threading.Thread(target=_bg, daemon=True).start()
+
+    def _load_hitl_to_chat(self, task_id: int, question: str,
+                           agent_name: str, task_type: str) -> None:
+        """Pre-fill Manual Chat with HITL request context and arm the HITL loop."""
+        context = (
+            f"[Agent: {agent_name} | Task #{task_id} | Type: {task_type}]\n\n"
+            f"{question}"
+        )
+        try:
+            self._manual_chat_entry.delete(0, "end")
+            self._manual_chat_entry.insert(0, context)
+        except Exception:
+            return
+        # Store active HITL task ID so _send_manual_chat can close the loop
+        self._active_hitl_task_id = task_id
+        self._active_hitl_agent = agent_name
+        # Visual cue in chat display
+        self._manual_chat_display.configure(state="normal")
+        self._manual_chat_display.insert(
+            "end",
+            f"\n─── Loaded: {agent_name} Task #{task_id} ───\n"
+            f"{question}\n"
+        )
+        self._manual_chat_display.configure(state="disabled")
+        self._manual_chat_display.see("end")
 
     # ── Fleet Comm — AI-assisted response drafting ───────────────────────────
 
@@ -3643,7 +3764,7 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
         adv_count = count_pending_advisories()
         hitl_count = count_waiting_human()
         total = adv_count + hitl_count
-        
+
         if total > 0:
             msgs = []
             if hitl_count: msgs.append(f"{hitl_count} agent msg")
@@ -3653,6 +3774,10 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
                 fg_color=ORANGE, text_color="#1a1a1a")
         else:
             self._action_badge.configure(text="", fg_color="transparent")
+
+        # Update Fleet Comm tab badge overlay
+        if hasattr(self, '_tabs'):
+            self._tabs.set_badge("Fleet Comm", hitl_count)
 
     def _navigate_to_comm(self):
         """Switch to Fleet Comm tab and refresh (called from badge click)."""
@@ -3762,6 +3887,11 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
             self._update_agents_table(status)
         except Exception:
             pass
+
+        # Refresh HITL badge on each SSE push (DB read is fast)
+        threading.Thread(
+            target=lambda: self._safe_after(0, self._update_action_badge),
+            daemon=True).start()
 
     def _schedule_refresh(self):
         """Unified refresh every 4s — pills + agents + log/advisory (threaded I/O).
