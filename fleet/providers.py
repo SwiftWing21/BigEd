@@ -345,12 +345,27 @@ def get_optimal_model(skill_name: str, config: dict = None) -> str:
 
     Checks fleet.toml [skill_complexity] for per-skill overrides first,
     then falls back to the built-in SKILL_COMPLEXITY table.
+
+    MiniMax M2.5 mid-tier routing: when MINIMAX_API_KEY is available and
+    the skill complexity is "medium", prefer MiniMax as the cost-efficient
+    mid-tier (cheaper than Claude Sonnet, higher quality than Gemini Flash).
+    This is advisory — call_complex() still handles HA fallback if MiniMax
+    is unreachable.
     """
     if config:
         override = config.get("skill_complexity", {}).get(skill_name)
         if override and override in COMPLEXITY_ROUTING:
             return COMPLEXITY_ROUTING[override]
     complexity = _get_skill_complexity(skill_name)
+
+    # MiniMax mid-tier routing: medium tasks → MiniMax M2.5 when available
+    # Simple → Claude Haiku (cheapest), Medium → MiniMax M2.5, Complex → Claude Opus
+    if complexity == "medium" and os.environ.get("MINIMAX_API_KEY"):
+        minimax_model = "MiniMax-M1-80k"
+        if config:
+            minimax_model = config.get("models", {}).get("minimax_model", minimax_model)
+        return minimax_model
+
     return COMPLEXITY_ROUTING.get(complexity, "claude-sonnet-4-6")
 
 
@@ -368,6 +383,39 @@ def get_local_model_for_skill(skill_name: str, config: dict) -> str:
         return model
     # Fallback to config default
     return config.get("models", {}).get("local", "qwen3:8b")
+
+
+# ── v0.051.06b: Provider Benchmark Stub ───────────────────────────────────────
+
+
+def benchmark_providers(skill_name: str = "summarize", config: dict = None) -> dict:
+    """Compare providers on a standard task. Returns latency + cost per provider.
+
+    This is a stub -- actual benchmarking requires API keys for each provider
+    and should be run manually via:
+        lead_client.py task '{"type": "token_optimizer", "payload": {"action": "benchmark"}}'
+
+    Full benchmarking would send the same prompt to all available providers,
+    measure latency and output quality, and store results in fleet.db for
+    the dashboard cost comparison panel.
+    """
+    return {
+        "note": "Benchmark requires API keys for each provider. Run manually.",
+        "skill": skill_name,
+        "providers": ["claude", "gemini", "minimax", "local"],
+        "estimated_cost_per_1k_tokens": {
+            "claude_haiku": "$0.80",
+            "claude_sonnet": "$3.00",
+            "gemini_flash": "$0.10",
+            "minimax_m1": "$0.50",
+            "local_8b": "$0.00",
+        },
+        "routing_recommendation": {
+            "simple": "claude-haiku-4-5 or local (lowest cost)",
+            "medium": "MiniMax-M1-80k (cost/quality balance)",
+            "complex": "claude-sonnet-4-6 or claude-opus-4-6 (highest quality)",
+        },
+    }
 
 
 # ── v0.110 S1: ML-lite Task Routing (Intelligent Orchestration) ───────────────

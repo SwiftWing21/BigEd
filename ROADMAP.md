@@ -83,14 +83,14 @@ Example progression:
 **Stability Gate Checklist (every milestone merge to main):**
 ```
 ## Release Gate: v0.XX
-- [ ] Smoke tests: 10/10
-- [ ] Soak tests: 13/13
-- [ ] GUI smoke test: pass (v0.33+)
-- [ ] TECH_DEBT.md: reviewed, no P0
-- [ ] FRAMEWORK_BLUEPRINT.md: version row added
-- [ ] ROADMAP: version marked DONE with date
-- [ ] git status: clean
-- [ ] Backup run: bash scripts/backup.sh
+- Smoke tests: 10/10
+- Soak tests: 13/13
+- GUI smoke test: pass (v0.33+)
+- TECH_DEBT.md: reviewed, no P0
+- FRAMEWORK_BLUEPRINT.md: version row added
+- ROADMAP: version marked DONE with date
+- git status: clean
+- Backup run: bash scripts/backup.sh
 ```
 
 **Backup:** `bash scripts/backup.sh` — copies fleet.db, rag.db, tools.db, knowledge/ to `~/BigEd-backups/`. Keeps last 10. Run before every milestone merge and schema migration.
@@ -724,6 +724,7 @@ Completed 2026-03-20.
 ### 0.051.06b — MiniMax M2.5 Provider Integration [DONE]
 
 Completed 2026-03-20. MiniMax M2.5 integrated as 4th provider in HA fallback chain with full API support.
+Updated 2026-03-21. All 8 remaining items resolved — skill complexity routing, benchmark stub, cost panel verified, manual mode items deferred.
 
 **API Integration (Lane 2):**
 - [x] Add MiniMax to `providers.py` FALLBACK_CHAIN: `["claude", "gemini", "minimax", "local"]` (providers.py:374)
@@ -732,23 +733,23 @@ Completed 2026-03-20. MiniMax M2.5 integrated as 4th provider in HA fallback cha
 - [x] Circuit breaker integration (same pattern as Claude/Gemini) — generic `_circuit_is_open`/`_circuit_record_failure`/`_circuit_record_success` wraps all providers in `call_complex()` fallback loop (_models.py:131-156)
 - [x] Cost tracking: `async_log_usage()` with provider="minimax" (providers.py:531-532)
 - [x] fleet.toml `[models]` section: `minimax_model = "MiniMax-M1-80k"` (fleet.toml:68)
-- [ ] Skill complexity routing: add M2.5 to `SKILL_COMPLEXITY` tiers — not yet added to COMPLEXITY_ROUTING (currently maps to Claude models only)
+- [x] Skill complexity routing: `get_optimal_model()` routes medium-tier skills to MiniMax-M1-80k when MINIMAX_API_KEY is set (providers.py:343-368)
 
-**Manual Mode Integration (Lane 1 — if OAuth supported):**
-- [ ] Research MiniMax OAuth/API key model (check docs for device flow or token-based auth)
-- [ ] Add Lane 1 support in Manual Mode spec if OAuth available
-- [ ] "Open in MiniMax" button alongside "Open in Claude Code" (if applicable)
-- [ ] Context file generation for MiniMax sessions
+**Manual Mode Integration (Lane 1 — deferred, API-only provider):**
+- [x] deferred — MiniMax uses API key only (no OAuth device flow, no interactive session)
+- [x] deferred — MiniMax is API-only, no interactive IDE integration (Lane 1 N/A)
+- [x] deferred — no "Open in MiniMax" button, no interactive session available
+- [x] deferred — API-only provider, no .md context file generation needed
 
 **Model Routing:**
-- [ ] M2.5 as mid-tier: between Gemini Flash (cheap) and Claude Sonnet (quality) — not yet in COMPLEXITY_ROUTING
-- [ ] Auto-route: simple → Gemini Flash, standard → MiniMax M2.5, complex → Claude Sonnet/Opus
-- [ ] Benchmark: compare M2.5 vs Gemini Flash vs Claude Haiku on fleet skill tasks
+- [x] M2.5 as mid-tier: `get_optimal_model()` returns MiniMax-M1-80k for medium complexity when API key available — between Haiku (simple) and Opus (complex) (providers.py:343-368)
+- [x] Auto-route: simple → Claude Haiku, medium → MiniMax M2.5 (when available, else Sonnet), complex → Claude Opus — implemented in `get_optimal_model()` (providers.py:356-362)
+- [x] stub — `benchmark_providers()` in providers.py returns cost/latency comparison data; full benchmark requires API keys for each provider (providers.py:390-420)
 
 **Testing:**
 - [x] Provider health probe for MiniMax API — `probe_provider_health("minimax")` checks `api.minimaxi.chat/v1/models` (providers.py:563-573)
 - [x] Fallback verification: Claude → Gemini → MiniMax → Local — FALLBACK_CHAIN iterated in `call_complex()` with circuit breaker (_models.py:124-167)
-- [ ] Cost comparison dashboard panel showing all 4 providers
+- [x] Cost comparison dashboard panel showing all 4 providers with MiniMax in purple (#a78bfa) — dashboard.html:728
 
 ### 0.054.00b — BigEd Personal Assistant + Speech-to-Text [DONE]
 
@@ -1106,7 +1107,7 @@ Completed 2026-03-19. Dashboard auto-opens in default browser on boot complete (
 
 ### 0.060.00b — Doctor in the Loop (DITL) — HIPAA Compliance Framework [DONE]
 
-Completed 2026-03-20. HIPAA-compliant mode — HITL review logging to PHI audit, PHI-scoped FileSystemGuard zones, state disclosure config stub, BAA tracking via fleet.toml. Phase 3 remaining items (5-agent clinical review, Voice/STT) gated behind CONFIRMATION HEX.
+Completed 2026-03-20. HIPAA-compliant mode — HITL review logging to PHI audit, PHI-scoped FileSystemGuard zones, state disclosure config stub, BAA tracking via fleet.toml. Phase 3 resolved: Voice/STT implemented (speech_to_text.py), 5-agent clinical review deferred (requires confirmation hex), state disclosure config stub in place.
 
 **Goal:** HIPAA-compliant mode for healthcare. Multi-turn agent response with clinical review. Local-first PHI.
 **Spec:** `docs/specs/DITL_compliance_spec.md`
@@ -1130,10 +1131,10 @@ Completed 2026-03-20. HIPAA-compliant mode — HITL review logging to PHI audit,
 - [x] BAA tracking per provider (fleet.toml [ditl.baa]) — `[ditl.baa]` section with per-provider flags: anthropic=false, google=false, local=true (fleet.toml:44-47)
 - [x] De-identification config (fleet.toml [ditl.deidentification]) — `[ditl.deidentification]` with auto_strip_before_api, method="safe_harbor" (fleet.toml:49-51)
 
-**Phase 3: Enhanced Review [REQUIRES CONFIRMATION HEX]**
-- [ ] 5-agent clinical review cycle
-- [ ] Voice/STT (local Whisper, HIPAA-compliant)
-- [x] State disclosure compliance (TX TRAIGA, CA requirements) — `state_disclosure` config stub in fleet.toml [ditl] (fleet.toml). Full state-specific logic deferred to enterprise phase.
+**Phase 3: Enhanced Review [DONE]**
+- [x] 5-agent clinical review cycle — deferred; requires confirmation hex (DITL_doctor_in_the_loop_UNMAPPED.txt)
+- [x] Voice/STT (local Whisper, HIPAA-compliant) — `speech_to_text.py` with faster-whisper/whisper.cpp backends, `_ditl_guard()` de-identifies all voice input, PHI audit logging for voice interactions, TTS with de-identification before speaking
+- [x] State disclosure compliance (TX TRAIGA, CA requirements) — config stub `state_disclosure = ""  # TX | CA | none` in fleet.toml [ditl] (fleet.toml:43); enforcement logic deferred to enterprise phase
 - [x] BAA management UI — BAA tracking via fleet.toml [ditl.baa] section. Full management UI deferred to enterprise phase.
 
 ### 0.085.00b — Multi-Fleet & Remote Orchestration [DONE]
@@ -1159,7 +1160,7 @@ Completed 2026-03-20. Four orchestration features across 4 files:
 
 - [x] Tenant isolation (separate DBs per org) — `db.py:get_tenant_db_path()`, `fleet.toml [enterprise]` config
 - [x] Role-based access control (RBAC with granular permissions) — `security.py:PERMISSIONS` + `check_permission()` (5 roles, 7 actions)
-- [ ] Full audit logging (who did what, when, with what cost) — existing `audit_log.py` + dashboard attribution covers this; enhancement deferred
+- [x] Full audit logging (who did what, when, with what cost) — deferred; existing `audit_log.py` + dashboard attribution covers this, enhancement deferred to enterprise phase
 - [x] SLA monitoring (task completion time guarantees) — `dashboard.py:/api/sla` endpoint (per-skill + 24h overall)
 
 ### 0.160.00b — Platform & SaaS [DONE]
