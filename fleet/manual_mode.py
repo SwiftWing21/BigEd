@@ -1,17 +1,26 @@
-"""
-Manual Mode Engine — operator-driven Claude Code compliance auditing.
+"""Manual Mode Engine — operator-driven Claude Code compliance auditing.
 
-Provides:
-  - run_queue()            : execute a list of audit prompts with HITL gate
-  - _check_cost_anomaly()  : rolling-average cost spike detection
+Provides two complementary APIs:
+
+Module-level (used by mod_manual_mode.py / UI layer):
+  - run_queue()              : execute queue with HITL gate
+  - launch_vscode()          : cross-platform VS Code launcher
+  - _check_cost_anomaly()    : rolling-average cost spike detection
   - _write_audit_results_md(): structured markdown audit output
-  - launch_vscode()        : cross-platform VS Code launcher
+
+Class-based ManualModeEngine (queue/scheduler persistence + direct API calls):
+  - get_queue() / set_queue()
+  - get_scheduler() / set_scheduler()
+  - run_queue(queue, on_progress) — includes HITL gate + governance
+  - get_run_history(limit)
 """
+import json
 import logging
 import os
 import shutil
 import subprocess
 import sys
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -19,8 +28,24 @@ from typing import Any
 logger = logging.getLogger(__name__)
 
 FLEET_DIR = Path(__file__).parent
+FLEET_TOML = FLEET_DIR / "fleet.toml"
 KNOWLEDGE_DIR = FLEET_DIR / "knowledge"
 LOGS_DIR = FLEET_DIR / "logs"
+
+# Model display-name → API ID mapping
+CLAUDE_MODELS = {
+    "claude-sonnet": "claude-sonnet-4-6",
+    "claude-haiku":  "claude-haiku-4-5",
+    "claude-opus":   "claude-opus-4-6",
+}
+
+# Pricing per million tokens (input / output)
+_PRICING = {
+    "claude-haiku-4-5":  {"input": 0.80,  "output": 4.00},
+    "claude-sonnet-4-6": {"input": 3.00,  "output": 15.00},
+    "claude-opus-4-6":   {"input": 15.00, "output": 75.00},
+}
+
 
 # ── DB helpers ────────────────────────────────────────────────────────────────
 
@@ -60,7 +85,6 @@ def _get_last_run_tokens() -> int:
 
 def _save_run_record(total_tokens: int, total_cost: float, item_count: int, summary: dict) -> None:
     """Persist a completed run record for future HITL comparisons."""
-    import json
     try:
         sys.path.insert(0, str(FLEET_DIR))
         from db import get_conn
@@ -83,8 +107,8 @@ def _save_run_record(total_tokens: int, total_cost: float, item_count: int, summ
         logger.warning("[MANUAL MODE] Could not save run record: %s", exc)
 
 
-def _get_recent_run_costs(limit: int = 5) -> list[float]:
-    """Return the cost_usd values of the last `limit` completed runs."""
+def _get_recent_run_costs(limit: int = 5) -> list:
+    """Return the total_cost_usd values of the last `limit` completed runs."""
     try:
         sys.path.insert(0, str(FLEET_DIR))
         from db import get_conn
@@ -101,26 +125,25 @@ def _get_recent_run_costs(limit: int = 5) -> list[float]:
 
 # ── Cost Anomaly Detection ────────────────────────────────────────────────────
 
-def _check_cost_anomaly(run_cost: float, history: list[float]) -> bool:
+def _check_cost_anomaly(run_cost: float, history: list) -> bool:
     """Detect cost spikes vs rolling average of last 5 runs.
 
     Writes a DB alert and logs a warning if run_cost > avg * 2.5.
+    Requires at least 3 historical runs to avoid false positives.
 
     Returns True if an anomaly was detected.
     """
-    if not history:
+    if len(history) < 3:
         return False
-    avg = sum(history) / len(history)
+    avg = sum(history[-5:]) / len(history[-5:])
     if avg <= 0:
         return False
     if run_cost > avg * 2.5:
-        msg = f"Cost anomaly: ${run_cost:.4f} vs avg ${avg:.4f} (×{run_cost/avg:.1f})"
+        msg = f"Cost anomaly: ${run_cost:.4f} vs avg ${avg:.4f} (×{run_cost / avg:.1f})"
         logger.warning("[MANUAL MODE] %s", msg)
         _db_log_alert(
-            severity="warning",
-            source="manual_mode",
-            message=msg,
-            details={"run_cost": run_cost, "rolling_avg": avg, "history": history},
+            "warning", "manual_mode", msg,
+            {"run_cost": run_cost, "rolling_avg": avg, "history": history},
         )
         return True
     return False
@@ -128,39 +151,45 @@ def _check_cost_anomaly(run_cost: float, history: list[float]) -> bool:
 
 # ── Audit Results Markdown ────────────────────────────────────────────────────
 
-def _write_audit_results_md(run_summary: dict) -> Path | None:
+def _write_audit_results_md(run_summary: dict):
     """Write a structured audit-results markdown file to knowledge/.
 
-    Args:
-        run_summary: dict with keys: items, total_tokens, total_cost_usd,
-                     run_at (ISO str), anomaly_detected (bool).
+    Sections: Run Summary, Per-Prompt Results, Cost Breakdown, Recommendations.
+    Creates knowledge/ dir if missing.
 
-    Returns:
-        Path to the written file, or None on failure.
+    Returns Path to the written file, or None on failure.
     """
     KNOWLEDGE_DIR.mkdir(parents=True, exist_ok=True)
     ts = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
     out_path = KNOWLEDGE_DIR / f"audit_results_{ts}.md"
 
-    items: list[dict] = run_summary.get("items", [])
+    items: list = run_summary.get("items", [])
     total_tokens: int = run_summary.get("total_tokens", 0)
     total_cost: float = run_summary.get("total_cost_usd", 0.0)
     run_at: str = run_summary.get("run_at", ts)
     anomaly: bool = run_summary.get("anomaly_detected", False)
 
-    # Collect recommendations from items that returned action items
-    recommendations: list[str] = []
+    # Extract recommendations (lines containing action keywords, up to 10)
+    keywords = ("TODO", "FIXME", "ACTION", "must ", "should ")
+    recommendations: list = []
     for item in items:
-        for rec in item.get("action_items", []):
-            recommendations.append(f"- [{item.get('prompt', 'unknown')}] {rec}")
+        text = str(item.get("output", "") or item.get("response", ""))
+        for line in text.splitlines():
+            stripped = line.strip()
+            if any(kw.lower() in stripped.lower() for kw in keywords) and len(stripped) > 10:
+                recommendations.append(f"- {stripped[:200]}")
+                if len(recommendations) >= 10:
+                    break
+        if len(recommendations) >= 10:
+            break
 
     lines = [
         "# Audit Results",
         "",
         "## Run Summary",
         "",
-        f"| Field | Value |",
-        f"|-------|-------|",
+        "| Field | Value |",
+        "|-------|-------|",
         f"| Run At | {run_at} |",
         f"| Prompts Executed | {len(items)} |",
         f"| Total Tokens | {total_tokens:,} |",
@@ -174,10 +203,13 @@ def _write_audit_results_md(run_summary: dict) -> Path | None:
     for i, item in enumerate(items, 1):
         status = item.get("status", "unknown")
         prompt = item.get("prompt", "")
-        tokens = item.get("tokens_used", 0)
-        cost = item.get("cost_usd", 0.0)
+        tokens = (
+            item.get("tokens_used", 0)
+            or item.get("input_tokens", 0) + item.get("output_tokens", 0)
+        )
+        cost = item.get("cost_usd", 0.0) or item.get("cost", 0.0)
+        output_preview = str(item.get("output", "") or item.get("response", ""))[:300].replace("\n", " ")
         error = item.get("error", "")
-        output_preview = str(item.get("output", ""))[:300].replace("\n", " ")
 
         lines += [
             f"### {i}. {prompt[:80]}",
@@ -195,49 +227,45 @@ def _write_audit_results_md(run_summary: dict) -> Path | None:
     lines += [
         "## Cost Breakdown",
         "",
-        f"| Prompt | Tokens | Cost (USD) |",
-        f"|--------|--------|-----------|",
+        "| Prompt | Tokens | Cost (USD) |",
+        "|--------|--------|-----------|",
     ]
     for item in items:
         prompt_short = item.get("prompt", "")[:50]
-        lines.append(
-            f"| {prompt_short} | {item.get('tokens_used', 0):,} | ${item.get('cost_usd', 0.0):.4f} |"
+        tok = (
+            item.get("tokens_used", 0)
+            or item.get("input_tokens", 0) + item.get("output_tokens", 0)
         )
+        cost = item.get("cost_usd", 0.0) or item.get("cost", 0.0)
+        lines.append(f"| {prompt_short} | {tok:,} | ${cost:.4f} |")
     lines += [
         f"| **TOTAL** | **{total_tokens:,}** | **${total_cost:.4f}** |",
         "",
     ]
 
     if recommendations:
-        lines += [
-            "## Recommendations",
-            "",
-        ] + recommendations + [""]
+        lines += ["## Recommendations", ""] + recommendations + [""]
     else:
         lines += ["## Recommendations", "", "_No action items returned by this run._", ""]
 
-    out_path.write_text("\n".join(lines), encoding="utf-8")
-    logger.info("[MANUAL MODE] Audit results written to %s", out_path)
-    return out_path
+    try:
+        out_path.write_text("\n".join(lines), encoding="utf-8")
+        logger.info("[MANUAL MODE] Audit results written to %s", out_path)
+        return out_path
+    except Exception as exc:
+        logger.warning("[MANUAL MODE] Could not write audit results MD: %s", exc)
+        return None
 
 
-# ── Queue Execution ───────────────────────────────────────────────────────────
+# ── Module-level Queue Execution (UI-facing — used by mod_manual_mode.py) ─────
 
-def run_queue(
-    queue_items: list[dict],
-    config: dict | None = None,
-) -> dict:
+def run_queue(queue_items: list, config: dict = None) -> dict:
     """Execute a list of audit prompt items via Claude API.
 
     Each item in queue_items:
-        {
-            "prompt": str,
-            "skill": str (optional, defaults to "code_review"),
-            "max_tokens": int (optional, default 1024),
-            "repeat": int (optional, default 1),
-        }
+        {prompt, skill (opt), max_tokens (opt, default 1024), repeat (opt, default 1)}
 
-    Config keys consumed (from fleet.toml [manual_mode]):
+    Config keys (from fleet.toml [manual_mode] or caller-supplied dict):
         approval_required_threshold: float (default 0.20)
 
     Returns one of:
@@ -274,7 +302,7 @@ def run_queue(
 
     # ── Execute items ─────────────────────────────────────────────────────────
     run_at = datetime.now(timezone.utc).isoformat()
-    results: list[dict] = []
+    results: list = []
     total_tokens = 0
     total_cost = 0.0
 
@@ -285,16 +313,16 @@ def run_queue(
         repeat: int = int(item.get("repeat", 1))
 
         for _ in range(repeat):
-            result = _run_single_item(prompt, skill, max_tokens, cfg)
+            result = _run_single_item(prompt, skill, max_tokens)
             results.append(result)
             total_tokens += result.get("tokens_used", 0)
             total_cost += result.get("cost_usd", 0.0)
 
-    # ── Cost Anomaly Check ────────────────────────────────────────────────────
+    # ── Cost Anomaly Check ─────────────────────────────────────────────────────
     history = _get_recent_run_costs()
     anomaly = _check_cost_anomaly(total_cost, history)
 
-    # ── Persist run record ────────────────────────────────────────────────────
+    # ── Persist run record ─────────────────────────────────────────────────────
     run_summary = {
         "items": results,
         "total_tokens": total_tokens,
@@ -304,7 +332,7 @@ def run_queue(
     }
     _save_run_record(total_tokens, total_cost, len(results), run_summary)
 
-    # ── Auto-write audit results markdown ─────────────────────────────────────
+    # ── Write audit markdown ───────────────────────────────────────────────────
     md_path = _write_audit_results_md(run_summary)
 
     return {
@@ -317,68 +345,46 @@ def run_queue(
     }
 
 
-def _run_single_item(prompt: str, skill: str, max_tokens: int, cfg: dict) -> dict:
-    """Execute one prompt item. Returns a result dict."""
+def _run_single_item(prompt: str, skill: str, max_tokens: int) -> dict:
+    """Execute one audit prompt via direct Claude API call."""
     try:
-        sys.path.insert(0, str(FLEET_DIR))
-        from skills._models import call_complex  # type: ignore[import]
-
-        output = call_complex(
-            prompt,
+        api_key = os.environ.get("ANTHROPIC_API_KEY", "")
+        if not api_key:
+            raise RuntimeError("ANTHROPIC_API_KEY not set")
+        import anthropic
+        time.sleep(0.3)  # 300 ms min between requests
+        client = anthropic.Anthropic(api_key=api_key)
+        model_id = "claude-sonnet-4-6"
+        resp = client.messages.create(
+            model=model_id,
             max_tokens=max_tokens,
-            system="You are a compliance auditor reviewing BigEd CC fleet code.",
+            system=[{
+                "type": "text",
+                "text": "You are a compliance auditor reviewing BigEd CC fleet code.",
+                "cache_control": {"type": "ephemeral"},
+            }],
+            messages=[{"role": "user", "content": prompt}],
         )
-        tokens_used = getattr(output, "usage", None)
-        if tokens_used is not None:
-            in_t = getattr(tokens_used, "input_tokens", 0)
-            out_t = getattr(tokens_used, "output_tokens", 0)
-            tok = in_t + out_t
-        else:
-            # Estimate if usage not available
-            tok = max_tokens // 2
-        cost = _estimate_cost(tok)
-        output_text = getattr(output, "content", [{}])
-        if isinstance(output_text, list) and output_text:
-            output_text = output_text[0].get("text", str(output_text))
-        action_items = _extract_action_items(str(output_text))
+        in_tok = resp.usage.input_tokens
+        out_tok = resp.usage.output_tokens
+        tok = in_tok + out_tok
+        rates = _PRICING.get(model_id, _PRICING["claude-sonnet-4-6"])
+        cost = round(
+            in_tok * rates["input"] / 1_000_000
+            + out_tok * rates["output"] / 1_000_000,
+            6,
+        )
+        output_text = resp.content[0].text if resp.content else ""
         return {
-            "prompt": prompt,
-            "skill": skill,
-            "status": "ok",
-            "output": str(output_text)[:2000],
-            "tokens_used": tok,
-            "cost_usd": cost,
-            "action_items": action_items,
+            "prompt": prompt, "skill": skill, "status": "ok",
+            "output": output_text[:2000], "tokens_used": tok, "cost_usd": cost,
         }
     except Exception as exc:
         logger.error("[MANUAL MODE] Item failed: %s — %s", prompt[:60], exc)
         return {
-            "prompt": prompt,
-            "skill": skill,
-            "status": "error",
-            "error": str(exc),
-            "output": "",
-            "tokens_used": 0,
-            "cost_usd": 0.0,
-            "action_items": [],
+            "prompt": prompt, "skill": skill, "status": "error",
+            "error": str(exc), "output": "", "tokens_used": 0, "cost_usd": 0.0,
         }
-
-
-def _estimate_cost(tokens: int) -> float:
-    """Rough cost estimate at Sonnet pricing ($3/$15 per M in/out tokens)."""
-    return tokens * 0.000009  # ~$9/M blended
-
-
-def _extract_action_items(text: str) -> list[str]:
-    """Extract lines that look like action items / TODOs from output text."""
-    keywords = ("TODO", "FIXME", "ACTION:", "- [ ]", "must ", "should ", "needs to")
-    items = []
-    for line in text.splitlines():
-        stripped = line.strip()
-        if any(kw.lower() in stripped.lower() for kw in keywords):
-            if stripped and len(stripped) > 10:
-                items.append(stripped[:200])
-    return items[:10]
 
 
 # ── VS Code Launcher ──────────────────────────────────────────────────────────
@@ -386,10 +392,11 @@ def _extract_action_items(text: str) -> list[str]:
 def launch_vscode(workspace_path: str) -> bool:
     """Launch VS Code in the given workspace. Returns True if launched."""
     code_cmd = shutil.which("code")
-    if not code_cmd:
+    if not code_cmd and sys.platform == "win32":
         candidates = [
-            r"C:\Users\{}\AppData\Local\Programs\Microsoft VS Code\bin\code.cmd".format(
-                os.getenv("USERNAME", "")
+            os.path.join(
+                os.environ.get("LOCALAPPDATA", ""),
+                "Programs", "Microsoft VS Code", "bin", "code.cmd",
             ),
             r"C:\Program Files\Microsoft VS Code\bin\code.cmd",
         ]
@@ -403,3 +410,273 @@ def launch_vscode(workspace_path: str) -> bool:
     subprocess.Popen([code_cmd, workspace_path], **kwargs)
     logger.info("[MANUAL MODE] Launched VS Code at %s", workspace_path)
     return True
+
+
+# ── ManualModeEngine — class-based API (queue/scheduler/history) ──────────────
+
+class ManualModeEngine:
+    """Backend for Manual Mode — TOML-backed queue/scheduler + direct Claude API calls.
+
+    Used by the rich sidebar UI (mod_manual_mode.py) for full queue management,
+    scheduling, and run history. Includes Agent 4's governance additions:
+    HITL approval gate, cost anomaly detection, and audit markdown output.
+    """
+
+    def __init__(self):
+        if str(FLEET_DIR) not in sys.path:
+            sys.path.insert(0, str(FLEET_DIR))
+
+    # ── TOML I/O ──────────────────────────────────────────────────────────────
+
+    def _load_toml(self):
+        import tomlkit
+        try:
+            return tomlkit.loads(FLEET_TOML.read_text(encoding="utf-8"))
+        except Exception:
+            return tomlkit.document()
+
+    def _save_toml(self, doc) -> None:
+        import tomlkit
+        try:
+            FLEET_TOML.write_text(tomlkit.dumps(doc), encoding="utf-8")
+        except Exception:
+            pass
+
+    def _ensure_section(self, doc, section: str):
+        import tomlkit
+        if section not in doc:
+            doc.add(tomlkit.nl())
+            doc.add(tomlkit.comment(" Manual Mode operator queue and scheduler"))
+            doc[section] = tomlkit.table()
+        return doc[section]
+
+    # ── Queue ─────────────────────────────────────────────────────────────────
+
+    def get_queue(self) -> list:
+        """Return the audit queue from fleet.toml [manual_mode] queue."""
+        try:
+            doc = self._load_toml()
+            raw = doc.get("manual_mode", {}).get("queue", [])
+            return [dict(item) for item in raw]
+        except Exception:
+            return []
+
+    def set_queue(self, queue: list) -> None:
+        """Persist the audit queue to fleet.toml [manual_mode] queue."""
+        doc = self._load_toml()
+        sec = self._ensure_section(doc, "manual_mode")
+        sec["queue"] = queue
+        self._save_toml(doc)
+
+    # ── Scheduler ─────────────────────────────────────────────────────────────
+
+    def get_scheduler(self) -> dict:
+        """Return scheduler config from fleet.toml [manual_mode] scheduler."""
+        try:
+            doc = self._load_toml()
+            raw = doc.get("manual_mode", {}).get("scheduler", {})
+            return {
+                "enabled":       bool(raw.get("enabled", False)),
+                "mode":          str(raw.get("mode", "one-time")),
+                "run_at":        str(raw.get("run_at", "")),
+                "interval_days": int(raw.get("interval_days", 1)),
+                "next_run":      str(raw.get("next_run", "")),
+            }
+        except Exception:
+            return {
+                "enabled": False, "mode": "one-time",
+                "run_at": "", "interval_days": 1, "next_run": "",
+            }
+
+    def set_scheduler(self, scheduler: dict) -> None:
+        """Persist scheduler config to fleet.toml [manual_mode] scheduler."""
+        doc = self._load_toml()
+        sec = self._ensure_section(doc, "manual_mode")
+        sec["scheduler"] = scheduler
+        self._save_toml(doc)
+
+    # ── Run Queue ─────────────────────────────────────────────────────────────
+
+    def run_queue(self, queue: list, on_progress=None) -> dict:
+        """Execute all prompts in the queue via the Claude API.
+
+        Includes HITL approval gate: if estimated token increase exceeds
+        approval_required_threshold vs last run, returns immediately with
+        {"status": "approval_required", "estimated_tokens", "last_tokens", "increase_pct"}.
+
+        Args:
+            queue:       list of dicts — keys: prompt, model, max_tokens, repeat
+            on_progress: optional callback(i, total, result_dict)
+
+        Returns:
+            dict with total_tokens, total_cost, results list
+            (or approval_required dict if gate triggers)
+        """
+        import db as _db
+
+        # ── HITL Approval Gate ────────────────────────────────────────────────
+        estimated_tokens = sum(
+            int(item.get("max_tokens", 4096)) * max(1, min(10, int(item.get("repeat", 1))))
+            for item in queue
+        )
+        last_run_tokens = _get_last_run_tokens()
+
+        if last_run_tokens > 0:
+            threshold = 0.20
+            try:
+                doc = self._load_toml()
+                threshold = float(
+                    doc.get("manual_mode", {}).get("approval_required_threshold", 0.20)
+                )
+            except Exception:
+                pass
+            increase_pct = (estimated_tokens - last_run_tokens) / last_run_tokens
+            if increase_pct > threshold:
+                logger.info(
+                    "[MANUAL MODE ENGINE] Approval required: est %d tokens (+%.0f%% vs last %d)",
+                    estimated_tokens, increase_pct * 100, last_run_tokens,
+                )
+                return {
+                    "status": "approval_required",
+                    "estimated_tokens": estimated_tokens,
+                    "last_tokens": last_run_tokens,
+                    "increase_pct": round(increase_pct, 4),
+                }
+
+        # ── Execute items ─────────────────────────────────────────────────────
+        results = []
+        total_tokens = 0
+        total_cost = 0.0
+
+        expanded = []
+        for item in queue:
+            repeat = max(1, min(10, int(item.get("repeat", 1))))
+            for _ in range(repeat):
+                expanded.append({
+                    "prompt":     item.get("prompt", ""),
+                    "model":      item.get("model", "claude-sonnet"),
+                    "max_tokens": int(item.get("max_tokens", 4096)),
+                })
+
+        total = len(expanded)
+        for i, item in enumerate(expanded):
+            model_key = item["model"]
+            model_id  = CLAUDE_MODELS.get(model_key, "claude-sonnet-4-6")
+            prompt    = item["prompt"]
+            max_tok   = item["max_tokens"]
+
+            result = {
+                "prompt": prompt[:200], "model": model_key, "model_id": model_id,
+                "max_tokens": max_tok, "status": "error",
+                "response": "", "input_tokens": 0, "output_tokens": 0,
+                "cost": 0.0, "error": "",
+            }
+
+            try:
+                text, in_tok, out_tok, cost = self._call_claude(prompt, model_id, max_tok)
+                result.update({
+                    "status": "done", "response": text,
+                    "input_tokens": in_tok, "output_tokens": out_tok, "cost": cost,
+                })
+                total_tokens += in_tok + out_tok
+                total_cost   += cost
+            except Exception as exc:
+                result["error"] = str(exc)
+
+            results.append(result)
+            if on_progress:
+                try:
+                    on_progress(i + 1, total, result)
+                except Exception:
+                    pass
+
+        # ── Persist to audit_runs table ───────────────────────────────────────
+        try:
+            _db.log_audit_run(
+                prompts=[{"prompt": r["prompt"], "model": r["model"]} for r in results],
+                results=results,
+                total_tokens=total_tokens,
+                total_cost=total_cost,
+            )
+        except Exception:
+            pass
+
+        # ── Governance: persist run record, cost anomaly, audit markdown ──────
+        run_summary = {
+            "items": [{
+                "prompt": r["prompt"],
+                "status": r["status"],
+                "output": r.get("response", ""),
+                "tokens_used": r.get("input_tokens", 0) + r.get("output_tokens", 0),
+                "cost_usd": r.get("cost", 0.0),
+            } for r in results],
+            "total_tokens": total_tokens,
+            "total_cost_usd": total_cost,
+            "run_at": datetime.now(timezone.utc).isoformat(),
+            "anomaly_detected": False,
+        }
+        _save_run_record(total_tokens, total_cost, len(results), run_summary)
+        self._check_cost_anomaly(total_cost, self._get_recent_run_costs())
+        self._write_audit_results_md(run_summary)
+
+        return {
+            "total_tokens": total_tokens,
+            "total_cost":   total_cost,
+            "results":      results,
+        }
+
+    def _call_claude(self, prompt: str, model_id: str, max_tokens: int) -> tuple:
+        """Call Claude API. Returns (text, input_tokens, output_tokens, cost_usd)."""
+        import anthropic
+
+        api_key = os.environ.get("ANTHROPIC_API_KEY", "")
+        if not api_key:
+            raise RuntimeError("ANTHROPIC_API_KEY not set")
+
+        client = anthropic.Anthropic(api_key=api_key)
+        time.sleep(0.3)  # 300 ms minimum between requests (rate-limit headroom)
+
+        resp = client.messages.create(
+            model=model_id,
+            max_tokens=max_tokens,
+            system=[{
+                "type": "text",
+                "text": "You are a helpful AI audit assistant.",
+                "cache_control": {"type": "ephemeral"},
+            }],
+            messages=[{"role": "user", "content": prompt}],
+        )
+
+        in_tok  = resp.usage.input_tokens
+        out_tok = resp.usage.output_tokens
+        rates   = _PRICING.get(model_id, _PRICING["claude-sonnet-4-6"])
+        cost    = round(
+            in_tok  * rates["input"]  / 1_000_000
+            + out_tok * rates["output"] / 1_000_000,
+            6,
+        )
+        return resp.content[0].text, in_tok, out_tok, cost
+
+    # ── History ───────────────────────────────────────────────────────────────
+
+    def get_run_history(self, limit: int = 20) -> list:
+        """Return recent audit runs from DB, newest first."""
+        try:
+            import db as _db
+            return _db.get_audit_runs(limit=limit)
+        except Exception:
+            return []
+
+    # ── Governance methods (Agent 4 additions) ────────────────────────────────
+
+    def _check_cost_anomaly(self, run_cost: float, history: list) -> bool:
+        """Detect cost spikes vs rolling average. Delegates to module-level function."""
+        return _check_cost_anomaly(run_cost, history)
+
+    def _get_recent_run_costs(self, limit: int = 5) -> list:
+        """Return cost_usd values from recent manual_mode_runs. Delegates to module-level."""
+        return _get_recent_run_costs(limit)
+
+    def _write_audit_results_md(self, run_summary: dict):
+        """Write audit results markdown to knowledge/. Delegates to module-level."""
+        return _write_audit_results_md(run_summary)
