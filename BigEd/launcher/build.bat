@@ -9,16 +9,20 @@ echo == Installing dependencies ==
 pip install -r requirements.txt
 if errorlevel 1 ( echo FAILED: pip install && pause && exit /b 1 )
 
-echo == Generating icons ==
-python generate_icon.py
-if errorlevel 1 ( echo FAILED: generate_icon.py && pause && exit /b 1 )
+echo == Checking icons ==
+if exist brick.ico if exist icon_1024.png (
+    echo   brick.ico + icon_1024.png present — locked assets
+) else (
+    echo   ERROR: Missing brick.ico or icon_1024.png — cannot build
+    pause && exit /b 1
+)
 
 echo.
 echo == Closing running BigEdCC.exe (if open) ==
 taskkill /f /im BigEdCC.exe >nul 2>&1
 
 echo == Building BigEdCC.exe ==
-python -m PyInstaller --onefile --windowed --name "BigEdCC" --icon "brick.ico" --add-data "brick_banner.png;." --add-data "brick.ico;." --collect-all customtkinter --hidden-import psutil --hidden-import pynvml launcher.py
+python -m PyInstaller --onefile --windowed --name "BigEdCC" --icon "brick.ico" --add-data "brick.ico;." --add-data "icon_1024.png;." --collect-all customtkinter --hidden-import psutil --hidden-import pynvml launcher.py
 if errorlevel 1 ( echo FAILED: BigEdCC build && pause && exit /b 1 )
 
 echo.
@@ -35,7 +39,7 @@ taskkill /f /im Setup.exe >nul 2>&1
 
 echo.
 echo == Building Setup.exe ==
-python -m PyInstaller --onefile --windowed --name "Setup" --icon "brick.ico" --add-data "brick.ico;." --add-data "brick_banner.png;." --collect-all customtkinter installer.py
+python -m PyInstaller --onefile --windowed --name "Setup" --icon "brick.ico" --add-data "brick.ico;." --add-data "icon_1024.png;." --collect-all customtkinter installer.py
 if errorlevel 1 ( echo FAILED: Setup build && pause && exit /b 1 )
 
 echo.

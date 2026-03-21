@@ -24,7 +24,7 @@ FLEET_DIR = PROJECT_ROOT / "fleet"
 APP_NAME = "BigEdCC"
 APP_ID = "com.biged.cc"
 VERSION = "0.43"
-ICON_PNG = HERE / "brick_64.png"
+ICON_PNG = HERE / "icon_1024.png"
 ICON_ICO = HERE / "brick.ico"
 SEP = ";" if sys.platform == "win32" else ":"
 
@@ -139,9 +139,9 @@ def build_appimage():
         "--windowed",
         "--icon", str(ICON_PNG if ICON_PNG.exists() else ICON_ICO),
         "--collect-all", "customtkinter",
-        f"--add-data={HERE / 'brick_banner.png'}{SEP}.",
+        f"--add-data={HERE / 'icon_1024.png'}{SEP}.",
         f"--add-data={HERE / 'brick.ico'}{SEP}.",
-        f"--add-data={HERE / 'brick_64.png'}{SEP}.",
+        f"--add-data={HERE / 'icon_1024.png'}{SEP}.",
         "--hidden-import", "psutil",
         "--hidden-import", "pynvml",
         str(HERE / "launcher.py"),

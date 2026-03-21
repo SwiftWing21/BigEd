@@ -367,13 +367,11 @@ def test_conditional_dag():
 
     # Complete B — now both deps done, condition on A met, B is unconditional
     db.complete_task(tid_b, json.dumps({"verdict": "rejected"}))
-    # Allow async DAG queue to process (0.08.00) or sync fallback
-    time.sleep(0.3)
+    # Force sync DAG promotion (async queue may not flush in time for test)
+    time.sleep(0.1)
+    with db.get_conn() as conn:
+        db._promote_waiting_tasks(conn)
     task_c = db.get_task_result(tid_c)
-    if task_c["status"] != "PENDING":
-        with db.get_conn() as conn:
-            db._promote_waiting_tasks(conn)
-        task_c = db.get_task_result(tid_c)
     if task_c["status"] != "PENDING":
         return False, f"expected PENDING after conditions met, got {task_c['status']}"
 

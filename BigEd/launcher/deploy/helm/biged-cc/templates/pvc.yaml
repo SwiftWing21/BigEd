@@ -1,0 +1,54 @@
+---
+# fleet.db — shared between supervisor and dashboard
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "biged-cc.fullname" . }}-fleet-db
+  labels:
+    {{- include "biged-cc.labels" . | nindent 4 }}
+    app.kubernetes.io/component: storage
+spec:
+  accessModes:
+    - {{ .Values.persistence.fleetDb.accessMode }}
+  {{- if .Values.persistence.fleetDb.storageClass }}
+  storageClassName: {{ .Values.persistence.fleetDb.storageClass | quote }}
+  {{- end }}
+  resources:
+    requests:
+      storage: {{ .Values.persistence.fleetDb.size }}
+---
+# knowledge/ — worker artifacts, RAG data, code drafts
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "biged-cc.fullname" . }}-knowledge
+  labels:
+    {{- include "biged-cc.labels" . | nindent 4 }}
+    app.kubernetes.io/component: storage
+spec:
+  accessModes:
+    - {{ .Values.persistence.knowledge.accessMode }}
+  {{- if .Values.persistence.knowledge.storageClass }}
+  storageClassName: {{ .Values.persistence.knowledge.storageClass | quote }}
+  {{- end }}
+  resources:
+    requests:
+      storage: {{ .Values.persistence.knowledge.size }}
+---
+# logs/ — supervisor and worker log files
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "biged-cc.fullname" . }}-logs
+  labels:
+    {{- include "biged-cc.labels" . | nindent 4 }}
+    app.kubernetes.io/component: storage
+spec:
+  accessModes:
+    - {{ .Values.persistence.logs.accessMode }}
+  {{- if .Values.persistence.logs.storageClass }}
+  storageClassName: {{ .Values.persistence.logs.storageClass | quote }}
+  {{- end }}
+  resources:
+    requests:
+      storage: {{ .Values.persistence.logs.size }}

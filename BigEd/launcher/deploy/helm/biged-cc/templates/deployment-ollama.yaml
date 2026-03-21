@@ -1,0 +1,150 @@
+{{- if .Values.ollama.enabled }}
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ include "biged-cc.fullname" . }}-ollama
+  labels:
+    {{- include "biged-cc.labels" . | nindent 4 }}
+    app.kubernetes.io/component: ollama
+spec:
+  serviceName: {{ include "biged-cc.fullname" . }}-ollama
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "biged-cc.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: ollama
+  template:
+    metadata:
+      labels:
+        {{- include "biged-cc.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: ollama
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      # Init container: pull configured models on first boot
+      initContainers:
+        - name: model-pull
+          image: {{ .Values.ollama.image }}
+          imagePullPolicy: {{ .Values.ollama.imagePullPolicy }}
+          command:
+            - /bin/sh
+            - -c
+            - |
+              # Start Ollama in background for model pulls
+              ollama serve &
+              OLLAMA_PID=$!
+              sleep 5
+              {{- range .Values.ollama.models }}
+              echo "Pulling model: {{ . }}"
+              ollama pull {{ . }}
+              {{- end }}
+              kill $OLLAMA_PID 2>/dev/null || true
+              echo "Model pull complete."
+          volumeMounts:
+            - name: ollama-data
+              mountPath: /root/.ollama
+          {{- if .Values.ollama.gpu.enabled }}
+          resources:
+            limits:
+              {{ .Values.ollama.gpu.resourceKey }}: {{ .Values.ollama.gpu.count }}
+          {{- end }}
+      containers:
+        - name: ollama
+          image: {{ .Values.ollama.image }}
+          imagePullPolicy: {{ .Values.ollama.imagePullPolicy }}
+          ports:
+            - name: ollama
+              containerPort: {{ .Values.ollama.port }}
+              protocol: TCP
+          env:
+            - name: OLLAMA_HOST
+              value: "0.0.0.0:{{ .Values.ollama.port }}"
+            - name: OLLAMA_KEEP_ALIVE
+              value: "{{ .Values.config.keepAliveMins }}m"
+          volumeMounts:
+            - name: ollama-data
+              mountPath: /root/.ollama
+          resources:
+            requests:
+              cpu: {{ .Values.ollama.resources.requests.cpu }}
+              memory: {{ .Values.ollama.resources.requests.memory }}
+            limits:
+              cpu: {{ .Values.ollama.resources.limits.cpu }}
+              memory: {{ .Values.ollama.resources.limits.memory }}
+              {{- if .Values.ollama.gpu.enabled }}
+              {{ .Values.ollama.gpu.resourceKey }}: {{ .Values.ollama.gpu.count }}
+              {{- end }}
+          livenessProbe:
+            httpGet:
+              path: /api/tags
+              port: ollama
+            initialDelaySeconds: 30
+            periodSeconds: 30
+            timeoutSeconds: 5
+          readinessProbe:
+            httpGet:
+              path: /api/tags
+              port: ollama
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 3
+      {{- if .Values.ollama.gpu.enabled }}
+      tolerations:
+        - key: nvidia.com/gpu
+          operator: Exists
+          effect: NoSchedule
+        {{- with .Values.tolerations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      {{- else }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- end }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+  volumeClaimTemplates:
+    - metadata:
+        name: ollama-data
+        labels:
+          {{- include "biged-cc.labels" . | nindent 10 }}
+          app.kubernetes.io/component: ollama
+      spec:
+        accessModes:
+          - ReadWriteOnce
+        {{- if .Values.ollama.persistence.storageClass }}
+        storageClassName: {{ .Values.ollama.persistence.storageClass | quote }}
+        {{- end }}
+        resources:
+          requests:
+            storage: {{ .Values.ollama.persistence.size }}
+---
+# Headless service for StatefulSet DNS (ollama-0.ollama.namespace.svc)
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "biged-cc.fullname" . }}-ollama
+  labels:
+    {{- include "biged-cc.labels" . | nindent 4 }}
+    app.kubernetes.io/component: ollama
+spec:
+  type: ClusterIP
+  clusterIP: None
+  ports:
+    - name: ollama
+      port: {{ .Values.ollama.port }}
+      targetPort: ollama
+      protocol: TCP
+  selector:
+    {{- include "biged-cc.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: ollama
+{{- end }}

@@ -1,0 +1,107 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "biged-cc.fullname" . }}-supervisor
+  labels:
+    {{- include "biged-cc.labels" . | nindent 4 }}
+    app.kubernetes.io/component: supervisor
+spec:
+  replicas: {{ .Values.supervisor.replicas }}
+  selector:
+    matchLabels:
+      {{- include "biged-cc.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: supervisor
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        {{- include "biged-cc.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: supervisor
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+        checksum/secret: {{ include (print $.Template.BasePath "/secrets.yaml") . | sha256sum }}
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: supervisor
+          image: {{ .Values.supervisor.image }}
+          imagePullPolicy: {{ .Values.supervisor.imagePullPolicy }}
+          command: ["python", "supervisor.py"]
+          workingDir: /app/fleet
+          ports:
+            - name: health
+              containerPort: 8080
+              protocol: TCP
+          envFrom:
+            - secretRef:
+                name: {{ include "biged-cc.secretName" . }}
+                optional: true
+          env:
+            - name: FLEET_TOML
+              value: /config/fleet.toml
+            - name: BIGED_K8S
+              value: "1"
+            {{- range .Values.supervisor.extraEnv }}
+            - name: {{ .name }}
+              value: {{ .value | quote }}
+            {{- end }}
+          volumeMounts:
+            - name: config
+              mountPath: /config
+              readOnly: true
+            - name: fleet-db
+              mountPath: /app/fleet/fleet.db
+              subPath: fleet.db
+            - name: knowledge
+              mountPath: /app/fleet/knowledge
+            - name: logs
+              mountPath: /app/fleet/logs
+          resources:
+            {{- toYaml .Values.supervisor.resources | nindent 12 }}
+          livenessProbe:
+            exec:
+              command:
+                - python
+                - -c
+                - "import os, sys; sys.exit(0 if os.path.exists('/app/fleet/fleet.db') else 1)"
+            initialDelaySeconds: 30
+            periodSeconds: 60
+            timeoutSeconds: 5
+          readinessProbe:
+            exec:
+              command:
+                - python
+                - -c
+                - "import os, sys; sys.exit(0 if os.path.exists('/app/fleet/fleet.db') else 1)"
+            initialDelaySeconds: 10
+            periodSeconds: 15
+            timeoutSeconds: 5
+      volumes:
+        - name: config
+          configMap:
+            name: {{ include "biged-cc.configmapName" . }}
+        - name: fleet-db
+          persistentVolumeClaim:
+            claimName: {{ include "biged-cc.fullname" . }}-fleet-db
+        - name: knowledge
+          persistentVolumeClaim:
+            claimName: {{ include "biged-cc.fullname" . }}-knowledge
+        - name: logs
+          persistentVolumeClaim:
+            claimName: {{ include "biged-cc.fullname" . }}-logs
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}

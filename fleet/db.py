@@ -262,6 +262,24 @@ def init_db():
             )
         """)
         conn.execute("CREATE INDEX IF NOT EXISTS idx_phi_audit_date ON phi_audit(created_at)")
+        # Structured audit log — enhanced audit trail (fleet/audit.py)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS audit_log (
+                id            INTEGER PRIMARY KEY AUTOINCREMENT,
+                timestamp     TEXT NOT NULL DEFAULT (datetime('now')),
+                actor         TEXT NOT NULL,
+                action        TEXT NOT NULL,
+                resource      TEXT,
+                detail        TEXT,
+                cost_usd      REAL NOT NULL DEFAULT 0.0,
+                metadata_json TEXT,
+                ip_address    TEXT,
+                role          TEXT
+            )
+        """)
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_audit_ts ON audit_log(timestamp)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_audit_actor ON audit_log(actor)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_audit_action ON audit_log(action)")
 
 
 def update_intelligence_score(task_id, score):

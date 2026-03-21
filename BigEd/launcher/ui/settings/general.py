@@ -431,9 +431,9 @@ class GeneralPanelMixin:
 
     def _on_ditl_level_change(self, value):
         try:
-            self._parent._update_toml_value("ditl", "compliance_level", value)
+            self._update_toml_value("ditl", "compliance_level", value)
             enabled = value != "none"
-            self._parent._update_toml_value("ditl", "enabled", enabled)
+            self._update_toml_value("ditl", "enabled", enabled)
         except Exception:
             pass
 
@@ -442,10 +442,10 @@ class GeneralPanelMixin:
             self._ditl_warning.configure(
                 text="WARNING: Disabling compliance removes HIPAA safeguards.\n"
                      "PHI may be sent to cloud APIs without BAA verification.")
-            self._parent._update_toml_value("ditl", "disable_at_own_risk", True)
+            self._update_toml_value("ditl", "disable_at_own_risk", True)
         else:
             self._ditl_warning.configure(text="")
-            self._parent._update_toml_value("ditl", "disable_at_own_risk", False)
+            self._update_toml_value("ditl", "disable_at_own_risk", False)
 
     # ── Module Hub handlers ────────────────────────────────────────────
 

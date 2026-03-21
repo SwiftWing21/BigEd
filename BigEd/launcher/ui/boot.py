@@ -71,12 +71,26 @@ def _get_python():
         py = shutil.which("python") or shutil.which("python3")
         if py:
             return py
-        # Try common locations
-        for candidate in [
-            Path(sys._MEIPASS).parent / "python.exe",  # PyInstaller temp
-            Path.home() / "AppData" / "Local" / "Programs" / "Python" / "Python312" / "python.exe",
-            Path("C:/Python312/python.exe"),
-        ]:
+        # Try common locations (platform-specific)
+        if sys.platform == "win32":
+            candidates = [
+                Path(sys._MEIPASS).parent / "python.exe",  # PyInstaller temp
+                Path.home() / "AppData" / "Local" / "Programs" / "Python" / "Python312" / "python.exe",
+                Path("C:/Python312/python.exe"),
+            ]
+        elif sys.platform == "darwin":
+            candidates = [
+                Path("/usr/local/bin/python3"),
+                Path("/opt/homebrew/bin/python3"),
+                Path("/usr/bin/python3"),
+            ]
+        else:  # Linux
+            candidates = [
+                Path("/usr/bin/python3"),
+                Path("/usr/local/bin/python3"),
+                Path.home() / ".local" / "bin" / "python3",
+            ]
+        for candidate in candidates:
             if candidate.exists():
                 return str(candidate)
         # Last resort: try uv

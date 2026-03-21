@@ -3,7 +3,7 @@ import customtkinter as ctk
 
 from ui.theme import (
     BG2, BG3, ACCENT_H, GOLD, TEXT, DIM,
-    FONT_SM,
+    FONT_SM, FONT_PRESETS, _active_preset,
     GLASS_BG, GLASS_PANEL,
 )
 
@@ -86,6 +86,40 @@ class DisplayPanelMixin:
                       fg_color=BG3, progress_color=GOLD
                       ).pack(padx=12, pady=(4, 10), anchor="w")
 
+        # Section: Font
+        self._section_header(panel, "Font")
+        font_frame = ctk.CTkFrame(panel, fg_color=GLASS_BG, corner_radius=6)
+        font_frame.pack(fill="x", padx=16, pady=(0, 12))
+
+        ctk.CTkLabel(font_frame, text="Select display font. Applied on next launch.",
+                     font=FONT_SM, text_color=DIM).pack(padx=12, pady=(10, 6), anchor="w")
+
+        font_row = ctk.CTkFrame(font_frame, fg_color="transparent")
+        font_row.pack(fill="x", padx=12, pady=(0, 4))
+
+        self._font_var = ctk.StringVar(value=_active_preset)
+        preset_names = list(FONT_PRESETS.keys())
+        ctk.CTkOptionMenu(
+            font_row, values=preset_names, variable=self._font_var,
+            font=FONT_SM, width=200, height=28,
+            fg_color=BG3, button_color=GOLD, button_hover_color=ACCENT_H,
+            command=self._on_font_change,
+        ).pack(side="left")
+
+        self._font_preview = ctk.CTkLabel(
+            font_row, text="  Preview: BigEd CC Fleet", font=FONT_SM, text_color=TEXT)
+        self._font_preview.pack(side="left", padx=(16, 0))
+
+        # Show sample of each style
+        sample_frame = ctk.CTkFrame(font_frame, fg_color="transparent")
+        sample_frame.pack(fill="x", padx=12, pady=(4, 10))
+        self._font_sample_normal = ctk.CTkLabel(
+            sample_frame, text="Normal: The quick brown fox", font=FONT_SM, text_color=DIM)
+        self._font_sample_normal.pack(anchor="w")
+        self._font_sample_mono = ctk.CTkLabel(
+            sample_frame, text="Mono: 114.4 tok/s | IQ: 0.85", font=("Consolas", 10), text_color=DIM)
+        self._font_sample_mono.pack(anchor="w")
+
         # Section: Density
         self._section_header(panel, "Density")
         density_frame = ctk.CTkFrame(panel, fg_color=GLASS_BG, corner_radius=6)
@@ -123,6 +157,24 @@ class DisplayPanelMixin:
         L._save_settings(data)
         self._save_display_prefs()
         messagebox.showinfo("UI Scale", "Scale saved. Please restart BigEd CC for changes to take effect.")
+
+    def _on_font_change(self, choice):
+        """Update font preference and preview."""
+        from ui.theme import FONT_PRESETS
+        preset = FONT_PRESETS.get(choice, FONT_PRESETS["System Default"])
+        # Update preview labels
+        self._font_preview.configure(font=(preset["family"], 11))
+        self._font_sample_normal.configure(
+            text=f"Normal: The quick brown fox",
+            font=(preset["family"], 11))
+        self._font_sample_mono.configure(
+            text=f"Mono: 114.4 tok/s | IQ: 0.85",
+            font=(preset["mono"], 10))
+        # Save preference
+        L = _launcher()
+        data = L._load_settings()
+        data["font_preset"] = choice
+        L._save_settings(data)
 
     def _on_always_on_top_toggle(self):
         on_top = self._on_top_var.get()

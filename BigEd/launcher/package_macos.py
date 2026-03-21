@@ -68,7 +68,7 @@ def _pyinstaller_cmd() -> list:
         cmd.extend(["--icon", str(ico)])
 
     # Add data files (same assets as build.py build_launcher)
-    for asset in ["brick_banner.png", "brick.ico"]:
+    for asset in ["icon_1024.png", "brick.ico"]:
         asset_path = HERE / asset
         if asset_path.exists():
             cmd.extend(["--add-data", f"{asset}{SEP}."])
@@ -97,10 +97,7 @@ def build_app_bundle() -> Path:
           str(HERE / "requirements.txt")],
          "Installing dependencies")
 
-    # Generate icons (may produce .icns on macOS)
-    icon_script = HERE / "generate_icon.py"
-    if icon_script.exists():
-        _run([sys.executable, str(icon_script)], "Generating icons")
+    # Icons: brick.ico + icon_1024.png are locked assets (no generation needed)
 
     # PyInstaller build
     _run(_pyinstaller_cmd(), f"Building {APP_NAME}.app")

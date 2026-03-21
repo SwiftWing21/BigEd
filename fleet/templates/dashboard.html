@@ -216,6 +216,36 @@
   </div>
 
   <div class="card wide">
+    <h2>Audit Trail <span style="font-size:11px;color:var(--dim);font-weight:normal">structured event log</span></h2>
+    <div style="display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap;align-items:center">
+      <select id="auditActorFilter" style="padding:4px 8px;font-size:12px;background:var(--card);color:var(--fg);border:1px solid var(--dim);border-radius:4px">
+        <option value="">All Actors</option>
+      </select>
+      <select id="auditActionFilter" style="padding:4px 8px;font-size:12px;background:var(--card);color:var(--fg);border:1px solid var(--dim);border-radius:4px">
+        <option value="">All Actions</option>
+      </select>
+      <input type="date" id="auditFromDate" title="From date" style="padding:4px 8px;font-size:12px;background:var(--card);color:var(--fg);border:1px solid var(--dim);border-radius:4px">
+      <input type="date" id="auditToDate" title="To date" style="padding:4px 8px;font-size:12px;background:var(--card);color:var(--fg);border:1px solid var(--dim);border-radius:4px">
+      <button onclick="loadAuditTrail()" style="padding:4px 12px;font-size:12px;background:var(--accent);color:#000;border:none;border-radius:4px;cursor:pointer">Filter</button>
+      <button onclick="exportAudit('csv')" style="padding:4px 12px;font-size:12px;background:var(--card);color:var(--fg);border:1px solid var(--dim);border-radius:4px;cursor:pointer">Export CSV</button>
+      <button onclick="exportAudit('json')" style="padding:4px 12px;font-size:12px;background:var(--card);color:var(--fg);border:1px solid var(--dim);border-radius:4px;cursor:pointer">Export JSON</button>
+    </div>
+    <div id="auditTrailNote" style="color:var(--dim);font-size:11px;margin-bottom:6px"></div>
+    <table style="width:100%;font-size:12px">
+      <thead><tr>
+        <th style="text-align:left;padding:4px 8px;color:var(--dim)">Time</th>
+        <th style="text-align:left;padding:4px 8px;color:var(--dim)">Actor</th>
+        <th style="text-align:left;padding:4px 8px;color:var(--dim)">Action</th>
+        <th style="text-align:left;padding:4px 8px;color:var(--dim)">Resource</th>
+        <th style="text-align:right;padding:4px 8px;color:var(--dim)">Cost</th>
+        <th style="text-align:left;padding:4px 8px;color:var(--dim)">Detail</th>
+      </tr></thead>
+      <tbody id="auditTrailTable"></tbody>
+    </table>
+    <div id="auditTrailPager" style="margin-top:8px;display:flex;gap:8px;align-items:center;font-size:12px;color:var(--dim)"></div>
+  </div>
+
+  <div class="card wide">
     <h2>API Cost Tracker</h2>
     <div class="stat-row" id="costSummary"></div>
     <div id="costDetails" style="margin-top:12px"></div>
@@ -331,8 +361,12 @@ function connectSSE() {
   eventSource = new EventSource('/api/stream');
 
   eventSource.onopen = () => {
+    _sseRetries = 0;
     document.getElementById('connectionStatus').textContent = 'Live';
     document.getElementById('liveDot').style.background = 'var(--green)';
+    document.title = 'BigEd CC Dashboard';
+    const ov = document.getElementById('offlineOverlay');
+    if (ov) ov.remove();
   };
 
   eventSource.onmessage = (e) => {
@@ -342,16 +376,52 @@ function connectSSE() {
         updateStatusFromSSE(msg.data);
       } else if (msg.type === 'alert') {
         addAlertToBar(msg.data);
+      } else if (msg.type === 'audit') {
+        loadAuditTrail();
       }
     } catch (err) {}
   };
 
   eventSource.onerror = () => {
+    _sseRetries = (_sseRetries || 0) + 1;
+    if (_sseRetries >= 6) {
+      document.getElementById('connectionStatus').textContent = 'BigEd CC Offline';
+      document.getElementById('liveDot').style.background = 'var(--dim)';
+      document.title = '[Offline] BigEd CC Dashboard';
+      // Show offline overlay
+      if (!document.getElementById('offlineOverlay')) {
+        const ov = document.createElement('div');
+        ov.id = 'offlineOverlay';
+        ov.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.85);z-index:9999;display:flex;align-items:center;justify-content:center;flex-direction:column';
+        ov.innerHTML = '<div style="color:var(--gold);font-size:24px;font-weight:bold">BigEd CC Offline</div>'
+          + '<div style="color:var(--dim);margin-top:8px">The fleet has been shut down.</div>'
+          + '<div id="offlineCountdown" style="color:var(--dim);margin-top:4px;font-size:13px">Dashboard will clear in 60s — tab will remain open</div>'
+          + '<button onclick="location.reload()" style="margin-top:16px;padding:8px 24px;background:var(--accent);color:white;border:none;border-radius:4px;cursor:pointer">Retry Connection</button>';
+        document.body.appendChild(ov);
+        // 60s countdown then clear dashboard content
+        var _offlineSecs = 60;
+        window._offlineTimer = setInterval(function() {
+          _offlineSecs--;
+          var el = document.getElementById('offlineCountdown');
+          if (el) el.textContent = 'Dashboard will clear in ' + _offlineSecs + 's — tab will remain open';
+          if (_offlineSecs <= 0) {
+            clearInterval(window._offlineTimer);
+            document.body.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100vh;background:#1a1a1a;flex-direction:column">'
+              + '<div style="color:#c8a84b;font-size:20px;font-weight:bold">BigEd CC</div>'
+              + '<div style="color:#888;margin-top:8px">Fleet offline — restart BigEd to reconnect</div>'
+              + '<button onclick="location.reload()" style="margin-top:16px;padding:8px 24px;background:#b22222;color:white;border:none;border-radius:4px;cursor:pointer">Retry</button></div>';
+            document.title = '[Offline] BigEd CC';
+          }
+        }, 1000);
+      }
+      return; // Stop retrying
+    }
     document.getElementById('connectionStatus').textContent = 'Reconnecting...';
     document.getElementById('liveDot').style.background = 'var(--red)';
     setTimeout(connectSSE, 5000);
   };
 }
+var _sseRetries = 0;
 
 function updateStatusFromSSE(data) {
   const t = data.tasks;
@@ -864,6 +934,98 @@ async function loadFilesystemAudit() {
   } catch(ex) { console.error('Filesystem audit load error:', ex); }
 }
 
+// ── Audit Trail (structured DB-backed audit) ────────────────────────────────
+let _auditOffset = 0;
+const _auditLimit = 50;
+
+async function loadAuditTrail() {
+  try {
+    const actor = document.getElementById('auditActorFilter').value;
+    const action = document.getElementById('auditActionFilter').value;
+    const fromDate = document.getElementById('auditFromDate').value;
+    const toDate = document.getElementById('auditToDate').value;
+
+    let url = '/api/audit?limit=' + _auditLimit + '&offset=' + _auditOffset;
+    if (actor) url += '&actor=' + encodeURIComponent(actor);
+    if (action) url += '&action=' + encodeURIComponent(action);
+    if (fromDate) url += '&from=' + encodeURIComponent(fromDate + 'T00:00:00');
+    if (toDate) url += '&to=' + encodeURIComponent(toDate + 'T23:59:59');
+
+    const d = await fetch(url).then(r => r.json());
+    if (d.error) {
+      document.getElementById('auditTrailNote').textContent = 'Error: ' + d.error;
+      return;
+    }
+
+    const events = d.events || [];
+    const total = d.total || 0;
+    const note = document.getElementById('auditTrailNote');
+    note.textContent = total + ' total events' + (total > _auditLimit ? ' (showing ' + Math.min(_auditLimit, events.length) + ')' : '');
+
+    // Populate filter dropdowns (only on first load or when filters change)
+    const filters = d.filters || {};
+    const actorSel = document.getElementById('auditActorFilter');
+    const actionSel = document.getElementById('auditActionFilter');
+    if (actorSel.options.length <= 1 && (filters.actors||[]).length > 0) {
+      (filters.actors||[]).forEach(a => {
+        const opt = document.createElement('option');
+        opt.value = a; opt.textContent = a;
+        actorSel.appendChild(opt);
+      });
+    }
+    if (actionSel.options.length <= 1 && (filters.actions||[]).length > 0) {
+      (filters.actions||[]).forEach(a => {
+        const opt = document.createElement('option');
+        opt.value = a; opt.textContent = a;
+        actionSel.appendChild(opt);
+      });
+    }
+
+    // Render table
+    const tbody = document.getElementById('auditTrailTable');
+    let rows = '';
+    events.forEach(e => {
+      const ts = (e.timestamp||'').replace('T',' ').substring(0,19);
+      const cost = e.cost_usd ? '$' + Number(e.cost_usd).toFixed(4) : '';
+      const detail = (e.detail||'').length > 60 ? (e.detail||'').substring(0,57) + '...' : (e.detail||'');
+      rows += '<tr>'
+        + '<td style="padding:3px 8px;white-space:nowrap;color:var(--dim)">' + escapeHTML(ts) + '</td>'
+        + '<td style="padding:3px 8px">' + escapeHTML(e.actor||'') + '</td>'
+        + '<td style="padding:3px 8px">' + escapeHTML(e.action||'') + '</td>'
+        + '<td style="padding:3px 8px;font-size:11px">' + escapeHTML(e.resource||'') + '</td>'
+        + '<td style="padding:3px 8px;text-align:right;color:var(--accent)">' + escapeHTML(cost) + '</td>'
+        + '<td style="padding:3px 8px;font-size:11px;word-break:break-all">' + escapeHTML(detail) + '</td>'
+        + '</tr>';
+    });
+    if (!rows) rows = '<tr><td colspan="6" style="padding:8px;color:var(--dim);text-align:center">No audit events yet</td></tr>';
+    tbody.innerHTML = rows;
+
+    // Pager
+    const pager = document.getElementById('auditTrailPager');
+    let pagerHtml = 'Page ' + (Math.floor(_auditOffset / _auditLimit) + 1) + ' of ' + Math.max(1, Math.ceil(total / _auditLimit));
+    if (_auditOffset > 0) {
+      pagerHtml = '<button onclick="_auditOffset=Math.max(0,_auditOffset-' + _auditLimit + ');loadAuditTrail()" style="padding:2px 8px;font-size:11px;cursor:pointer">Prev</button> ' + pagerHtml;
+    }
+    if (_auditOffset + _auditLimit < total) {
+      pagerHtml += ' <button onclick="_auditOffset+=' + _auditLimit + ';loadAuditTrail()" style="padding:2px 8px;font-size:11px;cursor:pointer">Next</button>';
+    }
+    pager.innerHTML = pagerHtml;
+  } catch(ex) { console.error('Audit trail load error:', ex); }
+}
+
+function exportAudit(fmt) {
+  let url = '/api/audit/export?fmt=' + fmt;
+  const actor = document.getElementById('auditActorFilter').value;
+  const action = document.getElementById('auditActionFilter').value;
+  const fromDate = document.getElementById('auditFromDate').value;
+  const toDate = document.getElementById('auditToDate').value;
+  if (actor) url += '&actor=' + encodeURIComponent(actor);
+  if (action) url += '&action=' + encodeURIComponent(action);
+  if (fromDate) url += '&from=' + encodeURIComponent(fromDate + 'T00:00:00');
+  if (toDate) url += '&to=' + encodeURIComponent(toDate + 'T23:59:59');
+  window.open(url, '_blank');
+}
+
 async function loadAll() {
   // Pre-fetch aggregate to collapse 11 API calls into 1; fetchJSON() serves from cache
   try {
@@ -877,7 +1039,7 @@ async function loadAll() {
     loadActivity(), loadSkills(), loadDiscussions(), loadModules(),
     loadReviews(), loadKnowledge(), loadRAG(), loadTimeline(),
     loadDataStats(), loadAlerts(), loadAgentActivity(), loadCostTracker(),
-    loadEvolution(), loadFilesystemAudit(),
+    loadEvolution(), loadFilesystemAudit(), loadAuditTrail(),
   ]);
   _dashCache = null; // release cache after all loaders consumed it
   document.getElementById('lastUpdate').textContent = 'Updated: ' + new Date().toLocaleTimeString();
@@ -900,7 +1062,7 @@ setInterval(async () => {
     loadThermal(), loadTraining(), loadActivity(), loadSkills(),
     loadReviews(), loadTimeline(), loadAlerts(),
     loadAgentActivity(), loadCostTracker(), loadEvolution(),
-    loadFilesystemAudit(),
+    loadFilesystemAudit(), loadAuditTrail(),
   ]);
   _dashCache = null;
 }, 30000);

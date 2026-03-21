@@ -151,7 +151,7 @@ class OperationsPanelMixin:
         try:
             mins = int(value)
             secs = max(180, mins * 60)
-            self._parent._update_toml_value("backup", "interval_secs", secs)
+            self._update_toml_value("backup", "interval_secs", secs)
         except Exception:
             pass
 
@@ -159,7 +159,7 @@ class OperationsPanelMixin:
         """Update backup depth in fleet.toml."""
         try:
             depth = int(value)
-            self._parent._update_toml_value("backup", "depth", depth)
+            self._update_toml_value("backup", "depth", depth)
         except Exception:
             pass
 
@@ -167,15 +167,15 @@ class OperationsPanelMixin:
         """Toggle infinite backup (do not clean)."""
         infinite = self._backup_infinite_var.get()
         if infinite:
-            self._parent._update_toml_value("backup", "prune_enabled", False)
-            self._parent._update_toml_value("backup", "depth", 0)
+            self._update_toml_value("backup", "prune_enabled", False)
+            self._update_toml_value("backup", "depth", 0)
             self._backup_disk_warn.configure(
                 text="Warning: backups will grow indefinitely. Monitor disk usage.",
                 text_color="#ff9800")
         else:
-            self._parent._update_toml_value("backup", "prune_enabled", True)
+            self._update_toml_value("backup", "prune_enabled", True)
             depth = int(self._backup_depth_var.get() or 10)
-            self._parent._update_toml_value("backup", "depth", depth)
+            self._update_toml_value("backup", "depth", depth)
             self._backup_disk_warn.configure(text="", text_color=DIM)
 
     def _on_backup_location_change(self):
@@ -183,7 +183,7 @@ class OperationsPanelMixin:
         from tkinter import filedialog
         chosen = filedialog.askdirectory(title="Select backup location")
         if chosen:
-            self._parent._update_toml_value("backup", "location", chosen)
+            self._update_toml_value("backup", "location", chosen)
             self._backup_loc_label.configure(text=chosen)
 
     def _on_manual_backup(self):
@@ -192,7 +192,8 @@ class OperationsPanelMixin:
         def _run():
             try:
                 import sys
-                sys.path.insert(0, str(self._parent.FLEET_DIR))
+                import launcher as _L
+                sys.path.insert(0, str(_L.FLEET_DIR))
                 from backup_manager import BackupManager
                 from config import load_config
                 bm = BackupManager(load_config())

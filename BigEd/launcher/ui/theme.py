@@ -47,11 +47,50 @@ GREEN    = "#4caf50"
 ORANGE   = "#ff9800"
 RED      = "#f44336"
 
-# Fonts
-MONO     = ("Consolas", 11)
-FONT     = (RS_PLAIN_12, 12)
-FONT_SM  = (RS_PLAIN_11, 11)
-FONT_H   = (RS_BOLD_12, 14, "bold")
+# ─── Font Presets ────────────────────────────────────────────────────────────
+FONT_PRESETS = {
+    "System Default": {
+        "family": "Segoe UI" if sys.platform == "win32" else "Helvetica",
+        "mono": "Consolas" if sys.platform == "win32" else "Menlo" if sys.platform == "darwin" else "Monospace",
+        "bold": "Segoe UI" if sys.platform == "win32" else "Helvetica",
+    },
+    "RuneScape": {
+        "family": RS_PLAIN_12,
+        "mono": "Consolas" if sys.platform == "win32" else "Menlo" if sys.platform == "darwin" else "Monospace",
+        "bold": RS_BOLD_12,
+    },
+    "Consolas": {
+        "family": "Consolas" if sys.platform == "win32" else "Menlo" if sys.platform == "darwin" else "Monospace",
+        "mono": "Consolas" if sys.platform == "win32" else "Menlo" if sys.platform == "darwin" else "Monospace",
+        "bold": "Consolas" if sys.platform == "win32" else "Menlo" if sys.platform == "darwin" else "Monospace",
+    },
+    "Courier New": {
+        "family": "Courier New",
+        "mono": "Courier New",
+        "bold": "Courier New",
+    },
+}
+
+def _load_font_pref() -> str:
+    """Load saved font preference from settings."""
+    try:
+        import json
+        settings_file = Path(__file__).resolve().parent.parent / "data" / "settings.json"
+        if settings_file.exists():
+            data = json.loads(settings_file.read_text(encoding="utf-8"))
+            return data.get("font_preset", "System Default")
+    except Exception:
+        pass
+    return "System Default"
+
+_active_preset = _load_font_pref()
+_preset = FONT_PRESETS.get(_active_preset, FONT_PRESETS["System Default"])
+
+# Fonts (resolved from active preset)
+MONO     = (_preset["mono"], 11)
+FONT     = (_preset["family"], 12)
+FONT_SM  = (_preset["family"], 11)
+FONT_H   = (_preset["bold"], 14, "bold")
 
 # Status colors (counter cards, agent cards)
 BLUE     = "#4fc3f7"
@@ -85,12 +124,12 @@ COUNTER_COLORS = {
     "models": CYAN,
 }
 
-# Font hierarchy
-FONT_XS    = (RS_PLAIN_11, 9)                # timestamps, metadata
-FONT_STAT  = ("Consolas", 10)                # stats, numbers (keep mono)
-FONT_MONO  = ("Consolas", 11)                # code, values (keep mono)
-FONT_BOLD  = (RS_BOLD_12, 12, "bold")        # agent names, emphasis
-FONT_TITLE = (RS_BOLD_12, 15, "bold")        # section titles
+# Font hierarchy (resolved from active preset)
+FONT_XS    = (_preset["family"], 9)           # timestamps, metadata
+FONT_STAT  = (_preset["mono"], 10)            # stats, numbers (keep mono)
+FONT_MONO  = (_preset["mono"], 11)            # code, values (keep mono)
+FONT_BOLD  = (_preset["bold"], 12, "bold")    # agent names, emphasis
+FONT_TITLE = (_preset["bold"], 15, "bold")    # section titles
 
 # Dimensions
 CARD_RADIUS   = 8

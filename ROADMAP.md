@@ -1196,6 +1196,70 @@ Completed 2026-03-20. Four orchestration features across 4 files:
 - [x] Model tier selection based on total available VRAM across GPUs — `auto_profile._calculate_configs()` uses aggregated VRAM
 - [x] fleet.toml [gpu] section: multi_gpu, cluster_peers, memory_mode — all 5 keys present (lines 91-99)
 
+### 0.165.07b — UX Fixes, OAuth Flow, Shutdown Fix, Icon Redesign [DONE]
+
+Completed 2026-03-21. UX polish + OAuth flow + critical shutdown hang fix:
+
+**Icon redesign:** New 1024px app icon (white B + red Ed monogram, dark bg, gold accent dot). Multi-size ICO (16-256px). Applied to all windows (launcher, settings, consoles, installer, updater, dialogs).
+
+**Module tabs fix:** `mod_manual_mode.py` missing `on_refresh`/`on_close` methods — added. Module loader `except ImportError: pass` replaced with `except Exception` + stderr logging. `manual_mode` added to `load_tab_cfg()` defaults + fleet.toml + `_ICONS` dict. All 4 module tabs now load: Ingestion, Outputs, Intelligence, Manual Mode.
+
+**OAuth UX overhaul:**
+- [x] Model dropdown callback shows ToS warnings + step-by-step guidance when OAuth selected
+- [x] Context preview dialog expanded with "What happens next" + ToS notice banner
+- [x] VS Code auto-opens task-briefing.md via `--goto`, Claude CLI auto-starts via `--print` when available
+- [x] task-briefing.md includes MCP availability, caching/batching efficiency hints
+- [x] HITL loop stays armed during OAuth analysis (no premature close)
+- [x] DITL compliance: PHI filtering via `deidentify_text()` on context sent to OAuth providers
+
+**Shutdown hang fix:** `_do_stop_and_close()` moved from synchronous main thread to background daemon thread. Dark overlay with live status text keeps window responsive. 8-second force-close safety net. `time.sleep(1)` reduced to 0.5s.
+
+**Chat UX:** Enter-to-send with `"break"` return (no beep). Shift+Enter passthrough. Sidebar "Claude research decisions" truncation fixed (shortened to "Claude research").
+
+Smoke: 22/22. Skills: 80+.
+
+### 0.170.00b — Deferred Items Sweep
+
+**Goal:** Resolve all deferred roadmap items — MCP wizard, clinical review, audit logging, web frontend, Helm chart.
+
+**MCP Phase 2: Integration Wizard (M, ~10-15k)**
+- [ ] "Add Integration" button → modal with categorized server list
+- [ ] Default servers: toggle on, auto-writes `.mcp.json` + starts container if needed
+- [ ] Key-gated servers: API key input → validate → enable
+- [ ] Custom: URL or `npx` command input → transport auto-detect → test connection
+
+**MCP Phase 4: Web Launcher + Remote (S, ~5-8k)**
+- [ ] Mirror MCP management in web_app.py
+- [ ] Remote operators can view MCP status, enable defaults
+- [ ] API endpoints for MCP server CRUD
+
+**DITL Phase 3: 5-Agent Clinical Review Cycle (M, ~12-18k)**
+- [ ] Clinical review pipeline skill: intake → analysis → recommendation → peer review → sign-off
+- [ ] Confirmation hex for final approval
+- [ ] PHI audit at every pipeline step
+- [ ] Structured review output format
+
+**Full Audit Logging Enhancement (S, ~5-8k)**
+- [ ] Structured event schema (who, what, when, cost, context)
+- [ ] Query API for audit trail with filters
+- [ ] Retention policies + auto-purge
+- [ ] Dashboard audit viewer panel
+- [ ] Export to CSV/JSON
+
+**React/Next.js Web Frontend (XL, ~50-80k)**
+- [ ] Next.js app scaffold in BigEd/web/
+- [ ] Core pages: fleet status, agent cards, task queue, cost dashboard, settings
+- [ ] Tailwind dark theme matching launcher palette
+- [ ] Consumes all existing dashboard API endpoints
+- [ ] WebSocket/SSE for real-time updates
+
+**Kubernetes Helm Chart (M, ~10-15k)**
+- [ ] Helm chart in deploy/helm/
+- [ ] Deployments: fleet supervisor, dashboard, ollama
+- [ ] ConfigMap from fleet.toml, secrets for API keys
+- [ ] PVC for fleet.db + knowledge/
+- [ ] Values.yaml with resource presets matching RAM tier table
+
 ---
 
 ## Audit Coverage Check (per AUDIT_TRACKER.md)

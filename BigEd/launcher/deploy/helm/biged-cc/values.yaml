@@ -1,0 +1,158 @@
+# BigEd CC Helm Chart — Default Values
+# See fleet.toml for full configuration reference.
+
+# -- Fleet supervisor
+supervisor:
+  replicas: 1
+  image: biged-cc/fleet:latest
+  imagePullPolicy: IfNotPresent
+  resources:
+    requests:
+      cpu: 500m
+      memory: 512Mi
+    limits:
+      cpu: 2000m
+      memory: 2Gi
+  # Extra environment variables for the supervisor container
+  extraEnv: []
+
+# -- Dashboard (Flask web UI)
+dashboard:
+  replicas: 1
+  image: biged-cc/fleet:latest
+  imagePullPolicy: IfNotPresent
+  port: 7777
+  resources:
+    requests:
+      cpu: 250m
+      memory: 256Mi
+    limits:
+      cpu: 1000m
+      memory: 1Gi
+  service:
+    type: ClusterIP
+    port: 7777
+  ingress:
+    enabled: false
+    className: ""
+    annotations: {}
+    hosts:
+      - host: biged.local
+        paths:
+          - path: /
+            pathType: Prefix
+    tls: []
+
+# -- Ollama (local LLM inference server)
+ollama:
+  enabled: true
+  image: ollama/ollama:latest
+  imagePullPolicy: IfNotPresent
+  port: 11434
+  resources:
+    requests:
+      cpu: 1000m
+      memory: 4Gi
+    limits:
+      cpu: 4000m
+      memory: 8Gi
+  gpu:
+    enabled: false
+    count: 1
+    # NVIDIA GPU resource key — change for AMD (amd.com/gpu) or Intel
+    resourceKey: nvidia.com/gpu
+  persistence:
+    size: 50Gi
+    storageClass: ""
+  models:
+    - qwen3:8b
+    - qwen3:4b
+
+# -- Persistent storage
+persistence:
+  fleetDb:
+    size: 1Gi
+    storageClass: ""
+    accessMode: ReadWriteOnce
+  knowledge:
+    size: 5Gi
+    storageClass: ""
+    accessMode: ReadWriteOnce
+  logs:
+    size: 2Gi
+    storageClass: ""
+    accessMode: ReadWriteOnce
+
+# -- Fleet configuration (generates fleet.toml ConfigMap)
+config:
+  offlineMode: false
+  airGapMode: false
+  maxWorkers: 6
+  idleEnabled: true
+  idleTimeoutSecs: 10
+  ecoMode: false
+  # Resource presets matching RAM-based worker scaling tiers:
+  #   minimal  — <8GB  RAM: 3 workers, 256Mi memory limit
+  #   basic    — 8-16GB:    6 workers, 384Mi memory limit
+  #   standard — 16-32GB:  10 workers, 512Mi memory limit
+  #   high     — 32-64GB:  13 workers, 512Mi memory limit
+  #   server   — 64GB+:    16 workers, 768Mi memory limit
+  preset: standard
+  # Dashboard
+  dashboardPort: 5555
+  dashboardBind: "0.0.0.0"
+  # Models
+  localModel: "qwen3:8b"
+  complexModel: "qwen3:8b"
+  complexProvider: "local"
+  conductorModel: "qwen3:4b"
+  ollamaHost: ""  # Auto-resolved by chart; override for external Ollama
+  keepAliveMins: 30
+  # GPU
+  gpuMode: "eco"
+  # Workers
+  coderCount: 3
+  workerMemoryLimitMb: 512
+  workerNiceLevel: 15
+  workerCpuLimitPercent: 10
+  # Review
+  reviewEnabled: true
+  reviewProvider: "api"
+  # Thermal
+  gpuMaxSustainedC: 82
+  gpuMaxBurstC: 85
+  cpuMaxSustainedC: 85
+  # Security
+  sandboxEnabled: false
+  # DITL / HIPAA
+  ditlEnabled: false
+  complianceLevel: "none"
+  # Backup
+  backupEnabled: true
+  backupIntervalSecs: 1200
+  backupDepth: 10
+  # Federation
+  federationEnabled: false
+  federationPeers: []
+
+# -- Secrets (API keys, tokens)
+secrets:
+  claudeApiKey: ""
+  geminiApiKey: ""
+  minimaxApiKey: ""
+  githubToken: ""
+  dashboardToken: ""
+  adminToken: ""
+  operatorToken: ""
+
+# -- Common overrides
+nameOverride: ""
+fullnameOverride: ""
+
+# -- Pod-level settings
+nodeSelector: {}
+tolerations: []
+affinity: {}
+
+# -- Image pull secrets for private registries
+imagePullSecrets: []

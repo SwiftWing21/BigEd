@@ -12,8 +12,10 @@ import shutil
 import subprocess
 import sys
 import threading
-import winreg
 from pathlib import Path
+
+if sys.platform == "win32":
+    import winreg
 
 import customtkinter as ctk
 from PIL import Image
@@ -32,7 +34,7 @@ else:
 
 FLEET_EXE   = EXE_DIR / "BigEdCC.exe"
 UPDATER_EXE = EXE_DIR / "Updater.exe"
-BANNER_PNG  = ASSETS  / "brick_banner.png"
+BANNER_PNG  = ASSETS  / "icon_1024.png"
 ICON_ICO    = ASSETS  / "brick.ico"
 
 APP_NAME    = "Big Edge Compute Command"
@@ -58,6 +60,17 @@ DIM      = "#888888"
 GREEN    = "#4caf50"
 ORANGE   = "#ff9800"
 RED      = "#f44336"
+
+
+def _open_path(path):
+    """Cross-platform file/URL opener."""
+    path = str(path)
+    if sys.platform == "win32":
+        os.startfile(path)
+    elif sys.platform == "darwin":
+        subprocess.Popen(["open", path])
+    else:
+        subprocess.Popen(["xdg-open", path])
 
 
 # ─── Registry helpers ─────────────────────────────────────────────────────────
@@ -264,7 +277,7 @@ class Setup(ctk.CTk):
         return None
 
     def _detect_ollama(self) -> str | None:
-        """Return ollama path if found, else None. Checks PATH + common Windows locations."""
+        """Return ollama path if found, else None. Checks PATH + platform-specific locations."""
         exe = shutil.which("ollama")
         if exe:
             return exe
@@ -280,6 +293,15 @@ class Setup(ctk.CTk):
                     p = Path(base) / subpath
                     if p.exists():
                         return str(p)
+        elif sys.platform == "darwin":
+            for p in [Path("/usr/local/bin/ollama"), Path("/opt/homebrew/bin/ollama")]:
+                if p.exists():
+                    return str(p)
+        else:  # Linux
+            for p in [Path("/usr/bin/ollama"), Path("/usr/local/bin/ollama"),
+                      Path.home() / ".local" / "bin" / "ollama"]:
+                if p.exists():
+                    return str(p)
         return None
 
     # ── Page: Welcome (not installed) ─────────────────────────────────────────
@@ -438,7 +460,7 @@ class Setup(ctk.CTk):
         loc = (self._install_info or {}).get("InstallLocation", "")
         p = Path(loc)
         if p.exists():
-            os.startfile(str(p))
+            _open_path(p)
 
     # ── Page: Options (install / reinstall) ───────────────────────────────────
     def _page_options(self, parent):
@@ -503,7 +525,7 @@ class Setup(ctk.CTk):
         if not self._python_found:
             ctk.CTkButton(py_row, text="Download", width=70, height=22,
                           font=("RuneScape Plain 11", 9), fg_color=ACCENT, hover_color=ACCENT_H,
-                          command=lambda: os.startfile("https://www.python.org/downloads/"),
+                          command=lambda: _open_path("https://www.python.org/downloads/"),
                           ).pack(side="right", padx=(8, 4))
             ctk.CTkLabel(prereq_frame,
                          text="Python 3.11+ required. Install it, then re-run Setup.",
@@ -779,11 +801,10 @@ class Setup(ctk.CTk):
     def _step_build(self) -> str:
         src  = Path(__file__).parent if not getattr(sys, "frozen", False) else Path(sys.executable).parent.parent
         icon = src / "brick.ico"
-        banner = src / "brick_banner.png"
+        banner = src / "icon_1024.png"
         req  = src / "requirements.txt"
         cmds = [
             ["pip", "install", "--upgrade", "-r", str(req)],
-            ["python", str(src / "generate_icon.py")],
             ["python", "-m", "PyInstaller", "--onefile", "--windowed",
              "--name", "BigEdCC", "--icon", str(icon),
              f"--add-data={banner};.", f"--add-data={icon};.",

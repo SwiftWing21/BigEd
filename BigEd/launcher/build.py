@@ -106,7 +106,7 @@ def build_launcher() -> float:
     return _run(
         _pyinstaller_cmd(
             "BigEdCC", "launcher.py",
-            add_data=["brick_banner.png", "brick.ico"],
+            add_data=["brick.ico", "icon_1024.png"],
             hidden_imports=["psutil", "pynvml"],
         ),
         "Building BigEdCC",
@@ -131,9 +131,21 @@ def build_setup() -> float:
     return _run(
         _pyinstaller_cmd(
             "Setup", "installer.py",
-            add_data=["brick.ico", "brick_banner.png"],
+            add_data=["brick.ico", "icon_1024.png"],
         ),
         "Building Setup",
+    )
+
+
+def build_usb_media() -> float:
+    """Build USB Media Creator executable."""
+    _kill_process("USBMedia")
+    return _run(
+        _pyinstaller_cmd(
+            "USBMedia", "create_usb_media.py",
+            add_data=["brick.ico"],
+        ),
+        "Building USB Media Creator",
     )
 
 
@@ -176,13 +188,14 @@ def main():
     parser.add_argument("--launcher", action="store_true", help="Build launcher only")
     parser.add_argument("--updater", action="store_true", help="Build updater only")
     parser.add_argument("--setup", action="store_true", help="Build setup only")
+    parser.add_argument("--usb", action="store_true", help="Build USB media creator only")
     parser.add_argument("--production", action="store_true",
                         help="Production build — set BIGED_PRODUCTION=1 env in exe")
     parser.add_argument("--ux-screenshots", action="store_true",
                         help="Capture UX test suite screenshots after build (0.051.04b)")
     args = parser.parse_args()
 
-    build_all = not (args.launcher or args.updater or args.setup)
+    build_all = not (args.launcher or args.updater or args.setup or args.usb)
 
     # ── Header ────────────────────────────────────────────────────────────
     print(f"\n{BOLD}{GOLD}╔══════════════════════════════════════╗{RESET}")
@@ -204,11 +217,14 @@ def main():
                  "Installing dependencies")
         step_times["Dependencies"] = t
 
-    # Generate icons
-    icon_script = HERE / "generate_icon.py"
-    if icon_script.exists() and build_all:
-        t = _run([sys.executable, str(icon_script)], "Generating icons")
-        step_times["Icons"] = t
+    # Icons — brick.ico + icon_1024.png are locked assets (v0.165.07b+)
+    _ico = HERE / "brick.ico"
+    _png = HERE / "icon_1024.png"
+    if _ico.exists() and _png.exists():
+        print(f"  {DIM}Icons: brick.ico + icon_1024.png present{RESET}")
+    else:
+        print(f"  {RED}ERROR: Missing icon assets (brick.ico / icon_1024.png){RESET}")
+        print(f"  {RED}  Regenerate: python -c \"from PIL import Image; ...\" (see ROADMAP){RESET}")
 
     # Build targets
     if build_all or args.launcher:
@@ -217,6 +233,8 @@ def main():
         step_times["Updater"] = build_updater()
     if build_all or args.setup:
         step_times["Setup"] = build_setup()
+    if build_all or args.usb:
+        step_times["USBMedia"] = build_usb_media()
 
     # Production marker — launcher reads this to hide dev features
     dist = HERE / "dist"

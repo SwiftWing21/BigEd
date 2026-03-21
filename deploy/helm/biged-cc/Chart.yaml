@@ -1,0 +1,18 @@
+apiVersion: v2
+name: biged-cc
+description: BigEd CC — AI fleet supervisor with Ollama workers, dashboard, and knowledge management
+type: application
+version: 0.1.0
+appVersion: "0.165.07b"
+keywords:
+  - ai
+  - fleet
+  - ollama
+  - education
+  - compliance
+maintainers:
+  - name: BigEd CC
+    url: https://github.com/SwiftWing21/BigEd
+home: https://github.com/SwiftWing21/BigEd
+sources:
+  - https://github.com/SwiftWing21/BigEd

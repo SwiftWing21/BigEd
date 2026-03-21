@@ -7,8 +7,10 @@ import shutil
 import subprocess
 import sys
 import threading
-import winreg
 from pathlib import Path
+
+if sys.platform == "win32":
+    import winreg
 
 import customtkinter as ctk
 from PIL import Image
@@ -21,7 +23,7 @@ else:
     BUNDLE   = Path(__file__).parent / "dist"
     SELF_EXE = Path(__file__)
 
-BANNER_PNG = BUNDLE / "brick_banner.png"
+BANNER_PNG = BUNDLE / "icon_1024.png"
 ICON_ICO   = BUNDLE / "brick.ico"
 
 APP_NAME  = "Big Edge Compute Command"

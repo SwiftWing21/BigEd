@@ -31,9 +31,10 @@ else:
     SRC_DIR  = Path(__file__).parent
     DIST_DIR = SRC_DIR / "dist"
 
-EXE_PATH      = DIST_DIR / "BigEdCC.exe"
-UPD_PATH      = DIST_DIR / "Updater.exe"
-UPD_NEW_PATH  = DIST_DIR / "Updater_new.exe"   # staged build — swapped on close
+_EXE_SUFFIX   = ".exe" if sys.platform == "win32" else ""
+EXE_PATH      = DIST_DIR / f"BigEdCC{_EXE_SUFFIX}"
+UPD_PATH      = DIST_DIR / f"Updater{_EXE_SUFFIX}"
+UPD_NEW_PATH  = DIST_DIR / f"Updater_new{_EXE_SUFFIX}"   # staged build — swapped on close
 REQ_FILE      = SRC_DIR  / "requirements.txt"
 MANIFEST_FILE = DIST_DIR / ".update_manifest.json"
 HERE          = SRC_DIR
@@ -69,7 +70,12 @@ DIM      = "#888888"
 GREEN    = "#4caf50"
 ORANGE   = "#ff9800"
 RED      = "#f44336"
-MONO     = ("Consolas", 10)
+if sys.platform == "win32":
+    MONO = ("Consolas", 10)
+elif sys.platform == "darwin":
+    MONO = ("Menlo", 10)
+else:
+    MONO = ("Monospace", 10)
 
 
 # ─── Manifest helpers ─────────────────────────────────────────────────────────
@@ -99,6 +105,7 @@ def save_manifest(data: dict):
 # required_outputs — Paths that must exist; step runs if any are missing
 # Empty tracked_files + empty outputs = always run
 _NW = getattr(subprocess, 'CREATE_NO_WINDOW', 0)
+_SEP = ";" if sys.platform == "win32" else ":"
 
 
 def _git_check_behind() -> tuple[int, list[str]]:
@@ -142,20 +149,14 @@ STEPS = [
         [],
     ),
     (
-        "Generate icons",
-        ["python", str(SRC_DIR / "generate_icon.py")],
-        ["generate_icon.py"],
-        [SRC_DIR / "brick.ico", SRC_DIR / "brick_banner.png"],
-    ),
-    (
         "Build BigEdCC",
         [
             "python", "-m", "PyInstaller",
             "--onefile", "--windowed",
             "--name", "BigEdCC",
             "--icon", str(SRC_DIR / "brick.ico"),
-            f"--add-data={SRC_DIR / 'brick_banner.png'};.",
-            f"--add-data={SRC_DIR / 'brick.ico'};.",
+            f"--add-data={SRC_DIR / 'icon_1024.png'}{_SEP}.",
+            f"--add-data={SRC_DIR / 'brick.ico'}{_SEP}.",
             "--collect-all", "customtkinter",
             "--hidden-import", "psutil",
             "--hidden-import", "pynvml",
@@ -171,7 +172,7 @@ STEPS = [
             "--onefile", "--windowed",
             "--name", "Updater_new",        # staged — swapped on close so running exe isn't locked
             "--icon", str(SRC_DIR / "brick.ico"),
-            f"--add-data={SRC_DIR / 'brick.ico'};.",
+            f"--add-data={SRC_DIR / 'brick.ico'}{_SEP}.",
             "--collect-all", "customtkinter",
             str(SRC_DIR / "updater.py"),
         ],
@@ -1020,9 +1021,32 @@ class AutoUpdater(Updater):
 
 
 # ─── Entry ────────────────────────────────────────────────────────────────────
+_LOCK_FILE = DIST_DIR / ".updater_running"
+
 if __name__ == "__main__":
-    if "--auto" in sys.argv:
-        app = AutoUpdater()
-    else:
-        app = Updater()
-    app.mainloop()
+    # Guard: prevent multiple updater instances from spawning
+    if _LOCK_FILE.exists():
+        try:
+            lock_age = time.time() - _LOCK_FILE.stat().st_mtime
+            if lock_age < 120:  # another updater ran within 2 min
+                print("Updater already ran recently — skipping to prevent loop")
+                sys.exit(0)
+        except Exception:
+            pass
+    try:
+        _LOCK_FILE.parent.mkdir(parents=True, exist_ok=True)
+        _LOCK_FILE.write_text(str(os.getpid()), encoding="utf-8")
+    except Exception:
+        pass
+
+    try:
+        if "--auto" in sys.argv:
+            app = AutoUpdater()
+        else:
+            app = Updater()
+        app.mainloop()
+    finally:
+        try:
+            _LOCK_FILE.unlink(missing_ok=True)
+        except Exception:
+            pass

@@ -106,7 +106,7 @@ def _log_api_attribution(response):
         return response
     try:
         role = _get_request_role()
-        # Use db.log_alert if available, otherwise fall back to audit_log
+        # Legacy file-based audit
         try:
             sys.path.insert(0, str(FLEET_DIR))
             from audit_log import log_event
@@ -123,7 +123,30 @@ def _log_api_attribution(response):
                 severity="info",
             )
         except (ImportError, AttributeError):
-            pass  # audit_log not available — skip silently
+            pass
+        # Enhanced DB-backed audit (write operations only — GETs already sampled above)
+        if request.method in ("POST", "PUT", "DELETE", "PATCH"):
+            try:
+                from audit import log_audit
+                log_audit(
+                    actor=role or "unknown",
+                    action=f"api.{request.method.lower()}",
+                    resource=request.path,
+                    detail=f"{request.method} {request.path} -> {response.status_code}",
+                    ip_address=request.remote_addr,
+                    role=role,
+                )
+            except Exception:
+                pass
+            # Broadcast SSE so the audit panel auto-refreshes
+            try:
+                _broadcast_sse({"type": "audit", "data": {
+                    "actor": role or "unknown",
+                    "action": f"api.{request.method.lower()}",
+                    "resource": request.path,
+                }})
+            except Exception:
+                pass
     except Exception:
         pass  # Never let logging break the response
     return response
@@ -1393,18 +1416,34 @@ def api_mcp_enable(name):
     """Enable a default or integration MCP server."""
     try:
         from mcp_manager import enable_default, MCP_INTEGRATIONS, add_server
+        enabled = False
         if enable_default(name):
-            return jsonify({"status": "enabled", "server": name})
-        # Try as integration
-        if name in MCP_INTEGRATIONS:
+            enabled = True
+        elif name in MCP_INTEGRATIONS:
+            # Try as integration
             server_def = MCP_INTEGRATIONS[name]
             config = {"type": server_def.get("type", "stdio")}
             if config["type"] == "stdio":
                 config["command"] = server_def.get("command", "npx")
                 config["args"] = server_def.get("args", [])
             add_server(name, config)
-            return jsonify({"status": "enabled", "server": name})
-        return jsonify({"error": f"Unknown server: {name}"}), 404
+            enabled = True
+        if not enabled:
+            return jsonify({"error": f"Unknown server: {name}"}), 404
+        # Audit log
+        try:
+            from audit import log_audit
+            log_audit(
+                actor=_get_request_role() or "operator",
+                action="mcp.server.enable",
+                resource=f"mcp:{name}",
+                detail=f"Enabled MCP server '{name}'",
+                role=_get_request_role(),
+                ip_address=request.remote_addr,
+            )
+        except Exception:
+            pass
+        return jsonify({"status": "enabled", "server": name})
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
@@ -1415,23 +1454,150 @@ def api_mcp_disable(name):
     try:
         from mcp_manager import disable_server
         if disable_server(name):
+            # Audit log
+            try:
+                from audit import log_audit
+                log_audit(
+                    actor=_get_request_role() or "operator",
+                    action="mcp.server.disable",
+                    resource=f"mcp:{name}",
+                    detail=f"Disabled MCP server '{name}'",
+                    role=_get_request_role(),
+                    ip_address=request.remote_addr,
+                )
+            except Exception:
+                pass
             return jsonify({"status": "disabled", "server": name})
         return jsonify({"error": f"Server not found: {name}"}), 404
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
 
-# ── Audit Log ──────────────────────────────────────────────────────────────
+# ── Audit Log (enhanced — DB-backed structured audit trail) ───────────────
 
 @app.route("/api/audit")
 def api_audit():
-    from audit_log import read_events, get_audit_summary
-    if request.args.get("summary"):
-        return jsonify(get_audit_summary())
-    return jsonify(read_events(
-        last_n=int(request.args.get("limit", 50)),
-        event_type=request.args.get("type"),
-    ))
+    """Paginated audit trail with filter params.
+
+    Query params:
+        actor   — filter by actor (exact)
+        action  — filter by action (exact)
+        from    — events after this ISO timestamp
+        to      — events before this ISO timestamp
+        resource — filter by resource (contains)
+        limit   — max rows (default 100, max 1000)
+        offset  — pagination offset
+        summary — if truthy, return legacy audit_log.py summary instead
+        legacy  — if truthy, return legacy file-based events
+    """
+    # Legacy compat: ?summary=1 or ?legacy=1 still use the old audit_log.py
+    if request.args.get("summary") or request.args.get("legacy"):
+        try:
+            from audit_log import read_events, get_audit_summary
+            if request.args.get("summary"):
+                return jsonify(get_audit_summary())
+            return jsonify(read_events(
+                last_n=int(request.args.get("limit", 50)),
+                event_type=request.args.get("type"),
+            ))
+        except ImportError:
+            return jsonify({"error": "audit_log module not available"}), 500
+
+    try:
+        from audit import query_audit, count_audit, get_audit_actors, get_audit_actions
+        filters = {}
+        if request.args.get("actor"):
+            filters["actor"] = request.args["actor"]
+        if request.args.get("action"):
+            filters["action"] = request.args["action"]
+        if request.args.get("from"):
+            filters["from_ts"] = request.args["from"]
+        if request.args.get("to"):
+            filters["to_ts"] = request.args["to"]
+        if request.args.get("resource"):
+            filters["resource"] = request.args["resource"]
+
+        limit = int(request.args.get("limit", 100))
+        offset = int(request.args.get("offset", 0))
+
+        rows = query_audit(filters=filters, limit=limit, offset=offset)
+        total = count_audit(filters=filters)
+        actors = get_audit_actors()
+        actions = get_audit_actions()
+
+        return jsonify({
+            "events": rows,
+            "total": total,
+            "limit": limit,
+            "offset": offset,
+            "filters": {"actors": actors, "actions": actions},
+        })
+    except Exception as e:
+        return jsonify({"error": _safe_error(e)}), 500
+
+
+@app.route("/api/audit/export")
+def api_audit_export():
+    """Download audit export as JSON or CSV.
+
+    Query params:
+        fmt    — "json" (default) or "csv"
+        actor  — filter by actor
+        action — filter by action
+        from   — events after this ISO timestamp
+        to     — events before this ISO timestamp
+    """
+    try:
+        from audit import export_audit
+        fmt = request.args.get("fmt", "json")
+        if fmt not in ("json", "csv"):
+            fmt = "json"
+
+        filters = {}
+        if request.args.get("actor"):
+            filters["actor"] = request.args["actor"]
+        if request.args.get("action"):
+            filters["action"] = request.args["action"]
+        if request.args.get("from"):
+            filters["from_ts"] = request.args["from"]
+        if request.args.get("to"):
+            filters["to_ts"] = request.args["to"]
+
+        content, content_type, filename = export_audit(fmt=fmt, filters=filters)
+        return Response(
+            content,
+            mimetype=content_type,
+            headers={"Content-Disposition": f"attachment; filename={filename}"},
+        )
+    except Exception as e:
+        return jsonify({"error": _safe_error(e)}), 500
+
+
+@app.route("/api/audit/purge", methods=["POST"])
+@_require_role("admin")
+def api_audit_purge():
+    """Trigger retention purge — admin only.
+
+    JSON body:
+        older_than_days — retention window (default 365, minimum 1)
+    """
+    try:
+        from audit import purge_audit, log_audit
+        data = request.get_json(silent=True) or {}
+        days = int(data.get("older_than_days", 365))
+        result = purge_audit(older_than_days=days)
+        # Self-audit the purge action
+        log_audit(
+            actor=_get_request_role() or "admin",
+            action="audit.purge",
+            resource="audit_log",
+            detail=f"Purged {result['purged']} entries older than {days} days",
+            role=_get_request_role(),
+            ip_address=request.remote_addr,
+        )
+        return jsonify(result)
+    except Exception as e:
+        return jsonify({"error": _safe_error(e)}), 500
 
 
 @app.route("/api/gdpr/erasure", methods=["POST"])
@@ -1446,10 +1612,23 @@ def api_gdpr_erasure():
         sys.path.insert(0, str(FLEET_DIR))
         import db
         result = db.delete_user_data(identifier, scope=data.get("scope", "agent"))
-        # Log to audit trail
+        # Log to both audit trails (legacy file + new DB)
         try:
             from audit_log import log_event
             log_event("gdpr_erasure", "dashboard", {"identifier": identifier, "deleted": result}, severity="warning")
+        except Exception:
+            pass
+        try:
+            from audit import log_audit
+            log_audit(
+                actor=_get_request_role() or "admin",
+                action="gdpr.erasure",
+                resource=f"user:{identifier}",
+                detail=f"GDPR erasure for '{identifier}', deleted: {result}",
+                role=_get_request_role(),
+                ip_address=request.remote_addr,
+                metadata={"identifier": identifier, "deleted": result},
+            )
         except Exception:
             pass
         return jsonify({"status": "erased", "deleted": result})
@@ -1607,6 +1786,19 @@ def worker_disable(name):
             disabled.append(name)
             _update_fleet_toml_disabled(disabled)
             _add_alert("info", f"Agent '{name}' disabled by operator", "fleet")
+        # Audit log
+        try:
+            from audit import log_audit
+            log_audit(
+                actor=_get_request_role() or "operator",
+                action="fleet.worker.disable",
+                resource=f"worker:{name}",
+                detail=f"Disabled agent '{name}'",
+                role=_get_request_role(),
+                ip_address=request.remote_addr,
+            )
+        except Exception:
+            pass
         return jsonify({"status": "disabled", "agent": name, "disabled_agents": disabled})
     except Exception as e:
         return jsonify({"error": str(e)}), 500
@@ -1624,6 +1816,19 @@ def worker_enable(name):
             disabled.remove(name)
             _update_fleet_toml_disabled(disabled)
             _add_alert("info", f"Agent '{name}' enabled by operator", "fleet")
+        # Audit log
+        try:
+            from audit import log_audit
+            log_audit(
+                actor=_get_request_role() or "operator",
+                action="fleet.worker.enable",
+                resource=f"worker:{name}",
+                detail=f"Enabled agent '{name}'",
+                role=_get_request_role(),
+                ip_address=request.remote_addr,
+            )
+        except Exception:
+            pass
         return jsonify({"status": "enabled", "agent": name, "disabled_agents": disabled})
     except Exception as e:
         return jsonify({"error": str(e)}), 500

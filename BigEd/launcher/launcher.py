@@ -140,7 +140,6 @@ UPDATE_MANIFEST = _DIST_DIR / ".update_manifest.json"
 _UPDATE_TRACKED = {
     "launcher.py":      _SRC_DIR / "launcher.py",
     "requirements.txt": _SRC_DIR / "requirements.txt",
-    "generate_icon.py": _SRC_DIR / "generate_icon.py",
 }
 
 # ─── Theme ────────────────────────────────────────────────────────────────────
@@ -471,6 +470,7 @@ def load_tab_cfg() -> dict:
         "outputs": True,
         "owner_core": False,
         "intelligence": True,
+        "manual_mode": True,
     }
     try:
         import tomllib
@@ -758,14 +758,14 @@ def count_waiting_human() -> int:
 
 
 def _ctx_preview_confirm(parent, model: str, file_list: str) -> bool:
-    """Show a modal confirmation dialog listing context files to be written.
+    """Show a modal confirmation dialog listing context files and ToS before OAuth launch.
 
     Returns True if the user clicks Proceed, False if they click Cancel.
     """
     result = [False]
     dlg = ctk.CTkToplevel(parent)
     dlg.title("Launch Session — Context Preview")
-    dlg.geometry("420x240")
+    dlg.geometry("480x380")
     dlg.resizable(False, False)
     dlg.configure(fg_color="#1e1e1e")
     dlg.transient(parent)
@@ -783,6 +783,35 @@ def _ctx_preview_confirm(parent, model: str, file_list: str) -> bool:
     ctk.CTkLabel(files_frame, text=file_list, font=("Consolas", 9),
                  text_color="#c8c8c8", anchor="w", justify="left"
                  ).pack(padx=10, pady=8, anchor="w")
+
+    # ── What happens next ──
+    if "Claude" in model:
+        steps = (
+            "What happens next:\n"
+            "  1. VS Code opens to the project directory\n"
+            "  2. Claude Code starts with your task context\n"
+            "  3. Review the task and approve to begin"
+        )
+        tos = "By proceeding you agree to Anthropic's Terms of Service."
+    else:
+        steps = (
+            "What happens next:\n"
+            "  1. Google AI Studio opens in your browser\n"
+            "  2. Paste your task from task-briefing.md\n"
+            "  3. Review the output and copy results back"
+        )
+        tos = "By proceeding you agree to Google's Terms of Service."
+
+    ctk.CTkLabel(dlg, text=steps, font=("Consolas", 9),
+                 text_color="#c8c8c8", anchor="w", justify="left"
+                 ).pack(fill="x", padx=16, pady=(4, 2))
+
+    # ── ToS notice ──
+    tos_frame = ctk.CTkFrame(dlg, fg_color="#2a2200", corner_radius=4)
+    tos_frame.pack(fill="x", padx=16, pady=(4, 6))
+    ctk.CTkLabel(tos_frame, text=f"⚠  {tos}",
+                 font=("Consolas", 9), text_color="#c8a84b", anchor="w",
+                 wraplength=420).pack(padx=10, pady=6, anchor="w")
 
     btn_row = ctk.CTkFrame(dlg, fg_color="transparent")
     btn_row.pack(fill="x", padx=16, pady=(4, 14))
@@ -873,6 +902,7 @@ class CustomTabBar(ctk.CTkFrame):
         "Outputs":        "📤",
         "Owner":          "👤",
         "Intelligence":   "🧠",
+        "Manual Mode":    "🔧",
     }
 
     def __init__(self, master, **kwargs):
@@ -960,7 +990,7 @@ class CustomTabBar(ctk.CTkFrame):
             hover_color=BG3,
             text_color=DIM,
             corner_radius=0,
-            width=max(80, len(name) * 8 + 30),  # min 80px so short names stay readable
+            width=max(70, len(name) * 7 + 24),  # compact tabs — fit more in bar
             height=38,
             anchor="center",
             command=lambda n=name: self.set(n),
@@ -1050,15 +1080,25 @@ class CustomTabBar(ctk.CTkFrame):
         """Scroll tab bar left (-1) or right (+1). 0 = refresh in place."""
         bar_width = self._bar.winfo_width()
         if bar_width <= 1:
-            visible_count = 5  # fallback during init before widget is drawn
+            visible_count = len(self._all_tab_cells)  # show all during init
         else:
-            visible_count = max(1, bar_width // self._min_tab_width)
+            # Calculate visible count using actual tab widths, not minimum
+            total_w = 0
+            visible_count = 0
+            for cell in self._all_tab_cells:
+                tw = cell.winfo_reqwidth() or self._min_tab_width
+                if total_w + tw <= bar_width:
+                    visible_count += 1
+                    total_w += tw
+                else:
+                    break
+            visible_count = max(1, visible_count)
         max_offset = max(0, len(self._all_tab_cells) - visible_count)
         self._tab_scroll_offset = max(0, min(
             self._tab_scroll_offset + direction, max_offset))
-        # Re-grid: show tabs in the visible window, hide the rest
+        # Re-grid: show all tabs — let the bar clip naturally rather than hiding
         for i, cell in enumerate(self._all_tab_cells):
-            if self._tab_scroll_offset <= i < self._tab_scroll_offset + visible_count + 3:
+            if self._tab_scroll_offset <= i < self._tab_scroll_offset + visible_count:
                 cell.grid(row=0, column=i - self._tab_scroll_offset, sticky="ns", padx=0)
             else:
                 cell.grid_remove()
@@ -1238,45 +1278,62 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
     def _do_stop_and_close(self):
         """Graceful close: save task queue, unload models, kill agents, exit.
 
-        1. Requeue RUNNING tasks to PENDING (resume on next startup)
-        2. Mark all agents OFFLINE
-        3. Unload Ollama models (free VRAM)
-        4. Kill fleet processes
+        Runs blocking work on a background thread to keep the UI responsive.
         """
-        self._log_output("Shutting down fleet...")
         self._shutdown_gui()
 
-        # 1. Save task queue — requeue RUNNING tasks so they resume on next boot
-        try:
-            self._log_output("  Saving task queue...")
-            _graceful_save_tasks()
-        except Exception:
-            pass
+        # Show a shutdown overlay so the window stays responsive
+        self._shutdown_overlay = ctk.CTkFrame(self, fg_color="#1a1a1a")
+        self._shutdown_overlay.place(relx=0, rely=0, relwidth=1, relheight=1)
+        ctk.CTkLabel(self._shutdown_overlay, text="Shutting down fleet...",
+                     font=FONT_TITLE, text_color=GOLD).place(relx=0.5, rely=0.4, anchor="center")
+        self._shutdown_status = ctk.CTkLabel(
+            self._shutdown_overlay, text="Saving tasks...",
+            font=FONT_SM, text_color=DIM)
+        self._shutdown_status.place(relx=0.5, rely=0.48, anchor="center")
+        self.update_idletasks()
 
-        # 2. Unload all models to free VRAM
-        try:
-            self._log_output("  Unloading models...")
-            _unload_all_ollama_models()
-        except Exception:
-            pass
+        def _bg_shutdown():
+            # 1. Save task queue
+            try:
+                self._safe_after(0, lambda: self._shutdown_status.configure(text="Saving task queue..."))
+                _graceful_save_tasks()
+            except Exception:
+                pass
 
-        # 3. Kill fleet processes (supervisor, workers, dashboard, Dr. Ders)
-        try:
-            from ui.boot import _kill_fleet_processes
-            _kill_fleet_processes()
-        except Exception:
-            pass
+            # 2. Unload all models to free VRAM
+            try:
+                self._safe_after(0, lambda: self._shutdown_status.configure(text="Unloading models..."))
+                _unload_all_ollama_models()
+            except Exception:
+                pass
 
-        # 4. Final zombie sweep — confirm no fleet processes left behind
-        try:
-            time.sleep(1)
-            zombies = _zombie_sweep()
-            if zombies:
-                self._log_output(f"  Cleaned {len(zombies)} zombie(s): {', '.join(zombies)}")
-        except Exception:
-            pass
+            # 3. Kill fleet processes
+            try:
+                self._safe_after(0, lambda: self._shutdown_status.configure(text="Stopping fleet processes..."))
+                from ui.boot import _kill_fleet_processes
+                _kill_fleet_processes()
+            except Exception:
+                pass
 
-        self.destroy()
+            # 4. Brief pause + zombie sweep
+            try:
+                time.sleep(0.5)
+                _zombie_sweep()
+            except Exception:
+                pass
+
+            # Destroy on main thread
+            self._safe_after(0, self.destroy)
+
+        t = threading.Thread(target=_bg_shutdown, daemon=True)
+        t.start()
+
+        # Safety net: if background thread hangs, force-close after 8 seconds
+        def _force_close():
+            if self.winfo_exists():
+                self.destroy()
+        self.after(8000, _force_close)
 
     def _do_just_close(self):
         """Quick close: keep fleet running in background."""
@@ -1424,13 +1481,15 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
                 pass
 
     def _load_banner(self):
-        png = HERE / "brick_banner.png"
-        if png.exists():
-            try:
-                img = Image.open(png)
-                return ctk.CTkImage(light_image=img, dark_image=img, size=(60, 80))
-            except Exception:
-                pass
+        """Load app icon for header display. Tries icon_1024.png first, falls back to brick.ico."""
+        for name in ["icon_1024.png", "brick.ico"]:
+            path = HERE / name
+            if path.exists():
+                try:
+                    img = Image.open(path)
+                    return ctk.CTkImage(light_image=img, dark_image=img, size=(42, 42))
+                except Exception:
+                    continue
         return None
 
     # ── Build UI ──────────────────────────────────────────────────────────────
@@ -1458,11 +1517,11 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
             ctk.CTkLabel(hdr, image=banner, text="").grid(
                 row=0, column=0, padx=(10, 2), pady=6)
         else:
-            ctk.CTkLabel(hdr, text="🧱", font=("RuneScape Plain 12", 22)).grid(
+            ctk.CTkLabel(hdr, text="B", font=FONT_TITLE, text_color=GOLD).grid(
                 row=0, column=0, padx=(10, 2), pady=6)
 
         self._sidebar_btn = ctk.CTkButton(
-            hdr, text="≡", font=("RuneScape Bold 12", 28), width=40, height=40,
+            hdr, text="≡", font=FONT_TITLE, width=40, height=40,
             fg_color="transparent", hover_color=BG2, text_color=TEXT,
             corner_radius=4, command=self._toggle_sidebar
         )
@@ -1472,7 +1531,7 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
         title_frame = ctk.CTkFrame(hdr, fg_color="transparent")
         title_frame.grid(row=0, column=2, padx=(0, 8), pady=6, sticky="w")
         ctk.CTkLabel(title_frame, text="BigEd CC",
-                     font=("RuneScape Bold 12", 26, "bold"), text_color=BRAND).pack(side="left")
+                     font=FONT_TITLE, text_color=BRAND).pack(side="left")
         ctk.CTkLabel(title_frame, text=f"  {_get_version()}",
                      font=FONT_XS, text_color=DIM).pack(side="left", pady=(6, 0))
 
@@ -1619,7 +1678,7 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
             value=self._get_complex_provider() == "claude")
         self._claude_research_cb  = ctk.CTkCheckBox(
             sb,
-            text="Claude research decisions",
+            text="Claude research",
             variable=self._claude_research_var,
             font=FONT_SM,
             text_color=TEXT,
@@ -1693,6 +1752,8 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
                 tip="Launch the compiled Big Edge Compute Command from dist/")
             btn(s, "🔨 Rebuild All",       self._rebuild_all,        "#2a1a10", "#3a2a18",
                 tip="Recompile the app via PyInstaller (build.bat)")
+            btn(s, "💾 USB Media Creator", self._launch_usb_media,   "#1a1a2a", "#2a2a3a",
+                tip="Create a portable USB installer for offline deployment")
 
         # ── LOGS ──────────────────────────────────────────────────────────────
         s = section("LOGS")
@@ -1753,8 +1814,10 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
         try:
             from modules import load_modules, _load_manifest
             self._modules = load_modules(self, tab_cfg)
-        except ImportError:
-            pass  # Module system not available
+        except Exception as _mod_err:
+            import sys
+            print(f"[WARN] Module system failed to load: {_mod_err}", file=sys.stderr)
+            import traceback; traceback.print_exc(file=sys.stderr)
 
         for name, mod in self._modules.items():
             try:
@@ -1775,6 +1838,9 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
                 print(f"[WARN] Module '{name}' failed to register tab: {e}", file=sys.stderr)
 
         tabs.set("Command Center")
+
+        # Recalculate scroll after window renders and bar has real width
+        self._safe_after(200, lambda: tabs._scroll_tabs(0))
 
     def _make_module_builder(self, mod, label, deprecated, meta):
         """Return a callable that builds a module tab on first view."""
@@ -2598,6 +2664,7 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
             values=["Local (Ollama)", "Claude Code (OAuth)", "Gemini (OAuth)"],
             font=FONT_SM, width=160, height=26,
             fg_color=BG3,
+            command=self._on_manual_model_change,
         ).pack(side="right", padx=8, pady=5)
 
         # Chat display
@@ -2616,7 +2683,7 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
             input_row, font=FONT, fg_color=BG2,
             placeholder_text="Type a message or select an agent request above...")
         self._manual_chat_entry.grid(row=0, column=0, sticky="ew", padx=(0, 4))
-        self._manual_chat_entry.bind("<Return>", lambda e: self._send_manual_chat())
+        self._manual_chat_entry.bind("<Return>", self._on_chat_enter)
 
         ctk.CTkButton(
             input_row, text="Send", width=70, height=30, font=FONT_SM,
@@ -2665,6 +2732,49 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
 
     # ── Manual Chat helpers ──────────────────────────────────────────────
 
+    def _on_manual_model_change(self, choice):
+        """Show guidance when user switches to an OAuth model."""
+        if "OAuth" not in choice:
+            return
+        if "Claude" in choice:
+            guidance = (
+                "━━━ Claude Code (OAuth) ━━━\n"
+                "How it works:\n"
+                "  1. Type your task in the chat box and press Send\n"
+                "  2. BigEd writes a task-briefing.md with your request + fleet context\n"
+                "  3. VS Code opens to the project directory\n"
+                "  4. Claude Code starts automatically with your task pre-loaded\n\n"
+                "Terms of Service:\n"
+                "  • Uses Anthropic's Claude API via OAuth — your prompt is sent to Anthropic\n"
+                "  • Subject to Anthropic's Terms of Service and Usage Policy\n"
+                "  • Do not include PHI, credentials, or secrets in your prompt\n\n"
+                "Type your task below and press Send to begin.\n"
+            )
+        else:
+            guidance = (
+                "━━━ Gemini (OAuth) ━━━\n"
+                "How it works:\n"
+                "  1. Type your task in the chat box and press Send\n"
+                "  2. BigEd writes a task-briefing.md with your request + fleet context\n"
+                "  3. Google AI Studio opens in your browser\n\n"
+                "Terms of Service:\n"
+                "  • Uses Google's Gemini API — your prompt is sent to Google\n"
+                "  • Subject to Google's Terms of Service and AI Principles\n"
+                "  • Do not include PHI, credentials, or secrets in your prompt\n\n"
+                "Type your task below and press Send to begin.\n"
+            )
+        self._manual_chat_display.configure(state="normal")
+        self._manual_chat_display.insert("end", f"\nSystem:\n{guidance}\n")
+        self._manual_chat_display.configure(state="disabled")
+        self._manual_chat_display.see("end")
+
+    def _on_chat_enter(self, event):
+        """Enter sends chat; Shift+Enter does nothing (single-line entry)."""
+        if event.state & 0x1:  # Shift held
+            return  # ignore — single-line entry, no newline needed
+        self._send_manual_chat()
+        return "break"
+
     def _send_manual_chat(self):
         """Send a message from the Manual Chat input."""
         text = self._manual_chat_entry.get().strip()
@@ -2699,6 +2809,21 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
             self._safe_after(500, self._refresh_comm)
 
         if "OAuth" in model:
+            # If HITL is active, do NOT auto-close the HITL loop yet —
+            # the operator will send the final response after reviewing OAuth output.
+            # Restore the HITL context so it stays armed.
+            if hitl_id is not None:
+                self._active_hitl_task_id = hitl_id
+                self._active_hitl_agent = hitl_agent
+                self._manual_chat_display.configure(state="normal")
+                self._manual_chat_display.delete("end-3l", "end")  # remove premature close msg
+                self._manual_chat_display.insert(
+                    "end",
+                    f"\n─── Launching OAuth for analysis — HITL #{hitl_id} still active ───\n"
+                    f"Send your final response after reviewing the OAuth output.\n"
+                )
+                self._manual_chat_display.configure(state="disabled")
+                self._manual_chat_display.see("end")
             self._launch_oauth_session(model, text)
         else:
             threading.Thread(target=self._local_chat, args=(text,), daemon=True).start()
@@ -2825,6 +2950,20 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
 
         ditl_line = f"- DITL: {'enabled' if ditl_enabled else 'disabled'}"
 
+        # DITL compliance: filter PHI from context sent to external OAuth providers
+        if ditl_enabled:
+            try:
+                if str(FLEET_DIR) not in sys.path:
+                    sys.path.insert(0, str(FLEET_DIR))
+                from phi_deidentify import deidentify_text
+                context = deidentify_text(context)
+            except Exception:
+                pass  # PHI filter not available — proceed with raw context
+
+        # Check for MCP availability
+        mcp_available = (FLEET_DIR.parent / ".mcp.json").exists()
+        mcp_line = "- MCP: available (.mcp.json configured)" if mcp_available else "- MCP: not configured"
+
         content = (
             f"# Manual Chat Session Briefing\n"
             f"Generated: {ts} by BigEd CC\n\n"
@@ -2833,7 +2972,13 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
             f"- Fleet: {fleet_status}\n"
             f"- Model: {selected_model}\n"
             f"{ditl_line}\n"
+            f"{mcp_line}\n"
             f"{recent}\n"
+            f"## Efficiency Notes\n"
+            f"- Use `cache_control: {{type: \"ephemeral\"}}` on stable prompt prefixes\n"
+            f"- Use MCP tools for fleet DB access, file operations, and knowledge queries\n"
+            f"- Batch related operations to reduce round-trips\n"
+            f"- Read CLAUDE.md for project conventions before making changes\n\n"
             f"## Suggested Approach\n"
             f"Review the request above and use the fleet knowledge base for context.\n"
         )
@@ -2893,7 +3038,6 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
             import shutil
             code_exe = shutil.which("code")
             if not code_exe and sys.platform == "win32":
-                # Common Windows VS Code paths
                 for p in [
                     Path(os.environ.get("LOCALAPPDATA", "")) / "Programs" / "Microsoft VS Code" / "Code.exe",
                     Path(os.environ.get("PROGRAMFILES", "")) / "Microsoft VS Code" / "Code.exe",
@@ -2903,39 +3047,52 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
                         code_exe = str(p)
                         break
             if not code_exe and sys.platform == "darwin":
-                # Common macOS VS Code paths
-                mac_paths = [
+                for p in [
                     Path("/Applications/Visual Studio Code.app/Contents/Resources/app/bin/code"),
                     Path.home() / "Applications" / "Visual Studio Code.app" / "Contents" / "Resources" / "app" / "bin" / "code",
-                ]
-                for p in mac_paths:
+                ]:
                     if p.exists():
                         code_exe = str(p)
                         break
             if not code_exe and sys.platform == "linux":
-                # Common Linux VS Code paths
-                linux_paths = [
+                for p in [
                     Path("/usr/bin/code"),
                     Path("/usr/share/code/bin/code"),
                     Path("/snap/bin/code"),
                     Path.home() / ".local" / "bin" / "code",
-                ]
-                for p in linux_paths:
+                ]:
                     if p.exists():
                         code_exe = str(p)
                         break
             if code_exe:
                 try:
+                    # Open VS Code to project dir + auto-open the briefing file
                     subprocess.Popen(
-                        [code_exe, str(FLEET_DIR.parent)],
+                        [code_exe, str(FLEET_DIR.parent),
+                         "--goto", str(briefing)],
                         creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
-                    self._append_chat_response(
-                        "VS Code opened with context.\n"
-                        "Start a Claude Code session (Ctrl+Shift+P → Claude) to continue.")
+                    # Try to launch Claude Code CLI with the task pre-loaded
+                    claude_exe = shutil.which("claude")
+                    if claude_exe:
+                        # Launch Claude Code with the task context auto-fed via --print
+                        escaped = context.replace('"', '\\"')
+                        subprocess.Popen(
+                            [claude_exe, "--print",
+                             f"Read fleet/task-briefing.md and execute the task described in it. "
+                             f"User request: {escaped}"],
+                            cwd=str(FLEET_DIR.parent),
+                            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+                        self._append_chat_response(
+                            "VS Code opened with task-briefing.md.\n"
+                            "Claude Code session started with your task pre-loaded.")
+                    else:
+                        self._append_chat_response(
+                            "VS Code opened with task-briefing.md.\n"
+                            "Start Claude Code: Ctrl+Shift+P → 'Claude: Open'\n"
+                            "Claude will see your task in task-briefing.md automatically.")
                 except Exception as e:
                     self._append_chat_response(f"Could not open VS Code: {e}")
             else:
-                # VS Code not installed — offer alternative
                 import webbrowser
                 webbrowser.open("https://vscode.dev")
                 self._append_chat_response(
@@ -4908,6 +5065,7 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
         self._log_output(f"→ {text}")
 
         def _bg():
+            r = None
             try:
                 import shutil
                 uv = shutil.which("uv")
@@ -4929,7 +5087,7 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
                 self._task_status.configure(text="✓ done", text_color=GREEN)
                 self._safe_after(3000, lambda: self._task_status.configure(text=""))
                 # Toast notification for task completion
-                if r.returncode == 0:
+                if r and r.returncode == 0:
                     self._show_toast(f"✓ Task done: {text[:40]}", GREEN)
                 else:
                     self._show_toast(f"✗ Task failed: {text[:40]}", RED, duration=8000)
@@ -5074,10 +5232,10 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
         self._update_banner.grid(row=0, column=0, columnspan=2, sticky="ew")
         self._update_banner.grid_propagate(False)
         ctk.CTkLabel(self._update_banner, text=f"Update available ({msg})",
-                     font=("RuneScape Plain 11", 10), text_color="#c8e6c9"
+                     font=FONT_SM, text_color="#c8e6c9"
                      ).pack(side="left", padx=12)
         ctk.CTkButton(self._update_banner, text="Update Now", width=90, height=24,
-                      font=("RuneScape Bold 12", 10, "bold"), fg_color="#2e7d32",
+                      font=FONT_BOLD, fg_color="#2e7d32",
                       hover_color="#388e3c", command=lambda: threading.Thread(
                           target=self._apply_update, daemon=True).start()
                       ).pack(side="right", padx=12, pady=4)
@@ -5158,6 +5316,30 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
             ["cmd", "/c", "start", "cmd", "/k", str(build_bat)],
             cwd=str(build_bat.parent),
         )
+
+    def _launch_usb_media(self):
+        """Launch the USB Media Creator tool."""
+        # Check for compiled .exe first (frozen context)
+        if getattr(sys, "frozen", False):
+            exe = Path(sys.executable).parent / "USBMedia.exe"
+            if exe.exists():
+                subprocess.Popen(
+                    [str(exe)],
+                    creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0),
+                )
+                self._log_output("Launched USB Media Creator (USBMedia.exe)")
+                return
+        # Fall back to running the Python script directly
+        script = HERE / "create_usb_media.py"
+        if script.exists():
+            subprocess.Popen(
+                [sys.executable, str(script)],
+                cwd=str(HERE),
+                creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0),
+            )
+            self._log_output("Launched USB Media Creator")
+        else:
+            self._log_output("USB Media Creator not found (create_usb_media.py)")
 
 
 # ─── Settings / Config dialogs (extracted to ui/settings.py — TECH_DEBT 4.1) ─

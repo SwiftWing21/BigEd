@@ -945,6 +945,32 @@ def main():
     # Start Dr. Ders (hw_supervisor) — respawned if it crashes
     start_hw_supervisor(config)
 
+    # Federation: announce rejoin to peers on startup (crash recovery)
+    try:
+        federation_cfg = config.get("federation", {})
+        if federation_cfg.get("enabled") and not offline:
+            device_name = config.get("naming", {}).get("device_name", "unknown")
+            peers = federation_cfg.get("peers", [])
+            for peer_url in peers:
+                try:
+                    rejoin_data = json.dumps({
+                        "fleet_id": device_name,
+                        "agents": len(ROLES),
+                        "pending": _count_pending_tasks(),
+                        "event": "rejoin",
+                        "timestamp": time.time(),
+                    }).encode()
+                    req = urllib.request.Request(
+                        f"{peer_url}/api/federation/heartbeat",
+                        data=rejoin_data, method="POST",
+                        headers={"Content-Type": "application/json"})
+                    urllib.request.urlopen(req, timeout=5)
+                    log.info(f"Federation: rejoined peer {peer_url}")
+                except Exception:
+                    log.debug(f"Federation: peer {peer_url} unreachable (will retry in heartbeat loop)")
+    except Exception:
+        pass
+
     # NOTE: Conductor model warmup + ongoing keepalive handled by Dr. Ders.
     # Dr. Ders checks conductor every ~60s and keepalive every ~240s.
 

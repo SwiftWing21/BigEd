@@ -46,7 +46,7 @@ from ui.settings.hardware import HardwarePanelMixin
 from ui.settings.keys import KeysPanelMixin
 from ui.settings.review import ReviewPanelMixin
 from ui.settings.operations import OperationsPanelMixin
-from ui.settings.mcp import McpPanelMixin
+from ui.settings.mcp import McpPanelMixin, MCPWizardDialog
 from ui.settings.names import AgentNamesDialog
 from ui.settings.keys import KeyManagerDialog
 
@@ -169,6 +169,68 @@ class SettingsDialog(
                      corner_radius=1).pack(side="left", padx=(0, 8))
         ctk.CTkLabel(frame, text=text.upper(), font=FONT_BOLD,
                      text_color=GOLD).pack(side="left")
+
+    def _update_toml_value(self, section: str, key: str, value):
+        """Update a single value in fleet.toml [section].key."""
+        L = _launcher()
+        import tomllib
+        try:
+            with open(L.FLEET_TOML, "rb") as f:
+                data = tomllib.load(f)
+        except Exception:
+            data = {}
+        data.setdefault(section, {})[key] = value
+        # Write back — tomllib is read-only, use manual serialization
+        lines = []
+        try:
+            lines = L.FLEET_TOML.read_text(encoding="utf-8").splitlines()
+        except Exception:
+            pass
+        # Simple approach: find [section] and key, or append
+        in_section = False
+        found = False
+        for i, line in enumerate(lines):
+            stripped = line.strip()
+            if stripped == f"[{section}]":
+                in_section = True
+                continue
+            if in_section and stripped.startswith("["):
+                # Left the section without finding key — insert before next section
+                if isinstance(value, bool):
+                    val_str = "true" if value else "false"
+                elif isinstance(value, str):
+                    val_str = f'"{value}"'
+                else:
+                    val_str = str(value)
+                lines.insert(i, f"{key} = {val_str}")
+                found = True
+                break
+            if in_section and stripped.startswith(f"{key} "):
+                if isinstance(value, bool):
+                    val_str = "true" if value else "false"
+                elif isinstance(value, str):
+                    val_str = f'"{value}"'
+                else:
+                    val_str = str(value)
+                # Preserve inline comment if any
+                comment = ""
+                if "#" in line:
+                    comment = "  " + line[line.index("#"):]
+                lines[i] = f"{key} = {val_str}{comment}"
+                found = True
+                break
+        if not found:
+            # Append section + key if section doesn't exist
+            if not any(l.strip() == f"[{section}]" for l in lines):
+                lines.append(f"\n[{section}]")
+            if isinstance(value, bool):
+                val_str = "true" if value else "false"
+            elif isinstance(value, str):
+                val_str = f'"{value}"'
+            else:
+                val_str = str(value)
+            lines.append(f"{key} = {val_str}")
+        L.FLEET_TOML.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
     def _section_header_grid(self, parent, text: str, row: int):
         frame = ctk.CTkFrame(parent, fg_color="transparent")

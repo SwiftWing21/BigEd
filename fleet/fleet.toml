@@ -171,6 +171,7 @@ ingestion = true        # file/folder import to RAG
 outputs = true          # knowledge browser
 owner_core = false      # bolt-on: owner dashboard — enable via walkthrough
 intelligence = true     # system transparency, model controls, prompt queue, evaluation
+manual_mode = true      # operator-driven compliance audit with prompt queue
 
 [launcher.profiles.minimal]
 modules = ["ingestion", "outputs"]

@@ -89,6 +89,16 @@ BigEd/launcher/data/
 CLAUDE.USER.md
 .mcp.json
 
+# ── Fleet — runtime files (regenerated every run) ────────────────────────────
+fleet/.drders_heartbeat
+fleet/.supervisor_heartbeat
+fleet/audit-results.md
+fleet/task-briefing.md
+fleet/knowledge/screenshots/
+
+# ── Launcher — runtime data (boot timing, caches) ────────────────────────────
+BigEd/launcher/ui/data/
+
 # ── Docker (local dev orchestration) ─────────────────────────────────────────
 docker-compose.yml
 

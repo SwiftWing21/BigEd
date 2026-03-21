@@ -562,7 +562,17 @@ class Module:
         try:
             if sys.platform == "win32":
                 os.startfile(md_path)  # type: ignore[attr-defined]
+            elif sys.platform == "darwin":
+                subprocess.Popen(["open", md_path])
             else:
                 subprocess.Popen(["xdg-open", md_path])
         except Exception as exc:
             self._set_status(f"Could not open MD: {exc}", color=RED)
+
+    def on_refresh(self) -> None:
+        """Refresh module state (required by module interface)."""
+        pass
+
+    def on_close(self) -> None:
+        """Cleanup on module close (required by module interface)."""
+        self._running = False
