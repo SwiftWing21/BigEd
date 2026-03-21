@@ -775,6 +775,19 @@ def main():
     gpu_config = detect_gpu_config()
     log.info(f"GPU config: {gpu_config['gpu_count']} GPU(s), {gpu_config['total_vram_gb']}GB total, mode={gpu_config['memory_mode']}")
 
+    # Classify deployment tier for adaptive behavior
+    try:
+        _profiler_path = str(Path(__file__).parent)
+        if _profiler_path not in sys.path:
+            sys.path.insert(0, _profiler_path)
+        from skills.hardware_profiler import _get_hardware, _classify
+        _hw_full = _get_hardware()
+        deployment_tier = _classify(_hw_full)
+        gpu_config["deployment_tier"] = deployment_tier
+        log.info(f"Deployment tier: {deployment_tier}")
+    except Exception:
+        gpu_config["deployment_tier"] = "unknown"
+
     # ── Dr. Ders model promotion ──────────────────────────────────────────
     # Boot fast on smallest model, then promote to best available CPU-bound
     # model for better monitoring quality. Smallest stays as crash failsafe.

@@ -308,7 +308,7 @@ SKILL_COMPLEXITY = {
         "security_audit", "analyze_results", "fma_review", "code_quality",
         "code_refactor", "curriculum_update", "dataset_synthesize",
         "skill_train", "research_loop", "regression_detector",
-        "token_optimizer", "memory_optimizer", "model_recommend",
+        "token_optimizer", "memory_optimizer", "model_recommend", "hardware_profiler",
         "git_manager", "github_interact", "github_sync", "branch_manager",
         "db_encrypt", "db_migrate", "key_manager", "skill_test",
         "skill_draft", "deploy_skill", "evaluate", "generate_asset",

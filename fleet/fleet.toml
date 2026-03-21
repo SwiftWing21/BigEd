@@ -204,7 +204,7 @@ analyst = ["analyze_results", "benchmark", "synthesize", "evaluate", "billing_oc
 # Their skills are covered by researcher (lead_research), coder (code_write, discuss),
 # security (legal_draft → removed), and analyst (account_review → evaluate).
 security = ["security_audit", "pen_test", "security_review", "security_apply", "secret_rotate", "db_encrypt", "db_migrate", "key_manager"]
-planner = ["plan_workload", "curriculum_update", "evolution_coordinator", "model_manager", "model_recommend", "oom_prevent", "memory_optimizer", "swarm_consensus"]
+planner = ["plan_workload", "curriculum_update", "evolution_coordinator", "model_manager", "model_recommend", "oom_prevent", "memory_optimizer", "swarm_consensus", "hardware_profiler"]
 
 [integrations]
 unifi_enabled = false            # UniFi controller API integration
