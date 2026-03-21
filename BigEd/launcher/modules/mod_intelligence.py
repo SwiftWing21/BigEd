@@ -140,6 +140,11 @@ class Module:
             ("Tier Critical", tiers.get("critical", "qwen3:0.6b")),
         ]
 
+        # MiniMax model (shown only when configured)
+        minimax_model = models.get("minimax_model", "")
+        if minimax_model:
+            fields.append(("MiniMax Model", minimax_model))
+
         for i, (label, value) in enumerate(fields):
             ctk.CTkLabel(settings_grid, text=label, font=FONT_SM, text_color=DIM,
                          anchor="w").grid(row=i, column=0, padx=(0, 12), pady=2, sticky="w")

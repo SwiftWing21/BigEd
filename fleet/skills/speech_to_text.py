@@ -7,6 +7,7 @@ Falls back to cloud STT APIs if configured and local unavailable.
 Actions:
   transcribe    — transcribe an audio file
   listen        — capture from microphone and transcribe
+  wake_listen   — listen for wake word, then capture command
   check         — verify STT availability (local vs cloud)
 
 Privacy: audio never stored beyond transcription. Local-first by default.
@@ -33,6 +34,8 @@ def run(payload: dict, config: dict, log) -> dict:
         return _transcribe(payload, config, log)
     elif action == "listen":
         return _listen(payload, config, log)
+    elif action == "wake_listen":
+        return _wake_word_listen(payload, config, log)
     else:
         return {"error": f"Unknown action: {action}"}
 
@@ -164,3 +167,36 @@ def _listen(payload, config, log) -> dict:
         return {"error": "Microphone capture requires: pip install sounddevice numpy"}
     except Exception as e:
         return {"error": f"Microphone capture failed: {e}"}
+
+
+def _wake_word_listen(payload, config, log) -> dict:
+    """Listen for wake word, then capture and transcribe."""
+    wake_word = config.get("assistant", {}).get("wake_word", "hey biged")
+    if not wake_word:
+        return {"error": "No wake word configured in fleet.toml [assistant] wake_word"}
+
+    duration = payload.get("listen_secs", 3)
+    max_attempts = payload.get("max_attempts", 10)
+
+    log.info(f"Listening for wake word: '{wake_word}' ({max_attempts} attempts)")
+
+    for attempt in range(max_attempts):
+        result = _listen({"duration_secs": duration}, config, log)
+        if "text" in result and result["text"]:
+            text_lower = result["text"].lower().strip()
+            if wake_word.lower() in text_lower:
+                # Wake word detected — capture the command after it
+                command = text_lower.split(wake_word.lower(), 1)[-1].strip()
+                if not command:
+                    # Wake word alone — listen again for the command
+                    log.info("Wake word detected — listening for command...")
+                    cmd_result = _listen({"duration_secs": 5}, config, log)
+                    command = cmd_result.get("text", "")
+                return {
+                    "wake_detected": True,
+                    "command": command,
+                    "attempt": attempt + 1,
+                    "wake_word": wake_word,
+                }
+
+    return {"wake_detected": False, "attempts": max_attempts}

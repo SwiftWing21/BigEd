@@ -6,6 +6,7 @@ by config['models']['complex_provider'] in fleet.toml.
 Providers:
   claude  — Anthropic API (ANTHROPIC_API_KEY)
   gemini  — Google Gemini API (GEMINI_API_KEY)
+  minimax — MiniMax API (MINIMAX_API_KEY)
   local   — Ollama local model (same as config['models']['local'])
 
 Note: Provider-specific imports (anthropic, etc.) are deferred to function

@@ -267,6 +267,23 @@ def _alert_monitor():
                     except Exception:
                         pass
 
+            # Check for anomalous API spend (cost spike > 3x average)
+            try:
+                today_rows = query("SELECT COALESCE(SUM(cost_usd), 0) as cost FROM usage WHERE created_at >= datetime('now', '-1 day')")
+                today_cost = today_rows[0]["cost"] if today_rows else 0
+                avg_rows = query("""
+                    SELECT COALESCE(AVG(daily_cost), 0) as avg FROM (
+                        SELECT DATE(created_at) as d, SUM(cost_usd) as daily_cost
+                        FROM usage WHERE created_at >= datetime('now', '-7 days')
+                        GROUP BY d
+                    )""")
+                avg_cost = avg_rows[0]["avg"] if avg_rows else 0
+                if avg_cost > 0.01 and today_cost > avg_cost * 3:
+                    _add_alert("warning",
+                        f"Unusual API spend: ${today_cost:.2f} today (3x avg ${avg_cost:.2f})", "cost")
+            except Exception:
+                pass
+
             # Check for high-scoring skill drafts pending review
             try:
                 drafts = query("""

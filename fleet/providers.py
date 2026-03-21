@@ -602,6 +602,13 @@ def _call_local(system: str, user: str, models: dict, max_tokens: int,
         model = get_local_model_for_skill(skill_name, config)
     else:
         model = models.get("complex", models.get("local", "qwen3:8b"))
+    # Inject BigEd personality if configured
+    try:
+        personality = config.get("assistant", {}).get("personality", "") if config else ""
+        if personality and not system.startswith("[Personality"):
+            system = f"[Personality: {personality}]\n\n{system}"
+    except Exception:
+        pass
     prompt = f"{system}\n\n{user}"
     body = json.dumps({
         "model": model,

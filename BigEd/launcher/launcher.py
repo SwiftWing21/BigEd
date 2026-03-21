@@ -2811,6 +2811,30 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
         )
         briefing.write_text(content, encoding="utf-8")
 
+        # Write audit-results.md with recent fleet findings
+        try:
+            audit_results_path = FLEET_DIR / "audit-results.md"
+            import sqlite3 as _sq
+            _conn = _sq.connect(str(FLEET_DIR / "fleet.db"), timeout=5)
+            _conn.row_factory = _sq.Row
+            try:
+                recent = _conn.execute(
+                    "SELECT type, status, result_json, created_at, assigned_to FROM tasks "
+                    "WHERE status IN ('DONE','FAILED') AND created_at >= datetime('now', '-24 hours') "
+                    "ORDER BY created_at DESC LIMIT 20"
+                ).fetchall()
+                audit_md = f"# Audit Results\nGenerated: {ts} by BigEd CC API audit system\n\n"
+                for r in recent:
+                    preview = (r["result_json"] or "")[:300]
+                    audit_md += f"### {r['type']} ({r['status']})\n"
+                    audit_md += f"Agent: {r['assigned_to'] or '?'} | {r['created_at']}\n"
+                    audit_md += f"```\n{preview}\n```\n\n"
+                audit_results_path.write_text(audit_md, encoding="utf-8")
+            finally:
+                _conn.close()
+        except Exception:
+            pass
+
         # ── Write .claude/rules/compliance.md if DITL mode enabled ───────
         if ditl_enabled:
             compliance_rule.parent.mkdir(parents=True, exist_ok=True)
@@ -2974,6 +2998,13 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
             tab_text = "\U0001f4ac  Fleet Comm" + (f" ({n})" if n > 0 else "")
             if hasattr(self, '_tabs') and "Fleet Comm" in self._tabs._tab_buttons:
                 self._tabs._tab_buttons["Fleet Comm"].configure(text=tab_text)
+
+            # Notify via toast if new HITL requests appeared
+            n_waiting = n
+            if n_waiting > getattr(self, '_prev_hitl_count', 0):
+                new_count = n_waiting - getattr(self, '_prev_hitl_count', 0)
+                self._show_toast(f"{new_count} new agent request(s)", ORANGE, duration=5000)
+            self._prev_hitl_count = n_waiting
 
             if not total:
                 self._update_comm_request_view()

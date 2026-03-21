@@ -781,7 +781,7 @@ Completed 2026-03-20. MiniMax M2.5 integrated as 4th provider in HA fallback cha
 - [x] Audio never stored beyond transcription (privacy-first) — documented in speech_to_text.py docstring (speech_to_text.py:12)
 - [ ] Enterprise: configurable STT provider whitelist
 
-### 0.052.00b — Claude Manual Mode Integration (Enterprise) [PLANNED]
+### 0.052.00b — Claude Manual Mode Integration (Enterprise) [PARTIAL]
 
 **Goal:** ToS-compliant hybrid system — unattended API automation (Lane 2) + human-guided Claude Code sessions (Lane 1). No lane crossing. Spec: `docs/specs/claude-manual-mode-integration.md`
 
@@ -796,7 +796,7 @@ Completed 2026-03-20. MiniMax M2.5 integrated as 4th provider in HA fallback cha
 - [x] "Open in Claude Code" button in UI — Manual Chat writes task-briefing.md + launches VS Code (launcher.py:2741-2848)
 - [x] Auto-generate: task-briefing.md from context (rich: gathers recent agent activity, pending HITL, fleet status) — (launcher.py:2769-2775); audit-results.md from API audit output — `_write_audit_results_md()` (manual_mode.py:154-240)
 - [x] .claude/rules/compliance.md generation — dynamically generated when DITL mode enabled (launcher.py:2778-2801)
-- [ ] .claude/skills/ training-review workflow template
+- [x] .claude/skills/ training-review workflow template — `.claude/skills/training-review/SKILL.md` created with full review workflow
 - [x] Cross-platform VS Code launch (macOS/Windows/Linux) — `shutil.which("code")` + platform-specific path fallbacks for win32/darwin/linux (launcher.py:2806-2838); also `launch_vscode()` in manual_mode.py (manual_mode.py:392-415)
 
 **Phase 3: HITL governance + handoff**
@@ -1102,7 +1102,7 @@ Completed 2026-03-19. System Detection walkthrough step (hardware probing via ps
 
 Completed 2026-03-19. Dashboard auto-opens in default browser on boot complete (1.5s delay, threaded). Respects air-gap mode, `dashboard.enabled`, and new `dashboard.auto_open` fleet.toml toggle. Console persistence marked done (already working since v0.27.00 via JSONL). Audit tracker synced — UX deep-dive updated.
 
-### 0.060.00b — Doctor in the Loop (DITL) — HIPAA Compliance Framework [PLANNED]
+### 0.060.00b — Doctor in the Loop (DITL) — HIPAA Compliance Framework [PARTIAL]
 
 **Goal:** HIPAA-compliant mode for healthcare. Multi-turn agent response with clinical review. Local-first PHI.
 **Spec:** `docs/specs/DITL_compliance_spec.md`
@@ -1112,16 +1112,16 @@ Completed 2026-03-19. Dashboard auto-opens in default browser on boot complete (
 
 **Phase 1: Compliance Framework**
 - [x] fleet.toml [ditl] config (enabled, compliance_level, force_local_phi, retention) — `[ditl]` section with enabled, compliance_level, force_local_phi, data_retention_days, auto_purge, audit_all_phi_access, ai_disclaimer (fleet.toml:33-42)
-- [ ] DITL mode toggle in Settings (hipaa/soc2/none)
-- [ ] PHI audit table (who/when/what/action, AES-256, 6-year retention)
+- [x] DITL mode toggle in Settings (hipaa/soc2/none) — Compliance (DITL) section in general.py with compliance_level dropdown (none/soc2/hipaa), force_local_phi checkbox, disable-at-own-risk toggle + warning (general.py:224-265)
+- [x] PHI audit table (who/when/what/action, AES-256, 6-year retention) — CREATE TABLE phi_audit with user_id, action, data_scope, model_used, phi_detected, deidentified, created_at + index (db.py:236-247)
 - [x] AI disclaimer injection ("AI-generated, not clinical advice") — worker.py injects `[AI-Generated — Not Clinical Advice]` prefix when ditl.enabled + ditl.ai_disclaimer (worker.py:639-647)
 - [ ] Human review logging for every recommendation
 - [x] force_local_phi: PHI → Ollama only (no cloud without BAA) — `force_local_phi = true` in fleet.toml [ditl] (fleet.toml:36)
-- [ ] "Disable at own risk" dialog + warning banner + audit
+- [x] "Disable at own risk" dialog + warning banner + audit — checkbox in general.py DITL section with persistent warning text + writes `disable_at_own_risk` to fleet.toml (general.py:253-265, 440-448)
 
 **Phase 2: Data Handling**
 - [x] Safe Harbor de-identification (auto-strip 18 identifiers before cloud API) — `fleet/phi_deidentify.py` implements Safe Harbor engine (phi_deidentify.py)
-- [ ] Retention engine (auto-purge + secure deletion + destruction audit)
+- [x] Retention engine (auto-purge + secure deletion + destruction audit) — `purge_expired_phi()` in phi_deidentify.py with configurable retention_days (default 2555/~7yr), deletes expired phi_audit rows, returns purge count (phi_deidentify.py:64-85)
 - [ ] PHI-scoped FileSystemGuard zones
 - [x] BAA tracking per provider (fleet.toml [ditl.baa]) — `[ditl.baa]` section with per-provider flags: anthropic=false, google=false, local=true (fleet.toml:44-47)
 - [x] De-identification config (fleet.toml [ditl.deidentification]) — `[ditl.deidentification]` with auto_strip_before_api, method="safe_harbor" (fleet.toml:49-51)

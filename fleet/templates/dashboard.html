@@ -724,8 +724,8 @@ async function loadCostTracker() {
 
     // Provider breakdown
     details.textContent = '';
-    var providers = ['claude', 'gemini', 'local'];
-    var providerColors = {claude: '#c8a84b', gemini: '#4fc3f7', local: '#4caf50'};
+    var providers = ['claude', 'gemini', 'minimax', 'local'];
+    var providerColors = {claude: '#c8a84b', gemini: '#4fc3f7', minimax: '#a78bfa', local: '#4caf50'};
     var weekData = data.week || {};
     providers.forEach(function(p) {
       var pd = weekData[p];

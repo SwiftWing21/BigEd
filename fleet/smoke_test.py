@@ -282,8 +282,9 @@ def test_ha_fallback():
     """HA fallback chain builds correctly from config."""
     from skills._models import FALLBACK_CHAIN
     # Verify chain exists and has expected providers
-    assert len(FALLBACK_CHAIN) == 3, f"Expected 3 providers, got {len(FALLBACK_CHAIN)}"
+    assert len(FALLBACK_CHAIN) == 4, f"Expected 4 providers, got {len(FALLBACK_CHAIN)}"
     assert "claude" in FALLBACK_CHAIN
+    assert "minimax" in FALLBACK_CHAIN
     assert "local" in FALLBACK_CHAIN
     return True, f"chain: {' > '.join(FALLBACK_CHAIN)}"
 
