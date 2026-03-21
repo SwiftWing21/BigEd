@@ -2199,6 +2199,9 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
             n_waiting_human = 0
             agent_waiting = set()
             agent_iq_score = {}      # name -> avg intelligence_score (float or None)
+            agent_recent = {}        # name -> list of recent task dicts
+            agent_expertise = {}     # name -> list of top skill dicts
+            agent_tph = {}           # name -> tasks per hour (float)
             try:
                 from data_access import FleetDB
                 db_path = FLEET_DIR / "fleet.db"
@@ -2220,6 +2223,48 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
                         if row["assigned_to"]:
                             agent_iq_score[row["assigned_to"]] = round(row["avg_iq"], 2)
                     conn.close()
+                except Exception:
+                    pass
+                # Recent tasks + top skills per agent (for richer cards)
+                try:
+                    for aname in agent_names:
+                        if not aname:
+                            continue
+                        agent_recent[aname] = FleetDB.agent_recent_tasks(db_path, aname, limit=3)
+                        agent_expertise[aname] = FleetDB.agent_top_skills(db_path, aname, limit=3)
+                except Exception:
+                    pass
+                # Tasks per hour: count / hours since earliest task (24h window)
+                try:
+                    import sqlite3 as _sq2
+                    conn2 = _sq2.connect(str(db_path), timeout=2)
+                    conn2.row_factory = _sq2.Row
+                    for row in conn2.execute(
+                        "SELECT assigned_to, COUNT(*) as cnt, "
+                        "MIN(created_at) as first_at "
+                        "FROM tasks WHERE created_at > datetime('now', '-24 hours') "
+                        "GROUP BY assigned_to"
+                    ).fetchall():
+                        aname = row["assigned_to"]
+                        if not aname:
+                            continue
+                        cnt = row["cnt"]
+                        first_at = row["first_at"]
+                        if first_at and cnt > 0:
+                            try:
+                                from datetime import datetime as _dt, timezone as _tz
+                                first_dt = _dt.fromisoformat(
+                                    first_at.replace("Z", "+00:00"))
+                                if first_dt.tzinfo is None:
+                                    first_dt = first_dt.replace(tzinfo=_tz.utc)
+                                hours = (
+                                    _dt.now(_tz.utc) - first_dt
+                                ).total_seconds() / 3600.0
+                                if hours > 0.01:
+                                    agent_tph[aname] = round(cnt / hours, 1)
+                            except Exception:
+                                pass
+                    conn2.close()
                 except Exception:
                     pass
             except Exception as _enrich_err:
@@ -2274,15 +2319,12 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
                 role = ag.get("role", "?")
                 st = ag.get("status", "OFFLINE")
                 task = ag.get("task", "")
-                task_display = task if task and task != "—" else ""
                 active_names.add(name)
 
                 # Compute display values
                 display_name = themed_name(name)
                 if len(display_name) > 18:
                     display_name = display_name[:16] + "\u2026"
-                if task_display and len(task_display) > 40:
-                    task_display = task_display[:38] + "\u2026"
                 dot_color = GREEN if st in ("IDLE", "BUSY") else RED
                 if st == "BUSY":
                     status_text, status_color = "ACTIVE", GREEN
@@ -2299,7 +2341,7 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
                 model_text = default_model
                 tps = agent_tok_speed.get(name)
                 tps_text = f"{tps} tok/s" if tps is not None else "\u2014 tok/s"
-                last_result = agent_last_result.get(name, "")
+                last_result = self._humanize_result(agent_last_result.get(name, ""))
                 is_waiting = name in agent_waiting
                 iq = agent_iq_score.get(name)
                 if iq is not None:
@@ -2309,6 +2351,53 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
                     iq_text = "IQ: --"
                     iq_color = DIM
 
+                # Tasks per hour
+                tph = agent_tph.get(name)
+                tph_text = f"{tph}/hr" if tph is not None else ""
+
+                # Activity text: "Running: skill_name" when BUSY, "Idle" when IDLE
+                task_raw = task if task and task != "\u2014" else ""
+                if st == "BUSY" and task_raw:
+                    # Extract skill name (strip leading verbs like "Running ")
+                    skill_name = task_raw.split("(")[0].strip()
+                    if len(skill_name) > 35:
+                        skill_name = skill_name[:33] + "\u2026"
+                    activity_text = f"Running: {skill_name}"
+                    activity_color = GOLD
+                elif st == "IDLE":
+                    activity_text = "Idle"
+                    activity_color = DIM
+                else:
+                    activity_text = ""
+                    activity_color = DIM
+
+                # Recent task outcome icons from agent_recent_tasks
+                recent_icons = []
+                try:
+                    recents = agent_recent.get(name, [])
+                    for rt in recents:
+                        rst = rt.get("status", "")
+                        if rst == "DONE":
+                            recent_icons.append("\u2713")   # green check
+                        elif rst == "FAILED":
+                            recent_icons.append("\u2715")   # red cross
+                        else:
+                            recent_icons.append("\u2026")   # dim ellipsis
+                except Exception:
+                    recent_icons = []
+
+                # Top expertise skills as compact tags
+                expertise_text = ""
+                try:
+                    top_skills = agent_expertise.get(name, [])
+                    if top_skills:
+                        skill_names = [s.get("skill", "?") for s in top_skills]
+                        expertise_text = "Skills: " + " \u2022 ".join(skill_names)
+                        if len(expertise_text) > 45:
+                            expertise_text = expertise_text[:43] + "\u2026"
+                except Exception:
+                    expertise_text = ""
+
                 if name in self._agent_cards:
                     # Update existing card
                     c = self._agent_cards[name]
@@ -2316,14 +2405,25 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
                     c["dot"].configure(text_color=dot_color)
                     c["name_lbl"].configure(text=display_name, text_color=name_color)
                     c["status_lbl"].configure(text=status_text, text_color=status_color)
-                    c["task_lbl"].configure(text=task_display, text_color=GOLD)
                     c["spark_lbl"].configure(text=spark, text_color=spark_color)
                     c["count_lbl"].configure(text=count_text)
                     c["edit_btn"].configure(command=lambda a=ag: self._agents_edit_dialog(a))
                     c["model_lbl"].configure(text=model_text)
                     c["tps_lbl"].configure(text=tps_text)
-                    c["last_result_lbl"].configure(text=last_result)
                     c["iq_lbl"].configure(text=iq_text, text_color=iq_color)
+                    c["tph_lbl"].configure(text=tph_text)
+                    # Activity row
+                    c["activity_lbl"].configure(text=activity_text, text_color=activity_color)
+                    # Recent results row — humanized text + outcome icons
+                    _ri_suffix = ""
+                    if recent_icons:
+                        _ri_suffix = "  " + " ".join(recent_icons)
+                    recent_display = (last_result + _ri_suffix) if last_result else _ri_suffix.strip()
+                    if len(recent_display) > 50:
+                        recent_display = recent_display[:48] + "\u2026"
+                    c["recent_lbl"].configure(text=recent_display)
+                    # Expertise row
+                    c["expertise_lbl"].configure(text=expertise_text)
                     # WAITING_HUMAN indicator
                     if is_waiting:
                         c["waiting_badge"].configure(text="Needs Input")
@@ -2336,9 +2436,13 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
                     self._agent_cards[name] = self._create_agent_card(
                         self._agent_grid_frame, row_idx, col_idx,
                         display_name, status_text, status_color, dot_color,
-                        name_color, task_display, spark, spark_color,
+                        name_color, "", spark, spark_color,
                         count_text, ag, model_text, tps_text, last_result,
-                        is_waiting, iq_text, iq_color)
+                        is_waiting, iq_text, iq_color,
+                        tph_text=tph_text,
+                        activity_text=activity_text, activity_color=activity_color,
+                        recent_text=last_result, recent_icons=recent_icons,
+                        expertise_text=expertise_text)
               except Exception as _card_err:
                 import logging
                 logging.getLogger("launcher").warning("Agent card render failed for %s: %s",
@@ -2434,65 +2538,141 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
             logging.getLogger("launcher").warning(
                 "Toggle agent %s failed: %s", agent_name, e)
 
+    @staticmethod
+    def _humanize_result(result_json_str, task_type=""):
+        """Convert raw JSON task result into human-readable summary."""
+        if not result_json_str:
+            return ""
+        try:
+            data = (json.loads(result_json_str)
+                    if isinstance(result_json_str, str) else result_json_str)
+        except Exception:
+            return result_json_str[:50] if result_json_str else ""
+
+        # Skill-specific parsing
+        if isinstance(data, dict):
+            # Evolution results
+            if "evolved" in data:
+                skill = data.get("skill_name", "skill")
+                return f"Evolved {skill}" if data["evolved"] else f"No evolution for {skill}"
+            # Review results
+            if "passed" in data:
+                if data["passed"]:
+                    return "Review passed"
+                errors = data.get("errors", [])
+                return f"Review: {len(errors)} issue{'s' if len(errors) != 1 else ''}"
+            # Search results
+            if "results" in data and isinstance(data["results"], list):
+                return f"Found {len(data['results'])} results"
+            # Code output
+            if "code" in data or "output" in data:
+                return "Code generated"
+            # Error
+            if "error" in data:
+                return f"Error: {str(data['error'])[:40]}"
+            # Gaps/quality
+            if "gaps" in data:
+                gaps = data["gaps"]
+                if isinstance(gaps, list):
+                    return f"Found {len(gaps)} gap{'s' if len(gaps) != 1 else ''}"
+                return "Quality check done"
+            # Summary/status fallback (common in fleet results)
+            for key in ("summary", "status", "message"):
+                if key in data and isinstance(data[key], str):
+                    val = data[key]
+                    return val[:45] + "..." if len(val) > 45 else val
+            # Generic dict — show first key
+            first_key = next(iter(data), "")
+            if first_key:
+                first_val = data[first_key]
+                if isinstance(first_val, bool):
+                    return f"{first_key}: {'yes' if first_val else 'no'}"
+                if isinstance(first_val, (int, float)):
+                    return f"{first_key}: {first_val}"
+                return f"{first_key}: {str(first_val)[:30]}"
+        return str(data)[:50]
+
     def _create_agent_card(self, parent, row, col, display_name,
                            status_text, status_color, dot_color, name_color,
                            task_display, spark, spark_color, count_text, agent_data,
                            model_text="", tps_text="\u2014 tok/s", last_result="",
-                           is_waiting=False, iq_text="IQ: --", iq_color=DIM):
+                           is_waiting=False, iq_text="IQ: --", iq_color=DIM,
+                           tph_text="", activity_text="", activity_color=None,
+                           recent_text="", recent_icons=None,
+                           expertise_text=""):
         """Create a single agent dashboard card and return widget dict."""
+        if activity_color is None:
+            activity_color = DIM
+        if recent_icons is None:
+            recent_icons = []
         border_w = 2 if is_waiting else 0
         border_c = ORANGE if is_waiting else BG2
-        card = ctk.CTkFrame(parent, fg_color=BG2, corner_radius=8, height=140,
+        card = ctk.CTkFrame(parent, fg_color=BG2, corner_radius=8, height=160,
                             border_width=border_w, border_color=border_c)
         card.grid(row=row, column=col, padx=4, pady=4, sticky="nsew")
         card.grid_propagate(False)
 
         # Row 0 (y=6): Status dot + Agent name + status text
-        dot = ctk.CTkLabel(card, text="\u25cf", font=("Consolas", 14),
+        dot = ctk.CTkLabel(card, text="\u25cf", font=FONT_SM,
                            text_color=dot_color)
         dot.place(x=8, y=8)
 
         name_lbl = ctk.CTkLabel(card, text=display_name,
-                                font=("RuneScape Bold 12", 11, "bold"), text_color=name_color)
+                                font=FONT_BOLD, text_color=name_color)
         name_lbl.place(x=26, y=6)
 
         status_lbl = ctk.CTkLabel(card, text=status_text,
-                                  font=("Consolas", 9), text_color=status_color)
+                                  font=FONT_XS, text_color=status_color)
         status_lbl.place(relx=1.0, x=-8, y=8, anchor="ne")
 
-        # Row 1 (y=28): Model + IQ + tok/s — pushed down to clear 11pt bold name
+        # Row 1 (y=26): Model + IQ + tasks/hr + tok/s
         model_lbl = ctk.CTkLabel(card, text=model_text,
-                                 font=("Consolas", 8), text_color=DIM)
-        model_lbl.place(x=26, y=28)
+                                 font=FONT_STAT, text_color=DIM)
+        model_lbl.place(x=26, y=26)
 
         iq_lbl = ctk.CTkLabel(card, text=iq_text,
-                               font=("Consolas", 8), text_color=iq_color)
-        iq_lbl.place(relx=1.0, x=-70, y=28, anchor="ne")
+                               font=FONT_STAT, text_color=iq_color)
+        iq_lbl.place(x=110, y=26)
+
+        tph_lbl = ctk.CTkLabel(card, text=tph_text,
+                                font=FONT_STAT, text_color=DIM)
+        tph_lbl.place(relx=1.0, x=-80, y=26, anchor="ne")
 
         tps_lbl = ctk.CTkLabel(card, text=tps_text,
-                               font=("Consolas", 8), text_color=DIM)
-        tps_lbl.place(relx=1.0, x=-8, y=28, anchor="ne")
+                               font=FONT_STAT, text_color=DIM)
+        tps_lbl.place(relx=1.0, x=-8, y=26, anchor="ne")
 
-        # Row 2 (y=44): Current task
-        task_lbl = ctk.CTkLabel(card, text=task_display,
-                                font=("Consolas", 9), text_color=GOLD)
-        task_lbl.place(x=26, y=44)
+        # Row 2 (y=44): Activity — "Running: skill_name" or "Idle"
+        activity_lbl = ctk.CTkLabel(card, text=activity_text,
+                                    font=FONT_XS, text_color=activity_color)
+        activity_lbl.place(x=26, y=44)
 
-        # Row 3 (y=60): Last result preview
-        last_result_lbl = ctk.CTkLabel(card, text=last_result,
-                                       font=("Consolas", 8), text_color=DIM)
-        last_result_lbl.place(x=26, y=60)
+        # Row 3 (y=62): Last result — humanized text + recent outcome icons
+        _recent_suffix = ""
+        if recent_icons:
+            _recent_suffix = "  " + " ".join(recent_icons)
+        recent_display = (last_result + _recent_suffix) if last_result else _recent_suffix.strip()
+        if len(recent_display) > 50:
+            recent_display = recent_display[:48] + "\u2026"
+        recent_lbl = ctk.CTkLabel(card, text=recent_display,
+                                  font=FONT_XS, text_color=DIM)
+        recent_lbl.place(x=26, y=62)
 
-        # Row 4 (y=78): Activity sparkline + edit button
+        # Row 4 (y=82): Expertise — top skills as tags
+        expertise_lbl = ctk.CTkLabel(card, text=expertise_text,
+                                     font=FONT_XS, text_color=DIM)
+        expertise_lbl.place(x=26, y=82)
+
+        # Row 5 (y=100): Activity sparkline + edit/disable buttons
         spark_lbl = ctk.CTkLabel(card, text=spark,
-                                 font=("Consolas", 10), text_color=spark_color)
-        spark_lbl.place(x=8, y=78)
+                                 font=FONT_STAT, text_color=spark_color)
+        spark_lbl.place(x=8, y=100)
 
         edit_btn = ctk.CTkButton(
             card, text="\u270e", font=FONT_SM, width=24, height=18,
             fg_color=BG3, hover_color=BG,
             command=lambda a=agent_data: self._agents_edit_dialog(a))
-        edit_btn.place(relx=1.0, x=-8, y=78, anchor="ne")
+        edit_btn.place(relx=1.0, x=-8, y=100, anchor="ne")
 
         # Disable button (next to edit)
         disable_btn = ctk.CTkButton(
@@ -2500,26 +2680,28 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
             fg_color="#c62828", hover_color="#d32f2f",
             command=lambda n=display_name: self._toggle_agent_disabled(
                 n.replace("\u2026", ""), enable=False))
-        disable_btn.place(relx=1.0, x=-36, y=78, anchor="ne")
+        disable_btn.place(relx=1.0, x=-36, y=100, anchor="ne")
 
-        # Row 5 (y=98): WAITING_HUMAN badge
+        # WAITING_HUMAN badge (below sparkline row)
         waiting_text = "Needs Input" if is_waiting else ""
         waiting_badge = ctk.CTkLabel(card, text=waiting_text,
-                                     font=("Consolas", 8, "bold"), text_color=ORANGE)
-        waiting_badge.place(x=8, y=98)
+                                     font=FONT_XS, text_color=ORANGE)
+        waiting_badge.place(x=8, y=118)
 
-        # Row 6 (y=116): Task count (bottom-right)
+        # Task count (bottom-right)
         count_lbl = ctk.CTkLabel(card, text=count_text,
-                                 font=("Consolas", 8), text_color=DIM)
-        count_lbl.place(relx=1.0, x=-8, y=116, anchor="ne")
+                                 font=FONT_STAT, text_color=DIM)
+        count_lbl.place(relx=1.0, x=-8, y=138, anchor="ne")
 
         return {
             "card": card, "dot": dot, "name_lbl": name_lbl,
-            "status_lbl": status_lbl, "task_lbl": task_lbl,
+            "status_lbl": status_lbl,
+            "activity_lbl": activity_lbl, "recent_lbl": recent_lbl,
+            "expertise_lbl": expertise_lbl,
             "spark_lbl": spark_lbl, "count_lbl": count_lbl,
             "edit_btn": edit_btn, "disable_btn": disable_btn,
-            "model_lbl": model_lbl,
-            "tps_lbl": tps_lbl, "last_result_lbl": last_result_lbl,
+            "model_lbl": model_lbl, "tph_lbl": tph_lbl,
+            "tps_lbl": tps_lbl,
             "waiting_badge": waiting_badge, "iq_lbl": iq_lbl,
         }
 

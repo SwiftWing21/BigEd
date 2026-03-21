@@ -358,6 +358,19 @@ multi_tenant = false
 tenant_id = ""                    # This instance's tenant ID (empty = single-tenant)
 tenant_isolation = "database"     # database | schema | none
 
+# Event triggers — file watch, scheduled tasks, webhook dispatch
+[triggers]
+file_watch_enabled = true
+file_watch_dir = "~/Downloads"
+file_watch_extensions = [".pdf", ".md", ".txt", ".docx"]
+webhook_enabled = true
+
+# Scheduled tasks — periodic auto-dispatch (checked by supervisor loop)
+# Format: name = {skill = "...", interval_hours = N, payload = "..."}
+[schedules]
+daily_code_review = {skill = "code_review", interval_hours = 24, payload = '{"scope": "changed_files"}'}
+hourly_health = {skill = "stability_report", interval_hours = 1}
+
 # v0.050.03b: Configurable boot timeouts — used by adaptive timeout in boot.py
 [boot]
 model_load_timeout = 300         # first-boot default timeout (seconds) for model loading

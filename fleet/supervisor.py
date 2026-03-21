@@ -1012,6 +1012,7 @@ def main():
     last_federation_heartbeat = 0  # federation peer broadcast
     last_cache_cleanup = 0         # cache_manager stale invalidation
     last_rag_cleanup = 0           # RAG index stale entry cleanup
+    last_trigger_check = 0         # event triggers (file watch + schedules)
     # v0.23 S3: Auto-Intelligence — periodic evolution + research dispatch
     # Intervals defined at module level: RESEARCH_INTERVAL (24h), EVOLUTION_INTERVAL (7d)
     global _last_research_trigger, _last_evolution_trigger, _last_results_mtime
@@ -1412,6 +1413,17 @@ def main():
                 removed = result.get("stale_removed", 0)
                 if removed:
                     log.info(f"RAG: cleaned {removed} stale index entries")
+            except Exception:
+                pass
+
+        # Event triggers — file watch, scheduled tasks (every 30s)
+        if now - last_trigger_check >= 30:
+            last_trigger_check = now
+            try:
+                from event_triggers import check_all_triggers
+                dispatched = check_all_triggers(config)
+                if dispatched:
+                    log.info(f"Triggers: dispatched {dispatched} task(s)")
             except Exception:
                 pass
 

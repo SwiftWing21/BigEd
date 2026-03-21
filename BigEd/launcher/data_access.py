@@ -488,6 +488,56 @@ class FleetDB:
             return []
 
     @staticmethod
+    def agent_recent_tasks(db_path: str | Path, agent_name: str,
+                           limit: int = 3) -> list[dict]:
+        """Return last N tasks for an agent with type, status, created_at."""
+        try:
+            if not Path(db_path).exists():
+                return []
+            conn = FleetDB._connect(db_path, timeout=2)
+            try:
+                rows = conn.execute(
+                    "SELECT type, status, intelligence_score, created_at "
+                    "FROM tasks WHERE assigned_to = ? "
+                    "ORDER BY created_at DESC LIMIT ?",
+                    (agent_name, limit)
+                ).fetchall()
+                return [dict(r) for r in rows]
+            except sqlite3.OperationalError:
+                return []
+            finally:
+                conn.close()
+        except Exception:
+            return []
+
+    @staticmethod
+    def agent_top_skills(db_path: str | Path, agent_name: str,
+                         limit: int = 3) -> list[dict]:
+        """Return top skills by avg intelligence_score for this agent (last 7 days)."""
+        try:
+            if not Path(db_path).exists():
+                return []
+            conn = FleetDB._connect(db_path, timeout=2)
+            try:
+                rows = conn.execute(
+                    "SELECT type, AVG(intelligence_score) as avg_iq, COUNT(*) as count "
+                    "FROM tasks WHERE assigned_to = ? AND intelligence_score IS NOT NULL "
+                    "AND created_at > datetime('now', '-7 days') "
+                    "GROUP BY type ORDER BY avg_iq DESC LIMIT ?",
+                    (agent_name, limit)
+                ).fetchall()
+                return [
+                    {"skill": r["type"], "avg_iq": round(r["avg_iq"], 3), "count": r["count"]}
+                    for r in rows
+                ]
+            except sqlite3.OperationalError:
+                return []
+            finally:
+                conn.close()
+        except Exception:
+            return []
+
+    @staticmethod
     def recent_eval_scores(db_path, limit: int = 20) -> list[dict]:
         """Return last N tasks that have an intelligence_score, most recent first.
 

@@ -2031,6 +2031,73 @@ def api_cache_invalidate_named(name):
         return jsonify({"error": _safe_error(e)}), 500
 
 
+# ── Event Triggers: Webhook endpoint ──────────────────────────────────────────
+
+@app.route("/api/trigger", methods=["POST"])
+@_require_role("operator")
+def api_trigger():
+    """Webhook: receive external event and dispatch a fleet task.
+
+    Required: type (skill name).
+    Optional: payload (dict), priority (1-10), assigned_to (agent name).
+    Returns: {"task_id": N} on success.
+    """
+    try:
+        data = request.get_json(silent=True)
+        if data is None:
+            return jsonify({"error": "Request body must be valid JSON"}), 400
+
+        sys.path.insert(0, str(FLEET_DIR))
+        from event_triggers import handle_webhook
+
+        result = handle_webhook(data)
+        status_code = result.pop("status", 200)
+
+        # Broadcast via SSE so dashboard updates live
+        if "task_id" in result:
+            try:
+                _broadcast_sse({"type": "trigger", "data": result})
+            except Exception:
+                pass
+
+        return jsonify(result), status_code
+    except Exception as e:
+        return jsonify({"error": _safe_error(e)}), 500
+
+
+@app.route("/api/trigger/status")
+def api_trigger_status():
+    """Return current event trigger configuration and state."""
+    try:
+        cfg = _load_config()
+        triggers = cfg.get("triggers", {})
+        schedules = cfg.get("schedules", {})
+
+        # Load schedule state if available
+        schedule_state = {}
+        state_file = FLEET_DIR / "data" / "schedule_state.json"
+        if state_file.exists():
+            try:
+                import json as _json
+                schedule_state = _json.loads(state_file.read_text(encoding="utf-8"))
+            except Exception:
+                pass
+
+        return jsonify({
+            "triggers": triggers,
+            "schedules": {
+                name: {
+                    **spec,
+                    "last_run": schedule_state.get(name, 0),
+                }
+                for name, spec in schedules.items()
+                if isinstance(spec, dict)
+            },
+        })
+    except Exception as e:
+        return jsonify({"error": _safe_error(e)}), 500
+
+
 # ── Entry ────────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":

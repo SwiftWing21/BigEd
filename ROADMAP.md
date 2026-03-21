@@ -1283,6 +1283,28 @@ Completed 2026-03-21. Modules created and wired into active workflow.
 - [x] Dashboard offline: 60s countdown overlay, "Fleet offline" message
 - [x] UX bug fixes: module tabs, Enter-to-send, sidebar truncation, updater loop guard, DAG test race
 
+### 0.170.04b — Fleet Tab Agent Card Redesign + Event Triggers
+
+**Goal:** Human-readable agent activity, expertise context, event-driven automations.
+
+**Agent Card UX:**
+- [ ] Human-readable last result (parse JSON → "Reviewed 3 files", "Evolved skill_evolve", not raw JSON)
+- [ ] Current activity label (skill name displayed as "Running: code_review" not raw task type)
+- [ ] Recent activity feed (last 3 tasks with outcome icons)
+- [ ] Agent expertise tags (top 3 skills by IQ score from history)
+- [ ] Tasks/hour throughput metric on card
+
+**Event Trigger System:**
+- [ ] File-watch trigger (new file in configurable dir → auto-ingest task)
+- [ ] Webhook endpoint (POST /api/trigger → dispatch task)
+- [ ] Scheduled tasks (cron-like: fleet.toml [schedules] section)
+- [ ] Dashboard event triggers (anomalous cost → auto-throttle)
+
+**Data Layer:**
+- [ ] FleetDB.agent_recent_tasks(db_path, name, limit=3) — last N tasks with type+status
+- [ ] FleetDB.agent_top_skills(db_path, name, limit=3) — top skills by avg IQ
+- [ ] _humanize_result(result_json, task_type) — parse raw JSON into readable summary
+
 ---
 
 ## Audit Coverage Check (per AUDIT_TRACKER.md)
