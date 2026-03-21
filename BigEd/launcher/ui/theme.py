@@ -36,6 +36,7 @@ BG3      = "#2d2d2d"
 ACCENT   = "#b22222"
 ACCENT_H = "#8b0000"
 GOLD     = "#c8a84b"
+BRAND    = "#00bcd4"  # BigEd brand color (teal) — header, icon, primary accent
 
 # Text
 TEXT     = "#e2e2e2"

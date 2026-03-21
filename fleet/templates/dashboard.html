@@ -8,7 +8,7 @@
 <style>
   :root {
     --bg: #111; --bg2: #1a1a1a; --bg3: #242424; --border: #333;
-    --text: #e2e2e2; --dim: #888; --accent: #b22222; --gold: #c8a84b;
+    --text: #e2e2e2; --dim: #888; --accent: #b22222; --gold: #c8a84b; --brand: #00bcd4;
     --green: #4caf50; --red: #f44336; --orange: #ff9800; --blue: #42a5f5;
   }
   * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -19,7 +19,7 @@
     background: var(--bg3); padding: 16px 24px; border-bottom: 2px solid var(--accent);
     display: flex; align-items: center; gap: 12px;
   }
-  .header h1 { font-size: 20px; color: var(--gold); }
+  .header h1 { font-size: 20px; color: var(--brand); }
   .header .status { margin-left: auto; font-size: 13px; color: var(--dim); display: flex; gap: 8px; align-items: center; }
   .header .live-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--green); animation: pulse 2s infinite; }
   @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }

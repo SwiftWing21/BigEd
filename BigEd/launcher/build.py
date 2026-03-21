@@ -137,6 +137,40 @@ def build_setup() -> float:
     )
 
 
+def capture_ux_screenshots() -> float:
+    """Post-build: capture UX test suite screenshots for visual regression (0.051.04b)."""
+    t0 = time.time()
+    print(f"\n{BOLD}{CYAN}> Capturing UX test suite screenshots{RESET}")
+    fleet_dir = HERE.parent.parent / "fleet"
+    try:
+        sys.path.insert(0, str(fleet_dir))
+        from skills.screenshot import capture_ux_test_suite
+        import logging
+        log = logging.getLogger("build_ux")
+        log.addHandler(logging.StreamHandler())
+        log.setLevel(logging.INFO)
+        config = {}
+        try:
+            from config import load_config
+            config = load_config()
+        except Exception:
+            pass
+        results = capture_ux_test_suite(config, log)
+        ok = sum(1 for r in results if "error" not in r)
+        total = len(results)
+        print(f"  {GREEN}Captured {ok}/{total} screenshots{RESET}")
+        for r in results:
+            if "error" not in r:
+                print(f"    {DIM}{r.get('filename', '?')} ({r.get('resolution', '?')}){RESET}")
+            else:
+                print(f"    {RED}{r.get('error', '?')}{RESET}")
+    except ImportError as e:
+        print(f"  {DIM}Screenshot capture skipped (PIL not available: {e}){RESET}")
+    except Exception as e:
+        print(f"  {DIM}Screenshot capture skipped: {e}{RESET}")
+    return time.time() - t0
+
+
 def main():
     parser = argparse.ArgumentParser(description="BigEd CC Build System")
     parser.add_argument("--launcher", action="store_true", help="Build launcher only")
@@ -144,6 +178,8 @@ def main():
     parser.add_argument("--setup", action="store_true", help="Build setup only")
     parser.add_argument("--production", action="store_true",
                         help="Production build — set BIGED_PRODUCTION=1 env in exe")
+    parser.add_argument("--ux-screenshots", action="store_true",
+                        help="Capture UX test suite screenshots after build (0.051.04b)")
     args = parser.parse_args()
 
     build_all = not (args.launcher or args.updater or args.setup)
@@ -215,6 +251,10 @@ def main():
 
     if args.production:
         print(f"\n  {GOLD}Production marker written{RESET}")
+
+    # Post-build UX screenshot capture (0.051.04b)
+    if args.ux_screenshots or (build_all and not args.production):
+        step_times["UX Screenshots"] = capture_ux_screenshots()
 
     print()
 

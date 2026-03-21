@@ -1,6 +1,7 @@
 """General settings panel — theme, agent names, fleet behavior, tabs, backup."""
 import json
 import re
+import threading
 
 import customtkinter as ctk
 from pathlib import Path
@@ -16,6 +17,18 @@ def _launcher():
     """Return the launcher module (import once, cache)."""
     import launcher as _mod
     return _mod
+
+
+def _parse_version(v: str) -> tuple:
+    """Parse a version string like '0.22' or '1.2.3' into a comparable tuple."""
+    parts = re.split(r"[.\-]", str(v or "0"))
+    result = []
+    for p in parts:
+        try:
+            result.append(int(p))
+        except ValueError:
+            result.append(0)
+    return tuple(result) if result else (0,)
 
 
 class GeneralPanelMixin:
@@ -373,50 +386,112 @@ class GeneralPanelMixin:
 
     # ── Module Hub handlers ────────────────────────────────────────────
 
+    def _get_hub(self):
+        """Return a ModuleHub instance (cached import path)."""
+        import sys
+        sys.path.insert(0, str(Path(__file__).parent.parent))
+        from modules.hub import ModuleHub
+        return ModuleHub()
+
     def _check_hub_updates(self):
-        """Fetch available modules from the hub."""
-        import threading
+        """Fetch available modules from the hub and render module cards."""
         def _fetch():
             try:
-                import sys
-                sys.path.insert(0, str(Path(__file__).parent.parent))
-                from modules.hub import ModuleHub
-                hub = ModuleHub()  # reads config from fleet.toml
+                hub = self._get_hub()
                 available = hub.list_available()
-                installed = {m["name"] for m in hub.list_installed()}
+                installed_list = hub.list_installed()
+                installed = {m["name"]: m for m in installed_list}
 
-                self._hub_status.configure(text=f"Found {len(available)} modules")
+                # Read current tab config for enable/disable state
+                L = _launcher()
+                tab_cfg = L.load_tab_cfg()
 
-                # Clear old content
+                # Count stats
+                n_installed = sum(1 for m in available if m.get("name") in installed)
+                n_updates = len(hub.get_update_available())
+                enterprise_tag = " (enterprise)" if hub.is_enterprise() else ""
+                self._hub_status.configure(
+                    text=f"Found {len(available)} modules | {n_installed} installed | {n_updates} updates{enterprise_tag}")
+
+                # Clear old content (keep status label)
                 for w in self._hub_modules_frame.winfo_children():
                     if w != self._hub_status:
                         w.destroy()
 
+                # Build module cards
                 for mod in available:
-                    row = ctk.CTkFrame(self._hub_modules_frame, fg_color="transparent")
-                    row.pack(fill="x", padx=8, pady=2)
-                    row.grid_columnconfigure(1, weight=1)
-
                     name = mod.get("name", "?")
                     is_installed = name in installed
+                    is_enterprise_only = mod.get("enterprise_only", False)
+                    hub_version = mod.get("version", "?")
+                    local_version = installed.get(name, {}).get("version", "")
+                    has_update = (is_installed and _parse_version(hub_version) > _parse_version(local_version))
+                    is_enabled = tab_cfg.get(name, mod.get("default_enabled", False))
 
-                    ctk.CTkLabel(row, text=name, font=FONT_BOLD,
+                    # Card frame
+                    card = ctk.CTkFrame(self._hub_modules_frame, fg_color=GLASS_BG, corner_radius=6)
+                    card.pack(fill="x", padx=8, pady=3)
+                    card.grid_columnconfigure(1, weight=1)
+
+                    # Row 0: name + version + description
+                    name_text = name
+                    if is_enterprise_only:
+                        name_text += "  [enterprise]"
+                    ctk.CTkLabel(card, text=name_text, font=FONT_BOLD,
                                  text_color=TEXT, anchor="w"
-                                 ).grid(row=0, column=0, padx=(4, 8), sticky="w")
-                    ctk.CTkLabel(row, text=mod.get("description", "")[:50],
+                                 ).grid(row=0, column=0, padx=(8, 4), pady=(6, 0), sticky="w")
+
+                    ver_text = f"v{hub_version}"
+                    if is_installed and local_version:
+                        ver_text = f"v{local_version}"
+                        if has_update:
+                            ver_text += f" -> v{hub_version}"
+                    ctk.CTkLabel(card, text=ver_text,
+                                 font=("Consolas", 9),
+                                 text_color="#ff9800" if has_update else DIM,
+                                 anchor="w"
+                                 ).grid(row=0, column=1, padx=4, pady=(6, 0), sticky="w")
+
+                    # Row 1: description + tags
+                    desc = mod.get("description", "")[:60]
+                    tags = ", ".join(mod.get("tags", []))
+                    if tags:
+                        desc += f"  [{tags}]"
+                    ctk.CTkLabel(card, text=desc,
                                  font=("Consolas", 9), text_color=DIM, anchor="w"
-                                 ).grid(row=0, column=1, sticky="w")
+                                 ).grid(row=1, column=0, columnspan=2, padx=8, pady=(0, 2), sticky="w")
+
+                    # Row 0-1: action buttons (right side)
+                    btn_frame = ctk.CTkFrame(card, fg_color="transparent")
+                    btn_frame.grid(row=0, column=2, rowspan=2, padx=(4, 8), pady=4, sticky="e")
 
                     if is_installed:
-                        ctk.CTkLabel(row, text="Installed", font=FONT_SM,
-                                     text_color="#4caf50"
-                                     ).grid(row=0, column=2, padx=(4, 8))
+                        # Enable/Disable toggle
+                        toggle_text = "Disable" if is_enabled else "Enable"
+                        toggle_color = "#5c2020" if is_enabled else "#1e3a1e"
+                        toggle_hover = "#7a2a2a" if is_enabled else "#2a4a2a"
+                        ctk.CTkButton(
+                            btn_frame, text=toggle_text, font=FONT_SM,
+                            width=60, height=22,
+                            fg_color=toggle_color, hover_color=toggle_hover,
+                            command=lambda n=name, en=is_enabled: self._toggle_module(n, en)
+                        ).pack(side="left", padx=2)
+
+                        if has_update:
+                            ctk.CTkButton(
+                                btn_frame, text="Update", font=FONT_SM,
+                                width=60, height=22,
+                                fg_color="#1a3a5c", hover_color="#244a6c",
+                                command=lambda n=name: self._install_module(n)
+                            ).pack(side="left", padx=2)
                     else:
-                        ctk.CTkButton(row, text="Install", font=FONT_SM,
-                                      width=60, height=22, fg_color="#1e3a1e",
-                                      hover_color="#2a4a2a",
-                                      command=lambda n=name: self._install_module(n)
-                                      ).grid(row=0, column=2, padx=(4, 8))
+                        ctk.CTkButton(
+                            btn_frame, text="Install", font=FONT_SM,
+                            width=60, height=22,
+                            fg_color="#1e3a1e", hover_color="#2a4a2a",
+                            command=lambda n=name: self._install_module(n)
+                        ).pack(side="left", padx=2)
+
             except Exception as e:
                 self._hub_status.configure(text=f"Hub error: {e}", text_color="#f44336")
 
@@ -425,18 +500,16 @@ class GeneralPanelMixin:
 
     def _install_module(self, name):
         """Install a module from the hub."""
-        import threading
         def _do_install():
             try:
-                import sys
-                sys.path.insert(0, str(Path(__file__).parent.parent))
-                from modules.hub import ModuleHub
-                hub = ModuleHub()
+                hub = self._get_hub()
                 result = hub.install_module(name)
                 if result.get("installed"):
                     self._hub_status.configure(
                         text=f"Installed {name} v{result.get('version')}. Restart to activate.",
                         text_color="#4caf50")
+                    # Refresh the module list to show new state
+                    self._check_hub_updates()
                 else:
                     self._hub_status.configure(
                         text=f"Install failed: {result.get('error', 'unknown')}",
@@ -444,3 +517,26 @@ class GeneralPanelMixin:
             except Exception as e:
                 self._hub_status.configure(text=f"Install error: {e}", text_color="#f44336")
         threading.Thread(target=_do_install, daemon=True).start()
+
+    def _toggle_module(self, name, currently_enabled):
+        """Enable or disable a module via the hub."""
+        def _do_toggle():
+            try:
+                hub = self._get_hub()
+                if currently_enabled:
+                    result = hub.disable_module(name)
+                else:
+                    result = hub.enable_module(name)
+                if result.get("error"):
+                    self._hub_status.configure(
+                        text=f"Toggle failed: {result['error']}", text_color="#f44336")
+                else:
+                    state = "disabled" if currently_enabled else "enabled"
+                    self._hub_status.configure(
+                        text=f"Module '{name}' {state}. Restart to apply.",
+                        text_color="#4caf50")
+                    # Refresh cards
+                    self._check_hub_updates()
+            except Exception as e:
+                self._hub_status.configure(text=f"Toggle error: {e}", text_color="#f44336")
+        threading.Thread(target=_do_toggle, daemon=True).start()

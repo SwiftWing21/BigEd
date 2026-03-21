@@ -787,10 +787,10 @@ class BootManagerMixin:
             available = self._ollama_list_models()
             fallback = self._pick_fallback_model(model, available)
             if fallback:
+                # v0.050.03b: only log fallback — no action card when fallback succeeds.
+                # Previously showed action card + continued boot, which confused operators.
                 self._safe_after(0, lambda m=model, f=fallback: self._log_output(
                     f"  Model '{m}' not found — using fallback '{f}'"))
-                self._safe_after(0, lambda m=model, f=fallback, a=available:
-                    self._create_model_recovery_action(m, fallback=f, available=a))
                 model = fallback  # continue boot with fallback
                 _used_fallback = True
             else:

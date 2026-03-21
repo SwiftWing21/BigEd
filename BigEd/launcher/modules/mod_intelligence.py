@@ -402,6 +402,30 @@ class Module:
                          wraplength=550, anchor="w", justify="left"
                          ).pack(fill="x", padx=8, pady=(2, 6))
 
+        # Live scoring display (0.051.03b)
+        ctk.CTkLabel(card, text="Live Scoring Feed", font=FONT_BOLD,
+                     text_color=GOLD, anchor="w").pack(fill="x", padx=12, pady=(8, 2))
+
+        self._eval_feed_frame = ctk.CTkFrame(card, fg_color=BG3, corner_radius=4, height=120)
+        self._eval_feed_frame.pack(fill="x", padx=12, pady=(2, 4))
+        self._eval_feed_frame.pack_propagate(False)
+
+        self._eval_feed_labels = []
+        for i in range(5):
+            lbl = ctk.CTkLabel(self._eval_feed_frame, text="", font=FONT_XS,
+                               text_color=DIM, anchor="w")
+            lbl.pack(fill="x", padx=8, pady=1)
+            self._eval_feed_labels.append(lbl)
+
+        refresh_row = ctk.CTkFrame(card, fg_color="transparent")
+        refresh_row.pack(fill="x", padx=12, pady=(0, 4))
+        ctk.CTkButton(refresh_row, text="Refresh Scores", width=110, height=24,
+                      font=FONT_XS, fg_color=BG3, hover_color=BG2,
+                      command=self._refresh_eval_feed).pack(side="left")
+        self._eval_feed_status = ctk.CTkLabel(refresh_row, text="Click to load recent scores",
+                                               font=FONT_XS, text_color=DIM)
+        self._eval_feed_status.pack(side="left", padx=8)
+
         ctk.CTkLabel(card, text="", font=FONT_XS).pack(pady=(0, 4))
 
     # ── Panel 5: Cost Intelligence ───────────────────────────────────────────
@@ -427,25 +451,62 @@ class Module:
             ctk.CTkLabel(row, text=desc, font=FONT_XS, text_color=DIM,
                          anchor="w").pack(side="left", fill="x", expand=True)
 
-        # Skill routing weight display
-        ctk.CTkLabel(card, text="Skill Routing Weights", font=FONT_BOLD,
+        # Skill routing weight display + adjustment UI (0.051.03b)
+        ctk.CTkLabel(card, text="Skill Complexity Routing Weights", font=FONT_BOLD,
                      text_color=GOLD, anchor="w").pack(fill="x", padx=12, pady=(8, 2))
+        ctk.CTkLabel(card, text="Drag skills between tiers to adjust routing cost. "
+                     "Changes write back to providers.py SKILL_COMPLEXITY.",
+                     font=FONT_XS, text_color=DIM, wraplength=600,
+                     anchor="w").pack(fill="x", padx=16, pady=(0, 4))
 
-        weight_info = [
-            ("Simple \u2192 Haiku/Local", "$0.80/M or free", "flashcard, benchmark, rag_query..."),
-            ("Medium \u2192 Sonnet/8b", "$3.00/M or free", "code_review, web_search, summarize..."),
-            ("Complex \u2192 Opus", "$15.00/M", "code_write, plan_workload, skill_evolve..."),
+        self._weight_tiers = {}
+        tier_defs = [
+            ("simple", "Haiku/Local", "$0.80/M or free", GREEN),
+            ("medium", "Sonnet/8b", "$3.00/M or free", ORANGE),
+            ("complex", "Opus", "$15.00/M", RED),
         ]
 
-        for tier, cost, examples in weight_info:
-            wrow = ctk.CTkFrame(card, fg_color="transparent")
-            wrow.pack(fill="x", padx=12, pady=1)
-            ctk.CTkLabel(wrow, text=tier, font=FONT_SM, text_color=TEXT,
-                         anchor="w", width=180).pack(side="left")
-            ctk.CTkLabel(wrow, text=cost, font=FONT_STAT, text_color=GREEN,
-                         anchor="w", width=100).pack(side="left")
-            ctk.CTkLabel(wrow, text=examples, font=FONT_XS, text_color=DIM,
-                         anchor="w").pack(side="left", fill="x", expand=True)
+        # Load current SKILL_COMPLEXITY from providers.py
+        current_tiers = self._load_skill_complexity()
+
+        for tier_key, tier_label, cost, color in tier_defs:
+            trow = ctk.CTkFrame(card, fg_color=BG3, corner_radius=4)
+            trow.pack(fill="x", padx=12, pady=2)
+            header = ctk.CTkFrame(trow, fg_color="transparent")
+            header.pack(fill="x", padx=8, pady=(4, 0))
+            ctk.CTkLabel(header, text=f"{tier_label}", font=FONT_BOLD,
+                         text_color=color, anchor="w").pack(side="left")
+            ctk.CTkLabel(header, text=cost, font=FONT_XS, text_color=DIM,
+                         anchor="e").pack(side="right")
+
+            skills_str = ", ".join(current_tiers.get(tier_key, []))
+            skill_label = ctk.CTkLabel(trow, text=skills_str or "(none)",
+                                       font=FONT_XS, text_color=DIM,
+                                       wraplength=550, anchor="w", justify="left")
+            skill_label.pack(fill="x", padx=8, pady=(2, 4))
+            self._weight_tiers[tier_key] = skill_label
+
+        # Move skill controls
+        move_row = ctk.CTkFrame(card, fg_color="transparent")
+        move_row.pack(fill="x", padx=12, pady=(4, 2))
+
+        ctk.CTkLabel(move_row, text="Move skill:", font=FONT_SM, text_color=DIM).pack(side="left")
+        self._move_skill_var = ctk.StringVar(value="")
+        ctk.CTkEntry(move_row, textvariable=self._move_skill_var, width=140, height=28,
+                     font=FONT_SM, fg_color=BG, placeholder_text="skill_name").pack(side="left", padx=4)
+
+        ctk.CTkLabel(move_row, text="to:", font=FONT_SM, text_color=DIM).pack(side="left", padx=(4, 2))
+        self._move_tier_var = ctk.StringVar(value="simple")
+        ctk.CTkOptionMenu(move_row, variable=self._move_tier_var,
+                          values=["simple", "medium", "complex"],
+                          font=FONT_SM, width=90, height=28, fg_color=BG3).pack(side="left", padx=2)
+
+        ctk.CTkButton(move_row, text="Move", width=60, height=28, font=FONT_SM,
+                      fg_color=ACCENT, hover_color=ACCENT_H,
+                      command=self._move_skill_tier).pack(side="left", padx=4)
+
+        self._weight_status = ctk.CTkLabel(move_row, text="", font=FONT_XS, text_color=DIM)
+        self._weight_status.pack(side="left", padx=8)
 
         ctk.CTkLabel(card, text="", font=FONT_XS).pack(pady=(0, 6))
 
@@ -459,8 +520,140 @@ class Module:
         except Exception:
             return {}
 
+    def _load_skill_complexity(self) -> dict:
+        """Load SKILL_COMPLEXITY from providers.py."""
+        try:
+            sys.path.insert(0, str(FLEET_DIR))
+            from providers import SKILL_COMPLEXITY
+            return dict(SKILL_COMPLEXITY)
+        except (ImportError, AttributeError):
+            return {
+                "simple": ["flashcard", "rag_query", "summarize", "benchmark"],
+                "medium": ["code_review", "web_search", "discuss"],
+                "complex": ["plan_workload", "code_write", "skill_evolve"],
+            }
+
+    def _move_skill_tier(self):
+        """Move a skill from its current tier to the selected tier."""
+        skill = self._move_skill_var.get().strip()
+        target_tier = self._move_tier_var.get()
+        if not skill:
+            self._weight_status.configure(text="Enter a skill name", text_color=RED)
+            return
+
+        try:
+            import re
+            providers_path = FLEET_DIR / "providers.py"
+            text = providers_path.read_text(encoding="utf-8")
+
+            # Find and parse SKILL_COMPLEXITY dict
+            current_tiers = self._load_skill_complexity()
+
+            # Find which tier the skill is currently in
+            source_tier = None
+            for tier, skills in current_tiers.items():
+                if skill in skills:
+                    source_tier = tier
+                    break
+
+            if source_tier is None:
+                self._weight_status.configure(text=f"Skill '{skill}' not found", text_color=RED)
+                return
+
+            if source_tier == target_tier:
+                self._weight_status.configure(text=f"Already in {target_tier}", text_color=DIM)
+                return
+
+            # Remove from source, add to target
+            current_tiers[source_tier].remove(skill)
+            current_tiers[target_tier].append(skill)
+
+            # Rebuild the SKILL_COMPLEXITY block in providers.py
+            new_block = "SKILL_COMPLEXITY = {\n"
+            for tier in ["simple", "medium", "complex"]:
+                skills_list = current_tiers.get(tier, [])
+                # Format as multi-line list with 8 skills per line
+                lines = []
+                for i in range(0, len(skills_list), 8):
+                    chunk = skills_list[i:i+8]
+                    lines.append(", ".join(f'"{s}"' for s in chunk))
+                skills_str = ",\n        ".join(lines)
+                new_block += f'    "{tier}": [\n        {skills_str},\n    ],\n'
+            new_block += "}"
+
+            # Replace in file using regex
+            pattern = r'SKILL_COMPLEXITY\s*=\s*\{[^}]+\}'
+            text = re.sub(pattern, new_block, text, flags=re.DOTALL)
+            providers_path.write_text(text, encoding="utf-8")
+
+            # Update UI labels
+            for tier_key, label in self._weight_tiers.items():
+                label.configure(text=", ".join(current_tiers.get(tier_key, [])) or "(none)")
+
+            self._weight_status.configure(
+                text=f"Moved '{skill}': {source_tier} -> {target_tier}", text_color=GREEN)
+
+        except Exception as e:
+            self._weight_status.configure(text=f"Error: {e}", text_color=RED)
+
+    def _refresh_eval_feed(self):
+        """Load and display the 5 most recent scored tasks."""
+        try:
+            if FleetDB is None:
+                self._eval_feed_status.configure(text="FleetDB not available")
+                return
+
+            fdb = FleetDB()
+            with fdb._conn() as conn:
+                rows = conn.execute("""
+                    SELECT id, type, assigned_to, intelligence_score, updated_at
+                    FROM tasks WHERE intelligence_score IS NOT NULL
+                    AND intelligence_score > 0
+                    ORDER BY updated_at DESC LIMIT 5
+                """).fetchall()
+
+            if not rows:
+                self._eval_feed_status.configure(text="No scored tasks yet")
+                for lbl in self._eval_feed_labels:
+                    lbl.configure(text="")
+                return
+
+            for i, row in enumerate(rows):
+                if i < len(self._eval_feed_labels):
+                    score = row["intelligence_score"]
+                    # Color-code score
+                    if score >= 0.7:
+                        color = GREEN
+                    elif score >= 0.4:
+                        color = ORANGE
+                    else:
+                        color = RED
+                    task_id = row["id"]
+                    skill = row["type"] or "?"
+                    agent = row["assigned_to"] or "?"
+                    ts = row["updated_at"] or ""
+                    # Shorten timestamp
+                    ts_short = ts[11:19] if len(ts) > 19 else ts
+                    self._eval_feed_labels[i].configure(
+                        text=f"  #{task_id}  [{skill}]  agent={agent}  score={score:.3f}  {ts_short}",
+                        text_color=color,
+                    )
+
+            # Clear remaining labels
+            for i in range(len(rows), len(self._eval_feed_labels)):
+                self._eval_feed_labels[i].configure(text="")
+
+            self._eval_feed_status.configure(text=f"Showing {len(rows)} recent scores")
+        except Exception as e:
+            self._eval_feed_status.configure(text=f"Error: {e}")
+
     def on_refresh(self):
-        pass  # Static panels — no periodic refresh needed
+        """Periodic refresh -- update live eval feed if visible."""
+        try:
+            if hasattr(self, '_eval_feed_labels'):
+                self._refresh_eval_feed()
+        except Exception:
+            pass
 
     def on_close(self):
         self._queue_running = False

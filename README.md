@@ -76,6 +76,29 @@ BigEd CC
 - **Audit Trail**: All API calls, file access, config changes logged
 - **Air-Gap Mode**: Full offline operation with local models only
 
+## Multi-Machine Fleet Federation
+
+BigEd CC supports multi-device fleet federation. Each device runs its own supervisor and workers, sharing tasks through a federated task queue.
+
+| Feature | Details |
+|---------|---------|
+| **Device Identity** | `fleet.toml [naming] device_name` identifies each machine |
+| **Task Sharing** | Federation broker routes tasks to the best-equipped device |
+| **Cross-Platform** | Windows, Linux, macOS nodes in the same fleet |
+| **FleetBridge** | `fleet_bridge.py` ABC with WslBridge (Win->WSL) and DirectBridge (Linux/macOS) |
+| **Air-Gap Safe** | Each node enforces its own offline/air-gap policy independently |
+| **GPU Routing** | Tasks route to nodes with available VRAM via Dr. Ders hw_state reports |
+
+Configuration in `fleet.toml`:
+```toml
+[naming]
+device_name = "workstation-01"    # unique device ID
+
+[federation]
+enabled = false                   # enable multi-device mode
+broker_url = ""                   # federation broker endpoint
+```
+
 ## Training Pipeline
 
 Autonomous ML training loop inspired by [Karpathy's build-nanogpt](https://github.com/karpathy/build-nanogpt). Agent-edited `train.py` runs 5-minute experiments, measures val_bpb, keeps or reverts changes.

@@ -38,7 +38,9 @@ ICON_ICO    = ASSETS  / "brick.ico"
 APP_NAME    = "Big Edge Compute Command"
 APP_VERSION = "0.42.00b"
 PUBLISHER   = "Max's Home Lab"
-DEFAULT_DIR = Path(os.environ.get("PROGRAMFILES", "C:/Program Files")) / "BigEdCC"
+# v0.050.03b: null-safe env var — fallback to C:/Program Files if PROGRAMFILES unset or empty
+_pf = os.environ.get("PROGRAMFILES") or "C:/Program Files"
+DEFAULT_DIR = Path(_pf) / "BigEdCC"
 REG_KEY     = r"Software\Microsoft\Windows\CurrentVersion\Uninstall\BigEdCC"
 
 # ─── Theme ────────────────────────────────────────────────────────────────────
@@ -124,12 +126,15 @@ def create_shortcut(target: Path, shortcut_path: Path, icon: Path = None):
 
 def remove_shortcuts() -> list[str]:
     removed = []
-    desktop = Path(os.environ.get("USERPROFILE", "~")) / "Desktop" / "BigEdCC.lnk"
+    # v0.050.03b: null-safe env vars — resolve to real paths, never "~" string
+    _up = os.environ.get("USERPROFILE") or str(Path.home())
+    desktop = Path(_up) / "Desktop" / "BigEdCC.lnk"
     if desktop.exists():
         desktop.unlink(missing_ok=True)
         removed.append("Desktop shortcut")
+    _ad = os.environ.get("APPDATA") or str(Path.home() / "AppData" / "Roaming")
     programs = (
-        Path(os.environ.get("APPDATA", "~"))
+        Path(_ad)
         / "Microsoft/Windows/Start Menu/Programs/Big Edge Compute Command"
     )
     if programs.exists():
@@ -918,7 +923,9 @@ class Setup(ctk.CTk):
 
             # Strategy 2: curl (ships with Windows 11)
             curl = shutil.which("curl")
-            dl_dir = Path(os.environ.get("TEMP") or os.environ.get("TMP") or "C:/Windows/Temp")
+            # v0.050.03b: null-safe temp dir — never falls through to hardcoded Windows path
+            import tempfile
+            dl_dir = Path(os.environ.get("TEMP") or os.environ.get("TMP") or tempfile.gettempdir())
             installer = dl_dir / "OllamaSetup.exe"
             url = "https://ollama.com/download/OllamaSetup.exe"
 
@@ -1056,12 +1063,16 @@ class Setup(ctk.CTk):
         icon   = install_dir / "brick.ico"
         created = []
         if self._desktop_sc.get():
-            desktop = Path(os.environ.get("USERPROFILE", "~")) / "Desktop"
+            # v0.050.03b: null-safe env var — resolve to real paths
+            _up = os.environ.get("USERPROFILE") or str(Path.home())
+            desktop = Path(_up) / "Desktop"
             create_shortcut(target, desktop / "BigEdCC.lnk", icon)
             created.append("Desktop shortcut")
         if self._startmenu_sc.get():
+            # v0.050.03b: null-safe env var — resolve to real paths
+            _ad = os.environ.get("APPDATA") or str(Path.home() / "AppData" / "Roaming")
             programs = (
-                Path(os.environ.get("APPDATA", "~"))
+                Path(_ad)
                 / "Microsoft/Windows/Start Menu/Programs/Big Edge Compute Command"
             )
             programs.mkdir(parents=True, exist_ok=True)

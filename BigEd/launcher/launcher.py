@@ -148,7 +148,7 @@ ctk.set_appearance_mode("dark")
 ctk.set_default_color_theme("dark-blue")
 
 from ui.theme import (
-    BG, BG2, BG3, ACCENT, ACCENT_H, GOLD, TEXT, DIM,
+    BG, BG2, BG3, ACCENT, ACCENT_H, GOLD, BRAND, TEXT, DIM,
     GREEN, ORANGE, RED, MONO, FONT, FONT_SM, FONT_H,
     BLUE, CYAN, FONT_STAT, FONT_BOLD, FONT_TITLE, FONT_XS,
     HEADER_HEIGHT, BTN_HEIGHT,
@@ -228,6 +228,30 @@ AGENT_THEMES = {
         "implementation": "Smith",
         "security": "Sentinel",
         "planner": "Architect",
+    },
+    "cul-de-sac": {
+        "supervisor": "Ed",
+        "researcher": "Edd",
+        "coder": "Eddie",
+        "archivist": "Plank",
+        "analyst": "Jimmy",
+        "sales": "Kevin",
+        "onboarding": "Nazz",
+        "implementation": "Rolf",
+        "security": "Jonny",
+        "planner": "Sarah",
+    },
+    "robots": {
+        "supervisor": "Optimus",
+        "researcher": "Data",
+        "coder": "Cortana",
+        "archivist": "JARVIS",
+        "analyst": "GLaDOS",
+        "sales": "HAL",
+        "onboarding": "Samantha",
+        "implementation": "Bender",
+        "security": "T-800",
+        "planner": "TARS",
     },
 }
 
@@ -1448,7 +1472,7 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
         title_frame = ctk.CTkFrame(hdr, fg_color="transparent")
         title_frame.grid(row=0, column=2, padx=(0, 8), pady=6, sticky="w")
         ctk.CTkLabel(title_frame, text="BigEd CC",
-                     font=("RuneScape Bold 12", 26, "bold"), text_color=GOLD).pack(side="left")
+                     font=("RuneScape Bold 12", 26, "bold"), text_color=BRAND).pack(side="left")
         ctk.CTkLabel(title_frame, text=f"  {_get_version()}",
                      font=FONT_XS, text_color=DIM).pack(side="left", pady=(6, 0))
 

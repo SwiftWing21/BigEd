@@ -60,8 +60,16 @@ def run(payload: dict, config: dict, log) -> dict:
                     img = _capture_window(title)
                     if img:
                         break
+        elif action == "diff":
+            # Screenshot diff tool (0.051.04b) — compare before/after images
+            before = payload.get("before", "")
+            after = payload.get("after", "")
+            threshold = payload.get("threshold", 0.02)
+            if not before or not after:
+                return {"error": "diff action requires 'before' and 'after' image paths"}
+            return screenshot_diff(before, after, threshold=threshold)
         else:
-            return {"error": f"Unknown action: {action}. Use: full, window, region, app, dashboard"}
+            return {"error": f"Unknown action: {action}. Use: full, window, region, app, dashboard, diff"}
 
         if img is None:
             return {"error": "Screenshot capture failed — window not found or display unavailable"}
@@ -163,3 +171,67 @@ def capture_ux_test_suite(config: dict, log) -> list:
         time.sleep(1)  # Brief pause between captures
 
     return results
+
+
+def screenshot_diff(before_path: str, after_path: str, output_path: str = None,
+                    threshold: float = 0.02) -> dict:
+    """Compare two screenshots for visual regression (0.051.04b).
+
+    Args:
+        before_path: Path to the "before" screenshot (baseline).
+        after_path: Path to the "after" screenshot (new version).
+        output_path: Optional path for the diff image. Auto-generated if None.
+        threshold: Pixel difference threshold (0.0-1.0). Default 2% = pass.
+
+    Returns:
+        dict with keys: match (bool), diff_pct (float), diff_pixels (int),
+        total_pixels (int), diff_image (str path or None), verdict (str).
+    """
+    try:
+        from PIL import Image, ImageChops
+        import math
+
+        img_before = Image.open(before_path).convert("RGB")
+        img_after = Image.open(after_path).convert("RGB")
+
+        # Resize to match if dimensions differ
+        if img_before.size != img_after.size:
+            img_after = img_after.resize(img_before.size, Image.Resampling.LANCZOS)
+
+        # Compute pixel-wise difference
+        diff = ImageChops.difference(img_before, img_after)
+
+        # Count significantly different pixels (threshold per channel: 30/255)
+        diff_data = list(diff.getdata())
+        total = len(diff_data)
+        changed = sum(1 for r, g, b in diff_data if max(r, g, b) > 30)
+        diff_pct = changed / total if total > 0 else 0.0
+
+        # Generate diff image (amplified for visibility)
+        diff_amplified = diff.point(lambda x: min(255, x * 5))
+
+        if output_path is None:
+            ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+            SCREENSHOT_DIR.mkdir(parents=True, exist_ok=True)
+            output_path = str(SCREENSHOT_DIR / f"diff_{ts}.png")
+
+        diff_amplified.save(output_path, "PNG")
+
+        verdict = "PASS" if diff_pct <= threshold else "FAIL"
+
+        return {
+            "match": diff_pct <= threshold,
+            "diff_pct": round(diff_pct * 100, 2),
+            "diff_pixels": changed,
+            "total_pixels": total,
+            "diff_image": output_path,
+            "verdict": verdict,
+            "threshold_pct": round(threshold * 100, 2),
+            "before": before_path,
+            "after": after_path,
+        }
+
+    except ImportError:
+        return {"error": "PIL/Pillow not installed — run: pip install Pillow"}
+    except Exception as e:
+        return {"error": f"Screenshot diff failed: {e}"}

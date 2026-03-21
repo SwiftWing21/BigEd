@@ -102,8 +102,51 @@ def _is_valid_skill(name):
     return name in _valid_skills
 
 
+def _get_docker_volumes(skill_name, config):
+    """Build Docker volume mounts scoped to FileSystemGuard zones.
+
+    When the guard is configured, only mount zones the skill has access to.
+    Falls back to read-only project mount when guard is absent or unconfigured.
+    """
+    volumes = []
+    try:
+        from filesystem_guard import FileSystemGuard
+        guard = FileSystemGuard(config)
+        zones = guard.get_zones()
+        overrides = config.get("filesystem", {}).get("overrides", {})
+        skill_override = overrides.get(skill_name, {})
+        override_zones = skill_override.get("zones", [])
+        override_access = skill_override.get("access", "")
+
+        for zone_name, spec in zones.items():
+            zone_path = str(spec["path"])
+            access = spec["access"]
+
+            # Apply skill override if this zone is overridden for the skill
+            if zone_name in override_zones and override_access:
+                access = override_access
+
+            # Map access level to Docker mount mode
+            ro = ":ro" if access == "read" else ""
+            container_path = f"/workspace/{zone_name}"
+            volumes.extend(["-v", f"{zone_path}:{container_path}{ro}"])
+
+        if volumes:
+            return volumes
+    except (ImportError, Exception):
+        pass
+
+    # Fallback: read-only project mount
+    project_root = str(Path(__file__).parent.parent.resolve())
+    return ["-v", f"{project_root}:/project:ro"]
+
+
 def _run_in_docker(skill_name, task, config):
-    """Execute a skill inside a Docker container for isolation."""
+    """Execute a skill inside a Docker container for isolation.
+
+    v0.051.07b: Uses FileSystemGuard zones to scope Docker volume mounts.
+    Only directories the skill has permission to access are mounted.
+    """
     import tempfile
     payload = json.loads(task.get("payload_json", "{}"))
 
@@ -113,12 +156,16 @@ def _run_in_docker(skill_name, task, config):
         input_path = f.name
 
     try:
-        result = subprocess.run([
+        # Build zone-scoped volume mounts via FileSystemGuard
+        volume_args = _get_docker_volumes(skill_name, config)
+
+        cmd = [
             "docker", "run", "--rm",
             "--network=none",  # no network access inside container
             "--memory=512m",   # memory limit
             "--cpus=1",        # CPU limit
             "-v", f"{input_path}:/input.json:ro",
+        ] + volume_args + [
             "python:3.12-slim",
             "python", "-c", f"""
 import json, sys
@@ -126,7 +173,9 @@ payload = json.load(open('/input.json'))
 # Minimal skill execution in sandbox
 print(json.dumps({{"status": "sandboxed", "skill": "{skill_name}", "payload_received": True}}))
 """
-        ], capture_output=True, text=True, timeout=120)
+        ]
+
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
 
         if result.returncode == 0:
             return result.stdout.strip()

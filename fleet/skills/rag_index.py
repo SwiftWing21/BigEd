@@ -20,6 +20,15 @@ sys.path.insert(0, str(FLEET_DIR))
 
 
 def run(payload, config):
+    try:
+        from filesystem_guard import FileSystemGuard
+        from config import load_config
+        guard = FileSystemGuard(load_config())
+        if not guard.check_access("fleet/knowledge", "write", skill="rag_index"):
+            return {"error": "Access denied to knowledge/ by FileSystemGuard"}
+    except ImportError:
+        pass  # Guard not available — allow (non-enterprise)
+
     from rag import RAGIndex
 
     mode = payload.get("mode", "update")
