@@ -139,15 +139,15 @@ memory_limit_mb = 512    # max RSS per worker process (0 = unlimited)
 # Unassigned tasks with affinity skills are claimed preferentially by matching agents.
 # Agents can still claim non-affinity tasks if nothing else is available.
 [affinity]
-researcher = ["web_search", "arxiv_fetch", "summarize", "web_crawl", "rag_query", "unifi_manage", "home_assistant", "mqtt_inspect", "browser_crawl"]
-coder = ["code_write", "code_review", "code_discuss", "code_write_review", "code_index", "code_quality", "fma_review", "skill_draft", "skill_test", "skill_evolve"]
-archivist = ["flashcard", "rag_index", "rag_query", "ingest"]
-analyst = ["analyze_results", "benchmark", "synthesize"]
+researcher = ["web_search", "arxiv_fetch", "summarize", "web_crawl", "browser_crawl", "rag_query", "unifi_manage", "home_assistant", "mqtt_inspect", "research_loop", "lead_research"]
+coder = ["code_write", "code_review", "code_discuss", "code_write_review", "code_index", "code_quality", "fma_review", "skill_draft", "skill_test", "skill_evolve", "skill_chain", "skill_learn", "skill_promote", "skill_train", "code_refactor", "refactor_verify", "deploy_skill", "claude_code", "git_manager", "github_interact", "github_sync", "branch_manager"]
+archivist = ["flashcard", "rag_index", "rag_query", "ingest", "rag_compress", "knowledge_prune", "marathon_log", "review_discards"]
+analyst = ["analyze_results", "benchmark", "synthesize", "evaluate", "billing_ocr", "token_optimizer", "packet_optimizer", "regression_detector", "stability_report", "swarm_intelligence"]
 sales = ["lead_research", "marketing", "generate_asset"]
 onboarding = ["discuss"]
 implementation = ["code_write", "discuss"]
-security = ["security_audit", "pen_test", "security_review", "security_apply"]
-planner = ["plan_workload", "curriculum_update"]
+security = ["security_audit", "pen_test", "security_review", "security_apply", "secret_rotate", "db_encrypt", "db_migrate", "key_manager"]
+planner = ["plan_workload", "curriculum_update", "evolution_coordinator", "model_manager", "model_recommend", "oom_prevent", "memory_optimizer", "swarm_consensus"]
 legal = ["legal_draft"]
 account_manager = ["account_review"]
 

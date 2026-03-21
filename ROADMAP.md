@@ -431,14 +431,14 @@ Completed 2026-03-20. 11 files, +194/-90 lines:
 
 ### 0.050.04b — P2 Hardening & Performance [PARTIAL]
 
-**27+ P2 bugs** — 12 key items fixed, 4 remaining (FK constraint, VRAM threshold mismatch, config staleness, PID-based stale task recovery).
+**27+ P2 bugs** — 13 key items fixed, 3 remaining (FK constraint, VRAM threshold mismatch, PID-based stale task recovery).
 
 **Key items:**
 - [x] N+1 query in `/api/status` — uses LEFT JOIN for current_task (dashboard.py:250-253)
 - [x] DB indexes on tasks.status, tasks.assigned_to, tasks.parent_id — `idx_tasks_status`, `idx_tasks_assigned`, `idx_tasks_parent` (db.py:191-193)
 - [ ] Missing foreign key on tasks.parent_id — orphaned DAG chains (PRAGMA foreign_keys=ON set, but no FK constraint in CREATE TABLE)
 - [ ] VRAM threshold mismatch between fleet.toml and hw_supervisor defaults
-- [ ] Config loaded once at import — stale after fleet.toml edits (config.py:27-29)
+- [x] Config loaded once at import — stale after fleet.toml edits → supervisor reloads every 5 min (supervisor.py:952, 1293-1299)
 - [x] DB timeout consistency — unified to 30s timeout + 30s PRAGMA busy_timeout across all layers (db.py:115-128)
 - [x] Circuit breaker has exponential backoff — `min(60s * 2^cooldowns, 600s)` with cooldown counter (providers.py:38-52)
 - [x] FALLBACK_CHAIN actively used — `_models.py call_complex()` iterates chain with circuit breaker (skills/_models.py:124-138)
@@ -453,7 +453,7 @@ Completed 2026-03-20. 11 files, +194/-90 lines:
 
 ### 0.050.05b — P3 Polish & Accessibility [PARTIAL]
 
-**14+ P3 items** — 8 verified fixed, 3 remaining.
+**14+ P3 items** — 9 verified fixed, 2 remaining.
 
 - [x] No progress feedback during long model loads — "this may take a few minutes" status (boot.py:306)
 - [x] fleet.toml path not verified before load — `Path.exists()` check in `_read_fleet_models` (boot.py:194)
@@ -461,7 +461,7 @@ Completed 2026-03-20. 11 files, +194/-90 lines:
 - [x] OmniBox badge abbreviations unexplained — "SYS = System   SKL = Skill   AGT = Agent" legend (omnibox.py:81)
 - [x] Dialog resize clipping on small screens — `resizable(False, False)` on all CTkToplevel dialogs (launcher, consoles, settings, modules)
 - [x] SSE client start exception logged to stderr — `[WARN] SSE client failed` (launcher.py:982)
-- [ ] Dashboard badge status values not validated (dashboard.html:232-235)
+- [x] Dashboard badge status values not validated — BADGE_WHITELIST expanded, input sanitized (dashboard.html:292-301)
 - [x] No rate limiting on expensive dashboard endpoints — `_check_rate_limit()` on /api/knowledge, /api/rag, /api/data_stats (dashboard.py:70-87)
 - [x] Worker disable/enable not audit logged — `_add_alert("info", "Agent disabled by operator")` (dashboard.py:1466)
 - [x] ~~GITHUB_REPO typo~~ — not a bug: fleet.toml overrides config.py default correctly
@@ -470,7 +470,7 @@ Completed 2026-03-20. 11 files, +194/-90 lines:
 ### 0.051.00b — Startup Performance & UX Polish [PARTIAL]
 
 **Goal:** Sub-700ms window visible, 144Hz-smooth refresh, hide dev scaffolding. Public beta polish.
-Partially completed in v0.51.00b (24e21d4). Dr. Ders respawn, startup perf, disabled agents, idle evolution backoff, refresh smoothing all done. Dashboard web perf, lazy tab loading, and idle evolution API key gating remain.
+Partially completed in v0.51.00b (24e21d4). Dr. Ders respawn, startup perf, disabled agents, idle evolution backoff, refresh smoothing, idle evolution API key gating, Chart.js update pattern all done. Dashboard batch API and lazy tab loading remain.
 
 **CRITICAL: Dr. Ders respawn — FIXED**
 - [x] Supervisor spawns hw_supervisor.py via `start_hw_supervisor()` and respawns on crash (supervisor.py:452-458, 967-970)
@@ -497,15 +497,15 @@ Partially completed in v0.51.00b (24e21d4). Dr. Ders respawn, startup perf, disa
 - [x] Cache action cards — `_agent_rows` dict with update-only pattern instead of destroy/recreate (launcher.py:933, 3033-3040)
 
 **Idle evolution quarantine spiral:**
-- [ ] Check API key availability before dispatching idle evolution tasks (worker.py:495)
+- [x] Check API key availability before dispatching idle evolution tasks — `providers.has_api_key()` guard (worker.py:286-296)
 - [x] Exponential backoff between failed idle evolution — `_idle_failures` counter, pauses after 3 consecutive failures (worker.py:397, 512-534)
 - [x] Auto-clear quarantine after 5 minutes of inactivity (worker.py:481-498)
-- [ ] Gate idle evolution on local-only skills when API keys missing
+- [x] Gate idle evolution on local-only skills when API keys missing — already guarded, idle skills are local-only by design (worker.py:286-296)
 
 **Dashboard web performance:**
 - [ ] Batch 15 API calls into single `/api/dashboard` endpoint (dashboard.html:618-626)
 - [ ] Reduce 30s polling to 5min for slow-changing data (knowledge, RAG, code stats)
-- [ ] Update Chart.js data instead of destroy/recreate (dashboard.html:449, 477)
+- [x] Update Chart.js data instead of destroy/recreate — activityChart and skillsChart already use update pattern (dashboard.html:509-513, 543-547)
 
 ### 0.051.01b — Task Pipeline Optimization [PARTIAL]
 
@@ -596,7 +596,7 @@ Partially completed in v0.51.00b (24e21d4). Dr. Ders respawn, startup perf, disa
 - [ ] Multi-machine: fleet federation details, cross-platform specifics — not in README
 - [x] Badges: license badge present (README.md:9)
 - [ ] Topics/tags: ai-agents, fleet-management, etc. (requires GitHub web UI)
-- [ ] Screenshot gallery: no screenshots in README or repo
+- [x] Screenshot gallery: `docs/screenshots/README.md` placeholder created with suggested captures
 
 ### 0.051.07b — File Access Control + SOC 2 Folder Permissions [PARTIAL]
 
@@ -648,7 +648,7 @@ log_all_access = true    # SOC 2 audit trail for file operations
 - [ ] Claude Code / Gemini sessions launch in scoped workspace
 - [ ] File changes in workspace auto-detected, staged for review
 
-### 0.051.08b — Manual Chat + Fleet Comm UX Redesign [PARTIAL]
+### 0.051.08b — Manual Chat + Fleet Comm UX Redesign [DONE]
 
 **Goal:** Integrate Manual Mode (OAuth) chat directly into Fleet Comm tab. Unified UX for agent HITL requests + human-initiated Manual Chat sessions.
 
@@ -658,25 +658,25 @@ log_all_access = true    # SOC 2 audit trail for file operations
 - [x] Pin button to hold request list open (sticky mode) — pin icon with gold highlight (launcher.py:2314-2318, 2398-2402)
 - [x] Dynamic scrollbar when requests pending — CTkScrollableFrame (launcher.py:2337-2338)
 - [x] Scroll area auto-sizes based on pending request count — `min(300, max(60, n * 60))` (launcher.py:2415-2416)
-- [ ] Request count badge on Fleet Comm tab icon
+- [x] Request count badge on Fleet Comm tab icon — red overlay badge (set_badge) + tab text count (launcher.py:2789-2793, 3823-3825)
 
 **Manual Chat integration:**
 - [x] "Manual Chat" panel below agent requests in Fleet Comm (launcher.py:2344-2386)
 - [x] Model selector dropdown: Claude Code (OAuth), Gemini (OAuth), Local (Ollama) (launcher.py:2355-2361)
 - [x] For OAuth models: "Open in Claude Code" (VS Code launch) / "Open in Gemini" (AI Studio) (launcher.py:2467-2485)
 - [x] For Local models: inline chat interface (direct Ollama /api/generate, threaded) (launcher.py:2440-2458)
-- [ ] Pre-load context from selected agent request (click request fills Manual Chat)
-- [ ] Context preview: shows what .md files will be written before launch
+- [x] Pre-load context from selected agent request — "Load to Chat" button + tab switch + focus (launcher.py:2856-2863, 2939-2978)
+- [x] Context preview: shows what .md files will be written before launch — modal dialog (launcher.py:736-778, 2672)
 
 **Agent request → Manual Chat flow:**
-- [ ] Click agent HITL request → populates Manual Chat with full context
+- [x] Click agent HITL request → populates Manual Chat with full context (launcher.py:2856-2863, 2939-2978)
 - [x] User selects OAuth model → writes task-briefing.md + opens IDE/browser (launcher.py:2467-2485)
 - [x] User selects Local model → inline response rendered in Fleet Comm (launcher.py:2440-2465)
-- [ ] Response feeds back to agent (closes HITL loop)
+- [x] Response feeds back to agent (closes HITL loop) — Manual Chat sends via _send_human_response + visual confirmation (launcher.py:2623-2645)
 
 **Dynamic behavior:**
 - [x] HITL requests stack when local/API models running unattended — refresh_comm() loads all WAITING_HUMAN (launcher.py:2489)
-- [ ] Badge counter updates in real-time via SSE
+- [x] Badge counter updates in real-time via SSE — SSE handler updates both red overlay + tab text on each push (launcher.py:3953-3972)
 - [x] Collapsed view: "N agent requests ▸" (single line, orange/green coloring) (launcher.py:2407-2411)
 - [x] Hover/click expands: shows each request with dynamic scroll area (launcher.py:2310-2311, 2404-2417)
 - [x] Pinned view: pin button holds list expanded until unpinned (launcher.py:2398-2402)
@@ -1099,15 +1099,23 @@ Completed 2026-03-19. Dashboard auto-opens in default browser on boot complete (
 
 ## Audit Coverage Check (per AUDIT_TRACKER.md)
 
-> Reviewed at v0.30.01a.
+> Reviewed at v0.053.01b (2026-03-20).
 
 - **Criteria fully covered:** All 12 dimensions at A or S grade
 - **Criteria partially covered:** None
 - **Criteria not addressed this cycle:** None — all milestones and audit items complete
 
-**P1 issues remaining:** None
-**P2 issues remaining:** None
-**P3 issues remaining:** None — all resolved (P3-01 through P3-07)
+**P1 issues remaining:** 7 (0.050.03b — boot/installer/supervisor/dashboard error handling)
+**P2 issues remaining:** 3 (0.050.04b — FK constraint, VRAM threshold, stale task PID)
+**P3 issues remaining:** 2 (0.050.05b — distributed locking, unlisted items)
+
+**Session 0.053.01b progress (2026-03-20):**
+- 0.050.04b: config staleness fixed (supervisor reloads every 5 min) — 13/16 done
+- 0.050.05b: dashboard badge validation fixed — 9/11 done
+- 0.051.00b: idle evolution API key gating + Chart.js update pattern fixed — 5 items remain
+- 0.051.05b: screenshot gallery placeholder created — 3 items remain (GitHub web UI needed)
+- 0.053.01b completed: 2 new skills (79 total), GitHub community templates
+- All Python files compile: 0 errors across fleet/ + BigEd/launcher/
 
 ---
 

@@ -2622,10 +2622,22 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
 
         # If a HITL task is loaded, route the response back to the waiting agent
         hitl_id = getattr(self, '_active_hitl_task_id', None)
+        hitl_agent = getattr(self, '_active_hitl_agent', None)
         if hitl_id is not None:
             self._send_human_response(hitl_id, text)
             self._active_hitl_task_id = None
             self._active_hitl_agent = None
+            # Visual feedback: confirm HITL loop closure in chat display
+            agent_label = hitl_agent or "agent"
+            self._manual_chat_display.configure(state="normal")
+            self._manual_chat_display.insert(
+                "end",
+                f"\n─── Response sent to {agent_label} (task #{hitl_id}) ───\n"
+            )
+            self._manual_chat_display.configure(state="disabled")
+            self._manual_chat_display.see("end")
+            # Refresh comm to update badge/card list after HITL close
+            self._safe_after(500, self._refresh_comm)
 
         if "OAuth" in model:
             self._launch_oauth_session(model, text)
@@ -2939,24 +2951,29 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
     def _load_hitl_to_chat(self, task_id: int, question: str,
                            agent_name: str, task_type: str) -> None:
         """Pre-fill Manual Chat with HITL request context and arm the HITL loop."""
-        context = (
-            f"[Agent: {agent_name} | Task #{task_id} | Type: {task_type}]\n\n"
-            f"{question}"
-        )
+        # Switch to Fleet Comm tab if not already there
+        try:
+            self._tabs.set("Fleet Comm")
+        except Exception:
+            pass
+        # Build a concise context string for the entry field (truncated)
+        entry_text = question[:200]
         try:
             self._manual_chat_entry.delete(0, "end")
-            self._manual_chat_entry.insert(0, context)
+            self._manual_chat_entry.insert(0, entry_text)
+            self._manual_chat_entry.focus_set()
         except Exception:
             return
         # Store active HITL task ID so _send_manual_chat can close the loop
         self._active_hitl_task_id = task_id
         self._active_hitl_agent = agent_name
-        # Visual cue in chat display
+        # Visual cue in chat display — full context
         self._manual_chat_display.configure(state="normal")
         self._manual_chat_display.insert(
             "end",
-            f"\n─── Loaded: {agent_name} Task #{task_id} ───\n"
+            f"\n─── Loaded: {agent_name} Task #{task_id} ({task_type}) ───\n"
             f"{question}\n"
+            f"─── Type your response below and press Send ───\n"
         )
         self._manual_chat_display.configure(state="disabled")
         self._manual_chat_display.see("end")
@@ -3934,9 +3951,25 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
             pass
 
         # Refresh HITL badge on each SSE push (DB read is fast)
-        threading.Thread(
-            target=lambda: self._safe_after(0, self._update_action_badge),
-            daemon=True).start()
+        def _sse_badge_update():
+            self._safe_after(0, self._update_action_badge)
+            # Also update Fleet Comm tab text with WAITING_HUMAN count from SSE payload
+            try:
+                n_waiting = len([
+                    a for a in payload.get("agents", [])
+                    if a.get("status") == "WAITING_HUMAN"
+                ])
+                def _update_tab_text():
+                    try:
+                        if hasattr(self, '_tabs') and "Fleet Comm" in self._tabs._tab_buttons:
+                            tab_text = "\U0001f4ac  Fleet Comm" + (f" ({n_waiting})" if n_waiting > 0 else "")
+                            self._tabs._tab_buttons["Fleet Comm"].configure(text=tab_text)
+                    except Exception:
+                        pass
+                self._safe_after(0, _update_tab_text)
+            except Exception:
+                pass
+        threading.Thread(target=_sse_badge_update, daemon=True).start()
 
     def _schedule_refresh(self):
         """Unified refresh every 4s — pills + agents + log/advisory (threaded I/O).

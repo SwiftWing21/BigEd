@@ -293,24 +293,49 @@ LOCAL_COMPLEXITY_ROUTING = {
     "complex": "default",  # qwen3:8b — best local quality
 }
 
-# Skills pre-classified by complexity
+# Skills pre-classified by complexity (grouped by tier)
 SKILL_COMPLEXITY = {
-    # Simple (API: Haiku, Local: 4b) — classification, extraction, indexing
-    "flashcard": "simple", "rag_query": "simple", "summarize": "simple",
-    "ingest": "simple", "rag_index": "simple", "code_index": "simple",
-    "account_review": "simple", "status_report": "simple",
-    "stability_report": "simple", "onboard_checklist": "simple",
-    # Medium (API: Sonnet, Local: 8b) — generation, analysis, review
-    "web_search": "medium", "code_review": "medium", "discuss": "medium",
-    "code_discuss": "medium", "security_audit": "medium", "analyze_results": "medium",
-    "fma_review": "medium", "code_quality": "medium", "code_refactor": "medium",
-    "curriculum_update": "medium", "dataset_synthesize": "medium",
-    "skill_train": "medium", "research_loop": "medium",
-    # Complex (API: Opus, Local: 8b) — multi-step reasoning, architecture
-    "plan_workload": "complex", "lead_research": "complex", "skill_evolve": "complex",
-    "code_write": "complex", "legal_draft": "complex", "claude_code": "complex",
-    "swarm_intelligence": "complex", "evolution_coordinator": "complex",
+    "simple": [
+        "flashcard", "rag_query", "summarize", "ingest", "rag_index",
+        "code_index", "account_review", "stability_report", "benchmark",
+        "screenshot", "billing_ocr", "marathon_log", "rag_compress",
+        "knowledge_prune", "review_discards", "packet_optimizer",
+    ],
+    "medium": [
+        "web_search", "code_review", "discuss", "code_discuss",
+        "security_audit", "analyze_results", "fma_review", "code_quality",
+        "code_refactor", "curriculum_update", "dataset_synthesize",
+        "skill_train", "research_loop", "regression_detector",
+        "token_optimizer", "memory_optimizer", "model_recommend",
+        "git_manager", "github_interact", "github_sync", "branch_manager",
+        "db_encrypt", "db_migrate", "key_manager", "skill_test",
+        "skill_draft", "deploy_skill", "evaluate", "generate_asset",
+        "marketing", "secret_rotate", "security_review", "security_apply",
+        "pen_test", "synthesize", "vision_analyze", "web_crawl",
+        "browser_crawl", "home_assistant", "mqtt_inspect", "unifi_manage",
+        "refactor_verify", "ml_bridge", "service_manager", "arxiv_fetch",
+        "product_release",
+    ],
+    "complex": [
+        "plan_workload", "lead_research", "skill_evolve", "code_write",
+        "legal_draft", "claude_code", "swarm_intelligence",
+        "evolution_coordinator", "swarm_consensus", "code_write_review",
+        "skill_chain", "model_manager", "oom_prevent", "skill_learn",
+        "skill_promote",
+    ],
 }
+
+
+def _get_skill_complexity(skill_name: str) -> str:
+    """Resolve a skill name to its complexity tier from SKILL_COMPLEXITY.
+
+    SKILL_COMPLEXITY is grouped as {tier: [skills]}. This does a reverse
+    lookup and defaults to 'medium' for unknown skills.
+    """
+    for tier, skills in SKILL_COMPLEXITY.items():
+        if skill_name in skills:
+            return tier
+    return "medium"
 
 
 def get_optimal_model(skill_name: str, config: dict = None) -> str:
@@ -323,7 +348,7 @@ def get_optimal_model(skill_name: str, config: dict = None) -> str:
         override = config.get("skill_complexity", {}).get(skill_name)
         if override and override in COMPLEXITY_ROUTING:
             return COMPLEXITY_ROUTING[override]
-    complexity = SKILL_COMPLEXITY.get(skill_name, "medium")
+    complexity = _get_skill_complexity(skill_name)
     return COMPLEXITY_ROUTING.get(complexity, "claude-sonnet-4-6")
 
 
@@ -333,7 +358,7 @@ def get_local_model_for_skill(skill_name: str, config: dict) -> str:
     Simple skills use the smaller model (e.g. qwen3:4b) to save VRAM and reduce
     latency. Medium/complex skills use the default model (e.g. qwen3:8b).
     """
-    complexity = SKILL_COMPLEXITY.get(skill_name, "medium")
+    complexity = _get_skill_complexity(skill_name)
     tier_key = LOCAL_COMPLEXITY_ROUTING.get(complexity, "default")
     tiers = config.get("models", {}).get("tiers", {})
     model = tiers.get(tier_key)

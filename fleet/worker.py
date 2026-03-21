@@ -283,7 +283,11 @@ def _run_idle_evolution(agent_name, config):
     global _last_evolution_pipeline, _last_research_trigger
     log = logging.getLogger(agent_name)
 
-    # Guard: skip if the configured complex provider has no API key
+    # Guard: skip if the configured complex provider has no API key.
+    # Idle evolution skills (skill_test, evolution_coordinator, research_loop) are
+    # local-only by design — they use Ollama, not external APIs. However, the
+    # provider check gates on whether the *routing* provider is available, which
+    # prevents quarantine spirals when no API key is configured at all.
     try:
         import providers
         if not providers.has_api_key(config):

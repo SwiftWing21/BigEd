@@ -145,11 +145,71 @@ class Module:
             ctk.CTkLabel(settings_grid, text=value, font=FONT_STAT, text_color=TEXT,
                          anchor="w").grid(row=i, column=1, pady=2, sticky="w")
 
+        # Edit controls
+        edit_row = ctk.CTkFrame(card, fg_color="transparent")
+        edit_row.pack(fill="x", padx=12, pady=(4, 8))
+
+        ctk.CTkButton(edit_row, text="Edit Model Settings", font=FONT_SM,
+                      width=140, height=28, fg_color=BG3, hover_color=BG2,
+                      command=self._edit_model_settings).pack(side="left")
+
+        self._model_edit_status = ctk.CTkLabel(edit_row, text="", font=FONT_XS, text_color=DIM)
+        self._model_edit_status.pack(side="left", padx=8)
+
         # Weight adjustment
         ctk.CTkLabel(card, text="Skill Complexity Routing", font=FONT_BOLD,
                      text_color=GOLD, anchor="w").pack(fill="x", padx=12, pady=(8, 2))
         ctk.CTkLabel(card, text="Simple tasks → Haiku ($0.80/M)  |  Standard → Sonnet ($3/M)  |  Complex → Opus ($15/M)",
                      font=FONT_XS, text_color=DIM, anchor="w").pack(fill="x", padx=16, pady=(0, 8))
+
+    def _edit_model_settings(self):
+        """Open inline editor for model settings."""
+        config = self._load_config()
+        models = config.get("models", {})
+
+        dlg = ctk.CTkToplevel(self._app)
+        dlg.title("Model Settings")
+        dlg.geometry("400x300")
+        dlg.resizable(False, False)
+        dlg.configure(fg_color=BG2)
+
+        fields = {}
+        entries = [
+            ("local", models.get("local", "qwen3:8b"), "GPU model"),
+            ("conductor_model", models.get("conductor_model", "qwen3:4b"), "CPU conductor"),
+            ("keep_alive_mins", str(models.get("keep_alive_mins", 30)), "Keep alive (min)"),
+        ]
+
+        for i, (key, value, label) in enumerate(entries):
+            ctk.CTkLabel(dlg, text=label, font=FONT_SM, text_color=DIM
+                         ).grid(row=i, column=0, padx=12, pady=6, sticky="w")
+            entry = ctk.CTkEntry(dlg, font=FONT, fg_color=BG, width=200)
+            entry.insert(0, value)
+            entry.grid(row=i, column=1, padx=8, pady=6)
+            fields[key] = entry
+
+        def save():
+            try:
+                import re
+                toml_path = FLEET_TOML
+                text = toml_path.read_text(encoding="utf-8")
+                for key, entry in fields.items():
+                    val = entry.get().strip()
+                    # Update the value in fleet.toml
+                    pattern = rf'^(\s*{re.escape(key)}\s*=\s*).*$'
+                    if key == "keep_alive_mins":
+                        text = re.sub(pattern, rf'\g<1>{val}', text, flags=re.MULTILINE)
+                    else:
+                        text = re.sub(pattern, rf'\g<1>"{val}"', text, flags=re.MULTILINE)
+                toml_path.write_text(text, encoding="utf-8")
+                self._model_edit_status.configure(text="Saved. Changes apply on next model load.", text_color="#4caf50")
+                dlg.destroy()
+            except Exception as e:
+                self._model_edit_status.configure(text=f"Save failed: {e}", text_color="#f44336")
+
+        ctk.CTkButton(dlg, text="Save", font=FONT_SM, width=80, height=28,
+                      fg_color=ACCENT, hover_color=ACCENT_H,
+                      command=save).grid(row=len(entries), column=1, pady=12, sticky="e", padx=8)
 
     # ── Panel 3: Prompt Queue ────────────────────────────────────────────────
 
@@ -365,6 +425,26 @@ class Module:
             ctk.CTkLabel(row, text=savings, font=FONT_STAT, text_color=GREEN,
                          anchor="w", width=120).pack(side="left")
             ctk.CTkLabel(row, text=desc, font=FONT_XS, text_color=DIM,
+                         anchor="w").pack(side="left", fill="x", expand=True)
+
+        # Skill routing weight display
+        ctk.CTkLabel(card, text="Skill Routing Weights", font=FONT_BOLD,
+                     text_color=GOLD, anchor="w").pack(fill="x", padx=12, pady=(8, 2))
+
+        weight_info = [
+            ("Simple \u2192 Haiku/Local", "$0.80/M or free", "flashcard, benchmark, rag_query..."),
+            ("Medium \u2192 Sonnet/8b", "$3.00/M or free", "code_review, web_search, summarize..."),
+            ("Complex \u2192 Opus", "$15.00/M", "code_write, plan_workload, skill_evolve..."),
+        ]
+
+        for tier, cost, examples in weight_info:
+            wrow = ctk.CTkFrame(card, fg_color="transparent")
+            wrow.pack(fill="x", padx=12, pady=1)
+            ctk.CTkLabel(wrow, text=tier, font=FONT_SM, text_color=TEXT,
+                         anchor="w", width=180).pack(side="left")
+            ctk.CTkLabel(wrow, text=cost, font=FONT_STAT, text_color=GREEN,
+                         anchor="w", width=100).pack(side="left")
+            ctk.CTkLabel(wrow, text=examples, font=FONT_XS, text_color=DIM,
                          anchor="w").pack(side="left", fill="x", expand=True)
 
         ctk.CTkLabel(card, text="", font=FONT_XS).pack(pady=(0, 6))

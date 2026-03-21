@@ -291,12 +291,13 @@ async function fetchJSON(url) {
 
 const BADGE_WHITELIST = new Set([
   'done', 'failed', 'running', 'pending', 'idle', 'busy',
-  'offline', 'online', 'error', 'info'
+  'offline', 'online', 'error', 'info', 'quarantined',
+  'sleeping', 'resting', 'active', 'disabled'
 ]);
 
 function badge(status) {
-  const s = (status || '').toLowerCase();
-  const cls = BADGE_WHITELIST.has(s) ? s : 'unknown';
+  const s = (status || 'unknown').toLowerCase().replace(/[^a-z0-9-]/g, '-');
+  const cls = BADGE_WHITELIST.has(s) ? s : 'info';
   return `<span class="badge badge-${cls}">${escapeHTML(status)}</span>`;
 }
 

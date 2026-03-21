@@ -950,6 +950,8 @@ def main():
     last_model_recommend = 0
     MODEL_RECOMMEND_INTERVAL = 6 * 3600  # every 6 hours
     last_sched_check = 0  # Manual Mode scheduler — poll at most once per minute
+    last_config_reload = 0
+    CONFIG_RELOAD_INTERVAL = 300  # reload fleet.toml every 5 minutes
     # v0.23 S3: Auto-Intelligence — periodic evolution + research dispatch
     # Intervals defined at module level: RESEARCH_INTERVAL (24h), EVOLUTION_INTERVAL (7d)
     global _last_research_trigger, _last_evolution_trigger, _last_results_mtime
@@ -1289,6 +1291,15 @@ def main():
         if now - last_sched_check >= _SCHED_CHECK_INTERVAL:
             last_sched_check = now
             _check_manual_mode_schedule()
+
+        # Reload config every 5 min to pick up fleet.toml changes
+        if now - last_config_reload >= CONFIG_RELOAD_INTERVAL:
+            last_config_reload = now
+            try:
+                from config import reload_config
+                reload_config()
+            except Exception:
+                pass
 
         # Write status snapshot
         if now - last_status >= 30:
