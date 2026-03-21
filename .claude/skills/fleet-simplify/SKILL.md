@@ -60,6 +60,7 @@ For each changed file, check if it duplicates existing patterns:
 |------|-------|
 | Skills in `fleet/skills/` export `SKILL_NAME`, `DESCRIPTION`, `run(payload, config)` | Grep for missing exports |
 | Skills optionally export `REQUIRES_NETWORK = True` | Check if skill makes HTTP calls without declaring it |
+| Skills optionally export `COMPLEXITY = "simple"\|"medium"\|"complex"` | Check if complex/LLM-heavy skills declare their complexity tier (affects model routing) |
 | Settings panels are mixins in `BigEd/launcher/ui/settings/<name>.py` | Not inline in `__init__.py` |
 | Dialogs are in `BigEd/launcher/ui/dialogs/` | Not inline in `launcher.py` |
 | Security primitives are in `fleet/security.py` | Not duplicated in dashboard or skills |
@@ -80,8 +81,8 @@ For each issue found:
 ## Step 6: Verify
 
 ```bash
-# All syntax clean
-find fleet/ BigEd/ -name "*.py" -not -path "*/.venv/*" -not -path "*__pycache__*" -exec python -c "import py_compile; py_compile.compile('{}', doraise=True)" \;
+# All syntax clean (Windows-safe — avoids find/exec incompatibilities)
+python -m compileall -q fleet/ BigEd/ -x "\.venv|__pycache__"
 
 # Smoke tests pass
 python fleet/smoke_test.py --fast

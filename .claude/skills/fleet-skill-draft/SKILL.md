@@ -49,20 +49,29 @@ def run(payload: dict, config: dict) -> dict:
 5. **All imports** at module level or inside `run()` — no top-level side effects
 6. **Path traversal prevention**: always validate paths against `FLEET_DIR`
 7. **Declare `REQUIRES_NETWORK = True`** if the skill needs internet access
-8. For LLM calls, use `from skills._models import call_complex`
+8. **Optionally declare `COMPLEXITY`**: `"simple"` | `"medium"` | `"complex"` — influences model routing; omit for simple I/O skills, set `"complex"` for LLM-heavy or multi-step reasoning skills
+9. For LLM calls, use `from skills._models import call_complex`
 
 ## MCP-Aware Pattern
 
-Skills can check for MCP servers and use them as a preferred data source:
+Skills can check for MCP servers and use them as a preferred data source.
+There is no `call_mcp()` helper — make direct HTTP calls to the URL returned by `get_mcp_url()`:
 
 ```python
+import urllib.request, json
 from mcp_manager import is_mcp_available, get_mcp_url
 
 def run(payload: dict, config: dict) -> dict:
-    if is_mcp_available("server_name"):
-        # Use MCP server for this capability
-        url = get_mcp_url("server_name")
-        result = call_mcp(url, payload)
+    available, mcp_url = is_mcp_available("server_name")
+    if available and mcp_url:
+        # Direct HTTP call to the MCP server endpoint
+        req = urllib.request.Request(
+            f"{mcp_url}/endpoint",
+            data=json.dumps(payload).encode(),
+            headers={"Content-Type": "application/json"},
+        )
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            result = json.loads(resp.read())
     else:
         # Fall back to local library or HTTP
         result = local_fallback(payload)
@@ -109,13 +118,13 @@ Apply ONE of these perspectives based on the skill's purpose:
 
 ## Workflow
 
-1. Read existing similar skills in `fleet/skills/` for patterns: !`ls fleet/skills/*.py | head -20`
+1. Read existing similar skills in `fleet/skills/` for patterns — use Glob `fleet/skills/*.py` to list them
 2. Check `fleet/fleet.toml` for config patterns the skill may need
-3. Write the skill to `fleet/knowledge/code_drafts/<skill_name>_draft.py` (NEVER directly to `skills/`)
+3. Write the skill to `fleet/knowledge/code_drafts/<skill_name>_draft_<YYYYMMDD>.py` (NEVER directly to `skills/`)
 4. Validate: ensure `SKILL_NAME`, `DESCRIPTION`, and `run()` are present
 5. Show the user the draft and explain what it does
 
 ## Output Location
 
-**IMPORTANT**: Drafts go to `fleet/knowledge/code_drafts/` — NEVER auto-deploy to `fleet/skills/`.
+**IMPORTANT**: Drafts go to `fleet/knowledge/code_drafts/<skill_name>_draft_<YYYYMMDD>.py` — NEVER auto-deploy to `fleet/skills/`.
 The user or fleet will promote via `skill_promote` -> `deploy_skill` after review.

@@ -29,7 +29,7 @@ Evolve/improve the fleet skill: $ARGUMENTS
    - Add improvements incrementally — don't rewrite from scratch
 
 4. **Validate after evolution**:
-   - Run `python dependency_check.py --json` to verify no broken imports or missing dependencies
+   - Run `python fleet/dependency_check.py --json` (from project root) to verify no broken imports or missing dependencies
    - Ensure the evolved skill still passes basic contract checks (SKILL_NAME, DESCRIPTION, run() present)
 
 5. **Save to drafts**: `fleet/knowledge/code_drafts/<skill_name>_evolved_<date>.py`
@@ -64,3 +64,4 @@ The settings system uses 10 mixin modules composed via MRO. When evolving:
 | Timeouts | Network calls without timeout parameters |
 | Return consistency | Mixed None/dict returns — always return dict |
 | Logging | print() instead of structured logging |
+| Complexity declaration | Missing `COMPLEXITY = "simple"\|"medium"\|"complex"` on LLM-heavy skills — add to improve model routing |
