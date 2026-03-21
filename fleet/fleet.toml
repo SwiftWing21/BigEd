@@ -16,11 +16,13 @@ hitl_evolution = false           # true = evolution proposals go to WAITING_HUMA
 [models]
 local = "qwen3:8b"
 complex = "qwen3:8b"
-complex_provider = "local"    # "claude" | "gemini" | "local"
+complex_provider = "local"    # "claude" | "gemini" | "minimax" | "local"
 conductor_model = "qwen3:4b"  # CPU-pinned user chat model (num_gpu=0, ~2-3GB RAM, 0 VRAM)
 vision_model = "llava"        # local multimodal model for image analysis (llava, minicpm-v, qwen-vl)
 ollama_host = "http://localhost:11434"
 keep_alive_mins = 30             # model stay loaded (auto-refreshed while app runs)
+minimax_model = "MiniMax-M1-80k"        # MiniMax M1 (OpenAI-compatible API)
+minimax_api_key_env = "MINIMAX_API_KEY" # env var name for MiniMax API key
 
 # Model hopping batch thresholds — don't swap models unless enough demand queued
 # Prevents thrashing between tiers for single low-value tasks
