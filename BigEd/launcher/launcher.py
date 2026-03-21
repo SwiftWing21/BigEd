@@ -945,13 +945,16 @@ class CustomTabBar(ctk.CTkFrame):
         self._tab_scroll_offset = 0
         self._all_tab_cells: list = []
         self._tab_names_order: list[str] = []
-        self._min_tab_width = 80  # minimum tab width (px) used to compute visible count dynamically
+        self._tab_widths: dict[str, int] = {}  # actual tab widths stored at creation time
 
         # Mouse-wheel horizontal scroll (Windows + Linux)
         for _widget in (self._bar, bar_container):
             _widget.bind("<MouseWheel>", self._on_mousewheel)
             _widget.bind("<Button-4>", self._on_mousewheel)
             _widget.bind("<Button-5>", self._on_mousewheel)
+
+        # Recalculate visible tabs when bar actually gets its real size
+        self._bar.bind("<Configure>", lambda e: self._scroll_tabs(0))
 
         # Full-width 1-px separator beneath the strip
         self._sep = ctk.CTkFrame(self, fg_color=BG3, height=1, corner_radius=0)
@@ -1023,6 +1026,7 @@ class CustomTabBar(ctk.CTkFrame):
 
         self._all_tab_cells.append(cell)
         self._tab_names_order.append(name)
+        self._tab_widths[name] = max(70, len(name) * 7 + 24)  # matches button width formula
         self._col += 1
         self._scroll_tabs(0)  # Refresh chevron visibility
 
@@ -1049,7 +1053,18 @@ class CustomTabBar(ctk.CTkFrame):
         if name in self._tab_names_order:
             idx = self._tab_names_order.index(name)
             bar_width = self._bar.winfo_width()
-            _vc = 5 if bar_width <= 1 else max(1, bar_width // self._min_tab_width)
+            if bar_width <= 1:
+                _vc = 5
+            else:
+                _vc, _tw = 0, 0
+                for n in self._tab_names_order:
+                    w = self._tab_widths.get(n, 80)
+                    if _tw + w <= bar_width:
+                        _vc += 1
+                        _tw += w
+                    else:
+                        break
+                _vc = max(3, _vc)
             if idx < self._tab_scroll_offset or idx >= self._tab_scroll_offset + _vc:
                 self._tab_scroll_offset = max(0, idx - 2)
                 self._scroll_tabs(0)
@@ -1080,19 +1095,18 @@ class CustomTabBar(ctk.CTkFrame):
         """Scroll tab bar left (-1) or right (+1). 0 = refresh in place."""
         bar_width = self._bar.winfo_width()
         if bar_width <= 1:
-            visible_count = len(self._all_tab_cells)  # show all during init
-        else:
-            # Calculate visible count using actual tab widths, not minimum
-            total_w = 0
-            visible_count = 0
-            for cell in self._all_tab_cells:
-                tw = cell.winfo_reqwidth() or self._min_tab_width
-                if total_w + tw <= bar_width:
-                    visible_count += 1
-                    total_w += tw
-                else:
-                    break
-            visible_count = max(1, visible_count)
+            bar_width = 800  # reasonable default before render
+        # Calculate how many tabs fit using stored widths
+        visible_count = 0
+        total_w = 0
+        for name in self._tab_names_order:
+            tw = self._tab_widths.get(name, 80)
+            if total_w + tw <= bar_width:
+                visible_count += 1
+                total_w += tw
+            else:
+                break
+        visible_count = max(3, visible_count)  # always show at least 3
         max_offset = max(0, len(self._all_tab_cells) - visible_count)
         self._tab_scroll_offset = max(0, min(
             self._tab_scroll_offset + direction, max_offset))
@@ -1818,6 +1832,7 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
             import sys
             print(f"[WARN] Module system failed to load: {_mod_err}", file=sys.stderr)
             import traceback; traceback.print_exc(file=sys.stderr)
+            self._safe_after(1000, lambda e=str(_mod_err): self._log_output(f"\u26a0 Module load error: {e}"))
 
         for name, mod in self._modules.items():
             try:
@@ -1836,11 +1851,10 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
             except Exception as e:
                 import sys
                 print(f"[WARN] Module '{name}' failed to register tab: {e}", file=sys.stderr)
+                self._safe_after(500, lambda n=name, err=str(e):
+                    self._log_output(f"\u26a0 Module '{n}' failed: {err}"))
 
         tabs.set("Command Center")
-
-        # Recalculate scroll after window renders and bar has real width
-        self._safe_after(200, lambda: tabs._scroll_tabs(0))
 
     def _make_module_builder(self, mod, label, deprecated, meta):
         """Return a callable that builds a module tab on first view."""
@@ -1868,7 +1882,29 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
             except Exception as e:
                 import sys
                 print(f"[WARN] Module '{label}' failed to build tab: {e}", file=sys.stderr)
+                # Show error in the tab itself
+                err_frame = ctk.CTkFrame(tab_frame, fg_color="transparent")
+                err_frame.pack(fill="both", expand=True)
+                ctk.CTkLabel(err_frame, text=f"\u26a0 Module '{label}' failed to load",
+                             font=FONT_BOLD, text_color=ORANGE).pack(pady=(40, 8))
+                ctk.CTkLabel(err_frame, text=str(e),
+                             font=FONT_SM, text_color=DIM, wraplength=500).pack(pady=4)
+                ctk.CTkButton(err_frame, text="Retry", font=FONT_SM, width=100,
+                              fg_color=BG3, hover_color=BG2,
+                              command=lambda: self._retry_module_build(label, mod, tab_frame)
+                              ).pack(pady=8)
         return _builder
+
+    def _retry_module_build(self, label, mod, tab_frame):
+        """Clear a failed module tab and retry its build."""
+        for w in tab_frame.winfo_children():
+            w.destroy()
+        try:
+            mod.build_tab(tab_frame)
+            self._built_tabs.add(label)
+        except Exception as e:
+            ctk.CTkLabel(tab_frame, text=f"\u26a0 Retry failed: {e}",
+                         font=FONT_SM, text_color=RED).pack(pady=20)
 
     # ── Tab: Command Center (default) ────────────────────────────────────────
     def _build_tab_cc(self, parent):

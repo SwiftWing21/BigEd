@@ -950,7 +950,7 @@ This continues to work because `__init__.py` re-exports all three classes.
 - **Grading Alignment:** Module/Plugin Support → A to S | Usability/UX → A+ sustain | Architecture/SoC → A sustain
 - **Dependencies:** v0.30.00 (web launcher, settings view, containerization)
 - **Est. Tokens:** ~30-50k (L/XL)
-- **Status:** [x] Phase 1+3 done (config, settings panel, dashboard API, web launcher). Phase 2 (wizard modal) and Phase 4 (web enable/disable buttons) pending.
+- **Status:** [x] All 4 phases done — config (Phase 1), wizard modal (Phase 2), dashboard API (Phase 3), web enable/disable (Phase 4). Completed 0.170.00b.
 
 #### S-Tier SOC: Default vs Custom MCP Servers
 
@@ -1107,7 +1107,7 @@ Completed 2026-03-19. Dashboard auto-opens in default browser on boot complete (
 
 ### 0.060.00b — Doctor in the Loop (DITL) — HIPAA Compliance Framework [DONE]
 
-Completed 2026-03-20. HIPAA-compliant mode — HITL review logging to PHI audit, PHI-scoped FileSystemGuard zones, state disclosure config stub, BAA tracking via fleet.toml. Phase 3 resolved: Voice/STT implemented (speech_to_text.py), 5-agent clinical review deferred (requires confirmation hex), state disclosure config stub in place.
+Completed 2026-03-20. HIPAA-compliant mode — HITL review logging to PHI audit, PHI-scoped FileSystemGuard zones, state disclosure config stub, BAA tracking via fleet.toml. Phase 3 resolved: Voice/STT implemented (speech_to_text.py), 5-agent clinical review implemented in 0.170.00b (clinical_review.py with confirmation hex), state disclosure config stub in place.
 
 **Goal:** HIPAA-compliant mode for healthcare. Multi-turn agent response with clinical review. Local-first PHI.
 **Spec:** `docs/specs/DITL_compliance_spec.md`
@@ -1132,7 +1132,7 @@ Completed 2026-03-20. HIPAA-compliant mode — HITL review logging to PHI audit,
 - [x] De-identification config (fleet.toml [ditl.deidentification]) — `[ditl.deidentification]` with auto_strip_before_api, method="safe_harbor" (fleet.toml:49-51)
 
 **Phase 3: Enhanced Review [DONE]**
-- [x] 5-agent clinical review cycle — deferred; requires confirmation hex (DITL_doctor_in_the_loop_UNMAPPED.txt)
+- [x] 5-agent clinical review cycle — implemented in 0.170.00b (clinical_review.py, 720 lines, confirmation hex gate)
 - [x] Voice/STT (local Whisper, HIPAA-compliant) — `speech_to_text.py` with faster-whisper/whisper.cpp backends, `_ditl_guard()` de-identifies all voice input, PHI audit logging for voice interactions, TTS with de-identification before speaking
 - [x] State disclosure compliance (TX TRAIGA, CA requirements) — config stub `state_disclosure = ""  # TX | CA | none` in fleet.toml [ditl] (fleet.toml:43); enforcement logic deferred to enterprise phase
 - [x] BAA management UI — BAA tracking via fleet.toml [ditl.baa] section. Full management UI deferred to enterprise phase.
@@ -1160,7 +1160,7 @@ Completed 2026-03-20. Four orchestration features across 4 files:
 
 - [x] Tenant isolation (separate DBs per org) — `db.py:get_tenant_db_path()`, `fleet.toml [enterprise]` config
 - [x] Role-based access control (RBAC with granular permissions) — `security.py:PERMISSIONS` + `check_permission()` (5 roles, 7 actions)
-- [x] Full audit logging (who did what, when, with what cost) — deferred; existing `audit_log.py` + dashboard attribution covers this, enhancement deferred to enterprise phase
+- [x] Full audit logging (who did what, when, with what cost) — implemented in 0.170.00b (audit.py, HMAC-signed, async queue, query API, CSV/JSON export)
 - [x] SLA monitoring (task completion time guarantees) — `dashboard.py:/api/sla` endpoint (per-skill + 24h overall)
 
 ### 0.160.00b — Platform & SaaS [DONE]
@@ -1169,15 +1169,15 @@ Completed 2026-03-20. Four orchestration features across 4 files:
 - **Grading Alignment:** Deployment & Packaging -> impact: +5 pts / weight: 8%
 - **Dependencies:** Blocks 0.165.00b (multi-GPU), 0.200.00b (federation)
 - **Est. Tokens:** ~15k (M)
-- **Status:** Complete — foundation shipped, deferred items tracked for future phases
+- **Status:** Complete — foundation shipped. All deferred items (React frontend, Helm chart, federation forwarding) resolved in 0.170.00b.
 
 - [x] Self-hosted SaaS deployment (Docker Compose with fleet + ollama + dashboard services)
 - [x] Web-based launcher foundation (`fleet/web_app.py` -- extends dashboard with `/web` + `/api/web/config`)
 - [x] Dashboard container image (`Dockerfile.dashboard` -- lightweight dashboard-only service)
 - [x] Marketplace foundation (Module Hub -- BigEd-ModuleHub repo, skill/model/template store)
 - [x] Federated fleet orchestration — foundation implemented: heartbeat broadcast, peer endpoints, overflow routing in supervisor.py (full task forwarding deferred to 0.085 federation phase)
-- [x] Web launcher React/Next.js frontend — deferred: React frontend planned for post-beta. Current: HTML stub + dashboard serves all API data
-- [x] Kubernetes Helm chart — deferred: Docker Compose validated. Helm chart planned for enterprise deployment phase
+- [x] Web launcher React/Next.js frontend — implemented in 0.170.00b (Next.js app in BigEd/web/, 6 pages, Tailwind dark theme, TypeScript API client)
+- [x] Kubernetes Helm chart — implemented in 0.170.00b (deploy/helm/, Chart.yaml v0.1.0, 11 templates, 5 resource presets)
 
 ### 0.165.00b — Multi-GPU & Unified Memory Support [DONE]
 
