@@ -158,13 +158,15 @@ Every skill is a Python file in `fleet/skills/` with a single `run()` function:
 
 ```python
 # fleet/skills/my_skill.py
-def run(payload: dict, config: dict) -> dict:
+def run(payload: dict, config: dict, log) -> dict:
     """
     payload — JSON parsed from task's payload_json
     config  — fleet.toml parsed via config.load_config()
+    log     — worker logger (use log.info/warning/error instead of print)
     Returns a dict (serialized to result_json by the worker)
     """
     query = payload.get("query", "")
+    log.info(f"Processing query: {query}")
     # ... do work ...
     return {"summary": "...", "source": "..."}
 ```
@@ -499,6 +501,103 @@ uv run python lead_client.py detect-cli
 | **Eco** | `eco_mode = true` | CPU-only Ollama, ~40% CPU, 0 VRAM. Default mode |
 | **Offline** | `offline_mode = true` | External API skills rejected, local Ollama works, Discord/OpenClaw skipped |
 | **Air-Gap** | `air_gap_mode = true` | Implies offline + dashboard disabled, secrets not loaded, deny-by-default skill whitelist |
+
+---
+
+## New Systems (v0.051.05b – v0.053.01b)
+
+### FileSystemGuard (`fleet/filesystem_guard.py`)
+
+Per-zone file access control for SOC 2 compliance. Agents and skills are restricted to declared filesystem zones.
+
+**Config** (`fleet.toml [filesystem]`):**
+```toml
+[filesystem.zones]
+knowledge = {path = "fleet/knowledge", access = "read_write"}
+skills    = {path = "fleet/skills", access = "read"}
+
+[filesystem.overrides]
+deploy_skill = {zones = ["skills"], access = "full"}
+
+[filesystem.enterprise]
+enforce         = false   # true forces hard rejection on all violations
+deny_by_default = true    # reject paths not in zones
+log_all_access  = true    # write SOC 2 audit trail to fs_access.log
+```
+
+**Usage in skills:**
+```python
+from filesystem_guard import FileSystemGuard
+guard = FileSystemGuard(config)
+ok, reason = guard.check_access("fleet/skills/my_skill.py", "write", skill="deploy_skill")
+```
+
+**Common errors:**
+- `Access denied` — path not in any declared zone. Add an entry under `[filesystem.zones]` or `[filesystem.overrides]`.
+- Guard not enforcing — `enforce = false` is the default (log-only). Set `enforce = true` for hard rejection.
+
+---
+
+### Module Hub (`BigEd/launcher/modules/hub.py`)
+
+Downloads, verifies, and installs modules from the BigEd-ModuleHub GitHub repo.
+
+**Config** (`fleet.toml [modules]`):**
+```toml
+[modules]
+hub_url              = "https://github.com/SwiftWing21/BigEd-ModuleHub"
+enterprise_hub_url   = ""      # set for private org hub
+verify_checksums     = true    # SHA-256 on every download
+```
+
+**API:**
+```python
+from modules.hub import ModuleHub
+hub = ModuleHub(config)
+hub.list_available()           # modules in remote registry.json
+hub.list_installed()           # local manifest.json
+hub.install_module("crm")     # download + verify + write to modules/
+hub.uninstall_module("crm")   # delete file + update manifest
+hub.get_update_available()    # modules with newer hub version
+```
+
+**Common errors:**
+- `Module not found in hub` — registry.json doesn't list that name. Check hub repo.
+- `Checksum mismatch` — downloaded file corrupted. Retry or set `verify_checksums = false` temporarily.
+- `Download failed` — network unavailable or `hub_url` misconfigured.
+
+> **Note:** After install, manually add the module to `fleet.toml [launcher.tabs]` and restart the launcher. Automatic tab registration is planned for Phase 2 (0.053.01b+).
+
+---
+
+### Memory Optimizer Skill (`fleet/skills/memory_optimizer.py`)
+
+Identifies and reclaims memory across the fleet — idle models, high-RSS workers, GC fragmentation.
+
+**Actions:**
+| Action | Description |
+|--------|-------------|
+| `audit` | Snapshot current RSS per worker, idle model list, GC stats |
+| `optimize` | Unload idle CPU models, trigger GC on high-RSS workers |
+| `compact` | Compact SQLite WAL files, prune stale knowledge artifacts |
+| `monitor` | Continuous watch — signals supervisor to scale down under pressure |
+
+**Dispatch:**
+```bash
+python lead_client.py task '{"type": "memory_optimizer", "payload": {"action": "audit"}}'
+```
+
+Safety: never kills active tasks; all actions are reversible.
+
+---
+
+### Fleet Comm UX (v0.051.05b redesign)
+
+The Fleet Comm launcher tab was redesigned. Operational notes:
+
+- **Agent Requests section (top):** HITL requests collapsed to 1-line summary, expand on click. Pin button holds list open. Dynamic scroll when >1 request.
+- **Manual Chat section (bottom):** Choose Local (Ollama inline), Claude Code (OAuth → VS Code), or Gemini (OAuth → browser). For OAuth models, task-briefing.md is written to `fleet/knowledge/` before IDE opens.
+- **HITL response types:** Approve, Reject, Need More Info, Provide Feedback, Open Discussion. "More Info" auto-creates a `research_loop` task; "Discuss" creates a `code_discuss` task.
 
 ---
 

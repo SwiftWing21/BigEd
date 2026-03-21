@@ -31,7 +31,7 @@
 
 ## Scoreboard
 
-> Last updated: **v0.28.00** | Audited by: Opus (2026-03-19)
+> Last updated: **v0.053.00b** | Audited by: Sonnet (2026-03-20)
 
 | Dimension | Grade | Trend | Key Gap |
 |-----------|-------|-------|---------|
@@ -43,7 +43,7 @@
 | **Observability / S2** | A | → | /api/health, /api/agents/performance, JSON logging, alerts pipeline |
 | **Usability / UX** | A+ | ↑ | System detection auto-configures fleet; settings display panel; API key validation; setup scripts |
 | **Dynamic Abilities** | S | → | Auto-trigger evolution/research, swarm affinity, multi-backend |
-| **Module / Plugin Support** | A | → | Module Hub client (hub.py): registry fetch, SHA-256 install, enterprise URL — hot-reload still missing |
+| **Module / Plugin Support** | A | ↑ | ModuleHub client (hub.py) with download/verify/install; manifest.json; plugin discovery partial |
 | **Data Processing + HITL** | S | → | Tier 2 LLM scoring, distributed tracing, auto-intelligence |
 | **Performance** | A | → | Code-aware token estimation (P2-02), configurable timeout (P3-01) |
 | **Documentation** | S | ↑ | README, CONTRIBUTING, SETUP.md, setup scripts, BETA_PREP — comprehensive public-ready docs |
@@ -129,7 +129,7 @@
 
 ### LOW (P3) — Track, fix when passing
 
-#### P3-01 — `_call_local` timeout hardcoded to 120s [DONE v0.25.00]
+#### P3-01 — `_call_local` timeout hardcoded to 120s
 **File:** `fleet/providers.py:326`
 **Detail:** `urllib.urlopen(req, timeout=120)` — not configurable via fleet.toml. Long-running vision or large-context local calls may need more time.
 **Fix:** Read from `config.get("fleet", {}).get("local_timeout", 120)`.
@@ -239,19 +239,23 @@
 
 ### 4. Module / Plugin Support
 
-**Current Grade: A**
+**Current Grade: A-**
 
 | Feature | Status | Notes |
 |---------|--------|-------|
 | 6 active modules (CRM, Ingestion, Accounts, Onboarding, OwnerCore, Walkthrough) | ✓ Active | |
 | Zero-bloat baseline (no modules by default) | ✓ Active (v0.46) | |
 | Module loader (`__init__.py`, 334 LOC) | ✓ Working | |
-| Plugin manifest / capability registry | ✓ Active (0.053.00b) | Module Hub client (hub.py): registry.json fetch from GitHub, SHA-256 install, version check |
+| ModuleHub client (`modules/hub.py`) | ✓ Done (v0.053.00b) | Download, SHA-256 verify, install, uninstall, version comparison |
+| Local manifest (`manifest.json`) | ✓ Done (v0.053.00b) | Tracks installed module versions |
+| Enterprise hub URL config (`enterprise_hub_url`) | ✓ Done (v0.053.00b) | Reads from fleet.toml `[modules]` |
+| Plugin manifest / capability registry | ✗ Partial | hub.py reads hub registry.json; no per-module `module.toml` yet |
+| Module Hub UX (install/enable/disable cards) | ✗ Missing | Settings panel not yet built (Phase 2) |
 | Hot-reload of modules without restart | ✗ Missing | Restart required |
-| Community skill install (git repo pull) | ✓ Active (0.053.00b) | install_module() via ModuleHub; enterprise_hub_url in fleet.toml |
+| Community skill install via Hub | Partial (0.053.00b) | Backend logic done; UX pending |
 | Module dependency declaration | ✗ Missing | Modules can't declare deps |
 
-**S-tier path:** Add hot-reload capability; add per-module `module.toml` with dep declarations.
+**S-tier path:** Build Module Hub Settings panel (Phase 2 per spec), then hot-reload capability.
 
 ---
 
@@ -313,11 +317,12 @@
 | WSL secret store (API keys) | ✓ Active | ✓ |
 | Key rotation (secret_rotate.py) | ✓ Active | ✓ |
 | Evaluator-optimizer adversarial review | ✓ Active | ✓ |
-| SQLCipher encryption | Done (v0.24.00) | ✓ |
-| TLS for dashboard | Done (v0.24.00) | ✓ |
-| RBAC (operator/admin/viewer) | Done (v0.24.00) | ✓ |
-| API attribution logging | Done (v0.24.00) | ✓ |
+| SQLCipher encryption | Planned (0.24.00) | ✗ |
+| TLS for dashboard | Planned (0.24.00) | ✗ |
+| RBAC (operator/admin/viewer) | Planned (0.24.00) | ✗ |
+| API attribution logging | Planned (0.24.00) | ✗ |
 | MQTT wildcard blocking | ✓ Active (0.11.00) | ✓ |
+| FileSystemGuard zone enforcement | ✓ Active (v0.051.05b) | `fleet/filesystem_guard.py`; enterprise deny_by_default + SOC 2 audit log |
 
 **Prod hardening checklist (do before any public deployment):**
 - [ ] `sandbox_enabled = true` in fleet.toml
@@ -413,6 +418,14 @@
 | Supervisor liveness extraction | _check_supervisor_liveness() shared by parse_status() and SSE | v0.28.00 |
 | Dashboard auto-open on boot | webbrowser.open after boot complete, threaded, air-gap aware | v0.29.00 |
 | Console persistence confirmed | JSONL history per console already working since v0.27.00 | v0.29.00 |
+| FileSystemGuard (SOC 2 file access control) | `fleet/filesystem_guard.py` — per-zone ACL (read/read_write/full), skill overrides, enterprise deny_by_default, audit log | v0.051.05b |
+| Fleet Comm UX redesign | Collapsible agent requests, pin button, Manual Chat panel (Local/OAuth), scroll area | v0.051.05b |
+| Memory optimizer skill | `fleet/skills/memory_optimizer.py` — audit/optimize/compact/monitor actions | v0.051.05b |
+| HITL feedback enhancement | 5 response types, follow-up task auto-creation for more_info/discuss | v0.051.05b |
+| ModuleHub client | `BigEd/launcher/modules/hub.py` — download, SHA-256 verify, install, uninstall, version comparison | v0.053.00b |
+| regression_detector skill | Track quality grades, detect hallucinations + regressions in fleet outputs | v0.053.01b |
+| packet_optimizer skill | Audit and optimize packet sizes across all fleet API calls | v0.053.01b |
+| GitHub community templates | Issue templates, PR template, branch protection rules | v0.053.01b |
 
 ---
 
@@ -428,6 +441,7 @@
 | 2026-03-19 | v0.28.00 | Opus | Incremental | UX A→A+ (system detection, setup scripts), Docs A→S (README/CONTRIBUTING/SETUP.md). Zero open issues. |
 | 2026-03-19 | v0.28.00 | Gemini | Claude Code SoC | Audited Claude Code's ability to maintain SOC S-tier. Validated strict isolation via worktrees, MCP server context delegation, and `claude_code.py` skill abstraction. |
 | 2026-03-19 | v0.28.00 | Gemini | Claude Code SOC 2 | Audited Claude Code's compliance with SOC 2 principles (Security, Availability, Processing Integrity, Confidentiality, Privacy). Verified S-tier alignment. |
+| 2026-03-20 | v0.053.00b | Sonnet | Incremental | ModuleHub client, FileSystemGuard, memory_optimizer, Fleet Comm redesign, HITL feedback, regression_detector, packet_optimizer, GitHub community templates. Module/Plugin Support upgraded B+→A-. Security checklist updated. 79 skills. |
 
 ---
 
