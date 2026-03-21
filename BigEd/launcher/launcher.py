@@ -2810,9 +2810,9 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
 
     # ── Fleet Comm tab ─────────────────────────────────────────────────────
     def _build_tab_comm(self, parent):
-        """Fleet Comm: collapsible Agent Requests + Manual Chat panel."""
-        parent.grid_rowconfigure(1, weight=0)   # request list (dynamic)
-        parent.grid_rowconfigure(2, weight=1)   # manual chat (expands)
+        """Fleet Comm: Agent Requests (dominant) + Manual Chat / VS Code guide."""
+        parent.grid_rowconfigure(1, weight=1)   # request list (dominant — takes most space)
+        parent.grid_rowconfigure(2, weight=0)   # manual chat (compact at bottom)
         parent.grid_columnconfigure(0, weight=1)
 
         # Persist provider selection across refreshes (default: Local — always available)
@@ -2865,16 +2865,17 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
         self._comm_request_cards = []
         self._comm_cards = []  # track rendered card widgets (compat)
 
-        # ── Manual Chat section ──────────────────────────────────────────
-        chat_frame = ctk.CTkFrame(parent, fg_color=BG, corner_radius=0)
-        chat_frame.grid(row=2, column=0, sticky="nsew")
+        # ── Manual Chat / VS Code Guide section ────────────────────────
+        self._chat_container = ctk.CTkFrame(parent, fg_color=BG, corner_radius=0)
+        self._chat_container.grid(row=2, column=0, sticky="nsew")
 
-        # Chat header with model selector
-        chat_hdr = ctk.CTkFrame(chat_frame, fg_color=BG2, height=36, corner_radius=0)
+        # Chat header with mode selector
+        chat_hdr = ctk.CTkFrame(self._chat_container, fg_color=BG2, height=36, corner_radius=0)
         chat_hdr.pack(fill="x")
         chat_hdr.pack_propagate(False)
-        ctk.CTkLabel(chat_hdr, text="Manual Chat", font=FONT_BOLD,
-                     text_color=GOLD, anchor="w").pack(side="left", padx=12)
+        self._chat_mode_label = ctk.CTkLabel(chat_hdr, text="Local Console", font=FONT_BOLD,
+                     text_color=GOLD, anchor="w")
+        self._chat_mode_label.pack(side="left", padx=12)
 
         self._manual_model_var = ctk.StringVar(value="Local (Ollama)")
         ctk.CTkOptionMenu(
@@ -2885,15 +2886,17 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
             command=self._on_manual_model_change,
         ).pack(side="right", padx=8, pady=5)
 
-        # Chat display
+        # ── Local console (shown when Local selected) ────────────────
+        self._local_chat_frame = ctk.CTkFrame(self._chat_container, fg_color="transparent")
+        self._local_chat_frame.pack(fill="both", expand=True)
+
         self._manual_chat_display = ctk.CTkTextbox(
-            chat_frame, font=("Consolas", 11), fg_color=BG2,
+            self._local_chat_frame, font=FONT_STAT, fg_color=BG2,
             text_color=TEXT, corner_radius=4)
         self._manual_chat_display.pack(fill="both", expand=True, padx=8, pady=4)
         self._manual_chat_display.configure(state="disabled")
 
-        # Input row
-        input_row = ctk.CTkFrame(chat_frame, fg_color="transparent")
+        input_row = ctk.CTkFrame(self._local_chat_frame, fg_color="transparent")
         input_row.pack(fill="x", padx=8, pady=(0, 8))
         input_row.grid_columnconfigure(0, weight=1)
 
@@ -2915,6 +2918,61 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
             fg_color=BG3, hover_color=BG2,
             command=self._voice_input)
         self._mic_btn.grid(row=0, column=2, padx=(4, 0))
+
+        # ── VS Code guide (shown when Claude/Gemini selected) ────────
+        self._vscode_guide_frame = ctk.CTkFrame(self._chat_container, fg_color="transparent")
+        # NOT packed initially — shown when VS Code mode selected
+
+        guide_inner = ctk.CTkFrame(self._vscode_guide_frame, fg_color=BG2, corner_radius=8)
+        guide_inner.pack(fill="both", expand=True, padx=8, pady=8)
+
+        ctk.CTkLabel(guide_inner, text="VS Code Manual Mode",
+                     font=FONT_TITLE, text_color=GOLD).pack(pady=(16, 4))
+        ctk.CTkLabel(guide_inner, text="Open VS Code to work with Claude or Gemini directly",
+                     font=FONT_SM, text_color=DIM).pack(pady=(0, 12))
+
+        # How it works
+        guide_text = ctk.CTkTextbox(guide_inner, font=FONT_SM, fg_color=BG3,
+                                     text_color=TEXT, corner_radius=4, height=180)
+        guide_text.pack(fill="x", padx=16, pady=(0, 8))
+        guide_text.insert("1.0",
+            "How it works:\n"
+            "  1. Type your task below and click 'Open VS Code'\n"
+            "  2. BigEd writes task-briefing.md with fleet context\n"
+            "  3. VS Code opens with the briefing file\n"
+            "  4. Start Claude Code or Gemini CLI in the terminal\n\n"
+            "Agent interaction:\n"
+            "  - Fleet agents remain active while you work in VS Code\n"
+            "  - Agent HITL requests appear above in Agent Requests\n"
+            "  - Claude/Gemini read CLAUDE.md, fleet knowledge, MCP tools\n"
+            "  - Results are visible to fleet agents via shared files\n\n"
+            "Starting Claude Code:\n"
+            "  Ctrl+Shift+P → 'Claude: Open'  (or run 'claude' in terminal)\n\n"
+            "Starting Gemini CLI:\n"
+            "  Open terminal → run 'gemini'\n"
+            "  Toggle agent mode: /agent-mode (approval-gated ↔ autonomous)\n\n"
+            "Terms of Service:\n"
+            "  Prompts are sent to the selected provider (Anthropic/Google).\n"
+            "  Do not include PHI, credentials, or secrets."
+        )
+        guide_text.configure(state="disabled")
+
+        # VS Code launch row
+        vscode_row = ctk.CTkFrame(guide_inner, fg_color="transparent")
+        vscode_row.pack(fill="x", padx=16, pady=(0, 12))
+        vscode_row.grid_columnconfigure(0, weight=1)
+
+        self._vscode_task_entry = ctk.CTkEntry(
+            vscode_row, font=FONT, fg_color=BG3,
+            placeholder_text="Describe your task for VS Code session...")
+        self._vscode_task_entry.grid(row=0, column=0, sticky="ew", padx=(0, 4))
+        self._vscode_task_entry.bind("<Return>", lambda e: self._launch_vscode_from_guide())
+
+        ctk.CTkButton(
+            vscode_row, text="Open VS Code", width=120, height=30, font=FONT_SM,
+            fg_color=ACCENT, hover_color=ACCENT_H,
+            command=self._launch_vscode_from_guide,
+        ).grid(row=0, column=1)
 
     def _toggle_comm_requests(self):
         """Toggle collapsible Agent Requests panel."""
@@ -2950,10 +3008,33 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
 
     # ── Manual Chat helpers ──────────────────────────────────────────────
 
-    def _on_manual_model_change(self, choice):
-        """Show guidance when user switches to a VS Code model."""
-        if "VS Code" not in choice:
+    def _launch_vscode_from_guide(self):
+        """Launch VS Code session from the guide panel entry."""
+        text = self._vscode_task_entry.get().strip()
+        if not text:
             return
+        model = self._manual_model_var.get()
+        self._vscode_task_entry.delete(0, "end")
+        # Reuse the existing launch flow
+        self._manual_chat_display.configure(state="normal")
+        self._manual_chat_display.insert("end", f"\nYou: {text}\n")
+        self._manual_chat_display.configure(state="disabled")
+        self._launch_oauth_session(model, text)
+
+    def _on_manual_model_change(self, choice):
+        """Swap between Local console and VS Code guide."""
+        if "VS Code" in choice:
+            # Show VS Code guide, hide local console
+            self._local_chat_frame.pack_forget()
+            self._vscode_guide_frame.pack(fill="both", expand=True)
+            self._chat_mode_label.configure(text="VS Code Manual Mode")
+        else:
+            # Show local console, hide VS Code guide
+            self._vscode_guide_frame.pack_forget()
+            self._local_chat_frame.pack(fill="both", expand=True)
+            self._chat_mode_label.configure(text="Local Console")
+            return
+
         if "Claude" in choice:
             guidance = (
                 "━━━ Claude Code (VS Code) ━━━\n"
