@@ -148,6 +148,17 @@ class Module:
         self._last_results: dict = {}
         self._running = False
         self._cfg: dict = _load_manual_mode_config()
+        # Engine instance — created on first run, reused across runs
+        self._engine = None
+
+    def _get_engine(self):
+        """Return (and lazily create) the ManualModeEngine instance."""
+        if self._engine is None:
+            import sys
+            sys.path.insert(0, str(FLEET_DIR))
+            from manual_mode import ManualModeEngine
+            self._engine = ManualModeEngine()
+        return self._engine
 
     # ── Tab construction ──────────────────────────────────────────────────────
 
@@ -296,7 +307,7 @@ class Module:
             fg_color=ACCENT, hover_color=ACCENT_H, command=self._save_threshold
         ).grid(row=0, column=2, padx=(0, 12), pady=8)
 
-        # Run / VS Code row
+        # Run / Stop / VS Code row
         action_row = ctk.CTkFrame(parent, fg_color="transparent")
         action_row.grid(row=1, column=0, sticky="ew", padx=8, pady=4)
 
@@ -306,6 +317,15 @@ class Module:
             width=200
         )
         self._run_btn.pack(side="left", padx=(0, 8))
+
+        # Gap 3: Stop button — visible only while a run is active
+        self._stop_btn = ctk.CTkButton(
+            action_row, text="⏹ Stop", font=FONT_BOLD,
+            fg_color=RED, hover_color="#b71c1c", command=self._cancel_run,
+            width=90
+        )
+        # Start hidden; shown when _running = True
+        # (pack/forget used for show/hide since CTkButton has no visible= kwarg)
 
         ctk.CTkButton(
             action_row, text="Open in VS Code", font=FONT_SM,
@@ -323,6 +343,27 @@ class Module:
         self._progress.grid(row=3, column=0, sticky="ew", padx=8, pady=4)
         self._progress.set(0)
 
+    def _set_run_active(self, active: bool) -> None:
+        """Toggle run/stop button visibility and disabled state together."""
+        self._running = active
+        if active:
+            self._run_btn.configure(state="disabled")
+            self._stop_btn.pack(side="left", padx=(0, 8), before=self._run_btn)
+        else:
+            self._run_btn.configure(state="normal")
+            try:
+                self._stop_btn.pack_forget()
+            except Exception:
+                pass
+
+    def _cancel_run(self) -> None:
+        """Signal the engine to stop after the current item."""
+        engine = self._engine
+        if engine is not None:
+            engine.cancel_run()
+        self._set_status("Cancelling — finishing current item…", color=ORANGE)
+        self._stop_btn.configure(state="disabled")
+
     def _save_threshold(self) -> None:
         try:
             pct = float(self._threshold_var.get())
@@ -339,18 +380,18 @@ class Module:
         if not self._queue_items:
             self._set_status("Queue is empty — add prompts first.", color=ORANGE)
             return
-        self._running = True
-        self._run_btn.configure(state="disabled")
+        engine = self._get_engine()
+        engine.reset_cancel()
+        self._set_run_active(True)
+        self._stop_btn.configure(state="normal")
         self._progress.start()
         self._set_status("Running audit queue…")
         threading.Thread(target=self._run_queue_thread, daemon=True).start()
 
     def _run_queue_thread(self) -> None:
         try:
-            import sys
-            sys.path.insert(0, str(FLEET_DIR))
-            from manual_mode import run_queue
-            result = run_queue(list(self._queue_items), config=self._cfg)
+            engine = self._get_engine()
+            result = engine.run_queue(list(self._queue_items))
 
             if result.get("status") == "approval_required":
                 # Must show dialog on main thread
@@ -365,8 +406,7 @@ class Module:
 
     def _show_approval_dialog(self, result: dict) -> None:
         """Called on main thread to show the HITL approval dialog."""
-        self._running = False
-        self._run_btn.configure(state="normal")
+        self._set_run_active(False)
         self._progress.stop()
         self._progress.set(0)
 
@@ -379,52 +419,58 @@ class Module:
         self._app.wait_window(dlg)
 
         if dlg.result:
-            # User approved — bypass threshold for this run by temporarily setting threshold to 1.0
-            patched_cfg = dict(self._cfg, approval_required_threshold=1.0)
-            self._running = True
-            self._run_btn.configure(state="disabled")
+            # User approved — bypass threshold for this run via a patched engine
+            # by setting approval_required_threshold=1.0 temporarily in config
+            try:
+                import tomlkit
+                doc = tomlkit.parse(FLEET_TOML.read_text(encoding="utf-8"))
+                doc.setdefault("manual_mode", tomlkit.table())["approval_required_threshold"] = 1.0
+                FLEET_TOML.write_text(tomlkit.dumps(doc), encoding="utf-8")
+            except Exception:
+                pass
+            engine = self._get_engine()
+            engine.reset_cancel()
+            self._set_run_active(True)
+            self._stop_btn.configure(state="normal")
             self._progress.start()
             self._set_status("Running (approved)…")
             threading.Thread(
                 target=self._run_approved_thread,
-                args=(patched_cfg,),
                 daemon=True
             ).start()
         else:
             self._set_status("Run cancelled by operator.", color=ORANGE)
 
-    def _run_approved_thread(self, patched_cfg: dict) -> None:
+    def _run_approved_thread(self) -> None:
         try:
-            import sys
-            sys.path.insert(0, str(FLEET_DIR))
-            from manual_mode import run_queue
-            result = run_queue(list(self._queue_items), config=patched_cfg)
+            engine = self._get_engine()
+            result = engine.run_queue(list(self._queue_items))
             self._last_results = result
             self._app.after(0, self._on_run_complete)
         except Exception as exc:
             self._app.after(0, lambda e=exc: self._on_run_error(e))
 
     def _on_run_complete(self) -> None:
-        self._running = False
-        self._run_btn.configure(state="normal")
+        self._set_run_active(False)
         self._progress.stop()
         self._progress.set(1)
         r = self._last_results
         tok = r.get("total_tokens", 0)
-        cost = r.get("total_cost_usd", 0.0)
+        cost = r.get("total_cost", r.get("total_cost_usd", 0.0))
         anomaly = r.get("anomaly_detected", False)
         md = r.get("audit_md_path", "")
+        cancelled = self._engine is not None and self._engine._cancel_event.is_set()
         status_msg = (
-            f"Done. {tok:,} tokens · ${cost:.4f}"
+            ("Cancelled. " if cancelled else "Done. ")
+            + f"{tok:,} tokens · ${cost:.4f}"
             + ("  ⚠ Cost anomaly!" if anomaly else "")
             + (f"  → {Path(md).name}" if md else "")
         )
-        self._set_status(status_msg, color=ORANGE if anomaly else GREEN)
+        self._set_status(status_msg, color=ORANGE if (anomaly or cancelled) else GREEN)
         self._refresh_results()
 
     def _on_run_error(self, exc: Exception) -> None:
-        self._running = False
-        self._run_btn.configure(state="normal")
+        self._set_run_active(False)
         self._progress.stop()
         self._progress.set(0)
         self._set_status(f"Error: {exc}", color=RED)
@@ -471,14 +517,14 @@ class Module:
             f.destroy()
         self._result_item_frames.clear()
 
-        items = self._last_results.get("items", [])
+        items = self._last_results.get("results", self._last_results.get("items", []))
         for i, item in enumerate(items):
             card = ctk.CTkFrame(self._results_scroll, fg_color=BG2, corner_radius=4)
             card.grid(row=i, column=0, sticky="ew", pady=3)
             card.grid_columnconfigure(0, weight=1)
 
             status = item.get("status", "?")
-            status_color = GREEN if status == "ok" else RED
+            status_color = GREEN if status in ("ok", "done") else RED
             prompt_short = item.get("prompt", "")[:60]
 
             ctk.CTkLabel(
@@ -487,15 +533,17 @@ class Module:
                 font=FONT_BOLD, text_color=status_color, anchor="w"
             ).grid(row=0, column=0, sticky="w", padx=10, pady=(6, 2))
 
-            tok = item.get("tokens_used", 0)
-            cost = item.get("cost_usd", 0.0)
+            tok = item.get("tokens_used", 0) or (
+                item.get("input_tokens", 0) + item.get("output_tokens", 0)
+            )
+            cost = item.get("cost_usd", item.get("cost", 0.0))
             ctk.CTkLabel(
                 card,
                 text=f"Tokens: {tok:,}  Cost: ${cost:.4f}",
                 font=FONT_SM, text_color=DIM, anchor="w"
             ).grid(row=1, column=0, sticky="w", padx=10, pady=(0, 4))
 
-            output_preview = str(item.get("output", ""))[:200]
+            output_preview = str(item.get("output", item.get("response", "")))[:200]
             if output_preview:
                 ctk.CTkLabel(
                     card,

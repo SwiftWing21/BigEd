@@ -76,6 +76,61 @@ _last_results_mtime = 0
 RESEARCH_INTERVAL = 86400    # 24 hours
 EVOLUTION_INTERVAL = 604800  # 7 days
 
+# ── Manual Mode Scheduler ─────────────────────────────────────────────────────
+_SCHED_CHECK_INTERVAL = 60   # poll at most once per minute
+
+
+def _check_manual_mode_schedule() -> None:
+    """Fire the Manual Mode audit queue when the configured next_run time arrives.
+
+    Reads fleet.toml [manual_mode.scheduler] via ManualModeEngine, fires
+    engine.run_queue() if the current UTC minute >= next_run, then advances
+    next_run for recurring schedules or disables the scheduler for one-time runs.
+    Safe to call every minute from the supervisor loop — exits immediately if
+    the scheduler is disabled or next_run is empty.
+    """
+    try:
+        sys.path.insert(0, str(FLEET_DIR))
+        from manual_mode import ManualModeEngine
+        from datetime import datetime, timezone, timedelta
+
+        engine = ManualModeEngine()
+        sched = engine.get_scheduler()
+        if not sched.get("enabled"):
+            return
+        next_run = sched.get("next_run", "")
+        if not next_run:
+            return
+
+        now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M")
+        if now >= next_run:
+            queue = engine.get_queue()
+            if not queue:
+                log.info("[SCHED] Manual Mode scheduler fired but queue is empty — skipping")
+            else:
+                log.info("[SCHED] Manual Mode scheduler firing: %d items", len(queue))
+                try:
+                    engine.run_queue(queue)
+                    log.info("[SCHED] Manual Mode scheduled run complete")
+                except Exception as exc:
+                    log.warning("[SCHED] Manual Mode scheduled run error: %s", exc)
+
+            # Advance or disable after firing
+            if sched.get("mode") == "recurring":
+                interval = int(sched.get("interval_days", 1))
+                new_next = (
+                    datetime.now(timezone.utc) + timedelta(days=interval)
+                ).strftime("%Y-%m-%d %H:%M")
+                sched["next_run"] = new_next
+                engine.set_scheduler(sched)
+                log.info("[SCHED] Next Manual Mode run scheduled for %s", new_next)
+            else:
+                sched["enabled"] = False
+                engine.set_scheduler(sched)
+                log.info("[SCHED] One-time Manual Mode run complete — scheduler disabled")
+    except Exception as exc:
+        log.debug("[SCHED] Manual Mode schedule check error: %s", exc)
+
 
 def _build_roles(config):
     """Expand BASE_ROLES, replacing 'coder' with coder_1..coder_N and filtering disabled agents."""
@@ -894,6 +949,7 @@ def main():
     SCALE_CHECK_INTERVAL = 30  # check every 30 seconds
     last_model_recommend = 0
     MODEL_RECOMMEND_INTERVAL = 6 * 3600  # every 6 hours
+    last_sched_check = 0  # Manual Mode scheduler — poll at most once per minute
     # v0.23 S3: Auto-Intelligence — periodic evolution + research dispatch
     # Intervals defined at module level: RESEARCH_INTERVAL (24h), EVOLUTION_INTERVAL (7d)
     global _last_research_trigger, _last_evolution_trigger, _last_results_mtime
@@ -1228,6 +1284,11 @@ def main():
                 log.info("Dispatched model_recommend analysis task")
             except Exception as e:
                 log.debug(f"Model recommend dispatch error: {e}")
+
+        # Manual Mode scheduler — check at most once per minute
+        if now - last_sched_check >= _SCHED_CHECK_INTERVAL:
+            last_sched_check = now
+            _check_manual_mode_schedule()
 
         # Write status snapshot
         if now - last_status >= 30:
