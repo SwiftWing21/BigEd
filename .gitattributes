@@ -1,0 +1,38 @@
+# ── Line ending normalization ──────────────────────────────────────────────────
+# Store all text files with LF in the repo; checkout behavior depends on core.autocrlf.
+* text=auto
+
+# Markdown and docs — always LF (prevents CRLF warnings on Windows with autocrlf=true)
+*.md text eol=lf
+*.txt text eol=lf
+*.toml text eol=lf
+*.json text eol=lf
+*.yaml text eol=lf
+*.yml text eol=lf
+
+# Python — always LF
+*.py text eol=lf
+
+# HTML/CSS/JS — always LF
+*.html text eol=lf
+*.css text eol=lf
+*.js text eol=lf
+
+# Shell scripts — always LF
+*.sh text eol=lf
+
+# Binary files — no line ending conversion
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.db binary
+*.sqlite binary
+*.pyc binary
+*.pyd binary
+*.exe binary
+*.dll binary
+*.zip binary
+*.gz binary
+*.tar binary

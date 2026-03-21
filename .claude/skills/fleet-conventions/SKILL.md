@@ -41,7 +41,7 @@ inspect models. Use it as a reference for a well-structured skill with multiple 
 
 ### Core Fleet
 
-- `fleet/skills/` — skill modules (75 total, including model_manager.py)
+- `fleet/skills/` — skill modules (79 total, including model_manager.py)
 - `fleet/skills/_models.py` — shared model routing, budget checking
 - `fleet/skills/_security.py` — path traversal prevention, sanitization
 - `fleet/skills/_watchdog.py` — health monitoring, DLP scrubbing
