@@ -1305,6 +1305,35 @@ Completed 2026-03-21. Modules created and wired into active workflow.
 - [ ] FleetDB.agent_top_skills(db_path, name, limit=3) — top skills by avg IQ
 - [ ] _humanize_result(result_json, task_type) — parse raw JSON into readable summary
 
+### 0.170.05b — Human Feedback Loop via Outputs Module
+
+**Goal:** Let operators review agent outputs and feed approval/rejection back into the fleet for reinforcement. Leverages existing HITL + DITL infrastructure.
+
+**Outputs Module — Feedback UI:**
+- [ ] Approve/Reject buttons on each output preview (thumbs up/down)
+- [ ] Optional feedback text field ("why rejected", "what to improve")
+- [ ] Feedback stored in fleet.db `output_feedback` table (output_path, verdict, feedback_text, operator, timestamp)
+- [ ] Badge showing feedback status: unreviewed / approved / rejected
+
+**Fleet Reinforcement Loop:**
+- [ ] Approved outputs → weight boost for that agent+skill pair in IQ scoring
+- [ ] Rejected outputs → dispatch `code_review` or `evaluate` task on the rejected output for agent self-correction
+- [ ] No-input handling: outputs older than N days without feedback auto-age out as "unreviewed" (neutral — no IQ impact)
+- [ ] DITL integration: when DITL enabled, rejected clinical outputs trigger PHI audit entry + mandatory re-review
+
+**Dashboard Integration:**
+- [ ] `/api/feedback` endpoint — submit/query feedback
+- [ ] Feedback stats panel: approval rate by agent, by skill, trend over time
+
+**Data Flow:**
+```
+Agent produces output → Outputs module shows it → Operator reviews
+  → Approve: IQ boost, output marked green
+  → Reject + feedback: re-review task dispatched, output marked red
+  → No action (>7 days): auto-neutral, no IQ impact
+  → DITL reject: PHI audit + mandatory re-review pipeline
+```
+
 ---
 
 ## Audit Coverage Check (per AUDIT_TRACKER.md)

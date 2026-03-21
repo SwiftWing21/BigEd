@@ -11,7 +11,7 @@ from pathlib import Path
 import customtkinter as ctk
 
 BG = BG2 = BG3 = ACCENT = ACCENT_H = GOLD = TEXT = DIM = GREEN = ORANGE = RED = ""
-FONT_SM = ("RuneScape Plain 11", 10)
+FONT_SM = FONT_STAT = FONT_BOLD = FONT_XS = ("Segoe UI", 10)
 FLEET_DIR = None
 
 
@@ -50,13 +50,17 @@ class Module:
         self._status = None
 
     def _init_theme(self):
-        global BG, BG2, BG3, ACCENT, ACCENT_H, GOLD, TEXT, DIM, GREEN, ORANGE, RED, FONT_SM, FLEET_DIR
+        global BG, BG2, BG3, ACCENT, ACCENT_H, GOLD, TEXT, DIM, GREEN, ORANGE, RED
+        global FONT_SM, FONT_STAT, FONT_BOLD, FONT_XS, FLEET_DIR
+        from ui.theme import (BG as _BG, BG2 as _BG2, BG3 as _BG3,
+                              ACCENT as _ACC, ACCENT_H as _AH, GOLD as _GOLD,
+                              TEXT as _TEXT, DIM as _DIM, GREEN as _GR, ORANGE as _OR, RED as _RED,
+                              FONT_SM as _FSM, FONT_STAT as _FST, FONT_BOLD as _FB, FONT_XS as _FXS)
+        BG = _BG; BG2 = _BG2; BG3 = _BG3
+        ACCENT = _ACC; ACCENT_H = _AH; GOLD = _GOLD
+        TEXT = _TEXT; DIM = _DIM; GREEN = _GR; ORANGE = _OR; RED = _RED
+        FONT_SM = _FSM; FONT_STAT = _FST; FONT_BOLD = _FB; FONT_XS = _FXS
         import launcher
-        BG = launcher.BG; BG2 = launcher.BG2; BG3 = launcher.BG3
-        ACCENT = launcher.ACCENT; ACCENT_H = launcher.ACCENT_H
-        GOLD = launcher.GOLD; TEXT = launcher.TEXT; DIM = launcher.DIM
-        GREEN = launcher.GREEN; ORANGE = launcher.ORANGE; RED = launcher.RED
-        FONT_SM = launcher.FONT_SM
         FLEET_DIR = launcher.FLEET_DIR
 
     def build_tab(self, parent):
@@ -81,7 +85,7 @@ class Module:
         ).grid(row=0, column=1, sticky="w")
 
         self._path_label = ctk.CTkLabel(
-            hdr, text=ingest_path, font=("Consolas", 9), text_color=DIM, anchor="w")
+            hdr, text=ingest_path, font=FONT_XS, text_color=DIM, anchor="w")
         self._path_label.grid(row=0, column=2, padx=(8, 0), sticky="w")
 
         ctk.CTkButton(hdr, text="Refresh", font=FONT_SM, height=26, width=80,
@@ -102,16 +106,16 @@ class Module:
 
         sel_bar = ctk.CTkFrame(left, fg_color=BG3, corner_radius=0)
         sel_bar.grid(row=0, column=0, sticky="ew")
-        ctk.CTkButton(sel_bar, text="Select All", font=("RuneScape Plain 11", 9),
+        ctk.CTkButton(sel_bar, text="Select All", font=FONT_XS,
                       width=70, height=22, fg_color="transparent", hover_color=BG2,
                       text_color=DIM, command=self._select_all
                       ).pack(side="left", padx=4, pady=2)
-        ctk.CTkButton(sel_bar, text="Select None", font=("RuneScape Plain 11", 9),
+        ctk.CTkButton(sel_bar, text="Select None", font=FONT_XS,
                       width=75, height=22, fg_color="transparent", hover_color=BG2,
                       text_color=DIM, command=self._select_none
                       ).pack(side="left", padx=0, pady=2)
         self._count_lbl = ctk.CTkLabel(
-            sel_bar, text="", font=("RuneScape Plain 11", 9), text_color=DIM)
+            sel_bar, text="", font=FONT_XS, text_color=DIM)
         self._count_lbl.pack(side="right", padx=8)
 
         self._file_list = ctk.CTkScrollableFrame(
@@ -145,7 +149,7 @@ class Module:
 
         info_frame = ctk.CTkFrame(right, fg_color=BG3, corner_radius=6)
         info_frame.pack(fill="x", padx=12, pady=(8, 4))
-        ctk.CTkLabel(info_frame, text="Supported formats", font=("RuneScape Bold 12", 10, "bold"),
+        ctk.CTkLabel(info_frame, text="Supported formats", font=FONT_BOLD,
                      text_color=GOLD).pack(padx=10, pady=(8, 2), anchor="w")
         ctk.CTkLabel(info_frame,
                      text="Text:   .md .txt .rst .log .toml .yaml .cfg .ini\n"
@@ -153,17 +157,17 @@ class Module:
                           "Data:   .json .csv .tsv .xml .html\n"
                           "Docs:  .pdf .docx\n"
                           "Zip:     .zip (auto-extracted, nested supported)",
-                     font=("Consolas", 9), text_color=DIM, justify="left"
+                     font=FONT_XS, text_color=DIM, justify="left"
                      ).pack(padx=10, pady=(0, 8), anchor="w")
 
         self._btn = ctk.CTkButton(
-            right, text="Ingest Selected", font=("RuneScape Bold 12", 11, "bold"),
+            right, text="Ingest Selected", font=FONT_BOLD,
             height=36, fg_color=ACCENT, hover_color=ACCENT_H,
             command=self._run_ingest)
         self._btn.pack(padx=12, pady=(8, 4), fill="x")
 
         self._status = ctk.CTkTextbox(
-            right, font=("Consolas", 9), fg_color=BG,
+            right, font=FONT_XS, fg_color=BG,
             text_color="#aaa", height=120, corner_radius=4)
         self._status.pack(fill="both", expand=True, padx=12, pady=(4, 12))
         self._status.insert("end", "Select files and click Ingest to import into RAG.\n")
@@ -205,7 +209,7 @@ class Module:
             var = ctk.BooleanVar(value=False)
             cb = ctk.CTkCheckBox(
                 self._file_list, text=f"[dir] {d.name}/",
-                variable=var, font=("Consolas", 9),
+                variable=var, font=FONT_XS,
                 text_color=GOLD, fg_color=ACCENT, hover_color=ACCENT_H,
                 checkbox_width=16, checkbox_height=16, corner_radius=3)
             cb.grid(row=row, column=0, sticky="ew", padx=4, pady=1)
@@ -228,7 +232,7 @@ class Module:
             cb = ctk.CTkCheckBox(
                 self._file_list,
                 text=f"  {f.name}  ({f.stat().st_size / 1024:.0f} KB)",
-                variable=var, font=("Consolas", 9),
+                variable=var, font=FONT_XS,
                 text_color=color, fg_color=ACCENT, hover_color=ACCENT_H,
                 checkbox_width=16, checkbox_height=16, corner_radius=3)
             cb.grid(row=row, column=0, sticky="ew", padx=4, pady=1)

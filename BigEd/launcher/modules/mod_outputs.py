@@ -9,7 +9,7 @@ from pathlib import Path
 import customtkinter as ctk
 
 BG = BG2 = BG3 = ACCENT = ACCENT_H = GOLD = TEXT = DIM = GREEN = ORANGE = RED = ""
-FONT_SM = ("RuneScape Plain 11", 10)
+FONT_SM = FONT_STAT = FONT_BOLD = FONT_XS = ("Segoe UI", 10)
 FLEET_DIR = None
 
 
@@ -27,8 +27,14 @@ class Module:
         "Quality": "quality",
         "Drafts": "code_drafts",
         "Reports": "reports",
-        "Chains": "chains",
+        "Evaluations": "evaluations",
+        "Stability": "stability",
+        "Summaries": "summaries",
+        "Refactors": "refactors",
         "FMA Reviews": "fma_reviews",
+        "DITL": "ditl",
+        "Evolution": "evolution",
+        "Chains": "chains",
     }
 
     def __init__(self, app):
@@ -41,13 +47,17 @@ class Module:
         self._preview_label = None
 
     def _init_theme(self):
-        global BG, BG2, BG3, ACCENT, ACCENT_H, GOLD, TEXT, DIM, GREEN, ORANGE, RED, FONT_SM, FLEET_DIR
+        global BG, BG2, BG3, ACCENT, ACCENT_H, GOLD, TEXT, DIM, GREEN, ORANGE, RED
+        global FONT_SM, FONT_STAT, FONT_BOLD, FONT_XS, FLEET_DIR
+        from ui.theme import (BG as _BG, BG2 as _BG2, BG3 as _BG3,
+                              ACCENT as _ACC, ACCENT_H as _AH, GOLD as _GOLD,
+                              TEXT as _TEXT, DIM as _DIM, GREEN as _GR, ORANGE as _OR, RED as _RED,
+                              FONT_SM as _FSM, FONT_STAT as _FST, FONT_BOLD as _FB, FONT_XS as _FXS)
+        BG = _BG; BG2 = _BG2; BG3 = _BG3
+        ACCENT = _ACC; ACCENT_H = _AH; GOLD = _GOLD
+        TEXT = _TEXT; DIM = _DIM; GREEN = _GR; ORANGE = _OR; RED = _RED
+        FONT_SM = _FSM; FONT_STAT = _FST; FONT_BOLD = _FB; FONT_XS = _FXS
         import launcher
-        BG = launcher.BG; BG2 = launcher.BG2; BG3 = launcher.BG3
-        ACCENT = launcher.ACCENT; ACCENT_H = launcher.ACCENT_H
-        GOLD = launcher.GOLD; TEXT = launcher.TEXT; DIM = launcher.DIM
-        GREEN = launcher.GREEN; ORANGE = launcher.ORANGE; RED = launcher.RED
-        FONT_SM = launcher.FONT_SM
         FLEET_DIR = launcher.FLEET_DIR
 
     def build_tab(self, parent):
@@ -96,7 +106,7 @@ class Module:
         self._preview_label.grid(row=0, column=0, padx=8, pady=(4, 2), sticky="w")
 
         self._preview = ctk.CTkTextbox(
-            preview_frame, font=("Consolas", 10), fg_color=BG2,
+            preview_frame, font=FONT_STAT, fg_color=BG2,
             text_color="#c8c8c8", wrap="word", corner_radius=0)
         self._preview.grid(row=1, column=0, sticky="nsew", padx=4, pady=(0, 4))
 
@@ -127,7 +137,7 @@ class Module:
             rel = f.relative_to(knowledge)
             bg = BG3 if i % 2 == 0 else BG2
             btn = ctk.CTkButton(
-                self._list, text=str(rel), font=("Consolas", 9),
+                self._list, text=str(rel), font=FONT_XS,
                 fg_color=bg, hover_color=ACCENT, text_color=TEXT,
                 anchor="w", height=22, corner_radius=2,
                 command=lambda path=f: self._show_file(path))
