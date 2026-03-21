@@ -788,50 +788,14 @@ def main():
     except Exception:
         gpu_config["deployment_tier"] = "unknown"
 
-    # ── Dr. Ders model promotion ──────────────────────────────────────────
-    # Boot fast on smallest model, then promote to best available CPU-bound
-    # model for better monitoring quality. Smallest stays as crash failsafe.
-    installed = get_available_models(host)
-    # Promotion preference: largest CPU-suitable model first
-    DRDERS_PROMOTE_ORDER = ["qwen3:4b", "qwen3:1.7b", "qwen3:0.6b"]
-    DRDERS_BOOT_MODEL = None
-    DRDERS_PROMOTED_MODEL = None
+    # ── Dr. Ders does NOT load models ──────────────────────────────────────
+    # Dr. Ders is a pure monitoring daemon — it never does inference.
+    # Model loading (conductor, failsafe) is the SUPERVISOR's responsibility.
+    # Previously this section loaded 2 CPU models (~3.5GB RAM) for no reason.
+    # Removed in v0.165.00b to free RAM for actual worker agents.
+    DRDERS_BOOT_MODEL = None  # Kept for error recovery reference
     drders_promoted = False
-
-    # Find smallest installed model as boot/failsafe
-    for m in reversed(DRDERS_PROMOTE_ORDER):
-        if m in installed:
-            DRDERS_BOOT_MODEL = m
-            break
-
-    # Find largest installed model as promotion target
-    for m in DRDERS_PROMOTE_ORDER:
-        if m in installed and m != DRDERS_BOOT_MODEL:
-            DRDERS_PROMOTED_MODEL = m
-            break
-
-    # Always keep failsafe micro model loaded on CPU — never evict this
-    if DRDERS_BOOT_MODEL:
-        log.info(f"Dr. Ders failsafe model: {DRDERS_BOOT_MODEL} (CPU, permanent)")
-        warmup_model(DRDERS_BOOT_MODEL, on_gpu=False)
-
-    if DRDERS_PROMOTED_MODEL:
-        log.info(f"Promoting Dr. Ders: {DRDERS_BOOT_MODEL} → {DRDERS_PROMOTED_MODEL} (CPU)")
-        try:
-            body = json.dumps({
-                "model": DRDERS_PROMOTED_MODEL, "keep_alive": _get_keep_alive(),
-                "options": {"num_gpu": 0},
-            }).encode()
-            req = urllib.request.Request(
-                f"{host}/api/generate", data=body, method="POST",
-                headers={"Content-Type": "application/json"})
-            urllib.request.urlopen(req, timeout=60)
-            drders_promoted = True
-            log.info(f"Dr. Ders promoted to {DRDERS_PROMOTED_MODEL} (CPU-bound)")
-        except Exception as e:
-            log.warning(f"Promotion failed, staying on {DRDERS_BOOT_MODEL}: {e}")
-    elif DRDERS_BOOT_MODEL:
-        log.info(f"Only one CPU model installed ({DRDERS_BOOT_MODEL}) — no promotion needed")
+    log.info("Dr. Ders: pure monitoring mode (no model loading — supervisor handles models)")
 
     poll_count = 0
     mem_stats = {}  # populated by periodic self-check
