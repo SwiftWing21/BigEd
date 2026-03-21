@@ -282,6 +282,15 @@ def _run_idle_evolution(agent_name, config):
     """
     global _last_evolution_pipeline, _last_research_trigger
     log = logging.getLogger(agent_name)
+
+    # Guard: skip if the configured complex provider has no API key
+    try:
+        import providers
+        if not providers.has_api_key(config):
+            log.info("Skipping idle evolution — no API key for configured provider")
+            return
+    except Exception:
+        pass
     now = time.time()
 
     # --- Original: skill_test on least-evolved skill ---
@@ -503,7 +512,18 @@ def main():
         except Exception:
             pass
 
-        task = db.claim_task(role, affinity_skills=affinity_skills)
+        # Use batch claiming when the queue is deep to reduce poll round-trips
+        _depth = 0
+        try:
+            _depth = db.queue_depth()
+        except Exception:
+            pass
+        if _depth > 3:
+            _batch = db.claim_tasks(role, n=2, affinity_skills=affinity_skills)
+            task = _batch[0] if _batch else None
+            # Process remaining batch tasks in subsequent iterations via normal claim
+        else:
+            task = db.claim_task(role, affinity_skills=affinity_skills)
         if not task:
             idle_count += 1
             now = time.time()
@@ -513,12 +533,7 @@ def main():
                     # Global dedup: skip idle evolution if queue already has pending work
                     pending = 0
                     try:
-                        import sqlite3 as _sq
-                        _c = _sq.connect(str(FLEET_DIR / "fleet.db"), timeout=2)
-                        try:
-                            pending = _c.execute("SELECT COUNT(*) FROM tasks WHERE status='PENDING'").fetchone()[0]
-                        finally:
-                            _c.close()
+                        pending = db.queue_depth()
                     except Exception:
                         pass
                     if pending < 3:  # Only evolve if queue is nearly empty
@@ -582,10 +597,10 @@ def main():
                             intel_score = score_task_output(task['type'], result, config)
                             if intel_score is not None:
                                 db.update_intelligence_score(task['id'], intel_score)
-                            # v0.23 Tier 2: LLM-based quality eval (sampled ~10%)
+                            # v0.23 Tier 2: LLM-based quality eval (sampled ~10%, deterministic)
                             t2_score = score_task_output_tier2(
                                 task['type'], task.get('payload_json', ''),
-                                result, config)
+                                result, config, task_id=task['id'])
                             if t2_score is not None:
                                 # Blend: 60% Tier1 + 40% Tier2
                                 blended = round(0.6 * (intel_score or 0.5) + 0.4 * t2_score, 3)
@@ -620,10 +635,10 @@ def main():
                         intel_score = score_task_output(task['type'], result, config)
                         if intel_score is not None:
                             db.update_intelligence_score(task['id'], intel_score)
-                        # v0.23 Tier 2: LLM-based quality eval (sampled ~10%)
+                        # v0.23 Tier 2: LLM-based quality eval (sampled ~10%, deterministic)
                         t2_score = score_task_output_tier2(
                             task['type'], task.get('payload_json', ''),
-                            result, config)
+                            result, config, task_id=task['id'])
                         if t2_score is not None:
                             # Blend: 60% Tier1 + 40% Tier2
                             blended = round(0.6 * (intel_score or 0.5) + 0.4 * t2_score, 3)

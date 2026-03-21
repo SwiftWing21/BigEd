@@ -143,13 +143,14 @@ researcher = ["web_search", "arxiv_fetch", "summarize", "web_crawl", "rag_query"
 coder = ["code_write", "code_review", "code_discuss", "code_write_review", "code_index", "code_quality", "fma_review", "skill_draft", "skill_test", "skill_evolve"]
 archivist = ["flashcard", "rag_index", "rag_query", "ingest"]
 analyst = ["analyze_results", "benchmark", "synthesize"]
-sales = ["lead_research", "marketing", "generate_asset"]
-onboarding = ["discuss"]
-implementation = ["code_write", "discuss"]
+# Disabled agents — excluded via disabled_agents in [fleet]; affinity entries removed to avoid stale routing
+# sales = ["lead_research", "marketing", "generate_asset"]
+# onboarding = ["discuss"]
+# implementation = ["code_write", "discuss"]
 security = ["security_audit", "pen_test", "security_review", "security_apply"]
 planner = ["plan_workload", "curriculum_update"]
-legal = ["legal_draft"]
-account_manager = ["account_review"]
+# legal = ["legal_draft"]
+# account_manager = ["account_review"]
 
 [integrations]
 unifi_enabled = false            # UniFi controller API integration

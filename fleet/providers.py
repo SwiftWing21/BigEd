@@ -35,11 +35,11 @@ def _start_usage_logger():
                         break
             except queue.Empty:
                 continue
-            # Flush batch to DB
+            # Flush batch to DB via cost_tracking (fixes silent drop from db.log_usage miss)
             for entry in batch:
                 try:
-                    import db
-                    db.log_usage(**entry)
+                    import cost_tracking
+                    cost_tracking._log_usage_sync(**entry)
                 except Exception:
                     pass
     t = threading.Thread(target=_flush_loop, daemon=True)
@@ -49,6 +49,24 @@ def async_log_usage(**kwargs):
     """Non-blocking usage logging. Batches writes every 2s."""
     _start_usage_logger()
     _usage_queue.put(kwargs)
+
+
+def has_api_key(config=None) -> bool:
+    """Returns True if the configured complex provider has the necessary credentials.
+
+    Local Ollama always returns True (no key needed).
+    Claude/Gemini providers require their respective env var.
+    """
+    provider = (config or {}).get("models", {}).get("complex_provider", "local")
+    if provider == "local":
+        return True
+    if provider == "claude":
+        return bool(os.environ.get("ANTHROPIC_API_KEY"))
+    if provider == "gemini":
+        return bool(os.environ.get("GEMINI_API_KEY"))
+    # Fallback: check any key
+    return bool(os.environ.get("ANTHROPIC_API_KEY") or os.environ.get("GEMINI_API_KEY"))
+
 
 # Circuit breaker state per provider
 _circuit_state = {}  # provider -> {"failures": int, "last_failure": float, "open_until": float}

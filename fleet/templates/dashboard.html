@@ -241,6 +241,11 @@ let activityChart = null;
 let skillsChart = null;
 let eventSource = null;
 
+// Aggregate batch cache — populated by loadAll(), consumed within _DASH_CACHE_TTL ms
+let _dashCache = null;
+let _dashCacheTs = 0;
+const _DASH_CACHE_TTL = 5000;
+
 function escapeHTML(s) {
   const div = document.createElement('div');
   div.textContent = String(s);
@@ -248,6 +253,13 @@ function escapeHTML(s) {
 }
 
 async function fetchJSON(url) {
+  // Serve from aggregate cache when available (within TTL)
+  if (_dashCache && (Date.now() - _dashCacheTs) < _DASH_CACHE_TTL) {
+    const key = url.startsWith('/api/') ? url.slice(5) : url;
+    if (Object.prototype.hasOwnProperty.call(_dashCache, key)) {
+      return _dashCache[key];
+    }
+  }
   try {
     const r = await fetch(url);
     if (!r.ok) throw new Error('HTTP ' + r.status);
@@ -469,25 +481,31 @@ async function loadActivity() {
   const done = data.map(d => d.DONE);
   const failed = data.map(d => d.FAILED);
 
-  if (activityChart) activityChart.destroy();
-  activityChart = new Chart(document.getElementById('activityChart'), {
-    type: 'bar',
-    data: {
-      labels,
-      datasets: [
-        { label: 'Done', data: done, backgroundColor: '#4caf50', borderRadius: 3 },
-        { label: 'Failed', data: failed, backgroundColor: '#f44336', borderRadius: 3 },
-      ]
-    },
-    options: {
-      responsive: true, maintainAspectRatio: false,
-      plugins: { legend: { labels: { color: '#888', font: { size: 11 } } } },
-      scales: {
-        x: { stacked: true, ticks: { color: '#666', font: { size: 10 } }, grid: { color: '#222' } },
-        y: { stacked: true, ticks: { color: '#666' }, grid: { color: '#222' } },
+  if (activityChart) {
+    activityChart.data.labels = labels;
+    activityChart.data.datasets[0].data = done;
+    activityChart.data.datasets[1].data = failed;
+    activityChart.update();
+  } else {
+    activityChart = new Chart(document.getElementById('activityChart'), {
+      type: 'bar',
+      data: {
+        labels,
+        datasets: [
+          { label: 'Done', data: done, backgroundColor: '#4caf50', borderRadius: 3 },
+          { label: 'Failed', data: failed, backgroundColor: '#f44336', borderRadius: 3 },
+        ]
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        plugins: { legend: { labels: { color: '#888', font: { size: 11 } } } },
+        scales: {
+          x: { stacked: true, ticks: { color: '#666', font: { size: 10 } }, grid: { color: '#222' } },
+          y: { stacked: true, ticks: { color: '#666' }, grid: { color: '#222' } },
+        }
       }
-    }
-  });
+    });
+  }
 }
 
 async function loadSkills() {
@@ -497,25 +515,31 @@ async function loadSkills() {
   const done = entries.map(e => e[1].DONE);
   const failed = entries.map(e => e[1].FAILED);
 
-  if (skillsChart) skillsChart.destroy();
-  skillsChart = new Chart(document.getElementById('skillsChart'), {
-    type: 'bar',
-    data: {
-      labels,
-      datasets: [
-        { label: 'Done', data: done, backgroundColor: '#4caf50' },
-        { label: 'Failed', data: failed, backgroundColor: '#f44336' },
-      ]
-    },
-    options: {
-      indexAxis: 'y', responsive: true, maintainAspectRatio: false,
-      plugins: { legend: { labels: { color: '#888', font: { size: 11 } } } },
-      scales: {
-        x: { stacked: true, ticks: { color: '#666' }, grid: { color: '#222' } },
-        y: { stacked: true, ticks: { color: '#aaa', font: { size: 11 } }, grid: { display: false } },
+  if (skillsChart) {
+    skillsChart.data.labels = labels;
+    skillsChart.data.datasets[0].data = done;
+    skillsChart.data.datasets[1].data = failed;
+    skillsChart.update();
+  } else {
+    skillsChart = new Chart(document.getElementById('skillsChart'), {
+      type: 'bar',
+      data: {
+        labels,
+        datasets: [
+          { label: 'Done', data: done, backgroundColor: '#4caf50' },
+          { label: 'Failed', data: failed, backgroundColor: '#f44336' },
+        ]
+      },
+      options: {
+        indexAxis: 'y', responsive: true, maintainAspectRatio: false,
+        plugins: { legend: { labels: { color: '#888', font: { size: 11 } } } },
+        scales: {
+          x: { stacked: true, ticks: { color: '#666' }, grid: { color: '#222' } },
+          y: { stacked: true, ticks: { color: '#aaa', font: { size: 11 } }, grid: { display: false } },
+        }
       }
-    }
-  });
+    });
+  }
 }
 
 async function loadDiscussions() {
@@ -786,6 +810,13 @@ async function loadEvolution() {
 }
 
 async function loadAll() {
+  // Pre-fetch aggregate to collapse 11 API calls into 1; fetchJSON() serves from cache
+  try {
+    _dashCache = await fetch('/api/dashboard').then(r => r.ok ? r.json() : null);
+    _dashCacheTs = Date.now();
+  } catch(e) {
+    _dashCache = null;
+  }
   await Promise.all([
     loadStatus(), loadCodeStats(), loadThermal(), loadTraining(),
     loadActivity(), loadSkills(), loadDiscussions(), loadModules(),
@@ -793,6 +824,7 @@ async function loadAll() {
     loadDataStats(), loadAlerts(), loadAgentActivity(), loadCostTracker(),
     loadEvolution(),
   ]);
+  _dashCache = null; // release cache after all loaders consumed it
   document.getElementById('lastUpdate').textContent = 'Updated: ' + new Date().toLocaleTimeString();
 }
 
@@ -801,12 +833,20 @@ loadAll();
 connectSSE();
 // Fallback polling for non-SSE data (charts, knowledge, etc) every 30s
 setInterval(async () => {
+  // Pre-fetch aggregate to reduce connections; fetchJSON() serves from cache
+  try {
+    _dashCache = await fetch('/api/dashboard').then(r => r.ok ? r.json() : null);
+    _dashCacheTs = Date.now();
+  } catch(e) {
+    _dashCache = null;
+  }
   await Promise.all([
     loadThermal(), loadTraining(), loadActivity(), loadSkills(),
     loadModules(), loadReviews(), loadKnowledge(), loadRAG(),
     loadTimeline(), loadDataStats(), loadCodeStats(), loadAlerts(),
     loadAgentActivity(), loadCostTracker(), loadEvolution(),
   ]);
+  _dashCache = null;
 }, 30000);
 </script>
 </body>
