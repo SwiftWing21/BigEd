@@ -24,7 +24,7 @@ def get_last_provider():
 
 from providers import (
     PRICING, FALLBACK_CHAIN, calculate_cost,
-    _call_claude, _call_gemini, _call_local,
+    _call_claude, _call_gemini, _call_minimax, _call_local,
     _circuit_is_open, _circuit_record_failure, _circuit_record_success,
     get_optimal_model, get_local_model_for_skill,
 )
@@ -142,6 +142,9 @@ def call_complex(system: str, user: str, config: dict, max_tokens: int = 2048, c
             if prov == "gemini":
                 result = _call_gemini(system, user, models, max_tokens,
                                       skill_name=skill_name, task_id=task_id, agent_name=agent_name)
+            elif prov == "minimax":
+                result = _call_minimax(system, user, models, max_tokens,
+                                       skill_name=skill_name, task_id=task_id, agent_name=agent_name)
             elif prov == "local":
                 result = _call_local(system, user, models, max_tokens,
                                      skill_name=skill_name, config=config,
