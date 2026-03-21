@@ -25,6 +25,7 @@ from pathlib import Path
 FLEET_DIR = Path(__file__).parent.parent
 SKILL_NAME = "packet_optimizer"
 DESCRIPTION = "Audit and optimize sent/received packet sizes across fleet API calls."
+COMPLEXITY = "simple"
 REQUIRES_NETWORK = False
 
 # Target sizes (bytes) — anything above triggers optimization recommendation

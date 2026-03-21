@@ -10,6 +10,7 @@ Panels:
 """
 import json
 import os
+import sys
 import threading
 import time
 from pathlib import Path
@@ -23,6 +24,17 @@ try:
 except ImportError:
     FLEET_DIR = Path(__file__).resolve().parent.parent.parent.parent / "fleet"
 FLEET_TOML = FLEET_DIR / "fleet.toml"
+
+# Launcher dir — anchored to this file, not cwd
+_LAUNCHER_DIR = Path(__file__).resolve().parent.parent  # BigEd/launcher/
+if str(_LAUNCHER_DIR) not in sys.path:
+    sys.path.insert(0, str(_LAUNCHER_DIR))
+if str(FLEET_DIR) not in sys.path:
+    sys.path.insert(0, str(FLEET_DIR))
+try:
+    from data_access import FleetDB
+except ImportError:
+    FleetDB = None
 
 LABEL = "Intelligence"
 
@@ -259,8 +271,6 @@ class Module:
 
     def _run_queue(self):
         """Background thread: dispatch prompts round-robin."""
-        import sys
-        sys.path.insert(0, str(FLEET_DIR))
         try:
             import db
         except ImportError:
