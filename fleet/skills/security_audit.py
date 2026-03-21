@@ -6,6 +6,7 @@ No changes are made until the advisory is explicitly approved via security_apply
 import hashlib
 import json
 import os
+import sys
 import re
 import stat
 from datetime import datetime
@@ -47,6 +48,10 @@ def _ollama(prompt, config):
 
 
 def _check_permissions():
+    # Windows doesn't use Unix file permissions — stat() always reports 0o666
+    # Skip permission checks on Windows to avoid false positive floods
+    if sys.platform == "win32":
+        return []
     findings = []
     for path_str, required_mode in PERMISSION_CHECKS:
         path = Path(path_str).expanduser()
