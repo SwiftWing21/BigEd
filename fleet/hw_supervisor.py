@@ -788,14 +788,74 @@ def main():
     except Exception:
         gpu_config["deployment_tier"] = "unknown"
 
-    # ── Dr. Ders does NOT load models ──────────────────────────────────────
-    # Dr. Ders is a pure monitoring daemon — it never does inference.
-    # Model loading (conductor, failsafe) is the SUPERVISOR's responsibility.
-    # Previously this section loaded 2 CPU models (~3.5GB RAM) for no reason.
-    # Removed in v0.165.00b to free RAM for actual worker agents.
-    DRDERS_BOOT_MODEL = None  # Kept for error recovery reference
-    drders_promoted = False
-    log.info("Dr. Ders: pure monitoring mode (no model loading — supervisor handles models)")
+    # ── Supervisor watchdog ─────────────────────────────────────────────────
+    # Dr. Ders watches the supervisor process. If supervisor dies:
+    #   1. Load fallback model (0.6b CPU) so fleet has SOMETHING to work with
+    #   2. Attempt to restart supervisor
+    #   3. Once supervisor is healthy and loads its normal model, unload fallback
+    # Dr. Ders never loads models for itself — only as emergency fleet recovery.
+    _supervisor_healthy = True
+    _recovery_model_loaded = False
+    _recovery_model = "qwen3:0.6b"  # smallest, fastest to load
+    _supervisor_check_interval = 12  # ~60s at 5s poll
+    _HEARTBEAT_FILE = FLEET_DIR / ".supervisor_heartbeat"
+    _DRDERS_HEARTBEAT = FLEET_DIR / ".drders_heartbeat"
+    _supervisor_miss_count = 0
+    _MISS_THRESHOLD = 3  # 3 missed heartbeats (~3 min) before recovery
+
+    def _write_drders_heartbeat():
+        """Write Dr. Ders heartbeat — supervisor reads this to confirm we're alive."""
+        try:
+            _DRDERS_HEARTBEAT.write_text(
+                json.dumps({"pid": os.getpid(), "ts": time.time(), "status": "watching"}),
+                encoding="utf-8")
+        except Exception:
+            pass
+
+    def _check_supervisor_alive() -> bool:
+        """Direct handshake: read supervisor's heartbeat file.
+
+        Supervisor writes .supervisor_heartbeat every ~30s.
+        Dr. Ders reads it. If stale (>90s), supervisor may be dead.
+        Falls back to process check + STATUS.md freshness.
+        """
+        # Primary: direct heartbeat file (fastest, no HTTP overhead)
+        try:
+            if _HEARTBEAT_FILE.exists():
+                data = json.loads(_HEARTBEAT_FILE.read_text(encoding="utf-8"))
+                age = time.time() - data.get("ts", 0)
+                if age < 90:
+                    return True
+                log.warning(f"Supervisor heartbeat stale: {age:.0f}s old")
+        except Exception:
+            pass
+
+        # Secondary: check process directly
+        try:
+            import psutil
+            for proc in psutil.process_iter(['cmdline']):
+                try:
+                    cmd = ' '.join(proc.info.get('cmdline') or [])
+                    if 'supervisor.py' in cmd and 'hw_supervisor' not in cmd:
+                        return True
+                except (psutil.NoSuchProcess, psutil.AccessDenied):
+                    continue
+        except ImportError:
+            pass
+
+        # Tertiary: STATUS.md freshness
+        try:
+            status_md = Path(__file__).parent / "STATUS.md"
+            if status_md.exists():
+                age = time.time() - status_md.stat().st_mtime
+                return age < 60
+        except Exception:
+            pass
+        return False
+
+    # Write initial Dr. Ders heartbeat
+    _write_drders_heartbeat()
+    log.info("Dr. Ders: watchdog mode (direct heartbeat handshake with supervisor)")
 
     poll_count = 0
     mem_stats = {}  # populated by periodic self-check
@@ -1155,6 +1215,46 @@ def main():
                         pass
 
                 write_state("ready", current_model, thermal, models_loaded, conductor_status, mem_stats, gpu_config)
+
+                # ── Supervisor watchdog ────────────────────────────
+                # Check supervisor heartbeat every ~60s
+                if poll_count % _supervisor_check_interval == 0:
+                    _write_drders_heartbeat()  # Our side of the handshake
+                    sup_alive = _check_supervisor_alive()
+
+                    if not sup_alive:
+                        _supervisor_miss_count += 1
+                        log.warning(f"Supervisor heartbeat missed ({_supervisor_miss_count}/{_MISS_THRESHOLD})")
+
+                        if _supervisor_miss_count >= _MISS_THRESHOLD and not _recovery_model_loaded:
+                            # Supervisor is down — load emergency fallback model
+                            log.warning(f"Supervisor DOWN — loading recovery model {_recovery_model}")
+                            try:
+                                warmup_model(_recovery_model, on_gpu=False)
+                                _recovery_model_loaded = True
+                                _supervisor_healthy = False
+                                _add_alert = None  # Can't alert via dashboard if supervisor is down
+                            except Exception as e:
+                                log.warning(f"Recovery model load failed: {e}")
+                    else:
+                        if _supervisor_miss_count > 0:
+                            log.info(f"Supervisor heartbeat restored (was missing {_supervisor_miss_count} checks)")
+                        _supervisor_miss_count = 0
+
+                        # If recovery model was loaded, unload it now that supervisor is healthy
+                        if _recovery_model_loaded:
+                            log.info(f"Supervisor recovered — unloading recovery model {_recovery_model}")
+                            try:
+                                body = json.dumps({"model": _recovery_model, "keep_alive": 0}).encode()
+                                req = urllib.request.Request(
+                                    f"{host}/api/generate", data=body, method="POST",
+                                    headers={"Content-Type": "application/json"})
+                                urllib.request.urlopen(req, timeout=5)
+                                _recovery_model_loaded = False
+                                _supervisor_healthy = True
+                                log.info("Recovery model unloaded — back to normal operation")
+                            except Exception:
+                                pass  # Will retry next cycle
 
                 # ── Adaptive wake-up interval ────────────────────────
                 # Speed up when something is happening, slow down when idle

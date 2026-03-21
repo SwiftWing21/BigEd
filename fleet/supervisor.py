@@ -1362,10 +1362,20 @@ def main():
             except Exception:
                 pass
 
-        # Write status snapshot
+        # Write status snapshot + heartbeat handshake with Dr. Ders
         if now - last_status >= 30:
             last_status = now
             write_status_md()
+            # Heartbeat: write our alive signal for Dr. Ders watchdog
+            try:
+                hb_file = FLEET_DIR / ".supervisor_heartbeat"
+                hb_file.write_text(json.dumps({
+                    "pid": os.getpid(), "ts": time.time(),
+                    "workers": len(_get_running_workers()),
+                    "model": config.get("models", {}).get("local", ""),
+                }), encoding="utf-8")
+            except Exception:
+                pass
 
         time.sleep(5)
 
