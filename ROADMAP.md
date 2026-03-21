@@ -1132,28 +1132,28 @@ Completed 2026-03-19. Dashboard auto-opens in default browser on boot complete (
 - [ ] State disclosure compliance (TX TRAIGA, CA requirements)
 - [ ] BAA management UI
 
-### 0.100.00b — Multi-Fleet & Remote Orchestration [FUTURE]
+### 0.085.00b — Multi-Fleet & Remote Orchestration [FUTURE]
 
 - Fleet-to-fleet communication (federated supervisor mesh)
 - Remote dashboard access (auth + TLS + public URL)
 - Fleet cloning (deploy identical fleet via config export)
 - Plugin marketplace (community skills via git repos)
 
-### 0.200.00b — Intelligent Orchestration [FUTURE]
+### 0.110.00b — Intelligent Orchestration [FUTURE]
 
 - ML-driven task routing (learn optimal agent→skill mapping from history)
 - Predictive scaling (anticipate load from task patterns)
 - Natural language fleet control ("scale up coders, pause research")
 - Auto-generated SOPs from fleet behavior patterns
 
-### 0.300.00b — Enterprise & Multi-Tenant [FUTURE]
+### 0.135.00b — Enterprise & Multi-Tenant [FUTURE]
 
 - Tenant isolation (separate DBs, configs, knowledge per customer)
 - Role-based access control (RBAC with granular permissions)
 - Full audit logging (who did what, when, with what cost)
 - SLA monitoring (task completion time guarantees)
 
-### 0.400.00b — Platform & SaaS [FUTURE]
+### 0.160.00b — Platform & SaaS [FUTURE]
 
 - Self-hosted SaaS deployment (Docker Compose / K8s)
 - Web-based launcher (replace desktop GUI with React/Next.js)
