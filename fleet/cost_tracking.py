@@ -242,6 +242,30 @@ def get_skill_cost_breakdown(period: str = "week") -> list:
         return [dict(r) for r in rows]
 
 
+def detect_cost_anomaly(threshold_multiplier: float = 2.0) -> dict | None:
+    """Check if today's spend is anomalous vs 7-day average.
+
+    Returns anomaly dict if detected, None if normal.
+    Uses get_daily_cost_series() for the last 7 days, compares today
+    against the average of the preceding days.
+    """
+    series = get_daily_cost_series(days=7)
+    if len(series) < 2:
+        return None
+    # Average of all days except today (the last entry)
+    preceding = series[:-1]
+    avg = sum(d["total_cost"] for d in preceding) / max(1, len(preceding))
+    today = series[-1]["total_cost"] if series else 0
+    if avg > 0 and today > avg * threshold_multiplier:
+        return {
+            "today_cost": round(today, 4),
+            "avg_cost": round(avg, 4),
+            "multiplier": round(today / avg, 1),
+            "threshold": threshold_multiplier,
+        }
+    return None
+
+
 def get_model_usage_breakdown(period: str = "week") -> list:
     """Get usage breakdown by model for chart rendering."""
     period_map = {"day": "-1 day", "week": "-7 days", "month": "-30 days"}

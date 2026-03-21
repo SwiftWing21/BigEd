@@ -280,6 +280,21 @@ def init_db():
         conn.execute("CREATE INDEX IF NOT EXISTS idx_audit_ts ON audit_log(timestamp)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_audit_actor ON audit_log(actor)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_audit_action ON audit_log(action)")
+        # Human feedback on agent outputs (Outputs module)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS output_feedback (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                output_path TEXT NOT NULL,
+                verdict TEXT NOT NULL,
+                feedback_text TEXT,
+                operator TEXT DEFAULT 'human',
+                agent_name TEXT,
+                skill_type TEXT,
+                created_at TEXT DEFAULT (datetime('now'))
+            )
+        """)
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_feedback_path ON output_feedback(output_path)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_feedback_verdict ON output_feedback(verdict)")
 
 
 def update_intelligence_score(task_id, score):
@@ -1350,3 +1365,68 @@ def get_audit_runs(limit: int = 20) -> list:
             (limit,)
         ).fetchall()
         return [dict(r) for r in rows]
+
+
+# ── Human Feedback on Agent Outputs ──────────────────────────────────────────
+
+def submit_feedback(output_path, verdict, feedback_text="", agent_name="", skill_type=""):
+    """Store human feedback on an agent output.
+
+    verdict must be 'approved', 'rejected', or 'neutral'.
+    Upserts: a new review on the same path replaces the previous one.
+    """
+    if verdict not in ("approved", "rejected", "neutral"):
+        raise ValueError(f"Invalid verdict: {verdict!r}")
+    def _do():
+        with get_conn() as conn:
+            # Delete any prior feedback for this path, then insert fresh
+            conn.execute("DELETE FROM output_feedback WHERE output_path = ?", (output_path,))
+            conn.execute(
+                """INSERT INTO output_feedback
+                   (output_path, verdict, feedback_text, operator, agent_name, skill_type)
+                   VALUES (?, ?, ?, 'human', ?, ?)""",
+                (output_path, verdict, feedback_text, agent_name, skill_type),
+            )
+    _retry_write(_do)
+
+
+def get_feedback(output_path):
+    """Get feedback for a specific output. Returns dict or None."""
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT * FROM output_feedback WHERE output_path = ? ORDER BY id DESC LIMIT 1",
+            (output_path,),
+        ).fetchone()
+        return dict(row) if row else None
+
+
+def get_feedback_stats(days=7):
+    """Get approval/rejection stats by agent and skill over recent window."""
+    with get_conn() as conn:
+        rows = conn.execute(
+            """SELECT agent_name, skill_type, verdict, COUNT(*) as cnt
+               FROM output_feedback
+               WHERE created_at >= datetime('now', ?)
+               GROUP BY agent_name, skill_type, verdict
+               ORDER BY cnt DESC""",
+            (f"-{days} days",),
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+
+def get_feedback_bulk(output_paths):
+    """Get feedback verdicts for multiple paths in one query.
+
+    Returns a dict mapping output_path -> verdict string.
+    Paths without feedback are omitted from the result.
+    """
+    if not output_paths:
+        return {}
+    with get_conn() as conn:
+        placeholders = ",".join("?" * len(output_paths))
+        rows = conn.execute(
+            f"""SELECT output_path, verdict FROM output_feedback
+                WHERE output_path IN ({placeholders})""",
+            list(output_paths),
+        ).fetchall()
+        return {r["output_path"]: r["verdict"] for r in rows}

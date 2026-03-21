@@ -292,20 +292,17 @@ def _alert_monitor():
                     except Exception:
                         pass
 
-            # Check for anomalous API spend (cost spike > 3x average)
+            # Check for anomalous API spend (v0.170.04b: uses detect_cost_anomaly)
             try:
-                today_rows = query("SELECT COALESCE(SUM(cost_usd), 0) as cost FROM usage WHERE created_at >= datetime('now', '-1 day')")
-                today_cost = today_rows[0]["cost"] if today_rows else 0
-                avg_rows = query("""
-                    SELECT COALESCE(AVG(daily_cost), 0) as avg FROM (
-                        SELECT DATE(created_at) as d, SUM(cost_usd) as daily_cost
-                        FROM usage WHERE created_at >= datetime('now', '-7 days')
-                        GROUP BY d
-                    )""")
-                avg_cost = avg_rows[0]["avg"] if avg_rows else 0
-                if avg_cost > 0.01 and today_cost > avg_cost * 3:
+                from cost_tracking import detect_cost_anomaly
+                anomaly = detect_cost_anomaly()
+                if anomaly:
+                    throttle_active = (FLEET_DIR / ".cost_anomaly_throttle").exists()
+                    throttle_label = " [idle evolution paused]" if throttle_active else ""
                     _add_alert("warning",
-                        f"Unusual API spend: ${today_cost:.2f} today (3x avg ${avg_cost:.2f})", "cost")
+                        f"Cost anomaly: ${anomaly['today_cost']:.2f} today "
+                        f"({anomaly['multiplier']}x avg ${anomaly['avg_cost']:.2f})"
+                        f"{throttle_label}", "cost")
             except Exception:
                 pass
 
@@ -2094,6 +2091,232 @@ def api_trigger_status():
                 if isinstance(spec, dict)
             },
         })
+    except Exception as e:
+        return jsonify({"error": _safe_error(e)}), 500
+
+
+# ── Human Feedback ────────────────────────────────────────────────────────────
+
+@app.route("/api/feedback", methods=["POST"])
+def api_submit_feedback():
+    """Submit human feedback on an agent output.
+
+    Body JSON:
+        output_path (str):    path or 'task:<id>' identifying the output
+        verdict (str):        'approved' or 'rejected'
+        feedback_text (str):  optional free-text explanation
+        agent_name (str):     optional agent that produced the output
+        skill_type (str):     optional skill that produced the output
+    """
+    try:
+        if not _check_rate_limit("feedback_submit", max_per_min=30):
+            return jsonify({"error": "rate limited"}), 429
+
+        data = request.get_json(silent=True) or {}
+        output_path = (data.get("output_path") or "").strip()
+        verdict = (data.get("verdict") or "").strip().lower()
+        feedback_text = (data.get("feedback_text") or "").strip()
+        agent_name = (data.get("agent_name") or "").strip()
+        skill_type = (data.get("skill_type") or "").strip()
+
+        if not output_path:
+            return jsonify({"error": "output_path required"}), 400
+        if verdict not in ("approved", "rejected"):
+            return jsonify({"error": "verdict must be 'approved' or 'rejected'"}), 400
+
+        # Store feedback
+        import db
+        db.submit_feedback(output_path, verdict, feedback_text, agent_name, skill_type)
+
+        # Process reinforcement (IQ adjustments + re-review dispatch)
+        result = {"output_path": output_path, "verdict": verdict}
+        try:
+            from reinforcement import process_approved, process_rejected, process_ditl_rejection
+
+            if verdict == "approved":
+                new_score = process_approved(output_path, agent_name, skill_type)
+                if new_score is not None:
+                    result["new_iq"] = new_score
+
+            elif verdict == "rejected":
+                # Dispatch re-review task
+                re_task = process_rejected(output_path, agent_name, skill_type, feedback_text)
+                if re_task is not None:
+                    result["re_review_task_id"] = re_task
+
+                # DITL: if enabled and rejected, also log PHI audit + clinical review
+                try:
+                    cfg = _load_config()
+                    if cfg.get("ditl", {}).get("enabled", False):
+                        ditl_result = process_ditl_rejection(output_path, agent_name, feedback_text)
+                        if ditl_result:
+                            result["ditl_audit_id"] = ditl_result.get("audit_id")
+                            result["ditl_task_id"] = ditl_result.get("task_id")
+                except Exception:
+                    pass  # DITL is optional — never block feedback on it
+
+        except Exception:
+            pass  # reinforcement is enhancement — never block feedback storage
+
+        # Broadcast SSE event so dashboard updates live
+        _broadcast_sse({
+            "type": "feedback",
+            "data": {
+                "output_path": output_path,
+                "verdict": verdict,
+                "agent_name": agent_name,
+                "skill_type": skill_type,
+            },
+        })
+
+        return jsonify(result)
+
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+    except Exception as e:
+        return jsonify({"error": _safe_error(e)}), 500
+
+
+@app.route("/api/feedback", methods=["GET"])
+def api_get_feedback():
+    """Query feedback with filters.
+
+    Query params:
+        output_path (str):  exact match on output path
+        agent (str):        filter by agent_name
+        skill (str):        filter by skill_type
+        verdict (str):      filter by verdict (approved/rejected/neutral)
+        days (int):         lookback window in days (default 30)
+        limit (int):        max rows (default 100, max 500)
+    """
+    try:
+        if not _check_rate_limit("feedback_get", max_per_min=30):
+            return jsonify({"error": "rate limited"}), 429
+
+        output_path = request.args.get("output_path", "").strip()
+        agent = request.args.get("agent", "").strip()
+        skill = request.args.get("skill", "").strip()
+        verdict = request.args.get("verdict", "").strip()
+        days = min(365, max(1, int(request.args.get("days", 30))))
+        limit = min(500, max(1, int(request.args.get("limit", 100))))
+
+        # If output_path is given, return single feedback
+        if output_path:
+            import db
+            fb = db.get_feedback(output_path)
+            return jsonify({"feedback": fb})
+
+        # Otherwise, query with filters
+        import db
+        clauses = ["created_at >= datetime('now', ?)"]
+        params = [f"-{days} days"]
+
+        if agent:
+            clauses.append("agent_name = ?")
+            params.append(agent)
+        if skill:
+            clauses.append("skill_type = ?")
+            params.append(skill)
+        if verdict:
+            clauses.append("verdict = ?")
+            params.append(verdict)
+
+        where = " AND ".join(clauses)
+        params.append(limit)
+
+        with db.get_conn() as conn:
+            rows = conn.execute(
+                f"""SELECT id, output_path, verdict, feedback_text, operator,
+                           agent_name, skill_type, created_at
+                    FROM output_feedback
+                    WHERE {where}
+                    ORDER BY created_at DESC
+                    LIMIT ?""",
+                params,
+            ).fetchall()
+
+        return jsonify({"feedback": [dict(r) for r in rows], "count": len(rows)})
+
+    except Exception as e:
+        return jsonify({"error": _safe_error(e)}), 500
+
+
+@app.route("/api/feedback/stats")
+def api_feedback_stats():
+    """Feedback stats: approval rate by agent, by skill, trend.
+
+    Query params:
+        days (int): lookback window in days (default 7)
+    """
+    try:
+        if not _check_rate_limit("feedback_stats", max_per_min=20):
+            return jsonify({"error": "rate limited"}), 429
+
+        days = min(365, max(1, int(request.args.get("days", 7))))
+
+        import db
+        raw = db.get_feedback_stats(days=days)
+
+        # Pivot into by-agent and by-skill summaries
+        by_agent = {}
+        by_skill = {}
+        totals = {"approved": 0, "rejected": 0, "neutral": 0}
+
+        for row in raw:
+            agent = row.get("agent_name") or "unknown"
+            skill = row.get("skill_type") or "unknown"
+            v = row.get("verdict", "neutral")
+            cnt = row.get("cnt", 0)
+
+            totals[v] = totals.get(v, 0) + cnt
+
+            if agent not in by_agent:
+                by_agent[agent] = {"approved": 0, "rejected": 0, "neutral": 0}
+            by_agent[agent][v] = by_agent[agent].get(v, 0) + cnt
+
+            if skill not in by_skill:
+                by_skill[skill] = {"approved": 0, "rejected": 0, "neutral": 0}
+            by_skill[skill][v] = by_skill[skill].get(v, 0) + cnt
+
+        # Compute approval rates
+        total_reviewed = totals["approved"] + totals["rejected"]
+        approval_rate = round(totals["approved"] / total_reviewed, 3) if total_reviewed else None
+
+        for d in list(by_agent.values()) + list(by_skill.values()):
+            reviewed = d["approved"] + d["rejected"]
+            d["approval_rate"] = round(d["approved"] / reviewed, 3) if reviewed else None
+
+        # Daily trend (last N days)
+        trend = []
+        try:
+            with db.get_conn() as conn:
+                rows = conn.execute(
+                    """SELECT DATE(created_at) as day, verdict, COUNT(*) as cnt
+                       FROM output_feedback
+                       WHERE created_at >= datetime('now', ?)
+                       GROUP BY day, verdict
+                       ORDER BY day""",
+                    (f"-{days} days",),
+                ).fetchall()
+            trend_map = {}
+            for r in rows:
+                day = r["day"]
+                if day not in trend_map:
+                    trend_map[day] = {"day": day, "approved": 0, "rejected": 0, "neutral": 0}
+                trend_map[day][r["verdict"]] = r["cnt"]
+            trend = list(trend_map.values())
+        except Exception:
+            pass
+
+        return jsonify({
+            "days": days,
+            "totals": totals,
+            "approval_rate": approval_rate,
+            "by_agent": by_agent,
+            "by_skill": by_skill,
+            "trend": trend,
+        })
+
     except Exception as e:
         return jsonify({"error": _safe_error(e)}), 500
 

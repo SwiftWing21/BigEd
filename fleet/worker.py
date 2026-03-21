@@ -597,6 +597,17 @@ def main():
             now = time.time()
             cooldown_ok = (now - _last_idle_run) >= idle_cooldown
             if idle_count >= IDLE_THRESHOLD and config.get("idle", {}).get("enabled", False) and cooldown_ok:
+                # v0.170.04b: Skip idle evolution when cost anomaly throttle is active
+                _cost_throttle_file = FLEET_DIR / ".cost_anomaly_throttle"
+                if _cost_throttle_file.exists():
+                    try:
+                        _ct_data = json.loads(_cost_throttle_file.read_text(encoding="utf-8"))
+                        # Only honor if flag is less than 20 min old (stale = ignore)
+                        if time.time() - _ct_data.get("ts", 0) < 1200:
+                            idle_count = 0
+                            continue
+                    except Exception:
+                        pass
                 if _idle_failures < 3:  # Stop after 3 consecutive failures
                     # Global dedup: skip idle evolution if queue already has pending work
                     pending = 0

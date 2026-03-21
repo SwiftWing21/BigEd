@@ -1012,7 +1012,11 @@ def main():
     last_federation_heartbeat = 0  # federation peer broadcast
     last_cache_cleanup = 0         # cache_manager stale invalidation
     last_rag_cleanup = 0           # RAG index stale entry cleanup
+    last_feedback_check = 0        # reinforcement loop — age out unreviewed outputs
+    FEEDBACK_CHECK_INTERVAL = 600  # 10 minutes
     last_trigger_check = 0         # event triggers (file watch + schedules)
+    last_cost_anomaly_check = 0    # v0.170.04b: cost anomaly auto-throttle (every 10 min)
+    COST_ANOMALY_INTERVAL = 600    # 10 minutes
     # v0.23 S3: Auto-Intelligence — periodic evolution + research dispatch
     # Intervals defined at module level: RESEARCH_INTERVAL (24h), EVOLUTION_INTERVAL (7d)
     global _last_research_trigger, _last_evolution_trigger, _last_results_mtime
@@ -1416,6 +1420,17 @@ def main():
             except Exception:
                 pass
 
+        # Reinforcement loop — age out unreviewed outputs (every 10 min)
+        if now - last_feedback_check >= FEEDBACK_CHECK_INTERVAL:
+            last_feedback_check = now
+            try:
+                from reinforcement import age_out_unreviewed
+                aged = age_out_unreviewed()
+                if aged:
+                    log.debug(f"Feedback: aged out {aged} unreviewed outputs")
+            except Exception:
+                pass
+
         # Event triggers — file watch, scheduled tasks (every 30s)
         if now - last_trigger_check >= 30:
             last_trigger_check = now
@@ -1435,6 +1450,43 @@ def main():
                 reload_config()
             except Exception:
                 pass
+
+        # v0.170.04b: Cost anomaly auto-throttle — pause idle evolution on spend spike
+        if now - last_cost_anomaly_check >= COST_ANOMALY_INTERVAL:
+            last_cost_anomaly_check = now
+            try:
+                from cost_tracking import detect_cost_anomaly
+                anomaly = detect_cost_anomaly()
+                throttle_flag = FLEET_DIR / ".cost_anomaly_throttle"
+                if anomaly:
+                    log.warning(f"Cost anomaly: ${anomaly['today_cost']} today vs "
+                                f"${anomaly['avg_cost']} avg ({anomaly['multiplier']}x)")
+                    _json_log("WARNING", "cost_anomaly_throttle", **anomaly)
+                    # Write throttle flag — workers check this before idle evolution
+                    throttle_flag.write_text(json.dumps({
+                        "ts": time.time(),
+                        "today_cost": anomaly["today_cost"],
+                        "avg_cost": anomaly["avg_cost"],
+                        "multiplier": anomaly["multiplier"],
+                    }), encoding="utf-8")
+                    # Post dashboard alert via DB
+                    try:
+                        db.post_note("sup", "supervisor", json.dumps({
+                            "type": "cost_anomaly",
+                            "title": f"Cost anomaly: ${anomaly['today_cost']} today "
+                                     f"({anomaly['multiplier']}x avg ${anomaly['avg_cost']})",
+                            "tags": ["cost", "anomaly"],
+                        }))
+                    except Exception:
+                        pass
+                else:
+                    # Clear throttle flag when spend returns to normal
+                    if throttle_flag.exists():
+                        throttle_flag.unlink(missing_ok=True)
+                        log.info("Cost anomaly cleared — idle evolution resumed")
+                        _json_log("INFO", "cost_anomaly_cleared")
+            except Exception:
+                pass  # cost anomaly check must never block supervisor
 
         # Federation: broadcast status to peers (every 60s)
         if now - last_federation_heartbeat >= 60:

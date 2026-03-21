@@ -92,6 +92,7 @@ CLAUDE.USER.md
 # ── Fleet — runtime files (regenerated every run) ────────────────────────────
 fleet/.drders_heartbeat
 fleet/.supervisor_heartbeat
+fleet/.cost_anomaly_throttle
 fleet/audit-results.md
 fleet/task-briefing.md
 fleet/knowledge/screenshots/

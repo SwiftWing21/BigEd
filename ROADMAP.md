@@ -1288,42 +1288,42 @@ Completed 2026-03-21. Modules created and wired into active workflow.
 **Goal:** Human-readable agent activity, expertise context, event-driven automations.
 
 **Agent Card UX:**
-- [ ] Human-readable last result (parse JSON → "Reviewed 3 files", "Evolved skill_evolve", not raw JSON)
-- [ ] Current activity label (skill name displayed as "Running: code_review" not raw task type)
-- [ ] Recent activity feed (last 3 tasks with outcome icons)
-- [ ] Agent expertise tags (top 3 skills by IQ score from history)
-- [ ] Tasks/hour throughput metric on card
+- [x] Human-readable last result — `_humanize_result()` parses JSON → readable summaries
+- [x] Current activity label — "Running: skill_name" when BUSY, "Idle" when IDLE
+- [x] Recent activity feed — last 3 tasks with checkmark/cross/ellipsis icons
+- [x] Agent expertise tags — top 3 skills by IQ from 7-day history
+- [x] Tasks/hour throughput metric on card
 
 **Event Trigger System:**
-- [ ] File-watch trigger (new file in configurable dir → auto-ingest task)
-- [ ] Webhook endpoint (POST /api/trigger → dispatch task)
-- [ ] Scheduled tasks (cron-like: fleet.toml [schedules] section)
-- [ ] Dashboard event triggers (anomalous cost → auto-throttle)
+- [x] File-watch trigger — `FileWatchTrigger` polls configurable dir, auto-dispatches ingest
+- [x] Webhook endpoint — `POST /api/trigger` with rate limiting + audit logging
+- [x] Scheduled tasks — `[schedules]` in fleet.toml, cron-like with state persistence
+- [x] Dashboard event triggers — `detect_cost_anomaly()` + auto-pause idle evolution via flag file
 
 **Data Layer:**
-- [ ] FleetDB.agent_recent_tasks(db_path, name, limit=3) — last N tasks with type+status
-- [ ] FleetDB.agent_top_skills(db_path, name, limit=3) — top skills by avg IQ
-- [ ] _humanize_result(result_json, task_type) — parse raw JSON into readable summary
+- [x] FleetDB.agent_recent_tasks(db_path, name, limit=3) — last N tasks with type+status
+- [x] FleetDB.agent_top_skills(db_path, name, limit=3) — top skills by avg IQ
+- [x] _humanize_result(result_json, task_type) — parse raw JSON into readable summary
 
 ### 0.170.05b — Human Feedback Loop via Outputs Module
 
 **Goal:** Let operators review agent outputs and feed approval/rejection back into the fleet for reinforcement. Leverages existing HITL + DITL infrastructure.
 
 **Outputs Module — Feedback UI:**
-- [ ] Approve/Reject buttons on each output preview (thumbs up/down)
-- [ ] Optional feedback text field ("why rejected", "what to improve")
-- [ ] Feedback stored in fleet.db `output_feedback` table (output_path, verdict, feedback_text, operator, timestamp)
-- [ ] Badge showing feedback status: unreviewed / approved / rejected
+- [x] Approve/Reject buttons on each output preview — green/red buttons + notes field in feedback bar
+- [x] Optional feedback text field — entry below buttons, restored on file reselect
+- [x] Feedback stored in fleet.db `output_feedback` table — upsert pattern via `db.submit_feedback()`
+- [x] Badge showing feedback status — checkmark (green) / X (red) prefix on file list items
 
 **Fleet Reinforcement Loop:**
-- [ ] Approved outputs → weight boost for that agent+skill pair in IQ scoring
-- [ ] Rejected outputs → dispatch `code_review` or `evaluate` task on the rejected output for agent self-correction
-- [ ] No-input handling: outputs older than N days without feedback auto-age out as "unreviewed" (neutral — no IQ impact)
-- [ ] DITL integration: when DITL enabled, rejected clinical outputs trigger PHI audit entry + mandatory re-review
+- [x] Approved outputs → IQ boost +0.05 (capped at 1.0) via `reinforcement.process_approved()`
+- [x] Rejected outputs → dispatch `evaluate` task with human feedback text via `reinforcement.process_rejected()`
+- [x] No-input handling — `age_out_unreviewed(days=7)` inserts neutral verdicts, runs every 10min in supervisor
+- [x] DITL integration — `process_ditl_rejection()` logs to phi_audit + dispatches clinical_review at priority 8
 
 **Dashboard Integration:**
-- [ ] `/api/feedback` endpoint — submit/query feedback
-- [ ] Feedback stats panel: approval rate by agent, by skill, trend over time
+- [x] `/api/feedback` endpoint — POST (submit + reinforce) + GET (query with filters)
+- [x] `/api/feedback/stats` — approval rate by agent, by skill, daily trend breakdown
 
 **Data Flow:**
 ```
