@@ -1005,6 +1005,7 @@ def main():
     backup_parser = subparsers.add_parser("backup", help="Manual backup")
     backup_parser.add_argument("--list", action="store_true", help="List recent backups")
     backup_parser.add_argument("--restore", metavar="ID", help="Restore from backup ID")
+    backup_parser.add_argument("--confirm", action="store_true", help="Confirm restore — required to overwrite live DBs")
 
     args = parser.parse_args()
 
@@ -1086,7 +1087,11 @@ def main():
                 size = b.get("total_size_bytes", 0) / 1024 / 1024
                 print(f"  {b['id']}  {b.get('trigger', '?'):<12}  {size:.1f} MB")
         elif args.restore:
-            print(f"Restore from {args.restore} — not yet implemented (manual copy from ~/BigEd-backups/{args.restore}/)")
+            if not args.confirm:
+                print(f"WARNING: This will overwrite live fleet.db, rag.db, and config from backup {args.restore}.")
+                print("Re-run with --confirm to proceed.")
+            else:
+                print(f"Restore from {args.restore} — not yet implemented (manual copy from ~/BigEd-backups/{args.restore}/)")
         else:
             result = bm.perform_backup(trigger="cli")
             size = result.get("total_size_bytes", 0) / 1024 / 1024

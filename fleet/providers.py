@@ -317,10 +317,20 @@ def get_optimal_model(skill_name: str, config: dict = None) -> str:
     """Return the optimal API model for a skill based on complexity tier.
 
     Uses SKILL_COMPLEXITY to classify the skill, then COMPLEXITY_ROUTING
-    to pick the right model. Config is accepted for signature compat but
-    provider selection happens in call_complex(), not here.
+    to pick the right model.
+    # Per-skill overrides read from fleet.toml [skill_complexity] at call time — see mod_intelligence.py
     """
     complexity = SKILL_COMPLEXITY.get(skill_name, "medium")
+    # Apply per-skill override from fleet.toml [skill_complexity] (read at call time)
+    if config is None:
+        try:
+            from config import load_config
+            config = load_config()
+        except Exception:
+            config = {}
+    override = config.get("skill_complexity", {}).get(skill_name)
+    if override:
+        complexity = override
     return COMPLEXITY_ROUTING.get(complexity, "claude-sonnet-4-6")
 
 
@@ -329,8 +339,13 @@ def get_local_model_for_skill(skill_name: str, config: dict) -> str:
 
     Simple skills use the smaller model (e.g. qwen3:4b) to save VRAM and reduce
     latency. Medium/complex skills use the default model (e.g. qwen3:8b).
+    # Per-skill overrides read from fleet.toml [skill_complexity] at call time — see mod_intelligence.py
     """
     complexity = SKILL_COMPLEXITY.get(skill_name, "medium")
+    # Apply per-skill override from fleet.toml [skill_complexity] (read at call time)
+    override = config.get("skill_complexity", {}).get(skill_name)
+    if override:
+        complexity = override
     tier_key = LOCAL_COMPLEXITY_ROUTING.get(complexity, "default")
     tiers = config.get("models", {}).get("tiers", {})
     model = tiers.get(tier_key)

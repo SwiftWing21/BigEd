@@ -14,6 +14,24 @@ MODULES_DIR = Path(__file__).parent
 DEFAULT_HUB = "https://github.com/SwiftWing21/BigEd-ModuleHub"
 
 
+def _parse_version(v: str):
+    """Parse a version string for correct ordering comparison.
+
+    Tries packaging.version.Version first (handles semver edge cases like
+    0.10 > 0.9). Falls back to tuple-of-ints split on '.' if packaging is
+    unavailable.
+    """
+    try:
+        from packaging.version import Version
+        return Version(str(v))
+    except Exception:
+        pass
+    try:
+        return tuple(int(x) for x in str(v).strip().split("."))
+    except Exception:
+        return (0,)
+
+
 class ModuleHub:
     def __init__(self, config: dict = None):
         cfg = (config or {}).get("modules", {})
@@ -63,7 +81,7 @@ class ModuleHub:
         for mod in available:
             name = mod["name"]
             if name in installed:
-                if mod.get("version", "0") > installed[name]:
+                if _parse_version(mod.get("version", "0")) > _parse_version(installed[name]):
                     updates.append(mod)
             else:
                 updates.append(mod)  # Not installed = available

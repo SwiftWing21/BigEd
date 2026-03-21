@@ -71,14 +71,16 @@ sys.path.insert(0, str(FLEET_DIR))
 
 def load_thermal_config():
     """Load [thermal], [thermal.vram], [models.tiers], [models], [training], [fleet] from fleet.toml."""
+    # Last-resort fallback defaults — must match fleet.toml [thermal] / [thermal.vram] / [models.tiers]
+    # to avoid tighter-than-intended thresholds if fleet.toml is unreadable at startup.
     defaults = {
-        "gpu_max_sustained_c": 75, "gpu_max_burst_c": 78,
-        "cpu_max_sustained_c": 80, "cooldown_target_c": 72,
-        "cooldown_window_secs": 60, "poll_interval_secs": 5,
-        "grace_period_secs": 15, "cooldown_after_swap_secs": 30,
+        "gpu_max_sustained_c": 82, "gpu_max_burst_c": 85,
+        "cpu_max_sustained_c": 85, "cooldown_target_c": 75,
+        "cooldown_window_secs": 120, "poll_interval_secs": 5,
+        "grace_period_secs": 20, "cooldown_after_swap_secs": 60,
         "ambient_estimation": True,
         "vram_emergency": 0.92, "vram_high": 0.85, "vram_restore": 0.60,
-        "tier_default": "qwen3:8b", "tier_mid": "qwen3:4b",
+        "tier_default": "qwen3:8b", "tier_mid": "qwen3:8b",
         "tier_low": "qwen3:1.7b", "tier_crit": "qwen3:0.6b",
         "training_exclusive_lock": True,
         "ollama_host": "http://localhost:11434",
