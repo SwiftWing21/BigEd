@@ -1260,17 +1260,20 @@ Completed 2026-03-21. All deferred roadmap items resolved — 68 files, +7540 li
 - [x] PVC for fleet.db + knowledge/ + logs/
 - [x] Values.yaml with resource presets matching RAM tier table (5 presets)
 
-### 0.170.01b — Data Management Systems [DONE]
+### 0.170.01b — Data Management Systems
 
-Completed 2026-03-21. Context windows, cache invalidation, RAG cleanup.
+**Goal:** Wire context windows, cache invalidation, and RAG cleanup into the active workflow.
+**Status:** Modules created, integration pending.
 
-- [x] Conversation context manager (`fleet/context_manager.py`) — per-agent sliding window, token budgets, summarize-on-overflow, DB persistence
-- [x] Fleet-wide cache invalidation (`fleet/cache_manager.py`) — 7 caches auto-registered, TTL-based invalidation, dashboard endpoints
-- [x] RAG stale entry cleanup (`fleet/rag.py`) — `cleanup_stale()` removes entries for deleted files, `get_index_stats()`, auto-cleanup during update()
+- [ ] Conversation context manager — wire `context_manager.get_context()` into `worker.py` and `providers._call_local()` for multi-turn agent conversations
+- [ ] Fleet-wide cache invalidation — wire `cache_manager.invalidate_stale()` into supervisor main loop (periodic call)
+- [ ] RAG stale entry cleanup — verify `rag.update()` auto-cleanup works in production, add to supervisor idle cycle
+- [ ] Module files exist: `fleet/context_manager.py`, `fleet/cache_manager.py`, `fleet/rag.py` (updated)
 
-### 0.170.02b — Cross-Platform + Icon Overhaul + Font Selector + VS Code Unification [DONE]
+### 0.170.02b — Cross-Platform + Icon Overhaul + Font Selector + VS Code Unification
 
-Completed 2026-03-21. Cross-platform fixes, icon system overhaul, font selector, unified VS Code launch.
+**Goal:** Cross-platform parity, icon refactor, font selector, unified VS Code launch.
+**Status:** Code written, needs verification on Linux/macOS.
 
 - [x] Cross-platform: winreg guarded, os.startfile → _open_path(), PyInstaller separator, Python/Ollama path fallbacks
 - [x] Icon system: deleted generate_icon.py, single source (icon_1024.png → brick.ico), purged all old references
