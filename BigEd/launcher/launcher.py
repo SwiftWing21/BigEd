@@ -1837,11 +1837,39 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
             text_color=DIM, anchor="w")
         self._ollama_lbl.grid(row=0, column=2, sticky="w")
 
+        # Quick model switch dropdown
+        self._model_switch_var = ctk.StringVar(value="")
+        self._model_switch = ctk.CTkOptionMenu(
+            ollama_frame, variable=self._model_switch_var,
+            values=["qwen3:0.6b", "qwen3:1.7b", "qwen3:4b", "qwen3:8b"],
+            font=("Consolas", 8), width=90, height=18,
+            fg_color=BG3, button_color=BG2, dropdown_fg_color=BG2,
+            command=self._quick_model_switch,
+        )
+        self._model_switch.grid(row=0, column=3, padx=(3, 2))
+
+        # Strategy presets
+        self._strategy_var = ctk.StringVar(value="balanced")
+        self._strategy_menu = ctk.CTkOptionMenu(
+            ollama_frame, variable=self._strategy_var,
+            values=["performance", "balanced", "training", "eco"],
+            font=("Consolas", 8), width=80, height=18,
+            fg_color=BG3, button_color=BG2, dropdown_fg_color=BG2,
+            command=self._apply_strategy,
+        )
+        self._strategy_menu.grid(row=0, column=4, padx=(2, 2))
+        Tooltip(self._strategy_menu,
+                "Strategy presets:\n"
+                "  performance: 8b GPU, max workers\n"
+                "  balanced: 8b GPU, standard workers\n"
+                "  training: 4b GPU + autoresearch\n"
+                "  eco: 0.6b, min workers, low power")
+
         ctk.CTkButton(
             ollama_frame, text="↺", width=20, height=18,
             font=("RuneScape Plain 11", 9), fg_color=BG3, hover_color=BG,
             command=self._start_ollama,
-        ).grid(row=0, column=3, padx=(3, 6))
+        ).grid(row=0, column=5, padx=(2, 6))
 
         # Agents panel
         agents_frame = ctk.CTkFrame(left, fg_color=BG2, corner_radius=6)
@@ -4488,6 +4516,80 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
                 if callback:
                     callback("", str(e))
         threading.Thread(target=_run, daemon=True).start()
+
+    def _quick_model_switch(self, model_name):
+        """Switch the active Ollama model from the Command Center dropdown."""
+        self._log_output(f"Switching to {model_name}...")
+
+        def _switch():
+            try:
+                host = load_model_cfg().get("ollama_host", "http://localhost:11434")
+                # Unload current model
+                import urllib.request
+                try:
+                    with urllib.request.urlopen(f"{host}/api/ps", timeout=3) as r:
+                        data = json.loads(r.read())
+                    for m in data.get("models", []):
+                        body = json.dumps({"model": m["name"], "keep_alive": 0}).encode()
+                        req = urllib.request.Request(f"{host}/api/generate", data=body,
+                              method="POST", headers={"Content-Type": "application/json"})
+                        urllib.request.urlopen(req, timeout=5)
+                except Exception:
+                    pass
+                # Load new model on GPU
+                body = json.dumps({"model": model_name, "prompt": "", "keep_alive": "30m",
+                                   "options": {"num_gpu": 99}}).encode()
+                req = urllib.request.Request(f"{host}/api/generate", data=body,
+                      method="POST", headers={"Content-Type": "application/json"})
+                urllib.request.urlopen(req, timeout=60)
+                # Update fleet.toml
+                import re
+                toml_path = FLEET_TOML
+                text = toml_path.read_text(encoding="utf-8")
+                text = re.sub(r'^(\s*local\s*=\s*).*$', rf'\1"{model_name}"', text, flags=re.MULTILINE)
+                toml_path.write_text(text, encoding="utf-8")
+                self._safe_after(0, lambda: self._log_output(f"Switched to {model_name} (GPU)"))
+            except Exception as e:
+                self._safe_after(0, lambda: self._log_output(f"Switch failed: {e}"))
+        threading.Thread(target=_switch, daemon=True).start()
+
+    def _apply_strategy(self, strategy):
+        """Apply a fleet strategy preset."""
+        STRATEGIES = {
+            "performance": {
+                "model": "qwen3:8b", "max_workers": 10, "eco_mode": False,
+                "idle_enabled": True, "desc": "Max speed — 8b on GPU, full fleet",
+            },
+            "balanced": {
+                "model": "qwen3:8b", "max_workers": 6, "eco_mode": False,
+                "idle_enabled": True, "desc": "Standard — 8b on GPU, balanced workers",
+            },
+            "training": {
+                "model": "qwen3:4b", "max_workers": 4, "eco_mode": False,
+                "idle_enabled": False, "desc": "Training mode — 4b on GPU, VRAM for autoresearch",
+            },
+            "eco": {
+                "model": "qwen3:0.6b", "max_workers": 2, "eco_mode": True,
+                "idle_enabled": False, "desc": "Eco mode — minimal power, smallest model",
+            },
+        }
+        preset = STRATEGIES.get(strategy)
+        if not preset:
+            return
+        self._log_output(f"Strategy: {strategy} — {preset['desc']}")
+        # Switch model
+        self._model_switch_var.set(preset["model"])
+        self._quick_model_switch(preset["model"])
+        # Update fleet.toml settings
+        try:
+            import re
+            text = FLEET_TOML.read_text(encoding="utf-8")
+            text = re.sub(r'^(\s*max_workers\s*=\s*).*$', rf"\1{preset['max_workers']}", text, flags=re.MULTILINE)
+            text = re.sub(r'^(\s*eco_mode\s*=\s*).*$', rf"\1{'true' if preset['eco_mode'] else 'false'}", text, flags=re.MULTILINE)
+            text = re.sub(r'^(\s*idle_enabled\s*=\s*).*$', rf"\1{'true' if preset['idle_enabled'] else 'false'}", text, flags=re.MULTILINE)
+            FLEET_TOML.write_text(text, encoding="utf-8")
+        except Exception:
+            pass
 
     def _start_ollama(self):
         self._log_output("Starting Ollama...")
