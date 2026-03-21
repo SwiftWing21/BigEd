@@ -231,6 +231,12 @@ def test_budget_check():
         input_tokens=100000, output_tokens=50000,
         cost_usd=5.0, task_id=None, agent="smoke_agent",
     )
+    # Flush async usage queue before checking
+    try:
+        from cost_tracking import flush_usage_queue
+        flush_usage_queue(timeout=3)
+    except Exception:
+        import time; time.sleep(1)
     # Simulate budget check with $1.00 limit
     summary = db.get_usage_summary(period="day", group_by="skill")
     row = next((r for r in summary if r["skill"] == "smoke_budget_test"), None)
