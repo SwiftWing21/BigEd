@@ -14,22 +14,17 @@ MODULES_DIR = Path(__file__).parent
 DEFAULT_HUB = "https://github.com/SwiftWing21/BigEd-ModuleHub"
 
 
-def _parse_version(v: str):
-    """Parse a version string for correct ordering comparison.
-
-    Tries packaging.version.Version first (handles semver edge cases like
-    0.10 > 0.9). Falls back to tuple-of-ints split on '.' if packaging is
-    unavailable.
-    """
-    try:
-        from packaging.version import Version
-        return Version(str(v))
-    except Exception:
-        pass
-    try:
-        return tuple(int(x) for x in str(v).strip().split("."))
-    except Exception:
-        return (0,)
+def _parse_version(v: str) -> tuple:
+    """Parse a version string like '0.22' or '1.2.3' into a comparable tuple."""
+    import re
+    parts = re.split(r"[.\-]", str(v or "0"))
+    result = []
+    for p in parts:
+        try:
+            result.append(int(p))
+        except ValueError:
+            result.append(0)
+    return tuple(result) if result else (0,)
 
 
 class ModuleHub:
@@ -163,109 +158,6 @@ class ModuleHub:
             })
 
         manifest_path.write_text(json.dumps(data, indent=2), encoding="utf-8")
-
-    def download_module(self, url: str, expected_sha256: str) -> bytes:
-        """Download a module file from *url* and verify its SHA-256 checksum.
-
-        Returns the raw file bytes on success.
-        Raises ValueError if the checksum does not match.
-        Raises urllib.error.URLError / OSError on network failure.
-        """
-        with urllib.request.urlopen(url, timeout=30) as r:
-            content = r.read()
-
-        if expected_sha256:
-            actual = hashlib.sha256(content).hexdigest()
-            if not actual.startswith(expected_sha256) and not expected_sha256.startswith(actual):
-                raise ValueError(
-                    f"SHA-256 mismatch for {url}: "
-                    f"expected {expected_sha256[:16]}…, got {actual[:16]}…"
-                )
-
-        return content
-
-    def install_from_file(self, name: str, file_path) -> dict:
-        """Install a module from a local file path (no download required).
-
-        Copies *file_path* to the modules directory, updates manifest.json,
-        and returns a status dict.  Use this for enterprise/air-gap installs
-        where the operator has already obtained the .py file separately.
-
-        Args:
-            name:      Module name (must match the mod_<name>.py convention).
-            file_path: Path-like pointing to the source .py file.
-
-        Returns:
-            {"name": name, "version": "...", "file": str, "installed": True}
-            or {"error": "..."} on failure.
-        """
-        import shutil
-
-        src = Path(file_path)
-        if not src.exists():
-            return {"error": f"File not found: {file_path}"}
-        if not src.suffix == ".py":
-            return {"error": f"Expected a .py file, got: {src.name}"}
-
-        dest = MODULES_DIR / src.name
-        try:
-            shutil.copy2(src, dest)
-        except OSError as e:
-            return {"error": f"Copy failed: {e}"}
-
-        # Build a minimal module dict for the manifest entry
-        module = {
-            "name": name,
-            "file": src.name,
-            "version": "local",
-            "default_enabled": False,
-        }
-        self._update_local_manifest(module)
-
-        return {
-            "name": name,
-            "version": "local",
-            "file": str(dest),
-            "installed": True,
-        }
-
-    def check_versions(self) -> list:
-        """Compare installed manifest versions against the registry.
-
-        Returns a list of dicts:
-            [{"name": str, "installed": str, "available": str,
-              "update_available": bool}, ...]
-
-        Modules present only in the registry (not installed locally) are
-        included with installed="not installed" and update_available=True.
-        Modules installed locally but absent from the registry are included
-        with available="unknown" and update_available=False.
-        """
-        installed_map = {m["name"]: m.get("version", "0") for m in self.list_installed()}
-
-        try:
-            registry_modules = self.list_available()
-            registry_map = {m["name"]: m.get("version", "0") for m in registry_modules}
-        except Exception:
-            registry_map = {}
-
-        all_names = set(installed_map) | set(registry_map)
-        results = []
-        for name in sorted(all_names):
-            inst = installed_map.get(name, "not installed")
-            avail = registry_map.get(name, "unknown")
-            update_available = (
-                inst != "not installed"
-                and avail != "unknown"
-                and avail > inst
-            ) or inst == "not installed"
-            results.append({
-                "name": name,
-                "installed": inst,
-                "available": avail,
-                "update_available": update_available,
-            })
-        return results
 
     def uninstall_module(self, name: str) -> dict:
         """Remove a module (delete file + remove from manifest)."""
