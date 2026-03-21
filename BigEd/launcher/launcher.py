@@ -2676,13 +2676,36 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
         briefing.write_text(f"# Manual Chat Session\n\n{context}\n", encoding="utf-8")
 
         if "Claude" in model:
-            try:
-                subprocess.Popen(
-                    ["code", str(FLEET_DIR.parent)],
-                    creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
-                self._append_chat_response("Opened VS Code with Claude Code context.")
-            except Exception as e:
-                self._append_chat_response(f"Could not open VS Code: {e}")
+            # Find VS Code: try multiple paths
+            import shutil
+            code_exe = shutil.which("code")
+            if not code_exe and sys.platform == "win32":
+                # Common Windows VS Code paths
+                for p in [
+                    Path(os.environ.get("LOCALAPPDATA", "")) / "Programs" / "Microsoft VS Code" / "Code.exe",
+                    Path(os.environ.get("PROGRAMFILES", "")) / "Microsoft VS Code" / "Code.exe",
+                    Path(os.environ.get("USERPROFILE", "")) / "AppData" / "Local" / "Programs" / "Microsoft VS Code" / "Code.exe",
+                ]:
+                    if p.exists():
+                        code_exe = str(p)
+                        break
+            if code_exe:
+                try:
+                    subprocess.Popen(
+                        [code_exe, str(FLEET_DIR.parent)],
+                        creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+                    self._append_chat_response(
+                        "VS Code opened with context.\n"
+                        "Start a Claude Code session (Ctrl+Shift+P → Claude) to continue.")
+                except Exception as e:
+                    self._append_chat_response(f"Could not open VS Code: {e}")
+            else:
+                # VS Code not installed — offer alternative
+                import webbrowser
+                webbrowser.open("https://vscode.dev")
+                self._append_chat_response(
+                    "VS Code not found locally. Opened vscode.dev in browser.\n"
+                    "Context written to task-briefing.md.")
         elif "Gemini" in model:
             import webbrowser
             webbrowser.open("https://aistudio.google.com")
