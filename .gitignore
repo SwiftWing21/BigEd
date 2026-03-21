@@ -82,6 +82,7 @@ BigEd/launcher/data/
 
 # ── Claude Code local settings (permissions, not project instructions) ────────
 .claude/
+!.claude/skills/**
 
 # ── Local machine config (personal hardware/env/MCP — never committed) ────────
 CLAUDE.USER.md

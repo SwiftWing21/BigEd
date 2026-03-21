@@ -70,7 +70,10 @@ def detect_install() -> dict | None:
             except Exception:
                 pass
         winreg.CloseKey(key)
-        loc = Path(info.get("InstallLocation", ""))
+        loc_str = info.get("InstallLocation") or ""
+        if not loc_str:
+            return None
+        loc = Path(loc_str)
         if loc.exists():
             return info
     except Exception:
@@ -803,7 +806,9 @@ class Setup(ctk.CTk):
                     self.after(0, lambda l=line: self._log(l))
             proc.wait()
             if proc.returncode != 0:
-                raise RuntimeError(f"Build failed (exit {proc.returncode}): {' '.join(cmd[:5])}...")
+                full_cmd = ' '.join(cmd)
+                short_cmd = full_cmd[:120] + ("..." if len(full_cmd) > 120 else "")
+                raise RuntimeError(f"Build failed (exit {proc.returncode}): {short_cmd}")
         return "Build complete"
 
     def _step_mkdir(self, d: Path) -> str:
@@ -913,7 +918,7 @@ class Setup(ctk.CTk):
 
             # Strategy 2: curl (ships with Windows 11)
             curl = shutil.which("curl")
-            dl_dir = Path(os.environ.get("TEMP", "."))
+            dl_dir = Path(os.environ.get("TEMP") or os.environ.get("TMP") or "C:/Windows/Temp")
             installer = dl_dir / "OllamaSetup.exe"
             url = "https://ollama.com/download/OllamaSetup.exe"
 

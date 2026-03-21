@@ -1132,7 +1132,7 @@ def main():
                     gpu_throttled or
                     is_training or
                     (gpu.get("gpu_temp_c", 0) > cfg["gpu_max_sustained_c"] - 5) or
-                    (gpu.get("vram_pct", 0) > cfg.get("vram_high", 0.85))
+                    (gpu.get("vram_pct", 0) >= cfg.get("vram_high", 0.85))
                 )
                 if needs_attention:
                     _current_interval = _base_interval  # 5s — active monitoring

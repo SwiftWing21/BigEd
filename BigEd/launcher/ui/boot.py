@@ -780,6 +780,8 @@ class BootManagerMixin:
         Shorter timeout for missing models.
         """
         # Check model exists — find fallback if missing, only fail if nothing available
+        _used_fallback = False
+        _orig_model = model
         if not self._ollama_model_exists(model):
             # Find best available fallback
             available = self._ollama_list_models()
@@ -790,6 +792,7 @@ class BootManagerMixin:
                 self._safe_after(0, lambda m=model, f=fallback, a=available:
                     self._create_model_recovery_action(m, fallback=f, available=a))
                 model = fallback  # continue boot with fallback
+                _used_fallback = True
             else:
                 self._safe_after(0, lambda m=model: self._log_output(
                     f"  No models installed — creating recovery action..."))
@@ -835,12 +838,23 @@ class BootManagerMixin:
                     resp = json.loads(resp_data)
                     if "error" in resp:
                         raise Exception(f"{model}: {resp['error']}")
-                except json.JSONDecodeError:
-                    pass  # Expected: Ollama /api/generate streams NDJSON, last chunk may not parse
+                except json.JSONDecodeError as e:
+                    # Ollama /api/generate streams NDJSON — last chunk is rarely
+                    # valid standalone JSON. Log so operators can distinguish
+                    # expected NDJSON from a genuine parse failure.
+                    self._safe_after(0, lambda err=str(e): self._log_output(
+                        f"  [debug] model response non-JSON (NDJSON stream): {err[:80]}"))
             elapsed = time.time() - start_time
             _save_boot_timing("model_load", elapsed, model)
             return f"{model} ({elapsed:.0f}s)"
         except urllib.error.URLError as e:
+            if _used_fallback:
+                # Fallback model also failed — action card already shown for the
+                # missing primary model. Return degraded rather than raise to avoid
+                # showing both an action card and a boot-failure toast simultaneously.
+                self._safe_after(0, lambda m=model, err=str(e): self._log_output(
+                    f"  Fallback '{m}' also failed to load: {err}"))
+                return f"degraded — {_orig_model} + fallback {model} unavailable"
             raise Exception(f"{model}: {e}")
 
     def _boot_supervisor(self):

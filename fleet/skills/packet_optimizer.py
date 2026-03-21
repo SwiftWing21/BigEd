@@ -16,11 +16,14 @@ Usage:
     lead_client.py task '{"type": "packet_optimizer", "payload": {"action": "audit"}}'
 """
 import json
+import logging
 import os
 import sqlite3
 import time
 from datetime import datetime
 from pathlib import Path
+
+log = logging.getLogger(__name__)
 
 FLEET_DIR = Path(__file__).parent.parent
 SKILL_NAME = "packet_optimizer"
@@ -38,7 +41,7 @@ TARGETS = {
 }
 
 
-def run(payload: dict, config: dict, log) -> dict:
+def run(payload: dict, config: dict) -> dict:
     action = payload.get("action", "audit")
 
     if action == "audit":

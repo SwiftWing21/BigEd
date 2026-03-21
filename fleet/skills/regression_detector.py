@@ -25,10 +25,13 @@ Usage:
     lead_client.py task '{"type": "regression_detector", "payload": {"action": "hallcheck", "task_id": 123}}'
 """
 import json
+import logging
 import re
 import sqlite3
 from datetime import datetime
 from pathlib import Path
+
+log = logging.getLogger(__name__)
 
 FLEET_DIR = Path(__file__).parent.parent
 SKILL_NAME = "regression_detector"
@@ -71,7 +74,7 @@ HALLUCINATION_MARKERS = [
 ]
 
 
-def run(payload: dict, config: dict, log) -> dict:
+def run(payload: dict, config: dict) -> dict:
     action = payload.get("action", "audit")
 
     if action == "audit":

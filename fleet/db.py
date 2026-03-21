@@ -46,7 +46,8 @@ CREATE TABLE IF NOT EXISTS tasks (
     result_json  TEXT,
     error        TEXT,
     parent_id    INTEGER,
-    depends_on   TEXT
+    depends_on   TEXT,
+    FOREIGN KEY (parent_id) REFERENCES tasks(id) ON DELETE SET NULL
 );
 
 CREATE TABLE IF NOT EXISTS messages (
