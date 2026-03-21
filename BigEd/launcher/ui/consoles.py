@@ -696,12 +696,7 @@ class ClaudeConsole(_ConsoleBase):
         super().__init__(parent)
 
     def _get_api_key(self):
-        L = _launcher()
-        try:
-            out, _ = L.wsl("echo $ANTHROPIC_API_KEY", capture=True)
-            return out.strip() if out.strip() and not out.strip().startswith("$") else None
-        except Exception:
-            return os.environ.get("ANTHROPIC_API_KEY", "")
+        return os.environ.get("ANTHROPIC_API_KEY") or None
 
     # Available API models — label: model_id
     _CLAUDE_MODELS = {
@@ -757,10 +752,15 @@ class ClaudeConsole(_ConsoleBase):
         ]
 
     def _inject_key_status(self):
-        L = _launcher()
         try:
-            out, _ = L.wsl("cat ~/.secrets 2>/dev/null | grep -v '^#' | cut -d= -f1", capture=True)
-            keys = [l.replace("export ", "").strip() for l in out.splitlines() if l.strip()]
+            secrets_file = Path.home() / ".secrets"
+            if not secrets_file.exists():
+                self._input.insert("end", "\n\n[No ~/.secrets file found]")
+                return
+            keys = []
+            for line in secrets_file.read_text(encoding="utf-8", errors="ignore").splitlines():
+                if line.strip() and not line.strip().startswith("#") and "=" in line:
+                    keys.append(line.replace("export ", "").split("=")[0].strip())
             self._input.insert("end", f"\n\n[Configured Keys]\n" + ", ".join(keys))
         except Exception:
             self._input.insert("end", "\n\n[Could not read key status]")
@@ -809,13 +809,7 @@ class GeminiConsole(_ConsoleBase):
         super().__init__(parent)
 
     def _get_api_key(self):
-        L = _launcher()
-        try:
-            out, _ = L.wsl("echo $GEMINI_API_KEY", capture=True)
-            key = out.strip()
-            return key if key and not key.startswith("$") else None
-        except Exception:
-            return os.environ.get("GEMINI_API_KEY", "") or None
+        return os.environ.get("GEMINI_API_KEY") or None
 
     def _get_key_env_name(self):
         return "GEMINI_API_KEY"
@@ -837,10 +831,15 @@ class GeminiConsole(_ConsoleBase):
         ]
 
     def _inject_key_status(self):
-        L = _launcher()
         try:
-            out, _ = L.wsl("cat ~/.secrets 2>/dev/null | grep -v '^#' | cut -d= -f1", capture=True)
-            keys = [l.replace("export ", "").strip() for l in out.splitlines() if l.strip()]
+            secrets_file = Path.home() / ".secrets"
+            if not secrets_file.exists():
+                self._input.insert("end", "\n\n[No ~/.secrets file found]")
+                return
+            keys = []
+            for line in secrets_file.read_text(encoding="utf-8", errors="ignore").splitlines():
+                if line.strip() and not line.strip().startswith("#") and "=" in line:
+                    keys.append(line.replace("export ", "").split("=")[0].strip())
             self._input.insert("end", "\n\n[Configured Keys]\n" + ", ".join(keys))
         except Exception:
             self._input.insert("end", "\n\n[Could not read key status]")
