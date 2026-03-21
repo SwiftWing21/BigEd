@@ -14,6 +14,19 @@ MODULES_DIR = Path(__file__).parent
 DEFAULT_HUB = "https://github.com/SwiftWing21/BigEd-ModuleHub"
 
 
+def _parse_version(v: str) -> tuple:
+    """Parse a version string like '0.22' or '1.2.3' into a comparable tuple."""
+    import re
+    parts = re.split(r"[.\-]", str(v or "0"))
+    result = []
+    for p in parts:
+        try:
+            result.append(int(p))
+        except ValueError:
+            result.append(0)
+    return tuple(result) if result else (0,)
+
+
 class ModuleHub:
     def __init__(self, config: dict = None):
         cfg = (config or {}).get("modules", {})
@@ -63,7 +76,7 @@ class ModuleHub:
         for mod in available:
             name = mod["name"]
             if name in installed:
-                if mod.get("version", "0") > installed[name]:
+                if _parse_version(mod.get("version", "0")) > _parse_version(installed[name]):
                     updates.append(mod)
             else:
                 updates.append(mod)  # Not installed = available

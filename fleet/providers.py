@@ -316,10 +316,13 @@ SKILL_COMPLEXITY = {
 def get_optimal_model(skill_name: str, config: dict = None) -> str:
     """Return the optimal API model for a skill based on complexity tier.
 
-    Uses SKILL_COMPLEXITY to classify the skill, then COMPLEXITY_ROUTING
-    to pick the right model. Config is accepted for signature compat but
-    provider selection happens in call_complex(), not here.
+    Checks fleet.toml [skill_complexity] for per-skill overrides first,
+    then falls back to the built-in SKILL_COMPLEXITY table.
     """
+    if config:
+        override = config.get("skill_complexity", {}).get(skill_name)
+        if override and override in COMPLEXITY_ROUTING:
+            return COMPLEXITY_ROUTING[override]
     complexity = SKILL_COMPLEXITY.get(skill_name, "medium")
     return COMPLEXITY_ROUTING.get(complexity, "claude-sonnet-4-6")
 

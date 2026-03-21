@@ -41,7 +41,8 @@ how_we_roll.md
 fleet/certs/
 
 # ── Fleet — logs ──────────────────────────────────────────────────────────────
-fleet/logs/
+fleet/logs/*
+!fleet/logs/.gitkeep
 
 # ── Fleet — generated knowledge (runtime output, not source) ──────────────────
 fleet/knowledge/leads/
