@@ -1545,7 +1545,7 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
         title_frame = ctk.CTkFrame(hdr, fg_color="transparent")
         title_frame.grid(row=0, column=2, padx=(0, 8), pady=6, sticky="w")
         ctk.CTkLabel(title_frame, text="BigEd CC",
-                     font=FONT_TITLE, text_color=BRAND).pack(side="left")
+                     font=FONT_TITLE, text_color=ACCENT).pack(side="left")
         ctk.CTkLabel(title_frame, text=f"  {_get_version()}",
                      font=FONT_XS, text_color=DIM).pack(side="left", pady=(6, 0))
 

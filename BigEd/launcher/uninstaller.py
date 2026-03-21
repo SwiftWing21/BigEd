@@ -114,12 +114,12 @@ class Uninstaller(ctk.CTk):
         if BANNER_PNG.exists():
             try:
                 img    = Image.open(BANNER_PNG)
-                ctkimg = ctk.CTkImage(light_image=img, dark_image=img, size=(45, 60))
+                ctkimg = ctk.CTkImage(light_image=img, dark_image=img, size=(48, 48))
                 ctk.CTkLabel(hdr, image=ctkimg, text="").pack(side="left", padx=(12, 8), pady=5)
             except Exception:
-                ctk.CTkLabel(hdr, text="🧱", font=("RuneScape Plain 12", 32)).pack(side="left", padx=(12, 8))
+                ctk.CTkLabel(hdr, text="B", font=("Segoe UI", 28, "bold"), text_color="#b22222").pack(side="left", padx=(12, 8))
         else:
-            ctk.CTkLabel(hdr, text="🧱", font=("RuneScape Plain 12", 32)).pack(side="left", padx=(12, 8))
+            ctk.CTkLabel(hdr, text="B", font=("Segoe UI", 28, "bold"), text_color="#b22222").pack(side="left", padx=(12, 8))
 
         info = ctk.CTkFrame(hdr, fg_color="transparent")
         info.pack(side="left", fill="y", pady=10)
