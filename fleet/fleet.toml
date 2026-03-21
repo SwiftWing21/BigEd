@@ -282,6 +282,10 @@ deploy_skill = {zones = ["skills"], access = "full"}
 code_write = {zones = ["workspace", "code_drafts"], access = "full"}
 ingest = {zones = ["knowledge"], access = "read_write"}
 
+# v0.052.00b: Manual Mode — operator-driven Claude compliance audit settings
+[manual_mode]
+approval_required_threshold = 0.20  # HITL gate: require approval when token estimate increases >20% vs last run
+
 # v0.050.03b: Configurable boot timeouts — used by adaptive timeout in boot.py
 [boot]
 model_load_timeout = 300         # first-boot default timeout (seconds) for model loading
