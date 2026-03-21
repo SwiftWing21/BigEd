@@ -43,7 +43,7 @@
 | **Observability / S2** | A | → | /api/health, /api/agents/performance, JSON logging, alerts pipeline |
 | **Usability / UX** | A+ | ↑ | System detection auto-configures fleet; settings display panel; API key validation; setup scripts |
 | **Dynamic Abilities** | S | → | Auto-trigger evolution/research, swarm affinity, multi-backend |
-| **Module / Plugin Support** | A | → | Backend ABC, 3 backends, HuggingFace search, OpenAI adapter |
+| **Module / Plugin Support** | A | → | Module Hub client (hub.py): registry fetch, SHA-256 install, enterprise URL — hot-reload still missing |
 | **Data Processing + HITL** | S | → | Tier 2 LLM scoring, distributed tracing, auto-intelligence |
 | **Performance** | A | → | Code-aware token estimation (P2-02), configurable timeout (P3-01) |
 | **Documentation** | S | ↑ | README, CONTRIBUTING, SETUP.md, setup scripts, BETA_PREP — comprehensive public-ready docs |
@@ -129,7 +129,7 @@
 
 ### LOW (P3) — Track, fix when passing
 
-#### P3-01 — `_call_local` timeout hardcoded to 120s
+#### P3-01 — `_call_local` timeout hardcoded to 120s [DONE v0.25.00]
 **File:** `fleet/providers.py:326`
 **Detail:** `urllib.urlopen(req, timeout=120)` — not configurable via fleet.toml. Long-running vision or large-context local calls may need more time.
 **Fix:** Read from `config.get("fleet", {}).get("local_timeout", 120)`.
@@ -239,19 +239,19 @@
 
 ### 4. Module / Plugin Support
 
-**Current Grade: B+**
+**Current Grade: A**
 
 | Feature | Status | Notes |
 |---------|--------|-------|
 | 6 active modules (CRM, Ingestion, Accounts, Onboarding, OwnerCore, Walkthrough) | ✓ Active | |
 | Zero-bloat baseline (no modules by default) | ✓ Active (v0.46) | |
 | Module loader (`__init__.py`, 334 LOC) | ✓ Working | |
-| Plugin manifest / capability registry | ✗ Missing | No formal discovery mechanism |
+| Plugin manifest / capability registry | ✓ Active (0.053.00b) | Module Hub client (hub.py): registry.json fetch from GitHub, SHA-256 install, version check |
 | Hot-reload of modules without restart | ✗ Missing | Restart required |
-| Community skill install (git repo pull) | Planned (2.0) | Plugin marketplace |
+| Community skill install (git repo pull) | ✓ Active (0.053.00b) | install_module() via ModuleHub; enterprise_hub_url in fleet.toml |
 | Module dependency declaration | ✗ Missing | Modules can't declare deps |
 
-**S-tier path:** Add plugin manifest (`module.toml` per module with name/version/deps/entrypoint), then hot-reload capability.
+**S-tier path:** Add hot-reload capability; add per-module `module.toml` with dep declarations.
 
 ---
 
@@ -313,10 +313,10 @@
 | WSL secret store (API keys) | ✓ Active | ✓ |
 | Key rotation (secret_rotate.py) | ✓ Active | ✓ |
 | Evaluator-optimizer adversarial review | ✓ Active | ✓ |
-| SQLCipher encryption | Planned (0.24.00) | ✗ |
-| TLS for dashboard | Planned (0.24.00) | ✗ |
-| RBAC (operator/admin/viewer) | Planned (0.24.00) | ✗ |
-| API attribution logging | Planned (0.24.00) | ✗ |
+| SQLCipher encryption | Done (v0.24.00) | ✓ |
+| TLS for dashboard | Done (v0.24.00) | ✓ |
+| RBAC (operator/admin/viewer) | Done (v0.24.00) | ✓ |
+| API attribution logging | Done (v0.24.00) | ✓ |
 | MQTT wildcard blocking | ✓ Active (0.11.00) | ✓ |
 
 **Prod hardening checklist (do before any public deployment):**
