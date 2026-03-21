@@ -2,20 +2,16 @@
 
 > One-click local AI fleet deployment. No terminal required.
 
-BigEd CC eliminates manual CLI setup for local AI. Deploy Ollama models and a 79-skill agent fleet with one click. Use OAuth Manual Mode (Claude Code / Gemini) with pre-loaded context from agent requests, or let the fleet work autonomously via API.
+BigEd CC eliminates manual CLI setup for local AI. Deploy Ollama models and a 80-skill agent fleet with one click. Use OAuth Manual Mode (Claude Code / Gemini) with pre-loaded context from agent requests, or let the fleet work autonomously via API.
 
 **All platforms. Enterprise-ready. SOC 2 aligned.**
 
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 
-## Screenshots
-
-> Screenshots coming in the next release. See [docs/flowcharts/](docs/flowcharts/) for ASCII architecture diagrams.
-
 ## Features
 
 - **One-Click Setup** — Auto-installs Python, Ollama, models, and dependencies
-- **79 AI Skills** — Code review, security audit, web research, ML training, and more
+- **80+ AI Skills** — Code review, security audit, web research, ML training, and more
 - **Dynamic Agent Scaling** — 4 core agents + demand-based scaling (up to 16)
 - **Multi-Model Support** — Ollama (local), Claude, Gemini, MiniMax M2.5
 - **Manual Mode** — OAuth integration for Claude Code and Gemini sessions
@@ -49,12 +45,12 @@ BigEd CC
 │   ├── ui/             — Boot sequence, settings, consoles, dialogs
 │   ├── modules/        — Intelligence, Ingestion, Outputs (pluggable)
 │   └── fonts/          — Custom pixel fonts
-├── fleet/              — 79-skill AI worker fleet
+├── fleet/              — 80-skill AI worker fleet
 │   ├── supervisor.py   — Process lifecycle + dynamic scaling
 │   ├── hw_supervisor.py — Dr. Ders (thermal + model management)
 │   ├── dashboard.py    — Web dashboard (localhost:5555)
 │   ├── worker.py       — Generic task executor
-│   ├── skills/         — 79 registered skills
+│   ├── skills/         — 80 registered skills
 │   └── knowledge/      — Agent-generated artifacts
 ├── autoresearch/       — ML training pipeline (inspired by Karpathy)
 ├── scripts/            — Setup scripts (Windows/Linux/macOS)
@@ -89,27 +85,6 @@ Autonomous ML training loop inspired by [Karpathy's build-nanogpt](https://githu
 If BigEd CC is useful to you, consider supporting development:
 
 [![Ko-fi](https://img.shields.io/badge/Ko--fi-Support%20BigEd%20CC-FF5E5B?logo=ko-fi&logoColor=white)](https://ko-fi.com/swiftwing21)
-
-## Multi-Machine Federation
-
-BigEd CC supports running multiple instances across machines that share task coordination — a single fleet can span a Windows workstation, a Linux server, and a macOS laptop, each running local Ollama models while pulling from a shared task queue.
-
-**How it works:** Instances discover each other via the `[federation]` section in `fleet.toml`. Each node can point at a shared `fleet.db` path (NFS/SMB mount) or a primary node's REST API endpoint. DB-level locking (SQLite WAL + advisory locks) prevents task double-claiming across nodes.
-
-**Cross-platform:** Windows is the primary target; Linux and macOS nodes connect via FleetBridge (see `CROSS_PLATFORM.md`). Each node runs its own Ollama instance and Dr. Ders supervisor — only the task queue is shared.
-
-**Configure federation:**
-```toml
-# fleet.toml
-[federation]
-enabled = true
-role = "worker"           # "primary" or "worker"
-primary_url = "http://192.168.1.10:5555"   # primary node API
-```
-
-**Module Hub in federated deployments:** Enterprise deployments can configure a private Module Hub (`[modules] enterprise_hub_url`) so all federated nodes pull approved modules from an internal registry rather than the public GitHub hub. This ensures consistent skill versions across the fleet.
-
-**Current status:** DB locking is implemented; full remote orchestration (task delegation to remote workers via REST) is planned for `0.100.00b`.
 
 ## Contributing
 

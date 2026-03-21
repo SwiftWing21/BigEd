@@ -42,7 +42,7 @@ End every roadmap with an Audit Coverage Check section.
 - Roadmap: `ROADMAP.md`
 
 ## Structure
-- `fleet/` — 77-skill AI worker fleet (Ollama + Claude/Gemini)
+- `fleet/` — 80-skill AI worker fleet (Ollama + Claude/Gemini)
 - `BigEd/` — launcher GUI + compliance docs
 - `autoresearch/` — ML training pipeline
 - `fleet/backup_manager.py` — auto-save backup system
@@ -51,7 +51,7 @@ End every roadmap with an Audit Coverage Check section.
 - `docs/specs/` — enterprise integration specs
 
 ## Fleet Status
-- Skills: 77 (added billing_ocr, token_optimizer, screenshot) | Dashboard: 50+ endpoints | Smoke: 22/22
+- Skills: 80 (added billing_ocr, token_optimizer, screenshot, packet_optimizer, regression_detector) | Dashboard: 50+ endpoints | Smoke: 22/22
 - Dynamic agent scaling: 4 core + demand-based | Dr. Ders: event-driven wake-up timer
 - Security: P0-P2 hardened (XSS, SQL injection, thread safety, zombie cleanup)
 - Backup: auto-save every 20min, configurable depth/location
