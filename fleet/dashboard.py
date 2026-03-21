@@ -836,6 +836,34 @@ def api_dashboard_batch():
     })
 
 
+@app.route("/api/dashboard")
+def api_dashboard_aggregate():
+    """Aggregate endpoint — returns all core dashboard data in a single request.
+
+    Replaces 15 separate JS fetch calls with one, reducing connection overhead.
+    Keys match the individual endpoint paths for easy JS destructuring.
+    """
+    def _safe(fn):
+        try:
+            return fn().get_json()
+        except Exception:
+            return {}
+
+    return jsonify({
+        "status":     _safe(api_status),
+        "thermal":    _safe(api_thermal),
+        "training":   _safe(api_training),
+        "activity":   _safe(api_activity),
+        "skills":     _safe(api_skills),
+        "timeline":   _safe(api_timeline),
+        "alerts":     _safe(api_alerts),
+        "code_stats": _safe(api_code_stats),
+        "modules":    _safe(api_modules),
+        "data_stats": _safe(api_data_stats),
+        "evolution":  _safe(api_evolution),
+    })
+
+
 @app.route("/api/modules")
 def api_modules():
     """Enabled modules, versions, deprecation status."""

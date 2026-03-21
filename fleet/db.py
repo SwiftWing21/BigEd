@@ -241,6 +241,24 @@ def heartbeat(name, status='IDLE', current_task_id=None):
     _retry_write(_do)
 
 
+def queue_depth():
+    """Return the number of PENDING tasks."""
+    with get_conn() as conn:
+        row = conn.execute("SELECT COUNT(*) FROM tasks WHERE status='PENDING'").fetchone()
+        return row[0] if row else 0
+
+
+def claim_tasks(agent_name, n: int = 1, affinity_skills=None):
+    """Claim up to N pending tasks atomically. Returns a list (may be empty)."""
+    claimed = []
+    for _ in range(n):
+        task = claim_task(agent_name, affinity_skills=affinity_skills)
+        if task is None:
+            break
+        claimed.append(task)
+    return claimed
+
+
 def claim_task(agent_name, affinity_skills=None):
     """Atomically claim the highest-priority pending task for this agent.
 

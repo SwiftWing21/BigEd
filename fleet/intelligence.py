@@ -87,7 +87,7 @@ def _multi_paragraph(parsed):
     text = json.dumps(parsed) if not isinstance(parsed, str) else parsed
     return text.count("\\n\\n") >= 1 or text.count("\n\n") >= 1 or len(text) >= 200
 
-def score_task_output_tier2(skill_name, prompt, output, config):
+def score_task_output_tier2(skill_name, prompt, output, config, task_id=None):
     """Tier 2: LLM-based quality evaluation on sampled tasks.
 
     Called on ~10% of tasks for deep quality assessment. Uses a lightweight
@@ -98,13 +98,19 @@ def score_task_output_tier2(skill_name, prompt, output, config):
         prompt: the original task prompt/payload (may be truncated)
         output: the task output to evaluate (may be truncated)
         config: fleet config dict for model routing
+        task_id: task ID for deterministic sampling (same task always maps same tier)
 
     Returns:
         float score 0.0-1.0, or None if skipped (90% of calls) or on error.
     """
-    import random
-    if random.random() > 0.1:  # Only sample 10% of tasks
-        return None
+    # Deterministic 10% sample: same task_id always resolves the same way
+    if task_id is not None:
+        if hash(str(task_id)) % 100 >= 10:
+            return None
+    else:
+        import random
+        if random.random() > 0.1:
+            return None
 
     try:
         from skills._models import call_complex

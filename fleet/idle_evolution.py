@@ -1,4 +1,9 @@
 """Idle Evolution (v0.42+0.30.01a) — workers self-improve when no tasks pending."""
+import time
+
+# Staleness cache — keyed by (agent, ts_bucket) where ts_bucket = epoch // 60
+_staleness_cache = {}
+_STALENESS_TTL = 60  # seconds
 
 
 def _get_conn():
@@ -46,28 +51,41 @@ def get_least_evolved_skill(agent=None):
     - Weighted random from bottom 30% least-evolved skills
     - 4h per-agent cooldown (skip skills this agent evolved recently)
     - Cross-worker dedup (skip skills another agent is currently evolving)
+    - 60s TTL cache on the staleness DB query to reduce poll overhead
     """
     import random
     _AGENT_COOLDOWN_H = 4
 
-    with _get_conn() as conn:
-        # Get all skill types that have been dispatched at least once
-        active_skills = conn.execute(
-            "SELECT DISTINCT type FROM tasks WHERE status='DONE' ORDER BY type"
-        ).fetchall()
-        if not active_skills:
-            return None
-        skill_names = [r["type"] for r in active_skills]
+    # Cache key rounded to 60s so all agents share the same staleness snapshot
+    cache_key = int(time.time()) // _STALENESS_TTL
+    cached = _staleness_cache.get(cache_key)
 
-        # Get last evolution time for each skill
-        skill_staleness = []
-        for skill in skill_names:
-            row = conn.execute(
-                "SELECT MAX(created_at) as last_run FROM idle_runs WHERE skill=?",
-                (skill,)
-            ).fetchone()
-            last_run = row["last_run"] if row and row["last_run"] else "2000-01-01"
-            skill_staleness.append((skill, last_run))
+    with _get_conn() as conn:
+        if cached is not None:
+            skill_staleness = cached
+            skill_names = [s for s, _ in skill_staleness]
+        else:
+            # Get all skill types that have been dispatched at least once
+            active_skills = conn.execute(
+                "SELECT DISTINCT type FROM tasks WHERE status='DONE' ORDER BY type"
+            ).fetchall()
+            if not active_skills:
+                return None
+            skill_names = [r["type"] for r in active_skills]
+
+            # Get last evolution time for each skill
+            skill_staleness = []
+            for skill in skill_names:
+                row = conn.execute(
+                    "SELECT MAX(created_at) as last_run FROM idle_runs WHERE skill=?",
+                    (skill,)
+                ).fetchone()
+                last_run = row["last_run"] if row and row["last_run"] else "2000-01-01"
+                skill_staleness.append((skill, last_run))
+
+            # Evict stale cache entries, store new result
+            _staleness_cache.clear()
+            _staleness_cache[cache_key] = skill_staleness
 
         # Sort by staleness (oldest first = most stale)
         skill_staleness.sort(key=lambda x: x[1])

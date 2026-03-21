@@ -1,4 +1,10 @@
 """Cost Intelligence (CT-1 through CT-4) — usage tracking, summaries, deltas."""
+import queue
+import threading
+
+_usage_queue = queue.Queue()
+_usage_thread_started = False
+_usage_thread_lock = threading.Lock()
 
 
 def _get_conn():
@@ -13,12 +19,42 @@ def _retry_write(fn, retries=8):
     return db._retry_write(fn, retries)
 
 
-def log_usage(skill, model, input_tokens, output_tokens,
-              cache_read_tokens=0, cache_create_tokens=0,
-              cost_usd=0.0, task_id=None, agent=None,
-              eval_duration_ms=None, prompt_duration_ms=None,
-              tokens_per_sec=None, provider=None):
-    """Insert a usage record after each API call. Must never raise."""
+def _start_usage_logger():
+    global _usage_thread_started
+    with _usage_thread_lock:
+        if _usage_thread_started:
+            return
+        _usage_thread_started = True
+
+    def _flush_loop():
+        while True:
+            batch = []
+            try:
+                item = _usage_queue.get(timeout=5)
+                batch.append(item)
+                while len(batch) < 10:
+                    try:
+                        batch.append(_usage_queue.get_nowait())
+                    except queue.Empty:
+                        break
+            except queue.Empty:
+                continue
+            for entry in batch:
+                try:
+                    _log_usage_sync(**entry)
+                except Exception:
+                    pass
+
+    t = threading.Thread(target=_flush_loop, daemon=True)
+    t.start()
+
+
+def _log_usage_sync(skill, model, input_tokens, output_tokens,
+                    cache_read_tokens=0, cache_create_tokens=0,
+                    cost_usd=0.0, task_id=None, agent=None,
+                    eval_duration_ms=None, prompt_duration_ms=None,
+                    tokens_per_sec=None, provider=None):
+    """Synchronous INSERT — called from the background flush thread."""
     def _do():
         with _get_conn() as conn:
             conn.execute(
@@ -31,6 +67,23 @@ def log_usage(skill, model, input_tokens, output_tokens,
                  eval_duration_ms, prompt_duration_ms, tokens_per_sec, provider),
             )
     _retry_write(_do)
+
+
+def log_usage(skill, model, input_tokens, output_tokens,
+              cache_read_tokens=0, cache_create_tokens=0,
+              cost_usd=0.0, task_id=None, agent=None,
+              eval_duration_ms=None, prompt_duration_ms=None,
+              tokens_per_sec=None, provider=None):
+    """Non-blocking usage logging — buffers entries and flushes in background thread."""
+    _start_usage_logger()
+    _usage_queue.put({
+        "skill": skill, "model": model,
+        "input_tokens": input_tokens, "output_tokens": output_tokens,
+        "cache_read_tokens": cache_read_tokens, "cache_create_tokens": cache_create_tokens,
+        "cost_usd": cost_usd, "task_id": task_id, "agent": agent,
+        "eval_duration_ms": eval_duration_ms, "prompt_duration_ms": prompt_duration_ms,
+        "tokens_per_sec": tokens_per_sec, "provider": provider,
+    })
 
 
 def get_usage_summary(period="week", group_by="skill"):
