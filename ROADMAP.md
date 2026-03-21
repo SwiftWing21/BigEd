@@ -402,7 +402,7 @@ Completed 2026-03-20. 11 files, +194/-90 lines:
 **19 P1 bugs** — 12 fixed across v0.50.02b (35e2e2a) and v0.51.00b (24e21d4), 7 remaining.
 
 **Boot/Installer:**
-- [ ] Model load response parsing swallows JSONDecodeError silently (boot.py:778-790)
+- [x] Model load response parsing swallows JSONDecodeError silently (boot.py:778-790)
 - [x] Timeout values configurable via fleet.toml `[boot] model_load_timeout = 300` — adaptive timeout reads config (boot.py:154-166)
 - [ ] Missing env var null checks create relative paths (installer.py:73, boot.py:581-590)
 - [ ] Model fallback error handling confusing — action card + exception simultaneously (boot.py:735-749)
@@ -415,7 +415,7 @@ Completed 2026-03-20. 11 files, +194/-90 lines:
 
 **Dashboard:**
 - [x] SSE connection leak — clients cleaned in finally block and dead client removal (dashboard.py:176-177, 1324-1326)
-- [ ] TOML injection in worker disable/enable — agent name not validated (dashboard.py:1286-1311)
+- [x] TOML injection in worker disable/enable — agent name not validated (dashboard.py:1286-1311)
 - [x] fetchJSON() error handling — try/catch with HTTP status check, returns `{}` on failure (dashboard.html:250-258)
 
 **Launcher GUI:**
@@ -438,7 +438,7 @@ Completed 2026-03-20. 11 files, +194/-90 lines:
 - [x] DB indexes on tasks.status, tasks.assigned_to, tasks.parent_id — `idx_tasks_status`, `idx_tasks_assigned`, `idx_tasks_parent` (db.py:191-193)
 - [ ] Missing foreign key on tasks.parent_id — orphaned DAG chains (PRAGMA foreign_keys=ON set, but no FK constraint in CREATE TABLE)
 - [ ] VRAM threshold mismatch between fleet.toml and hw_supervisor defaults
-- [ ] Config loaded once at import — stale after fleet.toml edits (config.py:27-29)
+- [x] Config loaded once at import — stale after fleet.toml edits (config.py:27-29)
 - [x] DB timeout consistency — unified to 30s timeout + 30s PRAGMA busy_timeout across all layers (db.py:115-128)
 - [x] Circuit breaker has exponential backoff — `min(60s * 2^cooldowns, 600s)` with cooldown counter (providers.py:38-52)
 - [x] FALLBACK_CHAIN actively used — `_models.py call_complex()` iterates chain with circuit breaker (skills/_models.py:124-138)
@@ -449,7 +449,7 @@ Completed 2026-03-20. 11 files, +194/-90 lines:
 - [x] Alert monitor exception logging — logs first 3 failures via `logging.warning()` (dashboard.py:258-263)
 - [x] hw_state.json writes already atomic — `tempfile.mkstemp` + `os.replace` (hw_supervisor.py:205-208)
 - [x] Content-Security-Policy header on all dashboard responses — `_add_security_headers()` after_request handler (dashboard.py:111-120)
-- [ ] Stale task recovery uses time-based detection instead of PID liveness (db.py:657-677)
+- [x] Stale task recovery uses time-based detection instead of PID liveness (db.py:657-677)
 
 ### 0.050.05b — P3 Polish & Accessibility [PARTIAL]
 
@@ -503,7 +503,7 @@ Partially completed in v0.51.00b (24e21d4). Dr. Ders respawn, startup perf, disa
 - [ ] Gate idle evolution on local-only skills when API keys missing
 
 **Dashboard web performance:**
-- [ ] Batch 15 API calls into single `/api/dashboard` endpoint (dashboard.html:618-626)
+- [x] Batch 15 API calls into single `/api/dashboard` endpoint (dashboard.html:618-626)
 - [ ] Reduce 30s polling to 5min for slow-changing data (knowledge, RAG, code stats)
 - [ ] Update Chart.js data instead of destroy/recreate (dashboard.html:449, 477)
 
@@ -527,9 +527,9 @@ Partially completed in v0.51.00b (24e21d4). Dr. Ders respawn, startup perf, disa
 - [ ] Cache skill staleness ranking in idle evolution — no cache, queries DB each time (idle_evolution.py:40-113)
 - [ ] Batch-claim N tasks per poll when queue depth > threshold — only single claim_task() exists
 
-### 0.051.02b — Auto-Save & Backup System [PARTIAL]
+### 0.051.02b — Auto-Save & Backup System [DONE 2026-03-20]
 
-**Goal:** Prevent data loss from power outage or crashes. Configurable backup frequency/depth/location. 9 of 10 items done.
+**Goal:** Prevent data loss from power outage or crashes. Configurable backup frequency/depth/location. 10 of 10 items done.
 
 **Implementation:**
 - [x] `fleet/backup_manager.py` — BackupManager class with auto-save thread (203 lines)
@@ -539,7 +539,7 @@ Partially completed in v0.51.00b (24e21d4). Dr. Ders respawn, startup perf, disa
 - [x] Backup manifest JSON — timestamp, file hashes, integrity check results (backup_manager.py:49-82)
 - [x] Integrity verification — `PRAGMA integrity_check` after each backup (backup_manager.py:126-133)
 - [x] Prune beyond depth — with depth=0 "do not clean" toggle + disk usage warning (backup_manager.py:142-178)
-- [ ] CLI: `lead_client.py backup`, `backup --list`, `backup --restore ID` — not yet in lead_client.py
+- [x] CLI: `lead_client.py backup`, `backup --list`, `backup --restore ID` — implemented (lead_client.py:1004-1093)
 - [x] Supervisor integration — BackupManager imported and started on fleet startup (supervisor.py:868-869)
 - [x] Graceful shutdown saves task queue — `_graceful_save_tasks()` (launcher.py:522, 1057)
 
@@ -567,7 +567,7 @@ Partially completed in v0.51.00b (24e21d4). Dr. Ders respawn, startup perf, disa
 - [x] Auto-trigger `research_cycle` workflow daily — `RESEARCH_INTERVAL = 86400` in supervisor (supervisor.py:76, 1151)
 - [x] Auto-trigger `skill_evolution_pipeline` weekly — `EVOLUTION_INTERVAL = 604800` in supervisor (supervisor.py:77, 1176)
 - [x] `ml_bridge` auto-import when new `autoresearch/results.tsv` entries detected — mtime watch (supervisor.py:1199-1214)
-- [ ] Dataset synthesize outputs → autoresearch data pipeline (JSONL → training) — no auto-routing from dataset_synthesize to training
+- [x] Dataset synthesize outputs → autoresearch data pipeline (JSONL → training) — shutil.copy2 to autoresearch/data/ on output (dataset_synthesize.py:228-234)
 
 **Dashboard visibility:**
 - [x] Evolution leaderboard panel — skill improvement rates, agent contributions (dashboard.html:179-180)
@@ -658,7 +658,7 @@ log_all_access = true    # SOC 2 audit trail for file operations
 - [x] Pin button to hold request list open (sticky mode) — pin icon with gold highlight (launcher.py:2314-2318, 2398-2402)
 - [x] Dynamic scrollbar when requests pending — CTkScrollableFrame (launcher.py:2337-2338)
 - [x] Scroll area auto-sizes based on pending request count — `min(300, max(60, n * 60))` (launcher.py:2415-2416)
-- [ ] Request count badge on Fleet Comm tab icon
+- [x] Request count badge on Fleet Comm tab icon
 
 **Manual Chat integration:**
 - [x] "Manual Chat" panel below agent requests in Fleet Comm (launcher.py:2344-2386)
@@ -681,7 +681,7 @@ log_all_access = true    # SOC 2 audit trail for file operations
 - [x] Hover/click expands: shows each request with dynamic scroll area (launcher.py:2310-2311, 2404-2417)
 - [x] Pinned view: pin button holds list expanded until unpinned (launcher.py:2398-2402)
 
-### 0.053.00b — Module Hub + Scrollable Tab Bar [PLANNED]
+### 0.053.00b — Module Hub + Scrollable Tab Bar [PARTIAL]
 
 **Goal:** GitHub-based module repository with download/install UX + scrollable tab bar for unlimited modules.
 
@@ -696,13 +696,13 @@ log_all_access = true    # SOC 2 audit trail for file operations
 
 **Module Hub core:**
 - [ ] registry.json catalog (name, version, checksum, tags, enterprise_only)
-- [ ] Module download from GitHub raw URL with SHA-256 verification
+- [x] Module download from GitHub raw URL with SHA-256 verification
 - [ ] Module install: copy to modules/, update manifest, add to fleet.toml
 - [ ] Module Hub section in Settings (install/enable/disable/update cards)
-- [ ] Version checking: installed vs available
+- [x] Version checking: installed vs available
 
 **Enterprise:**
-- [ ] Private hub URL in fleet.toml `[modules] enterprise_hub_url`
+- [x] Private hub URL in fleet.toml `[modules] enterprise_hub_url`
 - [ ] Federation auto-selects from enterprise hub
 - [ ] Enterprise-only module gating
 - [ ] Agent-generated module recommendations (HITL)
