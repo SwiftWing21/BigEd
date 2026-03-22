@@ -99,17 +99,27 @@ class SettingsDialog(
         hdr.grid_propagate(False)
         hdr.grid_columnconfigure(2, weight=1)
 
-        stripe = ctk.CTkFrame(hdr, fg_color=GOLD, width=3, corner_radius=0)
-        stripe.grid(row=0, column=0, sticky="ns", padx=0)
+        # Icon
+        try:
+            from PIL import Image
+            L = _launcher()
+            icon_path = L.HERE / "icon_1024.png"
+            if icon_path.exists():
+                img = Image.open(icon_path)
+                ctk_img = ctk.CTkImage(light_image=img, dark_image=img, size=(36, 36))
+                ctk.CTkLabel(hdr, image=ctk_img, text="").grid(
+                    row=0, column=0, padx=(12, 0), pady=8)
+        except Exception:
+            pass
 
         title_frame = ctk.CTkFrame(hdr, fg_color="transparent")
-        title_frame.grid(row=0, column=1, padx=(12, 0), pady=8, sticky="w")
+        title_frame.grid(row=0, column=1, padx=(8, 0), pady=8, sticky="w")
         ctk.CTkLabel(title_frame, text="SETTINGS",
                      font=FONT_TITLE, text_color=GOLD).pack(anchor="w")
         ctk.CTkLabel(title_frame, text="fleet configuration & preferences",
                      font=FONT_XS, text_color=DIM).pack(anchor="w")
 
-        ctk.CTkLabel(hdr, text=" v0.31 ", font=FONT_XS,
+        ctk.CTkLabel(hdr, text=" v0.175 ", font=FONT_XS,
                      text_color=DIM, fg_color=GLASS_NAV,
                      corner_radius=CARD_RADIUS).grid(row=0, column=2, padx=16, sticky="e")
 
