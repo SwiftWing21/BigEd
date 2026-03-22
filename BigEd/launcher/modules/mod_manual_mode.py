@@ -97,6 +97,13 @@ class _ApprovalDialog(ctk.CTkToplevel):
         self.title("Token Budget Approval Required")
         self.resizable(False, False)
         self.grab_set()
+        try:
+            import launcher as _L
+            _ico = _L.HERE / "brick.ico"
+            if _ico.exists():
+                self.iconbitmap(str(_ico))
+        except Exception:
+            pass
         self.result = False  # True = proceed, False = cancel
 
         pct_str = f"{increase_pct * 100:.1f}%"

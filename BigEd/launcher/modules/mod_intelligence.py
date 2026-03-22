@@ -17,6 +17,12 @@ from pathlib import Path
 
 import customtkinter as ctk
 
+# Skill picker (grouped modal replaces flat dropdowns)
+try:
+    from ui.skill_picker import pick_skill
+except ImportError:
+    pick_skill = None  # graceful fallback if ui package unavailable
+
 # Dynamic FLEET_DIR — works regardless of install location
 try:
     import launcher as _launcher
@@ -174,6 +180,13 @@ class Module:
         models = config.get("models", {})
 
         dlg = ctk.CTkToplevel(self._app)
+        try:
+            import launcher as _L
+            _ico = _L.HERE / "brick.ico"
+            if _ico.exists():
+                dlg.iconbitmap(str(_ico))
+        except Exception:
+            pass
         dlg.title("Model Settings")
         dlg.geometry("400x300")
         dlg.resizable(False, False)
@@ -240,17 +253,24 @@ class Module:
                       fg_color=ACCENT, hover_color=ACCENT_H,
                       command=self._add_prompt).grid(row=0, column=1, padx=2)
 
-        # Skill type selector
+        # Skill type selector — grouped picker or fallback OptionMenu
         ctk.CTkLabel(input_row, text="Skill:", font=FONT_SM, text_color=DIM).grid(row=0, column=2, padx=(8, 2))
         self._queue_skill_var = ctk.StringVar(value="summarize")
-        skill_menu = ctk.CTkOptionMenu(
-            input_row, variable=self._queue_skill_var,
-            values=["summarize", "code_review", "web_search", "code_quality",
-                    "security_audit", "analyze_results", "benchmark", "research_loop"],
-            font=FONT_SM, width=120, height=28,
-            fg_color=BG3,
-        )
-        skill_menu.grid(row=0, column=3, padx=2)
+        if pick_skill is not None:
+            self._queue_skill_btn = ctk.CTkButton(
+                input_row, textvariable=self._queue_skill_var,
+                font=FONT_SM, width=140, height=28,
+                fg_color=BG3, hover_color=BG2, text_color=TEXT,
+                command=self._open_queue_skill_picker,
+            )
+            self._queue_skill_btn.grid(row=0, column=3, padx=2)
+        else:
+            ctk.CTkOptionMenu(
+                input_row, variable=self._queue_skill_var,
+                values=["summarize", "code_review", "web_search", "code_quality",
+                        "security_audit", "analyze_results", "benchmark", "research_loop"],
+                font=FONT_SM, width=120, height=28, fg_color=BG3,
+            ).grid(row=0, column=3, padx=2)
 
         # Queue list
         self._queue_frame = ctk.CTkFrame(card, fg_color=BG3, corner_radius=4)
@@ -497,17 +517,26 @@ class Module:
         move_row.pack(fill="x", padx=12, pady=(4, 2))
 
         ctk.CTkLabel(move_row, text="Move skill:", font=FONT_SM, text_color=DIM).pack(side="left")
-        # Collect all skills from the tier labels for the dropdown
+        # Collect all skills from the tier labels for initial value
         all_skills = []
         for _tier_key, _lbl in self._weight_tiers.items():
             text = _lbl.cget("text") if hasattr(_lbl, "cget") else ""
             all_skills.extend([s.strip() for s in text.split(",") if s.strip()])
         all_skills = sorted(set(all_skills)) or ["(no skills loaded)"]
         self._move_skill_var = ctk.StringVar(value=all_skills[0])
-        ctk.CTkOptionMenu(move_row, variable=self._move_skill_var,
-                          values=all_skills, font=FONT_SM, width=160, height=28,
-                          fg_color=BG3, button_color=BG2, dropdown_fg_color=BG2
-                          ).pack(side="left", padx=4)
+        if pick_skill is not None:
+            self._move_skill_btn = ctk.CTkButton(
+                move_row, textvariable=self._move_skill_var,
+                font=FONT_SM, width=160, height=28,
+                fg_color=BG3, hover_color=BG2, text_color=TEXT,
+                command=self._open_move_skill_picker,
+            )
+            self._move_skill_btn.pack(side="left", padx=4)
+        else:
+            ctk.CTkOptionMenu(move_row, variable=self._move_skill_var,
+                              values=all_skills, font=FONT_SM, width=160, height=28,
+                              fg_color=BG3, button_color=BG2, dropdown_fg_color=BG2
+                              ).pack(side="left", padx=4)
 
         ctk.CTkLabel(move_row, text="to:", font=FONT_SM, text_color=DIM).pack(side="left", padx=(4, 2))
         self._move_tier_var = ctk.StringVar(value="simple")
@@ -562,6 +591,22 @@ class Module:
         personality = asst.get("personality", "helpful, technical, concise")
         ctk.CTkLabel(card, text=f"Personality: {personality}", font=FONT_XS,
                      text_color=DIM, anchor="w").pack(padx=12, pady=(0, 8), anchor="w")
+
+    # ── Skill Picker Callbacks ────────────────────────────────────────────────
+
+    def _open_queue_skill_picker(self):
+        """Open the grouped skill picker for the prompt queue skill selector."""
+        current = self._queue_skill_var.get()
+        chosen = pick_skill(self._app, current=current)
+        if chosen:
+            self._queue_skill_var.set(chosen)
+
+    def _open_move_skill_picker(self):
+        """Open the grouped skill picker for the move-skill-tier control."""
+        current = self._move_skill_var.get()
+        chosen = pick_skill(self._app, current=current)
+        if chosen:
+            self._move_skill_var.set(chosen)
 
     # ── Helpers ──────────────────────────────────────────────────────────────
 

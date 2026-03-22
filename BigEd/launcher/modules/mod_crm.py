@@ -190,6 +190,13 @@ class Module:
 
     def _edit_dialog(self, rec: dict):
         win = ctk.CTkToplevel(self.app)
+        try:
+            import launcher as _L
+            _ico = _L.HERE / "brick.ico"
+            if _ico.exists():
+                win.iconbitmap(str(_ico))
+        except Exception:
+            pass
         win.title("CRM - Contact")
         win.geometry("400x340")
         win.resizable(False, False)
@@ -245,6 +252,13 @@ class Module:
 
     def _prospect_dialog(self):
         win = ctk.CTkToplevel(self.app)
+        try:
+            import launcher as _L
+            _ico = _L.HERE / "brick.ico"
+            if _ico.exists():
+                win.iconbitmap(str(_ico))
+        except Exception:
+            pass
         win.title("Prospect - Find Leads")
         win.geometry("360x260")
         win.resizable(False, False)
@@ -314,6 +328,13 @@ class Module:
                 leads.append(r)
 
         win = ctk.CTkToplevel(self.app)
+        try:
+            import launcher as _L
+            _ico = _L.HERE / "brick.ico"
+            if _ico.exists():
+                win.iconbitmap(str(_ico))
+        except Exception:
+            pass
         win.title(f"Import Leads ({len(leads)} found)")
         win.geometry("600x480")
         win.resizable(False, False)

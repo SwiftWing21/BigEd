@@ -151,6 +151,13 @@ class Module:
 
     def _edit_dialog(self, rec: dict):
         win = ctk.CTkToplevel(self.app)
+        try:
+            import launcher as _L
+            _ico = _L.HERE / "brick.ico"
+            if _ico.exists():
+                win.iconbitmap(str(_ico))
+        except Exception:
+            pass
         win.title("Customer Deployment")
         win.geometry("420x340")
         win.resizable(False, False)

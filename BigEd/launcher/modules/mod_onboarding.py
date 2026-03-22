@@ -177,6 +177,13 @@ class Module:
 
     def _add_customer(self):
         win = ctk.CTkToplevel(self.app)
+        try:
+            import launcher as _L
+            _ico = _L.HERE / "brick.ico"
+            if _ico.exists():
+                win.iconbitmap(str(_ico))
+        except Exception:
+            pass
         win.title("Add Customer")
         win.geometry("300x120")
         win.resizable(False, False)
