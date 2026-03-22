@@ -1939,28 +1939,36 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
         ollama_frame.grid_columnconfigure(1, weight=1)
 
         ctk.CTkLabel(ollama_frame, text="OLLAMA",
-                     font=("RuneScape Bold 12", 8, "bold"), text_color=DIM,
+                     font=FONT_XS, text_color=DIM,
                      anchor="w").grid(row=0, column=0, padx=(8, 4), pady=4)
 
         self._ollama_dot = ctk.CTkLabel(
-            ollama_frame, text="●", font=("Consolas", 11), text_color=DIM)
+            ollama_frame, text="●", font=FONT_SM, text_color=DIM)
         self._ollama_dot.grid(row=0, column=1, sticky="w", padx=(0, 3))
 
         self._ollama_lbl = ctk.CTkLabel(
-            ollama_frame, text="checking...", font=("Consolas", 9),
+            ollama_frame, text="checking...", font=FONT_XS,
             text_color=DIM, anchor="w")
         self._ollama_lbl.grid(row=0, column=2, sticky="w")
 
-        # Quick model switch dropdown
-        self._model_switch_var = ctk.StringVar(value="")
+        # Quick model switch dropdown — shows default model, populates from Ollama
+        default_model = "qwen3:8b"
+        try:
+            cfg = load_model_cfg()
+            default_model = cfg.get("local", "qwen3:8b")
+        except Exception:
+            pass
+        self._model_switch_var = ctk.StringVar(value=default_model)
         self._model_switch = ctk.CTkOptionMenu(
             ollama_frame, variable=self._model_switch_var,
-            values=["qwen3:0.6b", "qwen3:1.7b", "qwen3:4b", "qwen3:8b"],
-            font=("Consolas", 8), width=90, height=18,
+            values=[default_model],
+            font=FONT_XS, width=110, height=18,
             fg_color=BG3, button_color=BG2, dropdown_fg_color=BG2,
             command=self._quick_model_switch,
         )
         self._model_switch.grid(row=0, column=3, padx=(3, 2))
+        # Populate dropdown with installed models in background
+        self._safe_after(2000, self._populate_model_dropdown)
 
         # Strategy presets
         self._strategy_var = ctk.StringVar(value="balanced")
@@ -5009,6 +5017,20 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
                 if callback:
                     callback("", str(e))
         threading.Thread(target=_run, daemon=True).start()
+
+    def _populate_model_dropdown(self):
+        """Fetch installed Ollama models and update the dropdown values."""
+        def _fetch():
+            try:
+                host = load_model_cfg().get("ollama_host", "http://localhost:11434")
+                with urllib.request.urlopen(f"{host}/api/tags", timeout=3) as r:
+                    data = json.loads(r.read())
+                models = sorted(set(m["name"] for m in data.get("models", [])))
+                if models:
+                    self._safe_after(0, lambda: self._model_switch.configure(values=models))
+            except Exception:
+                pass
+        threading.Thread(target=_fetch, daemon=True).start()
 
     def _quick_model_switch(self, model_name):
         """Switch the active Ollama model from the Command Center dropdown."""
