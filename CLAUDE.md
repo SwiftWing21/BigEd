@@ -42,16 +42,19 @@ End every roadmap with an Audit Coverage Check section.
 - Roadmap: `ROADMAP.md`
 
 ## Structure
-- `fleet/` — 85-skill AI worker fleet (Ollama + Claude/Gemini)
+- `fleet/` — 92-skill AI worker fleet (Ollama + Claude/Gemini)
 - `BigEd/` — launcher GUI + compliance docs
 - `autoresearch/` — ML training pipeline
+- `deploy/` — Kubernetes Helm chart for enterprise deployment
+- `docs/` — design specs, plans, WHAT_IS_BIGED reference
+- `education-context/` — training context files for Playwright MCP workspace
+- `scripts/` — setup scripts (setup.ps1, setup.sh) and backup utilities
 - `fleet/backup_manager.py` — auto-save backup system
 - `fleet/cpu_temp.py` — cross-platform CPU temperature
 - `fleet/filesystem_guard.py` — SOC 2 file access control
-- `docs/specs/` — enterprise integration specs
 
 ## Fleet Status
-- Skills: 85 (added billing_ocr, token_optimizer, screenshot, packet_optimizer, regression_detector, clinical_review, + more) | Dashboard: 58 endpoints | Smoke: 22/22
+- Skills: 92 (+ oss_review, oss_review_swarm, quality_flywheel) | Dashboard: 65+ endpoints | Smoke: 22/22
 - Dynamic agent scaling: 4 core + demand-based | Dr. Ders: event-driven wake-up timer
 - Security: P0-P2 hardened (XSS, SQL injection, thread safety, zombie cleanup)
 - Backup: auto-save every 20min, configurable depth/location
@@ -59,14 +62,21 @@ End every roadmap with an Audit Coverage Check section.
 
 ## Gotchas
 - **Ollama PATH**: not on Git Bash PATH on Windows — supervisor auto-finds via `%LOCALAPPDATA%\Programs\Ollama`
-- **Window flash**: all subprocess.Popen calls must use `creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0)`
+- **Window flash**: all `subprocess.Popen` calls must use `creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0)`
 - **fleet.toml is config center**: all runtime config lives here, never hardcode URLs/ports in skills
-- **DB access**: always through `data_access.py` (FleetDB) or `rag.py` — never raw sqlite3
+- **DB access**: always through `db.py` (fleet.db) or `data_access.py` (FleetDB for launcher) or `rag.py` — never raw `sqlite3.connect()` in skills
+- **DB writes**: use `db._retry_write(fn)` for all INSERT/UPDATE — handles WAL busy timeouts with jittered backoff
 - **Skills never auto-deploy**: drafts go to `knowledge/code_drafts/`, operator reviews before promotion
 - **No `uv run` on Windows**: use native `python` — `uv run` is WSL only
 - **Idle evolution flood**: skill_test removed from idle rotation — was 96% of tasks
 - **Zombie Ollama**: close handler unloads all models (keep_alive=0) — Ollama stays running
 - **Dr. Ders offline**: supervisor now spawns + respawns hw_supervisor.py
+- **Error handling**: always `except Exception:` (never bare `except:`). Log with `log.warning()` at minimum — never silently swallow
+- **HTTP timeouts**: every `urllib.request.urlopen()` and `httpx` call MUST have `timeout=` parameter (10-30s typical)
+- **Lazy imports in skills**: use `import db` inside functions, not at module level — prevents circular imports
+- **Icon system**: `icon_1024.png` is the master source, `brick.ico` is derived. Never regenerate icons during build — `generate_icon.py` was deleted
+- **Theme fonts**: use constants from `ui/theme.py` (FONT_SM, FONT_BOLD, FONT_XS) — never hardcode "RuneScape" or "Consolas"
+- **Cross-platform**: guard `import winreg` with `sys.platform == "win32"`, use `_open_path()` instead of `os.startfile()`
 
 ## Local Machine — CLAUDE.USER.md
 

@@ -302,6 +302,7 @@ SKILL_COMPLEXITY = {
         "code_index", "account_review", "stability_report", "benchmark",
         "screenshot", "billing_ocr", "marathon_log", "rag_compress",
         "knowledge_prune", "review_discards", "packet_optimizer",
+        "skill_draft",
     ],
     "medium": [
         "web_search", "code_review", "discuss", "code_discuss",
@@ -311,7 +312,7 @@ SKILL_COMPLEXITY = {
         "token_optimizer", "memory_optimizer", "model_recommend", "hardware_profiler",
         "git_manager", "github_interact", "github_sync", "branch_manager",
         "db_encrypt", "db_migrate", "key_manager", "skill_test",
-        "skill_draft", "deploy_skill", "evaluate", "generate_asset",
+        "deploy_skill", "evaluate", "generate_asset",
         "marketing", "secret_rotate", "security_review", "security_apply",
         "pen_test", "synthesize", "vision_analyze", "web_crawl",
         "browser_crawl", "home_assistant", "mqtt_inspect", "unifi_manage",
