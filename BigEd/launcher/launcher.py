@@ -3271,7 +3271,7 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
         # ── Usage Status Bar ───────────────────────────────────────
         self._usage_bar_frame = ctk.CTkFrame(self._chat_container, fg_color=BG2,
                                               height=48, corner_radius=0)
-        if self._settings.get("show_usage_bar", True):
+        if _load_settings().get("show_usage_bar", True):
             self._usage_bar_frame.pack(fill="x")
         self._usage_bar_frame.pack_propagate(False)
 

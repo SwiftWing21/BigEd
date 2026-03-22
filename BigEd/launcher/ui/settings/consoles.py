@@ -54,7 +54,8 @@ class ConsolesPanelMixin:
 
         def _toggle_usage(val=None):
             self._settings["show_usage_bar"] = usage_var.get()
-            L._save_settings()
+            import launcher
+            launcher._save_settings(self._settings)
 
         ctk.CTkCheckBox(
             frame, text="Show usage status bar in Fleet Comm",
