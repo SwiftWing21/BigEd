@@ -3815,7 +3815,9 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
         try:
             # Open VS Code to project dir + auto-open the briefing file
             subprocess.Popen(
-                [code_exe, str(FLEET_DIR.parent), "--goto", str(briefing)],
+                [code_exe, str(FLEET_DIR.parent),
+                 "--goto", str(FLEET_DIR / "VSCODE_README.md"),
+                 "--goto", str(briefing)],
                 creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
         except Exception as e:
             self._append_chat_response(f"Could not open VS Code: {e}")
