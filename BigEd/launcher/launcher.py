@@ -150,7 +150,8 @@ from ui.theme import (
     BG, BG2, BG3, ACCENT, ACCENT_H, GOLD, BRAND, TEXT, DIM,
     GREEN, ORANGE, RED, MONO, FONT, FONT_SM, FONT_H,
     BLUE, CYAN, FONT_STAT, FONT_BOLD, FONT_TITLE, FONT_XS,
-    HEADER_HEIGHT, BTN_HEIGHT,
+    HEADER_HEIGHT, BTN_HEIGHT, CARD_RADIUS, BTN_RADIUS,
+    SB_HOVER, SB_ACTIVE_BG, SB_BTN_RADIUS, SB_BTN_HEIGHT, FONT_SB_SECTION,
 )
 
 
@@ -1646,7 +1647,7 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
         self._sidebar_btn = ctk.CTkButton(
             hdr, text="≡", font=FONT_TITLE, width=40, height=40,
             fg_color="transparent", hover_color=BG2, text_color=TEXT,
-            corner_radius=4, command=self._toggle_sidebar
+            corner_radius=BTN_RADIUS, command=self._toggle_sidebar
         )
         self._sidebar_btn.grid(row=0, column=1, padx=(0, 6), pady=6)
 
@@ -1729,40 +1730,70 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
         self._sidebar.grid(row=1, column=0, sticky="nsew")
         sb = self._sidebar
 
+        # Track all sidebar buttons for active-state management
+        self._sb_buttons = []       # [(wrapper, accent_bar, btn_widget), ...]
+        self._sb_active_btn = None  # currently active wrapper
+
         # ── Collapsible section + button helpers ──────────────────────────────
         def section(label, default_open=True):
+            """Section header with 2px gold accent bar on the left when open."""
             state = {"open": default_open, "widgets": []}
+            # Wrapper so we can put a gold accent bar beside the header text
+            hdr_frame = ctk.CTkFrame(sb, fg_color="transparent", height=28)
+            hdr_frame.pack(fill="x", padx=0, pady=(8, 0))
+            hdr_frame.pack_propagate(False)
+            # 2px gold accent bar (visible when section is expanded)
+            accent = ctk.CTkFrame(hdr_frame,
+                                  fg_color=GOLD if default_open else "transparent",
+                                  width=2, corner_radius=1)
+            accent.pack(side="left", fill="y", padx=(4, 0), pady=3)
+            state["accent"] = accent
             def toggle():
                 state["open"] = not state["open"]
-                hdr.configure(text=f"  {'▾' if state['open'] else '▸'}  {label}")
+                hdr.configure(text=f" {'▾' if state['open'] else '▸'}  {label}")
+                accent.configure(fg_color=GOLD if state["open"] else "transparent")
                 if state["open"]:
-                    prev = hdr
+                    prev = hdr_frame
                     for w in state["widgets"]:
-                        w.pack(fill="x", padx=10, pady=2, after=prev)
+                        w.pack(fill="x", padx=6, pady=2, after=prev)
                         prev = w
                 else:
                     for w in state["widgets"]:
                         w.pack_forget()
             hdr = ctk.CTkButton(
-                sb, text=f"  {'▾' if default_open else '▸'}  {label}",
-                font=("RuneScape Bold 12", 10, "bold"),
+                hdr_frame, text=f" {'▾' if default_open else '▸'}  {label}",
+                font=FONT_SB_SECTION,
                 fg_color="transparent", hover_color=BG3,
                 text_color=DIM, anchor="w", height=26, corner_radius=0,
                 command=toggle,
             )
-            hdr.pack(fill="x", padx=0, pady=(8, 0))
+            hdr.pack(side="left", fill="both", expand=True)
+            state["hdr_frame"] = hdr_frame
             return state
 
-        def btn(s, label, cmd, color=BG3, hover=None, tip=None):
+        def btn(s, label, cmd, color=None, hover=None, tip=None):
+            """Rounded, modern sidebar button with active-state gold accent bar."""
+            # Wrapper: [3px accent bar | button]
+            wrapper = ctk.CTkFrame(sb, fg_color="transparent", height=SB_BTN_HEIGHT)
+            wrapper.pack(fill="x", padx=6, pady=2)
+            wrapper.pack_propagate(False)
+            accent_bar = ctk.CTkFrame(wrapper, fg_color="transparent",
+                                      width=3, corner_radius=1)
+            accent_bar.pack(side="left", fill="y", padx=(0, 3), pady=3)
             b = ctk.CTkButton(
-                sb, text=label, font=FONT_SM, height=28,
-                fg_color=color, hover_color=hover or BG,
-                text_color=TEXT, anchor="w", corner_radius=4, command=cmd,
+                wrapper, text=f"  {label}", font=FONT_SM,
+                height=SB_BTN_HEIGHT,
+                fg_color=color or "transparent",
+                hover_color=hover or SB_HOVER,
+                text_color=TEXT, anchor="w",
+                corner_radius=SB_BTN_RADIUS,
+                command=lambda: (self._sb_set_active(wrapper, accent_bar), cmd()),
             )
-            b.pack(fill="x", padx=10, pady=2)
+            b.pack(side="left", fill="both", expand=True)
             if not s["open"]:
-                b.pack_forget()
-            s["widgets"].append(b)
+                wrapper.pack_forget()
+            s["widgets"].append(wrapper)
+            self._sb_buttons.append((wrapper, accent_bar, b))
             if tip:
                 Tooltip(b, tip)
             return b
@@ -1775,16 +1806,24 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
         btn(s, "↻  Status",      self._check_status,
             tip="Refresh agent status, show Ollama models and fleet log")
         # Dashboard — prominent button (larger, distinct color)
+        dash_wrapper = ctk.CTkFrame(sb, fg_color="transparent", height=38)
+        dash_wrapper.pack(fill="x", padx=6, pady=(4, 2))
+        dash_wrapper.pack_propagate(False)
+        dash_accent = ctk.CTkFrame(dash_wrapper, fg_color="transparent",
+                                   width=3, corner_radius=1)
+        dash_accent.pack(side="left", fill="y", padx=(0, 3), pady=3)
         self._btn_dashboard = ctk.CTkButton(
-            sb, text="📊  Dashboard", font=("RuneScape Bold 12", 13, "bold"), height=36,
+            dash_wrapper, text="📊  Dashboard", font=FONT_BOLD, height=36,
             fg_color="#1a3a5a", hover_color="#254565",
-            text_color="#7ec8e3", anchor="w", corner_radius=4,
-            command=self._open_dashboard,
+            text_color="#7ec8e3", anchor="w", corner_radius=SB_BTN_RADIUS,
+            command=lambda: (self._sb_set_active(dash_wrapper, dash_accent),
+                             self._open_dashboard()),
         )
-        self._btn_dashboard.pack(fill="x", padx=10, pady=(4, 2))
+        self._btn_dashboard.pack(side="left", fill="both", expand=True)
         if not s["open"]:
-            self._btn_dashboard.pack_forget()
-        s["widgets"].append(self._btn_dashboard)
+            dash_wrapper.pack_forget()
+        s["widgets"].append(dash_wrapper)
+        self._sb_buttons.append((dash_wrapper, dash_accent, self._btn_dashboard))
         Tooltip(self._btn_dashboard, "Open the Fleet Dashboard in your browser (localhost:5555)")
         if _fleet_mode() == "air_gap":
             self._btn_dashboard.configure(state="disabled", text="📊 Dashboard (air-gap)")
@@ -1833,38 +1872,52 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
             btn(s, "🐛 Report Issue", self._open_report_issue,
                 tip="Generate a debug report and export for issue submission")
 
-        # ── CONSOLES ─────────────────────────────────────────────────────────
+        # ── CONSOLES (with provider status dots) ─────────────────────────────
         s = section("CONSOLES", default_open=False)
         _mode = _fleet_mode()
         _api_disabled = _mode in ("offline", "air_gap")
         _has_claude = _quick_key_check("ANTHROPIC_API_KEY")
         _has_gemini = _quick_key_check("GEMINI_API_KEY")
 
+        # Status dots: green=key set, red=missing/offline
         if _api_disabled:
-            _c_text, _c_tip, _c_state = "🤖 Claude (offline)", "Disabled — offline mode", "disabled"
-            _g_text, _g_tip, _g_state = "✦  Gemini (offline)", "Disabled — offline mode", "disabled"
+            _c_dot, _c_text, _c_tip, _c_state = RED, "Claude (offline)", "Disabled — offline mode", "disabled"
+            _g_dot, _g_text, _g_tip, _g_state = RED, "Gemini (offline)", "Disabled — offline mode", "disabled"
         elif not _has_claude:
-            _c_text = "🤖 Claude (no key)"
+            _c_dot, _c_text = RED, "Claude (no key)"
             _c_tip = "Set ANTHROPIC_API_KEY in ~/.secrets or Key Manager to enable"
             _c_state = "disabled"
         else:
-            _c_text, _c_tip, _c_state = "🤖 Claude Console", "Open an interactive Claude API chat with fleet dispatch support", "normal"
+            _c_dot, _c_text, _c_tip, _c_state = GREEN, "Claude Console", "Open an interactive Claude API chat with fleet dispatch support", "normal"
 
-        if not _api_disabled and not _has_gemini:
-            _g_text = "✦  Gemini (no key)"
+        if _api_disabled:
+            pass  # already set above
+        elif not _has_gemini:
+            _g_dot, _g_text = RED, "Gemini (no key)"
             _g_tip = "Set GEMINI_API_KEY in ~/.secrets or Key Manager to enable"
             _g_state = "disabled"
-        elif not _api_disabled:
-            _g_text, _g_tip, _g_state = "✦  Gemini Console", "Open an interactive Gemini chat with fleet dispatch support", "normal"
+        else:
+            _g_dot, _g_text, _g_tip, _g_state = GREEN, "Gemini Console", "Open an interactive Gemini chat with fleet dispatch support", "normal"
 
-        self._btn_claude_console = btn(s, _c_text, self._open_claude_console, "#1a1a2e", "#252540", tip=_c_tip)
-        self._btn_gemini_console = btn(s, _g_text, self._open_gemini_console, "#1a2a1a", "#253525", tip=_g_tip)
+        _ollama_up = ollama_is_running()
+        _l_dot = GREEN if _ollama_up else RED
+        _l_suffix = "" if _ollama_up else " (offline)"
+
+        self._btn_claude_console = btn(s, f"🤖 {_c_text}", self._open_claude_console, "#1a1a2e", "#252540", tip=_c_tip)
+        self._btn_gemini_console = btn(s, f"✦  {_g_text}", self._open_gemini_console, "#1a2a1a", "#253525", tip=_g_tip)
         if _c_state == "disabled":
             self._btn_claude_console.configure(state="disabled")
         if _g_state == "disabled":
             self._btn_gemini_console.configure(state="disabled")
-        btn(s, "⚡ Local Console",  self._open_local_console, "#2a2010", "#3a3020",
+        self._btn_local_console = btn(s, f"⚡ Local Console{_l_suffix}", self._open_local_console, "#2a2010", "#3a3020",
             tip="Open an interactive Ollama chat — free, no API key needed")
+
+        # Store console dot colors so status poller can update labels later
+        self._console_dots = {
+            "claude": (_c_dot, self._btn_claude_console),
+            "gemini": (_g_dot, self._btn_gemini_console),
+            "local":  (_l_dot, self._btn_local_console),
+        }
 
         # ── BUILD ──────────────────────────────────────────────────────────────
         if DEV_MODE:
@@ -1875,7 +1928,7 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
                 tip="Launch the compiled Big Edge Compute Command from dist/")
             btn(s, "🔨 Rebuild All",       self._rebuild_all,        "#2a1a10", "#3a2a18",
                 tip="Recompile the app via PyInstaller (build.bat)")
-            btn(s, "💾 USB Media Creator", self._launch_usb_media,   "#1a1a2a", "#2a2a3a",
+            btn(s, "💾 USB Media Creator", self._launch_usb_media,   "#1a1a2a", SB_HOVER,
                 tip="Create a portable USB installer for offline deployment")
 
         # ── LOGS ──────────────────────────────────────────────────────────────
@@ -1895,15 +1948,25 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
         menu = ctk.CTkOptionMenu(
             sb, values=display_agents, variable=self._log_agent_var,
             font=FONT_SM, fg_color=BG3, button_color=ACCENT,
-            button_hover_color=ACCENT_H, height=28, command=self._switch_log,
+            button_hover_color=ACCENT_H, height=28,
+            corner_radius=SB_BTN_RADIUS, command=self._switch_log,
         )
         menu.pack(fill="x", padx=10, pady=4)
         s["widgets"].append(menu)
 
         # ── Developer mode indicator ─────────────────────────────────────────
         if DEV_MODE:
-            dev_label = ctk.CTkLabel(sb, text="🔧 Developer Mode", font=("RuneScape Plain 11", 8), text_color=DIM)
+            dev_label = ctk.CTkLabel(sb, text="🔧 Developer Mode", font=FONT_XS, text_color=DIM)
             dev_label.pack(side="bottom", pady=4)
+
+    def _sb_set_active(self, wrapper, accent_bar):
+        """Highlight the clicked sidebar button with a 3px gold left accent bar."""
+        # Clear previous active state
+        for _w, ab, _b in self._sb_buttons:
+            ab.configure(fg_color="transparent")
+        # Set new active
+        accent_bar.configure(fg_color=GOLD)
+        self._sb_active_btn = wrapper
 
     # ── Main area ─────────────────────────────────────────────────────────────
     # ── Tabs (primary content area) ──────────────────────────────────────────
@@ -2680,7 +2743,7 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
                                 row=r, column=c, padx=4, pady=2, sticky="nsew")
                         else:
                             dcard = ctk.CTkFrame(
-                                self._disabled_grid, fg_color=BG2, corner_radius=8,
+                                self._disabled_grid, fg_color=BG2, corner_radius=CARD_RADIUS,
                                 height=60, border_width=1, border_color="#333")
                             dcard.grid(row=r, column=c, padx=4, pady=2, sticky="nsew")
                             dcard.grid_propagate(False)
@@ -2807,7 +2870,7 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
             recent_icons = []
         border_w = 2 if is_waiting else 0
         border_c = ORANGE if is_waiting else BG2
-        card = ctk.CTkFrame(parent, fg_color=BG2, corner_radius=8, height=160,
+        card = ctk.CTkFrame(parent, fg_color=BG2, corner_radius=CARD_RADIUS, height=160,
                             border_width=border_w, border_color=border_c)
         card.grid(row=row, column=col, padx=4, pady=4, sticky="nsew")
         card.grid_propagate(False)
@@ -3314,7 +3377,7 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
         self._vscode_guide_frame = ctk.CTkFrame(self._chat_container, fg_color="transparent")
         # NOT packed initially — shown when VS Code mode selected
 
-        guide_inner = ctk.CTkFrame(self._vscode_guide_frame, fg_color=BG2, corner_radius=8)
+        guide_inner = ctk.CTkFrame(self._vscode_guide_frame, fg_color=BG2, corner_radius=CARD_RADIUS)
         guide_inner.pack(fill="both", expand=True, padx=8, pady=8)
 
         ctk.CTkLabel(guide_inner, text="VS Code Manual Mode",
@@ -4266,7 +4329,7 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
         bar.grid_columnconfigure(0, weight=1)
 
         # Single row: [entry] [mic] [dispatch] [status]
-        input_frame = ctk.CTkFrame(bar, fg_color=BG3, corner_radius=8)
+        input_frame = ctk.CTkFrame(bar, fg_color=BG3, corner_radius=CARD_RADIUS)
         input_frame.grid(row=0, column=0, padx=8, pady=6, sticky="ew")
         input_frame.grid_columnconfigure(0, weight=1)
 
@@ -5931,7 +5994,7 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
         """Show a non-intrusive toast notification in the top-right corner."""
         if color is None:
             color = GREEN
-        toast = ctk.CTkFrame(self, fg_color=color, corner_radius=8, height=36)
+        toast = ctk.CTkFrame(self, fg_color=color, corner_radius=CARD_RADIUS, height=36)
         toast.place(relx=1.0, x=-20, y=60, anchor="ne")
         ctk.CTkLabel(toast, text=message, font=("RuneScape Plain 11", 10), text_color="#ffffff",
                      padx=12, pady=6).pack()

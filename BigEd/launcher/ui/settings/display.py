@@ -1,9 +1,10 @@
-"""Display settings panel — UI scale, font, always-on-top."""
+"""Display settings panel — UI scale, font, theme, always-on-top."""
 import customtkinter as ctk
 
 from ui.theme import (
     BG2, BG3, ACCENT_H, GOLD, TEXT, DIM,
     FONT_SM, FONT_PRESETS, _active_preset,
+    THEME_PRESETS, _active_theme_name,
     GLASS_BG, GLASS_PANEL,
 )
 
@@ -52,6 +53,35 @@ class DisplayPanelMixin:
         btn_row_scale.pack(fill="x", padx=12, pady=(4, 10))
         ctk.CTkButton(btn_row_scale, text="Apply & Restart", font=FONT_SM, width=130, height=28,
                       fg_color=BG3, hover_color=BG2, command=self._apply_scale).pack(side="left")
+
+        # Section: Theme
+        self._section_header(panel, "Theme")
+        theme_frame = ctk.CTkFrame(panel, fg_color=GLASS_BG, corner_radius=6)
+        theme_frame.pack(fill="x", padx=16, pady=(0, 12))
+
+        ctk.CTkLabel(theme_frame, text="Select color theme. Applied on next launch.",
+                     font=FONT_SM, text_color=DIM).pack(padx=12, pady=(10, 6), anchor="w")
+
+        theme_row = ctk.CTkFrame(theme_frame, fg_color="transparent")
+        theme_row.pack(fill="x", padx=12, pady=(0, 4))
+
+        self._theme_var = ctk.StringVar(value=_active_theme_name)
+        theme_names = list(THEME_PRESETS.keys())
+        ctk.CTkOptionMenu(
+            theme_row, values=theme_names, variable=self._theme_var,
+            font=FONT_SM, width=200, height=28,
+            fg_color=BG3, button_color=GOLD, button_hover_color=ACCENT_H,
+            command=self._on_theme_change,
+        ).pack(side="left")
+
+        _THEME_DESCRIPTIONS = {
+            "Classic": "Original dark palette with sharp corners",
+            "Modern": "Deeper tones, blue tint, softer rounded corners",
+        }
+        self._theme_desc = ctk.CTkLabel(
+            theme_frame, text=_THEME_DESCRIPTIONS.get(_active_theme_name, ""),
+            font=FONT_SM, text_color=DIM)
+        self._theme_desc.pack(padx=12, pady=(4, 10), anchor="w")
 
         # Section: Window Behavior
         self._section_header(panel, "Window Behavior")
@@ -174,6 +204,18 @@ class DisplayPanelMixin:
         L = _launcher()
         data = L._load_settings()
         data["font_preset"] = choice
+        L._save_settings(data)
+
+    def _on_theme_change(self, choice):
+        """Save theme preference and update description label."""
+        _THEME_DESCRIPTIONS = {
+            "Classic": "Original dark palette with sharp corners",
+            "Modern": "Deeper tones, blue tint, softer rounded corners",
+        }
+        self._theme_desc.configure(text=_THEME_DESCRIPTIONS.get(choice, ""))
+        L = _launcher()
+        data = L._load_settings()
+        data["theme_preset"] = choice
         L._save_settings(data)
 
     def _on_always_on_top_toggle(self):

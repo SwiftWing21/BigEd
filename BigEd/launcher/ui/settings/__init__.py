@@ -17,6 +17,7 @@ from ui.theme import (
     GREEN, ORANGE, RED, MONO, FONT, FONT_SM, FONT_H,
     BLUE, FONT_XS, FONT_STAT, FONT_BOLD, FONT_TITLE,
     GLASS_BG, GLASS_NAV, GLASS_PANEL, GLASS_HOVER, GLASS_SEL, GLASS_BORDER,
+    CARD_RADIUS, BTN_RADIUS,
 )
 
 
@@ -110,7 +111,7 @@ class SettingsDialog(
 
         ctk.CTkLabel(hdr, text=" v0.31 ", font=FONT_XS,
                      text_color=DIM, fg_color=GLASS_NAV,
-                     corner_radius=8).grid(row=0, column=2, padx=16, sticky="e")
+                     corner_radius=CARD_RADIUS).grid(row=0, column=2, padx=16, sticky="e")
 
         # ── Left nav ────────────────────────────────────────────────────
         nav = ctk.CTkFrame(self, fg_color=GLASS_NAV, width=170, corner_radius=0)
@@ -124,7 +125,7 @@ class SettingsDialog(
             b = ctk.CTkButton(
                 nav, text=f"  {label}", font=FONT_SM,
                 fg_color="transparent", hover_color=GLASS_HOVER,
-                text_color=DIM, anchor="w", height=34, corner_radius=4,
+                text_color=DIM, anchor="w", height=34, corner_radius=BTN_RADIUS,
                 command=lambda k=key: self._show_section(k),
             )
             b.pack(fill="x", padx=6, pady=1)

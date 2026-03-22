@@ -781,6 +781,21 @@ def main():
                     pass  # budget tracking must never break task execution
             except Exception as e:
                 err_str = str(e).lower()
+                # Auth / missing-key errors — fail immediately, never requeue
+                # (requeuing would just fail again with the same error)
+                try:
+                    from providers import is_missing_key_error
+                    if is_missing_key_error(e):
+                        db.fail_task(task['id'], str(e))
+                        log.error(f"Task {task['id']} auth/key error (not requeued): {e}")
+                        try:
+                            db.heartbeat(role, status='IDLE')
+                        except Exception:
+                            pass
+                        time.sleep(0.1)
+                        continue
+                except ImportError:
+                    pass
                 # Overload / Network Drop detection
                 if any(k in err_str for k in ("timeout", "connection", "rate limit", "503", "502")):
                     log.warning(f"Task {task['id']} failed due to overload/timeout. Re-queuing...")

@@ -28,6 +28,7 @@ from providers import (
     _call_claude, _call_gemini, _call_minimax, _call_local,
     _circuit_is_open, _circuit_record_failure, _circuit_record_success,
     get_optimal_model, get_local_model_for_skill,
+    is_missing_key_error, _audit_auth_failure,
 )
 
 
@@ -144,7 +145,8 @@ def call_complex(system: str, user: str, config: dict, max_tokens: int = 2048, c
                 result = _call_gemini(system, user, models, max_tokens,
                                       skill_name=skill_name, task_id=task_id, agent_name=agent_name)
             elif prov == "minimax":
-                result = _call_minimax(system, user, models, max_tokens,
+                # _call_minimax expects full config (not models sub-dict) for model name resolution
+                result = _call_minimax(system, user, config, max_tokens,
                                        skill_name=skill_name, task_id=task_id, agent_name=agent_name)
             elif prov == "local":
                 result = _call_local(system, user, models, max_tokens,
@@ -167,8 +169,15 @@ def call_complex(system: str, user: str, config: dict, max_tokens: int = 2048, c
             return result
 
         except Exception as e:
-            _circuit_record_failure(prov)
             last_error = e
+            # Missing-key errors are permanent config issues, not transient failures.
+            # Don't penalise the circuit breaker — the provider will work once configured.
+            if is_missing_key_error(e):
+                import sys
+                print(f"[AUTH] {skill_name}: '{prov}' missing API key, skipping (no circuit penalty)...",
+                      file=sys.stderr)
+            else:
+                _circuit_record_failure(prov)
             if i < len(chain) - 1:
                 import sys
                 print(f"[HA] {skill_name}: '{prov}' failed ({type(e).__name__}), trying next...",
@@ -183,15 +192,19 @@ def call_complex_batch(requests: list, config: dict):
     """
     Submit a batch of requests to the Anthropic Message Batches API.
     CLAUDE.md: "Prefer Message Batches API for bulk/non-real-time (50% savings)"
-    
+
     Expected format for `requests`:
     [
         {"custom_id": "req_1", "system": "...", "user": "...", "max_tokens": 1024},
         ...
     ]
     """
+    api_key = os.environ.get("ANTHROPIC_API_KEY")
+    if not api_key:
+        _audit_auth_failure("claude", "batch", "ANTHROPIC_API_KEY not set")
+        raise RuntimeError("ANTHROPIC_API_KEY not set — configure via lead_client.py secret set ANTHROPIC_API_KEY <key>")
     import anthropic
-    client = anthropic.Anthropic(api_key=os.environ.get("ANTHROPIC_API_KEY"))
+    client = anthropic.Anthropic(api_key=api_key)
     models = config.get("models", {})
     model_id = models.get("complex", "claude-sonnet-4-6")
     
@@ -216,8 +229,12 @@ def call_complex_batch(requests: list, config: dict):
 
 def check_complex_batch(batch_id: str):
     """Check status of an Anthropic Message Batch and retrieve results if ended."""
+    api_key = os.environ.get("ANTHROPIC_API_KEY")
+    if not api_key:
+        _audit_auth_failure("claude", "batch_check", "ANTHROPIC_API_KEY not set")
+        raise RuntimeError("ANTHROPIC_API_KEY not set — configure via lead_client.py secret set ANTHROPIC_API_KEY <key>")
     import anthropic
-    client = anthropic.Anthropic(api_key=os.environ.get("ANTHROPIC_API_KEY"))
+    client = anthropic.Anthropic(api_key=api_key)
     
     batch = client.messages.batches.retrieve(batch_id)
     result = {"status": batch.processing_status}

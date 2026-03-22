@@ -484,10 +484,97 @@ def calculate_cost_simple(input_tokens: int, output_tokens: int, model_id: str) 
     return round(cost, 6)
 
 
+# ── v0.051.07b: Auth / Key Helpers ─────────────────────────────────────────
+
+# Map provider names to their environment variable keys
+_PROVIDER_KEY_MAP = {
+    "claude": "ANTHROPIC_API_KEY",
+    "gemini": "GEMINI_API_KEY",
+    "minimax": "MINIMAX_API_KEY",
+    "local": None,  # local (Ollama) does not require an API key
+}
+
+
+def _audit_auth_failure(provider: str, skill_name: str, detail: str):
+    """Log an authentication/key failure to the audit trail (non-blocking)."""
+    try:
+        from audit import log_audit
+        log_audit(
+            actor="system",
+            action="provider.auth_failure",
+            resource=f"provider:{provider}",
+            detail=f"[{skill_name}] {detail}",
+            metadata={"provider": provider, "skill": skill_name},
+        )
+    except Exception:
+        pass  # Audit logging must never crash the caller
+
+
+def is_missing_key_error(exc: Exception) -> bool:
+    """Return True if the exception is due to a missing or invalid API key.
+
+    Used by the fallback chain to avoid penalising the circuit breaker when
+    the root cause is simply a missing key (permanent config issue, not a
+    transient failure).
+    """
+    msg = str(exc).lower()
+    if "api_key not set" in msg or ("not set" in msg and "key" in msg):
+        return True
+    # Anthropic AuthenticationError, Google 401/403, generic auth keywords
+    exc_name = type(exc).__name__.lower()
+    if "authentication" in exc_name or "permission" in exc_name:
+        return True
+    if any(kw in msg for kw in ("401", "403", "invalid api key", "invalid key",
+                                 "authentication", "unauthorized")):
+        return True
+    return False
+
+
+def has_api_key(config: dict = None) -> bool:
+    """Return True if the configured complex_provider has an API key available.
+
+    For 'local' provider, always returns True (no key needed).
+    Used by idle evolution to skip work when no external API is configured.
+    """
+    provider = "claude"
+    if config:
+        provider = config.get("models", {}).get("complex_provider", "claude")
+    if provider == "local":
+        return True
+    env_var = _PROVIDER_KEY_MAP.get(provider)
+    if env_var is None:
+        return True  # Unknown provider — assume ok, let the call fail naturally
+    return bool(os.environ.get(env_var))
+
+
+def get_provider_status() -> dict:
+    """Return {provider: 'configured'|'missing_key'|'circuit_open'} for all providers."""
+    status = {}
+    for provider, env_var in _PROVIDER_KEY_MAP.items():
+        if env_var is None:
+            # Local provider — check if Ollama is reachable instead
+            if _circuit_is_open(provider):
+                status[provider] = "circuit_open"
+            else:
+                status[provider] = "configured"
+        elif not os.environ.get(env_var):
+            status[provider] = "missing_key"
+        elif _circuit_is_open(provider):
+            status[provider] = "circuit_open"
+        else:
+            status[provider] = "configured"
+    return status
+
+
 def _call_claude(system: str, user: str, models: dict, max_tokens: int, cache_system: bool = True,
                   skill_name: str = "unknown", task_id=None, agent_name=None) -> str:
+    api_key = os.environ.get("ANTHROPIC_API_KEY")
+    if not api_key:
+        _audit_auth_failure("claude", skill_name, "ANTHROPIC_API_KEY not set")
+        raise RuntimeError("ANTHROPIC_API_KEY not set — configure via lead_client.py secret set ANTHROPIC_API_KEY <key>")
+
     import anthropic
-    client = anthropic.Anthropic(api_key=os.environ.get("ANTHROPIC_API_KEY"))
+    client = anthropic.Anthropic(api_key=api_key)
 
     # CLAUDE.md: Always use cache_control on stable system prompts
     system_param = [{"type": "text", "text": system, "cache_control": {"type": "ephemeral"}}] if cache_system else system
@@ -521,6 +608,9 @@ def _call_claude(system: str, user: str, models: dict, max_tokens: int, cache_sy
             except Exception:
                 pass  # Usage logging must never break skill execution
             return resp.content[0].text
+        except anthropic.AuthenticationError as e:
+            _audit_auth_failure("claude", skill_name, f"AuthenticationError: {e}")
+            raise
         except anthropic.RateLimitError:
             if attempt == max_retries - 1:
                 raise
@@ -532,6 +622,7 @@ def _call_gemini(system: str, user: str, models: dict, max_tokens: int,
     import google.generativeai as genai
     api_key = os.environ.get("GEMINI_API_KEY")
     if not api_key:
+        _audit_auth_failure("gemini", skill_name, "GEMINI_API_KEY not set")
         raise RuntimeError("GEMINI_API_KEY not set — configure via lead_client.py secret set GEMINI_API_KEY <key>")
     genai.configure(api_key=api_key)
     model_name = models.get("complex", "gemini-2.0-flash")
@@ -585,7 +676,8 @@ def _call_minimax(system: str, user: str, config: dict, max_tokens: int = 2048,
     import json, urllib.request
     api_key = os.environ.get("MINIMAX_API_KEY", "")
     if not api_key:
-        raise RuntimeError("MINIMAX_API_KEY not set")
+        _audit_auth_failure("minimax", skill_name, "MINIMAX_API_KEY not set")
+        raise RuntimeError("MINIMAX_API_KEY not set — configure via lead_client.py secret set MINIMAX_API_KEY <key>")
 
     model = config.get("models", {}).get("minimax_model", "MiniMax-M1-80k")
     host = "https://api.minimaxi.chat/v1"

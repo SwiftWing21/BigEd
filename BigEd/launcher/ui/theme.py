@@ -1,5 +1,6 @@
-"""BigEd CC UI Theme — single source of truth for colors and fonts."""
+"""BigEd CC UI Theme — single source of truth for colors, fonts, and themes."""
 import ctypes
+import json as _json
 import sys
 from pathlib import Path
 
@@ -27,20 +28,58 @@ def load_custom_fonts():
 
 # Fonts loaded lazily — call load_custom_fonts() after window creation
 
-# Backgrounds
-BG       = "#1a1a1a"
-BG2      = "#242424"
-BG3      = "#2d2d2d"
+# ─── Theme Presets ──────────────────────────────────────────────────────────
+THEME_PRESETS = {
+    "Classic": {
+        "BG": "#1a1a1a", "BG2": "#242424", "BG3": "#2d2d2d",
+        "ACCENT": "#b22222", "ACCENT_H": "#8b0000", "GOLD": "#c8a84b",
+        "TEXT": "#e2e2e2", "DIM": "#888888",
+        "CARD_RADIUS": 8, "BTN_RADIUS": 4,
+        "GLASS_BG": "#0f0f0f", "GLASS_NAV": "#141414",
+        "GLASS_PANEL": "#181818", "GLASS_HOVER": "#222222",
+        "GLASS_SEL": "#1a1a2e", "GLASS_BORDER": "#2a2a2a",
+    },
+    "Modern": {
+        "BG": "#0f1117", "BG2": "#1a1e2e", "BG3": "#252a3a",
+        "ACCENT": "#c0392b", "ACCENT_H": "#96281b", "GOLD": "#d4a84b",
+        "TEXT": "#ecf0f1", "DIM": "#7f8c8d",
+        "CARD_RADIUS": 12, "BTN_RADIUS": 8,
+        "GLASS_BG": "#0a0d14", "GLASS_NAV": "#111520",
+        "GLASS_PANEL": "#161b28", "GLASS_HOVER": "#1e2436",
+        "GLASS_SEL": "#182040", "GLASS_BORDER": "#2a3045",
+    },
+}
 
-# Accents
-ACCENT   = "#b22222"
-ACCENT_H = "#8b0000"
-GOLD     = "#c8a84b"
+def _load_theme_pref() -> str:
+    """Load saved theme preference from settings.json (same pattern as _load_font_pref)."""
+    try:
+        settings_file = Path(__file__).resolve().parent.parent / "data" / "settings.json"
+        if settings_file.exists():
+            data = _json.loads(settings_file.read_text(encoding="utf-8"))
+            pref = data.get("theme_preset", "Modern")
+            if pref in THEME_PRESETS:
+                return pref
+    except Exception:
+        pass
+    return "Modern"  # new default for fresh installs
+
+_active_theme_name = _load_theme_pref()
+_theme = THEME_PRESETS[_active_theme_name]
+
+# Backgrounds (resolved from active theme)
+BG       = _theme["BG"]
+BG2      = _theme["BG2"]
+BG3      = _theme["BG3"]
+
+# Accents (resolved from active theme)
+ACCENT   = _theme["ACCENT"]
+ACCENT_H = _theme["ACCENT_H"]
+GOLD     = _theme["GOLD"]
 BRAND    = "#00bcd4"  # BigEd brand color (teal) — header, icon, primary accent
 
-# Text
-TEXT     = "#e2e2e2"
-DIM      = "#888888"
+# Text (resolved from active theme)
+TEXT     = _theme["TEXT"]
+DIM      = _theme["DIM"]
 
 # Status
 GREEN    = "#4caf50"
@@ -105,13 +144,20 @@ BG_DASH_H  = "#253545"   # dashboard hover
 BG_DANGER  = "#5a2020"   # uninstall/destructive
 BG_DANGER_H = "#6a2828"  # destructive hover
 
-# Glass palette (settings dialog)
-GLASS_BG     = "#0f0f0f"
-GLASS_NAV    = "#141414"
-GLASS_PANEL  = "#181818"
-GLASS_HOVER  = "#222222"
-GLASS_SEL    = "#1a1a2e"
-GLASS_BORDER = "#2a2a2a"
+# Sidebar (modernized — accent bars, rounded buttons, active state)
+SB_HOVER      = "#2a2a3a"   # button hover (subtle purple-gray)
+SB_ACTIVE_BG  = "#252535"   # active item background tint
+SB_BTN_RADIUS = 6           # rounded button corners
+SB_BTN_HEIGHT = 30          # standard sidebar button height
+FONT_SB_SECTION = (_preset["bold"], 11, "bold")  # section header (slightly larger)
+
+# Glass palette (settings dialog — resolved from active theme)
+GLASS_BG     = _theme["GLASS_BG"]
+GLASS_NAV    = _theme["GLASS_NAV"]
+GLASS_PANEL  = _theme["GLASS_PANEL"]
+GLASS_HOVER  = _theme["GLASS_HOVER"]
+GLASS_SEL    = _theme["GLASS_SEL"]
+GLASS_BORDER = _theme["GLASS_BORDER"]
 
 # Counter card colors
 COUNTER_COLORS = {
@@ -131,8 +177,9 @@ FONT_MONO  = (_preset["mono"], 11)            # code, values (keep mono)
 FONT_BOLD  = (_preset["bold"], 12, "bold")    # agent names, emphasis
 FONT_TITLE = (_preset["bold"], 15, "bold")    # section titles
 
-# Dimensions
-CARD_RADIUS   = 8
+# Dimensions (radius values resolved from active theme)
+CARD_RADIUS   = _theme["CARD_RADIUS"]
+BTN_RADIUS    = _theme["BTN_RADIUS"]
 CARD_PAD      = 4      # standard card padding
 BTN_HEIGHT    = 28     # standard button height
 BTN_HEIGHT_SM = 20     # small inline buttons
