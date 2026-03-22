@@ -980,12 +980,14 @@ class CustomTabBar(ctk.CTkFrame):
         self._tab_widths: dict[str, int] = {}
         self._tabs_ready = False
 
-        # Mouse-wheel horizontal scroll
+        # Mouse-wheel horizontal scroll — works anywhere in the tab strip
         def _on_wheel(e):
             delta = -1 if (e.num == 4 or (hasattr(e, "delta") and e.delta > 0)) else 1
             self._tab_canvas.xview_scroll(delta * 2, "units")
             if self._scrollbar_visible:
                 _show_scrollbar(e)
+            return "break"
+        self._wheel_handler = _on_wheel  # stored so add() can bind new buttons
         for w in (self._tab_canvas, bar_container, self._bar):
             w.bind("<MouseWheel>", _on_wheel)
             w.bind("<Button-4>", _on_wheel)
@@ -1041,6 +1043,12 @@ class CustomTabBar(ctk.CTkFrame):
             command=lambda n=name: self.set(n),
         )
         btn.grid(row=0, column=0, sticky="nsew")
+
+        # Bind mouse wheel to tab button + cell so scrolling works when hovering any tab
+        for _w in (btn, cell):
+            _w.bind("<MouseWheel>", self._wheel_handler)
+            _w.bind("<Button-4>", self._wheel_handler)
+            _w.bind("<Button-5>", self._wheel_handler)
 
         # 3-px accent indicator — transparent until this tab is active
         indicator = ctk.CTkFrame(cell, fg_color="transparent", height=3, corner_radius=0)
