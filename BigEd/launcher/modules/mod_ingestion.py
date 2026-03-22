@@ -176,6 +176,12 @@ class Module:
         self.on_refresh()
 
     def on_refresh(self):
+        # Preserve checked paths before rebuild
+        previously_checked = set()
+        for var, path in self._checks:
+            if var.get():
+                previously_checked.add(str(path))
+
         for w in self._widgets:
             w.destroy()
         self._widgets.clear()
@@ -206,7 +212,8 @@ class Module:
 
         row = 0
         for d in dirs:
-            var = ctk.BooleanVar(value=False)
+            was_checked = str(d) in previously_checked
+            var = ctk.BooleanVar(value=was_checked)
             cb = ctk.CTkCheckBox(
                 self._file_list, text=f"[dir] {d.name}/",
                 variable=var, font=FONT_XS,
@@ -218,7 +225,8 @@ class Module:
             row += 1
 
         for f in files:
-            var = ctk.BooleanVar(value=False)
+            was_checked = str(f) in previously_checked
+            var = ctk.BooleanVar(value=was_checked)
             ext = f.suffix.lower()
             if ext == ".zip":
                 color = ORANGE
