@@ -107,10 +107,17 @@ class Module:
             hdr, text=ingest_path, font=FONT_XS, text_color=DIM, anchor="w")
         self._path_label.grid(row=0, column=2, padx=(8, 0), sticky="w")
 
+        self._color_files_var = ctk.BooleanVar(value=False)
+        ctk.CTkSwitch(hdr, text="Color by type", variable=self._color_files_var,
+                      font=FONT_XS, text_color=DIM, width=40,
+                      fg_color=BG3, progress_color=GOLD,
+                      command=self.on_refresh
+                      ).grid(row=0, column=3, padx=(8, 0))
+
         ctk.CTkButton(hdr, text="Refresh", font=FONT_SM, height=26, width=80,
                       fg_color=BG3, hover_color=BG,
                       command=self.on_refresh
-                      ).grid(row=0, column=3, padx=(8, 0), sticky="e")
+                      ).grid(row=0, column=4, padx=(8, 0), sticky="e")
 
         content = ctk.CTkFrame(parent, fg_color=BG)
         content.grid(row=1, column=0, sticky="nsew")
@@ -251,19 +258,23 @@ class Module:
             was_checked = str(f) in previously_checked
             var = ctk.BooleanVar(value=was_checked)
             ext = f.suffix.lower()
-            if ext in self.ARCHIVE_EXTS:
-                color = ORANGE
-            elif ext in self.DOC_EXTS:
-                color = "#7aa2f7"  # blue — structured docs
-            elif ext in self.IMAGE_EXTS:
-                color = "#ce93d8"  # purple — images
-            elif ext in self.AUDIO_EXTS or ext in self.VIDEO_EXTS:
-                color = "#ffb74d"  # amber — media
-            elif ext in self.TEXT_EXTS:
-                color = GREEN if ext in (".py", ".js", ".ts", ".go", ".rs", ".java",
-                                         ".c", ".cpp", ".cs", ".rb", ".kt", ".swift") else TEXT
+            use_colors = self._color_files_var.get() if hasattr(self, '_color_files_var') else False
+            if use_colors:
+                if ext in self.ARCHIVE_EXTS:
+                    color = ORANGE
+                elif ext in self.DOC_EXTS:
+                    color = "#7aa2f7"  # blue — structured docs
+                elif ext in self.IMAGE_EXTS:
+                    color = "#ce93d8"  # purple — images
+                elif ext in self.AUDIO_EXTS or ext in self.VIDEO_EXTS:
+                    color = "#ffb74d"  # amber — media
+                elif ext in self.TEXT_EXTS:
+                    color = GREEN if ext in (".py", ".js", ".ts", ".go", ".rs", ".java",
+                                             ".c", ".cpp", ".cs", ".rb", ".kt", ".swift") else TEXT
+                else:
+                    color = DIM
             else:
-                color = DIM  # unrecognized — will attempt extraction
+                color = TEXT
 
             cb = ctk.CTkCheckBox(
                 self._file_list,
