@@ -932,48 +932,10 @@ class CustomTabBar(ctk.CTkFrame):
         self._tab_nav_btn.grid(row=0, column=0, sticky="ns", padx=(2, 0))
         Tooltip(self._tab_nav_btn, "Tab menu — switch, reorder, set default")
 
-        # Canvas for horizontal scrolling
-        self._tab_canvas = ctk.CTkCanvas(
-            bar_container, bg=BG2, highlightthickness=0, height=42)
-        self._tab_canvas.grid(row=0, column=1, sticky="nsew")
-
-        # Inner frame inside canvas holds tab buttons
-        self._bar = ctk.CTkFrame(self._tab_canvas, fg_color=BG2, corner_radius=0)
-        self._bar_window = self._tab_canvas.create_window(
-            (0, 0), window=self._bar, anchor="nw")
-
-        # Thin scrollbar — only visible on hover, 4px height
-        self._tab_scrollbar = ctk.CTkFrame(
-            bar_container, fg_color=DIM, height=3, corner_radius=2)
-        # Placed at bottom of bar_container, hidden by default
-        self._scrollbar_visible = False
-        self._scrollbar_thumb = ctk.CTkFrame(
-            self._tab_scrollbar, fg_color=GOLD, height=3, corner_radius=2, width=40)
-        self._scrollbar_thumb.pack(side="left")
-
-        # Show scrollbar on hover, hide on leave
-        def _show_scrollbar(e):
-            total_w = sum(self._tab_widths.get(n, 80) for n in self._tab_names_order)
-            canvas_w = self._tab_canvas.winfo_width()
-            if total_w > canvas_w:
-                self._tab_scrollbar.place(relx=0, rely=1.0, y=-4, relwidth=1.0, height=3)
-                # Size thumb proportionally
-                ratio = min(1.0, canvas_w / max(1, total_w))
-                thumb_w = max(20, int(canvas_w * ratio))
-                self._scrollbar_thumb.configure(width=thumb_w)
-                # Position thumb
-                max_scroll = total_w - canvas_w
-                cur_x = self._tab_canvas.canvasx(0)
-                if max_scroll > 0:
-                    pos = cur_x / max_scroll
-                    self._scrollbar_thumb.place(relx=pos * (1 - ratio), y=0)
-                self._scrollbar_visible = True
-        def _hide_scrollbar(e):
-            self._tab_scrollbar.place_forget()
-            self._scrollbar_visible = False
-
-        bar_container.bind("<Enter>", _show_scrollbar)
-        bar_container.bind("<Leave>", _hide_scrollbar)
+        # Simple frame for tab buttons — ≡ menu handles overflow navigation
+        self._bar = ctk.CTkFrame(bar_container, fg_color=BG2, height=42, corner_radius=0)
+        self._bar.grid(row=0, column=1, sticky="nsew")
+        self._bar.grid_propagate(False)
 
         self._tab_scroll_offset = 0
         self._all_tab_cells: list = []
@@ -981,25 +943,7 @@ class CustomTabBar(ctk.CTkFrame):
         self._tab_widths: dict[str, int] = {}
         self._tabs_ready = False
 
-        # Mouse-wheel horizontal scroll — works anywhere in the tab strip
-        def _on_wheel(e):
-            delta = -1 if (e.num == 4 or (hasattr(e, "delta") and e.delta > 0)) else 1
-            self._tab_canvas.xview_scroll(delta * 2, "units")
-            if self._scrollbar_visible:
-                _show_scrollbar(e)
-            return "break"
-        self._wheel_handler = _on_wheel  # stored so add() can bind new buttons
-        for w in (self._tab_canvas, bar_container, self._bar):
-            w.bind("<MouseWheel>", _on_wheel)
-            w.bind("<Button-4>", _on_wheel)
-            w.bind("<Button-5>", _on_wheel)
-
-        # Update canvas scroll region when bar resizes
-        def _on_bar_configure(e):
-            self._tab_canvas.configure(scrollregion=self._tab_canvas.bbox("all"))
-            # Also size canvas window height to match container
-            self._tab_canvas.itemconfig(self._bar_window, height=42)
-        self._bar.bind("<Configure>", _on_bar_configure)
+        self._wheel_handler = lambda e: None  # no-op — ≡ menu handles overflow
 
         # Full-width 1-px separator beneath the strip
         self._sep = ctk.CTkFrame(self, fg_color=BG3, height=1, corner_radius=0)
@@ -1101,21 +1045,7 @@ class CustomTabBar(ctk.CTkFrame):
         """Switch to the named tab (lazy-builds deferred tabs on first view)."""
         if name not in self._tab_frames:
             return
-        # Auto-scroll canvas to make the selected tab visible
-        if name in self._tab_cells:
-            cell = self._tab_cells[name]
-            try:
-                cell_x = cell.winfo_x()
-                cell_w = cell.winfo_width()
-                canvas_w = self._tab_canvas.winfo_width()
-                view_left = self._tab_canvas.canvasx(0)
-                view_right = view_left + canvas_w
-                # Scroll if tab is outside visible area
-                if cell_x < view_left or cell_x + cell_w > view_right:
-                    self._tab_canvas.xview_moveto(max(0, cell_x - 20) /
-                        max(1, self._bar.winfo_reqwidth()))
-            except Exception:
-                pass
+        # Tab switching is instant — ≡ menu handles navigation for overflow tabs
         # Build lazy tab content on first view
         app = self.winfo_toplevel()
         if hasattr(app, '_lazy_tabs') and name in app._lazy_tabs and name not in app._built_tabs:
@@ -1236,8 +1166,8 @@ class CustomTabBar(ctk.CTkFrame):
     # ── Scroll support (canvas-based) ─────────────────────────────────────
 
     def _scroll_tabs(self, direction: int) -> None:
-        """Scroll tab bar. Kept for compatibility — delegates to canvas xview."""
-        self._tab_canvas.xview_scroll(direction * 2, "units")
+        """No-op — kept for compatibility. Use ≡ menu for tab navigation."""
+        pass
 
 
 # ─── Main App ─────────────────────────────────────────────────────────────────
@@ -1997,6 +1927,7 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
 
         # Load modular tabs via module system
         self._modules = {}
+        self._tab_cfg = tab_cfg  # store for reload
         try:
             from modules import load_modules, _load_manifest
             self._modules = load_modules(self, tab_cfg)
@@ -2005,6 +1936,10 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
             print(f"[WARN] Module system failed to load: {_mod_err}", file=sys.stderr)
             import traceback; traceback.print_exc(file=sys.stderr)
             self._safe_after(1000, lambda e=str(_mod_err): self._log_output(f"\u26a0 Module load error: {e}"))
+
+        if not self._modules:
+            self._safe_after(2000, lambda: self._log_output(
+                "\u26a0 No modules loaded. Check Settings > General > Module Hub or restart."))
 
         for name, mod in self._modules.items():
             try:
@@ -2027,6 +1962,8 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
                     self._log_output(f"\u26a0 Module '{n}' failed: {err}"))
 
         # All tabs registered — apply saved order and show default tab
+        self._safe_after(500, lambda: self._log_output(
+            f"Tabs registered: {len(tabs._tab_names_order)} ({', '.join(tabs._tab_names_order)})"))
         tabs._tabs_ready = True
         try:
             prefs = _load_settings()
