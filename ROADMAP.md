@@ -1349,13 +1349,13 @@ Completed 2026-03-22. Three new skill systems:
 
 **Goal:** Reduce Claude API costs 30-60% through caching, batching, MCP routing, and bonus window detection.
 
-- [ ] `claude_efficiency` skill — audit usage patterns, recommend optimizations
-- [ ] Prompt caching enforcement — ensure all Claude-routed skills use cache_control
-- [ ] Batch API integration — queue non-urgent tasks for 50% discount
-- [ ] Capacity window tracker — detect 2x bonus periods from fleet.toml [capacity]
-- [ ] Auto-scale during bonus — deploy extra agents, prefer Claude over local
-- [ ] `.claude/skills/max-efficiency.md` — self-optimization plugin for any Claude session
-- [ ] Flywheel target: A (90+) — actionability improvements, consistency fixes
+- [x] `claude_efficiency` skill — audit, optimize, capacity_check, batch_queue, report (781 lines)
+- [x] Prompt caching enforcement — audit identifies skills with <10% cache utilization
+- [x] Batch API integration — batch_queue identifies 14 eligible skill types
+- [x] Capacity window tracker — `is_in_bonus_window()` with ET timezone + DST handling
+- [x] Auto-scale during bonus — supervisor checks every 5min, fleet.toml [capacity.auto_scale]
+- [x] `.claude/skills/max-efficiency.md` — 5-section self-optimization plugin
+- [x] Flywheel target: A (92.1/100) — actionability 73→96, consistency 80→100, evidence-based scoring
 
 ### 0.180.00b — Quality Flywheel S-Tier (100/100)
 
