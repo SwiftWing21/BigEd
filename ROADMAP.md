@@ -1368,6 +1368,31 @@ Completed 2026-03-22. Three new skill systems:
 - [ ] Regression lock — S-tier maintained for 7+ days triggers premium routing (Opus for complex tasks)
 - [ ] Premium routing when S-tier active — Claude Opus for complex, extended context, cache-first
 
+### 0.175.00b — API Safety + GUI/UX Modernization
+
+**Goal:** No crashes from missing API keys, clean key management UX, modernized GUI with theme selector.
+
+**API Safety:**
+- [ ] Guard all paid model calls — graceful fallback when API key missing (no MINIMAX/CLAUDE/GEMINI crashes)
+- [ ] OAuth error tracking — log failures to audit trail, show in dashboard
+- [ ] Provider health dashboard — circuit breaker status visible in UI
+
+**API Key Management UX:**
+- [ ] Refactor key manager — clean flow: detect keys, show status (set/missing), one-click set/edit
+- [ ] Key validation on entry — test API key before saving (quick probe)
+- [ ] Key status indicators in Settings + Command Center
+
+**Sidebar UX:**
+- [ ] Modern sidebar buttons — rounded, icon+label layout, hover animations
+- [ ] Collapsible sections with smooth transitions
+- [ ] Active state indicator (gold accent bar, not just color change)
+
+**Theme System:**
+- [ ] Theme selector in Settings > Display: "Classic" (current dark) vs "Modern" (new default)
+- [ ] Modern theme: softer corners, subtle gradients, refined spacing, glass-morphism cards
+- [ ] Theme persisted to settings.json, applied on startup
+- [ ] All widgets respect active theme (no hardcoded colors outside theme.py)
+
 ---
 
 ## Audit Coverage Check (per AUDIT_TRACKER.md)
