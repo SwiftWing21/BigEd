@@ -71,7 +71,9 @@ RUBRIC = {
     },
 }
 
-def score_to_grade(score: float) -> str:
+def score_to_grade(score: float, s_tier_eligible: bool = False) -> str:
+    if s_tier_eligible and score >= 95:
+        return "S"
     if score >= 90: return "A"
     if score >= 80: return "B+"
     if score >= 75: return "B"
@@ -83,13 +85,15 @@ def score_to_grade(score: float) -> str:
 
 # ── Part A: Context quality grading ────────────────────────────────────────
 
-def grade_completeness(project_root: Path) -> tuple[float, list[str]]:
-    """Check if CLAUDE.md covers required sections. Returns (score, gaps)."""
+def grade_completeness(project_root: Path) -> tuple[float, list[str], list[dict]]:
+    """Check if CLAUDE.md covers required sections. Returns (score, gaps, evidence)."""
     claude_md = project_root / "CLAUDE.md"
     if not claude_md.exists():
-        return 0.0, ["No CLAUDE.md found"]
+        return 0.0, ["No CLAUDE.md found"], []
 
-    content = claude_md.read_text(encoding="utf-8", errors="ignore").lower()
+    content = claude_md.read_text(encoding="utf-8", errors="ignore")
+    content_lower = content.lower()
+    lines = content.splitlines()
     required_sections = {
         "quick start": "How to run the project",
         "structure": "Directory/file layout",
@@ -99,62 +103,122 @@ def grade_completeness(project_root: Path) -> tuple[float, list[str]]:
     }
     score = 0
     gaps = []
+    evidence = []
     for section, desc in required_sections.items():
-        if section in content:
+        if section in content_lower:
             score += 100 / len(required_sections)
+            # Find line number of first occurrence
+            for i, line in enumerate(lines, 1):
+                if section in line.lower():
+                    evidence.append({
+                        "file": "CLAUDE.md", "line": i,
+                        "detail": f"Section '{desc}' found: {line.strip()[:80]}",
+                    })
+                    break
         else:
             gaps.append(f"Missing section: {desc}")
-    return min(100, score), gaps
+            evidence.append({
+                "file": "CLAUDE.md", "line": 0,
+                "detail": f"Section '{desc}' NOT found (searched for '{section}')",
+            })
+    return min(100, score), gaps, evidence
 
-def grade_consistency(project_root: Path) -> tuple[float, list[str]]:
-    """Check if docs agree with each other."""
+def grade_consistency(project_root: Path) -> tuple[float, list[str], list[dict]]:
+    """Check if docs agree with each other. Returns (score, issues, evidence)."""
     issues = []
+    evidence = []
     score = 100.0
 
     claude_md = project_root / "CLAUDE.md"
     readme = project_root / "README.md"
 
     if not claude_md.exists():
-        return 0.0, ["No CLAUDE.md"]
+        return 0.0, ["No CLAUDE.md"], []
 
     claude_text = claude_md.read_text(encoding="utf-8", errors="ignore")
+    claude_lines = claude_text.splitlines()
 
     # Check version consistency — match project version format (X.XXX.XXb)
     # Require at least 3-segment version with alpha/beta suffix to avoid matching
     # unrelated versions like Apache_2.0 or Python 3.11
     ver_re = r'v?(\d+\.\d{2,}\.\d+[ab]\b)'
     versions = re.findall(ver_re, claude_text)
+    if versions:
+        # Find line number of first version in CLAUDE.md
+        for i, line in enumerate(claude_lines, 1):
+            if re.search(ver_re, line):
+                evidence.append({
+                    "file": "CLAUDE.md", "line": i,
+                    "detail": f"Version '{versions[0]}' found: {line.strip()[:80]}",
+                })
+                break
+
     if readme.exists():
         readme_text = readme.read_text(encoding="utf-8", errors="ignore")
+        readme_lines = readme_text.splitlines()
         readme_versions = re.findall(ver_re, readme_text)
         if versions and readme_versions and versions[0] != readme_versions[0]:
             issues.append(f"Version mismatch: CLAUDE.md={versions[0]}, README={readme_versions[0]}")
             score -= 20
+            # Find line in README with mismatched version
+            for i, line in enumerate(readme_lines, 1):
+                if re.search(ver_re, line):
+                    evidence.append({
+                        "file": "README.md", "line": i,
+                        "detail": f"Mismatched version '{readme_versions[0]}': {line.strip()[:80]}",
+                    })
+                    break
+        elif versions and readme_versions and versions[0] == readme_versions[0]:
+            evidence.append({
+                "file": "README.md", "line": 0,
+                "detail": f"Version consistent: both report '{versions[0]}'",
+            })
 
     # Check skill count consistency
     skill_counts = re.findall(r'(\d+)\s*skills?', claude_text, re.I)
     if skill_counts:
+        # Find line number with skill count claim
+        for i, line in enumerate(claude_lines, 1):
+            if re.search(r'(\d+)\s*skills?', line, re.I):
+                evidence.append({
+                    "file": "CLAUDE.md", "line": i,
+                    "detail": f"Claims {skill_counts[0]} skills: {line.strip()[:80]}",
+                })
+                break
+
         # Count actual skills
         skills_dir = project_root / "fleet" / "skills"
         if skills_dir.exists():
-            actual = len([f for f in skills_dir.glob("*.py")
-                         if f.name != "__init__.py" and not f.name.startswith("_")])
+            actual_files = [f for f in skills_dir.glob("*.py")
+                           if f.name != "__init__.py" and not f.name.startswith("_")]
+            actual = len(actual_files)
             claimed = int(skill_counts[0])
             if abs(actual - claimed) > 3:
                 issues.append(f"Skill count: docs say {claimed}, actual is {actual}")
                 score -= 15
+                evidence.append({
+                    "file": "fleet/skills/", "line": 0,
+                    "detail": f"Actual skill count is {actual}, docs claim {claimed} (delta {abs(actual - claimed)})",
+                })
+            else:
+                evidence.append({
+                    "file": "fleet/skills/", "line": 0,
+                    "detail": f"Skill count consistent: actual={actual}, claimed={claimed}",
+                })
 
-    return max(0, score), issues
+    return max(0, score), issues, evidence
 
-def grade_actionability(project_root: Path) -> tuple[float, list[str]]:
-    """Score how specific and actionable the instructions are."""
+def grade_actionability(project_root: Path) -> tuple[float, list[str], list[dict]]:
+    """Score how specific and actionable the instructions are. Returns (score, issues, evidence)."""
     claude_md = project_root / "CLAUDE.md"
     if not claude_md.exists():
-        return 0.0, ["No CLAUDE.md"]
+        return 0.0, ["No CLAUDE.md"], []
 
     content = claude_md.read_text(encoding="utf-8", errors="ignore")
+    lines = content.splitlines()
     score = 40.0  # base
     issues = []
+    evidence = []
 
     # Positive signals (specific, actionable)
     specific_patterns = [
@@ -168,13 +232,28 @@ def grade_actionability(project_root: Path) -> tuple[float, list[str]]:
         (r'def\s+\w+\(', 4, "Has function signature examples"),
         (r'fleet\.toml|fleet\.db|CLAUDE\.md', 3, "References key project files"),
     ]
-    for pattern, points, _desc in specific_patterns:
-        if re.search(pattern, content, re.I):
+    for pattern, points, desc in specific_patterns:
+        match = re.search(pattern, content, re.I)
+        if match:
             score += points
+            # Find line number of first match
+            for i, line in enumerate(lines, 1):
+                if re.search(pattern, line, re.I):
+                    evidence.append({
+                        "file": "CLAUDE.md", "line": i,
+                        "detail": f"+{points}pts {desc}: {line.strip()[:60]}",
+                    })
+                    break
 
     # Bonus: count of code blocks (more = more actionable, up to +12)
     code_blocks = len(re.findall(r'```', content)) // 2
-    score += min(12, code_blocks * 2)
+    bonus = min(12, code_blocks * 2)
+    score += bonus
+    if code_blocks > 0:
+        evidence.append({
+            "file": "CLAUDE.md", "line": 0,
+            "detail": f"+{bonus}pts from {code_blocks} code blocks",
+        })
 
     # Negative signals (vague)
     vague_patterns = [
@@ -183,49 +262,99 @@ def grade_actionability(project_root: Path) -> tuple[float, list[str]]:
         (r'use best practices', -10, "Vague: 'use best practices'"),
     ]
     for pattern, penalty, desc in vague_patterns:
-        if re.search(pattern, content, re.I):
+        match = re.search(pattern, content, re.I)
+        if match:
             score += penalty
             issues.append(desc)
+            for i, line in enumerate(lines, 1):
+                if re.search(pattern, line, re.I):
+                    evidence.append({
+                        "file": "CLAUDE.md", "line": i,
+                        "detail": f"{penalty}pts {desc}: {line.strip()[:60]}",
+                    })
+                    break
 
-    return max(0, min(100, score)), issues
+    return max(0, min(100, score)), issues, evidence
 
-def grade_coverage(project_root: Path) -> tuple[float, list[str]]:
-    """What % of top-level dirs have relevant context?"""
+def grade_coverage(project_root: Path) -> tuple[float, list[str], list[dict]]:
+    """What % of top-level dirs have relevant context? Returns (score, issues, evidence)."""
     claude_md = project_root / "CLAUDE.md"
     if not claude_md.exists():
-        return 0.0, ["No CLAUDE.md"]
+        return 0.0, ["No CLAUDE.md"], []
 
-    content = claude_md.read_text(encoding="utf-8", errors="ignore").lower()
+    content = claude_md.read_text(encoding="utf-8", errors="ignore")
+    content_lower = content.lower()
+    lines = content.splitlines()
     top_dirs = [d.name for d in project_root.iterdir()
                 if d.is_dir() and not d.name.startswith(".") and d.name != "node_modules"][:20]
 
     if not top_dirs:
-        return 100.0, []
+        return 100.0, [], []
 
-    covered = sum(1 for d in top_dirs if d.lower() in content)
+    evidence = []
+    covered = 0
+    for d in top_dirs:
+        if d.lower() in content_lower:
+            covered += 1
+            # Find line where directory is mentioned
+            for i, line in enumerate(lines, 1):
+                if d.lower() in line.lower():
+                    evidence.append({
+                        "file": "CLAUDE.md", "line": i,
+                        "detail": f"Directory '{d}/' mentioned: {line.strip()[:60]}",
+                    })
+                    break
+        else:
+            evidence.append({
+                "file": str(project_root / d), "line": 0,
+                "detail": f"Directory '{d}/' exists but is NOT mentioned in CLAUDE.md",
+            })
+
     score = (covered / len(top_dirs)) * 100
-    uncovered = [d for d in top_dirs if d.lower() not in content]
+    uncovered = [d for d in top_dirs if d.lower() not in content_lower]
     issues = [f"Uncovered directory: {d}" for d in uncovered[:5]]
-    return min(100, score), issues
+    return min(100, score), issues, evidence
 
-def grade_freshness(project_root: Path) -> tuple[float, list[str]]:
-    """Are docs stale vs recent git activity?"""
+def grade_freshness(project_root: Path) -> tuple[float, list[str], list[dict]]:
+    """Are docs stale vs recent git activity? Returns (score, issues, evidence)."""
     claude_md = project_root / "CLAUDE.md"
     if not claude_md.exists():
-        return 0.0, ["No CLAUDE.md"]
+        return 0.0, ["No CLAUDE.md"], []
 
     issues = []
+    evidence = []
     try:
         doc_mtime = datetime.fromtimestamp(claude_md.stat().st_mtime, tz=timezone.utc)
         age_days = (datetime.now(timezone.utc) - doc_mtime).days
+        mtime_str = doc_mtime.strftime("%Y-%m-%d %H:%M UTC")
+        evidence.append({
+            "file": "CLAUDE.md", "line": 0,
+            "detail": f"Last modified: {mtime_str} ({age_days} days ago)",
+        })
         if age_days > 30:
             score = max(0, 100 - age_days * 2)
             issues.append(f"CLAUDE.md last modified {age_days} days ago")
         else:
             score = 100.0
+
+        # Also check key companion docs for staleness
+        companion_docs = ["ROADMAP.md", "AUDIT_TRACKER.md", "FRAMEWORK_BLUEPRINT.md"]
+        for doc_name in companion_docs:
+            doc_path = project_root / doc_name
+            if doc_path.exists():
+                try:
+                    d_mtime = datetime.fromtimestamp(doc_path.stat().st_mtime, tz=timezone.utc)
+                    d_age = (datetime.now(timezone.utc) - d_mtime).days
+                    d_mtime_str = d_mtime.strftime("%Y-%m-%d %H:%M UTC")
+                    evidence.append({
+                        "file": doc_name, "line": 0,
+                        "detail": f"Last modified: {d_mtime_str} ({d_age} days ago)",
+                    })
+                except Exception:
+                    pass
     except Exception:
         score = 50.0
-    return score, issues
+    return score, issues, evidence
 
 
 # ── Part B: Output quality grading ────────────────────────────────────────
@@ -429,20 +558,43 @@ def grade_output_quality(project_root: Path) -> dict[str, tuple[float, list[str]
 
 # ── Full audit + gap analysis + report ────────────────────────────────────
 
+def _unpack_grade(result):
+    """Normalize grade results to (score, issues, evidence).
+
+    Grading functions may return 2-tuples (score, issues) from Part B
+    or 3-tuples (score, issues, evidence) from Part A.  This helper
+    normalises both to a consistent 3-tuple.
+    """
+    if len(result) == 3:
+        return result[0], result[1], result[2]
+    return result[0], result[1], []
+
+
 def run_full_audit(project_root: Path) -> dict:
-    """Run complete 10-dimension audit. Returns graded report."""
-    scores = {}
+    """Run complete 10-dimension audit. Returns graded report.
 
-    # Part A: Context quality
-    scores["completeness"] = grade_completeness(project_root)
-    scores["consistency"] = grade_consistency(project_root)
-    scores["actionability"] = grade_actionability(project_root)
-    scores["coverage"] = grade_coverage(project_root)
-    scores["freshness"] = grade_freshness(project_root)
+    Backward-compatible: output dict structure unchanged from A-tier.
+    Evidence is collected internally but not exposed in the return dict;
+    use run_evidence_audit() for S-tier with evidence.
+    """
+    raw_scores = {}
 
-    # Part B: Output quality
+    # Part A: Context quality (returns 3-tuples with evidence)
+    raw_scores["completeness"] = grade_completeness(project_root)
+    raw_scores["consistency"] = grade_consistency(project_root)
+    raw_scores["actionability"] = grade_actionability(project_root)
+    raw_scores["coverage"] = grade_coverage(project_root)
+    raw_scores["freshness"] = grade_freshness(project_root)
+
+    # Part B: Output quality (returns 2-tuples, no evidence yet)
     output_scores = grade_output_quality(project_root)
-    scores.update(output_scores)
+    raw_scores.update(output_scores)
+
+    # Normalise to (score, issues) for backward-compat calculations
+    scores = {}
+    for dim, result in raw_scores.items():
+        s, i, _ev = _unpack_grade(result)
+        scores[dim] = (s, i)
 
     # Calculate overall
     overall = 0
@@ -496,6 +648,54 @@ def find_gaps(scores: dict) -> list[dict]:
 
     return gaps
 
+
+def discover_novel_patterns(project_root: Path) -> list:
+    """Find patterns in the project that go beyond standard best practices.
+
+    Lightweight pattern-matching only (no LLM calls). Scans CLAUDE.md for
+    indicators of advanced engineering practices that are rare in typical
+    projects.
+    """
+    discoveries = []
+
+    claude_md = project_root / "CLAUDE.md"
+    if not claude_md.exists():
+        return discoveries
+
+    content = claude_md.read_text(encoding="utf-8", errors="ignore")
+    content_lower = content.lower()
+
+    # Check for patterns that exceed typical CLAUDE.md files
+    novel_checks = [
+        ("quality_flywheel", "Self-auditing quality system",
+         "quality_flywheel" in content_lower),
+        ("reinforcement_loop", "Human feedback reinforcement",
+         "reinforcement" in content_lower or "feedback" in content_lower),
+        ("multi_provider_fallback", "HA fallback chain documented",
+         "fallback" in content_lower and "chain" in content_lower),
+        ("compliance_framework", "HIPAA/SOC2 compliance integration",
+         "hipaa" in content_lower or "soc" in content_lower),
+        ("event_triggers", "Automated event-driven task dispatch",
+         "trigger" in content_lower and (
+             "file_watch" in content_lower or "webhook" in content_lower)),
+        ("context_windows", "Per-agent conversation memory",
+         "context_manager" in content_lower or "context window" in content_lower),
+        ("capacity_tracking", "API capacity window optimization",
+         "capacity" in content_lower and "bonus" in content_lower),
+    ]
+
+    for pattern_id, description, found in novel_checks:
+        if found:
+            discoveries.append({
+                "pattern": pattern_id,
+                "description": description,
+                "status": "implemented",
+                "rarity": "novel",  # not found in typical projects
+            })
+
+    return discoveries
+
+
 def format_audit_report(audit: dict, project_name: str = "") -> str:
     """Format audit results as markdown report."""
     ts = time.strftime("%Y-%m-%d %H:%M")
@@ -517,5 +717,154 @@ def format_audit_report(audit: dict, project_name: str = "") -> str:
             if gap.get("issues"):
                 for issue in gap["issues"]:
                     report += f"  - {issue}\n"
+
+    # S-tier sections (only present in evidence audits)
+    if audit.get("s_tier_eligible") is not None:
+        report += "\n## S-Tier Assessment\n"
+        report += f"- **Eligible:** {'Yes' if audit['s_tier_eligible'] else 'No'}\n"
+        report += f"- **S-Tier Grade:** {audit.get('s_tier_grade', 'N/A')}\n"
+        if audit.get("hallucinations"):
+            report += f"- **Hallucinations detected:** {len(audit['hallucinations'])}\n"
+            for h in audit["hallucinations"]:
+                report += f"  - [{h['dimension']}] {h['issue']}: {h['claim']}\n"
+
+    # Evidence section (only present in evidence audits)
+    has_evidence = any(data.get("evidence") for data in audit["scores"].values())
+    if has_evidence:
+        report += "\n## Evidence Citations\n"
+        for dim, data in audit["scores"].items():
+            if data.get("evidence"):
+                report += f"\n### {dim}\n"
+                for ev in data["evidence"]:
+                    loc = f"{ev['file']}:{ev['line']}" if ev.get("line") else ev["file"]
+                    report += f"- `{loc}` — {ev['detail']}\n"
+
     report += "\n"
     return report
+
+
+# ── S-Tier: evidence-only scoring + hallucination detection ───────────────
+
+def run_evidence_audit(project_root: Path) -> dict:
+    """S-tier audit: every score must cite file:line evidence. No approximations.
+
+    Wraps the same grading functions as run_full_audit() but collects evidence
+    from every dimension and demotes any score that lacks citations (capped at 80).
+    """
+    raw_scores = {}
+
+    # Part A: Context quality (returns 3-tuples with evidence)
+    raw_scores["completeness"] = grade_completeness(project_root)
+    raw_scores["consistency"] = grade_consistency(project_root)
+    raw_scores["actionability"] = grade_actionability(project_root)
+    raw_scores["coverage"] = grade_coverage(project_root)
+    raw_scores["freshness"] = grade_freshness(project_root)
+
+    # Part B: Output quality (returns 2-tuples, no evidence yet)
+    output_scores = grade_output_quality(project_root)
+    raw_scores.update(output_scores)
+
+    # Build scored dict with evidence
+    scores = {}
+    flat_scores = {}  # (score, issues) for find_gaps compat
+    for dim, result in raw_scores.items():
+        s, i, ev = _unpack_grade(result)
+        scores[dim] = {
+            "score": s,
+            "grade": score_to_grade(s),
+            "issues": list(i),
+            "evidence": list(ev),
+        }
+        flat_scores[dim] = (s, i)
+
+    # Validate every dimension has evidence — demote if missing
+    for dim, data in scores.items():
+        if not data["evidence"]:
+            data["score"] = min(data["score"], 80)
+            data["issues"].append(f"S-tier: no file:line evidence for {dim}")
+            data["grade"] = score_to_grade(data["score"])
+
+    # Calculate overall
+    overall = 0
+    for dim, data in scores.items():
+        weight = RUBRIC[dim]["weight"]
+        overall += data["score"] * weight
+
+    # Gap analysis (uses flat_scores format)
+    gaps = find_gaps(flat_scores)
+
+    # S-tier eligibility: all dimensions must be >= 95
+    all_95 = all(d["score"] >= 95 for d in scores.values())
+
+    return {
+        "scores": scores,
+        "overall_score": round(overall, 1),
+        "overall_grade": score_to_grade(overall),
+        "gaps": gaps,
+        "s_tier_eligible": all_95,
+        "s_tier_grade": "S" if all_95 else score_to_grade(overall),
+    }
+
+
+def _check_hallucinations(audit: dict, project_root: Path) -> list[dict]:
+    """Verify each evidence citation actually exists in the file.
+
+    Scans every evidence entry in the audit and confirms:
+    1. The cited file exists on disk
+    2. The cited detail text appears in the file (first 30 chars checked)
+
+    Returns a list of hallucination dicts for any citation that fails verification.
+    """
+    hallucinations = []
+    for dim, data in audit["scores"].items():
+        for ev in data.get("evidence", []):
+            file_path = project_root / ev["file"]
+
+            # Skip directory references (path ends with /)
+            if ev["file"].endswith("/"):
+                if not file_path.exists():
+                    hallucinations.append({
+                        "dimension": dim,
+                        "claim": ev,
+                        "issue": "directory not found",
+                    })
+                continue
+
+            if not file_path.exists():
+                hallucinations.append({
+                    "dimension": dim,
+                    "claim": ev,
+                    "issue": "file not found",
+                })
+                continue
+
+            # Skip aggregate evidence (line=0 means no specific line citation)
+            if not ev.get("line") or ev["line"] == 0:
+                continue
+
+            # Check if cited content actually appears near the cited line
+            try:
+                content = file_path.read_text(encoding="utf-8", errors="ignore")
+                detail_snippet = ev.get("detail", "")
+                # Extract the actual quoted content from the detail string
+                # Details often look like: "+8pts Has code examples: ```bash"
+                # We check the last portion after the colon, if present
+                if ": " in detail_snippet:
+                    check_text = detail_snippet.split(": ", 1)[1][:30]
+                else:
+                    check_text = detail_snippet[:30]
+
+                if check_text and check_text not in content:
+                    hallucinations.append({
+                        "dimension": dim,
+                        "claim": ev,
+                        "issue": "content not found in file",
+                    })
+            except Exception:
+                hallucinations.append({
+                    "dimension": dim,
+                    "claim": ev,
+                    "issue": "could not read file",
+                })
+
+    return hallucinations

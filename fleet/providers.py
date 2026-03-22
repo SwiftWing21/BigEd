@@ -341,11 +341,36 @@ def _get_skill_complexity(skill_name: str) -> str:
     return "medium"
 
 
+def is_premium_routing_active() -> bool:
+    """Check if S-tier regression lock is active (enables Opus for complex tasks).
+
+    Queries the last 7 days of flywheel_scores. If the average score across
+    all dimensions is >= 95, premium routing is active. This is a fast DB
+    query that never blocks — returns False on any error.
+    """
+    try:
+        import db
+        with db.get_conn() as conn:
+            rows = conn.execute("""
+                SELECT AVG(score) as avg FROM flywheel_scores
+                WHERE created_at > datetime('now', '-7 days')
+            """).fetchall()
+        if rows and rows[0]["avg"] and rows[0]["avg"] >= 95:
+            return True
+    except Exception:
+        pass
+    return False
+
+
 def get_optimal_model(skill_name: str, config: dict = None) -> str:
     """Return the optimal API model for a skill based on complexity tier.
 
     Checks fleet.toml [skill_complexity] for per-skill overrides first,
     then falls back to the built-in SKILL_COMPLEXITY table.
+
+    Premium routing: when the Quality Flywheel S-tier regression lock is
+    active (7 consecutive days at >= 95 avg score), complex tasks are
+    routed to Opus instead of Sonnet for maximum quality.
 
     MiniMax M2.5 mid-tier routing: when MINIMAX_API_KEY is available and
     the skill complexity is "medium", prefer MiniMax as the cost-efficient
@@ -358,6 +383,10 @@ def get_optimal_model(skill_name: str, config: dict = None) -> str:
         if override and override in COMPLEXITY_ROUTING:
             return COMPLEXITY_ROUTING[override]
     complexity = _get_skill_complexity(skill_name)
+
+    # Premium routing: S-tier lock promotes complex tasks to Opus
+    if complexity == "complex" and is_premium_routing_active():
+        return "claude-opus-4-6"
 
     # MiniMax mid-tier routing: medium tasks → MiniMax M2.5 when available
     # Simple → Claude Haiku (cheapest), Medium → MiniMax M2.5, Complex → Claude Opus

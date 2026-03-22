@@ -31,6 +31,16 @@ def run(payload: dict, config: dict, log=None) -> dict:
         return _history(payload, config, log)
     elif action == "calibrate":
         return _calibrate(payload, config, log)
+    elif action == "discover":
+        from skills._flywheel_core import discover_novel_patterns
+        project_root = Path(payload.get("project_path", str(FLEET_DIR.parent)))
+        return {"discoveries": discover_novel_patterns(project_root)}
+    elif action == "regression_check":
+        return _regression_check(payload, config, log)
+    elif action == "verify":
+        return _verify(payload, config, log)
+    elif action == "s_tier":
+        return _s_tier(payload, config, log)
     else:
         return {"error": f"Unknown action: {action}"}
 
@@ -235,3 +245,224 @@ def _calibrate(payload, config, log):
         }
     except Exception as e:
         return {"error": str(e)}
+
+
+def _regression_check(payload, config, log):
+    """Check if S-tier has been maintained for 7+ consecutive days.
+
+    Returns a lock status dict. When s_tier_locked is True, the project
+    qualifies for premium model routing (Opus for complex tasks).
+    Gracefully handles cases where not enough historical data exists.
+    """
+    project_root = str(Path(payload.get("project_path", str(FLEET_DIR.parent))))
+
+    try:
+        import db
+        with db.get_conn() as conn:
+            # Get last 7 days of overall scores (avg per day)
+            rows = conn.execute("""
+                SELECT DISTINCT date(created_at) as day,
+                       AVG(score) as avg_score
+                FROM flywheel_scores
+                WHERE project_path = ?
+                AND created_at > datetime('now', '-7 days')
+                GROUP BY date(created_at)
+                ORDER BY day
+            """, (project_root,)).fetchall()
+    except Exception as e:
+        return {"s_tier_locked": False, "reason": f"DB error: {e}", "days": 0}
+
+    if len(rows) < 7:
+        return {
+            "s_tier_locked": False,
+            "reason": f"Only {len(rows)} days of data (need 7)",
+            "days": len(rows),
+        }
+
+    all_above_95 = all(r["avg_score"] >= 95 for r in rows)
+
+    if all_above_95:
+        avg = sum(r["avg_score"] for r in rows) / len(rows)
+        return {
+            "s_tier_locked": True,
+            "days_maintained": len(rows),
+            "avg_score": round(avg, 1),
+            "premium_routing_eligible": True,
+        }
+
+    # Find which days dropped below
+    drops = [{"day": r["day"], "score": round(r["avg_score"], 1)}
+             for r in rows if r["avg_score"] < 95]
+    return {
+        "s_tier_locked": False,
+        "reason": f"{len(drops)} days below 95",
+        "drops": drops,
+    }
+
+
+def _parse_llm_grades(response: str) -> dict[str, float]:
+    """Parse LLM-generated grades from free-text response.
+
+    Expects the LLM to mention dimension names followed by scores (0-100).
+    Tolerant of various formats: "completeness: 85", "completeness — 85/100", etc.
+    """
+    import re
+    grades = {}
+    # Match patterns like "completeness: 85" or "completeness — 85/100" or "completeness 85"
+    for dim in ("completeness", "consistency", "actionability", "coverage", "freshness",
+                "accuracy", "first_attempt_rate", "regression_rate",
+                "context_utilization", "feedback_incorporation"):
+        # Try several patterns
+        patterns = [
+            rf'{dim}\s*[:\-—=]\s*(\d{{1,3}})',
+            rf'{dim}\s+(\d{{1,3}})',
+        ]
+        for pat in patterns:
+            m = re.search(pat, response, re.I)
+            if m:
+                score = float(m.group(1))
+                grades[dim] = min(100, max(0, score))
+                break
+    return grades
+
+
+def _verify(payload, config, log):
+    """Multi-agent verification: run evidence audit twice independently, compare scores.
+
+    First run uses the deterministic grading engine. Second run uses an LLM
+    as an independent grader. Scores must agree within 5 points per dimension
+    for verification to pass.
+    """
+    from skills._flywheel_core import run_evidence_audit, format_audit_report, FLYWHEEL_DIR, RUBRIC
+    from skills._models import call_complex
+
+    project_root = Path(payload.get("project_path", str(FLEET_DIR.parent)))
+
+    # Run 1: deterministic evidence audit
+    audit1 = run_evidence_audit(project_root)
+
+    # Run 2: independent LLM grader
+    claude_md = project_root / "CLAUDE.md"
+    if claude_md.exists():
+        claude_md_content = claude_md.read_text(encoding="utf-8", errors="ignore")[:4000]
+    else:
+        claude_md_content = "(no CLAUDE.md found)"
+
+    dimensions_desc = "\n".join(
+        f"- {dim}: {info['description']}" for dim, info in RUBRIC.items()
+    )
+
+    prompt = (
+        f"Grade this project's CLAUDE.md on these 10 dimensions (0-100 each):\n"
+        f"{dimensions_desc}\n\n"
+        f"CLAUDE.md content:\n{claude_md_content}\n\n"
+        f"Output each dimension name followed by a colon and integer score. "
+        f"Example: completeness: 85"
+    )
+
+    try:
+        response = call_complex(
+            system="You are an independent quality auditor. Grade strictly based on evidence in the text. "
+                   "Do not inflate scores. A missing section means 0 for that section's contribution.",
+            user=prompt, config=config, max_tokens=1024,
+            skill_name="quality_flywheel")
+        audit2_scores = _parse_llm_grades(response)
+    except Exception as e:
+        log.warning(f"LLM verification failed: {e}")
+        audit2_scores = {}
+
+    # Compare — must agree within 5 points per dimension
+    disagreements = []
+    for dim in audit1["scores"]:
+        s1 = audit1["scores"][dim]["score"]
+        s2 = audit2_scores.get(dim, 50)
+        if abs(s1 - s2) > 5:
+            disagreements.append({
+                "dimension": dim,
+                "score_engine": s1,
+                "score_llm": s2,
+                "delta": abs(s1 - s2),
+            })
+
+    verified = len(disagreements) == 0 and len(audit2_scores) > 0
+
+    # Save verification report
+    FLYWHEEL_DIR.mkdir(parents=True, exist_ok=True)
+    report = format_audit_report(audit1, project_root.name)
+    report += "\n## Multi-Agent Verification\n"
+    report += f"- **Verified:** {'Yes' if verified else 'No'}\n"
+    report += f"- **LLM dimensions graded:** {len(audit2_scores)}\n"
+    report += f"- **Disagreements:** {len(disagreements)}\n"
+    for d in disagreements:
+        report += f"  - {d['dimension']}: engine={d['score_engine']}, llm={d['score_llm']} (delta {d['delta']})\n"
+
+    report_path = FLYWHEEL_DIR / f"verify_{time.strftime('%Y%m%d_%H%M%S')}.md"
+    report_path.write_text(report, encoding="utf-8")
+
+    log.info(f"Flywheel verify: verified={verified}, disagreements={len(disagreements)}")
+    return {
+        "verified": verified,
+        "disagreements": disagreements,
+        "audit": audit1,
+        "llm_scores": audit2_scores,
+        "saved_to": str(report_path),
+    }
+
+
+def _s_tier(payload, config, log):
+    """Full S-tier assessment: evidence audit + hallucination check.
+
+    This is the complete S-tier pipeline:
+    1. Run evidence-only audit (scores without evidence are capped at 80)
+    2. Verify all evidence citations against actual files (hallucination check)
+    3. Any hallucinations disqualify S-tier eligibility
+
+    Use action='verify' separately for multi-agent cross-validation.
+    """
+    from skills._flywheel_core import (
+        run_evidence_audit, _check_hallucinations, format_audit_report, FLYWHEEL_DIR
+    )
+
+    project_root = Path(payload.get("project_path", str(FLEET_DIR.parent)))
+
+    # Step 1: evidence audit
+    audit = run_evidence_audit(project_root)
+
+    # Step 2: hallucination check
+    hallucinations = _check_hallucinations(audit, project_root)
+    if hallucinations:
+        audit["s_tier_eligible"] = False
+        audit["hallucinations"] = hallucinations
+
+    # Save report
+    FLYWHEEL_DIR.mkdir(parents=True, exist_ok=True)
+    report = format_audit_report(audit, project_root.name)
+    report_path = FLYWHEEL_DIR / f"s_tier_{time.strftime('%Y%m%d_%H%M%S')}.md"
+    report_path.write_text(report, encoding="utf-8")
+
+    # Store in DB
+    try:
+        import db
+        def _store():
+            with db.get_conn() as conn:
+                for dim, data in audit["scores"].items():
+                    conn.execute(
+                        "INSERT INTO flywheel_scores (project_path, dimension, grade, score, details_json) VALUES (?,?,?,?,?)",
+                        (str(project_root), dim, data["grade"], data["score"],
+                         json.dumps({"issues": data["issues"], "evidence": data.get("evidence", [])})))
+        db._retry_write(_store)
+    except Exception:
+        pass
+
+    log.info(f"S-tier check: eligible={audit['s_tier_eligible']}, "
+             f"grade={audit['s_tier_grade']}, hallucinations={len(hallucinations)}")
+    return {
+        "s_tier_eligible": audit["s_tier_eligible"],
+        "s_tier_grade": audit["s_tier_grade"],
+        "overall_score": audit["overall_score"],
+        "overall_grade": audit["overall_grade"],
+        "scores": audit["scores"],
+        "hallucinations": hallucinations,
+        "gaps": audit["gaps"],
+        "saved_to": str(report_path),
+    }
