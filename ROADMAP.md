@@ -5,6 +5,24 @@
 
 ---
 
+## v0.170.05b — Sprint Consolidation (2026-03-22)
+
+GitHub issues confirmed implemented and closed. All items were shipped as part of `0.052.00b — Claude Manual Mode Integration` and verified against source on 2026-03-22.
+
+| Issue | Feature | Location |
+|-------|---------|----------|
+| #15 | Prompt queue management UI (Queue Builder tab) | `mod_manual_mode.py:199-290` |
+| #17 | Anomalous usage alerting — `_check_cost_anomaly()` (2.5× spike vs rolling avg) | `fleet/manual_mode.py:128-149` |
+| #18 | Auto-generate `audit-results_{ts}.md` + `task-briefing.md` | `fleet/manual_mode.py:154-257`, `launcher.py:3913` |
+| #19 | HITL approval gate — token budget dialog before >20% token increase | `fleet/manual_mode.py:282-301`, `mod_manual_mode.py:92-139` |
+| #20 | Minimum tab width enforced (`max(70, len(name)×7+24)`) | `launcher.py:985, 1024` |
+| #27 | Audit engine — `ManualModeEngine.run_queue()` via Anthropic API | `fleet/manual_mode.py:500-626` |
+
+**Left open (partial):**
+- **#16** Scheduler — backend complete (`supervisor.py:83-132`, `ManualModeEngine.get/set_scheduler()`), UI Scheduler tab not present in `mod_manual_mode.py`
+
+---
+
 ## Version Scheme
 
 | Era | Format | Example | Notes |
