@@ -88,6 +88,7 @@ BigEd/launcher/data/
 # ── Local machine config (personal hardware/env/MCP — never committed) ────────
 CLAUDE.USER.md
 .mcp.json
+push.sh
 
 # ── Fleet — runtime files (regenerated every run) ────────────────────────────
 fleet/.drders_heartbeat
