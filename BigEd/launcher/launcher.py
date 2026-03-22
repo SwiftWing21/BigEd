@@ -3499,6 +3499,10 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
         self._manual_chat_display.configure(state="disabled")
         self._manual_chat_display.see("end")
 
+    def _append_chat_response(self, text):
+        """Compat shim — routes to _append_tagged_message."""
+        self._append_tagged_message("system", text, getattr(self, '_active_provider', 'local'), "")
+
     def _set_streaming(self, active):
         """Toggle streaming indicator on active provider pill."""
         from ui.theme import PROVIDER_LOCAL, PROVIDER_CLAUDE, PROVIDER_GEMINI
@@ -3803,7 +3807,7 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
     def _voice_input(self):
         """Capture voice and transcribe to chat input."""
         self._mic_btn.configure(text="\u23fa", fg_color="#5a2020")
-        self._append_chat_response("[Listening... 5 seconds]")
+        self._append_tagged_message("system", "[Listening... 5 seconds]", self._active_provider, "")
 
         def _record():
             try:
@@ -3933,7 +3937,8 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
             pass
 
         fleet_status = "running" if self._system_running else "stopped"
-        selected_model = self._manual_model_var.get()
+        selected_model = getattr(self, '_model_swap_var', None)
+        selected_model = selected_model.get() if selected_model else "OAuth"
 
         ditl_line = f"- DITL: {'enabled' if ditl_enabled else 'disabled'}"
 
