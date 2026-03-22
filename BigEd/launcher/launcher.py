@@ -1802,52 +1802,8 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
             btn(s, "📋 Setup Walkthrough", lambda: WalkthroughDialog(self),
                 tip="Re-run the first-time setup walkthrough")
 
-        # ── CONSOLES (with provider status dots) ─────────────────────────────
-        s = section("CONSOLES", default_open=False)
-        _mode = _fleet_mode()
-        _api_disabled = _mode in ("offline", "air_gap")
-        _has_claude = _quick_key_check("ANTHROPIC_API_KEY")
-        _has_gemini = _quick_key_check("GEMINI_API_KEY")
-
-        # Status dots: green=key set, red=missing/offline
-        if _api_disabled:
-            _c_dot, _c_text, _c_tip, _c_state = RED, "Claude (offline)", "Disabled — offline mode", "disabled"
-            _g_dot, _g_text, _g_tip, _g_state = RED, "Gemini (offline)", "Disabled — offline mode", "disabled"
-        elif not _has_claude:
-            _c_dot, _c_text = RED, "Claude (no key)"
-            _c_tip = "Set ANTHROPIC_API_KEY in ~/.secrets or Key Manager to enable"
-            _c_state = "disabled"
-        else:
-            _c_dot, _c_text, _c_tip, _c_state = GREEN, "Claude Console", "Open an interactive Claude API chat with fleet dispatch support", "normal"
-
-        if _api_disabled:
-            pass  # already set above
-        elif not _has_gemini:
-            _g_dot, _g_text = RED, "Gemini (no key)"
-            _g_tip = "Set GEMINI_API_KEY in ~/.secrets or Key Manager to enable"
-            _g_state = "disabled"
-        else:
-            _g_dot, _g_text, _g_tip, _g_state = GREEN, "Gemini Console", "Open an interactive Gemini chat with fleet dispatch support", "normal"
-
-        _ollama_up = ollama_is_running()
-        _l_dot = GREEN if _ollama_up else RED
-        _l_suffix = "" if _ollama_up else " (offline)"
-
-        self._btn_claude_console = btn(s, f"🤖 {_c_text}", self._open_claude_console, "#1a1a2e", "#252540", tip=_c_tip)
-        self._btn_gemini_console = btn(s, f"✦  {_g_text}", self._open_gemini_console, "#1a2a1a", "#253525", tip=_g_tip)
-        if _c_state == "disabled":
-            self._btn_claude_console.configure(state="disabled")
-        if _g_state == "disabled":
-            self._btn_gemini_console.configure(state="disabled")
-        self._btn_local_console = btn(s, f"⚡ Local Console{_l_suffix}", self._open_local_console, "#2a2010", "#3a3020",
-            tip="Open an interactive Ollama chat — free, no API key needed")
-
-        # Store console dot colors so status poller can update labels later
-        self._console_dots = {
-            "claude": (_c_dot, self._btn_claude_console),
-            "gemini": (_g_dot, self._btn_gemini_console),
-            "local":  (_l_dot, self._btn_local_console),
-        }
+        # ── CONSOLES moved to Settings > Developer Consoles ──────────────
+        self._console_dots = {}  # compat — no longer in sidebar
 
         # ── BUILD ──────────────────────────────────────────────────────────────
         if DEV_MODE:
@@ -3256,28 +3212,79 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
         self._comm_request_cards = []
         self._comm_cards = []  # track rendered card widgets (compat)
 
-        # ── Manual Chat / VS Code Guide section ────────────────────────
+        # ── Unified Console section ────────────────────────────────────
         self._chat_container = ctk.CTkFrame(parent, fg_color=BG, corner_radius=0)
         self._chat_container.grid(row=2, column=0, sticky="nsew")
 
-        # Chat header with mode selector
-        chat_hdr = ctk.CTkFrame(self._chat_container, fg_color=BG2, height=36, corner_radius=0)
-        chat_hdr.pack(fill="x")
-        chat_hdr.pack_propagate(False)
-        self._chat_mode_label = ctk.CTkLabel(chat_hdr, text="Local Console", font=FONT_BOLD,
-                     text_color=GOLD, anchor="w")
-        self._chat_mode_label.pack(side="left", padx=12)
+        # Unified console state
+        if not hasattr(self, "_usage_tracker"):
+            from ui.usage_tracker import UsageTracker
+            self._usage_tracker = UsageTracker()
+        self._active_provider = "local"
+        self._provider_dots = {}
+        self._provider_pills = {}
+        self._streaming = False
 
-        self._manual_model_var = ctk.StringVar(value="Local (Ollama)")
-        ctk.CTkOptionMenu(
-            chat_hdr, variable=self._manual_model_var,
-            values=["Local (Ollama)", "Claude Code (VS Code)", "Gemini CLI (VS Code)"],
-            font=FONT_SM, width=180, height=26,
+        from ui.theme import (PROVIDER_LOCAL, PROVIDER_CLAUDE, PROVIDER_GEMINI,
+                              PROVIDER_OAUTH, PROVIDER_BG_LOCAL, PROVIDER_BG_CLAUDE,
+                              PROVIDER_BG_GEMINI)
+
+        # ── Provider Pills + Model Swapper ─────────────────────────
+        pill_row = ctk.CTkFrame(self._chat_container, fg_color=BG2, height=40, corner_radius=0)
+        pill_row.pack(fill="x")
+        pill_row.pack_propagate(False)
+
+        providers = [
+            ("Local", PROVIDER_LOCAL, PROVIDER_BG_LOCAL),
+            ("Claude", PROVIDER_CLAUDE, PROVIDER_BG_CLAUDE),
+            ("Gemini", PROVIDER_GEMINI, PROVIDER_BG_GEMINI),
+            ("OAuth", PROVIDER_OAUTH, None),
+        ]
+
+        for name, color, bg in providers:
+            pill = ctk.CTkButton(
+                pill_row, text=f"  {name}", width=90, height=28,
+                font=FONT_SM, corner_radius=14,
+                fg_color=bg or BG3, hover_color=color,
+                border_width=2 if name.lower() == self._active_provider else 0,
+                border_color=color,
+                command=lambda n=name.lower(): self._select_provider(n),
+            )
+            pill.pack(side="left", padx=4, pady=6)
+            self._provider_pills[name.lower()] = pill
+
+            # Connection dot
+            dot = ctk.CTkLabel(pill_row, text="\u2b24", font=("Segoe UI", 6),
+                               text_color=DIM)
+            dot.pack(side="left", padx=(0, 4))
+            self._provider_dots[name.lower()] = dot
+
+        # Model swapper (right-aligned)
+        self._model_swap_var = ctk.StringVar(value="qwen3:8b")
+        self._model_swap = ctk.CTkOptionMenu(
+            pill_row, variable=self._model_swap_var,
+            values=["qwen3:8b"], font=FONT_SM, width=160, height=26,
             fg_color=BG3,
-            command=self._on_manual_model_change,
-        ).pack(side="right", padx=8, pady=5)
+        )
+        self._model_swap.pack(side="right", padx=8, pady=6)
 
-        # ── Local console (shown when Local selected) ────────────────
+        # ── Usage Status Bar ───────────────────────────────────────
+        self._usage_bar_frame = ctk.CTkFrame(self._chat_container, fg_color=BG2,
+                                              height=48, corner_radius=0)
+        if self._settings.get("show_usage_bar", True):
+            self._usage_bar_frame.pack(fill="x")
+        self._usage_bar_frame.pack_propagate(False)
+
+        self._usage_labels = {}
+        for prov, color in [("local", PROVIDER_LOCAL), ("claude", PROVIDER_CLAUDE),
+                             ("gemini", PROVIDER_GEMINI)]:
+            lbl = ctk.CTkLabel(self._usage_bar_frame, text="",
+                                font=FONT_XS, text_color=color, anchor="w")
+            lbl.pack(side="left", padx=12, pady=2)
+            lbl.bind("<Button-1>", lambda e, p=prov: self._show_usage_popover(p))
+            self._usage_labels[prov] = lbl
+
+        # ── Chat Display ───────────────────────────────────────────
         self._local_chat_frame = ctk.CTkFrame(self._chat_container, fg_color="transparent")
         self._local_chat_frame.pack(fill="both", expand=True)
 
@@ -3287,13 +3294,14 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
         self._manual_chat_display.pack(fill="both", expand=True, padx=8, pady=4)
         self._manual_chat_display.configure(state="disabled")
 
+        # ── Input Row ──────────────────────────────────────────────
         input_row = ctk.CTkFrame(self._local_chat_frame, fg_color="transparent")
         input_row.pack(fill="x", padx=8, pady=(0, 8))
         input_row.grid_columnconfigure(0, weight=1)
 
         self._manual_chat_entry = ctk.CTkEntry(
             input_row, font=FONT, fg_color=BG2,
-            placeholder_text="Type a message or select an agent request above...")
+            placeholder_text="Message (Local) \u2014 switch provider with pills above...")
         self._manual_chat_entry.grid(row=0, column=0, sticky="ew", padx=(0, 4))
         self._manual_chat_entry.bind("<Return>", self._on_chat_enter)
 
@@ -3303,67 +3311,26 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
             command=self._send_manual_chat,
         ).grid(row=0, column=1)
 
-        # Microphone button (voice input)
         self._mic_btn = ctk.CTkButton(
             input_row, text="\U0001f3a4", width=36, height=30, font=("Segoe UI", 14),
             fg_color=BG3, hover_color=BG2,
             command=self._voice_input)
         self._mic_btn.grid(row=0, column=2, padx=(4, 0))
 
-        # ── VS Code guide (shown when Claude/Gemini selected) ────────
-        self._vscode_guide_frame = ctk.CTkFrame(self._chat_container, fg_color="transparent")
-        # NOT packed initially — shown when VS Code mode selected
+        # ── Initialize HITL poller ─────────────────────────────────
+        import sys as _sys
+        if str(FLEET_DIR) not in _sys.path:
+            _sys.path.insert(0, str(FLEET_DIR))
+        from hitl_responder import HITLFilePoller
+        if not hasattr(self, "_hitl_poller"):
+            def _hitl_send(task_id, response):
+                from data_access import FleetDB
+                return FleetDB.send_human_response(FLEET_DIR / "fleet.db", task_id, response)
+            self._hitl_poller = HITLFilePoller(_hitl_send)
 
-        guide_inner = ctk.CTkFrame(self._vscode_guide_frame, fg_color=BG2, corner_radius=CARD_RADIUS)
-        guide_inner.pack(fill="both", expand=True, padx=8, pady=8)
-
-        ctk.CTkLabel(guide_inner, text="VS Code Manual Mode",
-                     font=FONT_TITLE, text_color=GOLD).pack(pady=(16, 4))
-        ctk.CTkLabel(guide_inner, text="Open VS Code to work with Claude or Gemini directly",
-                     font=FONT_SM, text_color=DIM).pack(pady=(0, 12))
-
-        # How it works
-        guide_text = ctk.CTkTextbox(guide_inner, font=FONT_SM, fg_color=BG3,
-                                     text_color=TEXT, corner_radius=4, height=180)
-        guide_text.pack(fill="x", padx=16, pady=(0, 8))
-        guide_text.insert("1.0",
-            "How it works:\n"
-            "  1. Type your task below and click 'Open VS Code'\n"
-            "  2. BigEd writes task-briefing.md with fleet context\n"
-            "  3. VS Code opens with the briefing file\n"
-            "  4. Start Claude Code or Gemini CLI in the terminal\n\n"
-            "Agent interaction:\n"
-            "  - Fleet agents remain active while you work in VS Code\n"
-            "  - Agent HITL requests appear above in Agent Requests\n"
-            "  - Claude/Gemini read CLAUDE.md, fleet knowledge, MCP tools\n"
-            "  - Results are visible to fleet agents via shared files\n\n"
-            "Starting Claude Code:\n"
-            "  Ctrl+Shift+P → 'Claude: Open'  (or run 'claude' in terminal)\n\n"
-            "Starting Gemini CLI:\n"
-            "  Open terminal → run 'gemini'\n"
-            "  Toggle agent mode: /agent-mode (approval-gated ↔ autonomous)\n\n"
-            "Terms of Service:\n"
-            "  Prompts are sent to the selected provider (Anthropic/Google).\n"
-            "  Do not include PHI, credentials, or secrets."
-        )
-        guide_text.configure(state="disabled")
-
-        # VS Code launch row
-        vscode_row = ctk.CTkFrame(guide_inner, fg_color="transparent")
-        vscode_row.pack(fill="x", padx=16, pady=(0, 12))
-        vscode_row.grid_columnconfigure(0, weight=1)
-
-        self._vscode_task_entry = ctk.CTkEntry(
-            vscode_row, font=FONT, fg_color=BG3,
-            placeholder_text="Describe your task for VS Code session...")
-        self._vscode_task_entry.grid(row=0, column=0, sticky="ew", padx=(0, 4))
-        self._vscode_task_entry.bind("<Return>", lambda e: self._launch_vscode_from_guide())
-
-        ctk.CTkButton(
-            vscode_row, text="Open VS Code", width=120, height=30, font=FONT_SM,
-            fg_color=ACCENT, hover_color=ACCENT_H,
-            command=self._launch_vscode_from_guide,
-        ).grid(row=0, column=1)
+        # Start connection polling + model swapper population
+        self._safe_after(1000, self._check_provider_connections)
+        self._safe_after(1500, lambda: self._update_model_swapper("local"))
 
     def _toggle_comm_requests(self):
         """Toggle collapsible Agent Requests panel."""
@@ -3397,141 +3364,168 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
             self._comm_request_frame.configure(height=h)
             self._comm_request_frame.grid(row=1, column=0, sticky="ew")
 
-    # ── Manual Chat helpers ──────────────────────────────────────────────
+    # ── Unified Console helpers ──────────────────────────────────────────
 
-    def _launch_vscode_from_guide(self):
-        """Launch VS Code session from the guide panel entry."""
-        text = self._vscode_task_entry.get().strip()
-        if not text:
-            return
-        model = self._manual_model_var.get()
-        self._vscode_task_entry.delete(0, "end")
-        # Reuse the existing launch flow
-        self._manual_chat_display.configure(state="normal")
-        self._manual_chat_display.insert("end", f"\nYou: {text}\n")
-        self._manual_chat_display.configure(state="disabled")
-        self._launch_oauth_session(model, text)
+    def _select_provider(self, provider):
+        """Switch active provider in Fleet Comm unified console."""
+        from ui.theme import (PROVIDER_LOCAL, PROVIDER_CLAUDE, PROVIDER_GEMINI,
+                              PROVIDER_BG_LOCAL, PROVIDER_BG_CLAUDE, PROVIDER_BG_GEMINI)
 
-    def _on_manual_model_change(self, choice):
-        """Swap between Local console and VS Code guide."""
-        if "VS Code" in choice:
-            # Show VS Code guide, hide local console
-            self._local_chat_frame.pack_forget()
-            self._vscode_guide_frame.pack(fill="both", expand=True)
-            self._chat_mode_label.configure(text="VS Code Manual Mode")
-        else:
-            # Show local console, hide VS Code guide
-            self._vscode_guide_frame.pack_forget()
-            self._local_chat_frame.pack(fill="both", expand=True)
-            self._chat_mode_label.configure(text="Local Console")
+        if provider == "oauth":
+            self._launch_oauth_session("OAuth", "")
             return
 
-        if "Claude" in choice:
-            guidance = (
-                "━━━ Claude Code (VS Code) ━━━\n"
-                "How it works:\n"
-                "  1. Type your task in the chat box and press Send\n"
-                "  2. BigEd writes task-briefing.md with your request + fleet context\n"
-                "  3. VS Code opens to the project with task-briefing.md visible\n"
-                "  4. Claude Code starts with your task pre-loaded (if CLI available)\n\n"
-                "Agent interaction:\n"
-                "  • Fleet agents remain active — HITL requests flow to Fleet Comm\n"
-                "  • Claude Code reads fleet knowledge, CLAUDE.md, and MCP tools\n"
-                "  • Results from Claude Code are visible to fleet agents via shared files\n\n"
-                "Terms of Service:\n"
-                "  • Prompts sent to Anthropic — subject to Anthropic ToS\n"
-                "  • Do not include PHI, credentials, or secrets in your prompt\n\n"
-                "Type your task below and press Send to begin.\n"
-            )
-        else:
-            guidance = (
-                "━━━ Gemini CLI (VS Code) ━━━\n"
-                "How it works:\n"
-                "  1. Type your task in the chat box and press Send\n"
-                "  2. BigEd writes task-briefing.md with your request + fleet context\n"
-                "  3. VS Code opens to the project with task-briefing.md visible\n"
-                "  4. Use Gemini CLI in the VS Code terminal: gemini\n\n"
-                "Agent interaction:\n"
-                "  • Fleet agents remain active — HITL requests flow to Fleet Comm\n"
-                "  • Gemini reads the same project context as Claude Code\n"
-                "  • Toggle agent mode: approval-gated writes (default) or un-gated\n"
-                "    In Gemini CLI: /agent-mode to toggle autonomous writes\n\n"
-                "Terms of Service:\n"
-                "  • Prompts sent to Google — subject to Google ToS\n"
-                "  • Do not include PHI, credentials, or secrets in your prompt\n\n"
-                "Type your task below and press Send to begin.\n"
-            )
-        self._manual_chat_display.configure(state="normal")
-        self._manual_chat_display.insert("end", f"\nSystem:\n{guidance}\n")
-        self._manual_chat_display.configure(state="disabled")
-        self._manual_chat_display.see("end")
+        self._active_provider = provider
+        colors = {
+            "local": (PROVIDER_LOCAL, PROVIDER_BG_LOCAL),
+            "claude": (PROVIDER_CLAUDE, PROVIDER_BG_CLAUDE),
+            "gemini": (PROVIDER_GEMINI, PROVIDER_BG_GEMINI),
+        }
+        for name, pill in self._provider_pills.items():
+            if name == "oauth":
+                continue
+            c, bg = colors.get(name, (DIM, BG3))
+            if name == provider:
+                pill.configure(border_width=2, border_color=c, fg_color=bg)
+            else:
+                pill.configure(border_width=0, fg_color=BG3)
+
+        self._update_model_swapper(provider)
+        labels = {"local": "Local", "claude": "Claude", "gemini": "Gemini"}
+        self._manual_chat_entry.configure(
+            placeholder_text=f"Message ({labels.get(provider, provider)}) \u2014 switch provider with pills above..."
+        )
+
+    def _update_model_swapper(self, provider):
+        """Update model dropdown based on selected provider."""
+        mcfg = load_model_cfg()
+        if provider == "local":
+            def _fetch():
+                try:
+                    host = mcfg.get("ollama_host", "http://localhost:11434")
+                    req = urllib.request.Request(f"{host}/api/tags", method="GET")
+                    with urllib.request.urlopen(req, timeout=3) as r:
+                        data = json.loads(r.read())
+                    models = [m["name"] for m in data.get("models", [])]
+                    if not models:
+                        models = [mcfg.get("local", "qwen3:8b")]
+                    import sys as _sys
+                    if str(FLEET_DIR) not in _sys.path:
+                        _sys.path.insert(0, str(FLEET_DIR))
+                    import db
+                    trusted = db.get_registered_models()
+                    display = []
+                    for m in models:
+                        if m not in trusted:
+                            display.append(f"NEW: {m}")
+                        else:
+                            display.append(m)
+                    self._safe_after(0, lambda d=display: (
+                        self._model_swap.configure(values=d),
+                        self._model_swap_var.set(d[0] if d else "qwen3:8b"),
+                    ))
+                except Exception:
+                    default = mcfg.get("local", "qwen3:8b")
+                    self._safe_after(0, lambda: (
+                        self._model_swap.configure(values=[default]),
+                        self._model_swap_var.set(default),
+                    ))
+            threading.Thread(target=_fetch, daemon=True).start()
+        elif provider == "claude":
+            models = ["claude-haiku-4-5", "claude-sonnet-4-6", "claude-opus-4-6"]
+            self._model_swap.configure(values=models)
+            self._model_swap_var.set(mcfg.get("claude_model", "claude-sonnet-4-6"))
+        elif provider == "gemini":
+            models = [mcfg.get("gemini_model", "gemini-2.0-flash")]
+            self._model_swap.configure(values=models)
+            self._model_swap_var.set(models[0])
 
     def _on_chat_enter(self, event):
         """Enter sends chat; Shift+Enter does nothing (single-line entry)."""
-        if event.state & 0x1:  # Shift held
-            return  # ignore — single-line entry, no newline needed
+        if event.state & 0x1:
+            return
         self._send_manual_chat()
         return "break"
 
     def _send_manual_chat(self):
-        """Send a message from the Manual Chat input."""
+        """Send a message from the unified Fleet Comm console."""
         text = self._manual_chat_entry.get().strip()
         if not text:
             return
-        model = self._manual_model_var.get()
         self._manual_chat_entry.delete(0, "end")
+        self._append_tagged_message("user", text, self._active_provider, "")
 
-        # Append user message to display
-        self._manual_chat_display.configure(state="normal")
-        self._manual_chat_display.insert("end", f"\nYou: {text}\n")
-        self._manual_chat_display.configure(state="disabled")
-        self._manual_chat_display.see("end")
-
-        # If a HITL task is loaded, route the response back to the waiting agent
+        # Handle HITL context
         hitl_id = getattr(self, '_active_hitl_task_id', None)
         hitl_agent = getattr(self, '_active_hitl_agent', None)
         if hitl_id is not None:
             self._send_human_response(hitl_id, text)
             self._active_hitl_task_id = None
             self._active_hitl_agent = None
-            # Visual feedback: confirm HITL loop closure in chat display
             agent_label = hitl_agent or "agent"
-            self._manual_chat_display.configure(state="normal")
-            self._manual_chat_display.insert(
-                "end",
-                f"\n─── Response sent to {agent_label} (task #{hitl_id}) ───\n"
-            )
-            self._manual_chat_display.configure(state="disabled")
-            self._manual_chat_display.see("end")
-            # Refresh comm to update badge/card list after HITL close
+            self._append_tagged_message(
+                "system", f"Response sent to {agent_label} (task #{hitl_id})",
+                self._active_provider, "")
             self._safe_after(500, self._refresh_comm)
+            return
 
-        if "VS Code" in model:
-            # If HITL is active, do NOT auto-close the HITL loop yet —
-            # the operator will send the final response after reviewing VS Code output.
-            # Restore the HITL context so it stays armed.
-            if hitl_id is not None:
-                self._active_hitl_task_id = hitl_id
-                self._active_hitl_agent = hitl_agent
-                self._manual_chat_display.configure(state="normal")
-                self._manual_chat_display.delete("end-3l", "end")  # remove premature close msg
-                self._manual_chat_display.insert(
-                    "end",
-                    f"\n─── Launching VS Code for analysis — HITL #{hitl_id} still active ───\n"
-                    f"Send your final response after reviewing the VS Code output.\n"
-                )
-                self._manual_chat_display.configure(state="disabled")
-                self._manual_chat_display.see("end")
-            self._launch_oauth_session(model, text)
+        # Route to active provider
+        provider = self._active_provider
+        model = self._model_swap_var.get().replace("NEW: ", "")
+        self._set_streaming(True)
+
+        if provider == "local":
+            threading.Thread(target=self._unified_local_chat,
+                             args=(text, model), daemon=True).start()
+        elif provider == "claude":
+            threading.Thread(target=self._unified_claude_chat,
+                             args=(text, model), daemon=True).start()
+        elif provider == "gemini":
+            threading.Thread(target=self._unified_gemini_chat,
+                             args=(text, model), daemon=True).start()
+
+    def _append_tagged_message(self, role, text, provider, model):
+        """Append a provider-tagged message to the unified chat display."""
+        self._manual_chat_display.configure(state="normal")
+        if role == "user":
+            self._manual_chat_display.insert("end", f"\nYou: {text}\n")
+        elif role == "system":
+            self._manual_chat_display.insert("end", f"\n\u2500\u2500\u2500 {text} \u2500\u2500\u2500\n")
         else:
-            threading.Thread(target=self._local_chat, args=(text,), daemon=True).start()
+            provider_icons = {"local": "\u26a1", "claude": "\U0001f916", "gemini": "\u2726"}
+            icon = provider_icons.get(provider, "")
+            tag = f"[{model}]" if model else f"[{provider}]"
+            self._manual_chat_display.insert("end", f"\n{icon} {tag} {text}\n")
+        self._manual_chat_display.configure(state="disabled")
+        self._manual_chat_display.see("end")
 
-    def _local_chat(self, prompt):
-        """Send prompt to local Ollama and stream response."""
+    def _set_streaming(self, active):
+        """Toggle streaming indicator on active provider pill."""
+        from ui.theme import PROVIDER_LOCAL, PROVIDER_CLAUDE, PROVIDER_GEMINI
+        self._streaming = active
+        pill = self._provider_pills.get(self._active_provider)
+        if not pill:
+            return
+        colors = {"local": PROVIDER_LOCAL, "claude": PROVIDER_CLAUDE,
+                  "gemini": PROVIDER_GEMINI}
+        color = colors.get(self._active_provider, DIM)
+        if active:
+            pill.configure(border_width=3, border_color=color)
+            self._manual_chat_entry.configure(placeholder_text="Waiting for response...")
+        else:
+            pill.configure(border_width=2, border_color=color)
+            labels = {"local": "Local", "claude": "Claude", "gemini": "Gemini"}
+            self._manual_chat_entry.configure(
+                placeholder_text=f"Message ({labels.get(self._active_provider, '')})..."
+            )
+
+    # ── Provider API calls ─────────────────────────────────────────────
+
+    def _unified_local_chat(self, prompt, model):
+        """Send to Ollama with usage tracking and quarantine for new models."""
         try:
             mcfg = load_model_cfg()
             host = mcfg.get("ollama_host", "http://localhost:11434")
-            model = mcfg.get("local", "qwen3:8b")
             body = json.dumps({
                 "model": model, "prompt": prompt,
                 "stream": False, "options": {"num_gpu": 99},
@@ -3541,17 +3535,270 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
                 headers={"Content-Type": "application/json"})
             with urllib.request.urlopen(req, timeout=120) as r:
                 resp = json.loads(r.read())
-            response = resp.get("response", "No response")
-            self._safe_after(0, lambda r=response: self._append_chat_response(r))
-        except Exception as e:
-            self._safe_after(0, lambda e=str(e): self._append_chat_response(f"Error: {e}"))
 
-    def _append_chat_response(self, text):
-        """Append an assistant response to the Manual Chat display."""
+            response = resp.get("response", "No response")
+            tok_out = resp.get("eval_count", 0)
+            tok_in = resp.get("prompt_eval_count", 0)
+            eval_ns = resp.get("eval_duration", 0)
+            tps = (tok_out / (eval_ns / 1e9)) if eval_ns > 0 else 0.0
+
+            self._usage_tracker.record("local", model, tokens_in=tok_in,
+                                        tokens_out=tok_out, tok_per_sec=tps)
+
+            import sys as _sys
+            if str(FLEET_DIR) not in _sys.path:
+                _sys.path.insert(0, str(FLEET_DIR))
+            import db
+            is_new = not db.is_model_trusted(model)
+
+            def _show():
+                self._set_streaming(False)
+                self._append_tagged_message("assistant", response, "local", model)
+                self._update_usage_bar()
+                if is_new:
+                    self._show_quarantine_controls(model, response)
+
+            self._safe_after(0, _show)
+        except Exception as e:
+            self._safe_after(0, lambda: (
+                self._set_streaming(False),
+                self._append_tagged_message("assistant", f"Error: {e}", "local", model),
+            ))
+
+    def _unified_claude_chat(self, prompt, model):
+        """Send to Claude API with usage tracking."""
+        try:
+            key = os.environ.get("ANTHROPIC_API_KEY", "")
+            if not key:
+                self._safe_after(0, lambda: (
+                    self._set_streaming(False),
+                    self._append_tagged_message("system",
+                        "ANTHROPIC_API_KEY not set. Configure in Settings > API Keys.",
+                        "claude", model),
+                ))
+                return
+
+            import anthropic
+            client = anthropic.Anthropic(api_key=key)
+            resp = client.messages.create(
+                model=model, max_tokens=1024,
+                messages=[{"role": "user", "content": prompt}],
+            )
+            response = resp.content[0].text
+            tok_in = resp.usage.input_tokens
+            tok_out = resp.usage.output_tokens
+
+            cost = 0.0
+            if "haiku" in model:
+                cost = (tok_in * 0.80 + tok_out * 4.0) / 1_000_000
+            elif "sonnet" in model:
+                cost = (tok_in * 3.0 + tok_out * 15.0) / 1_000_000
+            elif "opus" in model:
+                cost = (tok_in * 15.0 + tok_out * 75.0) / 1_000_000
+
+            self._usage_tracker.record("claude", model, tokens_in=tok_in,
+                                        tokens_out=tok_out, cost=cost)
+            self._safe_after(0, lambda: (
+                self._set_streaming(False),
+                self._append_tagged_message("assistant", response, "claude", model),
+                self._update_usage_bar(),
+            ))
+        except Exception as e:
+            self._safe_after(0, lambda: (
+                self._set_streaming(False),
+                self._append_tagged_message("assistant", f"Error: {e}", "claude", model),
+            ))
+
+    def _unified_gemini_chat(self, prompt, model):
+        """Send to Gemini API with usage tracking."""
+        try:
+            key = os.environ.get("GEMINI_API_KEY", "")
+            if not key:
+                self._safe_after(0, lambda: (
+                    self._set_streaming(False),
+                    self._append_tagged_message("system",
+                        "GEMINI_API_KEY not set. Configure in Settings > API Keys.",
+                        "gemini", model),
+                ))
+                return
+
+            from google import genai
+            client = genai.Client(api_key=key)
+            resp = client.models.generate_content(model=model, contents=prompt)
+            response = resp.text
+
+            tok_in = getattr(resp.usage_metadata, "prompt_token_count", 0) or 0
+            tok_out = getattr(resp.usage_metadata, "candidates_token_count", 0) or 0
+            cost = (tok_in * 0.075 + tok_out * 0.30) / 1_000_000
+
+            self._usage_tracker.record("gemini", model, tokens_in=tok_in,
+                                        tokens_out=tok_out, cost=cost)
+            self._safe_after(0, lambda: (
+                self._set_streaming(False),
+                self._append_tagged_message("assistant", response, "gemini", model),
+                self._update_usage_bar(),
+            ))
+        except Exception as e:
+            self._safe_after(0, lambda: (
+                self._set_streaming(False),
+                self._append_tagged_message("assistant", f"Error: {e}", "gemini", model),
+            ))
+
+    # ── Connection status + Usage bar ──────────────────────────────────
+
+    def _check_provider_connections(self):
+        """Poll provider availability and update connection dots."""
+        def _check():
+            results = {}
+            try:
+                mcfg = load_model_cfg()
+                host = mcfg.get("ollama_host", "http://localhost:11434")
+                req = urllib.request.Request(f"{host}/api/tags", method="GET")
+                with urllib.request.urlopen(req, timeout=3) as r:
+                    json.loads(r.read())
+                results["local"] = "green"
+            except Exception:
+                results["local"] = "red"
+            results["claude"] = "green" if os.environ.get("ANTHROPIC_API_KEY") else "gray"
+            results["gemini"] = "green" if os.environ.get("GEMINI_API_KEY") else "gray"
+
+            dot_colors = {"green": GREEN, "red": RED, "gray": DIM}
+            self._safe_after(0, lambda: [
+                self._provider_dots[p].configure(text_color=dot_colors.get(s, DIM))
+                for p, s in results.items() if p in self._provider_dots
+            ])
+
+        threading.Thread(target=_check, daemon=True).start()
+        self._safe_after(30_000, self._check_provider_connections)
+
+    def _update_usage_bar(self):
+        """Refresh the usage status bar labels."""
+        for prov, lbl in self._usage_labels.items():
+            line = self._usage_tracker.format_line(prov)
+            prefix = {"local": "\u26a1 Local: ", "claude": "\U0001f916 Claude: ",
+                      "gemini": "\u2726 Gemini: "}
+            if line:
+                lbl.configure(text=f"{prefix.get(prov, '')}{line}")
+            else:
+                lbl.configure(text="")
+
+    def _show_usage_popover(self, provider):
+        """Show all-time usage from fleet.db (click on usage bar line)."""
+        try:
+            import sys as _sys
+            if str(FLEET_DIR) not in _sys.path:
+                _sys.path.insert(0, str(FLEET_DIR))
+            from cost_tracking import get_usage_summary
+            summary = get_usage_summary("all", group_by="model")
+            lines = [f"All-time usage ({provider}):"]
+            for row in summary:
+                if row.get("provider") == provider or provider == "local":
+                    lines.append(f"  {row.get('model', '?')}: "
+                                 f"{row.get('total_tokens', 0)} tok, "
+                                 f"${row.get('total_cost', 0):.3f}")
+            msg = "\n".join(lines) if len(lines) > 1 else "No all-time data yet."
+            self._append_tagged_message("system", msg, provider, "")
+        except Exception as e:
+            self._append_tagged_message("system", f"Usage query error: {e}", provider, "")
+
+    # ── Quarantine controls ────────────────────────────────────────────
+
+    def _show_quarantine_controls(self, model, response):
+        """Show Accept/Reject/Flag controls for unregistered model responses."""
         self._manual_chat_display.configure(state="normal")
-        self._manual_chat_display.insert("end", f"\nAssistant: {text}\n")
+        self._manual_chat_display.insert(
+            "end",
+            f"\n  \u26a0 Unregistered model: {model} \u2014 review response above\n"
+        )
         self._manual_chat_display.configure(state="disabled")
-        self._manual_chat_display.see("end")
+
+        qframe = ctk.CTkFrame(self._local_chat_frame, fg_color=BG2, corner_radius=4, height=32)
+        qframe.pack(fill="x", padx=8, pady=(0, 4))
+
+        ctk.CTkLabel(qframe, text=f"\u26a0 {model}", font=FONT_XS,
+                     text_color=ORANGE).pack(side="left", padx=8)
+
+        def _accept():
+            import sys as _sys
+            if str(FLEET_DIR) not in _sys.path:
+                _sys.path.insert(0, str(FLEET_DIR))
+            import db
+            count = db.record_model_accept(model)
+            qframe.destroy()
+            trust_threshold = 5
+            if count >= trust_threshold:
+                self._append_tagged_message("system",
+                    f"{model} marked as trusted ({count}/{trust_threshold} accepts).",
+                    "local", model)
+            else:
+                self._append_tagged_message("system",
+                    f"{model}: {count}/{trust_threshold} accepts toward trust.",
+                    "local", model)
+
+        def _reject():
+            qframe.destroy()
+            self._append_tagged_message("system",
+                f"Response from {model} rejected.", "local", model)
+
+        def _flag():
+            qframe.destroy()
+            self._append_tagged_message("system",
+                f"{model} flagged for review.", "local", model)
+
+        ctk.CTkButton(qframe, text="Accept", width=60, height=24, font=FONT_XS,
+                      fg_color=GREEN, hover_color="#388e3c",
+                      command=_accept).pack(side="right", padx=2, pady=4)
+        ctk.CTkButton(qframe, text="Reject", width=60, height=24, font=FONT_XS,
+                      fg_color=RED, hover_color="#c62828",
+                      command=_reject).pack(side="right", padx=2, pady=4)
+        ctk.CTkButton(qframe, text="Flag", width=60, height=24, font=FONT_XS,
+                      fg_color=ORANGE, hover_color="#e65100",
+                      command=_flag).pack(side="right", padx=2, pady=4)
+
+    # ── VS Code HITL reply ─────────────────────────────────────────────
+
+    def _reply_via_vscode(self, task_id, question, agent_name):
+        """Create HITL response file and open in VS Code."""
+        import sys as _sys
+        if str(FLEET_DIR) not in _sys.path:
+            _sys.path.insert(0, str(FLEET_DIR))
+        from hitl_responder import create_response_file
+
+        path = create_response_file(task_id, agent_name, question)
+        self._hitl_poller.watch(task_id, path)
+
+        code_exe = self._find_vscode()
+        if code_exe:
+            import subprocess
+            subprocess.Popen(
+                [code_exe, str(path)],
+                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+            )
+            self._append_tagged_message("system",
+                f"Opened hitl-response-{task_id}.md in VS Code. "
+                f"Edit and save to send response to {agent_name}.",
+                "local", "")
+        else:
+            self._append_tagged_message("system",
+                f"VS Code not found. Response file created at:\n{path}\n"
+                f"Edit and save it manually.",
+                "local", "")
+
+        self._safe_after(500, self._refresh_comm)
+
+    def _find_vscode(self):
+        """Locate VS Code executable."""
+        import shutil
+        code = shutil.which("code")
+        if code:
+            return code
+        for candidate in [
+            os.path.expandvars(r"%LOCALAPPDATA%\Programs\Microsoft VS Code\Code.exe"),
+            os.path.expandvars(r"%PROGRAMFILES%\Microsoft VS Code\Code.exe"),
+        ]:
+            if os.path.isfile(candidate):
+                return candidate
+        return None
 
     def _voice_input(self):
         """Capture voice and transcribe to chat input."""
@@ -4020,14 +4267,25 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
                     command=lambda t=tid, v=reply_var: self._send_human_response(t, v.get()),
                 ).grid(row=0, column=2)
 
-                # "Load to Chat" button: pre-fills Manual Chat and sets active HITL context
+                # Reply buttons: Local Chat + VS Code
                 task_type = item.get("type", "task")
+                btn_row = ctk.CTkFrame(card, fg_color="transparent")
+                btn_row.pack(fill="x", padx=8, pady=(0, 6))
+
                 ctk.CTkButton(
-                    card, text="↓ Load to Chat", width=110, height=22,
+                    btn_row, text="\u2193 Reply in Local Chat", width=140, height=22,
                     fg_color=BG3, hover_color=BG2, font=FONT_XS, text_color=DIM,
                     command=lambda t=tid, q=question, ag=agent_name, tt=task_type:
                         self._load_hitl_to_chat(t, q, ag, tt),
-                ).pack(anchor="e", padx=8, pady=(0, 6))
+                ).pack(side="left", padx=(0, 4))
+
+                from ui.theme import PROVIDER_OAUTH
+                ctk.CTkButton(
+                    btn_row, text="\U0001f4bb Reply in VS Code", width=140, height=22,
+                    fg_color=BG3, hover_color=BG2, font=FONT_XS, text_color=PROVIDER_OAUTH,
+                    command=lambda t=tid, q=question, ag=agent_name:
+                        self._reply_via_vscode(t, q, ag),
+                ).pack(side="left")
 
             # Render security advisories
             for adv in advisories:
