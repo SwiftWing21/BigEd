@@ -197,6 +197,7 @@ class Updater(ctk.CTk):
         self._running = False
         self._pending_self_update = False
         self._pending_release = None
+        self._consecutive_failures = 0
         self._start_time = 0.0
         self.protocol("WM_DELETE_WINDOW", self._on_close)
 
@@ -313,7 +314,7 @@ class Updater(ctk.CTk):
         btn_frame.grid_columnconfigure(3, weight=1)
 
         self._run_btn = ctk.CTkButton(
-            btn_frame, text="▶  Run Update", font=("RuneScape Bold 12", 11, "bold"),
+            btn_frame, text="▶  Update Now", font=("RuneScape Bold 12", 11, "bold"),
             width=140, height=34, fg_color="#2a6a2a", hover_color="#3a7a3a",
             command=lambda: self._start_update(force=False))
         self._run_btn.grid(row=0, column=0, padx=(12, 4), pady=9)
@@ -333,6 +334,11 @@ class Updater(ctk.CTk):
         self._status_lbl = ctk.CTkLabel(
             btn_frame, text="", font=("RuneScape Plain 11", 10), text_color=DIM)
         self._status_lbl.grid(row=0, column=4, padx=12, sticky="e")
+
+        # ── Failure warning bar (hidden until 3 consecutive failures) ────
+        self._fail_bar = ctk.CTkFrame(self, fg_color=BG3, height=36, corner_radius=0)
+        self._fail_bar.grid_columnconfigure(1, weight=1)
+        # Not gridded yet — shown by _show_failure_warning()
 
     # ── Status Check ─────────────────────────────────────────────────────────
     def _check_git_status(self):
@@ -444,8 +450,8 @@ class Updater(ctk.CTk):
         self._running = True
         self._start_time = time.time()
         self._update_stopwatch()
-        for btn in (self._run_btn, self._force_btn):
-            btn.configure(state="disabled")
+        self._run_btn.configure(state="disabled", text="Updating...", text_color=GOLD)
+        self._force_btn.configure(state="disabled")
         self._log.configure(state="normal")
         self._log.delete("1.0", "end")
         self._log.configure(state="disabled")
@@ -510,7 +516,7 @@ class Updater(ctk.CTk):
                     self._status_lbl.configure(text="Update failed", text_color=RED),
                 ))
                 self._running = False
-                self.after(0, self._re_enable_btns)
+                self.after(0, self._on_failure)
                 return
 
         self.after(0, lambda s=skipped: self._on_complete(s))
@@ -541,7 +547,7 @@ class Updater(ctk.CTk):
                 self._status_lbl.configure(text="Update failed", text_color=RED),
             ))
             self._running = False
-            self.after(0, self._re_enable_btns)
+            self.after(0, self._on_failure)
             return
 
         if release is None:
@@ -604,7 +610,7 @@ class Updater(ctk.CTk):
                 self._status_lbl.configure(text="Update failed", text_color=RED),
             ))
             self._running = False
-            self.after(0, self._re_enable_btns)
+            self.after(0, self._on_failure)
             return
 
         self.after(0, lambda: (
@@ -630,7 +636,7 @@ class Updater(ctk.CTk):
                 self._status_lbl.configure(text="Update failed", text_color=RED),
             ))
             self._running = False
-            self.after(0, self._re_enable_btns)
+            self.after(0, self._on_failure)
             return
         finally:
             if tmp_path.exists():
@@ -920,6 +926,7 @@ class Updater(ctk.CTk):
 
     def _on_complete(self, skipped: int = 0):
         self._running = False
+        self._consecutive_failures = 0
 
         # Record build stats if an actual compile/build step occurred (not just skips)
         if skipped < len(STEPS):
@@ -949,19 +956,76 @@ class Updater(ctk.CTk):
             text=f"✓ Done{skip_note}", text_color=GREEN)
         self._progress.configure(progress_color=GREEN)
         self._progress.set(1.0)
-        self._re_enable_btns()
         self._log_line("─" * 50)
-        if EXE_PATH.exists():
-            self._log_line(f"✓ {EXE_PATH}")
-            self._open_btn.configure(fg_color="#2a6a2a", hover_color="#3a7a3a")
-        else:
-            self._log_line("⚠ BigEdCC.exe not found — check log above.")
         if UPD_NEW_PATH.exists():
             self._pending_self_update = True
             self._log_line("✓ Updater_new.exe staged — Updater will self-update on close")
 
+        if EXE_PATH.exists():
+            self._log_line(f"✓ {EXE_PATH}")
+            self._open_btn.configure(fg_color="#2a6a2a", hover_color="#3a7a3a")
+            # Auto-launch BigEdCC
+            self._run_btn.configure(
+                text="Auto-launching BigEd CC...", text_color=GREEN,
+                state="disabled")
+            self._force_btn.configure(state="disabled")
+            self._log_line("Launching BigEd CC...")
+            self.after(1500, self._auto_launch_bigedcc)
+        else:
+            self._log_line("⚠ BigEdCC.exe not found — check log above.")
+            self._re_enable_btns()
+
         # Model health check — recover missing Ollama models
         threading.Thread(target=self._check_and_recover_models, daemon=True).start()
+
+    def _auto_launch_bigedcc(self):
+        """Launch BigEdCC.exe after successful update, then close updater."""
+        if EXE_PATH.exists():
+            subprocess.Popen([str(EXE_PATH)], cwd=str(DIST_DIR))
+        self._on_close()
+
+    def _on_failure(self):
+        """Handle update failure: track consecutive failures, update button state."""
+        self._consecutive_failures += 1
+        if self._consecutive_failures >= 3:
+            self._run_btn.configure(
+                state="disabled", text="▶  Update Now",
+                text_color=TEXT, fg_color="#2a6a2a")
+            self._force_btn.configure(state="disabled")
+            self._show_failure_warning()
+        else:
+            self._re_enable_btns()
+
+    def _show_failure_warning(self):
+        """Display the persistent failure warning bar with reset button."""
+        # Clear any previous children
+        for child in self._fail_bar.winfo_children():
+            child.destroy()
+
+        ctk.CTkLabel(
+            self._fail_bar,
+            text="Updates failing repeatedly. Try uninstalling and reinstalling. "
+                 "Your fleet data will be preserved.",
+            font=("RuneScape Plain 11", 10), text_color=RED,
+            wraplength=500, anchor="w",
+        ).grid(row=0, column=0, padx=(12, 4), pady=6, sticky="w")
+
+        ctk.CTkButton(
+            self._fail_bar, text="Reset", font=("RuneScape Plain 11", 9),
+            width=60, height=26, fg_color=BG2, hover_color=BG,
+            command=self._reset_failure_counter,
+        ).grid(row=0, column=2, padx=(4, 12), pady=6, sticky="e")
+
+        # Show the bar between log and buttons (row 3, shift buttons to row 4)
+        self._fail_bar.grid(row=4, column=0, sticky="ew")
+
+    def _reset_failure_counter(self):
+        """Clear consecutive failure count and re-enable update buttons."""
+        self._consecutive_failures = 0
+        self._fail_bar.grid_forget()
+        self._re_enable_btns()
+        self._status_lbl.configure(text="Failure counter reset", text_color=DIM)
+        self._log_line("Failure counter reset — updates re-enabled")
 
     def _on_close(self):
         self._launch_swap_if_needed()
@@ -987,7 +1051,9 @@ class Updater(ctk.CTk):
         )
 
     def _re_enable_btns(self):
-        self._run_btn.configure(state="normal", text="▶  Run Update")
+        self._run_btn.configure(
+            state="normal", text="▶  Update Now",
+            text_color=TEXT, fg_color="#2a6a2a")
         self._force_btn.configure(state="normal")
 
 
@@ -1008,16 +1074,12 @@ class AutoUpdater(Updater):
         self.after(600, lambda: self._start_update(force=False))
 
     def _on_complete(self, skipped: int = 0):
+        # AutoUpdater uses its own relaunch — call parent but it will
+        # already set button to "Auto-launching BigEd CC..." and schedule
+        # _auto_launch_bigedcc, which is what we want.
         super()._on_complete(skipped)
         self._status_lbl.configure(
             text="Relaunching BigEdCC...", text_color=GREEN)
-        self.after(1500, self._relaunch)
-
-    def _relaunch(self):
-        self._launch_swap_if_needed()
-        if EXE_PATH.exists():
-            subprocess.Popen([str(EXE_PATH)])
-        self.destroy()
 
 
 # ─── Entry ────────────────────────────────────────────────────────────────────
