@@ -1401,6 +1401,35 @@ Completed 2026-03-22. Three new skill systems:
 - [x] Queue management — 4 endpoints: queue list, priority change, cancel, requeue
 - [x] Fleet control plugin — `.claude/skills/fleet-control.md` with 34 CLI commands + 65+ REST API reference
 
+### 0.180.02b — Submit Issue Workflow
+
+**Goal:** In-app issue/feedback submission with API key scrubbing, error log attachment, and module hub routing.
+
+**Issue Types:**
+- [ ] Bug report — auto-attaches error logs, system info, repro steps template
+- [ ] Feature request — description + priority selector
+- [ ] Feedback — free-text with rating (1-5 stars)
+- [ ] Module submission — select existing module or propose new, routes to BigEd-ModuleHub repo
+
+**Submission Flow:**
+- [ ] "Report Issue" sidebar button opens submission dialog (replaces current minimal flow)
+- [ ] Type selector: Bug / Feature / Feedback / Module Submission
+- [ ] Auto-populate: BigEd version, OS, Python version, Ollama status, fleet status
+- [ ] Error log attachment: auto-collects last 50 lines from active log, user can edit before submit
+- [ ] API key scrubbing: scan submission text + logs for API key patterns, redact before send
+- [ ] Screenshot attachment: optional, uses existing screenshot skill
+- [ ] Module submission: dropdown of installed modules + "New Module" option, routes to BigEd-ModuleHub
+- [ ] Submit via GitHub Issues API (gh CLI) or fallback to open browser with pre-filled URL
+- [ ] Local backup: save copy to `fleet/knowledge/reports/issue_<date>.json` even if GitHub fails
+
+**Key Scrubbing Patterns:**
+- `sk-ant-*`, `sk-*` (Anthropic)
+- `AI*` (Gemini)
+- `ghp_*`, `github_pat_*` (GitHub)
+- `xoxb-*` (Slack)
+- `BSA*` (Brave)
+- Generic: any 32+ char alphanumeric string after `KEY=` or `TOKEN=`
+
 ---
 
 ## Audit Coverage Check (per AUDIT_TRACKER.md)
