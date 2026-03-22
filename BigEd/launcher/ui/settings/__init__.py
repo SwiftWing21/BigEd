@@ -36,6 +36,7 @@ _SETTINGS_NAV = [
     ("Review",     "review"),
     ("Operations", "operations"),
     ("MCP Servers", "mcp"),
+    ("Consoles",   "consoles"),
 ]
 
 
@@ -48,6 +49,7 @@ from ui.settings.keys import KeysPanelMixin
 from ui.settings.review import ReviewPanelMixin
 from ui.settings.operations import OperationsPanelMixin
 from ui.settings.mcp import McpPanelMixin, MCPWizardDialog
+from ui.settings.consoles import ConsolesPanelMixin
 from ui.settings.names import AgentNamesDialog
 from ui.settings.keys import KeyManagerDialog
 
@@ -61,6 +63,7 @@ class SettingsDialog(
     ReviewPanelMixin,
     OperationsPanelMixin,
     McpPanelMixin,
+    ConsolesPanelMixin,
     ctk.CTkToplevel,
 ):
     """Unified settings panel — dark glass look with left nav + content area."""
@@ -156,6 +159,7 @@ class SettingsDialog(
         self._build_review_panel()
         self._build_operations_panel()
         self._build_mcp_panel()
+        self._build_consoles_panel()
 
     def _show_section(self, key: str):
         if self._active_section == key:

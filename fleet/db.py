@@ -109,6 +109,13 @@ CREATE TABLE IF NOT EXISTS usage (
 CREATE INDEX IF NOT EXISTS idx_usage_skill ON usage(skill);
 CREATE INDEX IF NOT EXISTS idx_usage_created ON usage(created_at);
 
+CREATE TABLE IF NOT EXISTS trusted_models (
+    model       TEXT PRIMARY KEY,
+    trusted_at  TEXT DEFAULT (datetime('now')),
+    accept_count INTEGER DEFAULT 0,
+    notes       TEXT DEFAULT ''
+);
+
 CREATE TABLE IF NOT EXISTS idle_runs (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
     created_at  TEXT NOT NULL DEFAULT (datetime('now')),
@@ -344,6 +351,47 @@ def get_skill_quality_stats(hours=24):
             GROUP BY type ORDER BY avg_score DESC
         """, (f"-{hours} hours",)).fetchall()
         return [dict(r) for r in rows]
+
+
+def is_model_trusted(model: str) -> bool:
+    """Check if a model is in the trusted_models table."""
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT 1 FROM trusted_models WHERE model = ?", (model,)
+        ).fetchone()
+        return row is not None
+
+
+def record_model_accept(model: str) -> int:
+    """Increment accept count. Returns new count. Trusts at threshold."""
+    TRUST_THRESHOLD = 5
+    def _do():
+        with get_conn() as conn:
+            row = conn.execute(
+                "SELECT accept_count FROM trusted_models WHERE model = ?",
+                (model,),
+            ).fetchone()
+            if row:
+                new_count = row[0] + 1
+                conn.execute(
+                    "UPDATE trusted_models SET accept_count = ? WHERE model = ?",
+                    (new_count, model),
+                )
+                return new_count
+            else:
+                conn.execute(
+                    "INSERT INTO trusted_models (model, accept_count) VALUES (?, 1)",
+                    (model,),
+                )
+                return 1
+    return _retry_write(_do)
+
+
+def get_registered_models() -> list:
+    """Return list of all trusted model names."""
+    with get_conn() as conn:
+        rows = conn.execute("SELECT model FROM trusted_models").fetchall()
+        return [r[0] for r in rows]
 
 
 def register_agent(name, role, pid):

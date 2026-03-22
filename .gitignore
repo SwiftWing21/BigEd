@@ -28,6 +28,9 @@ fleet/rag.db-wal
 # ── Fleet — live status (regenerated on start) ────────────────────────────────
 fleet/STATUS.md
 
+# ── Fleet — ephemeral HITL response files ─────────────────────────────────────
+fleet/hitl-responses/*.md
+
 # ── Fleet — misplaced VS Code configs (Gemini artifacts) ─────────────────────
 fleet/launch.json
 fleet/tasks.json

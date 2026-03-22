@@ -86,6 +86,15 @@ GREEN    = "#4caf50"
 ORANGE   = "#ff9800"
 RED      = "#f44336"
 
+# Provider colors (for Fleet Comm unified console)
+PROVIDER_LOCAL    = "#d4a84b"   # gold — Ollama
+PROVIDER_CLAUDE   = "#6b8afd"  # blue — Anthropic
+PROVIDER_GEMINI   = "#4caf50"  # green — Google
+PROVIDER_OAUTH    = "#9c7cfc"   # purple — VS Code OAuth
+PROVIDER_BG_LOCAL  = "#2a2010"
+PROVIDER_BG_CLAUDE = "#0d0d2a"
+PROVIDER_BG_GEMINI = "#0d1a0d"
+
 # ─── Font Presets ────────────────────────────────────────────────────────────
 FONT_PRESETS = {
     "System Default": {
