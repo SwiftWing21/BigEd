@@ -93,6 +93,7 @@ def _check_manual_mode_schedule() -> None:
         sys.path.insert(0, str(FLEET_DIR))
         from manual_mode import ManualModeEngine
         from datetime import datetime, timezone, timedelta
+        import threading
 
         engine = ManualModeEngine()
         sched = engine.get_scheduler()
@@ -102,20 +103,37 @@ def _check_manual_mode_schedule() -> None:
         if not next_run:
             return
 
-        now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M")
-        if now >= next_run:
+        # Normalize next_run to a timezone-aware datetime for reliable comparison.
+        # get_scheduler() returns str(tomlkit_value): TOML datetimes stringify as
+        # ISO 8601 with "T" separator, while our strftime format uses a space —
+        # mixing both in a string comparison silently breaks the >= check.
+        try:
+            next_run_str = str(next_run).strip().replace("Z", "+00:00")
+            next_run_dt = datetime.fromisoformat(next_run_str)
+            if next_run_dt.tzinfo is None:
+                next_run_dt = next_run_dt.replace(tzinfo=timezone.utc)
+        except ValueError:
+            log.warning("[SCHED] next_run unparseable: %r — skipping", next_run)
+            return
+
+        now_dt = datetime.now(timezone.utc).replace(second=0, microsecond=0)
+        if now_dt >= next_run_dt:
             queue = engine.get_queue()
             if not queue:
                 log.info("[SCHED] Manual Mode scheduler fired but queue is empty — skipping")
             else:
                 log.info("[SCHED] Manual Mode scheduler firing: %d items", len(queue))
-                try:
-                    engine.run_queue(queue)
-                    log.info("[SCHED] Manual Mode scheduled run complete")
-                except Exception as exc:
-                    log.warning("[SCHED] Manual Mode scheduled run error: %s", exc)
+                # run_queue() makes blocking Claude API calls — run in a daemon thread
+                # so the supervisor loop is not frozen while the queue executes.
+                def _run(_engine=engine, _queue=queue):
+                    try:
+                        _engine.run_queue(_queue)
+                        log.info("[SCHED] Manual Mode scheduled run complete")
+                    except Exception as exc:
+                        log.warning("[SCHED] Manual Mode scheduled run error: %s", exc)
+                threading.Thread(target=_run, daemon=True).start()
 
-            # Advance or disable after firing
+            # Advance or disable after firing (regardless of queue state)
             if sched.get("mode") == "recurring":
                 interval = int(sched.get("interval_days", 1))
                 new_next = (
