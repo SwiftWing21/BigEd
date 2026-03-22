@@ -11,7 +11,7 @@
 
 **An operator-controlled system.** You dispatch tasks, agents execute them, and results flow back through a dashboard. Agents can request human input (HITL) but never act outside their scope without approval.
 
-**A platform, not a chatbot.** BigEd doesn't chat — it works. Agents have roles (coder, researcher, security, analyst, planner, archivist), skills (84 registered), and quality scores. They evolve their capabilities during idle time.
+**A platform, not a chatbot.** BigEd doesn't chat — it works. Agents have roles (coder, researcher, security, analyst, planner, archivist), skills (85 registered), and quality scores. They evolve their capabilities during idle time.
 
 ## What BigEd IS NOT
 
@@ -24,7 +24,7 @@
 
 ## Feature Summary
 
-### Fleet (6 active roles, 84 skills)
+### Fleet (6 active roles, 85 skills)
 
 | Role | What it does | Key outputs |
 |------|-------------|-------------|
@@ -35,7 +35,7 @@
 | **Security** | Security audits, penetration testing, secret rotation, encryption, advisory management | `knowledge/security/pending/`, `applied/` |
 | **Planner** | Workload planning, curriculum updates, evolution coordination, model recommendations | `knowledge/reports/` |
 
-### Skills by Category (84 total)
+### Skills by Category (85 total)
 
 | Category | Count | Examples |
 |----------|-------|---------|
@@ -53,7 +53,7 @@
 
 | System | Storage | Purpose |
 |--------|---------|---------|
-| **fleet.db** (SQLite) | 11 tables | Tasks, agents, messages, usage, audit, context, alerts, locks |
+| **fleet.db** (SQLite) | 12 tables | Tasks, agents, messages, usage, audit, context, alerts, locks, output_feedback, audit_runs |
 | **rag.db** (FTS5) | 3 tables | Full-text search index on markdown files (BM25 ranking) |
 | **tools.db** | Launcher data | Module state, CRM contacts, boot timing |
 | **audit.jsonl** | HMAC-signed log | Tamper-evident event trail |
@@ -183,8 +183,8 @@ Every skill produces a structured result dict. Common patterns:
 
 ---
 
-## Version: 0.170.04b (Beta)
+## Version: 0.170.05b (Beta)
 
-85 skills | 45+ API endpoints | 11 DB tables | 6 agent roles | 30+ config sections
+85 skills | 58 API endpoints | 12 DB tables | 6 agent roles | 30+ config sections
 
 Apache 2.0 License | Windows/Linux/macOS | Offline/Air-Gap capable

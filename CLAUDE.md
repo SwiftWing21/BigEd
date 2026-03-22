@@ -1,4 +1,4 @@
-# BigEd CC — Beta (0.051.04b)
+# BigEd CC — Beta (0.170.05b)
 
 ## Quick Start
 ```bash
@@ -17,7 +17,7 @@ python fleet/lead_client.py task "your instruction here"  # dispatch a task
 ## Docs (kept as separate files — too large to inline)
 - `AUDIT_TRACKER.md` — grading rubric (12 dimensions), scoreboard, resolved issues
 - `ROADMAP.md` — active plan, version history, audit coverage check
-- `FRAMEWORK_BLUEPRINT.md` — full architecture spec, data schema, 45+ endpoints
+- `FRAMEWORK_BLUEPRINT.md` — full architecture spec, data schema, 58 endpoints
 - `OPERATIONS.md` — runbook, CLI reference, troubleshooting, backup/recovery
 - `CROSS_PLATFORM.md` — platform matrix, FleetBridge ABC, migration priorities
 - `CONTRIBUTING.md` — contributor guide, skill authoring, code standards
@@ -42,7 +42,7 @@ End every roadmap with an Audit Coverage Check section.
 - Roadmap: `ROADMAP.md`
 
 ## Structure
-- `fleet/` — 80-skill AI worker fleet (Ollama + Claude/Gemini)
+- `fleet/` — 85-skill AI worker fleet (Ollama + Claude/Gemini)
 - `BigEd/` — launcher GUI + compliance docs
 - `autoresearch/` — ML training pipeline
 - `fleet/backup_manager.py` — auto-save backup system
@@ -51,11 +51,11 @@ End every roadmap with an Audit Coverage Check section.
 - `docs/specs/` — enterprise integration specs
 
 ## Fleet Status
-- Skills: 80 (added billing_ocr, token_optimizer, screenshot, packet_optimizer, regression_detector) | Dashboard: 50+ endpoints | Smoke: 22/22
+- Skills: 85 (added billing_ocr, token_optimizer, screenshot, packet_optimizer, regression_detector, clinical_review, + more) | Dashboard: 58 endpoints | Smoke: 22/22
 - Dynamic agent scaling: 4 core + demand-based | Dr. Ders: event-driven wake-up timer
 - Security: P0-P2 hardened (XSS, SQL injection, thread safety, zombie cleanup)
 - Backup: auto-save every 20min, configurable depth/location
-- v0.050.00b-0.051.04b: installer overhaul, model recovery, startup perf, autoresearch integration
+- v0.050.00b-0.170.05b: installer overhaul, model recovery, startup perf, autoresearch integration, deferred items sweep, feedback loop
 
 ## Gotchas
 - **Ollama PATH**: not on Git Bash PATH on Windows — supervisor auto-finds via `%LOCALAPPDATA%\Programs\Ollama`

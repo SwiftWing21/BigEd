@@ -2,7 +2,7 @@
 
 > Personal educational project — a vibe-coding experiment pushing the limits of what AI-assisted development can build. Welcome to review and scrutiny.
 
-BigEd CC is a local AI fleet platform built almost entirely through AI-assisted "vibe coding." It started as a learning exercise to explore how far you can push model-driven development and evolved into an 80-skill autonomous agent system with enterprise-grade guardrails. It is not a product — it is a reference implementation and playground for anyone curious about the real capabilities and limitations of building with AI.
+BigEd CC is a local AI fleet platform built almost entirely through AI-assisted "vibe coding." It started as a learning exercise to explore how far you can push model-driven development and evolved into an 85-skill autonomous agent system with enterprise-grade guardrails. It is not a product — it is a reference implementation and playground for anyone curious about the real capabilities and limitations of building with AI.
 
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 
@@ -17,7 +17,7 @@ BigEd CC is a local AI fleet platform built almost entirely through AI-assisted 
 
 - **Not a product or service** — There is no hosted version, no paying customers, no SaaS pitch
 - **Not a custom model** — BigEd orchestrates existing models (Ollama, Claude, Gemini); it does not train or fine-tune its own LLM
-- **Not production-hardened** — Currently in beta (v0.051.04b); the enterprise features (RBAC, DLP, audit logging) are implemented but not battle-tested at scale
+- **Not production-hardened** — Currently in beta (0.170.05b); the enterprise features (RBAC, DLP, audit logging) are implemented but not battle-tested at scale
 - **Not a low-code tool** — You need Python 3.11+ and a willingness to read code to work with it meaningfully
 
 ## How It Was Built — Model Contributions
@@ -43,7 +43,7 @@ Together, these files act as the project's "constitution" — the models follow 
 ## Features
 
 - **One-Click Setup** — Auto-installs Python, Ollama, models, and dependencies
-- **80+ AI Skills** — Code review, security audit, web research, ML training, and more
+- **85+ AI Skills** — Code review, security audit, web research, ML training, and more
 - **Dynamic Agent Scaling** — 4 core agents + demand-based scaling (up to 16)
 - **Multi-Model Support** — Ollama (local), Claude, Gemini, MiniMax M2.5
 - **Manual Mode** — OAuth integration for Claude Code and Gemini sessions
@@ -77,12 +77,12 @@ BigEd CC
 │   ├── ui/             — Boot sequence, settings, consoles, dialogs
 │   ├── modules/        — Intelligence, Ingestion, Outputs (pluggable)
 │   └── fonts/          — Custom pixel fonts
-├── fleet/              — 80-skill AI worker fleet
+├── fleet/              — 85-skill AI worker fleet
 │   ├── supervisor.py   — Process lifecycle + dynamic scaling
 │   ├── hw_supervisor.py — Dr. Ders (thermal + model management)
 │   ├── dashboard.py    — Web dashboard (localhost:5555)
 │   ├── worker.py       — Generic task executor
-│   ├── skills/         — 80 registered skills
+│   ├── skills/         — 85 registered skills
 │   └── knowledge/      — Agent-generated artifacts
 ├── autoresearch/       — ML training pipeline (inspired by Karpathy)
 ├── scripts/            — Setup scripts (Windows/Linux/macOS)
