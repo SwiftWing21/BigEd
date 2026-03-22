@@ -302,7 +302,7 @@ SKILL_COMPLEXITY = {
         "code_index", "account_review", "stability_report", "benchmark",
         "screenshot", "billing_ocr", "marathon_log", "rag_compress",
         "knowledge_prune", "review_discards", "packet_optimizer",
-        "skill_draft",
+        "skill_draft", "claude_efficiency",
     ],
     "medium": [
         "web_search", "code_review", "discuss", "code_discuss",

@@ -23,7 +23,7 @@
 - Smoke: `python smoke_test.py --fast` (22/22)
 - Deps: `python dependency_check.py` (11 checks)
 - Export: `python lead_client.py export` | Import: `python lead_client.py import <file>`
-- Skills: 85 registered | Dashboard: 58 endpoints
+- Skills: 92 registered | Dashboard: 65+ endpoints
 - Security advisories: `knowledge/security/pending/advisory_<id>.md`
 - Process control: REST API (`/api/fleet/*`)
 

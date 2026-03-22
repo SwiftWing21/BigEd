@@ -201,7 +201,7 @@ enabled = true
 researcher = ["web_search", "arxiv_fetch", "summarize", "web_crawl", "browser_crawl", "rag_query", "unifi_manage", "home_assistant", "mqtt_inspect", "research_loop", "lead_research"]
 coder = ["code_write", "code_review", "code_discuss", "code_write_review", "code_index", "code_quality", "fma_review", "skill_draft", "skill_test", "skill_evolve", "skill_chain", "skill_learn", "skill_promote", "skill_train", "code_refactor", "refactor_verify", "deploy_skill", "claude_code", "git_manager", "github_interact", "github_sync", "branch_manager"]
 archivist = ["flashcard", "rag_index", "rag_query", "ingest", "rag_compress", "knowledge_prune", "marathon_log", "review_discards"]
-analyst = ["analyze_results", "benchmark", "synthesize", "evaluate", "billing_ocr", "token_optimizer", "packet_optimizer", "regression_detector", "stability_report", "swarm_intelligence"]
+analyst = ["analyze_results", "benchmark", "synthesize", "evaluate", "billing_ocr", "token_optimizer", "packet_optimizer", "regression_detector", "stability_report", "swarm_intelligence", "claude_efficiency"]
 # Permanently disabled agents removed from affinity (0.051.00b) — skills redistributed to active roles.
 # sales, onboarding, implementation, legal, account_manager affinities removed.
 # Their skills are covered by researcher (lead_research), coder (code_write, discuss),
@@ -376,3 +376,22 @@ hourly_health = {skill = "stability_report", interval_hours = 1}
 # v0.050.03b: Configurable boot timeouts — used by adaptive timeout in boot.py
 [boot]
 model_load_timeout = 300         # first-boot default timeout (seconds) for model loading
+
+# Claude Maximum Efficiency — capacity bonus window tracking
+[capacity]
+enabled = true
+provider = "claude"
+
+# Promotion windows (updated manually or via claude_efficiency skill)
+[[capacity.windows]]
+start = "2026-03-13"
+end = "2026-03-27"
+weekday_bonus_start_et = 14      # 2PM ET — bonus starts after this
+weekday_bonus_end_et = 8         # 8AM ET — bonus ends before this
+weekend_all_day = true
+multiplier = 2.0
+
+[capacity.auto_scale]
+deploy_agents = 2                # auto-deploy N extra agents during bonus
+prefer_claude = true             # route to Claude instead of local during bonus
+disable_budget_throttle = true   # bonus usage doesn't count against limits

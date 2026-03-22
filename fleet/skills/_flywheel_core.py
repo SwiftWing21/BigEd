@@ -119,11 +119,14 @@ def grade_consistency(project_root: Path) -> tuple[float, list[str]]:
 
     claude_text = claude_md.read_text(encoding="utf-8", errors="ignore")
 
-    # Check version consistency
-    versions = re.findall(r'v?(\d+\.\d+[\.\d]*[ab]?)', claude_text)
+    # Check version consistency — match project version format (X.XXX.XXb)
+    # Require at least 3-segment version with alpha/beta suffix to avoid matching
+    # unrelated versions like Apache_2.0 or Python 3.11
+    ver_re = r'v?(\d+\.\d{2,}\.\d+[ab]\b)'
+    versions = re.findall(ver_re, claude_text)
     if readme.exists():
         readme_text = readme.read_text(encoding="utf-8", errors="ignore")
-        readme_versions = re.findall(r'v?(\d+\.\d+[\.\d]*[ab]?)', readme_text)
+        readme_versions = re.findall(ver_re, readme_text)
         if versions and readme_versions and versions[0] != readme_versions[0]:
             issues.append(f"Version mismatch: CLAUDE.md={versions[0]}, README={readme_versions[0]}")
             score -= 20
@@ -150,19 +153,28 @@ def grade_actionability(project_root: Path) -> tuple[float, list[str]]:
         return 0.0, ["No CLAUDE.md"]
 
     content = claude_md.read_text(encoding="utf-8", errors="ignore")
-    score = 50.0  # base
+    score = 40.0  # base
     issues = []
 
     # Positive signals (specific, actionable)
     specific_patterns = [
-        (r'```', 10, "Has code examples"),
-        (r'never|always|must|do not', 8, "Has explicit rules"),
+        (r'```', 8, "Has code examples"),
+        (r'never|always|must|do not', 6, "Has explicit rules"),
         (r'python .*\.py', 5, "Has runnable commands"),
-        (r'\bpath\b.*/', 5, "Has file path references"),
+        (r'\bpath\b.*/', 4, "Has file path references"),
+        (r"#\s*DO[N']?T|# DON'T|# DO:", 8, "Has do/don't pairs"),
+        (r'\|.*\|.*\|', 5, "Has reference tables"),
+        (r'import\s+\w+', 5, "Has import examples"),
+        (r'def\s+\w+\(', 4, "Has function signature examples"),
+        (r'fleet\.toml|fleet\.db|CLAUDE\.md', 3, "References key project files"),
     ]
     for pattern, points, _desc in specific_patterns:
         if re.search(pattern, content, re.I):
             score += points
+
+    # Bonus: count of code blocks (more = more actionable, up to +12)
+    code_blocks = len(re.findall(r'```', content)) // 2
+    score += min(12, code_blocks * 2)
 
     # Negative signals (vague)
     vague_patterns = [
@@ -218,6 +230,137 @@ def grade_freshness(project_root: Path) -> tuple[float, list[str]]:
 
 # ── Part B: Output quality grading ────────────────────────────────────────
 
+def _grade_context_utilization(conn, project_root: Path) -> tuple[float, list[str]]:
+    """Check if CLAUDE.md conventions appear in recent task results.
+
+    Measures whether the AI actually references and follows documented patterns
+    by scanning recent DONE task results for mentions of key CLAUDE.md terms.
+    """
+    issues = []
+    claude_md = project_root / "CLAUDE.md"
+    if not claude_md.exists():
+        return 50.0, ["No CLAUDE.md to check utilization against"]
+
+    content = claude_md.read_text(encoding="utf-8", errors="ignore")
+
+    # Extract key convention markers from CLAUDE.md
+    markers = []
+    # Look for emphasized terms: **bold** items in gotchas / rules
+    bold_terms = re.findall(r'\*\*([^*]{3,40})\*\*', content)
+    # Filter to actionable terms (skip generic headings)
+    skip = {"goal", "status", "est. tokens", "dependencies", "grading alignment",
+            "default", "not", "a", "the", "how", "what"}
+    for term in bold_terms:
+        normalized = term.lower().strip()
+        if normalized not in skip and len(normalized) > 4:
+            markers.append(normalized)
+    markers = list(dict.fromkeys(markers))[:20]  # dedupe, cap at 20
+
+    if not markers:
+        return 75.0, ["No convention markers extracted from CLAUDE.md"]
+
+    # Check recent DONE task results for marker references
+    try:
+        rows = conn.execute("""
+            SELECT result_json FROM tasks
+            WHERE status = 'DONE' AND result_json IS NOT NULL
+            AND created_at > datetime('now', '-7 days')
+            ORDER BY created_at DESC LIMIT 50
+        """).fetchall()
+    except Exception:
+        return 70.0, ["Could not query recent task results"]
+
+    if not rows:
+        return 70.0, ["No recent DONE tasks to measure context utilization"]
+
+    # Count how many markers appear in at least one result
+    all_results = " ".join(
+        (r["result_json"] or "") for r in rows
+    ).lower()
+
+    matched = sum(1 for m in markers if m in all_results)
+    ratio = matched / max(1, len(markers))
+
+    # Score: 60 base + up to 40 from marker match ratio
+    score = 60.0 + ratio * 40.0
+    if ratio < 0.3:
+        issues.append(f"Only {matched}/{len(markers)} CLAUDE.md conventions referenced in recent outputs")
+
+    return min(100, score), issues
+
+
+def _grade_feedback_incorporation(conn) -> tuple[float, list[str]]:
+    """Check if rejected patterns from output_feedback recur after correction.
+
+    Measures whether previously rejected skill/agent combos continue to fail
+    or if corrections have been incorporated.
+    """
+    issues = []
+
+    try:
+        # Get rejected feedback entries from >3 days ago (old enough to have been fixed)
+        old_rejections = conn.execute("""
+            SELECT DISTINCT agent_name, skill_type FROM output_feedback
+            WHERE verdict = 'rejected'
+            AND created_at < datetime('now', '-3 days')
+            AND agent_name != '' AND skill_type != ''
+        """).fetchall()
+    except Exception:
+        return 75.0, ["Could not query output_feedback table"]
+
+    if not old_rejections:
+        # No old rejections = nothing to measure recurrence of
+        # Check if there are any feedback entries at all
+        try:
+            total = conn.execute(
+                "SELECT COUNT(*) as cnt FROM output_feedback"
+            ).fetchone()["cnt"]
+        except Exception:
+            total = 0
+
+        if total == 0:
+            return 75.0, ["No feedback data yet — score approximated"]
+        return 90.0, []  # Feedback exists but no old rejections = good
+
+    # For each old rejection, check if the same agent+skill combo was
+    # rejected again AFTER the original rejection (recurrence = bad)
+    recurred = 0
+    fixed = 0
+
+    for rej in old_rejections:
+        agent = rej["agent_name"]
+        skill = rej["skill_type"]
+
+        # Check for newer feedback on same agent+skill
+        recent = conn.execute("""
+            SELECT verdict FROM output_feedback
+            WHERE agent_name = ? AND skill_type = ?
+            AND created_at >= datetime('now', '-3 days')
+            ORDER BY created_at DESC LIMIT 1
+        """, (agent, skill)).fetchone()
+
+        if recent:
+            if recent["verdict"] == "rejected":
+                recurred += 1
+            else:
+                fixed += 1
+        else:
+            fixed += 1  # No recent entry = issue didn't recur
+
+    total_checked = recurred + fixed
+    if total_checked == 0:
+        return 80.0, []
+
+    fix_rate = fixed / total_checked
+    # Score: 60 base + up to 40 from fix rate
+    score = 60.0 + fix_rate * 40.0
+
+    if recurred > 0:
+        issues.append(f"{recurred}/{total_checked} rejected patterns recurred after correction")
+
+    return min(100, score), issues
+
+
 def grade_output_quality(project_root: Path) -> dict[str, tuple[float, list[str]]]:
     """Grade output quality dimensions from fleet.db task history."""
     results = {}
@@ -269,9 +412,11 @@ def grade_output_quality(project_root: Path) -> dict[str, tuple[float, list[str]
             issues.append(f"Quality declining: {lw:.0f} → {tw:.0f}")
         results["regression_rate"] = (min(100, regression), issues)
 
-        # Context utilization + feedback incorporation — approximate
-        results["context_utilization"] = (70.0, ["Approximated — full analysis requires LLM"])
-        results["feedback_incorporation"] = (75.0, ["Approximated — full analysis requires LLM"])
+        # Context utilization — check if CLAUDE.md conventions appear in recent task results
+        results["context_utilization"] = _grade_context_utilization(conn, project_root)
+
+        # Feedback incorporation — check if rejected patterns recur after correction
+        results["feedback_incorporation"] = _grade_feedback_incorporation(conn)
 
         conn.close()
     except Exception as e:

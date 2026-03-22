@@ -11,7 +11,7 @@
 
 **An operator-controlled system.** You dispatch tasks, agents execute them, and results flow back through a dashboard. Agents can request human input (HITL) but never act outside their scope without approval.
 
-**A platform, not a chatbot.** BigEd doesn't chat — it works. Agents have roles (coder, researcher, security, analyst, planner, archivist), skills (85 registered), and quality scores. They evolve their capabilities during idle time.
+**A platform, not a chatbot.** BigEd doesn't chat — it works. Agents have roles (coder, researcher, security, analyst, planner, archivist), skills (92 registered), and quality scores. They evolve their capabilities during idle time.
 
 ## What BigEd IS NOT
 
@@ -24,7 +24,7 @@
 
 ## Feature Summary
 
-### Fleet (6 active roles, 85 skills)
+### Fleet (6 active roles, 92 skills)
 
 | Role | What it does | Key outputs |
 |------|-------------|-------------|
@@ -35,18 +35,18 @@
 | **Security** | Security audits, penetration testing, secret rotation, encryption, advisory management | `knowledge/security/pending/`, `applied/` |
 | **Planner** | Workload planning, curriculum updates, evolution coordination, model recommendations | `knowledge/reports/` |
 
-### Skills by Category (85 total)
+### Skills by Category (92 total)
 
 | Category | Count | Examples |
 |----------|-------|---------|
-| Code & Development | 24 | code_review, code_write, git_manager, skill_evolve, deploy_skill |
+| Code & Development | 26 | code_review, code_write, git_manager, skill_evolve, deploy_skill, claude_code |
 | Research & Analysis | 11 | web_search, arxiv_fetch, summarize, research_loop |
 | Security | 8 | security_audit, pen_test, secret_rotate, db_encrypt |
 | Data & Knowledge | 10 | rag_index, ingest, flashcard, dataset_synthesize |
-| Operations & Planning | 12 | plan_workload, hardware_profiler, model_recommend, oom_prevent |
+| Operations & Planning | 13 | plan_workload, hardware_profiler, model_recommend, oom_prevent, auto_profile |
 | Output Generation | 7 | screenshot, vision_analyze, generate_image |
-| Cost & Quality | 5 | token_optimizer, regression_detector, billing_ocr |
-| System Monitoring | 3 | home_assistant, unifi_manage, mqtt_inspect |
+| Cost & Quality | 8 | token_optimizer, regression_detector, billing_ocr, quality_flywheel, oss_review |
+| System Monitoring | 5 | home_assistant, unifi_manage, mqtt_inspect, memory_optimizer |
 | Specialized | 4 | clinical_review, speech_to_text, legal_draft |
 
 ### Data Systems
@@ -75,7 +75,7 @@ Circuit breaker: 3 failures in 5 minutes triggers failover. Automatic recovery w
 | **Supervisor** (`supervisor.py`) | Process lifecycle, worker scaling, task dispatch, federation, config reload | Main loop (~1s) |
 | **Dr. Ders** (`hw_supervisor.py`) | Model health, VRAM/thermal monitoring, keepalive, GPU scaling | Event-driven (5-30s) |
 
-### Dashboard (45+ API endpoints)
+### Dashboard (65+ API endpoints)
 
 Web UI at `localhost:5555` with:
 - Live agent status + sparklines (SSE real-time updates)
@@ -183,8 +183,8 @@ Every skill produces a structured result dict. Common patterns:
 
 ---
 
-## Version: 0.170.05b (Beta)
+## Version: 0.170.07b (Beta)
 
-85 skills | 58 API endpoints | 12 DB tables | 6 agent roles | 30+ config sections
+92 skills | 65+ API endpoints | 12 DB tables | 6 agent roles | 30+ config sections
 
 Apache 2.0 License | Windows/Linux/macOS | Offline/Air-Gap capable

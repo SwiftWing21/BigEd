@@ -1357,6 +1357,17 @@ Completed 2026-03-22. Three new skill systems:
 - [ ] `.claude/skills/max-efficiency.md` — self-optimization plugin for any Claude session
 - [ ] Flywheel target: A (90+) — actionability improvements, consistency fixes
 
+### 0.180.00b — Quality Flywheel S-Tier (100/100)
+
+**Goal:** Every dimension at 95+, evidence-verified, multi-agent confirmed, zero hallucinations.
+
+- [ ] Evidence-only scoring — every dimension requires cited file:line proof (no approximations)
+- [ ] Multi-agent verification — 2nd agent independently grades, must agree within 5 points
+- [ ] Hallucination detector — adversarial agent tries to disprove each finding
+- [ ] Novel discovery layer — flag patterns that exceed known best practices
+- [ ] Regression lock — S-tier maintained for 7+ days triggers premium routing (Opus for complex tasks)
+- [ ] Premium routing when S-tier active — Claude Opus for complex, extended context, cache-first
+
 ---
 
 ## Audit Coverage Check (per AUDIT_TRACKER.md)

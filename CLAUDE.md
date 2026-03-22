@@ -1,4 +1,4 @@
-# BigEd CC — Beta (0.170.05b)
+# BigEd CC — Beta (0.170.07b)
 
 ## Quick Start
 ```bash
@@ -58,7 +58,7 @@ End every roadmap with an Audit Coverage Check section.
 - Dynamic agent scaling: 4 core + demand-based | Dr. Ders: event-driven wake-up timer
 - Security: P0-P2 hardened (XSS, SQL injection, thread safety, zombie cleanup)
 - Backup: auto-save every 20min, configurable depth/location
-- v0.050.00b-0.170.05b: installer overhaul, model recovery, startup perf, autoresearch integration, deferred items sweep, feedback loop
+- v0.050.00b-0.170.07b: installer overhaul, model recovery, startup perf, autoresearch integration, deferred items sweep, feedback loop
 
 ## Gotchas
 - **Ollama PATH**: not on Git Bash PATH on Windows — supervisor auto-finds via `%LOCALAPPDATA%\Programs\Ollama`
@@ -77,6 +77,103 @@ End every roadmap with an Audit Coverage Check section.
 - **Icon system**: `icon_1024.png` is the master source, `brick.ico` is derived. Never regenerate icons during build — `generate_icon.py` was deleted
 - **Theme fonts**: use constants from `ui/theme.py` (FONT_SM, FONT_BOLD, FONT_XS) — never hardcode "RuneScape" or "Consolas"
 - **Cross-platform**: guard `import winreg` with `sys.platform == "win32"`, use `_open_path()` instead of `os.startfile()`
+
+## Common Tasks — Do This, Not That
+
+### Adding a new skill
+```python
+# DO: place in fleet/skills/<name>.py with the standard contract
+SKILL_NAME = "my_skill"
+DESCRIPTION = "What this skill does"
+REQUIRES_NETWORK = False  # True if it calls external APIs
+
+def run(task: dict, context: dict) -> dict:
+    import db  # lazy import — prevents circular imports
+    return {"status": "ok", "result": "..."}
+
+# DON'T: import db at module level, skip SKILL_NAME/DESCRIPTION, or use raw sqlite3
+```
+
+### Writing to the database
+```python
+# DO: use db._retry_write() for any INSERT/UPDATE
+import db
+def save_result(data):
+    def _do():
+        with db.get_conn() as conn:
+            conn.execute("INSERT INTO tasks ...", (data,))
+    db._retry_write(_do)
+
+# DON'T: use raw sqlite3.connect("fleet/fleet.db") — bypasses WAL retry and connection pooling
+```
+
+### Spawning subprocesses (Windows-safe)
+```python
+# DO: suppress the console window on Windows
+import subprocess
+proc = subprocess.Popen(
+    ["python", "script.py"],
+    creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+    stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+)
+
+# DON'T: bare Popen without creationflags — causes window flash on Windows
+```
+
+### Making HTTP requests
+```python
+# DO: always set a timeout
+import urllib.request
+resp = urllib.request.urlopen(url, timeout=15)
+
+# DON'T: urlopen(url) without timeout — can hang indefinitely on network issues
+```
+
+### Reading config values
+```python
+# DO: use fleet/config.py
+from config import load_config
+cfg = load_config()
+port = cfg.get("dashboard", {}).get("port", 5555)
+
+# DON'T: hardcode ports, URLs, or model names — they change per-environment
+```
+
+### Platform-specific imports
+```python
+# DO: guard Windows-only imports
+import sys
+if sys.platform == "win32":
+    import winreg
+
+# DON'T: bare `import winreg` at module level — crashes on Linux/macOS
+```
+
+### Error handling
+```python
+# DO: catch Exception, log a warning, return a safe default
+try:
+    result = do_work()
+except Exception:
+    log.warning("do_work failed", exc_info=True)
+    result = fallback_value
+
+# DON'T: use bare `except:` (catches SystemExit/KeyboardInterrupt) or silently pass
+```
+
+## Key File Paths
+| File | Purpose | When to touch |
+|------|---------|---------------|
+| `fleet/fleet.toml` | All runtime config | Adding config keys, changing ports/models/thresholds |
+| `fleet/db.py` | Database schema + DAL | Adding tables, new queries, schema migrations |
+| `fleet/supervisor.py` | Process lifecycle | Worker scaling, boot sequence, respawn logic |
+| `fleet/hw_supervisor.py` | Model health (Dr. Ders) | VRAM/thermal thresholds, keepalive timing |
+| `fleet/dashboard.py` | Web UI + REST API | New endpoints, UI panels, SSE events |
+| `fleet/skills/*.py` | Skill implementations | Adding/modifying agent capabilities |
+| `fleet/providers.py` | Multi-backend LLM routing | Adding providers, changing fallback chain |
+| `fleet/config.py` | TOML config loader | Config schema changes, new top-level sections |
+| `fleet/reinforcement.py` | Human feedback loop | IQ scoring adjustments, age-out policy |
+| `BigEd/launcher/launcher.py` | Desktop GUI entry point | UI layout, boot flow, settings panels |
 
 ## Local Machine — CLAUDE.USER.md
 

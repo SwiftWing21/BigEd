@@ -157,6 +157,11 @@ ollama_evicted_for_training = False
 _last_busy = {}  # agent_name -> timestamp of last task activity
 
 
+class _capacity_state:
+    """Tracks Claude capacity bonus window state (lightweight namespace)."""
+    active = False
+
+
 def _count_pending_tasks() -> int:
     """Count pending tasks in the queue."""
     try:
@@ -1017,6 +1022,7 @@ def main():
     last_trigger_check = 0         # event triggers (file watch + schedules)
     last_cost_anomaly_check = 0    # v0.170.04b: cost anomaly auto-throttle (every 10 min)
     COST_ANOMALY_INTERVAL = 600    # 10 minutes
+    last_capacity_check = 0        # Claude capacity bonus window detection (every 5 min)
     # v0.23 S3: Auto-Intelligence — periodic evolution + research dispatch
     # Intervals defined at module level: RESEARCH_INTERVAL (24h), EVOLUTION_INTERVAL (7d)
     global _last_research_trigger, _last_evolution_trigger, _last_results_mtime
@@ -1487,6 +1493,23 @@ def main():
                         _json_log("INFO", "cost_anomaly_cleared")
             except Exception:
                 pass  # cost anomaly check must never block supervisor
+
+        # Claude capacity bonus window check (every 5 min)
+        if now - last_capacity_check >= 300:
+            last_capacity_check = now
+            try:
+                from skills.claude_efficiency import is_in_bonus_window
+                in_bonus = is_in_bonus_window(config)
+                if in_bonus and not getattr(_capacity_state, 'active', False):
+                    _capacity_state.active = True
+                    log.info("Claude capacity bonus window active")
+                    _json_log("INFO", "capacity_bonus_start")
+                elif not in_bonus and getattr(_capacity_state, 'active', False):
+                    _capacity_state.active = False
+                    log.info("Claude capacity bonus window ended")
+                    _json_log("INFO", "capacity_bonus_end")
+            except Exception:
+                pass
 
         # Federation: broadcast status to peers (every 60s)
         if now - last_federation_heartbeat >= 60:
