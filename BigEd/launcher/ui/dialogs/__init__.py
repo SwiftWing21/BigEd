@@ -3,6 +3,7 @@
 from .thermal import ThermalDialog
 from .model_selector import ModelSelectorDialog, OLLAMA_MODELS
 from .review import ReviewDialog
+from .submit_issue import SubmitIssueDialog
 from .walkthrough import (
     WalkthroughDialog,
     _detect_system_profile,
@@ -15,6 +16,7 @@ __all__ = [
     "ModelSelectorDialog",
     "OLLAMA_MODELS",
     "ReviewDialog",
+    "SubmitIssueDialog",
     "WalkthroughDialog",
     "_detect_system_profile",
     "_apply_system_profile",

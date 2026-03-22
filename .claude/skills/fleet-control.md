@@ -5,6 +5,12 @@ description: Control BigEd CC fleet from VS Code — dispatch tasks, respond to 
 
 # Fleet Control from VS Code
 
+## BigEd Help
+
+When the user says "BigEd help", "BigEd guide", or asks how to use BigEd from VS Code:
+- Read and present the contents of `fleet/VSCODE_README.md`
+- This command only works in projects that have a `fleet/` directory (BigEd projects)
+
 When the user wants to interact with the BigEd CC fleet from this VS Code session:
 
 ## CLI Commands (lead_client.py)

@@ -1796,11 +1796,11 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
         s = section("CONFIG")
         btn(s, "⚙  Settings",       self._open_settings,
             tip="Open the unified settings panel")
+        btn(s, "🐛 Submit Issue", self._open_report_issue,
+            tip="Report a bug, request a feature, or submit feedback")
         if DEV_MODE:
             btn(s, "📋 Setup Walkthrough", lambda: WalkthroughDialog(self),
                 tip="Re-run the first-time setup walkthrough")
-            btn(s, "🐛 Report Issue", self._open_report_issue,
-                tip="Generate a debug report and export for issue submission")
 
         # ── CONSOLES (with provider status dots) ─────────────────────────────
         s = section("CONSOLES", default_open=False)
@@ -3814,10 +3814,19 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
 
         try:
             # Open VS Code to project dir + auto-open the briefing file
+            # Only auto-open README if walkthrough hasn't been completed (fail-open)
+            cmd = [code_exe, str(FLEET_DIR.parent)]
+            try:
+                prefs = _load_settings()
+                walkthrough_done = prefs.get("walkthrough_completed", False)
+            except Exception:
+                walkthrough_done = False  # fail-open: show README if settings unreadable
+            if not walkthrough_done:
+                cmd.extend(["--goto", str(FLEET_DIR / "VSCODE_README.md")])
+            # Always include task briefing
+            cmd.extend(["--goto", str(briefing)])
             subprocess.Popen(
-                [code_exe, str(FLEET_DIR.parent),
-                 "--goto", str(FLEET_DIR / "VSCODE_README.md"),
-                 "--goto", str(briefing)],
+                cmd,
                 creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
         except Exception as e:
             self._append_chat_response(f"Could not open VS Code: {e}")
@@ -5963,15 +5972,8 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
         self._log_ring.append(text.strip())
 
     def _open_report_issue(self):
-        """Generate debug report and offer to save/export."""
-        try:
-            path = generate_debug_report(app=self)
-            self._log_output(f"Debug report saved: {path}")
-            # Offer to open the report location
-            import webbrowser
-            webbrowser.open(str(path.parent))
-        except Exception as e:
-            self._log_output(f"Report generation failed: {e}")
+        """Open the Submit Issue dialog."""
+        SubmitIssueDialog(self)
 
     def _open_settings(self):
         SettingsDialog(self)
@@ -6160,12 +6162,13 @@ from ui.settings import SettingsDialog, AgentNamesDialog, KeyManagerDialog
 # ─── Dialogs (extracted to ui/dialogs/ — TECH_DEBT 4.2) ──────────────────────
 from ui.dialogs import (
     ThermalDialog, ModelSelectorDialog, OLLAMA_MODELS,
-    ReviewDialog, WalkthroughDialog,
+    ReviewDialog, SubmitIssueDialog, WalkthroughDialog,
     _detect_system_profile, _apply_system_profile, _should_show_walkthrough,
 )
 from ui.dialogs.thermal import _init_gpu_refs as _init_thermal_refs
 from ui.dialogs.model_selector import _init_model_selector_refs
 from ui.dialogs.review import _init_review_refs
+from ui.dialogs.submit_issue import _init_submit_issue_refs
 from ui.dialogs.walkthrough import _init_walkthrough_refs
 
 # Inject late-bound refs into dialog modules (avoids circular imports)
@@ -6175,6 +6178,11 @@ _init_thermal_refs(HERE, _GPU_OK, _GPU_HANDLE if _GPU_OK else None, _pynvml_mod)
 _init_model_selector_refs(HERE, FLEET_DIR, FLEET_TOML, _GPU_OK,
                           _GPU_HANDLE if _GPU_OK else None, _pynvml_mod, load_model_cfg)
 _init_review_refs(HERE, FLEET_TOML)
+_init_submit_issue_refs(
+    HERE, FLEET_DIR, LOGS_DIR,
+    HERE / "modules" / "manifest.json",
+    _get_version,
+)
 try:
     from ui.settings.keys import KeyManagerDialog as _KMD
 except ImportError:

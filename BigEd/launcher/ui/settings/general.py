@@ -344,7 +344,28 @@ class GeneralPanelMixin:
         ctk.CTkButton(btn_row2, text="Import Config", font=FONT_SM, width=120, height=28,
                       fg_color=BG3, hover_color=BG2, command=self._import_config).pack(side="left", padx=8)
 
+        # Section: Help & Documentation
+        self._section_header(panel, "Help & Documentation")
+        help_frame = ctk.CTkFrame(panel, fg_color=GLASS_BG, corner_radius=6)
+        help_frame.pack(fill="x", padx=16, pady=(0, 12))
+
+        ctk.CTkButton(help_frame, text="Open VS Code Help Guide", font=FONT_SM,
+                      height=28, width=200, fg_color=BG3, hover_color=BG2,
+                      command=self._open_vscode_help).pack(padx=12, pady=10, anchor="w")
+
     # ── General panel handlers ────────────────────────────────────────────
+
+    def _open_vscode_help(self):
+        """Open the VS Code README help guide in VS Code."""
+        import subprocess
+        import shutil
+        L = _launcher()
+        code_exe = shutil.which("code")
+        readme = L.FLEET_DIR / "VSCODE_README.md"
+        if code_exe and readme.exists():
+            subprocess.Popen(
+                [code_exe, "--goto", str(readme)],
+                creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
 
     def _on_theme_change(self, choice: str):
         L = _launcher()

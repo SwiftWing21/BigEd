@@ -445,3 +445,11 @@ class WalkthroughDialog(ctk.CTkToplevel):
             FLEET_TOML.write_text(tomlkit.dumps(doc), encoding="utf-8")
         except Exception:
             pass
+        # Also persist to settings.json so the VS Code README gate can check it
+        try:
+            import launcher as _mod
+            data = _mod._load_settings()
+            data["walkthrough_completed"] = True
+            _mod._save_settings(data)
+        except Exception:
+            pass
