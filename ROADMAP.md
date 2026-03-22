@@ -1430,6 +1430,15 @@ Completed 2026-03-22. Three new skill systems:
 - `BSA*` (Brave)
 - Generic: any 32+ char alphanumeric string after `KEY=` or `TOKEN=`
 
+### 0.180.03b — VS Code README Lifecycle + Help Command
+
+**Goal:** README auto-opens only for new users, accessible on demand after walkthrough completion.
+
+- [ ] First-launch only: VSCODE_README.md auto-opens until walkthrough completed, then stops
+- [ ] Settings button: "Open VS Code Help" in Settings > General opens README in VS Code
+- [ ] fleet-control.md skill: respond to "BigEd help" prompt with README content (scoped to BigEd projects only, not global Claude)
+- [ ] Walkthrough completion flag in settings.json gates the auto-open behavior
+
 ---
 
 ## Audit Coverage Check (per AUDIT_TRACKER.md)
