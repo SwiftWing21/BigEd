@@ -3942,10 +3942,12 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
         return "break"  # prevent newline insertion
 
     def _auto_resize_task_entry(self, _event=None):
-        """Grow/shrink the task textbox to fit content (1–4 lines)."""
+        """Grow/shrink the task textbox to fit content. Caps at ~3x base height, then scrolls."""
         content = self._task_entry.get("1.0", "end-1c")
-        line_count = max(1, min(4, content.count("\n") + 1))
-        new_h = 20 + line_count * 18
+        line_count = max(1, content.count("\n") + 1)
+        # Base: 52px (2 lines visible). Max: 156px (~6 lines). Beyond that: scroll.
+        capped = min(6, line_count)
+        new_h = max(52, capped * 26)
         self._task_entry.configure(height=new_h)
 
     # ── Model Performance Panel ─────────────────────────────────────────────
