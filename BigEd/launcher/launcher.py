@@ -915,17 +915,26 @@ class CustomTabBar(ctk.CTkFrame):
         self.grid_columnconfigure(0, weight=1)
         self.grid_rowconfigure(2, weight=1)   # 0=bar strip, 1=separator, 2=content
 
-        # ── Tab button strip — horizontal scroll via thin scrollbar ──────────
+        # ── Tab button strip — dropdown nav + horizontal scroll ────────────
         bar_container = ctk.CTkFrame(self, fg_color=BG2, height=46, corner_radius=0)
         bar_container.grid(row=0, column=0, sticky="ew")
         bar_container.grid_propagate(False)
-        bar_container.grid_columnconfigure(0, weight=1)
+        bar_container.grid_columnconfigure(1, weight=1)
         bar_container.grid_rowconfigure(0, weight=1)
 
-        # Canvas for horizontal scrolling (no chevrons needed)
+        # Left: tab navigator dropdown (quick switch to any tab)
+        self._tab_nav_btn = ctk.CTkButton(
+            bar_container, text="≡", width=28, height=38,
+            font=FONT_BOLD, fg_color="transparent", hover_color=BG3,
+            text_color=DIM, corner_radius=0,
+            command=self._show_tab_menu)
+        self._tab_nav_btn.grid(row=0, column=0, sticky="ns", padx=(2, 0))
+        Tooltip(self._tab_nav_btn, "Tab menu — switch, reorder, set default")
+
+        # Canvas for horizontal scrolling
         self._tab_canvas = ctk.CTkCanvas(
             bar_container, bg=BG2, highlightthickness=0, height=42)
-        self._tab_canvas.grid(row=0, column=0, sticky="nsew")
+        self._tab_canvas.grid(row=0, column=1, sticky="nsew")
 
         # Inner frame inside canvas holds tab buttons
         self._bar = ctk.CTkFrame(self._tab_canvas, fg_color=BG2, corner_radius=0)
@@ -1119,7 +1128,103 @@ class CustomTabBar(ctk.CTkFrame):
         """Return the name of the currently active tab."""
         return self._active
 
-    # ── Scroll support (canvas-based — all tabs always exist, scroll to reveal) ──
+    # ── Tab navigation menu ─────────────────────────────────────────────────
+
+    def _show_tab_menu(self):
+        """Show dropdown menu listing all tabs with reorder + default options."""
+        import tkinter as tk
+        menu = tk.Menu(self, tearoff=0, bg=BG2, fg=TEXT,
+                       activebackground=ACCENT, activeforeground="white",
+                       font=("Segoe UI", 10))
+
+        # Quick switch section
+        for name in self._tab_names_order:
+            icon = self._ICONS.get(name, "▸")
+            prefix = "● " if name == self._active else "  "
+            menu.add_command(
+                label=f"{prefix}{icon}  {name}",
+                command=lambda n=name: self.set(n))
+
+        menu.add_separator()
+
+        # Set default startup tab
+        menu.add_cascade(label="Set default tab", menu=self._build_default_tab_submenu(menu))
+
+        # Reorder submenu
+        menu.add_cascade(label="Reorder tabs", menu=self._build_reorder_submenu(menu))
+
+        # Position menu below the nav button
+        try:
+            x = self._tab_nav_btn.winfo_rootx()
+            y = self._tab_nav_btn.winfo_rooty() + self._tab_nav_btn.winfo_height()
+            menu.tk_popup(x, y)
+        except Exception:
+            menu.tk_popup(0, 46)
+
+    def _build_default_tab_submenu(self, parent_menu):
+        """Submenu to pick which tab opens on startup."""
+        import tkinter as tk
+        sub = tk.Menu(parent_menu, tearoff=0, bg=BG2, fg=TEXT,
+                      activebackground=ACCENT, activeforeground="white",
+                      font=("Segoe UI", 10))
+        # Load current default
+        app = self.winfo_toplevel()
+        current_default = "Command Center"
+        if hasattr(app, '_load_settings'):
+            current_default = app._load_settings().get("default_tab", "Command Center")
+        for name in self._tab_names_order:
+            prefix = "● " if name == current_default else "  "
+            sub.add_command(
+                label=f"{prefix}{name}",
+                command=lambda n=name: self._set_default_tab(n))
+        return sub
+
+    def _build_reorder_submenu(self, parent_menu):
+        """Submenu to move tabs up/down in order."""
+        import tkinter as tk
+        sub = tk.Menu(parent_menu, tearoff=0, bg=BG2, fg=TEXT,
+                      activebackground=ACCENT, activeforeground="white",
+                      font=("Segoe UI", 10))
+        for i, name in enumerate(self._tab_names_order):
+            inner = tk.Menu(sub, tearoff=0, bg=BG2, fg=TEXT,
+                            activebackground=ACCENT, activeforeground="white",
+                            font=("Segoe UI", 10))
+            if i > 0:
+                inner.add_command(label="Move left",
+                                  command=lambda n=name, idx=i: self._reorder_tab(idx, idx - 1))
+            if i < len(self._tab_names_order) - 1:
+                inner.add_command(label="Move right",
+                                  command=lambda n=name, idx=i: self._reorder_tab(idx, idx + 1))
+            sub.add_cascade(label=name, menu=inner)
+        return sub
+
+    def _set_default_tab(self, name):
+        """Save which tab opens on startup."""
+        app = self.winfo_toplevel()
+        if hasattr(app, '_load_settings') and hasattr(app, '_save_settings'):
+            data = app._load_settings()
+            data["default_tab"] = name
+            app._save_settings(data)
+
+    def _reorder_tab(self, from_idx, to_idx):
+        """Swap two tabs in the bar order and re-pack."""
+        self._tab_names_order[from_idx], self._tab_names_order[to_idx] = \
+            self._tab_names_order[to_idx], self._tab_names_order[from_idx]
+        self._all_tab_cells[from_idx], self._all_tab_cells[to_idx] = \
+            self._all_tab_cells[to_idx], self._all_tab_cells[from_idx]
+        # Re-pack all cells in new order
+        for cell in self._all_tab_cells:
+            cell.pack_forget()
+        for cell in self._all_tab_cells:
+            cell.pack(side="left", fill="y", padx=0)
+        # Save order
+        app = self.winfo_toplevel()
+        if hasattr(app, '_load_settings') and hasattr(app, '_save_settings'):
+            data = app._load_settings()
+            data["tab_order"] = self._tab_names_order
+            app._save_settings(data)
+
+    # ── Scroll support (canvas-based) ─────────────────────────────────────
 
     def _scroll_tabs(self, direction: int) -> None:
         """Scroll tab bar. Kept for compatibility — delegates to canvas xview."""
@@ -1850,9 +1955,28 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
                 self._safe_after(500, lambda n=name, err=str(e):
                     self._log_output(f"\u26a0 Module '{n}' failed: {err}"))
 
-        # All tabs registered — mark ready and show initial tab
+        # All tabs registered — apply saved order and show default tab
         tabs._tabs_ready = True
-        tabs.set("Command Center")
+        try:
+            prefs = _load_settings()
+            saved_order = prefs.get("tab_order", [])
+            if saved_order:
+                # Reorder to match saved preference
+                ordered = [n for n in saved_order if n in tabs._tab_names_order]
+                remaining = [n for n in tabs._tab_names_order if n not in ordered]
+                new_order = ordered + remaining
+                tabs._tab_names_order = new_order
+                # Rebuild cell list to match
+                tabs._all_tab_cells = [tabs._tab_cells[n] for n in new_order
+                                        if n in tabs._tab_cells]
+                for cell in tabs._all_tab_cells:
+                    cell.pack_forget()
+                for cell in tabs._all_tab_cells:
+                    cell.pack(side="left", fill="y", padx=0)
+            default_tab = prefs.get("default_tab", "Command Center")
+        except Exception:
+            default_tab = "Command Center"
+        tabs.set(default_tab)
 
     def _make_module_builder(self, mod, label, deprecated, meta):
         """Return a callable that builds a module tab on first view."""
