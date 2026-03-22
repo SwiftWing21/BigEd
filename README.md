@@ -1,12 +1,44 @@
 # BigEd CC
 
-> One-click local AI fleet deployment. No terminal required.
+> Personal educational project — a vibe-coding experiment pushing the limits of what AI-assisted development can build. Welcome to review and scrutiny.
 
-BigEd CC eliminates manual CLI setup for local AI. Deploy Ollama models and a 80-skill agent fleet with one click. Use OAuth Manual Mode (Claude Code / Gemini) with pre-loaded context from agent requests, or let the fleet work autonomously via API.
-
-**All platforms. Enterprise-ready. SOC 2 aligned.**
+BigEd CC is a local AI fleet platform built almost entirely through AI-assisted "vibe coding." It started as a learning exercise to explore how far you can push model-driven development and evolved into an 80-skill autonomous agent system with enterprise-grade guardrails. It is not a product — it is a reference implementation and playground for anyone curious about the real capabilities and limitations of building with AI.
 
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
+
+## What BigEd CC IS
+
+- **A learning project** — Built to explore the boundaries of AI-assisted development, not to ship a SaaS
+- **A reference implementation** — Demonstrates patterns for multi-model orchestration, agent lifecycle, safety guardrails, and fleet management at a non-trivial scale
+- **A vibe-coding case study** — Nearly the entire codebase was generated, reviewed, and iterated on through AI models, making it a useful artifact for studying what AI-assisted development actually produces
+- **Open to scrutiny** — The code, architecture decisions, and quality tradeoffs are all visible; judge for yourself what works and what doesn't
+
+## What BigEd CC IS NOT
+
+- **Not a product or service** — There is no hosted version, no paying customers, no SaaS pitch
+- **Not a custom model** — BigEd orchestrates existing models (Ollama, Claude, Gemini); it does not train or fine-tune its own LLM
+- **Not production-hardened** — Currently in beta (v0.051.04b); the enterprise features (RBAC, DLP, audit logging) are implemented but not battle-tested at scale
+- **Not a low-code tool** — You need Python 3.11+ and a willingness to read code to work with it meaningfully
+
+## How It Was Built — Model Contributions
+
+This project is itself an artifact of multi-model AI development. The rough contribution breakdown:
+
+| Model | Role | Estimated Weight |
+|-------|------|-----------------|
+| **Claude Code (Opus 4.6)** | Primary architect and implementer — wrote the majority of the codebase, designed the fleet architecture, built the skill system, and drove most refactors | ~70% |
+| **Claude (Sonnet 4.6)** | Day-to-day code review, audits, skill generation, quick patches, and iterative improvements | ~15% |
+| **Gemini Pro (2.5/3.1)** | Independent reviews, architecture audits, second-opinion analysis, and HA fallback testing | ~10% |
+| **Human (Max)** | Direction, judgment calls, testing, integration decisions, and the occasional manual fix when the models got stuck | ~5% |
+
+### Design Guardrails
+
+The project's quality standards come from two key sources:
+
+- **`claude_code.py`** — A skill that wraps Claude Code CLI in headless mode with strict environment boundaries (DLP secret stripping, no shell=True, structured output capture). It enforces SOC 2-style confidentiality by scrubbing non-Anthropic secrets before subprocess execution and persisting all outputs to knowledge/ with immutable timestamps.
+- **`FRAMEWORK_BLUEPRINT.md`** — The full architecture spec that defines module contracts, separation of concerns boundaries, data schemas, and the evaluator-optimizer loop. This document, combined with the 12-dimension grading rubric in `AUDIT_TRACKER.md`, forms the quality bar every change is measured against.
+
+Together, these files act as the project's "constitution" — the models follow them, and the audit tracker grades compliance.
 
 ## Features
 
@@ -103,15 +135,22 @@ broker_url = ""                   # federation broker endpoint
 
 Autonomous ML training loop inspired by [Karpathy's build-nanogpt](https://github.com/karpathy/build-nanogpt). Agent-edited `train.py` runs 5-minute experiments, measures val_bpb, keeps or reverts changes.
 
+## Repository Structure
+
+| Repo | Purpose |
+|------|---------|
+| **[BigEd](https://github.com/SwiftWing21/BigEd)** | Core platform — launcher, fleet, dashboard, skills, ML pipeline |
+| **[BigEd-ModuleHub](https://github.com/SwiftWing21/BigEd-ModuleHub)** | Non-core modules — optional UI extensions (CRM, Ingestion, etc.) loaded at runtime |
+
 ## Support
 
-If BigEd CC is useful to you, consider supporting development:
+If BigEd CC is useful to you as a learning reference, consider supporting development:
 
 [![Ko-fi](https://img.shields.io/badge/Ko--fi-Support%20BigEd%20CC-FF5E5B?logo=ko-fi&logoColor=white)](https://ko-fi.com/swiftwing21)
 
 ## Contributing
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
+See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines. This is a personal learning project, but PRs, issues, and discussions are welcome — especially if you spot something the models got wrong.
 
 ## License
 
