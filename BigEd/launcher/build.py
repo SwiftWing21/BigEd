@@ -86,9 +86,13 @@ def _pyinstaller_cmd(name: str, script: str, icon: str = "brick.ico",
     if windowed:
         cmd.append("--windowed")
 
-    # Add data files
+    # Add data files/directories
     for src in (add_data or []):
-        cmd.extend(["--add-data", f"{src}{SEP}."])
+        src_path = HERE / src if not Path(src).is_absolute() else Path(src)
+        if src_path.is_dir():
+            cmd.extend(["--add-data", f"{src}{SEP}{src}"])
+        else:
+            cmd.extend(["--add-data", f"{src}{SEP}."])
 
     # Hidden imports — skip pynvml on macOS (no NVIDIA)
     for imp in (hidden_imports or []):
@@ -106,7 +110,7 @@ def build_launcher() -> float:
     return _run(
         _pyinstaller_cmd(
             "BigEdCC", "launcher.py",
-            add_data=["brick.ico", "icon_1024.png"],
+            add_data=["brick.ico", "icon_1024.png", "modules", "ui"],
             hidden_imports=["psutil", "pynvml"],
         ),
         "Building BigEdCC",

@@ -22,7 +22,7 @@ echo == Closing running BigEdCC.exe (if open) ==
 taskkill /f /im BigEdCC.exe >nul 2>&1
 
 echo == Building BigEdCC.exe ==
-python -m PyInstaller --onefile --windowed --name "BigEdCC" --icon "brick.ico" --add-data "brick.ico;." --add-data "icon_1024.png;." --collect-all customtkinter --hidden-import psutil --hidden-import pynvml launcher.py
+python -m PyInstaller --onefile --windowed --name "BigEdCC" --icon "brick.ico" --add-data "brick.ico;." --add-data "icon_1024.png;." --add-data "modules;modules" --add-data "ui;ui" --collect-all customtkinter --hidden-import psutil --hidden-import pynvml launcher.py
 if errorlevel 1 ( echo FAILED: BigEdCC build && pause && exit /b 1 )
 
 echo.
