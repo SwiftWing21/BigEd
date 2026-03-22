@@ -27,13 +27,32 @@ class Module:
     DEFAULT_ENABLED = True
     DEPENDS_ON = []
 
-    SUPPORTED_EXTS = {
+    # Text-extractable formats (direct RAG indexing)
+    TEXT_EXTS = {
+        # Text & docs
         ".md", ".txt", ".rst", ".log", ".cfg", ".ini", ".toml", ".yaml", ".yml",
+        ".rtf", ".ndjson", ".jsonl",
+        # Code (all major languages)
         ".py", ".js", ".ts", ".tsx", ".jsx", ".go", ".rs", ".java", ".c", ".cpp",
-        ".h", ".hpp", ".cs", ".rb", ".sh", ".bat", ".ps1", ".sql",
-        ".json", ".csv", ".tsv", ".xml", ".html", ".htm",
-        ".pdf", ".docx", ".zip",
+        ".h", ".hpp", ".cs", ".rb", ".sh", ".bat", ".ps1", ".sql", ".kt", ".swift",
+        ".r", ".lua", ".php", ".pl", ".scala", ".dart", ".zig",
+        # Config
+        ".json", ".csv", ".tsv", ".xml", ".html", ".htm", ".env", ".properties",
+        ".conf", ".tf", ".hcl",
     }
+    # Structured docs (need library extraction)
+    DOC_EXTS = {".pdf", ".docx", ".doc", ".xlsx", ".xls", ".pptx", ".ppt",
+                ".odt", ".ods", ".odp", ".epub"}
+    # Archives (auto-extracted)
+    ARCHIVE_EXTS = {".zip", ".tar", ".gz", ".7z", ".rar", ".tgz"}
+    # Media (routed to vision_analyze / speech_to_text skills)
+    IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".gif", ".bmp", ".webp", ".svg", ".ico"}
+    AUDIO_EXTS = {".mp3", ".wav", ".flac", ".ogg", ".m4a"}
+    VIDEO_EXTS = {".mp4", ".mkv", ".avi", ".mov", ".webm"}
+    # All recognized
+    SUPPORTED_EXTS = TEXT_EXTS | DOC_EXTS | ARCHIVE_EXTS | IMAGE_EXTS | AUDIO_EXTS | VIDEO_EXTS
+    # Accept ANY file — unrecognized types shown with "?" color
+    ACCEPT_ALL = True
 
     def __init__(self, app):
         self.app = app
@@ -149,14 +168,16 @@ class Module:
 
         info_frame = ctk.CTkFrame(right, fg_color=BG3, corner_radius=6)
         info_frame.pack(fill="x", padx=12, pady=(8, 4))
-        ctk.CTkLabel(info_frame, text="Supported formats", font=FONT_BOLD,
+        ctk.CTkLabel(info_frame, text="Accepts all files", font=FONT_BOLD,
                      text_color=GOLD).pack(padx=10, pady=(8, 2), anchor="w")
         ctk.CTkLabel(info_frame,
-                     text="Text:   .md .txt .rst .log .toml .yaml .cfg .ini\n"
-                          "Code:  .py .js .ts .go .rs .java .c .cpp .cs .rb .sh\n"
-                          "Data:   .json .csv .tsv .xml .html\n"
-                          "Docs:  .pdf .docx\n"
-                          "Zip:     .zip (auto-extracted, nested supported)",
+                     text="Text:      .md .txt .rst .log .toml .yaml .json .csv .xml .html\n"
+                          "Code:     .py .js .ts .go .rs .java .c .cpp .cs .rb .kt .swift +15 more\n"
+                          "Docs:     .pdf .docx .doc .xlsx .pptx .epub .odt\n"
+                          "Images:  .png .jpg .gif .webp .svg (routed to vision)\n"
+                          "Audio:    .mp3 .wav .flac .ogg (routed to STT)\n"
+                          "Archive: .zip .tar .7z .rar (auto-extracted)\n"
+                          "Other:    any file — attempts text extraction, flags if unsupported",
                      font=FONT_XS, text_color=DIM, justify="left"
                      ).pack(padx=10, pady=(0, 8), anchor="w")
 
@@ -198,8 +219,10 @@ class Module:
 
         files = []
         for f in sorted(source.iterdir(), key=lambda x: x.stat().st_mtime, reverse=True):
-            if f.is_file() and f.suffix.lower() in self.SUPPORTED_EXTS:
-                files.append(f)
+            if f.is_file():
+                # Accept all files if ACCEPT_ALL, otherwise filter by SUPPORTED_EXTS
+                if self.ACCEPT_ALL or f.suffix.lower() in self.SUPPORTED_EXTS:
+                    files.append(f)
             if len(files) >= 200:
                 break
 
@@ -228,14 +251,19 @@ class Module:
             was_checked = str(f) in previously_checked
             var = ctk.BooleanVar(value=was_checked)
             ext = f.suffix.lower()
-            if ext == ".zip":
+            if ext in self.ARCHIVE_EXTS:
                 color = ORANGE
-            elif ext in (".pdf", ".docx"):
-                color = "#7aa2f7"
-            elif ext in (".py", ".js", ".ts", ".go", ".rs", ".java"):
-                color = GREEN
+            elif ext in self.DOC_EXTS:
+                color = "#7aa2f7"  # blue — structured docs
+            elif ext in self.IMAGE_EXTS:
+                color = "#ce93d8"  # purple — images
+            elif ext in self.AUDIO_EXTS or ext in self.VIDEO_EXTS:
+                color = "#ffb74d"  # amber — media
+            elif ext in self.TEXT_EXTS:
+                color = GREEN if ext in (".py", ".js", ".ts", ".go", ".rs", ".java",
+                                         ".c", ".cpp", ".cs", ".rb", ".kt", ".swift") else TEXT
             else:
-                color = TEXT
+                color = DIM  # unrecognized — will attempt extraction
 
             cb = ctk.CTkCheckBox(
                 self._file_list,
