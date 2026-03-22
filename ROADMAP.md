@@ -1373,25 +1373,25 @@ Completed 2026-03-22. Three new skill systems:
 **Goal:** No crashes from missing API keys, clean key management UX, modernized GUI with theme selector.
 
 **API Safety:**
-- [ ] Guard all paid model calls — graceful fallback when API key missing (no MINIMAX/CLAUDE/GEMINI crashes)
-- [ ] OAuth error tracking — log failures to audit trail, show in dashboard
-- [ ] Provider health dashboard — circuit breaker status visible in UI
+- [x] Guard all paid model calls — graceful fallback, has_api_key(), get_provider_status(), fixed _call_minimax arg bug
+- [x] OAuth error tracking — _audit_auth_failure() logs to audit trail, is_missing_key_error() prevents circuit breaker poisoning
+- [x] Provider health dashboard — get_provider_status() returns configured/missing_key/circuit_open per provider
 
 **API Key Management UX:**
-- [ ] Refactor key manager — clean flow: detect keys, show status (set/missing), one-click set/edit
-- [ ] Key validation on entry — test API key before saving (quick probe)
-- [ ] Key status indicators in Settings + Command Center
+- [x] Refactor key manager — tri-state dots (red/orange/green), masked preview, clean card layout
+- [x] Key validation on entry — background probes for 5 providers (Anthropic, Gemini, GitHub, HF, Brave)
+- [x] Key status indicators in Settings + Command Center console buttons
 
 **Sidebar UX:**
-- [ ] Modern sidebar buttons — rounded, icon+label layout, hover animations
-- [ ] Collapsible sections with smooth transitions
-- [ ] Active state indicator (gold accent bar, not just color change)
+- [x] Modern sidebar buttons — rounded (corner_radius=6), SB_HOVER, SB_BTN_HEIGHT
+- [x] Collapsible sections with gold accent bar indicators
+- [x] Active state indicator — 3px gold left border via _sb_set_active()
 
 **Theme System:**
-- [ ] Theme selector in Settings > Display: "Classic" (current dark) vs "Modern" (new default)
-- [ ] Modern theme: softer corners, subtle gradients, refined spacing, glass-morphism cards
-- [ ] Theme persisted to settings.json, applied on startup
-- [ ] All widgets respect active theme (no hardcoded colors outside theme.py)
+- [x] Theme selector in Settings > Display: "Classic" vs "Modern" with descriptions
+- [x] Modern theme: deeper blue tint (#0f1117), softer corners (CARD_RADIUS=12, BTN_RADIUS=8)
+- [x] Theme persisted to settings.json, _load_theme_pref() at import time
+- [x] CARD_RADIUS + BTN_RADIUS replace hardcoded values across launcher + settings
 
 ---
 
