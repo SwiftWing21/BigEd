@@ -6540,8 +6540,77 @@ def generate_debug_report(app=None, error=None, traceback_str=None):
     return report_path
 
 
+# ─── Single-instance lock ─────────────────────────────────────────────────────
+
+_LOCK_FILE = Path(__file__).parent / "data" / "biged.lock"
+
+
+def _acquire_instance_lock() -> bool:
+    """Acquire single-instance lock. Returns True if lock acquired."""
+    if _LOCK_FILE.exists():
+        try:
+            old_pid = int(_LOCK_FILE.read_text().strip())
+        except (ValueError, OSError):
+            old_pid = -1
+        # Check if the PID is still alive
+        if old_pid > 0:
+            try:
+                import psutil
+                proc = psutil.Process(old_pid)
+                # Verify it's actually BigEd, not a recycled PID
+                if proc.is_running() and "python" in proc.name().lower():
+                    return False  # another instance is running
+            except Exception:
+                pass  # process dead — stale lock
+        # Stale lock — remove it
+        try:
+            _LOCK_FILE.unlink(missing_ok=True)
+        except OSError:
+            pass
+    # Write our PID
+    try:
+        _LOCK_FILE.parent.mkdir(parents=True, exist_ok=True)
+        _LOCK_FILE.write_text(str(os.getpid()))
+    except OSError:
+        pass  # non-fatal — proceed without lock
+    return True
+
+
+def _release_instance_lock():
+    """Remove the lock file on exit."""
+    try:
+        if _LOCK_FILE.exists():
+            pid = int(_LOCK_FILE.read_text().strip())
+            if pid == os.getpid():
+                _LOCK_FILE.unlink(missing_ok=True)
+    except Exception:
+        pass
+
+
 # ─── Entry point ──────────────────────────────────────────────────────────────
 if __name__ == "__main__":
+    if not _acquire_instance_lock():
+        # Show a warning dialog and exit
+        import tkinter as tk
+        from tkinter import messagebox
+        root = tk.Tk()
+        root.withdraw()
+        try:
+            old_pid = _LOCK_FILE.read_text().strip()
+        except Exception:
+            old_pid = "?"
+        messagebox.showwarning(
+            "BigEd CC — Already Running",
+            f"Another instance of BigEd CC is already running (PID {old_pid}).\n\n"
+            "Close the existing instance first, or delete:\n"
+            f"{_LOCK_FILE}\nif it crashed.",
+        )
+        root.destroy()
+        sys.exit(1)
+
+    import atexit
+    atexit.register(_release_instance_lock)
+
     try:
         app = BigEdCC()
         app.mainloop()
@@ -6558,3 +6627,5 @@ if __name__ == "__main__":
         except Exception:
             pass
         raise
+    finally:
+        _release_instance_lock()

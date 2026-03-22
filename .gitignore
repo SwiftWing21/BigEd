@@ -31,6 +31,9 @@ fleet/STATUS.md
 # ── Fleet — ephemeral HITL response files ─────────────────────────────────────
 fleet/hitl-responses/*.md
 
+# ── Launcher — single-instance lock ───────────────────────────────────────────
+BigEd/launcher/data/biged.lock
+
 # ── Fleet — misplaced VS Code configs (Gemini artifacts) ─────────────────────
 fleet/launch.json
 fleet/tasks.json
