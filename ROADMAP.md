@@ -1361,12 +1361,12 @@ Completed 2026-03-22. Three new skill systems:
 
 **Goal:** Every dimension at 95+, evidence-verified, multi-agent confirmed, zero hallucinations.
 
-- [ ] Evidence-only scoring — every dimension requires cited file:line proof (no approximations)
-- [ ] Multi-agent verification — 2nd agent independently grades, must agree within 5 points
-- [ ] Hallucination detector — adversarial agent tries to disprove each finding
-- [ ] Novel discovery layer — flag patterns that exceed known best practices
-- [ ] Regression lock — S-tier maintained for 7+ days triggers premium routing (Opus for complex tasks)
-- [ ] Premium routing when S-tier active — Claude Opus for complex, extended context, cache-first
+- [x] Evidence-only scoring — all 5 grading functions return file:line evidence, scores without evidence capped at 80
+- [x] Multi-agent verification — `verify` action: deterministic audit + independent LLM grading, must agree within 5 points
+- [x] Hallucination detector — `_check_hallucinations()` verifies every citation exists in actual files (0 found on BigEd)
+- [x] Novel discovery layer — 7 pattern detectors, BigEd has 4 novel patterns (quality_flywheel, reinforcement, compliance, multi_provider)
+- [x] Regression lock — `regression_check` action: 7-day avg >= 95 check, `s_tier_locked` status
+- [x] Premium routing when S-tier active — `is_premium_routing_active()` → Opus for complex tasks via `get_optimal_model()`
 
 ### 0.175.00b — API Safety + GUI/UX Modernization
 
