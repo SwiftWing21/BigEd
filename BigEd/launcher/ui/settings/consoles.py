@@ -10,7 +10,7 @@ class ConsolesPanelMixin:
     """Settings mixin — Developer Consoles section."""
 
     def _build_consoles_panel(self):
-        frame = ctk.CTkFrame(self._content, fg_color=GLASS_PANEL)
+        frame = ctk.CTkScrollableFrame(self._content, fg_color=GLASS_PANEL)
         self._panels["consoles"] = frame
 
         ctk.CTkLabel(frame, text="Developer Consoles", font=FONT_TITLE,
