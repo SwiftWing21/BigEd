@@ -2126,35 +2126,97 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
         # Model Performance panel (below agents)
         self._build_model_perf_panel(left)
 
-        # ── Actions panel (HITL + advisories) ────────────────────────────────
-        actions_frame = ctk.CTkFrame(left, fg_color=BG2, corner_radius=6)
-        actions_frame.grid(row=3, column=0, sticky="sew", pady=(4, 0))
-        actions_frame.grid_columnconfigure(0, weight=1)
-        actions_frame.grid_rowconfigure(1, weight=1)
+        # ── Prompt Queue panel (replaces old Actions panel) ─────────────────
+        self._pq_items = []       # list of {"prompt": str, "skill": str}
+        self._pq_running = False
+        self._pq_loop_count = 0
+        self._pq_max_loops = 1
 
-        act_hdr = ctk.CTkFrame(actions_frame, fg_color="transparent")
-        act_hdr.grid(row=0, column=0, sticky="ew")
-        act_hdr.grid_columnconfigure(2, weight=1)
-        ctk.CTkLabel(act_hdr, text="ACTIONS",
+        pq_frame = ctk.CTkFrame(left, fg_color=BG2, corner_radius=6)
+        pq_frame.grid(row=3, column=0, sticky="sew", pady=(4, 0))
+        pq_frame.grid_columnconfigure(0, weight=1)
+
+        # Header row: title + Add button
+        pq_hdr = ctk.CTkFrame(pq_frame, fg_color="transparent")
+        pq_hdr.grid(row=0, column=0, sticky="ew")
+        pq_hdr.grid_columnconfigure(1, weight=1)
+        ctk.CTkLabel(pq_hdr, text="PROMPT QUEUE",
                      font=("RuneScape Bold 12", 9, "bold"), text_color=GOLD
                      ).grid(row=0, column=0, padx=(8, 2), pady=(4, 2), sticky="w")
-        ctk.CTkLabel(act_hdr, text="(R to refresh)",
-                     font=("Consolas", 8), text_color=DIM
-                     ).grid(row=0, column=1, padx=(0, 4), pady=(4, 2), sticky="w")
-        self._actions_count_lbl = ctk.CTkLabel(
-            act_hdr, text="", font=("Consolas", 9), text_color=DIM)
-        self._actions_count_lbl.grid(row=0, column=2, padx=8, pady=(4, 2), sticky="e")
+        self._pq_status_lbl = ctk.CTkLabel(
+            pq_hdr, text="", font=FONT_XS, text_color=DIM)
+        self._pq_status_lbl.grid(row=0, column=1, padx=4, pady=(4, 2), sticky="e")
+        self._pq_add_btn = ctk.CTkButton(
+            pq_hdr, text="+ Add", width=50, height=20, font=FONT_XS,
+            fg_color=BG3, hover_color=BG,
+            command=self._pq_toggle_add_row)
+        self._pq_add_btn.grid(row=0, column=2, padx=(2, 6), pady=(4, 2))
 
-        self._actions_scroll = ctk.CTkScrollableFrame(
-            actions_frame, fg_color=BG2, corner_radius=0, height=180)
-        self._actions_scroll.grid(row=1, column=0, sticky="nsew", padx=4, pady=(0, 4))
-        self._actions_scroll.grid_columnconfigure(0, weight=1)
+        # Inline add row (hidden by default)
+        self._pq_add_frame = ctk.CTkFrame(pq_frame, fg_color=BG3, corner_radius=4)
+        # Not gridded yet — shown on "+ Add" click
+        self._pq_add_frame.grid_columnconfigure(1, weight=1)
 
-        self._action_cards = []
-        self._actions_empty_lbl = ctk.CTkLabel(
-            self._actions_scroll, text="No pending actions",
-            font=FONT_SM, text_color=DIM)
-        self._actions_empty_lbl.pack(pady=12)
+        self._pq_skill_var = ctk.StringVar(value="summarize")
+        ctk.CTkOptionMenu(
+            self._pq_add_frame, variable=self._pq_skill_var,
+            values=["summarize", "code_review", "web_search", "code_quality",
+                    "security_audit", "analyze_results", "benchmark",
+                    "research_loop", "code_refactor", "code_index"],
+            font=FONT_XS, width=100, height=20,
+            fg_color=BG, button_color=BG2, dropdown_fg_color=BG2,
+        ).grid(row=0, column=0, padx=(4, 2), pady=3)
+        self._pq_prompt_entry = ctk.CTkEntry(
+            self._pq_add_frame, font=FONT_XS, fg_color=BG, height=22,
+            placeholder_text="Enter prompt...")
+        self._pq_prompt_entry.grid(row=0, column=1, sticky="ew", padx=2, pady=3)
+        self._pq_prompt_entry.bind("<Return>", lambda e: self._pq_add_item())
+        ctk.CTkButton(
+            self._pq_add_frame, text="OK", width=30, height=20, font=FONT_XS,
+            fg_color=ACCENT, hover_color=ACCENT_H,
+            command=self._pq_add_item
+        ).grid(row=0, column=2, padx=(2, 4), pady=3)
+        self._pq_add_visible = False
+
+        # Scrollable queue list
+        self._pq_list_frame = ctk.CTkScrollableFrame(
+            pq_frame, fg_color=BG2, corner_radius=0, height=120)
+        self._pq_list_frame.grid(row=2, column=0, sticky="nsew", padx=4, pady=(0, 2))
+        self._pq_list_frame.grid_columnconfigure(0, weight=1)
+
+        self._pq_empty_lbl = ctk.CTkLabel(
+            self._pq_list_frame, text="Queue empty — click + Add",
+            font=FONT_XS, text_color=DIM)
+        self._pq_empty_lbl.pack(pady=8)
+
+        # Controls row: Loops + Stop + Start
+        pq_ctrl = ctk.CTkFrame(pq_frame, fg_color="transparent")
+        pq_ctrl.grid(row=3, column=0, sticky="ew", padx=4, pady=(0, 4))
+        pq_ctrl.grid_columnconfigure(1, weight=1)
+
+        loops_frame = ctk.CTkFrame(pq_ctrl, fg_color="transparent")
+        loops_frame.grid(row=0, column=0, sticky="w")
+        ctk.CTkLabel(loops_frame, text="Loops:", font=FONT_XS,
+                     text_color=DIM).pack(side="left")
+        self._pq_loop_var = ctk.StringVar(value="1")
+        ctk.CTkEntry(loops_frame, textvariable=self._pq_loop_var,
+                     width=30, height=20, font=FONT_XS, fg_color=BG
+                     ).pack(side="left", padx=2)
+        ctk.CTkLabel(loops_frame, text="(0=inf)", font=FONT_XS,
+                     text_color=DIM).pack(side="left", padx=2)
+
+        btn_frame = ctk.CTkFrame(pq_ctrl, fg_color="transparent")
+        btn_frame.grid(row=0, column=1, sticky="e")
+        self._pq_stop_btn = ctk.CTkButton(
+            btn_frame, text="Stop", width=40, height=20, font=FONT_XS,
+            fg_color="#5a2020", hover_color="#6a2828",
+            command=self._pq_stop, state="disabled")
+        self._pq_stop_btn.pack(side="left", padx=2)
+        self._pq_start_btn = ctk.CTkButton(
+            btn_frame, text="Start Queue", width=70, height=20, font=FONT_XS,
+            fg_color="#1e3a1e", hover_color="#2a4a2a",
+            command=self._pq_start)
+        self._pq_start_btn.pack(side="left", padx=2)
 
         # ── Right column: Log + Task Output ──────────────────────────────────
         right = ctk.CTkFrame(parent, fg_color=BG, corner_radius=0)
@@ -4188,7 +4250,6 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
         self._update_pills(status)
         self._update_agents_table(status)
         self._refresh_model_perf()
-        self._refresh_action_items()
         self._refresh_log()
         self._update_action_badge()
 
@@ -4455,103 +4516,126 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
         self._log_text.configure(state="disabled")
         self._log_label.configure(text=f"LOG — {display_agent}")
 
-    # ── HITL Action Panel ──────────────────────────────────────────────────
-    def _refresh_action_items(self):
-        """Fetch HITL tasks and advisories in background, update action cards."""
-        def _fetch():
-            from data_access import FleetDB
-            waiting = FleetDB.waiting_human_tasks(FLEET_DIR / "fleet.db")
-            advisories = []
+    # ── Prompt Queue (Command Center sidebar) ───────────────────────────
+    def _pq_toggle_add_row(self):
+        """Show/hide the inline add row for the prompt queue."""
+        if self._pq_add_visible:
+            self._pq_add_frame.grid_forget()
+            self._pq_add_visible = False
+        else:
+            self._pq_add_frame.grid(row=1, column=0, sticky="ew", padx=4, pady=(2, 0))
+            self._pq_add_visible = True
+            self._pq_prompt_entry.focus_set()
+
+    def _pq_add_item(self):
+        """Add a prompt to the queue."""
+        text = self._pq_prompt_entry.get().strip()
+        if not text:
+            return
+        self._pq_items.append({"prompt": text, "skill": self._pq_skill_var.get()})
+        self._pq_prompt_entry.delete(0, "end")
+        self._pq_refresh_list()
+
+    def _pq_remove_item(self, idx):
+        """Remove item at index from the queue."""
+        if 0 <= idx < len(self._pq_items):
+            self._pq_items.pop(idx)
+            self._pq_refresh_list()
+
+    def _pq_refresh_list(self):
+        """Rebuild the queue list display."""
+        for w in self._pq_list_frame.winfo_children():
+            w.destroy()
+        if not self._pq_items:
+            self._pq_empty_lbl = ctk.CTkLabel(
+                self._pq_list_frame, text="Queue empty — click + Add",
+                font=FONT_XS, text_color=DIM)
+            self._pq_empty_lbl.pack(pady=8)
+            return
+        for i, item in enumerate(self._pq_items):
+            row = ctk.CTkFrame(self._pq_list_frame, fg_color="transparent")
+            row.pack(fill="x", padx=2, pady=1)
+            row.grid_columnconfigure(2, weight=1)
+            ctk.CTkLabel(row, text=f"{i+1}.", font=FONT_XS, text_color=DIM,
+                         width=16).grid(row=0, column=0, padx=(2, 1))
+            ctk.CTkLabel(row, text=f"[{item['skill']}]", font=FONT_XS,
+                         text_color=GOLD, width=80, anchor="w"
+                         ).grid(row=0, column=1, padx=(0, 2))
+            ctk.CTkLabel(row, text=item['prompt'][:50], font=FONT_XS,
+                         text_color=TEXT, anchor="w"
+                         ).grid(row=0, column=2, sticky="ew")
+            ctk.CTkButton(row, text="x", width=18, height=16, font=FONT_XS,
+                          fg_color=BG, hover_color="#5a2020",
+                          command=lambda idx=i: self._pq_remove_item(idx)
+                          ).grid(row=0, column=3, padx=(2, 2))
+
+    def _pq_start(self):
+        """Start dispatching the prompt queue in a background thread."""
+        if not self._pq_items:
+            return
+        try:
+            loops = int(self._pq_loop_var.get())
+        except ValueError:
+            loops = 1
+        self._pq_max_loops = loops
+        self._pq_loop_count = 0
+        self._pq_running = True
+        self._pq_start_btn.configure(state="disabled")
+        self._pq_stop_btn.configure(state="normal")
+        threading.Thread(target=self._pq_run, daemon=True).start()
+
+    def _pq_stop(self):
+        """Stop the running prompt queue."""
+        self._pq_running = False
+        self._pq_start_btn.configure(state="normal")
+        self._pq_stop_btn.configure(state="disabled")
+        self._safe_after(0, lambda: self._pq_status_lbl.configure(text="Stopped"))
+
+    def _pq_run(self):
+        """Background thread: dispatch prompts round-robin via db.post_task."""
+        try:
+            import db
+        except ImportError:
+            self._pq_running = False
+            self._safe_after(0, lambda: self._pq_status_lbl.configure(
+                text="Error: db not available"))
+            return
+
+        idx = 0
+        while self._pq_running:
+            if not self._pq_items:
+                break
+            n_items = len(self._pq_items)
+            item = self._pq_items[idx % n_items]
+            loop_num = self._pq_loop_count + 1
+            item_num = (idx % n_items) + 1
             try:
-                if PENDING_DIR.exists():
-                    for f in sorted(PENDING_DIR.glob("advisory_*.md"))[:10]:
-                        try:
-                            text = f.read_text(encoding="utf-8", errors="replace")
-                            title = text.split("\n")[0].strip("# ").strip() if text else f.name
-                            advisories.append({
-                                "file": f.name, "title": title[:80], "path": str(f)})
-                        except Exception:
-                            pass
-            except Exception:
-                pass
-            return waiting, advisories
+                db.post_task(item['skill'], json.dumps({"prompt": item['prompt']}))
+                status_text = f"Running {item_num}/{n_items}, loop {loop_num}"
+                if self._pq_max_loops > 0:
+                    status_text += f"/{self._pq_max_loops}"
+                self._safe_after(0, lambda t=status_text: self._pq_status_lbl.configure(
+                    text=t, text_color=GREEN))
+            except Exception as e:
+                err = f"Dispatch error: {str(e)[:30]}"
+                self._safe_after(0, lambda t=err: self._pq_status_lbl.configure(
+                    text=t, text_color=RED))
 
-        def _render(data):
-            if not hasattr(self, '_action_cards'):
-                return
-            waiting, advisories = data
-            cards = list(self._action_cards)
-            self._action_cards.clear()
-            for w in cards:
-                try:
-                    w.destroy()
-                except Exception:
-                    pass
+            idx += 1
+            if idx % n_items == 0:
+                self._pq_loop_count += 1
+                if self._pq_max_loops > 0 and self._pq_loop_count >= self._pq_max_loops:
+                    break
 
-            total = len(waiting) + len(advisories)
-            self._actions_count_lbl.configure(
-                text=f"{total} pending" if total else "")
+            time.sleep(2)  # Pace between dispatches
 
-            if not total:
-                self._actions_empty_lbl.pack(pady=12)
-                return
-            self._actions_empty_lbl.pack_forget()
-
-            for item in waiting:
-                card = ctk.CTkFrame(self._actions_scroll, fg_color=BG3, corner_radius=6)
-                card.pack(fill="x", padx=2, pady=(1, 1))
-                self._action_cards.append(card)
-                agent_name = item.get("assigned_to", "?")
-                card_hdr = ctk.CTkFrame(card, fg_color="transparent")
-                card_hdr.pack(fill="x", padx=6, pady=(4, 0))
-                card_hdr.grid_columnconfigure(0, weight=1)
-                ctk.CTkLabel(card_hdr, text=f"\U0001f916 {agent_name} — Task #{item['id']}",
-                             font=("RuneScape Bold 12", 10, "bold"), text_color=GOLD,
-                             anchor="w").grid(row=0, column=0, sticky="w")
-                rel = _relative_time(item.get("created_at", ""))
-                if rel:
-                    ctk.CTkLabel(card_hdr, text=rel, font=("Consolas", 8),
-                                 text_color=DIM, anchor="e"
-                                 ).grid(row=0, column=1, sticky="e")
-                question = item.get("question", "")[:120]
-                ctk.CTkLabel(card, text=question, font=FONT_SM,
-                             text_color=TEXT, wraplength=280, anchor="w", justify="left"
-                             ).pack(fill="x", padx=6, pady=(2, 0))
-                tid = item["id"]
-                q_full = item.get("question", "")
-                ctk.CTkButton(
-                    card, text="Respond", width=70, height=22, font=FONT_SM,
-                    fg_color=ACCENT, hover_color=ACCENT_H,
-                    command=lambda t=tid, q=q_full: self._respond_to_agent(t, q),
-                ).pack(anchor="e", padx=6, pady=(2, 4))
-
-            for adv in advisories:
-                card = ctk.CTkFrame(self._actions_scroll, fg_color="#2a1a1a", corner_radius=6)
-                card.pack(fill="x", padx=2, pady=(1, 1))
-                self._action_cards.append(card)
-                top = ctk.CTkFrame(card, fg_color="transparent")
-                top.pack(fill="x", padx=6, pady=(4, 4))
-                top.grid_columnconfigure(1, weight=1)
-                ctk.CTkLabel(top, text=f"\U0001f512 {adv['title'][:50]}",
-                             font=("RuneScape Bold 12", 10, "bold"), text_color=ORANGE
-                             ).grid(row=0, column=0, sticky="w")
-                btn_frame = ctk.CTkFrame(top, fg_color="transparent")
-                btn_frame.grid(row=0, column=2, sticky="e")
-                ctk.CTkButton(
-                    btn_frame, text="View", width=50, height=22, font=FONT_SM,
-                    fg_color=BG3, hover_color=BG,
-                    command=lambda p=adv["path"]: self._view_advisory(p),
-                ).pack(side="left", padx=(0, 3))
-                ctk.CTkButton(
-                    btn_frame, text="Dismiss", width=60, height=22, font=FONT_SM,
-                    fg_color=BG3, hover_color=BG,
-                    command=lambda p=adv["path"]: self._dismiss_advisory_inline(p),
-                ).pack(side="left")
-
-        def _bg():
-            data = _fetch()
-            self._safe_after(0, lambda: _render(data))
-        threading.Thread(target=_bg, daemon=True).start()
+        self._pq_running = False
+        final = f"Done ({self._pq_loop_count} loop{'s' if self._pq_loop_count != 1 else ''})"
+        self._safe_after(0, lambda: (
+            self._pq_start_btn.configure(state="normal"),
+            self._pq_stop_btn.configure(state="disabled"),
+            self._pq_status_lbl.configure(text=final, text_color=DIM),
+        ))
 
     def _respond_to_agent(self, task_id, question):
         """Open structured response dialog for an agent's HITL request."""
@@ -4665,12 +4749,12 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
             pass
 
     def _refresh_action_items_now(self):
-        """Immediately refresh action items and comm panel."""
-        self._refresh_action_items()
+        """Refresh comm panel and action badge (HITL items live in Fleet Comm)."""
         try:
             self._refresh_comm()
         except Exception:
             pass
+        self._update_action_badge()
 
     def _view_advisory(self, path):
         """Open window showing advisory content."""
@@ -4713,7 +4797,10 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
                 json_path = adv_path.with_suffix(".json")
                 if json_path.exists():
                     json_path.rename(archived_dir / json_path.name)
-                self._refresh_action_items()
+                try:
+                    self._refresh_comm()
+                except Exception:
+                    pass
                 self._update_action_badge()
         except Exception:
             pass
