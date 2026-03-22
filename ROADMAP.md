@@ -1397,9 +1397,9 @@ Completed 2026-03-22. Three new skill systems:
 
 **Goal:** VS Code Claude/Gemini sessions can fully control the fleet via REST API.
 
-- [ ] HITL response endpoint — `POST /api/tasks/<id>/respond`, `GET /api/tasks/waiting-human`
-- [ ] Queue management — `GET /api/tasks/queue`, `PUT /api/tasks/<id>/priority`, `DELETE /api/tasks/<id>`
-- [ ] Fleet control plugin — `.claude/skills/fleet-control.md` teaches Claude Code how to use fleet APIs
+- [x] HITL response endpoint — 3 endpoints: waiting-human list, respond, question
+- [x] Queue management — 4 endpoints: queue list, priority change, cancel, requeue
+- [x] Fleet control plugin — `.claude/skills/fleet-control.md` with 34 CLI commands + 65+ REST API reference
 
 ---
 
