@@ -2321,6 +2321,210 @@ def api_feedback_stats():
         return jsonify({"error": _safe_error(e)}), 500
 
 
+# ── HITL Response Endpoints ───────────────────────────────────────────────────
+
+
+@app.route("/api/tasks/waiting-human")
+def api_waiting_human():
+    """List all tasks awaiting human input."""
+    try:
+        sys.path.insert(0, str(FLEET_DIR))
+        import db
+        tasks = db.get_waiting_human_tasks()
+        result = []
+        for t in tasks:
+            result.append({
+                "id": t["id"],
+                "type": t.get("type", ""),
+                "question": t.get("question", ""),
+                "agent": t.get("assigned_to", ""),
+                "created_at": t.get("created_at", ""),
+            })
+        return jsonify(result)
+    except Exception as e:
+        return jsonify({"error": _safe_error(e)}), 500
+
+
+@app.route("/api/tasks/<int:task_id>/respond", methods=["POST"])
+@_require_role("operator")
+def api_task_respond(task_id):
+    """Submit human response to a WAITING_HUMAN task."""
+    try:
+        data = request.get_json(silent=True) or {}
+        response_text = data.get("response", "").strip()
+        if not response_text:
+            return jsonify({"error": "response is required"}), 400
+
+        sys.path.insert(0, str(FLEET_DIR))
+        import db
+        db.respond_to_agent(task_id, response_text)
+
+        _broadcast_sse({
+            "type": "hitl_response",
+            "data": {"task_id": task_id, "responded": True},
+        })
+        return jsonify({"ok": True, "task_id": task_id})
+    except Exception as e:
+        return jsonify({"error": _safe_error(e)}), 500
+
+
+@app.route("/api/tasks/<int:task_id>/question")
+def api_task_question(task_id):
+    """Get the question asked by an agent for a specific task."""
+    try:
+        row = query(
+            "SELECT id, type, assigned_to, status, payload_json, created_at "
+            "FROM tasks WHERE id=?", (task_id,)
+        )
+        if not row:
+            return jsonify({"error": "Task not found"}), 404
+        task = row[0]
+        # Extract question from the agent's message to operator
+        question = ""
+        try:
+            msgs = query(
+                "SELECT body_json FROM messages "
+                "WHERE from_agent=? AND to_agent='operator' "
+                "AND body_json LIKE '%human_input_request%' "
+                "AND body_json LIKE ? "
+                "ORDER BY id DESC LIMIT 1",
+                (task.get("assigned_to") or "", f'%"task_id": {task_id}%'),
+            )
+            if msgs:
+                body = json.loads(msgs[0]["body_json"])
+                question = body.get("question", "")
+        except Exception:
+            pass
+        return jsonify({
+            "task_id": task_id,
+            "type": task.get("type", ""),
+            "agent": task.get("assigned_to", ""),
+            "status": task.get("status", ""),
+            "question": question,
+            "created_at": task.get("created_at", ""),
+        })
+    except Exception as e:
+        return jsonify({"error": _safe_error(e)}), 500
+
+
+# ── Queue Management Endpoints ───────────────────────────────────────────────
+
+
+@app.route("/api/tasks/queue")
+def api_task_queue():
+    """List pending and running tasks with priority and order."""
+    try:
+        page = max(1, int(request.args.get("page", 1)))
+        per_page = min(100, max(1, int(request.args.get("per_page", 50))))
+        offset = (page - 1) * per_page
+
+        total_row = query(
+            "SELECT COUNT(*) as n FROM tasks WHERE status IN ('PENDING','RUNNING')"
+        )
+        total = total_row[0]["n"] if total_row else 0
+
+        tasks = query(
+            "SELECT id, type, status, priority, assigned_to, created_at, payload_json "
+            "FROM tasks WHERE status IN ('PENDING','RUNNING') "
+            "ORDER BY priority DESC, created_at ASC "
+            "LIMIT ? OFFSET ?",
+            (per_page, offset),
+        )
+        return jsonify({
+            "tasks": tasks,
+            "page": page,
+            "per_page": per_page,
+            "total": total,
+        })
+    except Exception as e:
+        return jsonify({"error": _safe_error(e)}), 500
+
+
+@app.route("/api/tasks/<int:task_id>/priority", methods=["PUT"])
+@_require_role("operator")
+def api_task_priority(task_id):
+    """Change task priority (1-10). Only PENDING tasks can be re-prioritised."""
+    try:
+        data = request.get_json(silent=True) or {}
+        new_priority = data.get("priority", 5)
+        try:
+            new_priority = int(new_priority)
+        except (TypeError, ValueError):
+            return jsonify({"error": "priority must be an integer"}), 400
+        if not 1 <= new_priority <= 10:
+            return jsonify({"error": "priority must be between 1 and 10"}), 400
+
+        rows = query("SELECT status FROM tasks WHERE id=?", (task_id,))
+        if not rows:
+            return jsonify({"error": "Task not found"}), 404
+        if rows[0]["status"] != "PENDING":
+            return jsonify({"error": "Only PENDING tasks can be re-prioritised"}), 409
+
+        with get_conn() as conn:
+            conn.execute(
+                "UPDATE tasks SET priority=? WHERE id=? AND status='PENDING'",
+                (new_priority, task_id),
+            )
+
+        _broadcast_sse({
+            "type": "task_priority",
+            "data": {"task_id": task_id, "priority": new_priority},
+        })
+        return jsonify({"ok": True, "task_id": task_id, "priority": new_priority})
+    except Exception as e:
+        return jsonify({"error": _safe_error(e)}), 500
+
+
+@app.route("/api/tasks/<int:task_id>", methods=["DELETE"])
+@_require_role("operator")
+def api_task_cancel(task_id):
+    """Cancel a pending task."""
+    try:
+        rows = query("SELECT status FROM tasks WHERE id=?", (task_id,))
+        if not rows:
+            return jsonify({"error": "Task not found"}), 404
+        if rows[0]["status"] != "PENDING":
+            return jsonify({"error": "Only PENDING tasks can be cancelled"}), 409
+
+        with get_conn() as conn:
+            conn.execute(
+                "UPDATE tasks SET status='FAILED', result_json=? WHERE id=? AND status='PENDING'",
+                (json.dumps({"error": "Cancelled by operator"}), task_id),
+            )
+
+        _broadcast_sse({
+            "type": "task_cancelled",
+            "data": {"task_id": task_id},
+        })
+        return jsonify({"ok": True, "task_id": task_id, "status": "FAILED"})
+    except Exception as e:
+        return jsonify({"error": _safe_error(e)}), 500
+
+
+@app.route("/api/tasks/<int:task_id>/requeue", methods=["POST"])
+@_require_role("operator")
+def api_task_requeue(task_id):
+    """Requeue a failed task — resets it to PENDING."""
+    try:
+        rows = query("SELECT status FROM tasks WHERE id=?", (task_id,))
+        if not rows:
+            return jsonify({"error": "Task not found"}), 404
+        if rows[0]["status"] != "FAILED":
+            return jsonify({"error": "Only FAILED tasks can be requeued"}), 409
+
+        sys.path.insert(0, str(FLEET_DIR))
+        import db
+        db.requeue_task(task_id)
+
+        _broadcast_sse({
+            "type": "task_requeued",
+            "data": {"task_id": task_id},
+        })
+        return jsonify({"ok": True, "task_id": task_id, "status": "PENDING"})
+    except Exception as e:
+        return jsonify({"error": _safe_error(e)}), 500
+
+
 # ── Entry ────────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":

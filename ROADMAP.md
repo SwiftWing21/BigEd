@@ -1393,6 +1393,14 @@ Completed 2026-03-22. Three new skill systems:
 - [x] Theme persisted to settings.json, _load_theme_pref() at import time
 - [x] CARD_RADIUS + BTN_RADIUS replace hardcoded values across launcher + settings
 
+### 0.180.01b — VS Code ↔ Fleet Full Integration
+
+**Goal:** VS Code Claude/Gemini sessions can fully control the fleet via REST API.
+
+- [ ] HITL response endpoint — `POST /api/tasks/<id>/respond`, `GET /api/tasks/waiting-human`
+- [ ] Queue management — `GET /api/tasks/queue`, `PUT /api/tasks/<id>/priority`, `DELETE /api/tasks/<id>`
+- [ ] Fleet control plugin — `.claude/skills/fleet-control.md` teaches Claude Code how to use fleet APIs
+
 ---
 
 ## Audit Coverage Check (per AUDIT_TRACKER.md)
