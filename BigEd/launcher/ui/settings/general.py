@@ -221,6 +221,35 @@ class GeneralPanelMixin:
                                          font=FONT_SM, text_color=DIM)
         self._hub_status.pack(padx=12, pady=8)
 
+        # ── Skill Routing ────────────────────────────────────────────
+        self._section_header(panel, "Skill Routing")
+        affinity_frame = ctk.CTkFrame(panel, fg_color=GLASS_BG, corner_radius=6)
+        affinity_frame.pack(fill="x", padx=16, pady=(0, 12))
+
+        # Read current affinity state
+        affinity_enabled = True
+        try:
+            import tomllib
+            L = _launcher()
+            with open(L.FLEET_TOML, "rb") as f:
+                _toml = tomllib.load(f)
+            affinity_enabled = _toml.get("affinity", {}).get("enabled", True)
+        except Exception:
+            pass
+
+        self._affinity_var = ctk.BooleanVar(value=affinity_enabled)
+        ctk.CTkSwitch(
+            affinity_frame, text="Role-based skill affinity",
+            variable=self._affinity_var, font=FONT_SM, text_color=TEXT,
+            fg_color=BG3, progress_color=GOLD,
+            command=self._on_affinity_toggle,
+        ).pack(padx=12, pady=(10, 2), anchor="w")
+        ctk.CTkLabel(affinity_frame,
+                     text="ON: agents prefer skills matching their role (researcher→web_search, coder→code_review)\n"
+                          "OFF: all agents can run all skills — no role preference",
+                     font=FONT_XS, text_color=DIM, justify="left"
+                     ).pack(padx=12, pady=(0, 10), anchor="w")
+
         # ── Compliance (DITL) ─────────────────────────────────────────
         self._section_header(panel, "Compliance (DITL)")
         ditl_frame = ctk.CTkFrame(panel, fg_color="transparent")
@@ -426,6 +455,15 @@ class GeneralPanelMixin:
 
         if hasattr(self, "_status"):
             self._status.configure(text="Import successful.", text_color=GREEN)
+
+    # ── Affinity handler ──────────────────────────────────────────────
+
+    def _on_affinity_toggle(self):
+        enabled = self._affinity_var.get()
+        try:
+            self._update_toml_value("affinity", "enabled", enabled)
+        except Exception:
+            pass
 
     # ── DITL handlers ─────────────────────────────────────────────────
 
