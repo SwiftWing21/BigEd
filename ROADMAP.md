@@ -1334,6 +1334,29 @@ Agent produces output → Outputs module shows it → Operator reviews
   → DITL reject: PHI audit + mandatory re-review pipeline
 ```
 
+### 0.170.06b — OSS Review + Quality Flywheel + Claude Efficiency [DONE]
+
+Completed 2026-03-22. Three new skill systems:
+
+- [x] `oss_review` — lightweight project review (discover, pre-rate, single-agent)
+- [x] `oss_review_swarm` — 4-lens swarm audit + watchlist + regression tracking
+- [x] `quality_flywheel` — 10-dimension context audit, gap analysis, draft improvements, reinforcement learning
+- [x] `.claude/skills/oss-review.md` + `context-audit.md` — Claude Code plugins for any user
+- [x] Flywheel self-audit: B+ (84.9/100) — coverage A, completeness A, freshness A
+- [x] skill_draft rerouted simple→local (fixed 1959 MINIMAX failures)
+
+### 0.170.07b — Claude Maximum Efficiency + Capacity Tracker
+
+**Goal:** Reduce Claude API costs 30-60% through caching, batching, MCP routing, and bonus window detection.
+
+- [ ] `claude_efficiency` skill — audit usage patterns, recommend optimizations
+- [ ] Prompt caching enforcement — ensure all Claude-routed skills use cache_control
+- [ ] Batch API integration — queue non-urgent tasks for 50% discount
+- [ ] Capacity window tracker — detect 2x bonus periods from fleet.toml [capacity]
+- [ ] Auto-scale during bonus — deploy extra agents, prefer Claude over local
+- [ ] `.claude/skills/max-efficiency.md` — self-optimization plugin for any Claude session
+- [ ] Flywheel target: A (90+) — actionability improvements, consistency fixes
+
 ---
 
 ## Audit Coverage Check (per AUDIT_TRACKER.md)
