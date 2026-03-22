@@ -1406,21 +1406,21 @@ Completed 2026-03-22. Three new skill systems:
 **Goal:** In-app issue/feedback submission with API key scrubbing, error log attachment, and module hub routing.
 
 **Issue Types:**
-- [ ] Bug report — auto-attaches error logs, system info, repro steps template
-- [ ] Feature request — description + priority selector
-- [ ] Feedback — free-text with rating (1-5 stars)
-- [ ] Module submission — select existing module or propose new, routes to BigEd-ModuleHub repo
+- [x] Bug report — auto-attaches error logs, system info, repro steps template
+- [x] Feature request — description + priority selector
+- [x] Feedback — free-text with rating (1-5 stars)
+- [x] Module submission — select existing module or propose new, routes to BigEd-ModuleHub repo
 
 **Submission Flow:**
-- [ ] "Report Issue" sidebar button opens submission dialog (replaces current minimal flow)
-- [ ] Type selector: Bug / Feature / Feedback / Module Submission
-- [ ] Auto-populate: BigEd version, OS, Python version, Ollama status, fleet status
-- [ ] Error log attachment: auto-collects last 50 lines from active log, user can edit before submit
-- [ ] API key scrubbing: scan submission text + logs for API key patterns, redact before send
-- [ ] Screenshot attachment: optional, uses existing screenshot skill
-- [ ] Module submission: dropdown of installed modules + "New Module" option, routes to BigEd-ModuleHub
-- [ ] Submit via GitHub Issues API (gh CLI) or fallback to open browser with pre-filled URL
-- [ ] Local backup: save copy to `fleet/knowledge/reports/issue_<date>.json` even if GitHub fails
+- [x] "Report Issue" sidebar button opens submission dialog (replaces current minimal flow)
+- [x] Type selector: Bug / Feature / Feedback / Module Submission
+- [x] Auto-populate: BigEd version, OS, Python version, Ollama status, fleet status
+- [x] Error log attachment: auto-collects last 50 lines from active log, user can edit before submit
+- [x] API key scrubbing: scan submission text + logs for API key patterns, redact before send
+- [x] Screenshot attachment: optional, uses existing screenshot skill
+- [x] Module submission: dropdown of installed modules + "New Module" option, routes to BigEd-ModuleHub
+- [x] Submit via GitHub Issues API (gh CLI) or fallback to open browser with pre-filled URL
+- [x] Local backup: save copy to `fleet/knowledge/reports/issue_<date>.json` even if GitHub fails
 
 **Key Scrubbing Patterns:**
 - `sk-ant-*`, `sk-*` (Anthropic)
@@ -1434,10 +1434,10 @@ Completed 2026-03-22. Three new skill systems:
 
 **Goal:** README auto-opens only for new users, accessible on demand after walkthrough completion.
 
-- [ ] First-launch only: VSCODE_README.md auto-opens until walkthrough completed, then stops
-- [ ] Settings button: "Open VS Code Help" in Settings > General opens README in VS Code
-- [ ] fleet-control.md skill: respond to "BigEd help" prompt with README content (scoped to BigEd projects only, not global Claude)
-- [ ] Walkthrough completion flag in settings.json gates the auto-open behavior
+- [x] First-launch only: VSCODE_README.md auto-opens until walkthrough completed, then stops
+- [x] Settings button: "Open VS Code Help" in Settings > General opens README in VS Code
+- [x] fleet-control.md skill: respond to "BigEd help" prompt with README content (scoped to BigEd projects only, not global Claude)
+- [x] Walkthrough completion flag in settings.json gates the auto-open behavior
 
 ---
 
