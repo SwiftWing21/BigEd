@@ -3218,6 +3218,48 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
 
         threading.Thread(target=_record, daemon=True).start()
 
+    def _voice_into_task(self):
+        """Capture voice and transcribe into the Task entry bar."""
+        self._task_mic_btn.configure(text="\u23fa", fg_color="#5a2020")
+        self._task_status.configure(text="Listening...", text_color=ORANGE)
+
+        def _record():
+            try:
+                import sys as _sys
+                if str(FLEET_DIR) not in _sys.path:
+                    _sys.path.insert(0, str(FLEET_DIR))
+                from skills.speech_to_text import run as stt_run
+                config = {}
+                try:
+                    from config import load_config
+                    config = load_config()
+                except Exception:
+                    pass
+                import logging
+                result = stt_run({"action": "listen", "duration_secs": 5}, config, logging.getLogger("stt"))
+                if "text" in result and result["text"]:
+                    self._safe_after(0, lambda t=result["text"]: self._task_entry.insert("end", t))
+                    self._safe_after(0, lambda: self._task_status.configure(text="Transcribed", text_color=GREEN))
+                    self._safe_after(3000, lambda: self._task_status.configure(text=""))
+                else:
+                    self._safe_after(0, lambda: self._task_status.configure(
+                        text=result.get("error", "no text"), text_color=RED))
+            except Exception as e:
+                self._safe_after(0, lambda: self._task_status.configure(text=f"STT error", text_color=RED))
+            finally:
+                self._safe_after(0, lambda: self._task_mic_btn.configure(text="\U0001f3a4", fg_color=BG2))
+        threading.Thread(target=_record, daemon=True).start()
+
+    def _voice_into_active_entry(self):
+        """Ctrl+Shift+M — voice input into whichever entry is focused (task bar or chat)."""
+        focused = self.focus_get()
+        # If focused widget is the manual chat entry, use chat voice
+        if focused == getattr(self, '_manual_chat_entry', None):
+            self._voice_input()
+        else:
+            # Default to task bar
+            self._voice_into_task()
+
     def _launch_oauth_session(self, model, context):
         """Write context files and launch VS Code session (Claude Code or Gemini CLI)."""
         # Context preview — show files to be written before proceeding
@@ -3867,6 +3909,17 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
         btn_col = ctk.CTkFrame(bar, fg_color="transparent")
         btn_col.grid(row=0, column=2, padx=(4, 8), pady=6, sticky="n")
 
+        # Mic button — STT into task entry
+        self._task_mic_btn = ctk.CTkButton(
+            bar, text="\U0001f3a4", width=36, height=30, font=("Segoe UI", 14),
+            fg_color=BG2, hover_color=BG,
+            command=self._voice_into_task)
+        self._task_mic_btn.grid(row=0, column=2, padx=(2, 0), pady=6)
+        Tooltip(self._task_mic_btn, "Voice input (Ctrl+Shift+M)")
+
+        btn_col = ctk.CTkFrame(bar, fg_color="transparent")
+        btn_col.grid(row=0, column=3, padx=(4, 8), pady=6, sticky="n")
+
         ctk.CTkButton(
             btn_col, text="Dispatch", font=FONT_SM, width=90, height=30,
             fg_color=ACCENT, hover_color=ACCENT_H,
@@ -3877,9 +3930,12 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
             btn_col, text="", font=FONT_SM, text_color=DIM)
         self._task_status.pack()
 
-        # P3 polish — Ctrl+K hint for command palette discoverability
-        ctk.CTkLabel(bar, text="Ctrl+K  command palette", font=FONT_XS,
-                     text_color=DIM).grid(row=1, column=1, sticky="e", padx=(0, 8), pady=(0, 4))
+        # P3 polish — Ctrl+K hint + mic hotkey hint
+        ctk.CTkLabel(bar, text="Ctrl+K  command palette  |  Ctrl+Shift+M  voice input", font=FONT_XS,
+                     text_color=DIM).grid(row=1, column=1, columnspan=2, sticky="e", padx=(0, 8), pady=(0, 4))
+
+        # Global hotkey: Ctrl+Shift+M → voice input into focused entry
+        self.bind("<Control-Shift-M>", lambda e: self._voice_into_active_entry())
 
     def _on_task_enter(self, event):
         """Enter dispatches; Shift+Enter inserts newline."""
