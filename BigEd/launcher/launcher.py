@@ -924,8 +924,8 @@ class CustomTabBar(ctk.CTkFrame):
         # Left scroll chevron
         self._scroll_left_btn = ctk.CTkButton(
             bar_container, text="\u25C0", width=20, height=38,
-            font=("Consolas", 12), fg_color="transparent", hover_color=BG3,
-            text_color=BG2, corner_radius=0,
+            font=FONT_SM, fg_color="transparent", hover_color=BG3,
+            text_color=DIM, corner_radius=0,
             command=lambda: self._scroll_tabs(-1))
         self._scroll_left_btn.grid(row=0, column=0, sticky="ns")
 
@@ -937,8 +937,8 @@ class CustomTabBar(ctk.CTkFrame):
         # Right scroll chevron
         self._scroll_right_btn = ctk.CTkButton(
             bar_container, text="\u25B6", width=20, height=38,
-            font=("Consolas", 12), fg_color="transparent", hover_color=BG3,
-            text_color=BG2, corner_radius=0,
+            font=FONT_SM, fg_color="transparent", hover_color=BG3,
+            text_color=DIM, corner_radius=0,
             command=lambda: self._scroll_tabs(1))
         self._scroll_right_btn.grid(row=0, column=2, sticky="ns")
 
@@ -1127,9 +1127,9 @@ class CustomTabBar(ctk.CTkFrame):
                 cell.grid_remove()
         # Update chevron colours: visible when scrollable, hidden when at limit
         self._scroll_left_btn.configure(
-            text_color=TEXT if self._tab_scroll_offset > 0 else BG2)
+            text_color=TEXT if self._tab_scroll_offset > 0 else DIM)
         self._scroll_right_btn.configure(
-            text_color=TEXT if self._tab_scroll_offset < max_offset else BG2)
+            text_color=TEXT if self._tab_scroll_offset < max_offset else DIM)
 
     def _on_mousewheel(self, event) -> None:
         """Scroll tab bar on mouse wheel (Windows <MouseWheel>, Linux <Button-4/5>)."""

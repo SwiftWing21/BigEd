@@ -460,7 +460,7 @@ class Module:
         # Skill routing weight display + adjustment UI (0.051.03b)
         ctk.CTkLabel(card, text="Skill Complexity Routing Weights", font=FONT_BOLD,
                      text_color=GOLD, anchor="w").pack(fill="x", padx=12, pady=(8, 2))
-        ctk.CTkLabel(card, text="Drag skills between tiers to adjust routing cost. "
+        ctk.CTkLabel(card, text="Move skills between tiers to adjust routing cost. "
                      "Changes write back to providers.py SKILL_COMPLEXITY.",
                      font=FONT_XS, text_color=DIM, wraplength=600,
                      anchor="w").pack(fill="x", padx=16, pady=(0, 4))
@@ -497,9 +497,17 @@ class Module:
         move_row.pack(fill="x", padx=12, pady=(4, 2))
 
         ctk.CTkLabel(move_row, text="Move skill:", font=FONT_SM, text_color=DIM).pack(side="left")
-        self._move_skill_var = ctk.StringVar(value="")
-        ctk.CTkEntry(move_row, textvariable=self._move_skill_var, width=140, height=28,
-                     font=FONT_SM, fg_color=BG, placeholder_text="skill_name").pack(side="left", padx=4)
+        # Collect all skills from the tier labels for the dropdown
+        all_skills = []
+        for _tier_key, _lbl in self._weight_tiers.items():
+            text = _lbl.cget("text") if hasattr(_lbl, "cget") else ""
+            all_skills.extend([s.strip() for s in text.split(",") if s.strip()])
+        all_skills = sorted(set(all_skills)) or ["(no skills loaded)"]
+        self._move_skill_var = ctk.StringVar(value=all_skills[0])
+        ctk.CTkOptionMenu(move_row, variable=self._move_skill_var,
+                          values=all_skills, font=FONT_SM, width=160, height=28,
+                          fg_color=BG3, button_color=BG2, dropdown_fg_color=BG2
+                          ).pack(side="left", padx=4)
 
         ctk.CTkLabel(move_row, text="to:", font=FONT_SM, text_color=DIM).pack(side="left", padx=(4, 2))
         self._move_tier_var = ctk.StringVar(value="simple")
@@ -648,14 +656,17 @@ class Module:
                 self._eval_feed_status.configure(text="FleetDB not available")
                 return
 
-            fdb = FleetDB()
-            with fdb._conn() as conn:
+            db_path = FLEET_DIR / "fleet.db"
+            conn = FleetDB._connect(db_path)
+            try:
                 rows = conn.execute("""
                     SELECT id, type, assigned_to, intelligence_score, updated_at
                     FROM tasks WHERE intelligence_score IS NOT NULL
                     AND intelligence_score > 0
                     ORDER BY updated_at DESC LIMIT 5
                 """).fetchall()
+            finally:
+                conn.close()
 
             if not rows:
                 self._eval_feed_status.configure(text="No scored tasks yet")
