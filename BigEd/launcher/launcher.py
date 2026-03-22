@@ -915,53 +915,78 @@ class CustomTabBar(ctk.CTkFrame):
         self.grid_columnconfigure(0, weight=1)
         self.grid_rowconfigure(2, weight=1)   # 0=bar strip, 1=separator, 2=content
 
-        # ── Tab button strip (scrollable) ────────────────────────────────────
-        bar_container = ctk.CTkFrame(self, fg_color=BG2, height=42, corner_radius=0)
+        # ── Tab button strip — horizontal scroll via thin scrollbar ──────────
+        bar_container = ctk.CTkFrame(self, fg_color=BG2, height=46, corner_radius=0)
         bar_container.grid(row=0, column=0, sticky="ew")
         bar_container.grid_propagate(False)
-        bar_container.grid_columnconfigure(1, weight=1)
+        bar_container.grid_columnconfigure(0, weight=1)
+        bar_container.grid_rowconfigure(0, weight=1)
 
-        # Left scroll chevron
-        self._scroll_left_btn = ctk.CTkButton(
-            bar_container, text="\u25C0", width=20, height=38,
-            font=FONT_SM, fg_color="transparent", hover_color=BG3,
-            text_color=DIM, corner_radius=0,
-            command=lambda: self._scroll_tabs(-1))
-        self._scroll_left_btn.grid(row=0, column=0, sticky="ns")
+        # Canvas for horizontal scrolling (no chevrons needed)
+        self._tab_canvas = ctk.CTkCanvas(
+            bar_container, bg=BG2, highlightthickness=0, height=42)
+        self._tab_canvas.grid(row=0, column=0, sticky="nsew")
 
-        # Inner frame for tab buttons
-        self._bar = ctk.CTkFrame(bar_container, fg_color=BG2, height=42, corner_radius=0)
-        self._bar.grid(row=0, column=1, sticky="nsew")
-        self._bar.grid_propagate(False)
+        # Inner frame inside canvas holds tab buttons
+        self._bar = ctk.CTkFrame(self._tab_canvas, fg_color=BG2, corner_radius=0)
+        self._bar_window = self._tab_canvas.create_window(
+            (0, 0), window=self._bar, anchor="nw")
 
-        # Right scroll chevron
-        self._scroll_right_btn = ctk.CTkButton(
-            bar_container, text="\u25B6", width=20, height=38,
-            font=FONT_SM, fg_color="transparent", hover_color=BG3,
-            text_color=DIM, corner_radius=0,
-            command=lambda: self._scroll_tabs(1))
-        self._scroll_right_btn.grid(row=0, column=2, sticky="ns")
+        # Thin scrollbar — only visible on hover, 4px height
+        self._tab_scrollbar = ctk.CTkFrame(
+            bar_container, fg_color=DIM, height=3, corner_radius=2)
+        # Placed at bottom of bar_container, hidden by default
+        self._scrollbar_visible = False
+        self._scrollbar_thumb = ctk.CTkFrame(
+            self._tab_scrollbar, fg_color=GOLD, height=3, corner_radius=2, width=40)
+        self._scrollbar_thumb.pack(side="left")
+
+        # Show scrollbar on hover, hide on leave
+        def _show_scrollbar(e):
+            total_w = sum(self._tab_widths.get(n, 80) for n in self._tab_names_order)
+            canvas_w = self._tab_canvas.winfo_width()
+            if total_w > canvas_w:
+                self._tab_scrollbar.place(relx=0, rely=1.0, y=-4, relwidth=1.0, height=3)
+                # Size thumb proportionally
+                ratio = min(1.0, canvas_w / max(1, total_w))
+                thumb_w = max(20, int(canvas_w * ratio))
+                self._scrollbar_thumb.configure(width=thumb_w)
+                # Position thumb
+                max_scroll = total_w - canvas_w
+                cur_x = self._tab_canvas.canvasx(0)
+                if max_scroll > 0:
+                    pos = cur_x / max_scroll
+                    self._scrollbar_thumb.place(relx=pos * (1 - ratio), y=0)
+                self._scrollbar_visible = True
+        def _hide_scrollbar(e):
+            self._tab_scrollbar.place_forget()
+            self._scrollbar_visible = False
+
+        bar_container.bind("<Enter>", _show_scrollbar)
+        bar_container.bind("<Leave>", _hide_scrollbar)
 
         self._tab_scroll_offset = 0
         self._all_tab_cells: list = []
         self._tab_names_order: list[str] = []
-        self._tab_widths: dict[str, int] = {}  # actual tab widths stored at creation time
-        self._tabs_ready = False  # set True after all tabs registered — prevents premature scroll
+        self._tab_widths: dict[str, int] = {}
+        self._tabs_ready = False
 
-        # Mouse-wheel horizontal scroll (Windows + Linux)
-        for _widget in (self._bar, bar_container):
-            _widget.bind("<MouseWheel>", self._on_mousewheel)
-            _widget.bind("<Button-4>", self._on_mousewheel)
-            _widget.bind("<Button-5>", self._on_mousewheel)
+        # Mouse-wheel horizontal scroll
+        def _on_wheel(e):
+            delta = -1 if (e.num == 4 or (hasattr(e, "delta") and e.delta > 0)) else 1
+            self._tab_canvas.xview_scroll(delta * 2, "units")
+            if self._scrollbar_visible:
+                _show_scrollbar(e)
+        for w in (self._tab_canvas, bar_container, self._bar):
+            w.bind("<MouseWheel>", _on_wheel)
+            w.bind("<Button-4>", _on_wheel)
+            w.bind("<Button-5>", _on_wheel)
 
-        # Recalculate visible tabs when bar gets its real size (debounced, only after ready)
-        self._configure_after_id = None
+        # Update canvas scroll region when bar resizes
         def _on_bar_configure(e):
-            if not self._tabs_ready:
-                return  # tabs still being added — don't scroll yet
-            if self._configure_after_id:
-                self.after_cancel(self._configure_after_id)
-            self._configure_after_id = self.after(100, lambda: self._scroll_tabs(0))
+            self._tab_canvas.configure(scrollregion=self._tab_canvas.bbox("all"))
+            # Also size canvas window height to match container
+            self._tab_canvas.itemconfig(self._bar_window, height=42)
         self._bar.bind("<Configure>", _on_bar_configure)
 
         # Full-width 1-px separator beneath the strip
@@ -990,7 +1015,7 @@ class CustomTabBar(ctk.CTkFrame):
 
         # Cell: stacks button (row 0) + accent indicator (row 1)
         cell = ctk.CTkFrame(self._bar, fg_color="transparent", corner_radius=0)
-        cell.grid(row=0, column=self._col, sticky="ns", padx=0)
+        cell.pack(side="left", fill="y", padx=0)
         cell.grid_rowconfigure(0, weight=1)
 
         btn = ctk.CTkButton(
@@ -1058,25 +1083,21 @@ class CustomTabBar(ctk.CTkFrame):
         """Switch to the named tab (lazy-builds deferred tabs on first view)."""
         if name not in self._tab_frames:
             return
-        # Auto-scroll tab bar to keep the selected tab visible
-        if name in self._tab_names_order:
-            idx = self._tab_names_order.index(name)
-            bar_width = self._bar.winfo_width()
-            if bar_width <= 1:
-                _vc = 5
-            else:
-                _vc, _tw = 0, 0
-                for n in self._tab_names_order:
-                    w = self._tab_widths.get(n, 80)
-                    if _tw + w <= bar_width:
-                        _vc += 1
-                        _tw += w
-                    else:
-                        break
-                _vc = max(3, _vc)
-            if idx < self._tab_scroll_offset or idx >= self._tab_scroll_offset + _vc:
-                self._tab_scroll_offset = max(0, idx - 2)
-                self._scroll_tabs(0)
+        # Auto-scroll canvas to make the selected tab visible
+        if name in self._tab_cells:
+            cell = self._tab_cells[name]
+            try:
+                cell_x = cell.winfo_x()
+                cell_w = cell.winfo_width()
+                canvas_w = self._tab_canvas.winfo_width()
+                view_left = self._tab_canvas.canvasx(0)
+                view_right = view_left + canvas_w
+                # Scroll if tab is outside visible area
+                if cell_x < view_left or cell_x + cell_w > view_right:
+                    self._tab_canvas.xview_moveto(max(0, cell_x - 20) /
+                        max(1, self._bar.winfo_reqwidth()))
+            except Exception:
+                pass
         # Build lazy tab content on first view
         app = self.winfo_toplevel()
         if hasattr(app, '_lazy_tabs') and name in app._lazy_tabs and name not in app._built_tabs:
@@ -1098,45 +1119,11 @@ class CustomTabBar(ctk.CTkFrame):
         """Return the name of the currently active tab."""
         return self._active
 
-    # ── Scroll support ───────────────────────────────────────────────────────
+    # ── Scroll support (canvas-based — all tabs always exist, scroll to reveal) ──
 
     def _scroll_tabs(self, direction: int) -> None:
-        """Scroll tab bar left (-1) or right (+1). 0 = refresh in place."""
-        bar_width = self._bar.winfo_width()
-        if bar_width <= 1:
-            bar_width = 800  # reasonable default before render
-        # Calculate how many tabs fit using stored widths
-        visible_count = 0
-        total_w = 0
-        for name in self._tab_names_order:
-            tw = self._tab_widths.get(name, 80)
-            if total_w + tw <= bar_width:
-                visible_count += 1
-                total_w += tw
-            else:
-                break
-        visible_count = max(3, visible_count)  # always show at least 3
-        max_offset = max(0, len(self._all_tab_cells) - visible_count)
-        self._tab_scroll_offset = max(0, min(
-            self._tab_scroll_offset + direction, max_offset))
-        # Re-grid: show all tabs — let the bar clip naturally rather than hiding
-        for i, cell in enumerate(self._all_tab_cells):
-            if self._tab_scroll_offset <= i < self._tab_scroll_offset + visible_count:
-                cell.grid(row=0, column=i - self._tab_scroll_offset, sticky="ns", padx=0)
-            else:
-                cell.grid_remove()
-        # Update chevron colours: visible when scrollable, hidden when at limit
-        self._scroll_left_btn.configure(
-            text_color=TEXT if self._tab_scroll_offset > 0 else DIM)
-        self._scroll_right_btn.configure(
-            text_color=TEXT if self._tab_scroll_offset < max_offset else DIM)
-
-    def _on_mousewheel(self, event) -> None:
-        """Scroll tab bar on mouse wheel (Windows <MouseWheel>, Linux <Button-4/5>)."""
-        if event.num == 4 or (hasattr(event, "delta") and event.delta > 0):
-            self._scroll_tabs(-1)
-        elif event.num == 5 or (hasattr(event, "delta") and event.delta < 0):
-            self._scroll_tabs(1)
+        """Scroll tab bar. Kept for compatibility — delegates to canvas xview."""
+        self._tab_canvas.xview_scroll(direction * 2, "units")
 
 
 # ─── Main App ─────────────────────────────────────────────────────────────────
@@ -1863,9 +1850,8 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
                 self._safe_after(500, lambda n=name, err=str(e):
                     self._log_output(f"\u26a0 Module '{n}' failed: {err}"))
 
-        # All tabs registered — enable scroll system and show initial tab
+        # All tabs registered — mark ready and show initial tab
         tabs._tabs_ready = True
-        tabs._scroll_tabs(0)  # initial layout with all tabs present
         tabs.set("Command Center")
 
     def _make_module_builder(self, mod, label, deprecated, meta):
