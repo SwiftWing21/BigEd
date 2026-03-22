@@ -1,4 +1,4 @@
-"""General settings panel — theme, agent names, fleet behavior, tabs, backup."""
+"""General settings panel — theme, agent names, fleet behavior, tabs, backup, skill groups."""
 import json
 import re
 import threading
@@ -7,9 +7,9 @@ import customtkinter as ctk
 from pathlib import Path
 
 from ui.theme import (
-    BG2, BG3, ACCENT, ACCENT_H, TEXT, DIM,
-    GREEN, RED, FONT_SM, FONT_BOLD,
-    GLASS_BG, GLASS_PANEL, GLASS_BORDER,
+    BG, BG2, BG3, ACCENT, ACCENT_H, GOLD, TEXT, DIM,
+    GREEN, RED, FONT_SM, FONT_XS, FONT_BOLD,
+    GLASS_BG, GLASS_PANEL, GLASS_BORDER, GLASS_HOVER,
 )
 
 
@@ -250,6 +250,42 @@ class GeneralPanelMixin:
                      font=FONT_XS, text_color=DIM, justify="left"
                      ).pack(padx=12, pady=(0, 10), anchor="w")
 
+        # ── Skill Groups ──────────────────────────────────────────────
+        self._section_header(panel, "Skill Groups")
+        sg_frame = ctk.CTkFrame(panel, fg_color=GLASS_BG, corner_radius=6)
+        sg_frame.pack(fill="x", padx=16, pady=(0, 12))
+
+        ctk.CTkLabel(sg_frame,
+                     text="Manage skill categories used in the Add Agent dialog and prompt queue picker.",
+                     font=("RuneScape Plain 11", 9), text_color=DIM
+                     ).pack(padx=12, pady=(10, 6), anchor="w")
+
+        # Button row: New Group / Reset to Defaults
+        sg_btn_row = ctk.CTkFrame(sg_frame, fg_color="transparent")
+        sg_btn_row.pack(fill="x", padx=12, pady=(0, 4))
+
+        ctk.CTkButton(sg_btn_row, text="New Group", font=FONT_SM,
+                      width=100, height=28, fg_color=ACCENT, hover_color=ACCENT_H,
+                      command=self._sg_new_group).pack(side="left", padx=(0, 4))
+        ctk.CTkButton(sg_btn_row, text="Reset to Defaults", font=FONT_SM,
+                      width=130, height=28, fg_color=BG3, hover_color=BG2,
+                      command=self._sg_reset_defaults).pack(side="left", padx=4)
+
+        self._sg_status = ctk.CTkLabel(sg_btn_row, text="", font=("RuneScape Plain 11", 9),
+                                       text_color=DIM)
+        self._sg_status.pack(side="left", padx=8)
+
+        # Scrollable group list
+        self._sg_list_frame = ctk.CTkScrollableFrame(
+            sg_frame, fg_color="transparent", height=220,
+            scrollbar_button_color=BG3, scrollbar_button_hover_color=ACCENT,
+        )
+        self._sg_list_frame.pack(fill="x", padx=8, pady=(4, 10))
+        self._sg_list_frame.grid_columnconfigure(0, weight=1)
+
+        self._sg_group_widgets = {}  # group_name -> dict of widgets
+        self._sg_rebuild_list()
+
         # ── Compliance (DITL) ─────────────────────────────────────────
         self._section_header(panel, "Compliance (DITL)")
         ditl_frame = ctk.CTkFrame(panel, fg_color="transparent")
@@ -464,6 +500,311 @@ class GeneralPanelMixin:
             self._update_toml_value("affinity", "enabled", enabled)
         except Exception:
             pass
+
+    # ── Skill Group handlers ─────────────────────────────────────────
+
+    def _sg_rebuild_list(self):
+        """Rebuild the skill groups list from current state."""
+        from ui.skill_picker import (
+            SKILL_GROUPS, load_custom_groups, save_custom_groups,
+            _discover_all_skills,
+        )
+
+        # Clear existing widgets
+        for w in self._sg_list_frame.winfo_children():
+            w.destroy()
+        self._sg_group_widgets.clear()
+
+        groups = _discover_all_skills()
+        custom = load_custom_groups()
+        builtin_names = set(SKILL_GROUPS.keys())
+
+        for group_name, skills in groups.items():
+            if not skills:
+                continue
+
+            is_custom = group_name not in builtin_names
+            is_modified = (
+                group_name in builtin_names
+                and set(skills) != set(SKILL_GROUPS.get(group_name, []))
+            )
+
+            # Group header row
+            hdr = ctk.CTkFrame(self._sg_list_frame, fg_color=BG3, corner_radius=4)
+            hdr.pack(fill="x", pady=(4, 0))
+            hdr.grid_columnconfigure(1, weight=1)
+
+            # Collapse/expand toggle
+            collapsed_var = ctk.BooleanVar(value=True)  # start collapsed
+            arrow_label = ctk.CTkLabel(hdr, text="\u25b8", font=FONT_SM,
+                                       text_color=DIM, width=16)
+            arrow_label.grid(row=0, column=0, padx=(8, 0), pady=6)
+
+            # Group name + skill count
+            tag = ""
+            tag_color = TEXT
+            if is_custom:
+                tag = "  [custom]"
+                tag_color = GOLD
+            elif is_modified:
+                tag = "  [modified]"
+                tag_color = "#ff9800"
+
+            name_label = ctk.CTkLabel(
+                hdr, text=f"{group_name} ({len(skills)}){tag}",
+                font=FONT_BOLD, text_color=tag_color if tag else TEXT,
+                anchor="w",
+            )
+            name_label.grid(row=0, column=1, padx=4, pady=6, sticky="w")
+
+            # Buttons on the right
+            btn_frame = ctk.CTkFrame(hdr, fg_color="transparent")
+            btn_frame.grid(row=0, column=2, padx=(4, 8), pady=4, sticky="e")
+
+            if is_custom:
+                ctk.CTkButton(
+                    btn_frame, text="Delete", font=FONT_XS,
+                    width=50, height=22, fg_color="#5a2020", hover_color="#6a2828",
+                    command=lambda g=group_name: self._sg_delete_group(g),
+                ).pack(side="right", padx=2)
+
+            # Skills container (hidden by default)
+            skills_frame = ctk.CTkFrame(self._sg_list_frame, fg_color="transparent")
+
+            # Populate skills inside
+            for idx, skill in enumerate(sorted(skills)):
+                row_frame = ctk.CTkFrame(skills_frame, fg_color="transparent")
+                row_frame.pack(fill="x", padx=4, pady=1)
+                row_frame.grid_columnconfigure(0, weight=1)
+
+                ctk.CTkLabel(
+                    row_frame, text=f"  {skill}", font=FONT_XS,
+                    text_color=TEXT, anchor="w",
+                ).grid(row=0, column=0, sticky="w", padx=(16, 4))
+
+                ctk.CTkButton(
+                    row_frame, text="Move", font=FONT_XS,
+                    width=40, height=20, fg_color=BG3, hover_color=GLASS_HOVER,
+                    command=lambda s=skill, g=group_name: self._sg_move_skill(s, g),
+                ).grid(row=0, column=1, padx=2)
+
+            # Store references for toggle
+            self._sg_group_widgets[group_name] = {
+                "header": hdr,
+                "skills_frame": skills_frame,
+                "collapsed": collapsed_var,
+                "arrow": arrow_label,
+            }
+
+            # Bind header click for expand/collapse
+            def _toggle(gn=group_name):
+                w = self._sg_group_widgets[gn]
+                is_collapsed = w["collapsed"].get()
+                if is_collapsed:
+                    # Expand
+                    w["skills_frame"].pack(fill="x", pady=(0, 2), after=w["header"])
+                    w["arrow"].configure(text="\u25be")
+                    w["collapsed"].set(False)
+                else:
+                    # Collapse
+                    w["skills_frame"].pack_forget()
+                    w["arrow"].configure(text="\u25b8")
+                    w["collapsed"].set(True)
+
+            hdr.bind("<Button-1>", lambda e, gn=group_name: _toggle(gn))
+            arrow_label.bind("<Button-1>", lambda e, gn=group_name: _toggle(gn))
+            name_label.bind("<Button-1>", lambda e, gn=group_name: _toggle(gn))
+
+    def _sg_new_group(self):
+        """Show a dialog to create a new custom skill group."""
+        dialog = ctk.CTkToplevel(self)
+        dialog.title("BigEd CC — New Skill Group")
+        dialog.geometry("340x150")
+        dialog.resizable(False, False)
+        dialog.configure(fg_color=GLASS_BG)
+        dialog.grab_set()
+        dialog.focus_force()
+
+        try:
+            ico = Path(__file__).resolve().parent.parent.parent / "brick.ico"
+            if ico.exists():
+                dialog.iconbitmap(str(ico))
+        except Exception:
+            pass
+
+        # Center on parent
+        dialog.update_idletasks()
+        if self.winfo_exists():
+            px = self.winfo_rootx() + (self.winfo_width() - 340) // 2
+            py = self.winfo_rooty() + (self.winfo_height() - 150) // 2
+            dialog.geometry(f"+{max(0, px)}+{max(0, py)}")
+
+        ctk.CTkLabel(dialog, text="Group Name:", font=FONT_SM,
+                     text_color=TEXT).pack(padx=16, pady=(16, 4), anchor="w")
+
+        name_var = ctk.StringVar()
+        entry = ctk.CTkEntry(dialog, textvariable=name_var, font=FONT_SM,
+                             fg_color=BG3, border_color=GLASS_BORDER,
+                             text_color=TEXT, height=32, width=300)
+        entry.pack(padx=16, pady=(0, 8))
+        entry.focus_set()
+
+        status_label = ctk.CTkLabel(dialog, text="", font=FONT_XS, text_color=RED)
+        status_label.pack(padx=16, anchor="w")
+
+        btn_row = ctk.CTkFrame(dialog, fg_color="transparent")
+        btn_row.pack(fill="x", padx=16, pady=(4, 12))
+
+        def _create():
+            name = name_var.get().strip()
+            if not name:
+                status_label.configure(text="Name cannot be empty.")
+                return
+            if len(name) > 40:
+                status_label.configure(text="Name too long (max 40 chars).")
+                return
+
+            from ui.skill_picker import load_custom_groups, save_custom_groups, SKILL_GROUPS
+            # Check for duplicates against built-in + custom
+            all_names = set(SKILL_GROUPS.keys())
+            custom = load_custom_groups()
+            all_names.update(custom.get("custom_groups", {}).keys())
+            if name in all_names:
+                status_label.configure(text=f"Group '{name}' already exists.")
+                return
+
+            custom["custom_groups"][name] = []
+            save_custom_groups(custom)
+            dialog.grab_release()
+            dialog.destroy()
+            self._sg_rebuild_list()
+            self._sg_status.configure(text=f"Created '{name}'", text_color=GREEN)
+
+        entry.bind("<Return>", lambda e: _create())
+
+        ctk.CTkButton(btn_row, text="Create", font=FONT_SM,
+                      width=80, height=28, fg_color=ACCENT, hover_color=ACCENT_H,
+                      command=_create).pack(side="right", padx=(4, 0))
+        ctk.CTkButton(btn_row, text="Cancel", font=FONT_SM,
+                      width=70, height=28, fg_color=BG3, hover_color=BG2,
+                      command=lambda: (dialog.grab_release(), dialog.destroy())
+                      ).pack(side="right", padx=4)
+
+        dialog.bind("<Escape>", lambda e: (dialog.grab_release(), dialog.destroy()))
+
+    def _sg_delete_group(self, group_name: str):
+        """Delete a custom group — skills return to their original built-in group."""
+        from ui.skill_picker import (
+            SKILL_GROUPS, load_custom_groups, save_custom_groups, _SKILL_TO_GROUP,
+        )
+        custom = load_custom_groups()
+
+        # Remove the custom group
+        custom["custom_groups"].pop(group_name, None)
+
+        # Remove any overrides pointing to this group
+        overrides = custom.get("overrides", {})
+        to_remove = [s for s, g in overrides.items() if g == group_name]
+        for s in to_remove:
+            del overrides[s]
+
+        save_custom_groups(custom)
+        self._sg_rebuild_list()
+        self._sg_status.configure(text=f"Deleted '{group_name}'", text_color=GREEN)
+
+    def _sg_move_skill(self, skill_name: str, current_group: str):
+        """Show a dialog to move a skill to a different group."""
+        from ui.skill_picker import (
+            SKILL_GROUPS, load_custom_groups, save_custom_groups,
+            _discover_all_skills,
+        )
+
+        groups = _discover_all_skills()
+        group_names = [g for g in groups.keys() if g != current_group]
+
+        if not group_names:
+            self._sg_status.configure(text="No other groups to move to.", text_color=RED)
+            return
+
+        dialog = ctk.CTkToplevel(self)
+        dialog.title(f"Move '{skill_name}'")
+        dialog.geometry("320x180")
+        dialog.resizable(False, False)
+        dialog.configure(fg_color=GLASS_BG)
+        dialog.grab_set()
+        dialog.focus_force()
+
+        try:
+            ico = Path(__file__).resolve().parent.parent.parent / "brick.ico"
+            if ico.exists():
+                dialog.iconbitmap(str(ico))
+        except Exception:
+            pass
+
+        # Center on parent
+        dialog.update_idletasks()
+        if self.winfo_exists():
+            px = self.winfo_rootx() + (self.winfo_width() - 320) // 2
+            py = self.winfo_rooty() + (self.winfo_height() - 180) // 2
+            dialog.geometry(f"+{max(0, px)}+{max(0, py)}")
+
+        ctk.CTkLabel(dialog, text=f"Move '{skill_name}' from '{current_group}' to:",
+                     font=FONT_SM, text_color=TEXT, wraplength=280
+                     ).pack(padx=16, pady=(16, 8), anchor="w")
+
+        target_var = ctk.StringVar(value=group_names[0])
+        ctk.CTkOptionMenu(
+            dialog, values=group_names, variable=target_var,
+            font=FONT_SM, fg_color=BG3, button_color=ACCENT,
+            button_hover_color=ACCENT_H, height=30, width=280,
+        ).pack(padx=16, pady=(0, 8))
+
+        btn_row = ctk.CTkFrame(dialog, fg_color="transparent")
+        btn_row.pack(fill="x", padx=16, pady=(8, 12))
+
+        def _move():
+            target = target_var.get()
+            custom = load_custom_groups()
+            overrides = custom.setdefault("overrides", {})
+            custom_groups = custom.setdefault("custom_groups", {})
+
+            # Record the override
+            overrides[skill_name] = target
+
+            # If the target is a custom group, also add to its skill list
+            if target in custom_groups:
+                if skill_name not in custom_groups[target]:
+                    custom_groups[target].append(skill_name)
+
+            # If the source was a custom group, remove from its skill list
+            if current_group in custom_groups:
+                cg_skills = custom_groups[current_group]
+                if skill_name in cg_skills:
+                    cg_skills.remove(skill_name)
+
+            save_custom_groups(custom)
+            dialog.grab_release()
+            dialog.destroy()
+            self._sg_rebuild_list()
+            self._sg_status.configure(
+                text=f"Moved '{skill_name}' to '{target}'", text_color=GREEN)
+
+        ctk.CTkButton(btn_row, text="Move", font=FONT_SM,
+                      width=70, height=28, fg_color=ACCENT, hover_color=ACCENT_H,
+                      command=_move).pack(side="right", padx=(4, 0))
+        ctk.CTkButton(btn_row, text="Cancel", font=FONT_SM,
+                      width=70, height=28, fg_color=BG3, hover_color=BG2,
+                      command=lambda: (dialog.grab_release(), dialog.destroy())
+                      ).pack(side="right", padx=4)
+
+        dialog.bind("<Escape>", lambda e: (dialog.grab_release(), dialog.destroy()))
+
+    def _sg_reset_defaults(self):
+        """Reset skill groups to built-in defaults — deletes custom_skill_groups.json."""
+        from ui.skill_picker import reset_custom_groups
+        reset_custom_groups()
+        self._sg_rebuild_list()
+        self._sg_status.configure(text="Reset to defaults.", text_color=GREEN)
 
     # ── DITL handlers ─────────────────────────────────────────────────
 

@@ -12,6 +12,7 @@ Usage:
     # Or use the widget class directly with a callback
     SkillPicker(parent, current_skill="code_review", on_select=my_callback)
 """
+import json
 import sys
 from pathlib import Path
 
@@ -21,6 +22,46 @@ from ui.theme import (
     BG, BG2, BG3, ACCENT, ACCENT_H, GOLD, TEXT, DIM,
     FONT_SM, FONT_XS, FONT_BOLD, CARD_RADIUS,
 )
+
+# ── Custom Skill Groups persistence ──────────────────────────────────────────
+
+_CUSTOM_GROUPS_FILE = Path(__file__).resolve().parent.parent / "data" / "custom_skill_groups.json"
+
+
+def load_custom_groups() -> dict:
+    """Load user custom skill group overrides from disk.
+
+    Returns dict with keys: custom_groups (dict[str, list[str]]),
+    overrides (dict[str, str] — skill_name -> target_group).
+    """
+    if _CUSTOM_GROUPS_FILE.exists():
+        try:
+            data = json.loads(_CUSTOM_GROUPS_FILE.read_text(encoding="utf-8"))
+            return {
+                "custom_groups": data.get("custom_groups", {}),
+                "overrides": data.get("overrides", {}),
+            }
+        except Exception:
+            pass
+    return {"custom_groups": {}, "overrides": {}}
+
+
+def save_custom_groups(data: dict):
+    """Persist custom skill group overrides to disk."""
+    _CUSTOM_GROUPS_FILE.parent.mkdir(parents=True, exist_ok=True)
+    payload = {
+        "custom_groups": data.get("custom_groups", {}),
+        "overrides": data.get("overrides", {}),
+    }
+    _CUSTOM_GROUPS_FILE.write_text(
+        json.dumps(payload, indent=2), encoding="utf-8"
+    )
+
+
+def reset_custom_groups():
+    """Delete custom groups file, restoring defaults."""
+    if _CUSTOM_GROUPS_FILE.exists():
+        _CUSTOM_GROUPS_FILE.unlink()
 
 # ── Skill Groups ─────────────────────────────────────────────────────────────
 
@@ -73,29 +114,63 @@ for _grp, _skills in SKILL_GROUPS.items():
 
 
 def _discover_all_skills() -> dict[str, list[str]]:
-    """Return SKILL_GROUPS with auto-discovered skills appended to 'Other'.
+    """Return SKILL_GROUPS merged with custom groups and auto-discovered skills.
 
-    Scans fleet/skills/*.py for any skill files not already categorized.
+    Merge order:
+    1. Start with built-in SKILL_GROUPS
+    2. Apply overrides (move skills between groups)
+    3. Add custom groups
+    4. Auto-discover uncategorized skills into 'Other'
     """
     groups = {k: list(v) for k, v in SKILL_GROUPS.items()}
-    known = set(_SKILL_TO_GROUP.keys())
+    custom = load_custom_groups()
+    overrides = custom.get("overrides", {})
+    custom_groups = custom.get("custom_groups", {})
 
-    # Locate fleet/skills/ relative to this file
+    # Apply overrides: remove skill from its built-in group
+    for skill_name, target_group in overrides.items():
+        # Remove from current group
+        for grp_name, grp_skills in groups.items():
+            if skill_name in grp_skills:
+                grp_skills.remove(skill_name)
+                break
+        # Add to target group (create if needed)
+        groups.setdefault(target_group, [])
+        if skill_name not in groups[target_group]:
+            groups[target_group].append(skill_name)
+
+    # Merge custom groups (add new skills, create new groups)
+    for grp_name, grp_skills in custom_groups.items():
+        if grp_name not in groups:
+            groups[grp_name] = []
+        for skill in grp_skills:
+            if skill not in groups[grp_name]:
+                # Remove from any other group first
+                for other_grp, other_skills in groups.items():
+                    if other_grp != grp_name and skill in other_skills:
+                        other_skills.remove(skill)
+                        break
+                groups[grp_name].append(skill)
+
+    # Auto-discover uncategorized skills
+    all_assigned = set()
+    for grp_skills in groups.values():
+        all_assigned.update(grp_skills)
+
     fleet_skills = Path(__file__).resolve().parent.parent.parent.parent / "fleet" / "skills"
-    if not fleet_skills.is_dir():
-        return groups
+    if fleet_skills.is_dir():
+        uncategorized = []
+        for py_file in sorted(fleet_skills.glob("*.py")):
+            name = py_file.stem
+            if name.startswith("_") or name == "__init__":
+                continue
+            if name not in all_assigned:
+                uncategorized.append(name)
+        if uncategorized:
+            groups.setdefault("Other", []).extend(sorted(uncategorized))
 
-    uncategorized = []
-    for py_file in sorted(fleet_skills.glob("*.py")):
-        name = py_file.stem
-        # Skip private/internal modules
-        if name.startswith("_") or name == "__init__":
-            continue
-        if name not in known:
-            uncategorized.append(name)
-
-    if uncategorized:
-        groups["Other"] = sorted(uncategorized)
+    # Remove empty groups
+    groups = {k: v for k, v in groups.items() if v}
 
     return groups
 
