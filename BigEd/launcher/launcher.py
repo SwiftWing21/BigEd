@@ -3887,54 +3887,51 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
         except Exception as e:
             self._log_output(f"Dismiss error: {e}")
 
-    # ── Task bar ──────────────────────────────────────────────────────────────
+    # ── Task bar (compact — input is the hero) ─────────────────────────────
     def _build_taskbar(self):
-        bar = ctk.CTkFrame(self, fg_color=BG3, corner_radius=0)
+        bar = ctk.CTkFrame(self, fg_color=BG2, corner_radius=0)
         bar.grid(row=2, column=0, columnspan=2, sticky="ew")
-        self._taskbar = bar  # v0.44: store ref for update banner row shift
-        bar.grid_columnconfigure(1, weight=1)
+        self._taskbar = bar
+        bar.grid_columnconfigure(0, weight=1)
 
-        ctk.CTkLabel(bar, text="▶ Task:", font=FONT_SM,
-                     text_color=DIM).grid(row=0, column=0, padx=(12, 6), pady=8,
-                                          sticky="n")
+        # Single row: [entry] [mic] [dispatch] [status]
+        input_frame = ctk.CTkFrame(bar, fg_color=BG3, corner_radius=8)
+        input_frame.grid(row=0, column=0, padx=8, pady=6, sticky="ew")
+        input_frame.grid_columnconfigure(0, weight=1)
 
         self._task_entry = ctk.CTkTextbox(
-            bar, font=MONO, fg_color=BG, border_color="#444", border_width=1,
-            text_color=TEXT, wrap="word", corner_radius=4, height=34)
-        self._task_entry.grid(row=0, column=1, padx=4, pady=6, sticky="ew")
-        # Enter dispatches, Shift+Enter inserts newline
+            input_frame, font=FONT, fg_color="transparent", border_width=0,
+            text_color=TEXT, wrap="word", corner_radius=8, height=52)
+        self._task_entry.grid(row=0, column=0, padx=(8, 0), pady=4, sticky="ew")
         self._task_entry.bind("<Return>", self._on_task_enter)
         self._task_entry.bind("<KeyRelease>", self._auto_resize_task_entry)
 
-        btn_col = ctk.CTkFrame(bar, fg_color="transparent")
-        btn_col.grid(row=0, column=2, padx=(4, 8), pady=6, sticky="n")
+        # Mic + Dispatch inline inside the input frame
+        btn_row = ctk.CTkFrame(input_frame, fg_color="transparent")
+        btn_row.grid(row=0, column=1, padx=(4, 6), pady=4, sticky="e")
 
-        # Mic button — STT into task entry
         self._task_mic_btn = ctk.CTkButton(
-            bar, text="\U0001f3a4", width=36, height=30, font=("Segoe UI", 14),
-            fg_color=BG2, hover_color=BG,
+            btn_row, text="\U0001f3a4", width=32, height=32, font=("Segoe UI", 13),
+            fg_color="transparent", hover_color=BG2, corner_radius=6,
             command=self._voice_into_task)
-        self._task_mic_btn.grid(row=0, column=2, padx=(2, 0), pady=6)
+        self._task_mic_btn.pack(side="left", padx=(0, 4))
         Tooltip(self._task_mic_btn, "Voice input (Ctrl+Shift+M)")
 
-        btn_col = ctk.CTkFrame(bar, fg_color="transparent")
-        btn_col.grid(row=0, column=3, padx=(4, 8), pady=6, sticky="n")
-
         ctk.CTkButton(
-            btn_col, text="Dispatch", font=FONT_SM, width=90, height=30,
-            fg_color=ACCENT, hover_color=ACCENT_H,
+            btn_row, text="Dispatch", font=FONT_SM, width=80, height=32,
+            fg_color=ACCENT, hover_color=ACCENT_H, corner_radius=6,
             command=self._dispatch_task,
-        ).pack(pady=(0, 2))
+        ).pack(side="left")
 
         self._task_status = ctk.CTkLabel(
-            btn_col, text="", font=FONT_SM, text_color=DIM)
-        self._task_status.pack()
+            btn_row, text="", font=FONT_XS, text_color=DIM, width=60)
+        self._task_status.pack(side="left", padx=(6, 0))
 
-        # P3 polish — Ctrl+K hint + mic hotkey hint
-        ctk.CTkLabel(bar, text="Ctrl+K  command palette  |  Ctrl+Shift+M  voice input", font=FONT_XS,
-                     text_color=DIM).grid(row=1, column=1, columnspan=2, sticky="e", padx=(0, 8), pady=(0, 4))
+        # Hint row — minimal
+        ctk.CTkLabel(bar, text="Ctrl+K command palette  |  Ctrl+Shift+M voice", font=FONT_XS,
+                     text_color="#555").grid(row=1, column=0, sticky="e", padx=(0, 12), pady=(0, 3))
 
-        # Global hotkey: Ctrl+Shift+M → voice input into focused entry
+        # Global hotkey
         self.bind("<Control-Shift-M>", lambda e: self._voice_into_active_entry())
 
     def _on_task_enter(self, event):
