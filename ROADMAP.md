@@ -1439,6 +1439,41 @@ Completed 2026-03-22. Three new skill systems:
 - [x] fleet-control.md skill: respond to "BigEd help" prompt with README content (scoped to BigEd projects only, not global Claude)
 - [x] Walkthrough completion flag in settings.json gates the auto-open behavior
 
+### 0.185.00b — Dashboard Theme + Web Controller + System Tray
+
+**Goal:** Dashboard matches launcher theme. Web interface provides full fleet control. Launcher can minimize to system tray.
+
+**Dashboard Theme Refresh:**
+- [ ] Apply theme palette to dashboard.html via CSS variables (Classic/Modern/Figma)
+- [ ] Rounded cards (12px), glass-morphism panels, softer spacing
+- [ ] Theme selector in dashboard (cookie-persisted, syncs with fleet.toml)
+- [ ] System font stack (no hardcoded fonts)
+- [ ] Mobile-responsive layout
+
+**3rd Theme — Figma-Designed (new default):**
+- [ ] Design new "Figma" theme preset — professional, polished, distinct from Classic/Modern
+- [ ] Add to THEME_PRESETS in ui/theme.py
+- [ ] Set as default for fresh installs
+- [ ] Dashboard CSS mirrors the Figma theme
+
+**Web Dashboard Controller:**
+- [ ] Start/Stop fleet from web UI
+- [ ] Agent enable/disable toggles with inline buttons
+- [ ] Task dispatch form (skill picker + payload + priority)
+- [ ] HITL response panel (list + respond inline)
+- [ ] Prompt queue management (add/remove/reorder/start/stop)
+- [ ] Settings editor (fleet.toml sections via web form)
+- [ ] Log viewer (tail logs via SSE in browser)
+
+**System Tray / Background Mode:**
+- [ ] System tray icon via pystray — BigEd runs when window closed
+- [ ] Tray menu: Open GUI, Open Dashboard, Fleet Status, Quit
+- [ ] Close behavior setting: "Close to tray" vs "Quit" (Settings > Window Behavior)
+- [ ] Tray tooltip: agent count, pending tasks, status
+- [ ] Tray notification on HITL request
+- [ ] "Start minimized" option
+- [ ] Fleet stays running when GUI closed to tray
+
 ---
 
 ## Audit Coverage Check (per AUDIT_TRACKER.md)
