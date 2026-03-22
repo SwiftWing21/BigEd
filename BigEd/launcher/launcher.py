@@ -2280,8 +2280,8 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
         hdr.grid_columnconfigure(1, weight=1)
         ctk.CTkLabel(hdr, text="Fleet workers — internal team & customer instances",
                      font=FONT_SM, text_color=DIM).grid(row=0, column=0, sticky="w")
-        ctk.CTkButton(hdr, text="＋ Add Instance", font=FONT_SM, height=26,
-                      width=110, fg_color=BG3, hover_color=BG,
+        ctk.CTkButton(hdr, text="＋ Add Agent", font=FONT_SM, height=26,
+                      width=100, fg_color=BG3, hover_color=BG,
                       command=self._agents_add_dialog
                       ).grid(row=0, column=2, sticky="e")
 
@@ -2905,53 +2905,244 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
             "waiting_badge": waiting_badge, "iq_lbl": iq_lbl,
         }
 
+    # ── Agent profiles (recent unsaved + saved) ─────────────────────────
+    _AGENT_PROFILES_FILE = DATA_DIR / "agent_profiles.json"
+    _RECENT_PROFILES = []  # last 5 unsaved configs
+
+    @classmethod
+    def _load_agent_profiles(cls):
+        try:
+            if cls._AGENT_PROFILES_FILE.exists():
+                return json.loads(cls._AGENT_PROFILES_FILE.read_text(encoding="utf-8"))
+        except Exception:
+            pass
+        return []
+
+    @classmethod
+    def _save_agent_profiles(cls, profiles):
+        try:
+            cls._AGENT_PROFILES_FILE.parent.mkdir(parents=True, exist_ok=True)
+            cls._AGENT_PROFILES_FILE.write_text(json.dumps(profiles, indent=2), encoding="utf-8")
+        except Exception:
+            pass
+
     def _agents_add_dialog(self):
         self._agents_edit_dialog({})
 
     def _agents_edit_dialog(self, agent: dict):
+        from ui.skill_picker import SKILL_GROUPS
+
         win = ctk.CTkToplevel(self)
-        win.title("Agent Instance")
-        win.geometry("380x280")
+        win.title("Add Agent" if not agent.get("name") else f"Edit Agent — {agent.get('name')}")
+        win.geometry("480x520")
         win.resizable(False, False)
         win.configure(fg_color=BG)
         win.grab_set()
+        try:
+            ico = HERE / "brick.ico"
+            if ico.exists():
+                win.iconbitmap(str(ico))
+        except Exception:
+            pass
 
-        fields = [
-            ("Name",         agent.get("name", "")),
-            ("Role",         agent.get("role", "")),
-            ("Type",         agent.get("type", "Internal")),
-            ("Customer",     agent.get("customer", "")),
-            ("Notes",        agent.get("notes", "")),
+        win.grid_columnconfigure(1, weight=1)
+        row = 0
+
+        # ── Profile selector ──────────────────────────────────────────
+        ctk.CTkLabel(win, text="Profile", font=FONT_SM, text_color=GOLD,
+                     anchor="w").grid(row=row, column=0, padx=(14, 6), pady=(10, 4), sticky="w")
+
+        saved_profiles = self._load_agent_profiles()
+        profile_names = ["(none)"] + [p.get("name", "?") for p in saved_profiles]
+        # Add recent unsaved
+        for i, rp in enumerate(self._RECENT_PROFILES[-5:]):
+            profile_names.append(f"Recent: {rp.get('agent_name', '?')}")
+
+        if len(profile_names) <= 10:
+            profile_var = ctk.StringVar(value="(none)")
+            ctk.CTkOptionMenu(
+                win, variable=profile_var, values=profile_names,
+                font=FONT_SM, width=200, height=26, fg_color=BG3,
+                command=lambda v: _apply_profile(v),
+            ).grid(row=row, column=1, padx=(0, 14), pady=(10, 4), sticky="w")
+        else:
+            ctk.CTkButton(
+                win, text="Select Profile...", font=FONT_SM, height=26,
+                width=140, fg_color=BG3, hover_color=BG2,
+                command=lambda: _open_profile_picker(),
+            ).grid(row=row, column=1, padx=(0, 14), pady=(10, 4), sticky="w")
+        row += 1
+
+        # ── Agent fields ──────────────────────────────────────────────
+        fields_cfg = [
+            ("Name", agent.get("name", ""), "Agent display name"),
+            ("Role", agent.get("role", ""), "coder, researcher, analyst, etc."),
         ]
         entries = {}
-        for i, (lbl, val) in enumerate(fields):
+        for lbl, val, placeholder in fields_cfg:
             ctk.CTkLabel(win, text=lbl, font=FONT_SM, text_color=DIM,
-                         anchor="w").grid(row=i, column=0, padx=(14, 6), pady=4, sticky="w")
+                         anchor="w").grid(row=row, column=0, padx=(14, 6), pady=4, sticky="w")
             e = ctk.CTkEntry(win, font=FONT_SM, fg_color=BG2,
-                             border_color="#444", text_color=TEXT)
+                             border_color="#444", text_color=TEXT,
+                             placeholder_text=placeholder)
             e.insert(0, val)
-            e.grid(row=i, column=1, padx=(0, 14), pady=4, sticky="ew")
+            e.grid(row=row, column=1, padx=(0, 14), pady=4, sticky="ew")
             entries[lbl] = e
-        win.grid_columnconfigure(1, weight=1)
+            row += 1
 
-        def _save():
-            new_name = entries["Name"].get().strip()
+        # ── Skill group assignment ────────────────────────────────────
+        ctk.CTkLabel(win, text="Skills", font=FONT_SM, text_color=GOLD,
+                     anchor="w").grid(row=row, column=0, padx=(14, 6), pady=(8, 4), sticky="nw")
+
+        skills_frame = ctk.CTkScrollableFrame(win, fg_color=BG2, corner_radius=6, height=180)
+        skills_frame.grid(row=row, column=1, padx=(0, 14), pady=(8, 4), sticky="nsew")
+        win.grid_rowconfigure(row, weight=1)
+        row += 1
+
+        # Populate skill group checkboxes
+        skill_vars = {}
+        current_skills = set(agent.get("skills", []))
+        for group_name, skill_list in SKILL_GROUPS.items():
+            # Group header with select-all toggle
+            group_var = ctk.BooleanVar(value=False)
+            group_cb = ctk.CTkCheckBox(
+                skills_frame, text=f"{group_name} ({len(skill_list)})",
+                variable=group_var, font=FONT_BOLD, text_color=GOLD,
+                fg_color=ACCENT, hover_color=ACCENT_H,
+                checkbox_width=14, checkbox_height=14)
+            group_cb.pack(fill="x", padx=4, pady=(6, 2))
+
+            group_skill_vars = []
+            for skill in skill_list:
+                sv = ctk.BooleanVar(value=skill in current_skills)
+                cb = ctk.CTkCheckBox(
+                    skills_frame, text=f"  {skill}",
+                    variable=sv, font=FONT_XS, text_color=TEXT,
+                    fg_color=ACCENT, hover_color=ACCENT_H,
+                    checkbox_width=12, checkbox_height=12)
+                cb.pack(fill="x", padx=(20, 4), pady=1)
+                skill_vars[skill] = sv
+                group_skill_vars.append(sv)
+
+            # Wire group toggle
+            def _toggle_group(gvars=group_skill_vars, gvar=group_var):
+                val = gvar.get()
+                for sv in gvars:
+                    sv.set(val)
+            group_var.configure(command=_toggle_group)
+
+        # ── Notes ─────────────────────────────────────────────────────
+        ctk.CTkLabel(win, text="Notes", font=FONT_SM, text_color=DIM,
+                     anchor="w").grid(row=row, column=0, padx=(14, 6), pady=4, sticky="w")
+        notes_entry = ctk.CTkEntry(win, font=FONT_SM, fg_color=BG2,
+                                    border_color="#444", text_color=TEXT,
+                                    placeholder_text="Optional notes...")
+        notes_entry.insert(0, agent.get("notes", ""))
+        notes_entry.grid(row=row, column=1, padx=(0, 14), pady=4, sticky="ew")
+        row += 1
+
+        # ── Button row ────────────────────────────────────────────────
+        btn_row = ctk.CTkFrame(win, fg_color="transparent")
+        btn_row.grid(row=row, column=0, columnspan=2, padx=14, pady=(8, 14), sticky="ew")
+        btn_row.grid_columnconfigure(1, weight=1)
+
+        ctk.CTkButton(btn_row, text="Save as Profile", font=FONT_XS, height=26,
+                      width=100, fg_color=BG3, hover_color=BG2,
+                      command=lambda: _save_profile()
+                      ).pack(side="left")
+
+        ctk.CTkButton(btn_row, text="Add Agent", font=FONT_SM, height=30,
+                      width=100, fg_color=ACCENT, hover_color=ACCENT_H,
+                      command=lambda: _save_agent()
+                      ).pack(side="right")
+
+        ctk.CTkButton(btn_row, text="Cancel", font=FONT_SM, height=30,
+                      width=70, fg_color=BG3, hover_color=BG2,
+                      command=win.destroy
+                      ).pack(side="right", padx=(0, 8))
+
+        # ── Callbacks ─────────────────────────────────────────────────
+        def _get_config():
+            selected_skills = [s for s, v in skill_vars.items() if v.get()]
+            return {
+                "agent_name": entries["Name"].get().strip(),
+                "role": entries["Role"].get().strip(),
+                "skills": selected_skills,
+                "notes": notes_entry.get().strip(),
+            }
+
+        def _apply_profile(profile_name):
+            if profile_name == "(none)":
+                return
+            # Find profile
+            profile = None
+            for p in saved_profiles:
+                if p.get("name") == profile_name:
+                    profile = p
+                    break
+            if not profile:
+                # Check recent
+                for rp in self._RECENT_PROFILES:
+                    if f"Recent: {rp.get('agent_name', '?')}" == profile_name:
+                        profile = rp
+                        break
+            if not profile:
+                return
+            # Apply to fields
+            entries["Name"].delete(0, "end")
+            entries["Name"].insert(0, profile.get("agent_name", ""))
+            entries["Role"].delete(0, "end")
+            entries["Role"].insert(0, profile.get("role", ""))
+            notes_entry.delete(0, "end")
+            notes_entry.insert(0, profile.get("notes", ""))
+            # Apply skills
+            profile_skills = set(profile.get("skills", []))
+            for s, v in skill_vars.items():
+                v.set(s in profile_skills)
+
+        def _save_profile():
+            cfg = _get_config()
+            cfg["name"] = cfg["agent_name"] or "Unnamed Profile"
+            profiles = self._load_agent_profiles()
+            # Replace if same name exists
+            profiles = [p for p in profiles if p.get("name") != cfg["name"]]
+            profiles.append(cfg)
+            self._save_agent_profiles(profiles)
+
+        def _save_agent():
+            cfg = _get_config()
+            if not cfg["agent_name"]:
+                return
+            # Save to recent (unsaved)
+            self._RECENT_PROFILES.append(cfg)
+            if len(self._RECENT_PROFILES) > 5:
+                self._RECENT_PROFILES.pop(0)
+            # Write to DB
             con = self._db_conn()
             con.execute("DELETE FROM agents WHERE name=?", (agent.get("name", ""),))
-            if new_name:
-                con.execute(
-                    "INSERT OR REPLACE INTO agents (name, role, type, customer, notes) VALUES (?,?,?,?,?)",
-                    (new_name, entries["Role"].get(), entries["Type"].get(),
-                     entries["Customer"].get(), entries["Notes"].get()))
+            con.execute(
+                "INSERT OR REPLACE INTO agents (name, role, type, customer, notes) VALUES (?,?,?,?,?)",
+                (cfg["agent_name"], cfg["role"], "Internal", "",
+                 json.dumps({"notes": cfg["notes"], "skills": cfg["skills"]})))
             con.commit()
             con.close()
             self._agents_tab_refresh()
             win.destroy()
 
-        ctk.CTkButton(win, text="Save", font=FONT_SM, height=30,
-                      fg_color=ACCENT, hover_color=ACCENT_H, command=_save
-                      ).grid(row=len(fields), column=0, columnspan=2,
-                             padx=14, pady=(10, 14), sticky="ew")
+        def _open_profile_picker():
+            # For 10+ profiles — modal list
+            picker = ctk.CTkToplevel(win)
+            picker.title("Select Profile")
+            picker.geometry("300x400")
+            picker.grab_set()
+            lst = ctk.CTkScrollableFrame(picker, fg_color=BG)
+            lst.pack(fill="both", expand=True, padx=8, pady=8)
+            for p in saved_profiles:
+                ctk.CTkButton(
+                    lst, text=p.get("name", "?"), font=FONT_SM,
+                    fg_color=BG2, hover_color=BG3, anchor="w", height=28,
+                    command=lambda pn=p.get("name"): (_apply_profile(pn), picker.destroy())
+                ).pack(fill="x", pady=1)
 
     # ── DB helpers ─────────────────────────────────────────────────────────────
     def _db_conn(self):
