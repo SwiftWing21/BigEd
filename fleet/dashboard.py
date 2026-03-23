@@ -2009,6 +2009,18 @@ def api_federation_capacity():
         return jsonify(get_aggregated_capacity())
     except ImportError:
         return jsonify({"error": "federation_router not available"}), 501
+
+# ── Federation HITL (0.100.00b) ──────────────────────────────────────────────
+
+
+@app.route("/api/federation/hitl")
+def api_federation_hitl():
+    """Aggregated HITL tasks from local fleet and all federation peers."""
+    try:
+        sys.path.insert(0, str(FLEET_DIR))
+        from federation_hitl import get_all_hitl_tasks
+        tasks = get_all_hitl_tasks()
+        return jsonify(tasks)
     except Exception as e:
         return jsonify({"error": _safe_error(e)}), 500
 
@@ -2075,6 +2087,48 @@ def api_federation_cert_status():
         return jsonify(get_cert_info())
     except ImportError:
         return jsonify({"tls_enabled": False, "warning": "fleet_tls module not available"})
+
+@app.route("/api/federation/hitl/respond", methods=["POST"])
+@_require_role("operator")
+def api_federation_hitl_respond():
+    """Respond to a HITL task on a remote peer fleet.
+
+    Body: {"peer_url": "http://...", "task_id": 123, "response": "approved"}
+    If peer_url is "local" or omitted, routes to the local fleet.
+    """
+    try:
+        data = request.get_json(silent=True) or {}
+        peer_url = data.get("peer_url", "local")
+        task_id = data.get("task_id")
+        response_text = data.get("response", "").strip()
+
+        if not task_id:
+            return jsonify({"error": "task_id is required"}), 400
+        if not response_text:
+            return jsonify({"error": "response is required"}), 400
+
+        sys.path.insert(0, str(FLEET_DIR))
+
+        if peer_url == "local" or not peer_url:
+            # Local response
+            import db
+            db.respond_to_agent(int(task_id), response_text)
+            _broadcast_sse({
+                "type": "hitl_response",
+                "data": {"task_id": task_id, "responded": True, "source": "local"},
+            })
+            return jsonify({"ok": True, "task_id": task_id, "source": "local"})
+        else:
+            # Remote response — forward to peer
+            from federation_hitl import respond_to_remote_hitl
+            result = respond_to_remote_hitl(peer_url, int(task_id), response_text)
+            if "error" in result:
+                return jsonify(result), 502
+            _broadcast_sse({
+                "type": "hitl_response",
+                "data": {"task_id": task_id, "responded": True, "source": f"peer:{peer_url}"},
+            })
+            return jsonify({"ok": True, "task_id": task_id, "source": f"peer:{peer_url}"})
     except Exception as e:
         return jsonify({"error": _safe_error(e)}), 500
 
@@ -2255,6 +2309,67 @@ def api_deploy_reject(deploy_id):
         return jsonify(result), status_code
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)}), 500
+
+@app.route("/api/federation/hitl/notify", methods=["POST"])
+def api_federation_hitl_notify():
+    """Receive notification from a peer about a new HITL task.
+
+    Broadcasts an SSE event so connected dashboards update live.
+    Body: task_info dict with _source_fleet field.
+    """
+    try:
+        data = request.get_json(silent=True) or {}
+        source_fleet = data.get("_source_fleet", "unknown")
+        _broadcast_sse({
+            "type": "remote_hitl_waiting",
+            "data": {
+                "task_id": data.get("task_id") or data.get("id"),
+                "type": data.get("type", ""),
+                "question": data.get("question", ""),
+                "agent": data.get("agent", ""),
+                "source_fleet": source_fleet,
+            },
+        })
+        return jsonify({"ok": True})
+    except Exception as e:
+        return jsonify({"error": _safe_error(e)}), 500
+
+
+# ── Cluster Data (0.100.00b — Unified Dashboard Hooks) ──────────────────────
+
+
+@app.route("/api/cluster/agents")
+def api_cluster_agents():
+    """All agents across all federated peers."""
+    try:
+        sys.path.insert(0, str(FLEET_DIR))
+        from federation_data import get_cluster_agents
+        return jsonify(get_cluster_agents())
+    except Exception as e:
+        return jsonify({"error": _safe_error(e)}), 500
+
+
+@app.route("/api/cluster/tasks")
+def api_cluster_tasks():
+    """All tasks across all federated peers, optionally filtered by status."""
+    try:
+        status_filter = request.args.get("status")
+        sys.path.insert(0, str(FLEET_DIR))
+        from federation_data import get_cluster_tasks
+        return jsonify(get_cluster_tasks(status=status_filter))
+    except Exception as e:
+        return jsonify({"error": _safe_error(e)}), 500
+
+
+@app.route("/api/cluster/metrics")
+def api_cluster_metrics():
+    """Aggregated metrics across all federated peers."""
+    try:
+        sys.path.insert(0, str(FLEET_DIR))
+        from federation_data import get_cluster_metrics
+        return jsonify(get_cluster_metrics())
+    except Exception as e:
+        return jsonify({"error": _safe_error(e)}), 500
 
 
 # ── SLA Monitoring (0.135.00b — Enterprise & Multi-Tenant) ──────────────────
@@ -2652,9 +2767,33 @@ def api_feedback_stats():
 
 @app.route("/api/tasks/waiting-human")
 def api_waiting_human():
-    """List all tasks awaiting human input."""
+    """List all tasks awaiting human input.
+
+    Query params:
+        include_remote=true — include HITL tasks from federation peers
+                              (default: false, local only for backward compat)
+    """
     try:
+        include_remote = request.args.get("include_remote", "false").lower() == "true"
         sys.path.insert(0, str(FLEET_DIR))
+
+        if include_remote:
+            from federation_hitl import get_all_hitl_tasks
+            all_tasks = get_all_hitl_tasks()
+            result = []
+            for t in all_tasks:
+                result.append({
+                    "id": t.get("id"),
+                    "type": t.get("type", ""),
+                    "question": t.get("question", ""),
+                    "agent": t.get("assigned_to", ""),
+                    "created_at": t.get("created_at", ""),
+                    "source_fleet": t.get("source_fleet", "local"),
+                    "source": t.get("source", "local"),
+                })
+            return jsonify(result)
+
+        # Default: local only (backward compatible)
         import db
         tasks = db.get_waiting_human_tasks()
         result = []

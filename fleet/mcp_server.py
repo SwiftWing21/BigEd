@@ -169,18 +169,31 @@ def fleet_task_result(task_id: int) -> dict:
 
 
 @mcp.tool()
-def fleet_hitl_respond(task_id: int, response: str) -> dict:
+def fleet_hitl_respond(task_id: int, response: str, source: str = "local") -> dict:
     """Respond to a human-in-the-loop gate.
+
+    Auto-routes to the correct fleet based on the source field.
+    Use source="local" for local tasks, source="peer:http://..." for remote tasks.
 
     Args:
         task_id: The task awaiting human input
         response: Your response text (e.g. 'approved', 'rejected — reason', or freeform)
+        source: Task source — "local" or "peer:<url>" (from biged://hitl/pending)
     """
     try:
-        import db
+        if source and source.startswith("peer:"):
+            # Route to remote peer
+            peer_url = source[5:]  # strip "peer:" prefix
+            from federation_hitl import respond_to_remote_hitl
+            result = respond_to_remote_hitl(peer_url, task_id, response)
+            if "error" in result:
+                return result
+            return {"task_id": task_id, "responded": True, "response": response, "routed_to": peer_url}
 
+        # Local response
+        import db
         db.respond_to_agent(task_id, response)
-        return {"task_id": task_id, "responded": True, "response": response}
+        return {"task_id": task_id, "responded": True, "response": response, "routed_to": "local"}
     except Exception as e:
         _log.warning("fleet_hitl_respond failed", exc_info=True)
         return {"error": str(e)}
@@ -208,10 +221,15 @@ def fleet_cancel(task_id: int) -> dict:
 
 @mcp.resource("biged://hitl/pending")
 def pending_hitl() -> str:
-    """Tasks currently waiting for human approval or input."""
+    """Tasks currently waiting for human approval or input.
+
+    Includes tasks from local fleet and all federation peers (when enabled).
+    Each task has a 'source' field: "local" or "peer:http://..." to route responses.
+    """
     try:
         import db
 
+        # Local tasks
         with db.get_conn() as conn:
             rows = conn.execute(
                 "SELECT id, type, payload_json, assigned_to, created_at "
@@ -227,7 +245,32 @@ def pending_hitl() -> str:
                 "question": payload.get("_human_question", "Approval required"),
                 "context": payload.get("_human_context", ""),
                 "created_at": row["created_at"],
+                "source": "local",
             })
+
+        # Remote tasks (federation)
+        try:
+            from federation_hitl import get_federation_hitl_config, _fetch_peer_hitl
+            cfg = get_federation_hitl_config()
+            if cfg["enabled"] and cfg["aggregate_remote"]:
+                for peer_url in cfg["peers"]:
+                    try:
+                        remote = _fetch_peer_hitl(peer_url, timeout=cfg["peer_timeout_secs"])
+                        for rt in remote:
+                            tasks.append({
+                                "task_id": rt.get("id"),
+                                "skill": rt.get("type", ""),
+                                "agent": rt.get("assigned_to", rt.get("agent", "")),
+                                "question": rt.get("question", "Approval required"),
+                                "context": rt.get("context", ""),
+                                "created_at": rt.get("created_at", ""),
+                                "source": f"peer:{peer_url}",
+                            })
+                    except Exception:
+                        _log.debug("Skipping unreachable peer %s for HITL resource", peer_url)
+        except ImportError:
+            _log.debug("federation_hitl not available — showing local tasks only")
+
         return json.dumps(tasks, indent=2)
     except Exception as e:
         _log.warning("pending_hitl resource failed", exc_info=True)

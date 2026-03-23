@@ -337,6 +337,12 @@ auto_approve = false          # require manual approval on receive (HITL gate)
 max_package_mb = 50           # reject packages larger than this
 backup_before_deploy = true   # auto-backup before applying incoming deployment
 
+# v0.100.00b: Cross-Fleet HITL — aggregate and route human-in-the-loop tasks across peers
+[federation.hitl]
+aggregate_remote = true           # show remote HITL tasks in local dashboard
+forward_notifications = true      # notify peers about local HITL tasks
+remote_response_timeout = 30      # seconds to wait for peer response
+
 # v0.51.02b: Auto-save & Backup — periodic snapshots of fleet state
 [backup]
 enabled = true

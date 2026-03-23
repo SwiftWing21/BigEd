@@ -1001,7 +1001,11 @@ def get_fleet_status():
 # ── Human-in-the-Loop Functions ───────────────────────────────────────────────
 
 def request_human_input(task_id, agent_name, question):
-    """Agent pauses task and requests operator input. Sets status to WAITING_HUMAN."""
+    """Agent pauses task and requests operator input. Sets status to WAITING_HUMAN.
+
+    Also notifies federation peers (if enabled) so operators on any
+    connected dashboard see the HITL task immediately.
+    """
     def _do():
         with get_conn() as conn:
             conn.execute(
@@ -1015,6 +1019,25 @@ def request_human_input(task_id, agent_name, question):
                 "question": question,
             })))
     _retry_write(_do)
+
+    # Notify federation peers about the new HITL task (fire-and-forget)
+    try:
+        from federation_hitl import forward_hitl_notification, get_federation_hitl_config
+        cfg = get_federation_hitl_config()
+        if cfg["enabled"] and cfg["forward_notifications"] and cfg["peers"]:
+            import threading
+            task_info = {
+                "task_id": task_id,
+                "agent": agent_name,
+                "question": question,
+            }
+            threading.Thread(
+                target=forward_hitl_notification,
+                args=(cfg["peers"], task_info),
+                daemon=True,
+            ).start()
+    except Exception:
+        pass  # Federation notification is best-effort — never block HITL creation
 
 
 def respond_to_agent(task_id, response):
