@@ -1074,27 +1074,59 @@ def main():
                     _stop_worker(role)
                     worker_next_start.pop(role, None)
 
-                # Federation: overflow routing when queue is deep
-                federation_cfg = config.get("federation", {})
-                if federation_cfg.get("enabled") and pending > 10:
-                    overflow_threshold = federation_cfg.get("overflow_threshold", 0.85)
-                    max_capacity = config.get("fleet", {}).get("max_workers", 10) * 5
-                    if pending / max(max_capacity, 1) > overflow_threshold:
-                        fed_peers = federation_cfg.get("peers", [])
-                        for peer_url in fed_peers:
+                # Federation: cross-fleet task routing when queue exceeds overflow threshold
+                try:
+                    from federation_router import should_route_remotely, find_best_peer, route_to_peer, record_local_route
+                    federation_cfg = config.get("federation", {})
+                    if federation_cfg.get("enabled") and pending > 0:
+                        # Check oldest pending tasks and try to route them remotely
+                        _routed_count = 0
+                        if should_route_remotely("", priority=5):
                             try:
-                                # Check peer capacity
-                                with urllib.request.urlopen(
-                                    f"{peer_url}/api/federation/peers", timeout=3
-                                ) as r:
-                                    peer_data = json.loads(r.read())  # noqa: F841
-                                # Forward oldest pending tasks to least-loaded peer
-                                # (Stub — actual task forwarding requires /api/fleet/task/forward endpoint)
-                                log.info(f"Federation overflow: {pending} pending, routing to {peer_url}")
-                                _json_log("INFO", "federation_overflow", pending=pending, peer=peer_url)
-                                break
-                            except Exception:
-                                continue
+                                with db.get_conn() as _fc:
+                                    _pending_rows = _fc.execute(
+                                        "SELECT id, type, payload_json, priority FROM tasks "
+                                        "WHERE status='PENDING' ORDER BY priority DESC, id ASC LIMIT 5"
+                                    ).fetchall()
+                                best_peer = find_best_peer("")
+                                if best_peer:
+                                    for _pr in _pending_rows:
+                                        _task_priority = _pr["priority"] or 5
+                                        local_priority_min = int(federation_cfg.get("local_priority_min", 9))
+                                        if _task_priority >= local_priority_min:
+                                            continue  # critical tasks stay local
+                                        task_dict = {
+                                            "type": _pr["type"],
+                                            "payload": json.loads(_pr["payload_json"] or "{}"),
+                                            "priority": _task_priority,
+                                        }
+                                        result = route_to_peer(best_peer, task_dict)
+                                        if result.get("ok"):
+                                            # Mark task as FORWARDED in local DB
+                                            def _mark_forwarded(_tid=_pr["id"], _peer=best_peer["url"],
+                                                                _remote_id=result.get("task_id")):
+                                                with db.get_conn() as _mf:
+                                                    _mf.execute(
+                                                        "UPDATE tasks SET status='FORWARDED', "
+                                                        "result_json=? WHERE id=? AND status='PENDING'",
+                                                        (json.dumps({
+                                                            "forwarded_to": _peer,
+                                                            "remote_task_id": _remote_id,
+                                                        }), _tid))
+                                            db._retry_write(_mark_forwarded)
+                                            _routed_count += 1
+                                            log.info(f"Federation: routed task {_pr['id']} ({_pr['type']}) to {best_peer['url']}")
+                                            _json_log("INFO", "federation_route", task_id=_pr["id"],
+                                                      task_type=_pr["type"], peer=best_peer["url"])
+                                        else:
+                                            log.debug(f"Federation: route failed for task {_pr['id']}: {result.get('error')}")
+                                            break  # stop trying this peer if it fails
+                            except Exception as e:
+                                log.debug(f"Federation routing error: {e}")
+                        if _routed_count == 0:
+                            record_local_route()
+                except ImportError:
+                    pass  # federation_router not available
             except Exception as e:
                 log.debug(f"Dynamic scale check error: {e}")
 

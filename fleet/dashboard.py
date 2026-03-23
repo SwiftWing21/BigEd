@@ -1975,6 +1975,74 @@ def api_federation_peers():
     return jsonify(peers)
 
 
+# ── Federation Routing (v0.100.00b — Cross-Fleet Task Routing) ──────────────
+
+@app.route("/api/federation/capacity")
+def api_federation_capacity():
+    """Aggregated cluster capacity — local + all reachable peers."""
+    try:
+        sys.path.insert(0, str(FLEET_DIR))
+        from federation_router import get_aggregated_capacity
+        return jsonify(get_aggregated_capacity())
+    except ImportError:
+        return jsonify({"error": "federation_router not available"}), 501
+    except Exception as e:
+        return jsonify({"error": _safe_error(e)}), 500
+
+
+@app.route("/api/federation/routing-stats")
+def api_federation_routing_stats():
+    """Routing statistics — how many tasks routed locally vs remotely."""
+    try:
+        sys.path.insert(0, str(FLEET_DIR))
+        from federation_router import get_routing_stats
+        return jsonify(get_routing_stats())
+    except ImportError:
+        return jsonify({"error": "federation_router not available"}), 501
+    except Exception as e:
+        return jsonify({"error": _safe_error(e)}), 500
+
+
+@app.route("/api/federation/route", methods=["POST"])
+@_require_role("operator")
+def api_federation_route():
+    """Manually route a task to a specific peer fleet.
+
+    Body JSON: {"peer_url": "http://...", "type": "skill_name",
+                "payload": {...}, "priority": 5}
+    """
+    try:
+        data = request.get_json(silent=True)
+        if not data:
+            return jsonify({"error": "Request body must be valid JSON"}), 400
+
+        peer_url = data.get("peer_url")
+        task_type = data.get("type")
+        if not peer_url or not task_type:
+            return jsonify({"error": "peer_url and type are required"}), 400
+
+        sys.path.insert(0, str(FLEET_DIR))
+        from federation_router import route_to_peer
+
+        peer = {"url": peer_url}
+        task_dict = {
+            "type": task_type,
+            "payload": data.get("payload", {}),
+            "priority": data.get("priority", 5),
+        }
+        result = route_to_peer(peer, task_dict)
+
+        if result.get("ok"):
+            _broadcast_sse({"type": "federation_route", "data": result})
+            return jsonify(result)
+        else:
+            return jsonify(result), 502
+    except ImportError:
+        return jsonify({"error": "federation_router not available"}), 501
+    except Exception as e:
+        return jsonify({"error": _safe_error(e)}), 500
+
+
 # ── SLA Monitoring (0.135.00b — Enterprise & Multi-Tenant) ──────────────────
 
 @app.route("/api/sla")
