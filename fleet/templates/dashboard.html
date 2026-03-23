@@ -1,137 +1,515 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="figma">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Fleet Dashboard v2</title>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
 <style>
+  /* ── CSS Variables System ─────────────────────────────────────────────────── */
   :root {
-    --bg: #111; --bg2: #1a1a1a; --bg3: #242424; --border: #333;
-    --text: #e2e2e2; --dim: #888; --accent: #b22222; --gold: #c8a84b; --brand: #00bcd4;
-    --green: #4caf50; --red: #f44336; --orange: #ff9800; --blue: #42a5f5;
+    --bg-primary: #1e1e1e;
+    --bg-secondary: #2c2c2c;
+    --bg-card: #383838;
+    --text-primary: #e0e0e0;
+    --text-secondary: #a0a0a0;
+    --accent: #7c3aed;
+    --accent-hover: #6d28d9;
+    --accent-text: #fff;
+    --success: #22c55e;
+    --warning: #f59e0b;
+    --error: #ef4444;
+    --info: #3b82f6;
+    --gold: #d4a84b;
+    --border: rgba(255,255,255,0.08);
+    --glass-bg: rgba(255,255,255,0.04);
+    --glass-border: rgba(255,255,255,0.08);
+    --glass-hover: rgba(255,255,255,0.07);
+    --radius: 12px;
+    --radius-sm: 8px;
+    --radius-xs: 4px;
+    --shadow: 0 2px 12px rgba(0,0,0,0.2);
+    --shadow-lg: 0 4px 24px rgba(0,0,0,0.3);
+    --transition: all 0.2s ease;
+    --font-sans: 'Inter', 'Segoe UI', system-ui, -apple-system, sans-serif;
+    --font-mono: 'JetBrains Mono', 'Cascadia Code', 'Consolas', 'Menlo', monospace;
+    --font-size-xs: clamp(10px, 0.65rem + 0.1vw, 11px);
+    --font-size-sm: clamp(11px, 0.7rem + 0.1vw, 12px);
+    --font-size-base: clamp(12px, 0.75rem + 0.15vw, 14px);
+    --font-size-lg: clamp(14px, 0.875rem + 0.15vw, 16px);
+    --font-size-xl: clamp(18px, 1.1rem + 0.2vw, 22px);
+    --spacing-xs: 4px;
+    --spacing-sm: 8px;
+    --spacing-md: 12px;
+    --spacing-lg: 16px;
+    --spacing-xl: 24px;
   }
-  * { margin: 0; padding: 0; box-sizing: border-box; }
-  body { background: var(--bg); color: var(--text); font-family: 'Segoe UI', sans-serif; }
-  a { color: var(--gold); text-decoration: none; }
 
-  .header {
-    background: var(--bg3); padding: 16px 24px; border-bottom: 2px solid var(--accent);
-    display: flex; align-items: center; gap: 12px;
+  /* ── Figma Theme (default) — neutral grays, purple accent ─────────────── */
+  [data-theme="figma"] {
+    --bg-primary: #1e1e1e;
+    --bg-secondary: #2c2c2c;
+    --bg-card: #383838;
+    --text-primary: #e0e0e0;
+    --text-secondary: #a0a0a0;
+    --accent: #7c3aed;
+    --accent-hover: #6d28d9;
+    --accent-text: #fff;
+    --success: #22c55e;
+    --warning: #f59e0b;
+    --error: #ef4444;
+    --info: #3b82f6;
+    --gold: #d4a84b;
+    --border: rgba(255,255,255,0.08);
+    --glass-bg: rgba(255,255,255,0.04);
+    --glass-border: rgba(255,255,255,0.08);
+    --glass-hover: rgba(255,255,255,0.07);
+    --radius: 12px;
+    --shadow: 0 2px 12px rgba(0,0,0,0.2);
+    --shadow-lg: 0 4px 24px rgba(0,0,0,0.3);
   }
-  .header h1 { font-size: 20px; color: var(--brand); }
-  .header .status { margin-left: auto; font-size: 13px; color: var(--dim); display: flex; gap: 8px; align-items: center; }
-  .header .live-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--green); animation: pulse 2s infinite; }
+
+  /* ── Classic Theme — original dark with red accent ────────────────────── */
+  [data-theme="classic"] {
+    --bg-primary: #111111;
+    --bg-secondary: #1a1a1a;
+    --bg-card: #242424;
+    --text-primary: #e2e2e2;
+    --text-secondary: #888888;
+    --accent: #b22222;
+    --accent-hover: #8b0000;
+    --accent-text: #fff;
+    --success: #4caf50;
+    --warning: #ff9800;
+    --error: #f44336;
+    --info: #42a5f5;
+    --gold: #c8a84b;
+    --border: #333333;
+    --glass-bg: rgba(255,255,255,0.02);
+    --glass-border: #2a2a2a;
+    --glass-hover: rgba(255,255,255,0.04);
+    --radius: 8px;
+    --shadow: 0 2px 8px rgba(0,0,0,0.3);
+    --shadow-lg: 0 4px 16px rgba(0,0,0,0.4);
+  }
+
+  /* ── Modern Theme — dark blue, higher contrast ────────────────────────── */
+  [data-theme="modern"] {
+    --bg-primary: #0f1117;
+    --bg-secondary: #1a1e2e;
+    --bg-card: #252a3a;
+    --text-primary: #ecf0f1;
+    --text-secondary: #7f8c8d;
+    --accent: #6366f1;
+    --accent-hover: #4f46e5;
+    --accent-text: #fff;
+    --success: #10b981;
+    --warning: #f59e0b;
+    --error: #ef4444;
+    --info: #3b82f6;
+    --gold: #d4a84b;
+    --border: rgba(255,255,255,0.06);
+    --glass-bg: rgba(255,255,255,0.03);
+    --glass-border: #2a3045;
+    --glass-hover: rgba(255,255,255,0.06);
+    --radius: 12px;
+    --shadow: 0 2px 16px rgba(0,0,0,0.35);
+    --shadow-lg: 0 8px 32px rgba(0,0,0,0.5);
+  }
+
+  /* ── Reset and Base ───────────────────────────────────────────────────── */
+  *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: var(--bg-primary);
+    color: var(--text-primary);
+    font-family: var(--font-sans);
+    font-size: var(--font-size-base);
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+  a { color: var(--gold); text-decoration: none; transition: var(--transition); }
+  a:hover { opacity: 0.85; }
+
+  /* ── Header ───────────────────────────────────────────────────────────── */
+  .header {
+    background: var(--bg-secondary);
+    padding: var(--spacing-lg) var(--spacing-xl);
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-md);
+    position: sticky;
+    top: 0;
+    z-index: 100;
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+  }
+  .header h1 {
+    font-size: var(--font-size-lg);
+    font-weight: 600;
+    color: var(--accent);
+    letter-spacing: -0.02em;
+  }
+  .header .status {
+    margin-left: auto;
+    font-size: var(--font-size-sm);
+    color: var(--text-secondary);
+    display: flex;
+    gap: var(--spacing-sm);
+    align-items: center;
+    flex-wrap: wrap;
+  }
+  .header .live-dot {
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    background: var(--success);
+    animation: pulse 2s infinite;
+    flex-shrink: 0;
+  }
   @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
 
-  .alert-bar { padding: 0 16px; display: none; }
+  /* ── Theme Selector ───────────────────────────────────────────────────── */
+  .theme-selector {
+    display: flex;
+    gap: 2px;
+    background: var(--bg-primary);
+    border-radius: var(--radius-sm);
+    padding: 2px;
+    border: 1px solid var(--border);
+  }
+  .theme-pill {
+    padding: 4px 10px;
+    border: none;
+    border-radius: 6px;
+    background: transparent;
+    color: var(--text-secondary);
+    font-size: var(--font-size-xs);
+    font-family: var(--font-sans);
+    cursor: pointer;
+    transition: var(--transition);
+    white-space: nowrap;
+    min-height: 28px;
+    min-width: 44px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .theme-pill:hover { color: var(--text-primary); background: var(--glass-hover); }
+  .theme-pill.active {
+    background: var(--accent);
+    color: var(--accent-text);
+    font-weight: 600;
+  }
+
+  /* ── Hamburger Menu (mobile) ──────────────────────────────────────────── */
+  .hamburger {
+    display: none;
+    background: none;
+    border: none;
+    color: var(--text-primary);
+    font-size: 24px;
+    cursor: pointer;
+    padding: 4px;
+    min-width: 44px;
+    min-height: 44px;
+    align-items: center;
+    justify-content: center;
+  }
+
+  /* ── Alert Bar ────────────────────────────────────────────────────────── */
+  .alert-bar { padding: 0 var(--spacing-lg); display: none; }
   .alert-bar.expanded { display: block; }
   .alert-item {
-    padding: 8px 16px; margin: 4px 0; border-radius: 4px; font-size: 13px;
-    display: flex; align-items: center; gap: 8px;
+    padding: var(--spacing-sm) var(--spacing-lg);
+    margin: var(--spacing-xs) 0;
+    border-radius: var(--radius-xs);
+    font-size: var(--font-size-sm);
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-sm);
+    transition: var(--transition);
   }
-  .alert-item.critical { background: #3d1b1b; border-left: 3px solid var(--red); }
-  .alert-item.warning { background: #3d2e0e; border-left: 3px solid var(--orange); }
-  .alert-item.info { background: #1b2a3d; border-left: 3px solid var(--blue); }
-  .alert-item .dismiss { cursor: pointer; margin-left: auto; color: var(--dim); }
+  .alert-item.critical { background: rgba(239,68,68,0.12); border-left: 3px solid var(--error); }
+  .alert-item.warning { background: rgba(245,158,11,0.12); border-left: 3px solid var(--warning); }
+  .alert-item.info { background: rgba(59,130,246,0.12); border-left: 3px solid var(--info); }
+  .alert-item .dismiss {
+    cursor: pointer; margin-left: auto; color: var(--text-secondary);
+    min-width: 44px; min-height: 44px; display: flex; align-items: center; justify-content: center;
+  }
   .alert-bubble {
-    position: relative; cursor: pointer; margin-left: 4px;
+    position: relative; cursor: pointer; margin-left: var(--spacing-xs);
     width: 24px; height: 24px; border-radius: 50%;
     display: none; align-items: center; justify-content: center;
-    font-size: 11px; font-weight: bold; color: #fff;
+    font-size: var(--font-size-xs); font-weight: bold; color: #fff;
+    min-width: 44px; min-height: 44px;
   }
   .alert-bubble.has-alerts { display: inline-flex; }
-  .alert-bubble.warning { background: var(--orange); }
-  .alert-bubble.critical { background: var(--red); }
+  .alert-bubble.warning { background: var(--warning); }
+  .alert-bubble.critical { background: var(--error); }
 
+  /* ── Grid Layout ──────────────────────────────────────────────────────── */
   .grid {
-    display: grid; grid-template-columns: repeat(auto-fit, minmax(380px, 1fr));
-    gap: 16px; padding: 16px; max-width: 1600px; margin: 0 auto;
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(380px, 1fr));
+    gap: var(--spacing-lg);
+    padding: var(--spacing-lg);
+    max-width: 1600px;
+    margin: 0 auto;
   }
 
+  /* ── Cards — Glassmorphism ────────────────────────────────────────────── */
   .card {
-    background: var(--bg2); border: 1px solid var(--border); border-radius: 8px;
-    padding: 16px; min-height: 200px;
+    background: var(--glass-bg);
+    border: 1px solid var(--glass-border);
+    border-radius: var(--radius);
+    padding: var(--spacing-lg);
+    min-height: 200px;
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    transition: var(--transition);
+    box-shadow: var(--shadow);
   }
-  .card h2 { font-size: 14px; color: var(--gold); margin-bottom: 12px; text-transform: uppercase; letter-spacing: 1px; }
+  .card:hover {
+    border-color: var(--accent);
+    box-shadow: var(--shadow-lg);
+    background: var(--glass-hover);
+  }
+  .card h2 {
+    font-size: var(--font-size-sm);
+    color: var(--accent);
+    margin-bottom: var(--spacing-md);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    font-weight: 600;
+  }
   .card.wide { grid-column: span 2; }
 
-  .stat-row { display: flex; gap: 16px; flex-wrap: wrap; margin-bottom: 12px; }
+  /* ── Stats ────────────────────────────────────────────────────────────── */
+  .stat-row {
+    display: flex;
+    gap: var(--spacing-md);
+    flex-wrap: wrap;
+    margin-bottom: var(--spacing-md);
+  }
   .stat {
-    background: var(--bg3); border-radius: 6px; padding: 12px 16px; flex: 1; min-width: 120px; text-align: center;
+    background: var(--bg-secondary);
+    border-radius: var(--radius-sm);
+    padding: var(--spacing-md) var(--spacing-lg);
+    flex: 1;
+    min-width: 120px;
+    text-align: center;
+    border: 1px solid var(--border);
+    transition: var(--transition);
   }
-  .stat .value { font-size: 28px; font-weight: bold; }
-  .stat .label { font-size: 11px; color: var(--dim); margin-top: 4px; }
-  .stat.green .value { color: var(--green); }
-  .stat.red .value { color: var(--red); }
+  .stat:hover { border-color: var(--glass-border); transform: translateY(-1px); }
+  .stat .value { font-size: clamp(22px, 1.5rem + 0.3vw, 28px); font-weight: 700; font-feature-settings: 'tnum'; }
+  .stat .label { font-size: var(--font-size-xs); color: var(--text-secondary); margin-top: var(--spacing-xs); }
+  .stat.green .value { color: var(--success); }
+  .stat.red .value { color: var(--error); }
   .stat.gold .value { color: var(--gold); }
-  .stat.blue .value { color: var(--blue); }
-  .stat.orange .value { color: var(--orange); }
+  .stat.blue .value { color: var(--info); }
+  .stat.orange .value { color: var(--warning); }
+  .stat.dim .value { color: var(--text-secondary); }
 
-  table { width: 100%; border-collapse: collapse; font-size: 13px; }
-  th { text-align: left; color: var(--dim); font-weight: normal; padding: 6px 8px; border-bottom: 1px solid var(--border); }
-  td { padding: 6px 8px; border-bottom: 1px solid var(--bg3); }
-  tr:hover td { background: var(--bg3); }
-
-  .badge {
-    display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: bold;
+  /* ── Tables ───────────────────────────────────────────────────────────── */
+  table { width: 100%; border-collapse: collapse; font-size: var(--font-size-sm); }
+  th {
+    text-align: left; color: var(--text-secondary); font-weight: 500;
+    padding: var(--spacing-sm); border-bottom: 1px solid var(--border);
+    font-size: var(--font-size-xs); text-transform: uppercase; letter-spacing: 0.05em;
   }
-  .badge-done { background: #1b3d1b; color: var(--green); }
-  .badge-failed { background: #3d1b1b; color: var(--red); }
-  .badge-running { background: #3d2e0e; color: var(--orange); }
-  .badge-pending { background: #1b2a3d; color: var(--blue); }
-  .badge-idle { background: #1b2a3d; color: var(--blue); }
-  .badge-busy { background: #3d2e0e; color: var(--orange); }
-  .badge-offline { background: #2d2d2d; color: var(--dim); }
-  .badge-online { background: #1b3d1b; color: var(--green); }
-  .badge-error { background: #3d1b1b; color: var(--red); }
-  .badge-info { background: #1b2a3d; color: var(--blue); }
-  .badge-unknown { background: #2d2d2d; color: var(--dim); }
+  td { padding: var(--spacing-sm); border-bottom: 1px solid var(--border); }
+  tr { transition: var(--transition); }
+  tr:hover td { background: var(--glass-hover); }
 
+  /* ── Badges ───────────────────────────────────────────────────────────── */
+  .badge {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: var(--radius-xs);
+    font-size: var(--font-size-xs);
+    font-weight: 600;
+    letter-spacing: 0.02em;
+  }
+  .badge-done { background: rgba(34,197,94,0.15); color: var(--success); }
+  .badge-failed { background: rgba(239,68,68,0.15); color: var(--error); }
+  .badge-running { background: rgba(245,158,11,0.15); color: var(--warning); }
+  .badge-pending { background: rgba(59,130,246,0.15); color: var(--info); }
+  .badge-idle { background: rgba(59,130,246,0.1); color: var(--info); }
+  .badge-busy { background: rgba(245,158,11,0.15); color: var(--warning); }
+  .badge-offline { background: rgba(255,255,255,0.05); color: var(--text-secondary); }
+  .badge-online { background: rgba(34,197,94,0.15); color: var(--success); }
+  .badge-error { background: rgba(239,68,68,0.15); color: var(--error); }
+  .badge-info { background: rgba(59,130,246,0.15); color: var(--info); }
+  .badge-unknown { background: rgba(255,255,255,0.05); color: var(--text-secondary); }
+
+  /* ── Charts ───────────────────────────────────────────────────────────── */
   .chart-container { position: relative; height: 260px; }
 
+  /* ── Timeline ─────────────────────────────────────────────────────────── */
   .timeline { max-height: 400px; overflow-y: auto; }
   .timeline-item {
-    display: flex; gap: 10px; padding: 8px 0; border-bottom: 1px solid var(--bg3);
-    font-size: 12px;
+    display: flex; gap: 10px;
+    padding: var(--spacing-sm) 0;
+    border-bottom: 1px solid var(--border);
+    font-size: var(--font-size-sm);
+    transition: var(--transition);
   }
-  .timeline-item .time { color: var(--dim); min-width: 60px; }
-  .timeline-item .agent { color: var(--gold); min-width: 80px; }
+  .timeline-item:hover { background: var(--glass-hover); }
+  .timeline-item .time { color: var(--text-secondary); min-width: 60px; font-family: var(--font-mono); font-size: var(--font-size-xs); }
+  .timeline-item .agent { color: var(--gold); min-width: 80px; font-weight: 500; }
 
-  .file-list { max-height: 300px; overflow-y: auto; font-size: 12px; }
-  .file-item { padding: 4px 0; border-bottom: 1px solid var(--bg3); display: flex; justify-content: space-between; }
-  .file-item .name { color: var(--text); }
-  .file-item .meta { color: var(--dim); }
+  /* ── File Lists ───────────────────────────────────────────────────────── */
+  .file-list { max-height: 300px; overflow-y: auto; font-size: var(--font-size-sm); }
+  .file-item {
+    padding: var(--spacing-xs) 0;
+    border-bottom: 1px solid var(--border);
+    display: flex; justify-content: space-between;
+    transition: var(--transition);
+  }
+  .file-item:hover { background: var(--glass-hover); }
+  .file-item .name { color: var(--text-primary); }
+  .file-item .meta { color: var(--text-secondary); }
 
+  /* ── Buttons ──────────────────────────────────────────────────────────── */
   .refresh-btn {
-    background: var(--bg3); border: 1px solid var(--border); color: var(--dim);
-    padding: 4px 12px; border-radius: 4px; cursor: pointer; font-size: 12px;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    color: var(--text-secondary);
+    padding: 6px 14px;
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    font-size: var(--font-size-xs);
+    font-family: var(--font-sans);
+    transition: var(--transition);
+    min-height: 44px;
+    min-width: 44px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
   }
-  .refresh-btn:hover { color: var(--text); border-color: var(--gold); }
+  .refresh-btn:hover { color: var(--text-primary); border-color: var(--accent); background: var(--glass-hover); }
 
-  .thermal-gauge {
-    display: flex; gap: 12px; margin-top: 8px;
-  }
+  /* ── Thermal Gauges ───────────────────────────────────────────────────── */
+  .thermal-gauge { display: flex; gap: var(--spacing-md); margin-top: var(--spacing-sm); }
   .gauge {
-    flex: 1; background: var(--bg3); border-radius: 6px; padding: 10px; text-align: center;
+    flex: 1;
+    background: var(--bg-secondary);
+    border-radius: var(--radius-sm);
+    padding: var(--spacing-md);
+    text-align: center;
+    border: 1px solid var(--border);
+    transition: var(--transition);
   }
-  .gauge .temp { font-size: 24px; font-weight: bold; }
-  .gauge .name { font-size: 11px; color: var(--dim); margin-top: 4px; }
+  .gauge:hover { border-color: var(--glass-border); }
+  .gauge .temp { font-size: clamp(20px, 1.3rem + 0.2vw, 24px); font-weight: 700; font-feature-settings: 'tnum'; }
+  .gauge .name { font-size: var(--font-size-xs); color: var(--text-secondary); margin-top: var(--spacing-xs); }
 
-  .idle-toggle td { font-style: italic; padding: 4px 8px; }
-  .idle-toggle:hover td { color: var(--text) !important; }
+  /* ── Idle toggle ──────────────────────────────────────────────────────── */
+  .idle-toggle td { font-style: italic; padding: var(--spacing-xs) var(--spacing-sm); }
+  .idle-toggle:hover td { color: var(--text-primary) !important; }
 
-  @media (max-width: 800px) {
-    .grid { grid-template-columns: 1fr; }
+  /* ── Form controls (audit filters) ────────────────────────────────────── */
+  select, input[type="date"] {
+    padding: 6px 10px;
+    font-size: var(--font-size-sm);
+    font-family: var(--font-sans);
+    background: var(--bg-card);
+    color: var(--text-primary);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-xs);
+    transition: var(--transition);
+    min-height: 36px;
+  }
+  select:focus, input[type="date"]:focus { outline: none; border-color: var(--accent); }
+
+  .filter-btn {
+    padding: 6px 14px;
+    font-size: var(--font-size-sm);
+    font-family: var(--font-sans);
+    background: var(--accent);
+    color: var(--accent-text);
+    border: none;
+    border-radius: var(--radius-xs);
+    cursor: pointer;
+    transition: var(--transition);
+    min-height: 36px;
+    min-width: 44px;
+  }
+  .filter-btn:hover { background: var(--accent-hover); }
+
+  .export-btn {
+    padding: 6px 14px;
+    font-size: var(--font-size-sm);
+    font-family: var(--font-sans);
+    background: var(--bg-card);
+    color: var(--text-primary);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-xs);
+    cursor: pointer;
+    transition: var(--transition);
+    min-height: 36px;
+    min-width: 44px;
+  }
+  .export-btn:hover { border-color: var(--accent); background: var(--glass-hover); }
+
+  /* ── Scrollbar styling ────────────────────────────────────────────────── */
+  ::-webkit-scrollbar { width: 6px; height: 6px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+  ::-webkit-scrollbar-thumb:hover { background: var(--text-secondary); }
+
+  /* ── Mobile Responsive ────────────────────────────────────────────────── */
+  @media (max-width: 768px) {
+    .grid {
+      grid-template-columns: 1fr;
+      padding: var(--spacing-sm);
+      gap: var(--spacing-sm);
+    }
     .card.wide { grid-column: span 1; }
+    .header {
+      padding: var(--spacing-sm) var(--spacing-md);
+      flex-wrap: wrap;
+    }
+    .header h1 { font-size: var(--font-size-base); }
+    .header .status {
+      width: 100%;
+      justify-content: flex-end;
+      order: 2;
+    }
+    .hamburger { display: flex; }
+    .theme-selector {
+      order: 3;
+      width: 100%;
+      justify-content: center;
+    }
+    .stat-row { gap: var(--spacing-sm); }
+    .stat { min-width: 80px; padding: var(--spacing-sm); }
+    .stat .value { font-size: 20px; }
+    .thermal-gauge { flex-direction: column; }
+    .card { padding: var(--spacing-md); min-height: auto; }
+  }
+
+  @media (max-width: 480px) {
+    .header .status span:not(#connectionStatus):not(.live-dot) { display: none; }
+    .stat { min-width: 60px; }
+    .stat .value { font-size: 18px; }
+    .stat .label { font-size: 9px; }
   }
 </style>
 </head>
 <body>
 
 <div class="header">
+  <button class="hamburger" onclick="document.body.classList.toggle('menu-open')" aria-label="Toggle menu">&#9776;</button>
   <span style="font-size:24px">&#x1f9f1;</span>
   <h1>FLEET DASHBOARD v2</h1>
+  <div class="theme-selector" id="themeSelector">
+    <button class="theme-pill" data-theme="classic" onclick="setTheme('classic')">Classic</button>
+    <button class="theme-pill" data-theme="modern" onclick="setTheme('modern')">Modern</button>
+    <button class="theme-pill active" data-theme="figma" onclick="setTheme('figma')">Figma</button>
+  </div>
   <div class="status">
     <div class="live-dot" id="liveDot"></div>
     <span id="connectionStatus">Connecting...</span>
@@ -153,7 +531,7 @@
     <h2>Thermal</h2>
     <div class="thermal-gauge" id="thermalGauge"></div>
     <div class="stat-row" id="thermalStats" style="margin-top:12px"></div>
-    <div id="thermalNote" style="color:var(--dim);font-size:11px;margin-top:6px;display:none"></div>
+    <div id="thermalNote" style="color:var(--text-secondary);font-size:var(--font-size-xs);margin-top:6px;display:none"></div>
   </div>
 
   <div class="card">
@@ -164,12 +542,12 @@
 
   <div class="card">
     <h2>Activity</h2>
-    <div id="trainingBadge" style="font-size:11px;color:var(--dim);margin-bottom:8px">Training: idle</div>
+    <div id="trainingBadge" style="font-size:var(--font-size-xs);color:var(--text-secondary);margin-bottom:8px">Training: idle</div>
     <div id="activityFeed" style="max-height:350px;overflow-y:auto"></div>
   </div>
 
   <div class="card">
-    <h2>Activity — Last 30 Days</h2>
+    <h2>Activity &mdash; Last 30 Days</h2>
     <div class="chart-container"><canvas id="activityChart"></canvas></div>
   </div>
 
@@ -200,56 +578,56 @@
   </div>
 
   <div class="card wide">
-    <h2>File Access Log <span style="font-size:11px;color:var(--dim);font-weight:normal">v0.051.07b — SOC 2 audit trail</span></h2>
-    <div id="fsAuditNote" style="color:var(--dim);font-size:11px;margin-bottom:8px"></div>
-    <table style="width:100%;font-size:12px">
+    <h2>File Access Log <span style="font-size:var(--font-size-xs);color:var(--text-secondary);font-weight:normal">v0.051.07b &mdash; SOC 2 audit trail</span></h2>
+    <div id="fsAuditNote" style="color:var(--text-secondary);font-size:var(--font-size-xs);margin-bottom:8px"></div>
+    <table style="width:100%;font-size:var(--font-size-sm)">
       <thead><tr>
-        <th style="text-align:left;padding:4px 8px;color:var(--dim)">Time</th>
-        <th style="text-align:left;padding:4px 8px;color:var(--dim)">Status</th>
-        <th style="text-align:left;padding:4px 8px;color:var(--dim)">Agent</th>
-        <th style="text-align:left;padding:4px 8px;color:var(--dim)">Skill</th>
-        <th style="text-align:left;padding:4px 8px;color:var(--dim)">Action</th>
-        <th style="text-align:left;padding:4px 8px;color:var(--dim)">Path</th>
+        <th>Time</th>
+        <th>Status</th>
+        <th>Agent</th>
+        <th>Skill</th>
+        <th>Action</th>
+        <th>Path</th>
       </tr></thead>
       <tbody id="fsAuditTable"></tbody>
     </table>
   </div>
 
   <div class="card wide">
-    <h2>Audit Trail <span style="font-size:11px;color:var(--dim);font-weight:normal">structured event log</span></h2>
+    <h2>Audit Trail <span style="font-size:var(--font-size-xs);color:var(--text-secondary);font-weight:normal">structured event log</span></h2>
     <div style="display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap;align-items:center">
-      <select id="auditActorFilter" style="padding:4px 8px;font-size:12px;background:var(--card);color:var(--fg);border:1px solid var(--dim);border-radius:4px">
+      <select id="auditActorFilter">
         <option value="">All Actors</option>
       </select>
-      <select id="auditActionFilter" style="padding:4px 8px;font-size:12px;background:var(--card);color:var(--fg);border:1px solid var(--dim);border-radius:4px">
+      <select id="auditActionFilter">
         <option value="">All Actions</option>
       </select>
-      <input type="date" id="auditFromDate" title="From date" style="padding:4px 8px;font-size:12px;background:var(--card);color:var(--fg);border:1px solid var(--dim);border-radius:4px">
-      <input type="date" id="auditToDate" title="To date" style="padding:4px 8px;font-size:12px;background:var(--card);color:var(--fg);border:1px solid var(--dim);border-radius:4px">
-      <button onclick="loadAuditTrail()" style="padding:4px 12px;font-size:12px;background:var(--accent);color:#000;border:none;border-radius:4px;cursor:pointer">Filter</button>
-      <button onclick="exportAudit('csv')" style="padding:4px 12px;font-size:12px;background:var(--card);color:var(--fg);border:1px solid var(--dim);border-radius:4px;cursor:pointer">Export CSV</button>
-      <button onclick="exportAudit('json')" style="padding:4px 12px;font-size:12px;background:var(--card);color:var(--fg);border:1px solid var(--dim);border-radius:4px;cursor:pointer">Export JSON</button>
+      <input type="date" id="auditFromDate" title="From date">
+      <input type="date" id="auditToDate" title="To date">
+      <button class="filter-btn" onclick="loadAuditTrail()">Filter</button>
+      <button class="export-btn" onclick="exportAudit('csv')">Export CSV</button>
+      <button class="export-btn" onclick="exportAudit('json')">Export JSON</button>
     </div>
-    <div id="auditTrailNote" style="color:var(--dim);font-size:11px;margin-bottom:6px"></div>
-    <table style="width:100%;font-size:12px">
+    <div id="auditTrailNote" style="color:var(--text-secondary);font-size:var(--font-size-xs);margin-bottom:6px"></div>
+    <table style="width:100%;font-size:var(--font-size-sm)">
       <thead><tr>
-        <th style="text-align:left;padding:4px 8px;color:var(--dim)">Time</th>
-        <th style="text-align:left;padding:4px 8px;color:var(--dim)">Actor</th>
-        <th style="text-align:left;padding:4px 8px;color:var(--dim)">Action</th>
-        <th style="text-align:left;padding:4px 8px;color:var(--dim)">Resource</th>
-        <th style="text-align:right;padding:4px 8px;color:var(--dim)">Cost</th>
-        <th style="text-align:left;padding:4px 8px;color:var(--dim)">Detail</th>
+        <th>Time</th>
+        <th>Actor</th>
+        <th>Action</th>
+        <th>Resource</th>
+        <th style="text-align:right">Cost</th>
+        <th>Detail</th>
       </tr></thead>
       <tbody id="auditTrailTable"></tbody>
     </table>
-    <div id="auditTrailPager" style="margin-top:8px;display:flex;gap:8px;align-items:center;font-size:12px;color:var(--dim)"></div>
+    <div id="auditTrailPager" style="margin-top:8px;display:flex;gap:8px;align-items:center;font-size:var(--font-size-sm);color:var(--text-secondary)"></div>
   </div>
 
   <div class="card wide">
     <h2>API Cost Tracker</h2>
     <div class="stat-row" id="costSummary"></div>
     <div id="costDetails" style="margin-top:12px"></div>
-    <div id="costNote" style="color:var(--dim);font-size:11px;margin-top:8px"></div>
+    <div id="costNote" style="color:var(--text-secondary);font-size:var(--font-size-xs);margin-top:8px"></div>
   </div>
 
   <div class="card">
@@ -286,55 +664,130 @@
 </div>
 
 <script>
-let activityChart = null;
-let skillsChart = null;
-let eventSource = null;
+/* ── Theme Management ─────────────────────────────────────────────────────── */
 
-// Aggregate batch cache — populated by loadAll(), consumed within _DASH_CACHE_TTL ms
-let _dashCache = null;
-let _dashCacheTs = 0;
-const _DASH_CACHE_TTL = 5000;
+function getCookie(name) {
+  var match = document.cookie.match(new RegExp('(^| )' + name + '=([^;]+)'));
+  return match ? decodeURIComponent(match[2]) : null;
+}
+
+function setCookie(name, value, days) {
+  var d = new Date();
+  d.setTime(d.getTime() + (days || 365) * 24 * 60 * 60 * 1000);
+  document.cookie = name + '=' + encodeURIComponent(value) + ';expires=' + d.toUTCString() + ';path=/;SameSite=Lax';
+}
+
+function setTheme(theme) {
+  var valid = ['classic', 'modern', 'figma'];
+  if (valid.indexOf(theme) === -1) theme = 'figma';
+  document.documentElement.setAttribute('data-theme', theme);
+  setCookie('biged-theme', theme, 365);
+  /* Update pill active state */
+  var pills = document.querySelectorAll('.theme-pill');
+  for (var i = 0; i < pills.length; i++) {
+    var p = pills[i];
+    if (p.getAttribute('data-theme') === theme) {
+      p.classList.add('active');
+    } else {
+      p.classList.remove('active');
+    }
+  }
+  /* Persist to server (fire-and-forget) */
+  try {
+    fetch('/api/settings/theme', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({theme: theme})
+    }).catch(function() {});
+  } catch(e) {}
+  /* Update chart colors for the new theme */
+  updateChartColors();
+}
+
+function initTheme() {
+  /* Priority: cookie > server default > figma */
+  var theme = getCookie('biged-theme') || 'figma';
+  setTheme(theme);
+}
+
+function updateChartColors() {
+  var style = getComputedStyle(document.documentElement);
+  var dimColor = style.getPropertyValue('--text-secondary').trim() || '#888';
+  var borderColor = style.getPropertyValue('--border').trim() || '#333';
+  var successColor = style.getPropertyValue('--success').trim() || '#4caf50';
+  var errorColor = style.getPropertyValue('--error').trim() || '#f44336';
+  if (activityChart) {
+    activityChart.data.datasets[0].backgroundColor = successColor;
+    activityChart.data.datasets[1].backgroundColor = errorColor;
+    activityChart.options.scales.x.ticks.color = dimColor;
+    activityChart.options.scales.y.ticks.color = dimColor;
+    activityChart.options.scales.x.grid.color = borderColor;
+    activityChart.options.scales.y.grid.color = borderColor;
+    activityChart.options.plugins.legend.labels.color = dimColor;
+    activityChart.update('none');
+  }
+  if (skillsChart) {
+    skillsChart.data.datasets[0].backgroundColor = successColor;
+    skillsChart.data.datasets[1].backgroundColor = errorColor;
+    skillsChart.options.scales.x.ticks.color = dimColor;
+    skillsChart.options.scales.y.ticks.color = dimColor;
+    skillsChart.options.scales.x.grid.color = borderColor;
+    skillsChart.options.plugins.legend.labels.color = dimColor;
+    skillsChart.update('none');
+  }
+}
+
+/* Apply theme immediately on load */
+initTheme();
+
+/* ── Core Utilities ───────────────────────────────────────────────────────── */
+
+var activityChart = null;
+var skillsChart = null;
+var eventSource = null;
+
+/* Aggregate batch cache */
+var _dashCache = null;
+var _dashCacheTs = 0;
+var _DASH_CACHE_TTL = 5000;
 
 function escapeHTML(s) {
-  const div = document.createElement('div');
+  var div = document.createElement('div');
   div.textContent = String(s);
   return div.innerHTML;
 }
 
-async function fetchJSON(url) {
-  // Serve from aggregate cache when available (within TTL)
+function fetchJSON(url) {
   if (_dashCache && (Date.now() - _dashCacheTs) < _DASH_CACHE_TTL) {
-    const key = url.startsWith('/api/') ? url.slice(5) : url;
+    var key = url.startsWith('/api/') ? url.slice(5) : url;
     if (Object.prototype.hasOwnProperty.call(_dashCache, key)) {
-      return _dashCache[key];
+      return Promise.resolve(_dashCache[key]);
     }
   }
-  try {
-    const r = await fetch(url);
+  return fetch(url).then(function(r) {
     if (!r.ok) throw new Error('HTTP ' + r.status);
-    return await r.json();
-  } catch(e) {
+    return r.json();
+  }).catch(function(e) {
     console.error('fetchJSON error:', url, e);
     return {};
-  }
+  });
 }
 
-const BADGE_WHITELIST = new Set([
-  'done', 'failed', 'running', 'pending', 'idle', 'busy',
-  'offline', 'online', 'error', 'info', 'quarantined',
-  'sleeping', 'resting', 'active', 'disabled'
-]);
+var BADGE_WHITELIST_SET = {};
+['done', 'failed', 'running', 'pending', 'idle', 'busy',
+ 'offline', 'online', 'error', 'info', 'quarantined',
+ 'sleeping', 'resting', 'active', 'disabled'].forEach(function(b) { BADGE_WHITELIST_SET[b] = true; });
 
 function badge(status) {
-  const s = (status || 'unknown').toLowerCase().replace(/[^a-z0-9-]/g, '-');
-  const cls = BADGE_WHITELIST.has(s) ? s : 'info';
-  return `<span class="badge badge-${cls}">${escapeHTML(status)}</span>`;
+  var s = (status || 'unknown').toLowerCase().replace(/[^a-z0-9-]/g, '-');
+  var cls = BADGE_WHITELIST_SET[s] ? s : 'info';
+  return '<span class="badge badge-' + cls + '">' + escapeHTML(status) + '</span>';
 }
 
 function timeAgo(dateStr) {
   if (!dateStr) return 'never';
-  const d = new Date(dateStr + 'Z');
-  const s = Math.floor((Date.now() - d) / 1000);
+  var d = new Date(dateStr + 'Z');
+  var s = Math.floor((Date.now() - d) / 1000);
   if (s < 60) return s + 's ago';
   if (s < 3600) return Math.floor(s/60) + 'm ago';
   if (s < 86400) return Math.floor(s/3600) + 'h ago';
@@ -343,35 +796,35 @@ function timeAgo(dateStr) {
 
 function shortTime(dateStr) {
   if (!dateStr) return '';
-  const d = new Date(dateStr + 'Z');
+  var d = new Date(dateStr + 'Z');
   return d.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
 }
 
 function tempColor(temp, sustained, burst) {
-  if (temp >= burst) return 'var(--red)';
-  if (temp >= sustained) return 'var(--orange)';
+  if (temp >= burst) return 'var(--error)';
+  if (temp >= sustained) return 'var(--warning)';
   if (temp >= sustained - 10) return 'var(--gold)';
-  return 'var(--green)';
+  return 'var(--success)';
 }
 
-// ── SSE Connection ──────────────────────────────────────────────────────────
+/* ── SSE Connection ───────────────────────────────────────────────────────── */
 
 function connectSSE() {
   if (eventSource) eventSource.close();
   eventSource = new EventSource('/api/stream');
 
-  eventSource.onopen = () => {
+  eventSource.onopen = function() {
     _sseRetries = 0;
     document.getElementById('connectionStatus').textContent = 'Live';
-    document.getElementById('liveDot').style.background = 'var(--green)';
+    document.getElementById('liveDot').style.background = 'var(--success)';
     document.title = 'BigEd CC Dashboard';
-    const ov = document.getElementById('offlineOverlay');
+    var ov = document.getElementById('offlineOverlay');
     if (ov) ov.remove();
   };
 
-  eventSource.onmessage = (e) => {
+  eventSource.onmessage = function(e) {
     try {
-      const msg = JSON.parse(e.data);
+      var msg = JSON.parse(e.data);
       if (msg.type === 'status') {
         updateStatusFromSSE(msg.data);
       } else if (msg.type === 'alert') {
@@ -382,94 +835,191 @@ function connectSSE() {
     } catch (err) {}
   };
 
-  eventSource.onerror = () => {
+  eventSource.onerror = function() {
     _sseRetries = (_sseRetries || 0) + 1;
     if (_sseRetries >= 6) {
       document.getElementById('connectionStatus').textContent = 'BigEd CC Offline';
-      document.getElementById('liveDot').style.background = 'var(--dim)';
+      document.getElementById('liveDot').style.background = 'var(--text-secondary)';
       document.title = '[Offline] BigEd CC Dashboard';
-      // Show offline overlay
       if (!document.getElementById('offlineOverlay')) {
-        const ov = document.createElement('div');
+        var ov = document.createElement('div');
         ov.id = 'offlineOverlay';
         ov.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.85);z-index:9999;display:flex;align-items:center;justify-content:center;flex-direction:column';
-        ov.innerHTML = '<div style="color:var(--gold);font-size:24px;font-weight:bold">BigEd CC Offline</div>'
-          + '<div style="color:var(--dim);margin-top:8px">The fleet has been shut down.</div>'
-          + '<div id="offlineCountdown" style="color:var(--dim);margin-top:4px;font-size:13px">Dashboard will clear in 60s — tab will remain open</div>'
-          + '<button onclick="location.reload()" style="margin-top:16px;padding:8px 24px;background:var(--accent);color:white;border:none;border-radius:4px;cursor:pointer">Retry Connection</button>';
+        var inner = document.createElement('div');
+        inner.style.cssText = 'text-align:center';
+        var title = document.createElement('div');
+        title.style.cssText = 'color:var(--gold);font-size:24px;font-weight:bold';
+        title.textContent = 'BigEd CC Offline';
+        var sub = document.createElement('div');
+        sub.style.cssText = 'color:var(--text-secondary);margin-top:8px';
+        sub.textContent = 'The fleet has been shut down.';
+        var countdown = document.createElement('div');
+        countdown.id = 'offlineCountdown';
+        countdown.style.cssText = 'color:var(--text-secondary);margin-top:4px;font-size:13px';
+        countdown.textContent = 'Dashboard will clear in 60s';
+        var retryBtn = document.createElement('button');
+        retryBtn.textContent = 'Retry Connection';
+        retryBtn.style.cssText = 'margin-top:16px;padding:10px 28px;background:var(--accent);color:var(--accent-text);border:none;border-radius:var(--radius-sm);cursor:pointer;font-family:var(--font-sans);min-height:44px';
+        retryBtn.addEventListener('click', function() { location.reload(); });
+        inner.appendChild(title);
+        inner.appendChild(sub);
+        inner.appendChild(countdown);
+        inner.appendChild(retryBtn);
+        ov.appendChild(inner);
         document.body.appendChild(ov);
-        // 60s countdown then clear dashboard content
         var _offlineSecs = 60;
         window._offlineTimer = setInterval(function() {
           _offlineSecs--;
           var el = document.getElementById('offlineCountdown');
-          if (el) el.textContent = 'Dashboard will clear in ' + _offlineSecs + 's — tab will remain open';
+          if (el) el.textContent = 'Dashboard will clear in ' + _offlineSecs + 's';
           if (_offlineSecs <= 0) {
             clearInterval(window._offlineTimer);
-            document.body.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100vh;background:#1a1a1a;flex-direction:column">'
-              + '<div style="color:#c8a84b;font-size:20px;font-weight:bold">BigEd CC</div>'
-              + '<div style="color:#888;margin-top:8px">Fleet offline — restart BigEd to reconnect</div>'
-              + '<button onclick="location.reload()" style="margin-top:16px;padding:8px 24px;background:#b22222;color:white;border:none;border-radius:4px;cursor:pointer">Retry</button></div>';
+            /* Clear page and show offline message */
+            while (document.body.firstChild) document.body.removeChild(document.body.firstChild);
+            var wrap = document.createElement('div');
+            wrap.style.cssText = 'display:flex;align-items:center;justify-content:center;height:100vh;background:var(--bg-primary);flex-direction:column';
+            var t1 = document.createElement('div');
+            t1.style.cssText = 'color:var(--gold);font-size:20px;font-weight:bold';
+            t1.textContent = 'BigEd CC';
+            var t2 = document.createElement('div');
+            t2.style.cssText = 'color:var(--text-secondary);margin-top:8px';
+            t2.textContent = 'Fleet offline \u2014 restart BigEd to reconnect';
+            var rb = document.createElement('button');
+            rb.textContent = 'Retry';
+            rb.style.cssText = 'margin-top:16px;padding:10px 28px;background:var(--accent);color:var(--accent-text);border:none;border-radius:var(--radius-sm);cursor:pointer;font-family:var(--font-sans);min-height:44px';
+            rb.addEventListener('click', function() { location.reload(); });
+            wrap.appendChild(t1);
+            wrap.appendChild(t2);
+            wrap.appendChild(rb);
+            document.body.appendChild(wrap);
             document.title = '[Offline] BigEd CC';
           }
         }, 1000);
       }
-      return; // Stop retrying
+      return;
     }
     document.getElementById('connectionStatus').textContent = 'Reconnecting...';
-    document.getElementById('liveDot').style.background = 'var(--red)';
+    document.getElementById('liveDot').style.background = 'var(--error)';
     setTimeout(connectSSE, 5000);
   };
 }
 var _sseRetries = 0;
 
+/* ── DOM builder helpers ──────────────────────────────────────────────────── */
+
+function _buildStatRow(stats) {
+  /* stats: [{value, label, colorClass}] — builds stat-row content via DOM */
+  var frag = document.createDocumentFragment();
+  stats.forEach(function(s) {
+    var div = document.createElement('div');
+    div.className = 'stat' + (s.colorClass ? ' ' + s.colorClass : '');
+    var val = document.createElement('div');
+    val.className = 'value';
+    val.textContent = String(s.value);
+    var lbl = document.createElement('div');
+    lbl.className = 'label';
+    lbl.textContent = s.label;
+    div.appendChild(val);
+    div.appendChild(lbl);
+    frag.appendChild(div);
+  });
+  return frag;
+}
+
+function _clearElement(el) {
+  while (el.firstChild) el.removeChild(el.firstChild);
+}
+
 function updateStatusFromSSE(data) {
-  const t = data.tasks;
-  const total = t.DONE + t.FAILED + t.PENDING + t.RUNNING;
-  document.getElementById('taskStats').innerHTML = `
-    <div class="stat green"><div class="value">${escapeHTML(t.DONE)}</div><div class="label">Done</div></div>
-    <div class="stat red"><div class="value">${escapeHTML(t.FAILED)}</div><div class="label">Failed</div></div>
-    <div class="stat orange"><div class="value">${escapeHTML(t.RUNNING)}</div><div class="label">Running</div></div>
-    <div class="stat blue"><div class="value">${escapeHTML(t.PENDING)}</div><div class="label">Pending</div></div>
-    <div class="stat gold"><div class="value">${escapeHTML(total)}</div><div class="label">Total</div></div>
-  `;
-  // Display name: role/task type + identifier (e.g. "code_review / coder_1")
+  var t = data.tasks;
+  var total = t.DONE + t.FAILED + t.PENDING + t.RUNNING;
+  var taskEl = document.getElementById('taskStats');
+  _clearElement(taskEl);
+  taskEl.appendChild(_buildStatRow([
+    {value: t.DONE, label: 'Done', colorClass: 'green'},
+    {value: t.FAILED, label: 'Failed', colorClass: 'red'},
+    {value: t.RUNNING, label: 'Running', colorClass: 'orange'},
+    {value: t.PENDING, label: 'Pending', colorClass: 'blue'},
+    {value: total, label: 'Total', colorClass: 'gold'},
+  ]));
+
   function agentDisplayName(a) {
-    if (['dr_ders', 'hw_supervisor'].includes(a.name)) return a.name;
-    const task = a.current_task || a.role;
+    if (['dr_ders', 'hw_supervisor'].indexOf(a.name) !== -1) return a.name;
+    var task = a.current_task || a.role;
     return task + ' / ' + a.name;
   }
 
-  // Sort: supervisors first, then busy (with task type), then idle collapsed
-  const priority = ['dr_ders', 'hw_supervisor'];
-  const pinned = data.agents.filter(a => priority.includes(a.name));
-  const busy = data.agents.filter(a => ['BUSY','ACTIVE','RUNNING'].includes(a.status) && !priority.includes(a.name));
-  const idle = data.agents.filter(a => !['BUSY','ACTIVE','RUNNING'].includes(a.status) && !priority.includes(a.name));
-  const agentTbody = document.getElementById('agentTable');
-  const wasExpanded = agentTbody.dataset.expanded === 'true';
-  let rows = '';
-  pinned.forEach(a => { rows += '<tr><td><strong>' + escapeHTML(a.name) + '</strong></td><td style="color:var(--dim)">' + escapeHTML(a.role) + '</td><td>' + badge(a.status) + '</td><td style="color:var(--dim)">' + timeAgo(a.last_heartbeat) + '</td></tr>'; });
-  busy.forEach(a => { rows += '<tr><td><strong>' + escapeHTML(agentDisplayName(a)) + '</strong></td><td style="color:var(--dim)">' + escapeHTML(a.role) + '</td><td>' + badge(a.status) + '</td><td style="color:var(--dim)">' + timeAgo(a.last_heartbeat) + '</td></tr>'; });
+  var priority = ['dr_ders', 'hw_supervisor'];
+  var pinned = data.agents.filter(function(a) { return priority.indexOf(a.name) !== -1; });
+  var busy = data.agents.filter(function(a) { return ['BUSY','ACTIVE','RUNNING'].indexOf(a.status) !== -1 && priority.indexOf(a.name) === -1; });
+  var idle = data.agents.filter(function(a) { return ['BUSY','ACTIVE','RUNNING'].indexOf(a.status) === -1 && priority.indexOf(a.name) === -1; });
+  var agentTbody = document.getElementById('agentTable');
+  var wasExpanded = agentTbody.dataset.expanded === 'true';
+
+  function _agentRow(a, bold) {
+    var tr = document.createElement('tr');
+    var tdName = document.createElement('td');
+    if (bold) {
+      var strong = document.createElement('strong');
+      strong.textContent = typeof bold === 'string' ? bold : agentDisplayName(a);
+      tdName.appendChild(strong);
+    } else {
+      tdName.textContent = agentDisplayName(a);
+    }
+    var tdRole = document.createElement('td');
+    tdRole.style.color = 'var(--text-secondary)';
+    tdRole.textContent = a.role;
+    var tdStatus = document.createElement('td');
+    var statusSpan = document.createElement('span');
+    var s = (a.status || 'unknown').toLowerCase().replace(/[^a-z0-9-]/g, '-');
+    statusSpan.className = 'badge badge-' + (BADGE_WHITELIST_SET[s] ? s : 'info');
+    statusSpan.textContent = a.status || 'unknown';
+    tdStatus.appendChild(statusSpan);
+    var tdSeen = document.createElement('td');
+    tdSeen.style.color = 'var(--text-secondary)';
+    tdSeen.textContent = timeAgo(a.last_heartbeat);
+    tr.appendChild(tdName);
+    tr.appendChild(tdRole);
+    tr.appendChild(tdStatus);
+    tr.appendChild(tdSeen);
+    return tr;
+  }
+
+  _clearElement(agentTbody);
+  pinned.forEach(function(a) { agentTbody.appendChild(_agentRow(a, a.name)); });
+  busy.forEach(function(a) { agentTbody.appendChild(_agentRow(a, true)); });
   if (idle.length > 0) {
-    rows += '<tr class="idle-toggle" onclick="toggleIdleAgents()" style="cursor:pointer;color:var(--dim)"><td colspan="4">' + (wasExpanded ? '&#9662;' : '&#9656;') + ' ' + idle.length + ' idle' + '</td></tr>';
+    var toggleRow = document.createElement('tr');
+    toggleRow.className = 'idle-toggle';
+    toggleRow.style.cursor = 'pointer';
+    toggleRow.style.color = 'var(--text-secondary)';
+    toggleRow.addEventListener('click', toggleIdleAgents);
+    var toggleTd = document.createElement('td');
+    toggleTd.colSpan = 4;
+    toggleTd.textContent = (wasExpanded ? '\u25BE' : '\u25B8') + ' ' + idle.length + ' idle';
+    toggleRow.appendChild(toggleTd);
+    agentTbody.appendChild(toggleRow);
     if (wasExpanded) {
-      idle.forEach(a => { rows += '<tr class="idle-row"><td>' + escapeHTML(agentDisplayName(a)) + '</td><td style="color:var(--dim)">' + escapeHTML(a.role) + '</td><td>' + badge(a.status) + '</td><td style="color:var(--dim)">' + timeAgo(a.last_heartbeat) + '</td></tr>'; });
+      idle.forEach(function(a) {
+        var row = _agentRow(a, false);
+        row.className = 'idle-row';
+        agentTbody.appendChild(row);
+      });
     }
   }
-  agentTbody.innerHTML = rows;
   document.getElementById('lastUpdate').textContent = 'Updated: ' + new Date().toLocaleTimeString();
 }
 
 function addAlertToBar(alert) {
   if (alert.acknowledged) return;
-  const bar = document.getElementById('alertBar');
-  const div = document.createElement('div');
+  var bar = document.getElementById('alertBar');
+  var div = document.createElement('div');
   div.className = 'alert-item ' + escapeHTML(alert.level);
-  const strong = document.createElement('strong');
+  var strong = document.createElement('strong');
   strong.textContent = alert.level.toUpperCase();
-  const span = document.createElement('span');
+  var span = document.createElement('span');
   span.textContent = alert.message;
-  const dismiss = document.createElement('span');
+  var dismiss = document.createElement('span');
   dismiss.className = 'dismiss';
   dismiss.textContent = '\u00d7';
   dismiss.addEventListener('click', function() { ackAlert(alert.id, div); });
@@ -481,235 +1031,413 @@ function addAlertToBar(alert) {
   while (bar.children.length > 10) bar.lastChild.remove();
 }
 
-async function ackAlert(id, el) {
-  await fetch(`/api/alerts/ack/${id}`, {method: 'POST'});
+function ackAlert(id, el) {
+  fetch('/api/alerts/ack/' + id, {method: 'POST'}).catch(function() {});
   el.remove();
 }
 
-// ── Load functions ──────────────────────────────────────────────────────────
+/* ── Load functions ───────────────────────────────────────────────────────── */
 
-async function loadStatus() {
-  const data = await fetchJSON('/api/status');
-  updateStatusFromSSE(data);
+function loadStatus() {
+  return fetchJSON('/api/status').then(updateStatusFromSSE);
 }
 
-async function loadCodeStats() {
-  const data = await fetchJSON('/api/code_stats');
-  document.getElementById('codeStats').innerHTML = `
-    <div class="stat green"><div class="value">${escapeHTML(data.lines_added)}</div><div class="label">Lines Added</div></div>
-    <div class="stat red"><div class="value">${escapeHTML(data.lines_deleted)}</div><div class="label">Lines Deleted</div></div>
-    <div class="stat blue"><div class="value">${escapeHTML(data.files_changed)}</div><div class="label">Files Changed</div></div>
-    <div class="stat gold"><div class="value">${escapeHTML(data.commits)}</div><div class="label">Commits</div></div>
-  `;
+function loadCodeStats() {
+  return fetchJSON('/api/code_stats').then(function(data) {
+    var el = document.getElementById('codeStats');
+    _clearElement(el);
+    el.appendChild(_buildStatRow([
+      {value: data.lines_added, label: 'Lines Added', colorClass: 'green'},
+      {value: data.lines_deleted, label: 'Lines Deleted', colorClass: 'red'},
+      {value: data.files_changed, label: 'Files Changed', colorClass: 'blue'},
+      {value: data.commits, label: 'Commits', colorClass: 'gold'},
+    ]));
+  });
 }
 
-async function loadThermal() {
-  const data = await fetchJSON('/api/thermal');
-  const th = data.thresholds || {};
-  document.getElementById('thermalGauge').innerHTML = `
-    <div class="gauge"><div class="temp" style="color:${tempColor(data.gpu_temp_c, th.gpu_sustained||75, th.gpu_burst||78)}">${escapeHTML(data.gpu_temp_c)}&deg;C</div><div class="name">GPU</div></div>
-    <div class="gauge"><div class="temp" style="color:${tempColor(data.cpu_temp_c, th.cpu_sustained||80, 90)}">${escapeHTML(data.cpu_temp_c)}&deg;C</div><div class="name">CPU</div></div>
-    <div class="gauge"><div class="temp" style="color:var(--blue)">${escapeHTML(data.ambient_estimate_c)}&deg;C</div><div class="name">Ambient (est)</div></div>
-  `;
-  document.getElementById('thermalStats').innerHTML = `
-    <div class="stat"><div class="value">${escapeHTML(data.gpu_power_w)}W</div><div class="label">GPU Power</div></div>
-    <div class="stat"><div class="value">${escapeHTML(data.gpu_fan_pct)}%</div><div class="label">Fan</div></div>
-    <div class="stat"><div class="value">${escapeHTML(data.gpu_vram_used_gb)}/${escapeHTML(data.gpu_vram_total_gb)}GB</div><div class="label">VRAM</div></div>
-    <div class="stat"><div class="value">${escapeHTML(data.model_tier)}</div><div class="label">Model Tier</div></div>
-  `;
-  const note = document.getElementById('thermalNote');
-  const notes = [];
-  if (data.gpu_temp_c === 0) notes.push('GPU');
-  if (data.cpu_temp_c === 0) notes.push('CPU');
-  if (notes.length > 0) {
-    note.textContent = '*0\u00b0C = ' + notes.join(', ') + ' sensor unavailable';
-    note.style.display = 'block';
-  } else {
-    note.style.display = 'none';
-  }
-  if (data._note) {
-    note.textContent = data._note;
-    note.style.display = 'block';
-  }
-}
+function loadThermal() {
+  return fetchJSON('/api/thermal').then(function(data) {
+    var th = data.thresholds || {};
 
-async function loadTraining() {
-  const data = await fetchJSON('/api/training');
-  const badge = document.getElementById('trainingBadge');
-  if (data.locked) {
-    badge.textContent = 'Training: active \u2014 ' + data.holder + ' (' + Math.round(data.elapsed_s / 60) + 'min)';
-    badge.style.color = 'var(--orange)';
-  } else {
-    badge.textContent = 'Training: idle';
-    badge.style.color = 'var(--dim)';
-  }
-}
-
-async function loadModules() {
-  const data = await fetchJSON('/api/modules');
-  document.getElementById('modulesList').innerHTML = `
-    <div style="color:var(--dim);margin-bottom:8px">Profile: <strong>${escapeHTML(data.profile)}</strong></div>
-    ${(data.modules || []).map(m => `
-      <div class="file-item">
-        <span class="name">${escapeHTML(m.name)} <span style="color:var(--dim)">v${escapeHTML(m.version)}</span></span>
-        <span class="meta">
-          ${m.enabled ? '<span style="color:var(--green)">enabled</span>' : '<span style="color:var(--dim)">disabled</span>'}
-          ${m.deprecated ? '<span style="color:var(--orange)"> DEPRECATED</span>' : ''}
-        </span>
-      </div>
-    `).join('')}
-  `;
-}
-
-async function loadDataStats() {
-  const data = await fetchJSON('/api/data_stats');
-  document.getElementById('dataStats').innerHTML = Object.entries(data).map(([k, v]) => `
-    <div class="file-item">
-      <span class="name">${escapeHTML(k)}</span>
-      <span class="meta">${escapeHTML(v.count)} records${v.size_mb ? ` / ${escapeHTML(v.size_mb)}MB` : ''}</span>
-    </div>
-  `).join('') || '<div style="color:var(--dim)">No data</div>';
-}
-
-async function loadActivity() {
-  const data = await fetchJSON('/api/activity');
-  const labels = data.map(d => d.day.slice(5));
-  const done = data.map(d => d.DONE);
-  const failed = data.map(d => d.FAILED);
-
-  if (activityChart) {
-    activityChart.data.labels = labels;
-    activityChart.data.datasets[0].data = done;
-    activityChart.data.datasets[1].data = failed;
-    activityChart.update();
-  } else {
-    activityChart = new Chart(document.getElementById('activityChart'), {
-      type: 'bar',
-      data: {
-        labels,
-        datasets: [
-          { label: 'Done', data: done, backgroundColor: '#4caf50', borderRadius: 3 },
-          { label: 'Failed', data: failed, backgroundColor: '#f44336', borderRadius: 3 },
-        ]
-      },
-      options: {
-        responsive: true, maintainAspectRatio: false,
-        plugins: { legend: { labels: { color: '#888', font: { size: 11 } } } },
-        scales: {
-          x: { stacked: true, ticks: { color: '#666', font: { size: 10 } }, grid: { color: '#222' } },
-          y: { stacked: true, ticks: { color: '#666' }, grid: { color: '#222' } },
-        }
-      }
+    /* Build gauges via DOM */
+    var gaugeEl = document.getElementById('thermalGauge');
+    _clearElement(gaugeEl);
+    var gauges = [
+      {temp: data.gpu_temp_c, name: 'GPU', color: tempColor(data.gpu_temp_c, th.gpu_sustained||75, th.gpu_burst||78)},
+      {temp: data.cpu_temp_c, name: 'CPU', color: tempColor(data.cpu_temp_c, th.cpu_sustained||80, 90)},
+      {temp: data.ambient_estimate_c, name: 'Ambient (est)', color: 'var(--info)'},
+    ];
+    gauges.forEach(function(g) {
+      var div = document.createElement('div');
+      div.className = 'gauge';
+      var tempDiv = document.createElement('div');
+      tempDiv.className = 'temp';
+      tempDiv.style.color = g.color;
+      tempDiv.textContent = g.temp + '\u00b0C';
+      var nameDiv = document.createElement('div');
+      nameDiv.className = 'name';
+      nameDiv.textContent = g.name;
+      div.appendChild(tempDiv);
+      div.appendChild(nameDiv);
+      gaugeEl.appendChild(div);
     });
-  }
+
+    var statsEl = document.getElementById('thermalStats');
+    _clearElement(statsEl);
+    statsEl.appendChild(_buildStatRow([
+      {value: data.gpu_power_w + 'W', label: 'GPU Power'},
+      {value: data.gpu_fan_pct + '%', label: 'Fan'},
+      {value: data.gpu_vram_used_gb + '/' + data.gpu_vram_total_gb + 'GB', label: 'VRAM'},
+      {value: data.model_tier, label: 'Model Tier'},
+    ]));
+
+    var note = document.getElementById('thermalNote');
+    var notes = [];
+    if (data.gpu_temp_c === 0) notes.push('GPU');
+    if (data.cpu_temp_c === 0) notes.push('CPU');
+    if (notes.length > 0) {
+      note.textContent = '*0\u00b0C = ' + notes.join(', ') + ' sensor unavailable';
+      note.style.display = 'block';
+    } else {
+      note.style.display = 'none';
+    }
+    if (data._note) {
+      note.textContent = data._note;
+      note.style.display = 'block';
+    }
+  });
 }
 
-async function loadSkills() {
-  const data = await fetchJSON('/api/skills');
-  const entries = Object.entries(data).sort((a,b) => b[1].total - a[1].total);
-  const labels = entries.map(e => e[0]);
-  const done = entries.map(e => e[1].DONE);
-  const failed = entries.map(e => e[1].FAILED);
+function loadTraining() {
+  return fetchJSON('/api/training').then(function(data) {
+    var el = document.getElementById('trainingBadge');
+    if (data.locked) {
+      el.textContent = 'Training: active \u2014 ' + data.holder + ' (' + Math.round(data.elapsed_s / 60) + 'min)';
+      el.style.color = 'var(--warning)';
+    } else {
+      el.textContent = 'Training: idle';
+      el.style.color = 'var(--text-secondary)';
+    }
+  });
+}
 
-  if (skillsChart) {
-    skillsChart.data.labels = labels;
-    skillsChart.data.datasets[0].data = done;
-    skillsChart.data.datasets[1].data = failed;
-    skillsChart.update();
-  } else {
-    skillsChart = new Chart(document.getElementById('skillsChart'), {
-      type: 'bar',
-      data: {
-        labels,
-        datasets: [
-          { label: 'Done', data: done, backgroundColor: '#4caf50' },
-          { label: 'Failed', data: failed, backgroundColor: '#f44336' },
-        ]
-      },
-      options: {
-        indexAxis: 'y', responsive: true, maintainAspectRatio: false,
-        plugins: { legend: { labels: { color: '#888', font: { size: 11 } } } },
-        scales: {
-          x: { stacked: true, ticks: { color: '#666' }, grid: { color: '#222' } },
-          y: { stacked: true, ticks: { color: '#aaa', font: { size: 11 } }, grid: { display: false } },
-        }
+function loadModules() {
+  return fetchJSON('/api/modules').then(function(data) {
+    var el = document.getElementById('modulesList');
+    _clearElement(el);
+    var profileDiv = document.createElement('div');
+    profileDiv.style.cssText = 'color:var(--text-secondary);margin-bottom:8px';
+    var profileStrong = document.createElement('strong');
+    profileStrong.textContent = data.profile || '';
+    profileDiv.appendChild(document.createTextNode('Profile: '));
+    profileDiv.appendChild(profileStrong);
+    el.appendChild(profileDiv);
+    (data.modules || []).forEach(function(m) {
+      var item = document.createElement('div');
+      item.className = 'file-item';
+      var nameSpan = document.createElement('span');
+      nameSpan.className = 'name';
+      nameSpan.textContent = m.name + ' ';
+      var verSpan = document.createElement('span');
+      verSpan.style.color = 'var(--text-secondary)';
+      verSpan.textContent = 'v' + m.version;
+      nameSpan.appendChild(verSpan);
+      var metaSpan = document.createElement('span');
+      metaSpan.className = 'meta';
+      var statusSpan = document.createElement('span');
+      statusSpan.style.color = m.enabled ? 'var(--success)' : 'var(--text-secondary)';
+      statusSpan.textContent = m.enabled ? 'enabled' : 'disabled';
+      metaSpan.appendChild(statusSpan);
+      if (m.deprecated) {
+        var depSpan = document.createElement('span');
+        depSpan.style.color = 'var(--warning)';
+        depSpan.textContent = ' DEPRECATED';
+        metaSpan.appendChild(depSpan);
       }
+      item.appendChild(nameSpan);
+      item.appendChild(metaSpan);
+      el.appendChild(item);
     });
-  }
+  });
 }
 
-async function loadDiscussions() {
-  const data = await fetchJSON('/api/discussions');
-  document.getElementById('discussionTable').innerHTML = data.slice(0, 15).map(d => `
-    <tr><td>${escapeHTML(d.topic)}</td><td style="color:var(--dim)">${escapeHTML(d.agents.join(', '))}</td>
-    <td>${escapeHTML(d.rounds)}</td><td>${escapeHTML(d.contributions)}</td></tr>
-  `).join('') || '<tr><td colspan="4" style="color:var(--dim)">No discussions yet</td></tr>';
+function loadDataStats() {
+  return fetchJSON('/api/data_stats').then(function(data) {
+    var el = document.getElementById('dataStats');
+    _clearElement(el);
+    var entries = Object.entries(data);
+    if (entries.length === 0) {
+      var empty = document.createElement('div');
+      empty.style.color = 'var(--text-secondary)';
+      empty.textContent = 'No data';
+      el.appendChild(empty);
+      return;
+    }
+    entries.forEach(function(entry) {
+      var item = document.createElement('div');
+      item.className = 'file-item';
+      var nameSpan = document.createElement('span');
+      nameSpan.className = 'name';
+      nameSpan.textContent = entry[0];
+      var metaSpan = document.createElement('span');
+      metaSpan.className = 'meta';
+      metaSpan.textContent = entry[1].count + ' records' + (entry[1].size_mb ? ' / ' + entry[1].size_mb + 'MB' : '');
+      item.appendChild(nameSpan);
+      item.appendChild(metaSpan);
+      el.appendChild(item);
+    });
+  });
 }
 
-async function loadReviews() {
-  const data = await fetchJSON('/api/reviews');
-  document.getElementById('reviewList').innerHTML = data.slice(0, 20).map(r => `
-    <div class="file-item">
-      <span class="name">${escapeHTML(r.file)}</span>
-      <span class="meta">${escapeHTML(r.category)} / ${timeAgo(r.modified)}</span>
-    </div>
-  `).join('') || '<div style="color:var(--dim)">No reviews yet</div>';
+function loadActivity() {
+  return fetchJSON('/api/activity').then(function(data) {
+    var labels = data.map(function(d) { return d.day.slice(5); });
+    var done = data.map(function(d) { return d.DONE; });
+    var failed = data.map(function(d) { return d.FAILED; });
+
+    var style = getComputedStyle(document.documentElement);
+    var dimColor = style.getPropertyValue('--text-secondary').trim() || '#888';
+    var borderColor = style.getPropertyValue('--border').trim() || '#333';
+    var successColor = style.getPropertyValue('--success').trim() || '#4caf50';
+    var errorColor = style.getPropertyValue('--error').trim() || '#f44336';
+
+    if (activityChart) {
+      activityChart.data.labels = labels;
+      activityChart.data.datasets[0].data = done;
+      activityChart.data.datasets[1].data = failed;
+      activityChart.update();
+    } else {
+      activityChart = new Chart(document.getElementById('activityChart'), {
+        type: 'bar',
+        data: {
+          labels: labels,
+          datasets: [
+            { label: 'Done', data: done, backgroundColor: successColor, borderRadius: 3 },
+            { label: 'Failed', data: failed, backgroundColor: errorColor, borderRadius: 3 },
+          ]
+        },
+        options: {
+          responsive: true, maintainAspectRatio: false,
+          plugins: { legend: { labels: { color: dimColor, font: { size: 11 } } } },
+          scales: {
+            x: { stacked: true, ticks: { color: dimColor, font: { size: 10 } }, grid: { color: borderColor } },
+            y: { stacked: true, ticks: { color: dimColor }, grid: { color: borderColor } },
+          }
+        }
+      });
+    }
+  });
 }
 
-async function loadKnowledge() {
-  const data = await fetchJSON('/api/knowledge');
-  const entries = Object.entries(data);
-  const totalFiles = entries.reduce((s, [,v]) => s + v.count, 0);
-  document.getElementById('knowledgeStats').innerHTML = `
-    <div class="stat gold"><div class="value">${escapeHTML(totalFiles)}</div><div class="label">Total Files</div></div>
-    <div class="stat blue"><div class="value">${escapeHTML(entries.length)}</div><div class="label">Categories</div></div>
-  `;
-  document.getElementById('knowledgeList').innerHTML = entries
-    .sort((a,b) => b[1].count - a[1].count)
-    .map(([cat, v]) => `
-      <div class="file-item"><span class="name">${escapeHTML(cat)}/</span><span class="meta">${escapeHTML(v.count)} files</span></div>
-    `).join('');
+function loadSkills() {
+  return fetchJSON('/api/skills').then(function(data) {
+    var entries = Object.entries(data).sort(function(a,b) { return b[1].total - a[1].total; });
+    var labels = entries.map(function(e) { return e[0]; });
+    var done = entries.map(function(e) { return e[1].DONE; });
+    var failed = entries.map(function(e) { return e[1].FAILED; });
+
+    var style = getComputedStyle(document.documentElement);
+    var dimColor = style.getPropertyValue('--text-secondary').trim() || '#888';
+    var borderColor = style.getPropertyValue('--border').trim() || '#333';
+    var successColor = style.getPropertyValue('--success').trim() || '#4caf50';
+    var errorColor = style.getPropertyValue('--error').trim() || '#f44336';
+
+    if (skillsChart) {
+      skillsChart.data.labels = labels;
+      skillsChart.data.datasets[0].data = done;
+      skillsChart.data.datasets[1].data = failed;
+      skillsChart.update();
+    } else {
+      skillsChart = new Chart(document.getElementById('skillsChart'), {
+        type: 'bar',
+        data: {
+          labels: labels,
+          datasets: [
+            { label: 'Done', data: done, backgroundColor: successColor },
+            { label: 'Failed', data: failed, backgroundColor: errorColor },
+          ]
+        },
+        options: {
+          indexAxis: 'y', responsive: true, maintainAspectRatio: false,
+          plugins: { legend: { labels: { color: dimColor, font: { size: 11 } } } },
+          scales: {
+            x: { stacked: true, ticks: { color: dimColor }, grid: { color: borderColor } },
+            y: { stacked: true, ticks: { color: dimColor, font: { size: 11 } }, grid: { display: false } },
+          }
+        }
+      });
+    }
+  });
 }
 
-async function loadRAG() {
-  const data = await fetchJSON('/api/rag');
-  document.getElementById('ragStats').innerHTML = `
-    <div class="stat gold"><div class="value">${escapeHTML(data.files)}</div><div class="label">Files Indexed</div></div>
-    <div class="stat blue"><div class="value">${escapeHTML(data.chunks)}</div><div class="label">Chunks</div></div>
-  `;
-  document.getElementById('ragSources').innerHTML = (data.sources || []).slice(0, 15).map(s => `
-    <div class="file-item"><span class="name">${escapeHTML(s.path)}</span><span class="meta">${escapeHTML(s.chunks)} chunks</span></div>
-  `).join('') || '<div style="color:var(--dim)">Not indexed yet</div>';
+function loadDiscussions() {
+  return fetchJSON('/api/discussions').then(function(data) {
+    var el = document.getElementById('discussionTable');
+    _clearElement(el);
+    if (!data || data.length === 0) {
+      var tr = document.createElement('tr');
+      var td = document.createElement('td');
+      td.colSpan = 4;
+      td.style.color = 'var(--text-secondary)';
+      td.textContent = 'No discussions yet';
+      tr.appendChild(td);
+      el.appendChild(tr);
+      return;
+    }
+    data.slice(0, 15).forEach(function(d) {
+      var tr = document.createElement('tr');
+      var td1 = document.createElement('td'); td1.textContent = d.topic;
+      var td2 = document.createElement('td'); td2.style.color = 'var(--text-secondary)'; td2.textContent = d.agents.join(', ');
+      var td3 = document.createElement('td'); td3.textContent = d.rounds;
+      var td4 = document.createElement('td'); td4.textContent = d.contributions;
+      tr.appendChild(td1); tr.appendChild(td2); tr.appendChild(td3); tr.appendChild(td4);
+      el.appendChild(tr);
+    });
+  });
 }
 
-async function loadTimeline() {
-  const data = await fetchJSON('/api/timeline');
-  document.getElementById('timeline').innerHTML = data.map(e => `
-    <div class="timeline-item">
-      <span class="time">${shortTime(e.time)}</span>
-      <span class="agent">${escapeHTML(e.agent)}</span>
-      <span>${badge(e.status)} ${escapeHTML(e.detail)}</span>
-    </div>
-  `).join('') || '<div style="color:var(--dim);padding:12px">No recent activity</div>';
+function loadReviews() {
+  return fetchJSON('/api/reviews').then(function(data) {
+    var el = document.getElementById('reviewList');
+    _clearElement(el);
+    if (!data || data.length === 0) {
+      var empty = document.createElement('div');
+      empty.style.color = 'var(--text-secondary)';
+      empty.textContent = 'No reviews yet';
+      el.appendChild(empty);
+      return;
+    }
+    data.slice(0, 20).forEach(function(r) {
+      var item = document.createElement('div');
+      item.className = 'file-item';
+      var nameSpan = document.createElement('span');
+      nameSpan.className = 'name';
+      nameSpan.textContent = r.file;
+      var metaSpan = document.createElement('span');
+      metaSpan.className = 'meta';
+      metaSpan.textContent = r.category + ' / ' + timeAgo(r.modified);
+      item.appendChild(nameSpan);
+      item.appendChild(metaSpan);
+      el.appendChild(item);
+    });
+  });
 }
 
-async function loadAlerts() {
-  const data = await fetchJSON('/api/alerts');
-  const bar = document.getElementById('alertBar');
-  const bubble = document.getElementById('alertBubble');
-  while (bar.firstChild) bar.removeChild(bar.firstChild);
-  const active = data.filter(a => !a.acknowledged).slice(0, 10);
-  active.forEach(addAlertToBar);
-  if (active.length > 0) {
-    const hasCrit = active.some(a => a.level === 'critical');
-    bubble.className = 'alert-bubble has-alerts ' + (hasCrit ? 'critical' : 'warning');
-    bubble.textContent = active.length;
-    bubble.title = active.length + ' alert(s) — click to expand';
-  } else {
-    bubble.className = 'alert-bubble';
-    bubble.textContent = '';
-    bar.classList.remove('expanded');
-  }
+function loadKnowledge() {
+  return fetchJSON('/api/knowledge').then(function(data) {
+    var entries = Object.entries(data);
+    var totalFiles = entries.reduce(function(s, e) { return s + e[1].count; }, 0);
+    var statsEl = document.getElementById('knowledgeStats');
+    _clearElement(statsEl);
+    statsEl.appendChild(_buildStatRow([
+      {value: totalFiles, label: 'Total Files', colorClass: 'gold'},
+      {value: entries.length, label: 'Categories', colorClass: 'blue'},
+    ]));
+    var listEl = document.getElementById('knowledgeList');
+    _clearElement(listEl);
+    entries.sort(function(a,b) { return b[1].count - a[1].count; }).forEach(function(entry) {
+      var item = document.createElement('div');
+      item.className = 'file-item';
+      var nameSpan = document.createElement('span');
+      nameSpan.className = 'name';
+      nameSpan.textContent = entry[0] + '/';
+      var metaSpan = document.createElement('span');
+      metaSpan.className = 'meta';
+      metaSpan.textContent = entry[1].count + ' files';
+      item.appendChild(nameSpan);
+      item.appendChild(metaSpan);
+      listEl.appendChild(item);
+    });
+  });
+}
+
+function loadRAG() {
+  return fetchJSON('/api/rag').then(function(data) {
+    var statsEl = document.getElementById('ragStats');
+    _clearElement(statsEl);
+    statsEl.appendChild(_buildStatRow([
+      {value: data.files, label: 'Files Indexed', colorClass: 'gold'},
+      {value: data.chunks, label: 'Chunks', colorClass: 'blue'},
+    ]));
+    var listEl = document.getElementById('ragSources');
+    _clearElement(listEl);
+    if (!data.sources || data.sources.length === 0) {
+      var empty = document.createElement('div');
+      empty.style.color = 'var(--text-secondary)';
+      empty.textContent = 'Not indexed yet';
+      listEl.appendChild(empty);
+      return;
+    }
+    data.sources.slice(0, 15).forEach(function(s) {
+      var item = document.createElement('div');
+      item.className = 'file-item';
+      var nameSpan = document.createElement('span');
+      nameSpan.className = 'name';
+      nameSpan.textContent = s.path;
+      var metaSpan = document.createElement('span');
+      metaSpan.className = 'meta';
+      metaSpan.textContent = s.chunks + ' chunks';
+      item.appendChild(nameSpan);
+      item.appendChild(metaSpan);
+      listEl.appendChild(item);
+    });
+  });
+}
+
+function loadTimeline() {
+  return fetchJSON('/api/timeline').then(function(data) {
+    var el = document.getElementById('timeline');
+    _clearElement(el);
+    if (!data || data.length === 0) {
+      var empty = document.createElement('div');
+      empty.style.cssText = 'color:var(--text-secondary);padding:12px';
+      empty.textContent = 'No recent activity';
+      el.appendChild(empty);
+      return;
+    }
+    data.forEach(function(e) {
+      var div = document.createElement('div');
+      div.className = 'timeline-item';
+      var time = document.createElement('span');
+      time.className = 'time';
+      time.textContent = shortTime(e.time);
+      var agent = document.createElement('span');
+      agent.className = 'agent';
+      agent.textContent = e.agent;
+      var info = document.createElement('span');
+      var statusSpan = document.createElement('span');
+      var s = (e.status || 'unknown').toLowerCase().replace(/[^a-z0-9-]/g, '-');
+      statusSpan.className = 'badge badge-' + (BADGE_WHITELIST_SET[s] ? s : 'info');
+      statusSpan.textContent = e.status || '';
+      var detail = document.createTextNode(' ' + (e.detail || ''));
+      info.appendChild(statusSpan);
+      info.appendChild(detail);
+      div.appendChild(time);
+      div.appendChild(agent);
+      div.appendChild(info);
+      el.appendChild(div);
+    });
+  });
+}
+
+function loadAlerts() {
+  return fetchJSON('/api/alerts').then(function(data) {
+    var bar = document.getElementById('alertBar');
+    var bubble = document.getElementById('alertBubble');
+    _clearElement(bar);
+    var active = (data || []).filter(function(a) { return !a.acknowledged; }).slice(0, 10);
+    active.forEach(addAlertToBar);
+    if (active.length > 0) {
+      var hasCrit = active.some(function(a) { return a.level === 'critical'; });
+      bubble.className = 'alert-bubble has-alerts ' + (hasCrit ? 'critical' : 'warning');
+      bubble.textContent = active.length;
+      bubble.title = active.length + ' alert(s) \u2014 click to expand';
+    } else {
+      bubble.className = 'alert-bubble';
+      bubble.textContent = '';
+      bar.classList.remove('expanded');
+    }
+  });
 }
 
 function toggleAlerts() {
@@ -717,50 +1445,50 @@ function toggleAlerts() {
 }
 
 function toggleIdleAgents() {
-  const t = document.getElementById('agentTable');
+  var t = document.getElementById('agentTable');
   t.dataset.expanded = t.dataset.expanded === 'true' ? 'false' : 'true';
   loadStatus();
 }
 
-async function loadAgentActivity() {
-  const data = await fetchJSON('/api/timeline');
-  const el = document.getElementById('activityFeed');
-  while (el.firstChild) el.removeChild(el.firstChild);
-  (data || []).slice(0, 50).forEach(function(e) {
-    var div = document.createElement('div');
-    div.className = 'timeline-item';
-    var time = document.createElement('span');
-    time.className = 'time';
-    time.textContent = shortTime(e.time);
-    var agent = document.createElement('span');
-    agent.className = 'agent';
-    agent.textContent = e.agent;
-    var statusBadge = document.createElement('span');
-    var s = (e.status || '').toLowerCase();
-    statusBadge.className = 'badge badge-' + (BADGE_WHITELIST.has(s) ? s : 'unknown');
-    statusBadge.textContent = e.status || '';
-    var detail = document.createElement('span');
-    detail.textContent = ' ' + (e.detail || '');
-    var info = document.createElement('span');
-    info.appendChild(statusBadge);
-    info.appendChild(detail);
-    div.appendChild(time);
-    div.appendChild(agent);
-    div.appendChild(info);
-    el.appendChild(div);
+function loadAgentActivity() {
+  return fetchJSON('/api/timeline').then(function(data) {
+    var el = document.getElementById('activityFeed');
+    _clearElement(el);
+    (data || []).slice(0, 50).forEach(function(e) {
+      var div = document.createElement('div');
+      div.className = 'timeline-item';
+      var time = document.createElement('span');
+      time.className = 'time';
+      time.textContent = shortTime(e.time);
+      var agent = document.createElement('span');
+      agent.className = 'agent';
+      agent.textContent = e.agent;
+      var statusBadge = document.createElement('span');
+      var s = (e.status || '').toLowerCase();
+      statusBadge.className = 'badge badge-' + (BADGE_WHITELIST_SET[s] ? s : 'unknown');
+      statusBadge.textContent = e.status || '';
+      var detail = document.createElement('span');
+      detail.textContent = ' ' + (e.detail || '');
+      var info = document.createElement('span');
+      info.appendChild(statusBadge);
+      info.appendChild(detail);
+      div.appendChild(time);
+      div.appendChild(agent);
+      div.appendChild(info);
+      el.appendChild(div);
+    });
+    if (!data || data.length === 0) {
+      var empty = document.createElement('div');
+      empty.textContent = 'No recent activity';
+      empty.style.color = 'var(--text-secondary)';
+      empty.style.padding = '12px';
+      el.appendChild(empty);
+    }
   });
-  if (!data || data.length === 0) {
-    var empty = document.createElement('div');
-    empty.textContent = 'No recent activity';
-    empty.style.color = 'var(--dim)';
-    empty.style.padding = '12px';
-    el.appendChild(empty);
-  }
 }
 
-async function loadCostTracker() {
-  try {
-    var data = await fetchJSON('/api/usage/dashboard');
+function loadCostTracker() {
+  return fetchJSON('/api/usage/dashboard').then(function(data) {
     var summary = document.getElementById('costSummary');
     var details = document.getElementById('costDetails');
     var note = document.getElementById('costNote');
@@ -770,64 +1498,51 @@ async function loadCostTracker() {
     var month = (data.month || {})._total || {};
     var proj = data.projection || {};
 
-    summary.textContent = '';
-    var stats = [
-      {label: 'Today', value: '$' + (today.cost_usd || 0).toFixed(4), color: 'green'},
-      {label: '7 Days', value: '$' + (week.cost_usd || 0).toFixed(4), color: 'blue'},
-      {label: '30 Days', value: '$' + (month.cost_usd || 0).toFixed(2), color: 'gold'},
-      {label: 'Proj/Month', value: proj.monthly_usd ? '$' + proj.monthly_usd.toFixed(2) : '—', color: 'dim'},
-      {label: 'Calls Today', value: String(today.calls || 0), color: 'orange'},
-    ];
-    stats.forEach(function(s) {
-      var div = document.createElement('div');
-      div.className = 'stat ' + s.color;
-      var val = document.createElement('div');
-      val.className = 'value';
-      val.textContent = s.value;
-      var lbl = document.createElement('div');
-      lbl.className = 'label';
-      lbl.textContent = s.label;
-      div.appendChild(val);
-      div.appendChild(lbl);
-      summary.appendChild(div);
-    });
+    _clearElement(summary);
+    summary.appendChild(_buildStatRow([
+      {value: '$' + (today.cost_usd || 0).toFixed(4), label: 'Today', colorClass: 'green'},
+      {value: '$' + (week.cost_usd || 0).toFixed(4), label: '7 Days', colorClass: 'blue'},
+      {value: '$' + (month.cost_usd || 0).toFixed(2), label: '30 Days', colorClass: 'gold'},
+      {value: proj.monthly_usd ? '$' + proj.monthly_usd.toFixed(2) : '\u2014', label: 'Proj/Month', colorClass: 'dim'},
+      {value: String(today.calls || 0), label: 'Calls Today', colorClass: 'orange'},
+    ]));
 
-    // Provider breakdown
-    details.textContent = '';
+    /* Provider breakdown */
+    _clearElement(details);
     var providers = ['claude', 'gemini', 'minimax', 'local'];
-    var providerColors = {claude: '#c8a84b', gemini: '#4fc3f7', minimax: '#a78bfa', local: '#4caf50'};
+    var providerColors = {claude: 'var(--gold)', gemini: 'var(--info)', minimax: 'var(--accent)', local: 'var(--success)'};
     var weekData = data.week || {};
     providers.forEach(function(p) {
       var pd = weekData[p];
       if (!pd) return;
       var row = document.createElement('div');
-      row.style.cssText = 'display:flex;justify-content:space-between;padding:2px 0;font-size:12px';
+      row.style.cssText = 'display:flex;justify-content:space-between;padding:2px 0;font-size:var(--font-size-sm)';
       var name = document.createElement('span');
       name.textContent = p;
-      name.style.color = providerColors[p] || 'var(--dim)';
+      name.style.color = providerColors[p] || 'var(--text-secondary)';
       name.style.fontWeight = 'bold';
       var cost = document.createElement('span');
       cost.textContent = '$' + (pd.cost_usd || 0).toFixed(4) + '  (' + (pd.calls || 0) + ' calls)';
-      cost.style.color = 'var(--dim)';
+      cost.style.color = 'var(--text-secondary)';
       row.appendChild(name);
       row.appendChild(cost);
       details.appendChild(row);
     });
 
-    // Top skills
+    /* Top skills */
     if (data.top_skills && data.top_skills.length > 0) {
       var skillHdr = document.createElement('div');
       skillHdr.textContent = 'Top skills by cost (7d):';
-      skillHdr.style.cssText = 'font-size:11px;color:var(--dim);margin-top:8px;margin-bottom:4px';
+      skillHdr.style.cssText = 'font-size:var(--font-size-xs);color:var(--text-secondary);margin-top:8px;margin-bottom:4px';
       details.appendChild(skillHdr);
       data.top_skills.slice(0, 5).forEach(function(s) {
         var row = document.createElement('div');
-        row.style.cssText = 'display:flex;justify-content:space-between;padding:1px 0;font-size:11px;color:var(--text)';
+        row.style.cssText = 'display:flex;justify-content:space-between;padding:1px 0;font-size:var(--font-size-xs);color:var(--text-primary)';
         var name = document.createElement('span');
-        name.textContent = escapeHTML(s.skill || '?');
+        name.textContent = s.skill || '?';
         var cost = document.createElement('span');
         cost.textContent = '$' + (s.cost_usd || 0).toFixed(4);
-        cost.style.color = 'var(--dim)';
+        cost.style.color = 'var(--text-secondary)';
         row.appendChild(name);
         row.appendChild(cost);
         details.appendChild(row);
@@ -835,190 +1550,217 @@ async function loadCostTracker() {
     }
 
     note.textContent = 'Costs tracked locally per API call. Anthropic/Google do not expose account billing APIs.';
-  } catch(e) {
+  }).catch(function(e) {
     console.error('Cost tracker error:', e);
-  }
+  });
 }
 
-async function loadEvolution() {
-    try {
-        var data = await fetchJSON('/api/evolution');
-        var el = document.getElementById('evolutionStats');
-        el.textContent = '';
+function loadEvolution() {
+  return fetchJSON('/api/evolution').then(function(data) {
+    var el = document.getElementById('evolutionStats');
+    _clearElement(el);
 
-        // Agent contributions table
-        if (data.agents && data.agents.length > 0) {
-            var table = document.createElement('table');
-            var thead = document.createElement('thead');
-            var headerRow = document.createElement('tr');
-            ['Agent', 'Tasks', 'Done', 'IQ'].forEach(function(h) {
-                var th = document.createElement('th');
-                th.textContent = h;
-                headerRow.appendChild(th);
-            });
-            thead.appendChild(headerRow);
-            table.appendChild(thead);
+    if (data.agents && data.agents.length > 0) {
+      var table = document.createElement('table');
+      var thead = document.createElement('thead');
+      var headerRow = document.createElement('tr');
+      ['Agent', 'Tasks', 'Done', 'IQ'].forEach(function(h) {
+        var th = document.createElement('th');
+        th.textContent = h;
+        headerRow.appendChild(th);
+      });
+      thead.appendChild(headerRow);
+      table.appendChild(thead);
 
-            var tbody = document.createElement('tbody');
-            data.agents.slice(0, 10).forEach(function(a) {
-                var tr = document.createElement('tr');
-                var cells = [a.agent || '?', a.tasks, a.done, a.avg_iq || '\u2014'];
-                cells.forEach(function(val, i) {
-                    var td = document.createElement('td');
-                    td.textContent = String(val);
-                    if (i > 0) td.style.color = 'var(--dim)';
-                    tr.appendChild(td);
-                });
-                tbody.appendChild(tr);
-            });
-            table.appendChild(tbody);
-            el.appendChild(table);
-        } else {
-            el.textContent = 'No agent data yet';
-            el.style.color = 'var(--dim)';
-        }
-
-        // Quality trend
-        var qel = document.getElementById('qualityTrend');
-        qel.textContent = '';
-        if (data.quality_trend && data.quality_trend.length > 0) {
-            data.quality_trend.forEach(function(d) {
-                var row = document.createElement('div');
-                row.style.cssText = 'display:flex;justify-content:space-between;padding:2px 0;font-size:12px';
-                var day = document.createElement('span');
-                day.textContent = d.day;
-                day.style.color = 'var(--dim)';
-                var score = document.createElement('span');
-                score.textContent = 'IQ: ' + (d.avg_score || '\u2014') + ' (' + d.scored_tasks + ' tasks)';
-                var color = (d.avg_score || 0) >= 0.7 ? 'var(--green)' : (d.avg_score || 0) >= 0.4 ? 'var(--orange)' : 'var(--red)';
-                score.style.color = color;
-                row.appendChild(day);
-                row.appendChild(score);
-                qel.appendChild(row);
-            });
-        } else {
-            qel.textContent = 'No scored tasks yet';
-            qel.style.color = 'var(--dim)';
-        }
-    } catch(e) {
-        console.error('Evolution load error:', e);
+      var tbody = document.createElement('tbody');
+      data.agents.slice(0, 10).forEach(function(a) {
+        var tr = document.createElement('tr');
+        var cells = [a.agent || '?', a.tasks, a.done, a.avg_iq || '\u2014'];
+        cells.forEach(function(val, i) {
+          var td = document.createElement('td');
+          td.textContent = String(val);
+          if (i > 0) td.style.color = 'var(--text-secondary)';
+          tr.appendChild(td);
+        });
+        tbody.appendChild(tr);
+      });
+      table.appendChild(tbody);
+      el.appendChild(table);
+    } else {
+      el.textContent = 'No agent data yet';
+      el.style.color = 'var(--text-secondary)';
     }
+
+    var qel = document.getElementById('qualityTrend');
+    _clearElement(qel);
+    if (data.quality_trend && data.quality_trend.length > 0) {
+      data.quality_trend.forEach(function(d) {
+        var row = document.createElement('div');
+        row.style.cssText = 'display:flex;justify-content:space-between;padding:2px 0;font-size:var(--font-size-sm)';
+        var day = document.createElement('span');
+        day.textContent = d.day;
+        day.style.color = 'var(--text-secondary)';
+        var score = document.createElement('span');
+        score.textContent = 'IQ: ' + (d.avg_score || '\u2014') + ' (' + d.scored_tasks + ' tasks)';
+        var color = (d.avg_score || 0) >= 0.7 ? 'var(--success)' : (d.avg_score || 0) >= 0.4 ? 'var(--warning)' : 'var(--error)';
+        score.style.color = color;
+        row.appendChild(day);
+        row.appendChild(score);
+        qel.appendChild(row);
+      });
+    } else {
+      qel.textContent = 'No scored tasks yet';
+      qel.style.color = 'var(--text-secondary)';
+    }
+  }).catch(function(e) {
+    console.error('Evolution load error:', e);
+  });
 }
 
-async function loadFilesystemAudit() {
-  try {
-    const d = await fetch('/api/filesystem/audit?limit=20').then(r => r.json());
-    const note = document.getElementById('fsAuditNote');
-    const tbody = document.getElementById('fsAuditTable');
+function loadFilesystemAudit() {
+  return fetch('/api/filesystem/audit?limit=20').then(function(r) { return r.json(); }).then(function(d) {
+    var note = document.getElementById('fsAuditNote');
+    var tbody = document.getElementById('fsAuditTable');
     if (!d.log_exists) {
-      note.textContent = 'Audit log not found — enable log_all_access in fleet.toml [filesystem] to start recording.';
-      tbody.innerHTML = '';
+      note.textContent = 'Audit log not found \u2014 enable log_all_access in fleet.toml [filesystem] to start recording.';
+      _clearElement(tbody);
       return;
     }
     note.textContent = d.entries.length === 0
       ? 'No entries yet.' : 'Showing ' + d.entries.length + ' most recent entries (newest first).';
-    // Build rows using escapeHTML to prevent XSS on path/agent values
-    var rows = '';
+    _clearElement(tbody);
     d.entries.forEach(function(e) {
-      var color = e.status === 'DENY' ? 'var(--red)' : 'var(--green)';
-      rows += '<tr>'
-        + '<td style="padding:3px 8px;color:var(--dim);white-space:nowrap">' + escapeHTML((e.timestamp||'').replace('T',' ')) + '</td>'
-        + '<td style="padding:3px 8px;color:' + color + ';font-weight:bold">' + escapeHTML(e.status||'?') + '</td>'
-        + '<td style="padding:3px 8px">' + escapeHTML(e.agent||'') + '</td>'
-        + '<td style="padding:3px 8px;color:var(--dim)">' + escapeHTML(e.skill||'') + '</td>'
-        + '<td style="padding:3px 8px">' + escapeHTML(e.action||'') + '</td>'
-        + '<td style="padding:3px 8px;font-size:11px;word-break:break-all">' + escapeHTML(e.path||e.raw||'') + '</td>'
-        + '</tr>';
+      var tr = document.createElement('tr');
+      var cells = [
+        {text: (e.timestamp||'').replace('T',' '), style: 'padding:3px 8px;color:var(--text-secondary);white-space:nowrap'},
+        {text: e.status||'?', style: 'padding:3px 8px;color:' + (e.status === 'DENY' ? 'var(--error)' : 'var(--success)') + ';font-weight:bold'},
+        {text: e.agent||'', style: 'padding:3px 8px'},
+        {text: e.skill||'', style: 'padding:3px 8px;color:var(--text-secondary)'},
+        {text: e.action||'', style: 'padding:3px 8px'},
+        {text: e.path||e.raw||'', style: 'padding:3px 8px;font-size:var(--font-size-xs);word-break:break-all'},
+      ];
+      cells.forEach(function(c) {
+        var td = document.createElement('td');
+        td.style.cssText = c.style;
+        td.textContent = c.text;
+        tr.appendChild(td);
+      });
+      tbody.appendChild(tr);
     });
-    tbody.innerHTML = rows;
-  } catch(ex) { console.error('Filesystem audit load error:', ex); }
+  }).catch(function(ex) { console.error('Filesystem audit load error:', ex); });
 }
 
-// ── Audit Trail (structured DB-backed audit) ────────────────────────────────
-let _auditOffset = 0;
-const _auditLimit = 50;
+/* ── Audit Trail ──────────────────────────────────────────────────────────── */
+var _auditOffset = 0;
+var _auditLimit = 50;
 
-async function loadAuditTrail() {
-  try {
-    const actor = document.getElementById('auditActorFilter').value;
-    const action = document.getElementById('auditActionFilter').value;
-    const fromDate = document.getElementById('auditFromDate').value;
-    const toDate = document.getElementById('auditToDate').value;
+function loadAuditTrail() {
+  var actor = document.getElementById('auditActorFilter').value;
+  var action = document.getElementById('auditActionFilter').value;
+  var fromDate = document.getElementById('auditFromDate').value;
+  var toDate = document.getElementById('auditToDate').value;
 
-    let url = '/api/audit?limit=' + _auditLimit + '&offset=' + _auditOffset;
-    if (actor) url += '&actor=' + encodeURIComponent(actor);
-    if (action) url += '&action=' + encodeURIComponent(action);
-    if (fromDate) url += '&from=' + encodeURIComponent(fromDate + 'T00:00:00');
-    if (toDate) url += '&to=' + encodeURIComponent(toDate + 'T23:59:59');
+  var url = '/api/audit?limit=' + _auditLimit + '&offset=' + _auditOffset;
+  if (actor) url += '&actor=' + encodeURIComponent(actor);
+  if (action) url += '&action=' + encodeURIComponent(action);
+  if (fromDate) url += '&from=' + encodeURIComponent(fromDate + 'T00:00:00');
+  if (toDate) url += '&to=' + encodeURIComponent(toDate + 'T23:59:59');
 
-    const d = await fetch(url).then(r => r.json());
+  return fetch(url).then(function(r) { return r.json(); }).then(function(d) {
     if (d.error) {
       document.getElementById('auditTrailNote').textContent = 'Error: ' + d.error;
       return;
     }
 
-    const events = d.events || [];
-    const total = d.total || 0;
-    const note = document.getElementById('auditTrailNote');
-    note.textContent = total + ' total events' + (total > _auditLimit ? ' (showing ' + Math.min(_auditLimit, events.length) + ')' : '');
+    var events = d.events || [];
+    var total = d.total || 0;
+    var noteEl = document.getElementById('auditTrailNote');
+    noteEl.textContent = total + ' total events' + (total > _auditLimit ? ' (showing ' + Math.min(_auditLimit, events.length) + ')' : '');
 
-    // Populate filter dropdowns (only on first load or when filters change)
-    const filters = d.filters || {};
-    const actorSel = document.getElementById('auditActorFilter');
-    const actionSel = document.getElementById('auditActionFilter');
+    var filters = d.filters || {};
+    var actorSel = document.getElementById('auditActorFilter');
+    var actionSel = document.getElementById('auditActionFilter');
     if (actorSel.options.length <= 1 && (filters.actors||[]).length > 0) {
-      (filters.actors||[]).forEach(a => {
-        const opt = document.createElement('option');
+      (filters.actors||[]).forEach(function(a) {
+        var opt = document.createElement('option');
         opt.value = a; opt.textContent = a;
         actorSel.appendChild(opt);
       });
     }
     if (actionSel.options.length <= 1 && (filters.actions||[]).length > 0) {
-      (filters.actions||[]).forEach(a => {
-        const opt = document.createElement('option');
+      (filters.actions||[]).forEach(function(a) {
+        var opt = document.createElement('option');
         opt.value = a; opt.textContent = a;
         actionSel.appendChild(opt);
       });
     }
 
-    // Render table
-    const tbody = document.getElementById('auditTrailTable');
-    let rows = '';
-    events.forEach(e => {
-      const ts = (e.timestamp||'').replace('T',' ').substring(0,19);
-      const cost = e.cost_usd ? '$' + Number(e.cost_usd).toFixed(4) : '';
-      const detail = (e.detail||'').length > 60 ? (e.detail||'').substring(0,57) + '...' : (e.detail||'');
-      rows += '<tr>'
-        + '<td style="padding:3px 8px;white-space:nowrap;color:var(--dim)">' + escapeHTML(ts) + '</td>'
-        + '<td style="padding:3px 8px">' + escapeHTML(e.actor||'') + '</td>'
-        + '<td style="padding:3px 8px">' + escapeHTML(e.action||'') + '</td>'
-        + '<td style="padding:3px 8px;font-size:11px">' + escapeHTML(e.resource||'') + '</td>'
-        + '<td style="padding:3px 8px;text-align:right;color:var(--accent)">' + escapeHTML(cost) + '</td>'
-        + '<td style="padding:3px 8px;font-size:11px;word-break:break-all">' + escapeHTML(detail) + '</td>'
-        + '</tr>';
-    });
-    if (!rows) rows = '<tr><td colspan="6" style="padding:8px;color:var(--dim);text-align:center">No audit events yet</td></tr>';
-    tbody.innerHTML = rows;
+    var tbody = document.getElementById('auditTrailTable');
+    _clearElement(tbody);
+    if (events.length === 0) {
+      var tr = document.createElement('tr');
+      var td = document.createElement('td');
+      td.colSpan = 6;
+      td.style.cssText = 'padding:8px;color:var(--text-secondary);text-align:center';
+      td.textContent = 'No audit events yet';
+      tr.appendChild(td);
+      tbody.appendChild(tr);
+    } else {
+      events.forEach(function(e) {
+        var tr = document.createElement('tr');
+        var ts = (e.timestamp||'').replace('T',' ').substring(0,19);
+        var cost = e.cost_usd ? '$' + Number(e.cost_usd).toFixed(4) : '';
+        var detail = (e.detail||'').length > 60 ? (e.detail||'').substring(0,57) + '...' : (e.detail||'');
+        var cells = [
+          {text: ts, style: 'padding:3px 8px;white-space:nowrap;color:var(--text-secondary)'},
+          {text: e.actor||'', style: 'padding:3px 8px'},
+          {text: e.action||'', style: 'padding:3px 8px'},
+          {text: e.resource||'', style: 'padding:3px 8px;font-size:var(--font-size-xs)'},
+          {text: cost, style: 'padding:3px 8px;text-align:right;color:var(--accent)'},
+          {text: detail, style: 'padding:3px 8px;font-size:var(--font-size-xs);word-break:break-all'},
+        ];
+        cells.forEach(function(c) {
+          var td = document.createElement('td');
+          td.style.cssText = c.style;
+          td.textContent = c.text;
+          tr.appendChild(td);
+        });
+        tbody.appendChild(tr);
+      });
+    }
 
-    // Pager
-    const pager = document.getElementById('auditTrailPager');
-    let pagerHtml = 'Page ' + (Math.floor(_auditOffset / _auditLimit) + 1) + ' of ' + Math.max(1, Math.ceil(total / _auditLimit));
+    /* Pager */
+    var pager = document.getElementById('auditTrailPager');
+    _clearElement(pager);
+    var pageNum = Math.floor(_auditOffset / _auditLimit) + 1;
+    var totalPages = Math.max(1, Math.ceil(total / _auditLimit));
     if (_auditOffset > 0) {
-      pagerHtml = '<button onclick="_auditOffset=Math.max(0,_auditOffset-' + _auditLimit + ');loadAuditTrail()" style="padding:2px 8px;font-size:11px;cursor:pointer">Prev</button> ' + pagerHtml;
+      var prevBtn = document.createElement('button');
+      prevBtn.className = 'export-btn';
+      prevBtn.textContent = 'Prev';
+      prevBtn.addEventListener('click', function() { _auditOffset = Math.max(0, _auditOffset - _auditLimit); loadAuditTrail(); });
+      pager.appendChild(prevBtn);
+      pager.appendChild(document.createTextNode(' '));
     }
+    var pageText = document.createTextNode('Page ' + pageNum + ' of ' + totalPages);
+    pager.appendChild(pageText);
     if (_auditOffset + _auditLimit < total) {
-      pagerHtml += ' <button onclick="_auditOffset+=' + _auditLimit + ';loadAuditTrail()" style="padding:2px 8px;font-size:11px;cursor:pointer">Next</button>';
+      pager.appendChild(document.createTextNode(' '));
+      var nextBtn = document.createElement('button');
+      nextBtn.className = 'export-btn';
+      nextBtn.textContent = 'Next';
+      nextBtn.addEventListener('click', function() { _auditOffset += _auditLimit; loadAuditTrail(); });
+      pager.appendChild(nextBtn);
     }
-    pager.innerHTML = pagerHtml;
-  } catch(ex) { console.error('Audit trail load error:', ex); }
+  }).catch(function(ex) { console.error('Audit trail load error:', ex); });
 }
 
 function exportAudit(fmt) {
-  let url = '/api/audit/export?fmt=' + fmt;
-  const actor = document.getElementById('auditActorFilter').value;
-  const action = document.getElementById('auditActionFilter').value;
-  const fromDate = document.getElementById('auditFromDate').value;
-  const toDate = document.getElementById('auditToDate').value;
+  var url = '/api/audit/export?fmt=' + fmt;
+  var actor = document.getElementById('auditActorFilter').value;
+  var action = document.getElementById('auditActionFilter').value;
+  var fromDate = document.getElementById('auditFromDate').value;
+  var toDate = document.getElementById('auditToDate').value;
   if (actor) url += '&actor=' + encodeURIComponent(actor);
   if (action) url += '&action=' + encodeURIComponent(action);
   if (fromDate) url += '&from=' + encodeURIComponent(fromDate + 'T00:00:00');
@@ -1026,54 +1768,56 @@ function exportAudit(fmt) {
   window.open(url, '_blank');
 }
 
-async function loadAll() {
-  // Pre-fetch aggregate to collapse 11 API calls into 1; fetchJSON() serves from cache
-  try {
-    _dashCache = await fetch('/api/dashboard').then(r => r.ok ? r.json() : null);
+function loadAll() {
+  return fetch('/api/dashboard').then(function(r) { return r.ok ? r.json() : null; }).then(function(cache) {
+    _dashCache = cache;
     _dashCacheTs = Date.now();
-  } catch(e) {
+  }).catch(function() {
     _dashCache = null;
-  }
-  await Promise.all([
-    loadStatus(), loadCodeStats(), loadThermal(), loadTraining(),
-    loadActivity(), loadSkills(), loadDiscussions(), loadModules(),
-    loadReviews(), loadKnowledge(), loadRAG(), loadTimeline(),
-    loadDataStats(), loadAlerts(), loadAgentActivity(), loadCostTracker(),
-    loadEvolution(), loadFilesystemAudit(), loadAuditTrail(),
-  ]);
-  _dashCache = null; // release cache after all loaders consumed it
-  document.getElementById('lastUpdate').textContent = 'Updated: ' + new Date().toLocaleTimeString();
+  }).then(function() {
+    return Promise.all([
+      loadStatus(), loadCodeStats(), loadThermal(), loadTraining(),
+      loadActivity(), loadSkills(), loadDiscussions(), loadModules(),
+      loadReviews(), loadKnowledge(), loadRAG(), loadTimeline(),
+      loadDataStats(), loadAlerts(), loadAgentActivity(), loadCostTracker(),
+      loadEvolution(), loadFilesystemAudit(), loadAuditTrail(),
+    ]);
+  }).then(function() {
+    _dashCache = null;
+    document.getElementById('lastUpdate').textContent = 'Updated: ' + new Date().toLocaleTimeString();
+  });
 }
 
-// Initial load + SSE connection
+/* Initial load + SSE connection */
 loadAll();
 connectSSE();
 
-// Hot data — agent status, thermal, alerts, timeline — poll every 30s
-setInterval(async () => {
-  // Pre-fetch aggregate to reduce connections; fetchJSON() serves from cache
-  try {
-    _dashCache = await fetch('/api/dashboard').then(r => r.ok ? r.json() : null);
+/* Hot data — poll every 30s */
+setInterval(function() {
+  fetch('/api/dashboard').then(function(r) { return r.ok ? r.json() : null; }).then(function(cache) {
+    _dashCache = cache;
     _dashCacheTs = Date.now();
-  } catch(e) {
+  }).catch(function() {
     _dashCache = null;
-  }
-  await Promise.all([
-    loadThermal(), loadTraining(), loadActivity(), loadSkills(),
-    loadReviews(), loadTimeline(), loadAlerts(),
-    loadAgentActivity(), loadCostTracker(), loadEvolution(),
-    loadFilesystemAudit(), loadAuditTrail(),
-  ]);
-  _dashCache = null;
+  }).then(function() {
+    return Promise.all([
+      loadThermal(), loadTraining(), loadActivity(), loadSkills(),
+      loadReviews(), loadTimeline(), loadAlerts(),
+      loadAgentActivity(), loadCostTracker(), loadEvolution(),
+      loadFilesystemAudit(), loadAuditTrail(),
+    ]);
+  }).then(function() {
+    _dashCache = null;
+  });
 }, 30000);
 
-// Cold data — knowledge, RAG, code stats, modules — changes rarely; poll every 5min
-async function loadColdData() {
-  await Promise.all([
+/* Cold data — poll every 5min */
+function loadColdData() {
+  return Promise.all([
     loadKnowledge(), loadRAG(), loadCodeStats(), loadDataStats(), loadModules(),
   ]);
 }
-loadColdData();  // fire once immediately on page load
+loadColdData();
 setInterval(loadColdData, 300000);
 </script>
 </body>

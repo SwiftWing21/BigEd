@@ -1767,6 +1767,50 @@ def index():
     return Response(DASHBOARD_HTML, mimetype="text/html")  # fallback to cached
 
 
+# ── Theme Settings ────────────────────────────────────────────────────────────
+
+_VALID_THEMES = {"classic", "modern", "figma"}
+
+
+@app.route("/api/settings/theme", methods=["GET"])
+def api_settings_theme_get():
+    """Return current dashboard theme from fleet.toml."""
+    try:
+        cfg = _load_config()
+        theme = cfg.get("dashboard", {}).get("theme", "figma")
+        if theme not in _VALID_THEMES:
+            theme = "figma"
+        return jsonify({"theme": theme})
+    except Exception as e:
+        return jsonify({"error": _safe_error(e)}), 500
+
+
+@app.route("/api/settings/theme", methods=["POST"])
+@_require_role("operator")
+def api_settings_theme_set():
+    """Update dashboard theme in fleet.toml.
+
+    Accepts JSON body: {"theme": "classic"|"modern"|"figma"}
+    Writes to [dashboard] theme key using tomlkit to preserve formatting.
+    """
+    data = request.get_json(silent=True) or {}
+    theme = data.get("theme", "").strip().lower()
+    if theme not in _VALID_THEMES:
+        return jsonify({"error": f"Invalid theme '{theme}'. Valid: {sorted(_VALID_THEMES)}"}), 400
+
+    try:
+        import tomlkit
+        toml_path = FLEET_DIR / "fleet.toml"
+        doc = tomlkit.parse(toml_path.read_text(encoding="utf-8"))
+        if "dashboard" not in doc:
+            doc["dashboard"] = tomlkit.table()
+        doc["dashboard"]["theme"] = theme
+        toml_path.write_text(tomlkit.dumps(doc), encoding="utf-8")
+        return jsonify({"ok": True, "theme": theme})
+    except Exception as e:
+        return jsonify({"error": _safe_error(e)}), 500
+
+
 # ── Agent Disable/Enable ──────────────────────────────────────────────────────
 
 VALID_AGENT = re.compile(r'^[a-zA-Z0-9_-]{1,64}$')
