@@ -400,6 +400,16 @@ key_rotation_days = 90                # recommend key rotation after N days
 encrypt_at_rest = true                # encrypt tenant DB fields at rest
 encrypt_task_payloads = false         # encrypt task payload_json (performance impact)
 
+# v0.300.00b: Per-tenant billing & metering
+[billing]
+enabled = false                      # enable billing/metering subsystem
+currency = "USD"
+
+[billing.pricing]
+tokens_per_dollar = 1000000          # 1M tokens per dollar (base rate)
+base_monthly = 0                     # flat monthly fee per tenant
+overage_rate = 0.001                 # per-1K-token overage charge above quota
+
 # Event triggers — file watch, scheduled tasks, webhook dispatch
 [triggers]
 file_watch_enabled = true
