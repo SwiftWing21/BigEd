@@ -2062,6 +2062,47 @@ def api_federation_route():
             return jsonify(result), 502
     except ImportError:
         return jsonify({"error": "federation_router not available"}), 501
+
+# ── Federation mTLS (0.100.00b) ────────────────────────────────────────────
+
+
+@app.route("/api/federation/cert-status")
+def api_federation_cert_status():
+    """Certificate health info for the dashboard."""
+    try:
+        sys.path.insert(0, str(FLEET_DIR))
+        from fleet_tls import get_cert_info
+        return jsonify(get_cert_info())
+    except ImportError:
+        return jsonify({"tls_enabled": False, "warning": "fleet_tls module not available"})
+    except Exception as e:
+        return jsonify({"error": _safe_error(e)}), 500
+
+
+@app.route("/api/federation/exchange-cert", methods=["POST"])
+def api_federation_exchange_cert():
+    """Peer sends its cert, receives local cert.
+
+    Request body: {"peer_id": "...", "cert_pem": "-----BEGIN CERTIFICATE..."}
+    Response: {"ok": true, "cert_pem": "-----BEGIN CERTIFICATE..."}
+    """
+    try:
+        sys.path.insert(0, str(FLEET_DIR))
+        from fleet_tls import store_trusted_cert, get_local_cert_pem, is_tls_enabled
+        if not is_tls_enabled():
+            return jsonify({"error": "Federation TLS not enabled"}), 400
+        data = request.get_json(silent=True) or {}
+        peer_id = data.get("peer_id")
+        cert_pem = data.get("cert_pem")
+        if not peer_id or not cert_pem:
+            return jsonify({"error": "peer_id and cert_pem required"}), 400
+        # Store the incoming peer cert
+        store_trusted_cert(peer_id, cert_pem)
+        # Return our cert for mutual trust
+        local_cert = get_local_cert_pem()
+        return jsonify({"ok": True, "cert_pem": local_cert})
+    except FileNotFoundError as e:
+        return jsonify({"error": str(e)}), 404
     except Exception as e:
         return jsonify({"error": _safe_error(e)}), 500
 
@@ -3354,13 +3395,31 @@ if __name__ == "__main__":
     threading.Thread(target=_alert_monitor, daemon=True).start()
     threading.Thread(target=_sse_broadcaster, daemon=True).start()
 
-    # TLS: auto-generate self-signed cert for HTTPS by default
-    cert, key = _ensure_tls_cert()
+    # Fleet mTLS: auto-setup certs if federation TLS enabled
+    try:
+        from fleet_tls import auto_setup as _fleet_tls_auto_setup
+        _fleet_tls_auto_setup()
+    except Exception as _ftls_exc:
+        _log.debug("Fleet TLS auto-setup skipped: %s", _ftls_exc)
+
+    # TLS: prefer fleet mTLS context (mutual auth), fall back to self-signed cert
     ssl_ctx = None
-    if cert and key:
-        ssl_ctx = (cert, key)
-        print(f"Fleet Dashboard v2: https://{bind_addr}:{args.port} (TLS)")
-    else:
-        print(f"Fleet Dashboard v2: http://{bind_addr}:{args.port} (no TLS — openssl not found)")
+    try:
+        from fleet_tls import is_tls_enabled as _fleet_tls_enabled, get_ssl_context as _fleet_ssl_ctx
+        if _fleet_tls_enabled():
+            ssl_ctx = _fleet_ssl_ctx("server")
+            print(f"Fleet Dashboard v2: https://{bind_addr}:{args.port} (mTLS — fleet CA)")
+    except Exception as _mtls_exc:
+        _log.debug("Fleet mTLS context not available: %s", _mtls_exc)
+
+    if ssl_ctx is None:
+        # Fall back to existing self-signed cert (openssl-based)
+        cert, key = _ensure_tls_cert()
+        if cert and key:
+            ssl_ctx = (cert, key)
+            print(f"Fleet Dashboard v2: https://{bind_addr}:{args.port} (TLS)")
+        else:
+            print(f"Fleet Dashboard v2: http://{bind_addr}:{args.port} (no TLS — openssl not found)")
+
     app.run(host=bind_addr, port=args.port, debug=False, threaded=True,
             ssl_context=ssl_ctx)

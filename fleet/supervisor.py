@@ -957,6 +957,15 @@ def main():
     start_hw_supervisor(config)
 
     # Federation: start auto-discovery + announce rejoin to peers on startup
+
+    # Federation: auto-setup mTLS certs if enabled
+    try:
+        from fleet_tls import auto_setup as _tls_auto_setup, is_tls_enabled as _is_tls_enabled
+        _tls_auto_setup()
+    except Exception as _tls_exc:
+        log.debug("Fleet TLS auto-setup skipped: %s", _tls_exc)
+
+    # Federation: announce rejoin to peers on startup (crash recovery)
     try:
         federation_cfg = config.get("federation", {})
         if federation_cfg.get("enabled") and not offline:
@@ -973,6 +982,13 @@ def main():
             # Announce rejoin to manually configured peers (crash recovery)
             device_name = config.get("naming", {}).get("device_name", "unknown")
             peers = federation_cfg.get("peers", [])
+            _fed_ssl_ctx = None
+            try:
+                from fleet_tls import is_tls_enabled, get_ssl_context
+                if is_tls_enabled():
+                    _fed_ssl_ctx = get_ssl_context("client")
+            except Exception:
+                pass
             for peer_url in peers:
                 try:
                     rejoin_data = json.dumps({
@@ -986,7 +1002,10 @@ def main():
                         f"{peer_url}/api/federation/heartbeat",
                         data=rejoin_data, method="POST",
                         headers={"Content-Type": "application/json"})
-                    urllib.request.urlopen(req, timeout=5)
+                    if _fed_ssl_ctx:
+                        urllib.request.urlopen(req, timeout=5, context=_fed_ssl_ctx)
+                    else:
+                        urllib.request.urlopen(req, timeout=5)
                     log.info(f"Federation: rejoined peer {peer_url}")
                 except Exception:
                     log.debug(f"Federation: peer {peer_url} unreachable (will retry in heartbeat loop)")
@@ -1104,15 +1123,29 @@ def main():
                             fed_peers = [p["url"] for p in _all_peers if p.get("online", False)]
                         except Exception:
                             fed_peers = federation_cfg.get("peers", [])
+                        # Get mTLS context if available
+                        _hb_ssl = None
+                        try:
+                            from fleet_tls import is_tls_enabled, get_ssl_context
+                            if is_tls_enabled():
+                                _hb_ssl = get_ssl_context("client")
+                        except Exception:
+                            pass
                         for peer_url in fed_peers:
                             try:
-                                _hb = json.dumps(heartbeat).encode()
-                                _req = urllib.request.Request(
-                                    f"{peer_url}/api/federation/heartbeat",
-                                    data=_hb,
-                                    headers={"Content-Type": "application/json"},
-                                )
-                                urllib.request.urlopen(_req, timeout=5)
+                                # Check peer capacity
+                                _of_kwargs = {"timeout": 3}
+                                if _hb_ssl:
+                                    _of_kwargs["context"] = _overflow_ssl
+                                with urllib.request.urlopen(
+                                    f"{peer_url}/api/federation/peers", **_of_kwargs
+                                ) as r:
+                                    peer_data = json.loads(r.read())  # noqa: F841
+                                # Forward oldest pending tasks to least-loaded peer
+                                # (Stub — actual task forwarding requires /api/fleet/task/forward endpoint)
+                                log.info(f"Federation overflow: {pending} pending, routing to {peer_url}")
+                                _json_log("INFO", "federation_overflow", pending=pending, peer=peer_url)
+                                break
                             except Exception:
                                 pass
 
@@ -1608,6 +1641,14 @@ def main():
                         peer_urls = [p["url"] for p in all_peers]
                     except Exception:
                         peer_urls = federation_cfg.get("peers", [])
+                    # mTLS context for peer communication
+                    _hb_ssl_ctx = None
+                    try:
+                        from fleet_tls import is_tls_enabled, get_ssl_context
+                        if is_tls_enabled():
+                            _hb_ssl_ctx = get_ssl_context("client")
+                    except Exception:
+                        pass
                     for peer_url in peer_urls:
                         try:
                             status = {"fleet_id": config.get("naming", {}).get("device_name", ""),
@@ -1621,7 +1662,10 @@ def main():
                                 f"{peer_url}/api/federation/heartbeat",
                                 data=body, method="POST",
                                 headers={"Content-Type": "application/json"})
-                            urllib.request.urlopen(req, timeout=3)
+                            if _hb_ssl_ctx:
+                                urllib.request.urlopen(req, timeout=3, context=_hb_ssl_ctx)
+                            else:
+                                urllib.request.urlopen(req, timeout=3)
                         except Exception:
                             pass
             except Exception:

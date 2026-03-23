@@ -311,7 +311,7 @@ lead_research = "sequential_thinking"
 # v0.100.00b: Cross-fleet task routing with capacity aggregation
 [federation]
 enabled = false              # enable peer discovery and task forwarding
-peers = []                   # peer fleet URLs (e.g. ["http://192.168.1.50:5555", "http://fleet2.local:5555"])
+peers = []                   # peer fleet URLs (e.g. ["https://192.168.1.50:5555", "https://fleet2.local:5555"])
 overflow_threshold = 0.85    # forward tasks to peers when local queue > 85% capacity
 peer_timeout_secs = 5        # timeout for peer health probes
 discovery_enabled = true     # auto-discover peers on local network (UDP broadcast + optional mDNS)
@@ -321,6 +321,16 @@ discovery_method = "broadcast"  # "broadcast" = UDP only, "mdns" = zeroconf only
 routing_enabled = true       # enable cross-fleet task routing (requires enabled = true)
 local_priority_min = 9       # tasks with priority >= this always stay local (critical tasks)
 routing_timeout = 10         # seconds to wait for peer response when routing tasks
+
+# v0.100.00b: Mutual TLS for fleet-to-fleet communication
+[federation.tls]
+enabled = false                    # opt-in, don't break existing setups
+cert_dir = "fleet/certs"
+auto_generate = true               # auto-gen CA + peer cert on first enable
+ca_cert = "ca.pem"
+peer_cert = "peer.pem"
+peer_key = "peer-key.pem"
+verify_peers = true                # require valid peer certs
 
 # v0.51.02b: Auto-save & Backup — periodic snapshots of fleet state
 [backup]
