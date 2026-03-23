@@ -429,6 +429,12 @@ deploy_agents = 2                # auto-deploy N extra agents during bonus
 prefer_claude = true             # route to Claude instead of local during bonus
 disable_budget_throttle = true   # bonus usage doesn't count against limits
 
+# v0.200.00b: A/B Testing — experiment on skill variants with statistical evaluation
+[experiments]
+ab_testing_enabled = true
+min_samples_per_variant = 20       # minimum trials per variant before evaluation
+auto_promote_threshold = 0.95      # promote if variant p-value < 0.05 AND success rate > this
+
 # ── Dispatch Bridge (Cowork Dispatch → Fleet) ──────────────────────
 [dispatch_bridge]
 enabled = true

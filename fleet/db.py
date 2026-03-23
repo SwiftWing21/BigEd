@@ -337,6 +337,31 @@ def init_db():
             )
         """)
         conn.execute("CREATE INDEX IF NOT EXISTS idx_flywheel_project ON flywheel_scores(project_path, created_at)")
+        # A/B Testing — experiment definitions and results (v0.200.00b)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS experiments (
+                id TEXT PRIMARY KEY,
+                skill_name TEXT NOT NULL,
+                variant_path TEXT NOT NULL,
+                status TEXT DEFAULT 'active',
+                created_at REAL NOT NULL,
+                results_json TEXT
+            )
+        """)
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_experiments_skill ON experiments(skill_name, status)")
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS experiment_results (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                experiment_id TEXT NOT NULL,
+                variant TEXT NOT NULL,
+                agent TEXT,
+                success INTEGER NOT NULL DEFAULT 0,
+                score REAL,
+                created_at REAL NOT NULL,
+                FOREIGN KEY (experiment_id) REFERENCES experiments(id)
+            )
+        """)
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_expr_results_exp ON experiment_results(experiment_id, variant)")
 
 
 def update_intelligence_score(task_id, score):
