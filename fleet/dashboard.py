@@ -3352,6 +3352,31 @@ _SETTINGS_SCHEMA = {
 _dashboard_theme = "dark"
 
 
+# ── v0.200: ML Task Routing ──────────────────────────────────────────────────
+
+@app.route("/api/routing/model-status")
+def api_routing_model_status():
+    """Return ML routing model status: age, accuracy, feature importances."""
+    try:
+        from ml_router import get_model_status
+        return jsonify(get_model_status())
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/routing/retrain", methods=["POST"])
+def api_routing_retrain():
+    """Trigger manual retrain of the ML routing model."""
+    try:
+        from ml_router import train_routing_model
+        result = train_routing_model()
+        if result.get("error"):
+            return jsonify(result), 422
+        return jsonify(result)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
 @app.route("/api/settings")
 def api_settings():
     """Return fleet.toml as JSON with read-only sections marked."""

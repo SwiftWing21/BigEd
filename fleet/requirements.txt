@@ -7,3 +7,5 @@ psutil>=5.9.0
 google-genai>=0.3.0
 fastmcp>=2.0.0
 cryptography>=42.0.0
+scikit-learn>=1.4.0
+pandas>=2.1.0

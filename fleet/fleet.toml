@@ -440,6 +440,13 @@ circuit_breaker_window = 300         # 5 min sliding window for failure counting
 auto_rollback_enabled = true         # restore skill from code_drafts on regression
 regression_threshold = 0.20          # 20% success rate drop = regression
 
+# ── v0.200: ML Task Routing — sklearn-based agent selection ─────────
+[routing]
+ml_enabled = true                        # use trained ML model for agent-to-skill routing
+retrain_interval_hours = 24              # auto-retrain model after this many hours
+min_training_samples = 50                # minimum completed tasks before first training
+fallback_to_iq = true                    # fall back to IQ-average heuristic if no model
+
 # ── Dispatch Bridge (Cowork Dispatch → Fleet) ──────────────────────
 [dispatch_bridge]
 enabled = true

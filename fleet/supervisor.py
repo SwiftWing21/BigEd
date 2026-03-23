@@ -1545,6 +1545,17 @@ def main():
             except Exception:
                 pass
 
+            # v0.200: ML router auto-retrain (piggyback on feedback interval)
+            try:
+                from ml_router import retrain_if_stale
+                retrain_result = retrain_if_stale()
+                if retrain_result and not retrain_result.get("error"):
+                    log.info("ML router retrained: accuracy=%.3f, samples=%d",
+                             retrain_result.get("accuracy", 0),
+                             retrain_result.get("sample_count", 0))
+            except Exception:
+                pass
+
         # Event triggers — file watch, scheduled tasks (every 30s)
         if now - last_trigger_check >= 30:
             last_trigger_check = now

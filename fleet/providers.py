@@ -448,23 +448,43 @@ def benchmark_providers(skill_name: str = "summarize", config: dict = None) -> d
     }
 
 
-# ── v0.110 S1: ML-lite Task Routing (Intelligent Orchestration) ───────────────
+# ── v0.200 S1: ML Task Routing (Intelligent Orchestration) ────────────────────
 
-def get_optimal_agent_for_skill(skill_name: str, config: dict) -> str | None:
-    """ML-lite routing: recommend best agent for a skill based on historical IQ scores.
+def get_optimal_agent_for_skill(skill_name: str, config: dict,
+                                available_agents: list | None = None) -> str | None:
+    """Route a skill to the best agent using ML model or IQ-based fallback.
 
-    Analyzes the last 30 days of task history to find the agent with the highest
-    average intelligence_score for a given skill type. Requires at least 5 completed
-    tasks to avoid noisy recommendations. Returns the agent name or None if
-    insufficient data.
+    v0.200: Delegates to ml_router.predict_best_agent() when a trained model
+    exists and [routing] ml_enabled = true. Falls back to the original
+    IQ-average heuristic when:
+      - ML routing is disabled in fleet.toml
+      - No trained model on disk
+      - The skill/agents are unknown to the model
+      - scikit-learn is not installed
+
+    Args:
+        skill_name: skill/task type to route (e.g. "code_review")
+        config: fleet config dict (from load_config)
+        available_agents: optional list of idle agent names for ML scoring
     """
+    # ── Try ML router first ──────────────────────────────────────────────
     try:
-        import sqlite3
-        from pathlib import Path as _P
-        db_path = _P(__file__).parent / "fleet.db"
-        conn = sqlite3.connect(str(db_path), timeout=5)
-        try:
-            # Find agent with highest avg IQ for this skill type
+        from ml_router import predict_best_agent
+        if available_agents:
+            ml_pick = predict_best_agent(skill_name, available_agents)
+            if ml_pick is not None:
+                return ml_pick
+    except Exception:
+        pass  # ML router unavailable — fall through to IQ heuristic
+
+    # ── Fallback: IQ-average heuristic (original v0.110 logic) ───────────
+    routing_cfg = config.get("routing", {})
+    if not routing_cfg.get("fallback_to_iq", True):
+        return None
+
+    try:
+        import db as _db
+        with _db.get_conn() as conn:
             row = conn.execute("""
                 SELECT assigned_to, AVG(intelligence_score) as avg_iq, COUNT(*) as tasks
                 FROM tasks
@@ -476,9 +496,7 @@ def get_optimal_agent_for_skill(skill_name: str, config: dict) -> str | None:
                 ORDER BY avg_iq DESC LIMIT 1
             """, (skill_name,)).fetchone()
             if row:
-                return row[0]  # Best performing agent for this skill
-        finally:
-            conn.close()
+                return row["assigned_to"]
     except Exception:
         pass
     return None
