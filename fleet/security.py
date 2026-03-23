@@ -74,10 +74,12 @@ def check_permission(role: str, action: str) -> bool:
 
 
 def get_request_role(config_loader, req=None):
-    """Determine role from request token.
+    """Determine role from request token or SSO session.
 
-    Checks Authorization header and query param against configured
-    admin_token, operator_token, and dashboard_token in fleet.toml [security].
+    Checks (in order):
+      1. SSO session (if SSO enabled) — role from identity provider claims
+      2. Authorization header / query param against configured tokens
+      3. Falls back to "viewer"
 
     Parameters
     ----------
@@ -87,6 +89,19 @@ def get_request_role(config_loader, req=None):
         Defaults to the current ``flask.request``.
     """
     req = req or request
+
+    # 1. Check SSO session first (if SSO module available and enabled)
+    try:
+        from sso import get_sso_role
+        sso_role = get_sso_role(req)
+        if sso_role:
+            return sso_role
+    except ImportError:
+        pass  # SSO module not available — continue with token auth
+    except Exception:
+        pass  # SSO check failed — fall through to token auth
+
+    # 2. Token-based auth
     token = req.headers.get("Authorization", "").replace("Bearer ", "")
     if not token:
         token = req.args.get("token", "")
@@ -224,10 +239,26 @@ def register_hooks(app, config_loader):
 
     @app.before_request
     def _auth():
+        # Always allow SSO auth routes through
+        if request.path.startswith("/auth/"):
+            return
         if (not request.path.startswith("/api/")
                 and not request.path.startswith("/a2a/")
                 and request.path != "/.well-known/agent.json"):
             return  # skip auth for HTML pages, static
+
+        # Check SSO session first (if SSO enabled)
+        try:
+            from sso import is_sso_enabled, get_session_from_request
+            if is_sso_enabled():
+                session_data = get_session_from_request()
+                if session_data:
+                    return  # valid SSO session
+        except ImportError:
+            pass  # SSO module not available
+        except Exception:
+            pass  # SSO check failed — fall through to token auth
+
         config = config_loader()
         token = config.get("security", {}).get("dashboard_token", "")
         if not token:
@@ -235,6 +266,15 @@ def register_hooks(app, config_loader):
         auth = request.headers.get("Authorization", "")
         if auth == f"Bearer {token}":
             return  # valid
+        # Check admin/operator tokens as well
+        security = config.get("security", {})
+        admin_token = security.get("admin_token", "")
+        operator_token = security.get("operator_token", "")
+        bearer = auth.replace("Bearer ", "") if auth.startswith("Bearer ") else ""
+        if admin_token and bearer == admin_token:
+            return  # valid admin
+        if operator_token and bearer == operator_token:
+            return  # valid operator
         return jsonify({"error": "Unauthorized — set Authorization: Bearer <token>"}), 401
 
     @app.before_request

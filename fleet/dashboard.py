@@ -1489,6 +1489,14 @@ app.register_blueprint(health_bp)
 from a2a import a2a_bp
 app.register_blueprint(a2a_bp)
 
+# ── SSO / OIDC / SAML Authentication (v0.300.00b) ────────────────────────────
+try:
+    from sso import register_sso as _register_sso
+    _register_sso(app)
+except Exception as _sso_exc:
+    import logging as _sso_logging
+    _sso_logging.getLogger("dashboard").debug("SSO module not loaded: %s", _sso_exc)
+
 
 # ── MCP Server Status (v0.31.00) ─────────────────────────────────────────────
 

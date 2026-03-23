@@ -229,6 +229,18 @@ sandbox_skills = ["code_write", "skill_test", "benchmark"]  # skills that run in
 dependency_scan_enabled = true   # run pip-audit/pip-check during security_audit
 network_hardening_enabled = true # verify Ollama/dashboard bound to 127.0.0.1 during pen_test
 
+# v0.300.00b: SSO / OIDC / SAML — Enterprise Identity Federation
+[sso]
+enabled = false
+provider = "oidc"                # oidc | saml
+oidc_issuer = ""                 # e.g. https://accounts.google.com, https://login.microsoftonline.com/{tenant}/v2.0
+oidc_client_id = ""              # OAuth2 client ID from your IdP
+oidc_client_secret = ""          # OAuth2 client secret (or set SSO_CLIENT_SECRET env var)
+saml_metadata_url = ""           # SAML IdP metadata URL (only used when provider = "saml")
+session_expiry_hours = 8         # SSO session duration before re-authentication required
+role_claim = "roles"             # OIDC claim containing user roles (Azure AD: "roles", Okta: "groups")
+default_role = "viewer"          # role assigned when no matching claim found (admin/operator/developer/viewer/auditor)
+
 [walkthrough]
 completed = true
 skipped_steps = []
