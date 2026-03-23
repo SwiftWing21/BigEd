@@ -2099,7 +2099,7 @@ def worker_enable(name):
 # ── System Recommendations (0.052.00b) ────────────────────────────────────────
 
 @app.route("/api/recommendations")
-def api_recommendations():
+def api_system_recommendations():
     """System optimization recommendations (never auto-applied)."""
     recs = []
     try:
@@ -3565,10 +3565,6 @@ _SETTINGS_SCHEMA = {
     },
 }
 
-# In-memory theme preference (persists for session, not to TOML)
-_dashboard_theme = "dark"
-
-
 # ── v0.200: ML Task Routing ──────────────────────────────────────────────────
 
 @app.route("/api/routing/model-status")
@@ -3699,27 +3695,6 @@ def api_settings_update(section):
             "updated_keys": updated_keys,
             "total_updated": len(updated_keys),
         })
-    except Exception as e:
-        return jsonify({"error": _safe_error(e)}), 500
-
-
-@app.route("/api/settings/theme", methods=["GET", "POST"])
-def api_settings_theme():
-    """Get or update dashboard theme preference (in-memory, session-scoped).
-
-    GET: returns current theme
-    POST body JSON: {theme: "dark" | "light" | "system"}
-    """
-    global _dashboard_theme
-    if request.method == "GET":
-        return jsonify({"theme": _dashboard_theme})
-    try:
-        data = request.get_json(silent=True) or {}
-        theme = (data.get("theme") or "dark").strip().lower()
-        if theme not in ("dark", "light", "system"):
-            return jsonify({"error": "theme must be 'dark', 'light', or 'system'"}), 400
-        _dashboard_theme = theme
-        return jsonify({"status": "ok", "theme": _dashboard_theme})
     except Exception as e:
         return jsonify({"error": _safe_error(e)}), 500
 
@@ -3880,7 +3855,7 @@ def api_logs_sources():
 # ── Skill Recommendations (v0.200.00b) ────────────────────────────────────────
 
 @app.route("/api/recommendations/<skill>")
-def api_recommendations(skill):
+def api_skill_recommendations(skill):
     """Skill recommendations after completing a task — co-occurrence based."""
     try:
         if not _check_rate_limit("recommendations", max_per_min=30):

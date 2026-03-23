@@ -183,8 +183,8 @@ Every skill produces a structured result dict. Common patterns:
 
 ---
 
-## Version: 0.170.07b (Beta)
+## Version: 0.400.00b (Beta)
 
-92 skills | 65+ API endpoints | 12 DB tables | 6 agent roles | 30+ config sections
+86 skills | 190+ API endpoints | 20+ DB tables | 6 agent roles | 40+ config sections
 
 Apache 2.0 License | Windows/Linux/macOS | Offline/Air-Gap capable

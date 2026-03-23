@@ -1,4 +1,4 @@
-# BigEd CC — Beta (0.170.07b)
+# BigEd CC — Beta (0.400.00b)
 
 ## Quick Start
 ```bash
@@ -17,7 +17,7 @@ python fleet/lead_client.py task "your instruction here"  # dispatch a task
 ## Docs (kept as separate files — too large to inline)
 - `AUDIT_TRACKER.md` — grading rubric (12 dimensions), scoreboard, resolved issues
 - `ROADMAP.md` — active plan, version history, audit coverage check
-- `FRAMEWORK_BLUEPRINT.md` — full architecture spec, data schema, 58 endpoints
+- `FRAMEWORK_BLUEPRINT.md` — full architecture spec, data schema, 190+ endpoints
 - `OPERATIONS.md` — runbook, CLI reference, troubleshooting, backup/recovery
 - `CROSS_PLATFORM.md` — platform matrix, FleetBridge ABC, migration priorities
 - `CONTRIBUTING.md` — contributor guide, skill authoring, code standards
@@ -42,7 +42,7 @@ End every roadmap with an Audit Coverage Check section.
 - Roadmap: `ROADMAP.md`
 
 ## Structure
-- `fleet/` — 92-skill AI worker fleet (Ollama + Claude/Gemini)
+- `fleet/` — 86-skill AI worker fleet (Ollama + Claude/Gemini)
 - `BigEd/` — launcher GUI + compliance docs
 - `autoresearch/` — ML training pipeline
 - `deploy/` — Kubernetes Helm chart for enterprise deployment
@@ -54,11 +54,11 @@ End every roadmap with an Audit Coverage Check section.
 - `fleet/filesystem_guard.py` — SOC 2 file access control
 
 ## Fleet Status
-- Skills: 92 (+ oss_review, oss_review_swarm, quality_flywheel) | Dashboard: 65+ endpoints | Smoke: 22/22
+- Skills: 86 | Dashboard: 190+ endpoints (across dashboard.py + 9 blueprints) | Smoke: 22/22
 - Dynamic agent scaling: 4 core + demand-based | Dr. Ders: event-driven wake-up timer
 - Security: P0-P2 hardened (XSS, SQL injection, thread safety, zombie cleanup)
 - Backup: auto-save every 20min, configurable depth/location
-- v0.050.00b-0.170.07b: installer overhaul, model recovery, startup perf, autoresearch integration, deferred items sweep, feedback loop
+- v0.050.00b-0.400.00b: installer overhaul, model recovery, startup perf, autoresearch integration, deferred items sweep, feedback loop, federation, enterprise multi-tenant, SaaS platform
 
 ## Gotchas
 - **Ollama PATH**: not on Git Bash PATH on Windows — supervisor auto-finds via `%LOCALAPPDATA%\Programs\Ollama`
@@ -173,6 +173,16 @@ except Exception:
 | `fleet/providers.py` | Multi-backend LLM routing | Adding providers, changing fallback chain |
 | `fleet/config.py` | TOML config loader | Config schema changes, new top-level sections |
 | `fleet/reinforcement.py` | Human feedback loop | IQ scoring adjustments, age-out policy |
+| `fleet/self_healing.py` | Auto-recovery + circuit breakers | Agent stuck detection, task retry, skill rollback |
+| `fleet/ml_router.py` | ML-based task routing | sklearn agent-to-skill model, retrain |
+| `fleet/federation_router.py` | Cross-fleet task routing | Peer overflow, capacity aggregation |
+| `fleet/tenant_admin.py` | Multi-tenant management | Tenant CRUD, isolation, quotas |
+| `fleet/compliance.py` | Compliance reporting | SOC 2, audit summary, SLA reports |
+| `fleet/marketplace.py` | Skill marketplace | Package publish, review, install |
+| `fleet/geo_fleet.py` | Geo-distributed fleets | Region management, auto-scaling |
+| `fleet/sso.py` | SSO / OIDC / SAML | Enterprise identity federation |
+| `fleet/billing.py` | Usage-based billing | Per-tenant metering, quotas, invoices |
+| `fleet/control_plane.py` | SaaS control plane | Fleet provisioning, health aggregation |
 | `BigEd/launcher/launcher.py` | Desktop GUI entry point | UI layout, boot flow, settings panels |
 
 ## Local Machine — CLAUDE.USER.md

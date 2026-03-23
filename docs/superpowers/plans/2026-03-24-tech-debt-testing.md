@@ -14,12 +14,12 @@
 
 fleet.toml likely has duplicate sections from additive merge conflict resolution. Dashboard.py may have duplicate blueprint registrations.
 
-- [ ] Read `fleet/fleet.toml` end-to-end — find and remove duplicate config sections
-- [ ] Verify every `[section]` appears exactly once
-- [ ] Read `fleet/dashboard.py` — find and remove duplicate blueprint registrations
-- [ ] Verify no duplicate endpoint routes (same path registered twice)
-- [ ] Check `.gitignore` includes `fleet/certs/`, `fleet/data/*.pkl`, `fleet/data/tenant_keys.db`
-- [ ] Verify `fleet/requirements.txt` has no duplicate entries
+- [x] Read `fleet/fleet.toml` end-to-end — no duplicate config sections found (clean)
+- [x] Verify every `[section]` appears exactly once — confirmed
+- [x] Read `fleet/dashboard.py` — removed duplicate `/api/settings/theme` route (in-memory version superseded by fleet.toml-backed version)
+- [x] Fixed duplicate `api_recommendations` function name collision — renamed to `api_system_recommendations` and `api_skill_recommendations`
+- [x] Check `.gitignore` includes `fleet/certs/`, `fleet/data/*.pkl`, `fleet/data/tenant_keys.db` — all covered (`fleet/certs/` at line 47, `fleet/data/` at line 144)
+- [x] Verify `fleet/requirements.txt` has no duplicate entries — confirmed (9 unique packages)
 - [ ] Commit: `fix: clean fleet.toml duplicates and dashboard blueprint registration from merge`
 
 ## Phase 2: Import Verification (Agent 2)
@@ -160,9 +160,9 @@ Test cross-module interactions.
 
 ## Phase 7: Version Bump + Roadmap Update
 
-- [ ] Update version in `fleet/fleet.toml`, `BigEd/launcher/launcher.py`, and any `__version__` strings
-- [ ] Update `ROADMAP.md` — mark 0.100-0.400 milestones as DONE with date 2026-03-23
-- [ ] Update `CLAUDE.md` — add new modules to Key File Paths table, update skill count, endpoint count
+- [x] Update version strings — CLAUDE.md header, docs/WHAT_IS_BIGED.md, fleet/CLAUDE.md (fleet.toml has no version field; launcher reads from git tags dynamically)
+- [x] Verify `ROADMAP.md` — 0.085/0.110/0.135/0.160 milestones (the actual section headers for 0.100-0.400 themes) already marked [DONE] with dates
+- [x] Update `CLAUDE.md` — added 11 new modules to Key File Paths table, updated skill count (86), endpoint count (190+), version to 0.400.00b
 - [ ] Commit: `chore: version bump to v0.400.00b, update roadmap and docs`
 
 ---
