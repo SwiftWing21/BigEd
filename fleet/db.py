@@ -207,7 +207,7 @@ from comms import CH_SUP, CH_AGENT, CH_FLEET, CH_POOL
 # ── Messaging (extracted to comms.py) ────────────────────────────────────────
 from comms import post_message, get_messages, broadcast_message, post_note, get_notes, get_note_count
 
-VALID_TASK_STATUSES = {"PENDING", "RUNNING", "DONE", "FAILED", "WAITING", "REVIEW", "WAITING_HUMAN"}
+VALID_TASK_STATUSES = {"PENDING", "RUNNING", "DONE", "FAILED", "WAITING", "REVIEW", "WAITING_HUMAN", "FORWARDED"}
 
 
 def init_db():
