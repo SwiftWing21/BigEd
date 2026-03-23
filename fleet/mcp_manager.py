@@ -1,6 +1,7 @@
 """MCP Server Manager (v0.31.00) — discover, probe, and manage MCP server connections."""
 
 import json
+import os
 import urllib.request
 from pathlib import Path
 
@@ -245,3 +246,93 @@ def _categorize_server(name: str) -> str:
     if name in MCP_INTEGRATIONS:
         return "integration"
     return "custom"
+
+
+# ─── Claude Desktop registration ─────────────────────────────────────────────
+
+_CLAUDE_DESKTOP_SERVER_NAME = "biged-fleet"
+
+
+def get_claude_desktop_config_path() -> Path:
+    """Return the platform-specific path to claude_desktop_config.json.
+
+    Windows: %APPDATA%/Claude/claude_desktop_config.json
+    macOS:   ~/Library/Application Support/Claude/claude_desktop_config.json
+    Linux:   ~/.config/Claude/claude_desktop_config.json
+    """
+    import sys as _sys
+    if _sys.platform == "win32":
+        appdata = os.environ.get("APPDATA", "")
+        if appdata:
+            return Path(appdata) / "Claude" / "claude_desktop_config.json"
+        return Path.home() / "AppData" / "Roaming" / "Claude" / "claude_desktop_config.json"
+    elif _sys.platform == "darwin":
+        return Path.home() / "Library" / "Application Support" / "Claude" / "claude_desktop_config.json"
+    else:
+        return Path.home() / ".config" / "Claude" / "claude_desktop_config.json"
+
+
+def is_registered_claude_desktop() -> bool:
+    """Check if biged-fleet is registered in Claude Desktop's MCP config."""
+    config_path = get_claude_desktop_config_path()
+    if not config_path.exists():
+        return False
+    try:
+        data = json.loads(config_path.read_text(encoding="utf-8"))
+        return _CLAUDE_DESKTOP_SERVER_NAME in data.get("mcpServers", {})
+    except Exception:
+        return False
+
+
+def register_claude_desktop() -> bool:
+    """Register biged-fleet as an MCP server in Claude Desktop's config.
+
+    Writes a stdio entry pointing to fleet/mcp_server.py with the
+    dynamically resolved absolute path. Creates the config file and
+    parent directories if they don't exist.
+
+    Returns True on success, False on failure.
+    """
+    config_path = get_claude_desktop_config_path()
+    mcp_server_path = str(Path(__file__).resolve().parent / "mcp_server.py")
+
+    try:
+        # Load existing config or start fresh
+        if config_path.exists():
+            data = json.loads(config_path.read_text(encoding="utf-8"))
+        else:
+            data = {}
+
+        data.setdefault("mcpServers", {})
+        data["mcpServers"][_CLAUDE_DESKTOP_SERVER_NAME] = {
+            "type": "stdio",
+            "command": "python",
+            "args": [mcp_server_path],
+        }
+
+        config_path.parent.mkdir(parents=True, exist_ok=True)
+        config_path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+        return True
+    except Exception:
+        return False
+
+
+def unregister_claude_desktop() -> bool:
+    """Remove biged-fleet from Claude Desktop's MCP config.
+
+    Returns True if successfully removed, False if not found or on error.
+    """
+    config_path = get_claude_desktop_config_path()
+    if not config_path.exists():
+        return False
+
+    try:
+        data = json.loads(config_path.read_text(encoding="utf-8"))
+        servers = data.get("mcpServers", {})
+        if _CLAUDE_DESKTOP_SERVER_NAME not in servers:
+            return False
+        del servers[_CLAUDE_DESKTOP_SERVER_NAME]
+        config_path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+        return True
+    except Exception:
+        return False
