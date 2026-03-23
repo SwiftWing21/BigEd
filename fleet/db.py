@@ -1041,6 +1041,31 @@ def respond_to_agent(task_id, response):
     _retry_write(_do)
 
 
+def cancel_task(task_id):
+    """Cancel a PENDING or WAITING_HUMAN task. Returns True if cancelled."""
+    def _do():
+        with get_conn() as conn:
+            row = conn.execute(
+                "SELECT status, payload_json FROM tasks WHERE id=?",
+                (task_id,)).fetchone()
+            if not row:
+                return False
+            status = row["status"]
+            if status not in ("PENDING", "WAITING_HUMAN"):
+                return False
+            try:
+                payload = json.loads(row["payload_json"]) if row["payload_json"] else {}
+            except (json.JSONDecodeError, TypeError):
+                payload = {}
+            payload["_cancel_reason"] = "user_cancelled"
+            conn.execute(
+                "UPDATE tasks SET status='FAILED', payload_json=? WHERE id=?",
+                (json.dumps(payload), task_id),
+            )
+            return True
+    return _retry_write(_do)
+
+
 def get_waiting_human_tasks():
     """Get all tasks awaiting human input, with the agent's question."""
     with get_conn() as conn:

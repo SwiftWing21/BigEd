@@ -395,3 +395,11 @@ multiplier = 2.0
 deploy_agents = 2                # auto-deploy N extra agents during bonus
 prefer_claude = true             # route to Claude instead of local during bonus
 disable_budget_throttle = true   # bonus usage doesn't count against limits
+
+# ── Dispatch Bridge (Cowork Dispatch → Fleet) ──────────────────────
+[dispatch_bridge]
+enabled = true
+registered_claude_desktop = false
+hitl_auto_approve_timeout_min = 0       # 0 = off (wait forever)
+hitl_auto_approve_max_cost = 0          # 0 = no cost gate
+dashboard_base_url = "http://127.0.0.1:5555"

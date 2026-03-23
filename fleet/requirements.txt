@@ -5,3 +5,4 @@ anthropic>=0.40.0
 flask>=3.0.0
 psutil>=5.9.0
 google-genai>=0.3.0
+fastmcp>=2.0.0
