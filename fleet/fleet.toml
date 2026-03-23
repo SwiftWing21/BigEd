@@ -447,6 +447,12 @@ retrain_interval_hours = 24              # auto-retrain model after this many ho
 min_training_samples = 50                # minimum completed tasks before first training
 fallback_to_iq = true                    # fall back to IQ-average heuristic if no model
 
+# v0.200.00b: A/B Testing — experiment on skill variants with statistical evaluation
+[experiments]
+ab_testing_enabled = true
+min_samples_per_variant = 20       # minimum trials per variant before evaluation
+auto_promote_threshold = 0.95      # promote if variant p-value < 0.05 AND success rate > this
+
 # ── Dispatch Bridge (Cowork Dispatch → Fleet) ──────────────────────
 [dispatch_bridge]
 enabled = true

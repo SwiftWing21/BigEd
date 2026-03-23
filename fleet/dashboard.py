@@ -3660,6 +3660,160 @@ def api_logs_sources():
         return jsonify({"error": _safe_error(e), "sources": []}), 500
 
 
+# ── Skill Recommendations (v0.200.00b) ────────────────────────────────────────
+
+@app.route("/api/recommendations/<skill>")
+def api_recommendations(skill):
+    """Skill recommendations after completing a task — co-occurrence based."""
+    try:
+        if not _check_rate_limit("recommendations", max_per_min=30):
+            return jsonify({"error": "rate limited"}), 429
+
+        from skill_recommender import get_recommendations, get_skill_chain
+
+        n = min(20, max(1, int(request.args.get("n", 5))))
+        depth = min(10, max(1, int(request.args.get("depth", 3))))
+
+        recs = get_recommendations(skill, n=n)
+        chain = get_skill_chain(skill, depth=depth)
+
+        return jsonify({
+            "skill": skill,
+            "recommendations": recs,
+            "chain": chain,
+        })
+    except Exception as e:
+        return jsonify({"error": _safe_error(e), "recommendations": []}), 500
+
+
+@app.route("/api/recommendations/popular")
+def api_popular_skills():
+    """Most-used skills by task count over the last 30 days."""
+    try:
+        if not _check_rate_limit("popular_skills", max_per_min=30):
+            return jsonify({"error": "rate limited"}), 429
+
+        from skill_recommender import get_popular_skills
+
+        n = min(50, max(1, int(request.args.get("n", 10))))
+        skills = get_popular_skills(n=n)
+        return jsonify({"skills": skills, "total": len(skills)})
+    except Exception as e:
+        return jsonify({"error": _safe_error(e), "skills": []}), 500
+
+
+# ── A/B Testing Experiments (v0.200.00b) ──────────────────────────────────────
+
+@app.route("/api/experiments")
+def api_experiments_list():
+    """List active A/B experiments."""
+    try:
+        if not _check_rate_limit("experiments_list", max_per_min=30):
+            return jsonify({"error": "rate limited"}), 429
+
+        from ab_testing import get_active_experiments
+
+        experiments = get_active_experiments()
+        return jsonify({"experiments": experiments, "total": len(experiments)})
+    except Exception as e:
+        return jsonify({"error": _safe_error(e), "experiments": []}), 500
+
+
+@app.route("/api/experiments", methods=["POST"])
+def api_experiments_create():
+    """Create a new A/B experiment.
+
+    Body JSON:
+        skill (str):        skill name to experiment on
+        variant_path (str): Python module path for the variant skill
+    """
+    try:
+        if not _check_rate_limit("experiments_create", max_per_min=10):
+            return jsonify({"error": "rate limited"}), 429
+
+        data = request.get_json(silent=True) or {}
+        skill = (data.get("skill") or "").strip()
+        variant_path = (data.get("variant_path") or "").strip()
+
+        if not skill:
+            return jsonify({"error": "skill required"}), 400
+        if not variant_path:
+            return jsonify({"error": "variant_path required"}), 400
+
+        from ab_testing import create_experiment
+
+        exp_id = create_experiment(skill, variant_path)
+        if not exp_id:
+            return jsonify({"error": "failed to create experiment"}), 500
+
+        # Audit log
+        try:
+            from audit import log_audit
+            log_audit(
+                actor=_get_request_role() or "operator",
+                action="experiment.create",
+                resource=f"experiment:{exp_id}",
+                detail=f"A/B test: {skill} vs {variant_path}",
+                role=_get_request_role(),
+                ip_address=request.remote_addr,
+            )
+        except Exception:
+            pass
+
+        return jsonify({"experiment_id": exp_id, "skill": skill, "variant_path": variant_path})
+    except Exception as e:
+        return jsonify({"error": _safe_error(e)}), 500
+
+
+@app.route("/api/experiments/<exp_id>/results")
+def api_experiment_results(exp_id):
+    """Evaluate an experiment: compare control vs variant with p-value."""
+    try:
+        if not _check_rate_limit("experiment_results", max_per_min=30):
+            return jsonify({"error": "rate limited"}), 429
+
+        from ab_testing import evaluate_experiment
+
+        result = evaluate_experiment(exp_id)
+        return jsonify(result)
+    except Exception as e:
+        return jsonify({"error": _safe_error(e)}), 500
+
+
+@app.route("/api/experiments/<exp_id>/promote", methods=["POST"])
+def api_experiment_promote(exp_id):
+    """Promote the winner of an experiment (marks as completed).
+
+    Does NOT auto-deploy the variant file — operator must review and
+    copy from code_drafts/ to skills/ per project conventions.
+    """
+    try:
+        if not _check_rate_limit("experiment_promote", max_per_min=5):
+            return jsonify({"error": "rate limited"}), 429
+
+        from ab_testing import promote_winner
+
+        result = promote_winner(exp_id)
+
+        # Audit log
+        try:
+            from audit import log_audit
+            log_audit(
+                actor=_get_request_role() or "operator",
+                action="experiment.promote",
+                resource=f"experiment:{exp_id}",
+                detail=f"Winner: {result.get('winner', 'unknown')}",
+                role=_get_request_role(),
+                ip_address=request.remote_addr,
+            )
+        except Exception:
+            pass
+
+        return jsonify(result)
+    except Exception as e:
+        return jsonify({"error": _safe_error(e)}), 500
+
+
 # ── Entry ────────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":

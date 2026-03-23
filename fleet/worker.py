@@ -660,7 +660,34 @@ def main():
                             continue  # skip to next task
                 except Exception:
                     pass  # input scanning must never block task execution
+                # v0.200.00b: A/B testing — check for active experiment on this skill
+                _ab_variant = None
+                _ab_experiment_id = None
+                try:
+                    exp_cfg = config.get("experiments", {})
+                    if exp_cfg.get("ab_testing_enabled", True):
+                        from ab_testing import get_active_experiment, get_assignment
+                        _ab_exp = get_active_experiment(task['type'])
+                        if _ab_exp:
+                            _ab_experiment_id = _ab_exp["id"]
+                            _ab_variant = get_assignment(_ab_experiment_id, role)
+                            if _ab_variant == "variant":
+                                log.info(f"A/B test {_ab_experiment_id}: using variant for {task['type']}")
+                                payload["_ab_variant_path"] = _ab_exp["variant_path"]
+                except Exception:
+                    pass  # A/B testing must never block task execution
                 result = run_skill(task['type'], payload, config, log)
+                # v0.200.00b: Record A/B test result
+                try:
+                    if _ab_experiment_id and _ab_variant:
+                        from ab_testing import record_result as _ab_record
+                        _ab_success = 1 if isinstance(result, dict) and not result.get("error") else (0 if isinstance(result, dict) else 1)
+                        _ab_score = None
+                        if isinstance(result, dict):
+                            _ab_score = result.get("intelligence_score") or result.get("score")
+                        _ab_record(_ab_experiment_id, _ab_variant, _ab_success, _ab_score, agent=role)
+                except Exception:
+                    pass  # A/B recording must never block task execution
                 # v0.170.01b: Store prompt+response as context turns for this agent
                 try:
                     ctx_cfg = config.get("context", {})
