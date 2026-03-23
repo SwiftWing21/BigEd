@@ -50,33 +50,55 @@ BigEd's fleet has 92 skills, a REST API, HITL gates, and SSE streaming — but n
 
 | MCP Tool | Internal Target | Description |
 |---|---|---|
-| `fleet_task` | `parse_intent_with_maintainer()` → `db.post_task()` | Submit natural language task |
-| `fleet_dispatch` | `POST /api/trigger` | Explicit skill + payload dispatch |
+| `fleet_task` | `intent.parse_intent()` → `db.post_task()` | Submit natural language task |
+| `fleet_dispatch` | `db.post_task()` (direct) | Explicit skill + payload dispatch |
 | `fleet_status` | Dashboard status endpoints | Fleet health, agent counts, queue depth |
-| `fleet_catalog` | `GET /api/skill_catalog` | List available skills with descriptions |
-| `fleet_task_result` | `GET /api/tasks/<id>` | Check result of a submitted task |
-| `fleet_hitl_respond` | `POST /api/tasks/<id>/respond` | Approve/reject HITL gate |
+| `fleet_catalog` | `GET /api/skills` | List available skills with descriptions |
+| `fleet_task_result` | `db.get_task_result()` (direct) | Check result of a submitted task |
+| `fleet_hitl_respond` | `db` direct write + task resume | Approve/reject HITL gate |
+| `fleet_cancel` | `db` direct write | Cancel a pending/running task |
 
 #### Resource (1)
 
 | MCP Resource | Internal Target | Description |
 |---|---|---|
-| `hitl://pending` | `GET /api/tasks/waiting-human` | Tasks awaiting human approval |
+| `biged://hitl/pending` | `db` query for WAITING_HUMAN tasks | Tasks awaiting human approval |
 
 #### Internal wiring
 
 - Lazy imports (`import db`, `import config` inside functions)
-- Task submission via direct `db.post_task()` (avoids HTTP round-trip)
-- All other calls via `urllib.request` to `localhost:5555` (with `timeout=10`)
+- **Write operations use direct DB** — `db.post_task()`, `db.get_task_result()`, task status updates. Avoids HTTP round-trip and bypasses role-gated auth on dashboard endpoints.
+- **Read-only HTTP calls** via `urllib.request` to `localhost:5555` (with `timeout=10`) for status/catalog endpoints that don't require auth.
 - Reads `fleet.toml` via `config.load_config()` for port/base URL
 - `creationflags=CREATE_NO_WINDOW` if server needs to spawn subprocesses
+
+#### Intent parsing extraction
+
+`parse_intent_with_maintainer()` currently lives in `lead_client.py` (a CLI script with module-level imports). Must be extracted to `fleet/intent.py` as a shared module to avoid import side effects. The MCP server and CLI fallback both use it.
+
+#### Response schemas
+
+| Tool | Success Response | Error Response |
+|---|---|---|
+| `fleet_task` | `{"task_id": int, "skill": str, "status": "PENDING"}` | `{"error": str}` |
+| `fleet_dispatch` | `{"task_id": int, "skill": str, "status": "PENDING"}` | `{"error": str}` |
+| `fleet_status` | `{"agents": int, "queue_depth": int, "running": int, "healthy": bool}` | `{"error": str}` |
+| `fleet_catalog` | `{"skills": [{"name": str, "description": str}]}` | `{"error": str}` |
+| `fleet_task_result` | `{"task_id": int, "status": str, "result": any, "skill": str}` | `{"error": str}` |
+| `fleet_hitl_respond` | `{"task_id": int, "accepted": bool}` | `{"error": str}` |
+| `fleet_cancel` | `{"task_id": int, "cancelled": bool}` | `{"error": str}` |
+
+#### Offline / air-gap handling
+
+- **Air-gap mode** (`air_gap_mode = true`): MCP server starts but all tools use direct DB access only (no HTTP calls). Catalog reads from skill files on disk instead of dashboard API.
+- **Offline mode** (`offline_mode = true`): MCP server works normally (it's local-only). `fleet_task` intent parsing via Ollama may fall back to `summarize` skill if Ollama is down — the response includes `"fallback": true` so the caller knows.
 
 ### Section 2: HITL Notification Flow
 
 ```
 Fleet skill hits HITL gate
   → task.status = WAITING_HUMAN
-  → mcp_server.py resource hitl://pending returns it
+  → mcp_server.py resource biged://hitl/pending returns it
   → Cowork Dispatch polls MCP resources (native behavior)
   → Dispatch relays to Claude mobile app
   → User approves/rejects from phone
@@ -95,14 +117,20 @@ hitl_auto_approve_max_cost = 0      # 0 = no cost gate
 - Default: both `0` — wait indefinitely for explicit human approval
 - Opt-in: set `hitl_auto_approve_timeout_min > 0` to auto-approve after N minutes
 - Cost gate: if `hitl_auto_approve_max_cost > 0`, only auto-approve tasks below that token estimate
+- **Override:** calling `fleet_hitl_respond` with reject before timeout expires cancels the auto-approve countdown
 
-No new HITL plumbing — existing dashboard endpoints handle all mechanics.
+No new HITL plumbing — existing DB operations handle all mechanics.
 
 ### Section 3: Registration & Discovery
 
 #### Claude Desktop config registration
 
-On boot, BigEd launcher checks `%APPDATA%/Claude/claude_desktop_config.json` for a `biged-fleet` MCP server entry.
+On boot, BigEd launcher checks the Claude Desktop config for a `biged-fleet` MCP server entry.
+
+**Config path (platform-specific, resolved dynamically):**
+- Windows: `%APPDATA%/Claude/claude_desktop_config.json`
+- macOS: `~/Library/Application Support/Claude/claude_desktop_config.json`
+- Linux: `~/.config/Claude/claude_desktop_config.json`
 
 If missing and `[dispatch_bridge] enabled = true`:
 - Launcher prompts: "BigEd can connect to Claude Desktop for mobile Dispatch. Register now?"
@@ -113,12 +141,14 @@ If missing and `[dispatch_bridge] enabled = true`:
   "mcpServers": {
     "biged-fleet": {
       "command": "python",
-      "args": ["C:/Users/max/Projects/Education/fleet/mcp_server.py"],
+      "args": ["<dynamically resolved path to fleet/mcp_server.py>"],
       "env": {}
     }
   }
 }
 ```
+
+Path resolved at runtime via `Path(__file__).resolve().parent / "mcp_server.py"` — never hardcoded.
 
 - Sets `registered_claude_desktop = true` in `fleet.toml`
 - Does not re-prompt on subsequent launches
@@ -171,7 +201,7 @@ dashboard_base_url = "http://127.0.0.1:5555"
 
 #### Dependencies
 
-- `requirements.txt`: add `fastmcp`
+- `fleet/requirements.txt`: add `fastmcp`
 - No Node.js, Docker, or external runtime needed
 
 #### dependency_check.py
@@ -206,16 +236,18 @@ No changes. Both `setup.ps1` and `setup.sh` already run `pip install -r requirem
 
 | File | Change Type | Description |
 |---|---|---|
-| `fleet/mcp_server.py` | **New** | FastMCP server — 6 tools, 1 resource (~200 lines) |
+| `fleet/mcp_server.py` | **New** | FastMCP server — 7 tools, 1 resource (~250 lines) |
 | `fleet/dispatch_bridge.py` | **New** | CLI fallback (~120 lines) |
+| `fleet/intent.py` | **New** | Extracted intent parser from lead_client.py (~60 lines) |
 | `fleet/fleet.toml` | Edit | Add `[dispatch_bridge]` section |
 | `fleet/dependency_check.py` | Edit | Add `check_fastmcp()` |
-| `requirements.txt` | Edit | Add `fastmcp` |
+| `fleet/requirements.txt` | Edit | Add `fastmcp` |
+| `fleet/lead_client.py` | Edit | Import from `intent.py` instead of inline parser |
 | `fleet/mcp_manager.py` | Edit | Add Claude Desktop config writer helper |
 | `BigEd/launcher/launcher.py` | Edit | Registration prompt on boot |
 | `BigEd/launcher/ui/settings/mcp.py` | Edit | Dispatch bridge toggle |
 
-**No changes to:** dashboard.py, db.py, providers.py, supervisor.py, lead_client.py, worker.py, any existing skills.
+**No changes to:** dashboard.py, db.py, providers.py, supervisor.py, worker.py, any existing skills.
 
 ## Testing Strategy
 
