@@ -1489,6 +1489,14 @@ app.register_blueprint(health_bp)
 from a2a import a2a_bp
 app.register_blueprint(a2a_bp)
 
+# ── Compliance Reporting (v0.300.00b) ─────────────────────────────────────────
+try:
+    from compliance import create_compliance_blueprint
+    _compliance_bp = create_compliance_blueprint(_require_role)
+    app.register_blueprint(_compliance_bp)
+except ImportError:
+    pass  # compliance module optional
+
 
 # ── MCP Server Status (v0.31.00) ─────────────────────────────────────────────
 
