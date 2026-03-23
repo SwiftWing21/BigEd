@@ -23,7 +23,7 @@ if str(_FLEET_DIR) not in sys.path:
 
 mcp = FastMCP(
     "BigEd Fleet",
-    description="92-skill AI worker fleet — submit tasks, check status, respond to HITL gates",
+    instructions="92-skill AI worker fleet — submit tasks, check status, respond to HITL gates",
 )
 
 
