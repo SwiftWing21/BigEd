@@ -422,6 +422,14 @@ tokens_per_dollar = 1000000          # 1M tokens per dollar (base rate)
 base_monthly = 0                     # flat monthly fee per tenant
 overage_rate = 0.001                 # per-1K-token overage charge above quota
 
+# v0.400.00b: Usage-Based Billing — payment processing integration
+[payments]
+enabled = false
+provider = "mock"                    # "stripe" or "mock"
+stripe_api_key = ""                  # sk_live_... or sk_test_... (never log this)
+stripe_webhook_secret = ""           # whsec_... (never log this)
+stripe_price_ids = ""                # plan:price_id pairs — "free:price_xxx,pro:price_yyy,enterprise:price_zzz"
+
 # v0.300.00b: Tenant Admin Dashboard — self-service tenant management
 [enterprise.tenants]
 enabled = false                          # master switch for tenant admin API
