@@ -53,10 +53,10 @@ BigEd's fleet has 92 skills, a REST API, HITL gates, and SSE streaming — but n
 | `fleet_task` | `intent.parse_intent()` → `db.post_task()` | Submit natural language task |
 | `fleet_dispatch` | `db.post_task()` (direct) | Explicit skill + payload dispatch |
 | `fleet_status` | Dashboard status endpoints | Fleet health, agent counts, queue depth |
-| `fleet_catalog` | `GET /api/skills` | List available skills with descriptions |
+| `fleet_catalog` | Disk scan of `fleet/skills/*.py` | List available skills with descriptions |
 | `fleet_task_result` | `db.get_task_result()` (direct) | Check result of a submitted task |
-| `fleet_hitl_respond` | `db` direct write + task resume | Approve/reject HITL gate |
-| `fleet_cancel` | `db` direct write | Cancel a pending/running task |
+| `fleet_hitl_respond` | `db.respond_to_agent(task_id, response)` | Respond to HITL gate (text response) |
+| `fleet_cancel` | New `db.cancel_task(task_id)` | Cancel a pending/running task |
 
 #### Resource (1)
 
@@ -68,7 +68,7 @@ BigEd's fleet has 92 skills, a REST API, HITL gates, and SSE streaming — but n
 
 - Lazy imports (`import db`, `import config` inside functions)
 - **Write operations use direct DB** — `db.post_task()`, `db.get_task_result()`, task status updates. Avoids HTTP round-trip and bypasses role-gated auth on dashboard endpoints.
-- **Read-only HTTP calls** via `urllib.request` to `localhost:5555` (with `timeout=10`) for status/catalog endpoints that don't require auth.
+- **Read-only HTTP calls** via `urllib.request` to `localhost:5555` (with `timeout=10`) for status endpoints that don't require auth. Catalog uses disk scan (no HTTP).
 - Reads `fleet.toml` via `config.load_config()` for port/base URL
 - `creationflags=CREATE_NO_WINDOW` if server needs to spawn subprocesses
 
@@ -85,12 +85,18 @@ BigEd's fleet has 92 skills, a REST API, HITL gates, and SSE streaming — but n
 | `fleet_status` | `{"agents": int, "queue_depth": int, "running": int, "healthy": bool}` | `{"error": str}` |
 | `fleet_catalog` | `{"skills": [{"name": str, "description": str}]}` | `{"error": str}` |
 | `fleet_task_result` | `{"task_id": int, "status": str, "result": any, "skill": str}` | `{"error": str}` |
-| `fleet_hitl_respond` | `{"task_id": int, "accepted": bool}` | `{"error": str}` |
+| `fleet_hitl_respond` | `{"task_id": int, "responded": bool, "response": str}` | `{"error": str}` |
 | `fleet_cancel` | `{"task_id": int, "cancelled": bool}` | `{"error": str}` |
+
+**`fleet_hitl_respond` semantics:** Takes a text `response` parameter (e.g., "approved", "rejected — reason", or freeform instructions). Maps directly to `db.respond_to_agent(task_id, response)` which transitions task from WAITING_HUMAN → PENDING with the response stored in `payload._human_response`. The caller (Dispatch) decides how to phrase it — the tool passes through.
+
+**`fleet_cancel` implementation:** Requires adding `db.cancel_task(task_id)` — sets status to `FAILED` with `payload._cancel_reason = "user_cancelled"`. Only PENDING and WAITING_HUMAN tasks can be cancelled; RUNNING tasks get a best-effort interrupt flag.
+
+**`fleet_catalog` implementation:** Scans `fleet/skills/*.py` on disk, reads `SKILL_NAME` and `DESCRIPTION` constants from each file. No HTTP dependency — works identically in normal, offline, and air-gap modes.
 
 #### Offline / air-gap handling
 
-- **Air-gap mode** (`air_gap_mode = true`): MCP server starts but all tools use direct DB access only (no HTTP calls). Catalog reads from skill files on disk instead of dashboard API.
+- **Air-gap mode** (`air_gap_mode = true`): MCP server starts but all tools use direct DB access only (no HTTP calls). Catalog already reads from disk (no change needed).
 - **Offline mode** (`offline_mode = true`): MCP server works normally (it's local-only). `fleet_task` intent parsing via Ollama may fall back to `summarize` skill if Ollama is down — the response includes `"fallback": true` so the caller knows.
 
 ### Section 2: HITL Notification Flow
@@ -240,6 +246,7 @@ No changes. Both `setup.ps1` and `setup.sh` already run `pip install -r requirem
 | `fleet/dispatch_bridge.py` | **New** | CLI fallback (~120 lines) |
 | `fleet/intent.py` | **New** | Extracted intent parser from lead_client.py (~60 lines) |
 | `fleet/fleet.toml` | Edit | Add `[dispatch_bridge]` section |
+| `fleet/db.py` | Edit | Add `cancel_task(task_id)` function |
 | `fleet/dependency_check.py` | Edit | Add `check_fastmcp()` |
 | `fleet/requirements.txt` | Edit | Add `fastmcp` |
 | `fleet/lead_client.py` | Edit | Import from `intent.py` instead of inline parser |
@@ -247,7 +254,7 @@ No changes. Both `setup.ps1` and `setup.sh` already run `pip install -r requirem
 | `BigEd/launcher/launcher.py` | Edit | Registration prompt on boot |
 | `BigEd/launcher/ui/settings/mcp.py` | Edit | Dispatch bridge toggle |
 
-**No changes to:** dashboard.py, db.py, providers.py, supervisor.py, worker.py, any existing skills.
+**No changes to:** dashboard.py, providers.py, supervisor.py, worker.py, any existing skills.
 
 ## Testing Strategy
 
