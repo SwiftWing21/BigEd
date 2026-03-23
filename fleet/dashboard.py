@@ -1379,6 +1379,104 @@ def api_dag(parent_id):
         return jsonify({"error": _safe_error(e)}), 500
 
 
+# ── Autonomous DAG Builder (v0.200.00b) ──────────────────────────────────────
+
+@app.route("/api/dag/create", methods=["POST"])
+def api_dag_create():
+    """Parse a natural-language description into a DAG preview (no submission)."""
+    try:
+        sys.path.insert(0, str(FLEET_DIR))
+        from dag_builder import build_dag_from_description
+        data = request.get_json(silent=True) or {}
+        description = data.get("description", "").strip()
+        if not description:
+            return jsonify({"error": "description is required"}), 400
+        dag = build_dag_from_description(description)
+        return jsonify({"ok": True, "tasks": dag, "count": len(dag)})
+    except (ValueError, RuntimeError) as e:
+        return jsonify({"error": str(e)}), 400
+    except Exception as e:
+        return jsonify({"error": _safe_error(e)}), 500
+
+
+@app.route("/api/dag/submit", methods=["POST"])
+def api_dag_submit():
+    """Submit a DAG for execution. Accepts output from /api/dag/create."""
+    deny = _require_role("operator")
+    if deny:
+        return deny
+    try:
+        sys.path.insert(0, str(FLEET_DIR))
+        from dag_builder import submit_dag, build_dag_from_description
+        data = request.get_json(silent=True) or {}
+
+        # Accept either pre-built tasks or a description to parse
+        tasks = data.get("tasks")
+        if not tasks:
+            description = data.get("description", "").strip()
+            if not description:
+                return jsonify({"error": "tasks or description required"}), 400
+            tasks = build_dag_from_description(description)
+
+        priority = data.get("priority", 5)
+        task_ids = submit_dag(tasks, priority=priority)
+        return jsonify({"ok": True, "task_ids": task_ids, "root_id": task_ids[0] if task_ids else None})
+    except (ValueError, RuntimeError) as e:
+        return jsonify({"error": str(e)}), 400
+    except Exception as e:
+        return jsonify({"error": _safe_error(e)}), 500
+
+
+@app.route("/api/dag/<int:root_id>/status")
+def api_dag_status(root_id):
+    """DAG execution tree — task statuses and progress."""
+    try:
+        sys.path.insert(0, str(FLEET_DIR))
+        from dag_builder import get_dag_status
+        return jsonify(get_dag_status(root_id))
+    except Exception as e:
+        return jsonify({"error": _safe_error(e)}), 500
+
+
+@app.route("/api/dag/<int:root_id>/visualize")
+def api_dag_visualize(root_id):
+    """DAG nodes + edges for dashboard rendering with levels."""
+    try:
+        sys.path.insert(0, str(FLEET_DIR))
+        from dag_builder import visualize_dag
+        return jsonify(visualize_dag(root_id))
+    except Exception as e:
+        return jsonify({"error": _safe_error(e)}), 500
+
+
+# ── Predictive Scaling (v0.200.00b) ──────────────────────────────────────────
+
+@app.route("/api/scaling/prediction")
+def api_scaling_prediction():
+    """Current ML prediction vs actual agent count."""
+    try:
+        sys.path.insert(0, str(FLEET_DIR))
+        from predictive_scaler import get_prediction_summary
+        return jsonify(get_prediction_summary())
+    except Exception as e:
+        return jsonify({"error": _safe_error(e)}), 500
+
+
+@app.route("/api/scaling/retrain", methods=["POST"])
+def api_scaling_retrain():
+    """Trigger scaler model retrain from historical data."""
+    deny = _require_role("admin")
+    if deny:
+        return deny
+    try:
+        sys.path.insert(0, str(FLEET_DIR))
+        from predictive_scaler import train_scaler_model
+        result = train_scaler_model()
+        return jsonify(result)
+    except Exception as e:
+        return jsonify({"error": _safe_error(e)}), 500
+
+
 # ── Process Control (extracted to process_control.py) ─────────────────────────
 from process_control import fleet_bp
 app.register_blueprint(fleet_bp)

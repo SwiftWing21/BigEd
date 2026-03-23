@@ -1086,11 +1086,31 @@ def main():
                 except Exception:
                     pass
 
-                # Predictive scaling: inflate pending count if task creation is accelerating
-                predicted = _predict_queue_growth()
-                if predicted > 0:
-                    log.info(f"Predictive scaling: {predicted} additional tasks expected")
-                    pending += predicted  # Inflate pending count for scaling decision
+                # Predictive scaling: ML predictor if available, else heuristic
+                _ml_predictor_used = False
+                try:
+                    _scaling_cfg = config.get("scaling", {})
+                    if _scaling_cfg.get("ml_predictor_enabled", True):
+                        from predictive_scaler import (
+                            predict_optimal_agents as _ml_predict,
+                            record_scaling_event as _record_scaling,
+                            _get_task_rate,
+                        )
+                        _rate_5m = _get_task_rate(5)
+                        _rate_15m = _get_task_rate(15)
+                        _optimal = _ml_predict(pending, len(running), _rate_5m, _rate_15m)
+                        if _optimal > len(running):
+                            pending += (_optimal - len(running)) * SCALE_UP_QUEUE_DEPTH
+                            log.info(f"ML predictor: optimal={_optimal}, inflating pending to {pending}")
+                        _ml_predictor_used = True
+                except Exception:
+                    pass  # ML predictor unavailable — fall back to heuristic
+
+                if not _ml_predictor_used:
+                    predicted = _predict_queue_growth()
+                    if predicted > 0:
+                        log.info(f"Predictive scaling: {predicted} additional tasks expected")
+                        pending += predicted  # Inflate pending count for scaling decision
 
                 # Scale UP: spin up dynamic agents when queue builds up
                 to_start = _should_scale_up(pending, running)
@@ -1110,6 +1130,22 @@ def main():
                     _json_log("INFO", "scale_down", worker=role, idle_secs=idle_secs)
                     _stop_worker(role)
                     worker_next_start.pop(role, None)
+
+                # Record scaling decision for ML training data
+                try:
+                    if _ml_predictor_used:
+                        _action = "scale_up" if to_start else ("scale_down" if to_stop else "none")
+                        _target = len(running) + len(to_start) - len(to_stop)
+                        _record_scaling(
+                            queue_depth=_count_pending_tasks(),
+                            agent_count=len(running),
+                            task_rate_5m=_rate_5m,
+                            task_rate_15m=_rate_15m,
+                            action=_action,
+                            target_agents=_target,
+                        )
+                except Exception:
+                    pass  # recording is best-effort
 
                 # Federation: overflow routing when queue is deep
                 federation_cfg = config.get("federation", {})

@@ -453,6 +453,18 @@ ab_testing_enabled = true
 min_samples_per_variant = 20       # minimum trials per variant before evaluation
 auto_promote_threshold = 0.95      # promote if variant p-value < 0.05 AND success rate > this
 
+# ── Autonomous DAG Builder (v0.200.00b) ─────────────────────────────
+[dag]
+enabled = true
+max_dag_depth = 10                       # max dependency chain depth
+max_dag_tasks = 50                       # max tasks per DAG
+
+# ── Predictive Scaling ML (v0.200.00b) ──────────────────────────────
+[scaling]
+ml_predictor_enabled = true              # use ML model when trained, else heuristic
+predictor_retrain_hours = 12             # retrain model on this interval
+min_scaling_history = 100                # minimum samples before training
+
 # ── Dispatch Bridge (Cowork Dispatch → Fleet) ──────────────────────
 [dispatch_bridge]
 enabled = true
