@@ -1,515 +1,382 @@
 <!DOCTYPE html>
-<html lang="en" data-theme="figma">
+<html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Fleet Dashboard v2</title>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
 <style>
-  /* ── CSS Variables System ─────────────────────────────────────────────────── */
   :root {
-    --bg-primary: #1e1e1e;
-    --bg-secondary: #2c2c2c;
-    --bg-card: #383838;
-    --text-primary: #e0e0e0;
-    --text-secondary: #a0a0a0;
-    --accent: #7c3aed;
-    --accent-hover: #6d28d9;
-    --accent-text: #fff;
-    --success: #22c55e;
-    --warning: #f59e0b;
-    --error: #ef4444;
-    --info: #3b82f6;
-    --gold: #d4a84b;
-    --border: rgba(255,255,255,0.08);
-    --glass-bg: rgba(255,255,255,0.04);
-    --glass-border: rgba(255,255,255,0.08);
-    --glass-hover: rgba(255,255,255,0.07);
-    --radius: 12px;
-    --radius-sm: 8px;
-    --radius-xs: 4px;
-    --shadow: 0 2px 12px rgba(0,0,0,0.2);
-    --shadow-lg: 0 4px 24px rgba(0,0,0,0.3);
-    --transition: all 0.2s ease;
-    --font-sans: 'Inter', 'Segoe UI', system-ui, -apple-system, sans-serif;
-    --font-mono: 'JetBrains Mono', 'Cascadia Code', 'Consolas', 'Menlo', monospace;
-    --font-size-xs: clamp(10px, 0.65rem + 0.1vw, 11px);
-    --font-size-sm: clamp(11px, 0.7rem + 0.1vw, 12px);
-    --font-size-base: clamp(12px, 0.75rem + 0.15vw, 14px);
-    --font-size-lg: clamp(14px, 0.875rem + 0.15vw, 16px);
-    --font-size-xl: clamp(18px, 1.1rem + 0.2vw, 22px);
-    --spacing-xs: 4px;
-    --spacing-sm: 8px;
-    --spacing-md: 12px;
-    --spacing-lg: 16px;
-    --spacing-xl: 24px;
+    --bg: #111; --bg2: #1a1a1a; --bg3: #242424; --border: #333;
+    --text: #e2e2e2; --text-primary: #e2e2e2; --dim: #888;
+    --accent: #b22222; --accent-h: #8b0000; --gold: #c8a84b; --brand: #00bcd4;
+    --green: #4caf50; --red: #f44336; --orange: #ff9800; --blue: #42a5f5;
+    --bg-card: rgba(26, 26, 26, 0.85); --glass-border: rgba(42, 42, 42, 0.6);
+    --toast-success: #1b3d1b; --toast-error: #3d1b1b; --toast-info: #1b2a3d;
   }
-
-  /* ── Figma Theme (default) — neutral grays, purple accent ─────────────── */
-  [data-theme="figma"] {
-    --bg-primary: #1e1e1e;
-    --bg-secondary: #2c2c2c;
-    --bg-card: #383838;
-    --text-primary: #e0e0e0;
-    --text-secondary: #a0a0a0;
-    --accent: #7c3aed;
-    --accent-hover: #6d28d9;
-    --accent-text: #fff;
-    --success: #22c55e;
-    --warning: #f59e0b;
-    --error: #ef4444;
-    --info: #3b82f6;
-    --gold: #d4a84b;
-    --border: rgba(255,255,255,0.08);
-    --glass-bg: rgba(255,255,255,0.04);
-    --glass-border: rgba(255,255,255,0.08);
-    --glass-hover: rgba(255,255,255,0.07);
-    --radius: 12px;
-    --shadow: 0 2px 12px rgba(0,0,0,0.2);
-    --shadow-lg: 0 4px 24px rgba(0,0,0,0.3);
-  }
-
-  /* ── Classic Theme — original dark with red accent ────────────────────── */
-  [data-theme="classic"] {
-    --bg-primary: #111111;
-    --bg-secondary: #1a1a1a;
-    --bg-card: #242424;
-    --text-primary: #e2e2e2;
-    --text-secondary: #888888;
-    --accent: #b22222;
-    --accent-hover: #8b0000;
-    --accent-text: #fff;
-    --success: #4caf50;
-    --warning: #ff9800;
-    --error: #f44336;
-    --info: #42a5f5;
-    --gold: #c8a84b;
-    --border: #333333;
-    --glass-bg: rgba(255,255,255,0.02);
-    --glass-border: #2a2a2a;
-    --glass-hover: rgba(255,255,255,0.04);
-    --radius: 8px;
-    --shadow: 0 2px 8px rgba(0,0,0,0.3);
-    --shadow-lg: 0 4px 16px rgba(0,0,0,0.4);
-  }
-
-  /* ── Modern Theme — dark blue, higher contrast ────────────────────────── */
-  [data-theme="modern"] {
-    --bg-primary: #0f1117;
-    --bg-secondary: #1a1e2e;
-    --bg-card: #252a3a;
-    --text-primary: #ecf0f1;
-    --text-secondary: #7f8c8d;
-    --accent: #6366f1;
-    --accent-hover: #4f46e5;
-    --accent-text: #fff;
-    --success: #10b981;
-    --warning: #f59e0b;
-    --error: #ef4444;
-    --info: #3b82f6;
-    --gold: #d4a84b;
-    --border: rgba(255,255,255,0.06);
-    --glass-bg: rgba(255,255,255,0.03);
-    --glass-border: #2a3045;
-    --glass-hover: rgba(255,255,255,0.06);
-    --radius: 12px;
-    --shadow: 0 2px 16px rgba(0,0,0,0.35);
-    --shadow-lg: 0 8px 32px rgba(0,0,0,0.5);
-  }
-
-  /* ── Reset and Base ───────────────────────────────────────────────────── */
-  *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
-  body {
-    background: var(--bg-primary);
-    color: var(--text-primary);
-    font-family: var(--font-sans);
-    font-size: var(--font-size-base);
-    line-height: 1.5;
-    -webkit-font-smoothing: antialiased;
-    -moz-osx-font-smoothing: grayscale;
-  }
-  a { color: var(--gold); text-decoration: none; transition: var(--transition); }
-  a:hover { opacity: 0.85; }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: var(--bg); color: var(--text); font-family: 'Segoe UI', sans-serif; }
+  a { color: var(--gold); text-decoration: none; }
 
   /* ── Header ───────────────────────────────────────────────────────────── */
   .header {
-    background: var(--bg-secondary);
-    padding: var(--spacing-lg) var(--spacing-xl);
-    border-bottom: 1px solid var(--border);
-    display: flex;
-    align-items: center;
-    gap: var(--spacing-md);
-    position: sticky;
-    top: 0;
-    z-index: 100;
-    backdrop-filter: blur(12px);
-    -webkit-backdrop-filter: blur(12px);
+    background: var(--bg3); padding: 12px 24px; border-bottom: 2px solid var(--accent);
+    display: flex; align-items: center; gap: 12px; position: sticky; top: 0; z-index: 100;
   }
-  .header h1 {
-    font-size: var(--font-size-lg);
-    font-weight: 600;
-    color: var(--accent);
-    letter-spacing: -0.02em;
-  }
-  .header .status {
-    margin-left: auto;
-    font-size: var(--font-size-sm);
-    color: var(--text-secondary);
-    display: flex;
-    gap: var(--spacing-sm);
-    align-items: center;
-    flex-wrap: wrap;
-  }
-  .header .live-dot {
-    width: 8px; height: 8px;
-    border-radius: 50%;
-    background: var(--success);
-    animation: pulse 2s infinite;
-    flex-shrink: 0;
-  }
+  .header h1 { font-size: 20px; color: var(--brand); white-space: nowrap; }
+  .header .status { margin-left: auto; font-size: 13px; color: var(--dim); display: flex; gap: 8px; align-items: center; }
+  .header .live-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--green); animation: pulse 2s infinite; }
   @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
 
-  /* ── Theme Selector ───────────────────────────────────────────────────── */
-  .theme-selector {
-    display: flex;
-    gap: 2px;
-    background: var(--bg-primary);
-    border-radius: var(--radius-sm);
-    padding: 2px;
-    border: 1px solid var(--border);
+  /* ── Fleet Control (header bar) ────────────────────────────────────────── */
+  .fleet-control {
+    display: flex; align-items: center; gap: 8px; margin-left: 16px; margin-right: 16px;
+    padding: 4px 12px; border-radius: 8px;
+    background: rgba(15, 15, 15, 0.6); border: 1px solid var(--border);
   }
-  .theme-pill {
-    padding: 4px 10px;
-    border: none;
-    border-radius: 6px;
-    background: transparent;
-    color: var(--text-secondary);
-    font-size: var(--font-size-xs);
-    font-family: var(--font-sans);
-    cursor: pointer;
-    transition: var(--transition);
-    white-space: nowrap;
-    min-height: 28px;
-    min-width: 44px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
+  .status-dot {
+    width: 10px; height: 10px; border-radius: 50%; background: var(--green);
+    box-shadow: 0 0 6px var(--green); transition: all 0.3s ease;
   }
-  .theme-pill:hover { color: var(--text-primary); background: var(--glass-hover); }
-  .theme-pill.active {
-    background: var(--accent);
-    color: var(--accent-text);
-    font-weight: 600;
-  }
+  .status-dot.stopped { background: var(--red); box-shadow: 0 0 6px var(--red); }
+  .status-dot.starting { background: var(--orange); box-shadow: 0 0 6px var(--orange); animation: pulse 1s infinite; }
+  #fleet-status-text { font-size: 12px; font-weight: 600; min-width: 55px; }
 
-  /* ── Hamburger Menu (mobile) ──────────────────────────────────────────── */
-  .hamburger {
-    display: none;
-    background: none;
-    border: none;
-    color: var(--text-primary);
-    font-size: 24px;
-    cursor: pointer;
-    padding: 4px;
-    min-width: 44px;
-    min-height: 44px;
-    align-items: center;
-    justify-content: center;
-  }
-
-  /* ── Alert Bar ────────────────────────────────────────────────────────── */
-  .alert-bar { padding: 0 var(--spacing-lg); display: none; }
+  /* ── Alerts ────────────────────────────────────────────────────────────── */
+  .alert-bar { padding: 0 16px; display: none; }
   .alert-bar.expanded { display: block; }
   .alert-item {
-    padding: var(--spacing-sm) var(--spacing-lg);
-    margin: var(--spacing-xs) 0;
-    border-radius: var(--radius-xs);
-    font-size: var(--font-size-sm);
-    display: flex;
-    align-items: center;
-    gap: var(--spacing-sm);
-    transition: var(--transition);
+    padding: 8px 16px; margin: 4px 0; border-radius: 4px; font-size: 13px;
+    display: flex; align-items: center; gap: 8px;
   }
-  .alert-item.critical { background: rgba(239,68,68,0.12); border-left: 3px solid var(--error); }
-  .alert-item.warning { background: rgba(245,158,11,0.12); border-left: 3px solid var(--warning); }
-  .alert-item.info { background: rgba(59,130,246,0.12); border-left: 3px solid var(--info); }
-  .alert-item .dismiss {
-    cursor: pointer; margin-left: auto; color: var(--text-secondary);
-    min-width: 44px; min-height: 44px; display: flex; align-items: center; justify-content: center;
-  }
+  .alert-item.critical { background: #3d1b1b; border-left: 3px solid var(--red); }
+  .alert-item.warning { background: #3d2e0e; border-left: 3px solid var(--orange); }
+  .alert-item.info { background: #1b2a3d; border-left: 3px solid var(--blue); }
+  .alert-item .dismiss { cursor: pointer; margin-left: auto; color: var(--dim); }
   .alert-bubble {
-    position: relative; cursor: pointer; margin-left: var(--spacing-xs);
+    position: relative; cursor: pointer; margin-left: 4px;
     width: 24px; height: 24px; border-radius: 50%;
     display: none; align-items: center; justify-content: center;
-    font-size: var(--font-size-xs); font-weight: bold; color: #fff;
-    min-width: 44px; min-height: 44px;
+    font-size: 11px; font-weight: bold; color: #fff;
   }
   .alert-bubble.has-alerts { display: inline-flex; }
-  .alert-bubble.warning { background: var(--warning); }
-  .alert-bubble.critical { background: var(--error); }
+  .alert-bubble.warning { background: var(--orange); }
+  .alert-bubble.critical { background: var(--red); }
 
-  /* ── Grid Layout ──────────────────────────────────────────────────────── */
+  /* ── Tab Navigation ────────────────────────────────────────────────────── */
+  .tab-nav {
+    display: flex; gap: 0; background: var(--bg2); border-bottom: 1px solid var(--border);
+    padding: 0 16px; overflow-x: auto; -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+  }
+  .tab-nav::-webkit-scrollbar { display: none; }
+  .tab-btn {
+    padding: 12px 20px; font-size: 13px; font-weight: 600; color: var(--dim);
+    background: none; border: none; border-bottom: 2px solid transparent;
+    cursor: pointer; white-space: nowrap; transition: all 0.2s ease;
+    position: relative;
+  }
+  .tab-btn:hover { color: var(--text); background: rgba(255,255,255,0.03); }
+  .tab-btn.active { color: var(--gold); border-bottom-color: var(--gold); }
+  .tab-btn .tab-badge {
+    display: inline-block; padding: 1px 6px; border-radius: 10px; font-size: 10px;
+    font-weight: bold; margin-left: 6px; vertical-align: middle;
+    background: var(--accent); color: #fff;
+  }
+  .tab-panel { display: none; }
+  .tab-panel.active { display: block; }
+
+  /* Mobile: tabs become scrollable */
+  @media (max-width: 768px) {
+    .tab-nav { padding: 0 8px; }
+    .tab-btn { padding: 10px 14px; font-size: 12px; }
+    .fleet-control { display: none; }
+    .header h1 { font-size: 16px; }
+  }
+
+  /* ── Grid / Card Layout ────────────────────────────────────────────────── */
   .grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(380px, 1fr));
-    gap: var(--spacing-lg);
-    padding: var(--spacing-lg);
-    max-width: 1600px;
-    margin: 0 auto;
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(380px, 1fr));
+    gap: 16px; padding: 16px; max-width: 1600px; margin: 0 auto;
   }
-
-  /* ── Cards — Glassmorphism ────────────────────────────────────────────── */
   .card {
-    background: var(--glass-bg);
-    border: 1px solid var(--glass-border);
-    border-radius: var(--radius);
-    padding: var(--spacing-lg);
-    min-height: 200px;
-    backdrop-filter: blur(12px);
-    -webkit-backdrop-filter: blur(12px);
-    transition: var(--transition);
-    box-shadow: var(--shadow);
+    background: var(--bg-card); border: 1px solid var(--glass-border); border-radius: 12px;
+    padding: 16px; min-height: 200px; backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px); transition: border-color 0.2s ease;
   }
-  .card:hover {
-    border-color: var(--accent);
-    box-shadow: var(--shadow-lg);
-    background: var(--glass-hover);
-  }
-  .card h2 {
-    font-size: var(--font-size-sm);
-    color: var(--accent);
-    margin-bottom: var(--spacing-md);
-    text-transform: uppercase;
-    letter-spacing: 0.08em;
-    font-weight: 600;
-  }
+  .card:hover { border-color: rgba(200, 168, 75, 0.3); }
+  .card h2 { font-size: 14px; color: var(--gold); margin-bottom: 12px; text-transform: uppercase; letter-spacing: 1px; }
+  .card h3 { font-size: 14px; color: var(--gold); margin-bottom: 12px; }
   .card.wide { grid-column: span 2; }
 
-  /* ── Stats ────────────────────────────────────────────────────────────── */
-  .stat-row {
-    display: flex;
-    gap: var(--spacing-md);
-    flex-wrap: wrap;
-    margin-bottom: var(--spacing-md);
-  }
+  .stat-row { display: flex; gap: 16px; flex-wrap: wrap; margin-bottom: 12px; }
   .stat {
-    background: var(--bg-secondary);
-    border-radius: var(--radius-sm);
-    padding: var(--spacing-md) var(--spacing-lg);
-    flex: 1;
-    min-width: 120px;
-    text-align: center;
-    border: 1px solid var(--border);
-    transition: var(--transition);
+    background: var(--bg3); border-radius: 8px; padding: 12px 16px; flex: 1; min-width: 120px; text-align: center;
   }
-  .stat:hover { border-color: var(--glass-border); transform: translateY(-1px); }
-  .stat .value { font-size: clamp(22px, 1.5rem + 0.3vw, 28px); font-weight: 700; font-feature-settings: 'tnum'; }
-  .stat .label { font-size: var(--font-size-xs); color: var(--text-secondary); margin-top: var(--spacing-xs); }
-  .stat.green .value { color: var(--success); }
-  .stat.red .value { color: var(--error); }
+  .stat .value { font-size: 28px; font-weight: bold; }
+  .stat .label { font-size: 11px; color: var(--dim); margin-top: 4px; }
+  .stat.green .value { color: var(--green); }
+  .stat.red .value { color: var(--red); }
   .stat.gold .value { color: var(--gold); }
-  .stat.blue .value { color: var(--info); }
-  .stat.orange .value { color: var(--warning); }
-  .stat.dim .value { color: var(--text-secondary); }
+  .stat.blue .value { color: var(--blue); }
+  .stat.orange .value { color: var(--orange); }
 
-  /* ── Tables ───────────────────────────────────────────────────────────── */
-  table { width: 100%; border-collapse: collapse; font-size: var(--font-size-sm); }
-  th {
-    text-align: left; color: var(--text-secondary); font-weight: 500;
-    padding: var(--spacing-sm); border-bottom: 1px solid var(--border);
-    font-size: var(--font-size-xs); text-transform: uppercase; letter-spacing: 0.05em;
-  }
-  td { padding: var(--spacing-sm); border-bottom: 1px solid var(--border); }
-  tr { transition: var(--transition); }
-  tr:hover td { background: var(--glass-hover); }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th { text-align: left; color: var(--dim); font-weight: normal; padding: 6px 8px; border-bottom: 1px solid var(--border); }
+  td { padding: 6px 8px; border-bottom: 1px solid var(--bg3); }
+  tr:hover td { background: var(--bg3); }
 
-  /* ── Badges ───────────────────────────────────────────────────────────── */
   .badge {
-    display: inline-block;
-    padding: 2px 8px;
-    border-radius: var(--radius-xs);
-    font-size: var(--font-size-xs);
-    font-weight: 600;
-    letter-spacing: 0.02em;
+    display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: bold;
   }
-  .badge-done { background: rgba(34,197,94,0.15); color: var(--success); }
-  .badge-failed { background: rgba(239,68,68,0.15); color: var(--error); }
-  .badge-running { background: rgba(245,158,11,0.15); color: var(--warning); }
-  .badge-pending { background: rgba(59,130,246,0.15); color: var(--info); }
-  .badge-idle { background: rgba(59,130,246,0.1); color: var(--info); }
-  .badge-busy { background: rgba(245,158,11,0.15); color: var(--warning); }
-  .badge-offline { background: rgba(255,255,255,0.05); color: var(--text-secondary); }
-  .badge-online { background: rgba(34,197,94,0.15); color: var(--success); }
-  .badge-error { background: rgba(239,68,68,0.15); color: var(--error); }
-  .badge-info { background: rgba(59,130,246,0.15); color: var(--info); }
-  .badge-unknown { background: rgba(255,255,255,0.05); color: var(--text-secondary); }
+  .badge-done { background: #1b3d1b; color: var(--green); }
+  .badge-failed { background: #3d1b1b; color: var(--red); }
+  .badge-running { background: #3d2e0e; color: var(--orange); }
+  .badge-pending { background: #1b2a3d; color: var(--blue); }
+  .badge-idle { background: #1b2a3d; color: var(--blue); }
+  .badge-busy { background: #3d2e0e; color: var(--orange); }
+  .badge-offline { background: #2d2d2d; color: var(--dim); }
+  .badge-online { background: #1b3d1b; color: var(--green); }
+  .badge-error { background: #3d1b1b; color: var(--red); }
+  .badge-info { background: #1b2a3d; color: var(--blue); }
+  .badge-unknown { background: #2d2d2d; color: var(--dim); }
 
-  /* ── Charts ───────────────────────────────────────────────────────────── */
   .chart-container { position: relative; height: 260px; }
 
-  /* ── Timeline ─────────────────────────────────────────────────────────── */
   .timeline { max-height: 400px; overflow-y: auto; }
   .timeline-item {
-    display: flex; gap: 10px;
-    padding: var(--spacing-sm) 0;
-    border-bottom: 1px solid var(--border);
-    font-size: var(--font-size-sm);
-    transition: var(--transition);
+    display: flex; gap: 10px; padding: 8px 0; border-bottom: 1px solid var(--bg3);
+    font-size: 12px;
   }
-  .timeline-item:hover { background: var(--glass-hover); }
-  .timeline-item .time { color: var(--text-secondary); min-width: 60px; font-family: var(--font-mono); font-size: var(--font-size-xs); }
-  .timeline-item .agent { color: var(--gold); min-width: 80px; font-weight: 500; }
+  .timeline-item .time { color: var(--dim); min-width: 60px; }
+  .timeline-item .agent { color: var(--gold); min-width: 80px; }
 
-  /* ── File Lists ───────────────────────────────────────────────────────── */
-  .file-list { max-height: 300px; overflow-y: auto; font-size: var(--font-size-sm); }
-  .file-item {
-    padding: var(--spacing-xs) 0;
-    border-bottom: 1px solid var(--border);
-    display: flex; justify-content: space-between;
-    transition: var(--transition);
-  }
-  .file-item:hover { background: var(--glass-hover); }
-  .file-item .name { color: var(--text-primary); }
-  .file-item .meta { color: var(--text-secondary); }
+  .file-list { max-height: 300px; overflow-y: auto; font-size: 12px; }
+  .file-item { padding: 4px 0; border-bottom: 1px solid var(--bg3); display: flex; justify-content: space-between; }
+  .file-item .name { color: var(--text); }
+  .file-item .meta { color: var(--dim); }
 
-  /* ── Buttons ──────────────────────────────────────────────────────────── */
   .refresh-btn {
-    background: var(--bg-card);
-    border: 1px solid var(--border);
-    color: var(--text-secondary);
-    padding: 6px 14px;
-    border-radius: var(--radius-sm);
-    cursor: pointer;
-    font-size: var(--font-size-xs);
-    font-family: var(--font-sans);
-    transition: var(--transition);
-    min-height: 44px;
-    min-width: 44px;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
+    background: var(--bg3); border: 1px solid var(--border); color: var(--dim);
+    padding: 4px 12px; border-radius: 4px; cursor: pointer; font-size: 12px;
   }
-  .refresh-btn:hover { color: var(--text-primary); border-color: var(--accent); background: var(--glass-hover); }
+  .refresh-btn:hover { color: var(--text); border-color: var(--gold); }
 
-  /* ── Thermal Gauges ───────────────────────────────────────────────────── */
-  .thermal-gauge { display: flex; gap: var(--spacing-md); margin-top: var(--spacing-sm); }
+  .thermal-gauge { display: flex; gap: 12px; margin-top: 8px; }
   .gauge {
-    flex: 1;
-    background: var(--bg-secondary);
-    border-radius: var(--radius-sm);
-    padding: var(--spacing-md);
-    text-align: center;
-    border: 1px solid var(--border);
-    transition: var(--transition);
+    flex: 1; background: var(--bg3); border-radius: 8px; padding: 10px; text-align: center;
   }
-  .gauge:hover { border-color: var(--glass-border); }
-  .gauge .temp { font-size: clamp(20px, 1.3rem + 0.2vw, 24px); font-weight: 700; font-feature-settings: 'tnum'; }
-  .gauge .name { font-size: var(--font-size-xs); color: var(--text-secondary); margin-top: var(--spacing-xs); }
+  .gauge .temp { font-size: 24px; font-weight: bold; }
+  .gauge .name { font-size: 11px; color: var(--dim); margin-top: 4px; }
 
-  /* ── Idle toggle ──────────────────────────────────────────────────────── */
-  .idle-toggle td { font-style: italic; padding: var(--spacing-xs) var(--spacing-sm); }
-  .idle-toggle:hover td { color: var(--text-primary) !important; }
+  .idle-toggle td { font-style: italic; padding: 4px 8px; }
+  .idle-toggle:hover td { color: var(--text) !important; }
 
-  /* ── Form controls (audit filters) ────────────────────────────────────── */
-  select, input[type="date"] {
-    padding: 6px 10px;
-    font-size: var(--font-size-sm);
-    font-family: var(--font-sans);
-    background: var(--bg-card);
-    color: var(--text-primary);
-    border: 1px solid var(--border);
-    border-radius: var(--radius-xs);
-    transition: var(--transition);
-    min-height: 36px;
+  /* ── Buttons ───────────────────────────────────────────────────────────── */
+  .btn {
+    padding: 6px 16px; border: none; border-radius: 6px; cursor: pointer;
+    font-size: 12px; font-weight: 600; transition: all 0.2s ease;
+    display: inline-flex; align-items: center; gap: 4px;
   }
-  select:focus, input[type="date"]:focus { outline: none; border-color: var(--accent); }
-
-  .filter-btn {
-    padding: 6px 14px;
-    font-size: var(--font-size-sm);
-    font-family: var(--font-sans);
-    background: var(--accent);
-    color: var(--accent-text);
-    border: none;
-    border-radius: var(--radius-xs);
-    cursor: pointer;
-    transition: var(--transition);
-    min-height: 36px;
-    min-width: 44px;
+  .btn:hover { filter: brightness(1.15); transform: translateY(-1px); }
+  .btn:active { transform: translateY(0); }
+  .btn-success { background: var(--green); color: #fff; }
+  .btn-danger { background: var(--red); color: #fff; }
+  .btn-accent { background: var(--accent); color: #fff; }
+  .btn-ghost {
+    background: transparent; border: 1px solid var(--border); color: var(--dim);
   }
-  .filter-btn:hover { background: var(--accent-hover); }
+  .btn-ghost:hover { border-color: var(--gold); color: var(--text); }
+  .btn-sm { padding: 3px 10px; font-size: 11px; }
 
-  .export-btn {
-    padding: 6px 14px;
-    font-size: var(--font-size-sm);
-    font-family: var(--font-sans);
-    background: var(--bg-card);
-    color: var(--text-primary);
-    border: 1px solid var(--border);
-    border-radius: var(--radius-xs);
-    cursor: pointer;
-    transition: var(--transition);
-    min-height: 36px;
-    min-width: 44px;
+  /* ── Agent Cards (grid) ────────────────────────────────────────────────── */
+  .agent-grid {
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 12px; padding: 16px; max-width: 1600px; margin: 0 auto;
   }
-  .export-btn:hover { border-color: var(--accent); background: var(--glass-hover); }
+  .agent-card {
+    background: var(--bg-card); border: 1px solid var(--glass-border); border-radius: 12px;
+    padding: 14px; backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+    transition: all 0.2s ease;
+  }
+  .agent-card:hover { border-color: rgba(200, 168, 75, 0.3); }
+  .agent-card.disabled { opacity: 0.45; }
+  .agent-card .agent-header {
+    display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;
+  }
+  .agent-card .agent-name { font-weight: 700; font-size: 14px; }
+  .agent-card .agent-role { font-size: 11px; color: var(--dim); }
+  .agent-card .agent-task {
+    font-size: 11px; color: var(--dim); margin-top: 6px;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
 
-  /* ── Scrollbar styling ────────────────────────────────────────────────── */
-  ::-webkit-scrollbar { width: 6px; height: 6px; }
-  ::-webkit-scrollbar-track { background: transparent; }
-  ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
-  ::-webkit-scrollbar-thumb:hover { background: var(--text-secondary); }
+  /* Toggle switch */
+  .toggle { position: relative; display: inline-block; width: 36px; height: 20px; }
+  .toggle input { opacity: 0; width: 0; height: 0; }
+  .toggle .slider {
+    position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0;
+    background: #444; border-radius: 20px; transition: 0.3s;
+  }
+  .toggle .slider:before {
+    content: ""; position: absolute; height: 14px; width: 14px; left: 3px; bottom: 3px;
+    background: white; border-radius: 50%; transition: 0.3s;
+  }
+  .toggle input:checked + .slider { background: var(--green); }
+  .toggle input:checked + .slider:before { transform: translateX(16px); }
 
-  /* ── Mobile Responsive ────────────────────────────────────────────────── */
-  @media (max-width: 768px) {
-    .grid {
-      grid-template-columns: 1fr;
-      padding: var(--spacing-sm);
-      gap: var(--spacing-sm);
-    }
+  /* ── Task Dispatch Form ────────────────────────────────────────────────── */
+  .dispatch-form { max-width: 600px; margin: 16px auto; }
+  .dispatch-form select,
+  .dispatch-form textarea,
+  .dispatch-form input[type="text"] {
+    width: 100%; padding: 8px 12px; border-radius: 8px; border: 1px solid var(--border);
+    background: var(--bg3); color: var(--text); font-size: 13px; font-family: inherit;
+    margin-bottom: 10px; outline: none; transition: border-color 0.2s;
+  }
+  .dispatch-form select:focus,
+  .dispatch-form textarea:focus {
+    border-color: var(--gold);
+  }
+  .dispatch-form textarea { min-height: 80px; resize: vertical; font-family: 'Consolas', monospace; }
+  .dispatch-form label { font-size: 12px; color: var(--dim); display: block; margin-bottom: 4px; }
+  .dispatch-form .priority-row {
+    display: flex; align-items: center; gap: 12px; margin-bottom: 12px;
+  }
+  .dispatch-form .priority-row input[type="range"] {
+    flex: 1; accent-color: var(--gold);
+  }
+  .dispatch-form .priority-val {
+    font-size: 16px; font-weight: 700; color: var(--gold); min-width: 24px; text-align: center;
+  }
+
+  /* ── HITL Panel ────────────────────────────────────────────────────────── */
+  .hitl-item {
+    background: var(--bg3); border-radius: 8px; padding: 12px; margin-bottom: 10px;
+    border-left: 3px solid var(--orange);
+  }
+  .hitl-item .hitl-meta {
+    font-size: 11px; color: var(--dim); margin-bottom: 6px;
+    display: flex; justify-content: space-between;
+  }
+  .hitl-item .hitl-question {
+    font-size: 13px; margin-bottom: 8px; padding: 6px 10px;
+    background: rgba(255,255,255,0.03); border-radius: 6px;
+  }
+  .hitl-item textarea {
+    width: 100%; min-height: 60px; padding: 8px; border-radius: 6px;
+    border: 1px solid var(--border); background: var(--bg); color: var(--text);
+    font-size: 12px; font-family: inherit; resize: vertical; margin-bottom: 8px;
+  }
+  .hitl-item .hitl-actions { display: flex; gap: 8px; justify-content: flex-end; }
+
+  /* ── Queue Panel ───────────────────────────────────────────────────────── */
+  .queue-item {
+    display: flex; align-items: center; gap: 10px; padding: 8px 12px; margin: 4px 0;
+    background: var(--bg3); border-radius: 8px; cursor: grab; transition: all 0.15s;
+    border: 1px solid transparent;
+  }
+  .queue-item:hover { border-color: var(--border); }
+  .queue-item.dragging { opacity: 0.5; border-color: var(--gold); }
+  .queue-item .drag-handle { color: var(--dim); cursor: grab; font-size: 16px; user-select: none; }
+  .queue-item .queue-skill { font-weight: 600; flex: 1; }
+  .queue-item .queue-agent { font-size: 11px; color: var(--dim); }
+  .queue-item .priority-badge {
+    padding: 2px 8px; border-radius: 10px; font-size: 10px; font-weight: 700;
+    background: rgba(200,168,75,0.2); color: var(--gold);
+  }
+  .queue-header {
+    display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;
+  }
+
+  /* ── Settings Panel ────────────────────────────────────────────────────── */
+  .settings-section {
+    margin-bottom: 16px; border: 1px solid var(--border); border-radius: 8px; overflow: hidden;
+  }
+  .settings-section-header {
+    padding: 10px 14px; background: var(--bg3); cursor: pointer;
+    display: flex; justify-content: space-between; align-items: center;
+    font-size: 13px; font-weight: 600; color: var(--gold);
+  }
+  .settings-section-header:hover { background: rgba(36, 36, 36, 0.9); }
+  .settings-section-body { padding: 12px 14px; display: none; }
+  .settings-section-body.open { display: block; }
+  .settings-row {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 6px 0; border-bottom: 1px solid rgba(51,51,51,0.5);
+  }
+  .settings-row:last-child { border-bottom: none; }
+  .settings-row .settings-key { font-size: 12px; color: var(--dim); }
+  .settings-row input[type="text"],
+  .settings-row input[type="number"],
+  .settings-row select {
+    padding: 4px 8px; border-radius: 4px; border: 1px solid var(--border);
+    background: var(--bg); color: var(--text); font-size: 12px; min-width: 140px;
+  }
+
+  /* ── Log Viewer ────────────────────────────────────────────────────────── */
+  .log-viewer { max-width: 1600px; margin: 0 auto; padding: 16px; }
+  .log-viewer .log-toolbar {
+    display: flex; gap: 8px; align-items: center; margin-bottom: 10px; flex-wrap: wrap;
+  }
+  .log-viewer .log-filter {
+    padding: 4px 8px; border-radius: 4px; border: 1px solid var(--border);
+    background: var(--bg3); color: var(--text); font-size: 12px;
+  }
+  .log-scroll {
+    background: var(--bg); border: 1px solid var(--border); border-radius: 8px;
+    padding: 12px; max-height: 500px; overflow-y: auto; font-family: 'Consolas', monospace;
+    font-size: 12px; line-height: 1.6; white-space: pre-wrap; word-break: break-all;
+  }
+  .log-line-error { color: var(--red); }
+  .log-line-warning { color: var(--orange); }
+  .log-line-info { color: var(--text); }
+  .log-line-debug { color: var(--dim); }
+
+  /* ── Toast Notifications ───────────────────────────────────────────────── */
+  .toast-container {
+    position: fixed; bottom: 20px; right: 20px; z-index: 9999;
+    display: flex; flex-direction: column-reverse; gap: 8px;
+  }
+  .toast {
+    padding: 10px 16px; border-radius: 8px; font-size: 13px;
+    backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+    animation: toast-in 0.3s ease; min-width: 250px; max-width: 400px;
+    border: 1px solid var(--glass-border);
+    display: flex; align-items: center; gap: 8px;
+  }
+  .toast.success { background: var(--toast-success); border-left: 3px solid var(--green); }
+  .toast.error { background: var(--toast-error); border-left: 3px solid var(--red); }
+  .toast.info { background: var(--toast-info); border-left: 3px solid var(--blue); }
+  @keyframes toast-in { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
+  @keyframes toast-out { from { opacity: 1; } to { opacity: 0; transform: translateY(-10px); } }
+
+  /* ── Responsive ────────────────────────────────────────────────────────── */
+  @media (max-width: 800px) {
+    .grid { grid-template-columns: 1fr; }
     .card.wide { grid-column: span 1; }
-    .header {
-      padding: var(--spacing-sm) var(--spacing-md);
-      flex-wrap: wrap;
-    }
-    .header h1 { font-size: var(--font-size-base); }
-    .header .status {
-      width: 100%;
-      justify-content: flex-end;
-      order: 2;
-    }
-    .hamburger { display: flex; }
-    .theme-selector {
-      order: 3;
-      width: 100%;
-      justify-content: center;
-    }
-    .stat-row { gap: var(--spacing-sm); }
-    .stat { min-width: 80px; padding: var(--spacing-sm); }
-    .stat .value { font-size: 20px; }
-    .thermal-gauge { flex-direction: column; }
-    .card { padding: var(--spacing-md); min-height: auto; }
-  }
-
-  @media (max-width: 480px) {
-    .header .status span:not(#connectionStatus):not(.live-dot) { display: none; }
-    .stat { min-width: 60px; }
-    .stat .value { font-size: 18px; }
-    .stat .label { font-size: 9px; }
+    .agent-grid { grid-template-columns: 1fr; }
   }
 </style>
 </head>
 <body>
 
+<!-- ═══════════════════════════════════════════════════════════════════════════
+     HEADER
+     ═══════════════════════════════════════════════════════════════════════════ -->
+
 <div class="header">
-  <button class="hamburger" onclick="document.body.classList.toggle('menu-open')" aria-label="Toggle menu">&#9776;</button>
   <span style="font-size:24px">&#x1f9f1;</span>
   <h1>FLEET DASHBOARD v2</h1>
-  <div class="theme-selector" id="themeSelector">
-    <button class="theme-pill" data-theme="classic" onclick="setTheme('classic')">Classic</button>
-    <button class="theme-pill" data-theme="modern" onclick="setTheme('modern')">Modern</button>
-    <button class="theme-pill active" data-theme="figma" onclick="setTheme('figma')">Figma</button>
+
+  <!-- Fleet Control -->
+  <div class="fleet-control">
+    <span class="status-dot" id="fleet-dot"></span>
+    <span id="fleet-status-text">Checking...</span>
+    <button onclick="fleetAction('start')" class="btn btn-success btn-sm">Start</button>
+    <button onclick="fleetAction('stop')" class="btn btn-danger btn-sm">Stop</button>
   </div>
+
   <div class="status">
     <div class="live-dot" id="liveDot"></div>
     <span id="connectionStatus">Connecting...</span>
@@ -521,266 +388,371 @@
 
 <div class="alert-bar" id="alertBar"></div>
 
-<div class="grid">
-  <div class="card">
-    <h2>Task Summary</h2>
-    <div class="stat-row" id="taskStats"></div>
-  </div>
+<!-- ═══════════════════════════════════════════════════════════════════════════
+     TAB NAVIGATION
+     ═══════════════════════════════════════════════════════════════════════════ -->
 
-  <div class="card">
-    <h2>Thermal</h2>
-    <div class="thermal-gauge" id="thermalGauge"></div>
-    <div class="stat-row" id="thermalStats" style="margin-top:12px"></div>
-    <div id="thermalNote" style="color:var(--text-secondary);font-size:var(--font-size-xs);margin-top:6px;display:none"></div>
-  </div>
+<nav class="tab-nav" id="tabNav">
+  <button class="tab-btn active" onclick="switchTab('overview')" data-tab="overview">Overview</button>
+  <button class="tab-btn" onclick="switchTab('agents')" data-tab="agents">Agents</button>
+  <button class="tab-btn" onclick="switchTab('tasks')" data-tab="tasks">Tasks</button>
+  <button class="tab-btn" onclick="switchTab('hitl')" data-tab="hitl">HITL <span class="tab-badge" id="hitl-tab-badge" style="display:none">0</span></button>
+  <button class="tab-btn" onclick="switchTab('queue')" data-tab="queue">Queue <span class="tab-badge" id="queue-tab-badge" style="display:none">0</span></button>
+  <button class="tab-btn" onclick="switchTab('settings')" data-tab="settings">Settings</button>
+  <button class="tab-btn" onclick="switchTab('logs')" data-tab="logs">Logs</button>
+</nav>
 
-  <div class="card">
-    <h2>Agents</h2>
-    <table><thead><tr><th>Name</th><th>Role</th><th>Status</th><th>Last Seen</th></tr></thead>
-    <tbody id="agentTable"></tbody></table>
-  </div>
+<!-- ═══════════════════════════════════════════════════════════════════════════
+     TAB 1: OVERVIEW (original dashboard content)
+     ═══════════════════════════════════════════════════════════════════════════ -->
 
-  <div class="card">
-    <h2>Activity</h2>
-    <div id="trainingBadge" style="font-size:var(--font-size-xs);color:var(--text-secondary);margin-bottom:8px">Training: idle</div>
-    <div id="activityFeed" style="max-height:350px;overflow-y:auto"></div>
-  </div>
-
-  <div class="card">
-    <h2>Activity &mdash; Last 30 Days</h2>
-    <div class="chart-container"><canvas id="activityChart"></canvas></div>
-  </div>
-
-  <div class="card">
-    <h2>Skills Used</h2>
-    <div class="chart-container"><canvas id="skillsChart"></canvas></div>
-  </div>
-
-  <div class="card">
-    <h2>Evolution Leaderboard</h2>
-    <div id="evolutionStats"></div>
-  </div>
-
-  <div class="card">
-    <h2>Quality Trend (IQ)</h2>
-    <div id="qualityTrend"></div>
-  </div>
-
-  <div class="card">
-    <h2>Discussions / Meetings</h2>
-    <table><thead><tr><th>Topic</th><th>Agents</th><th>Rounds</th><th>Posts</th></tr></thead>
-    <tbody id="discussionTable"></tbody></table>
-  </div>
-
-  <div class="card">
-    <h2>Modules</h2>
-    <div id="modulesList"></div>
-  </div>
-
-  <div class="card wide">
-    <h2>File Access Log <span style="font-size:var(--font-size-xs);color:var(--text-secondary);font-weight:normal">v0.051.07b &mdash; SOC 2 audit trail</span></h2>
-    <div id="fsAuditNote" style="color:var(--text-secondary);font-size:var(--font-size-xs);margin-bottom:8px"></div>
-    <table style="width:100%;font-size:var(--font-size-sm)">
-      <thead><tr>
-        <th>Time</th>
-        <th>Status</th>
-        <th>Agent</th>
-        <th>Skill</th>
-        <th>Action</th>
-        <th>Path</th>
-      </tr></thead>
-      <tbody id="fsAuditTable"></tbody>
-    </table>
-  </div>
-
-  <div class="card wide">
-    <h2>Audit Trail <span style="font-size:var(--font-size-xs);color:var(--text-secondary);font-weight:normal">structured event log</span></h2>
-    <div style="display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap;align-items:center">
-      <select id="auditActorFilter">
-        <option value="">All Actors</option>
-      </select>
-      <select id="auditActionFilter">
-        <option value="">All Actions</option>
-      </select>
-      <input type="date" id="auditFromDate" title="From date">
-      <input type="date" id="auditToDate" title="To date">
-      <button class="filter-btn" onclick="loadAuditTrail()">Filter</button>
-      <button class="export-btn" onclick="exportAudit('csv')">Export CSV</button>
-      <button class="export-btn" onclick="exportAudit('json')">Export JSON</button>
+<div class="tab-panel active" id="panel-overview">
+  <div class="grid">
+    <div class="card">
+      <h2>Task Summary</h2>
+      <div class="stat-row" id="taskStats"></div>
     </div>
-    <div id="auditTrailNote" style="color:var(--text-secondary);font-size:var(--font-size-xs);margin-bottom:6px"></div>
-    <table style="width:100%;font-size:var(--font-size-sm)">
-      <thead><tr>
-        <th>Time</th>
-        <th>Actor</th>
-        <th>Action</th>
-        <th>Resource</th>
-        <th style="text-align:right">Cost</th>
-        <th>Detail</th>
-      </tr></thead>
-      <tbody id="auditTrailTable"></tbody>
-    </table>
-    <div id="auditTrailPager" style="margin-top:8px;display:flex;gap:8px;align-items:center;font-size:var(--font-size-sm);color:var(--text-secondary)"></div>
-  </div>
 
-  <div class="card wide">
-    <h2>API Cost Tracker</h2>
-    <div class="stat-row" id="costSummary"></div>
-    <div id="costDetails" style="margin-top:12px"></div>
-    <div id="costNote" style="color:var(--text-secondary);font-size:var(--font-size-xs);margin-top:8px"></div>
-  </div>
+    <div class="card">
+      <h2>Thermal</h2>
+      <div class="thermal-gauge" id="thermalGauge"></div>
+      <div class="stat-row" id="thermalStats" style="margin-top:12px"></div>
+      <div id="thermalNote" style="color:var(--dim);font-size:11px;margin-top:6px;display:none"></div>
+    </div>
 
-  <div class="card">
-    <h2>Code Reviews</h2>
-    <div class="file-list" id="reviewList"></div>
-  </div>
+    <div class="card">
+      <h2>Agents</h2>
+      <table><thead><tr><th>Name</th><th>Role</th><th>Status</th><th>Last Seen</th></tr></thead>
+      <tbody id="agentTable"></tbody></table>
+    </div>
 
-  <div class="card">
-    <h2>Code Output</h2>
-    <div class="stat-row" id="codeStats"></div>
-  </div>
+    <div class="card">
+      <h2>Activity</h2>
+      <div id="trainingBadge" style="font-size:11px;color:var(--dim);margin-bottom:8px">Training: idle</div>
+      <div id="activityFeed" style="max-height:350px;overflow-y:auto"></div>
+    </div>
 
-  <div class="card">
-    <h2>Knowledge Base</h2>
-    <div class="stat-row" id="knowledgeStats"></div>
-    <div class="file-list" id="knowledgeList"></div>
-  </div>
+    <div class="card">
+      <h2>Activity — Last 30 Days</h2>
+      <div class="chart-container"><canvas id="activityChart"></canvas></div>
+    </div>
 
-  <div class="card">
-    <h2>RAG Index</h2>
-    <div class="stat-row" id="ragStats"></div>
-    <div class="file-list" id="ragSources"></div>
-  </div>
+    <div class="card">
+      <h2>Skills Used</h2>
+      <div class="chart-container"><canvas id="skillsChart"></canvas></div>
+    </div>
 
-  <div class="card">
-    <h2>Data Stats</h2>
-    <div class="file-list" id="dataStats"></div>
-  </div>
+    <div class="card">
+      <h2>Evolution Leaderboard</h2>
+      <div id="evolutionStats"></div>
+    </div>
 
-  <div class="card wide">
-    <h2>Recent Activity</h2>
-    <div class="timeline" id="timeline"></div>
+    <div class="card">
+      <h2>Quality Trend (IQ)</h2>
+      <div id="qualityTrend"></div>
+    </div>
+
+    <div class="card">
+      <h2>Discussions / Meetings</h2>
+      <table><thead><tr><th>Topic</th><th>Agents</th><th>Rounds</th><th>Posts</th></tr></thead>
+      <tbody id="discussionTable"></tbody></table>
+    </div>
+
+    <div class="card">
+      <h2>Modules</h2>
+      <div id="modulesList"></div>
+    </div>
+
+    <div class="card wide">
+      <h2>File Access Log <span style="font-size:11px;color:var(--dim);font-weight:normal">v0.051.07b — SOC 2 audit trail</span></h2>
+      <div id="fsAuditNote" style="color:var(--dim);font-size:11px;margin-bottom:8px"></div>
+      <table style="width:100%;font-size:12px">
+        <thead><tr>
+          <th style="text-align:left;padding:4px 8px;color:var(--dim)">Time</th>
+          <th style="text-align:left;padding:4px 8px;color:var(--dim)">Status</th>
+          <th style="text-align:left;padding:4px 8px;color:var(--dim)">Agent</th>
+          <th style="text-align:left;padding:4px 8px;color:var(--dim)">Skill</th>
+          <th style="text-align:left;padding:4px 8px;color:var(--dim)">Action</th>
+          <th style="text-align:left;padding:4px 8px;color:var(--dim)">Path</th>
+        </tr></thead>
+        <tbody id="fsAuditTable"></tbody>
+      </table>
+    </div>
+
+    <div class="card wide">
+      <h2>Audit Trail <span style="font-size:11px;color:var(--dim);font-weight:normal">structured event log</span></h2>
+      <div style="display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap;align-items:center">
+        <select id="auditActorFilter" style="padding:4px 8px;font-size:12px;background:var(--bg3);color:var(--text);border:1px solid var(--dim);border-radius:4px">
+          <option value="">All Actors</option>
+        </select>
+        <select id="auditActionFilter" style="padding:4px 8px;font-size:12px;background:var(--bg3);color:var(--text);border:1px solid var(--dim);border-radius:4px">
+          <option value="">All Actions</option>
+        </select>
+        <input type="date" id="auditFromDate" title="From date" style="padding:4px 8px;font-size:12px;background:var(--bg3);color:var(--text);border:1px solid var(--dim);border-radius:4px">
+        <input type="date" id="auditToDate" title="To date" style="padding:4px 8px;font-size:12px;background:var(--bg3);color:var(--text);border:1px solid var(--dim);border-radius:4px">
+        <button onclick="loadAuditTrail()" class="btn btn-accent btn-sm">Filter</button>
+        <button onclick="exportAudit('csv')" class="btn btn-ghost btn-sm">Export CSV</button>
+        <button onclick="exportAudit('json')" class="btn btn-ghost btn-sm">Export JSON</button>
+      </div>
+      <div id="auditTrailNote" style="color:var(--dim);font-size:11px;margin-bottom:6px"></div>
+      <table style="width:100%;font-size:12px">
+        <thead><tr>
+          <th style="text-align:left;padding:4px 8px;color:var(--dim)">Time</th>
+          <th style="text-align:left;padding:4px 8px;color:var(--dim)">Actor</th>
+          <th style="text-align:left;padding:4px 8px;color:var(--dim)">Action</th>
+          <th style="text-align:left;padding:4px 8px;color:var(--dim)">Resource</th>
+          <th style="text-align:right;padding:4px 8px;color:var(--dim)">Cost</th>
+          <th style="text-align:left;padding:4px 8px;color:var(--dim)">Detail</th>
+        </tr></thead>
+        <tbody id="auditTrailTable"></tbody>
+      </table>
+      <div id="auditTrailPager" style="margin-top:8px;display:flex;gap:8px;align-items:center;font-size:12px;color:var(--dim)"></div>
+    </div>
+
+    <div class="card wide">
+      <h2>API Cost Tracker</h2>
+      <div class="stat-row" id="costSummary"></div>
+      <div id="costDetails" style="margin-top:12px"></div>
+      <div id="costNote" style="color:var(--dim);font-size:11px;margin-top:8px"></div>
+    </div>
+
+    <div class="card">
+      <h2>Code Reviews</h2>
+      <div class="file-list" id="reviewList"></div>
+    </div>
+
+    <div class="card">
+      <h2>Code Output</h2>
+      <div class="stat-row" id="codeStats"></div>
+    </div>
+
+    <div class="card">
+      <h2>Knowledge Base</h2>
+      <div class="stat-row" id="knowledgeStats"></div>
+      <div class="file-list" id="knowledgeList"></div>
+    </div>
+
+    <div class="card">
+      <h2>RAG Index</h2>
+      <div class="stat-row" id="ragStats"></div>
+      <div class="file-list" id="ragSources"></div>
+    </div>
+
+    <div class="card">
+      <h2>Data Stats</h2>
+      <div class="file-list" id="dataStats"></div>
+    </div>
+
+    <div class="card wide">
+      <h2>Recent Activity</h2>
+      <div class="timeline" id="timeline"></div>
+    </div>
   </div>
 </div>
 
+<!-- ═══════════════════════════════════════════════════════════════════════════
+     TAB 2: AGENTS — cards with enable/disable toggles
+     ═══════════════════════════════════════════════════════════════════════════ -->
+
+<div class="tab-panel" id="panel-agents">
+  <div style="padding:16px;max-width:1600px;margin:0 auto">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+      <h2 style="font-size:16px;color:var(--gold)">Fleet Agents</h2>
+      <button onclick="loadAgentCards()" class="btn btn-ghost btn-sm">Refresh</button>
+    </div>
+  </div>
+  <div class="agent-grid" id="agent-list">
+    <div style="color:var(--dim);padding:16px">Loading agents...</div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════════════════
+     TAB 3: TASKS — dispatch form + recent tasks
+     ═══════════════════════════════════════════════════════════════════════════ -->
+
+<div class="tab-panel" id="panel-tasks">
+  <div class="grid">
+    <div class="card dispatch-form">
+      <h3>Dispatch Task</h3>
+      <label for="skill-picker">Skill</label>
+      <select id="skill-picker">
+        <option value="">Loading skills...</option>
+      </select>
+
+      <label for="task-agent">Assign to Agent (optional)</label>
+      <input type="text" id="task-agent" placeholder="e.g. coder_1 (leave blank for auto-assign)">
+
+      <label for="payload-input">Payload (JSON)</label>
+      <textarea id="payload-input" placeholder='{"file": "fleet/worker.py", "instruction": "review code"}'></textarea>
+
+      <label>Priority</label>
+      <div class="priority-row">
+        <input type="range" id="priority" min="1" max="10" value="5" oninput="document.getElementById('priority-val').textContent=this.value">
+        <span class="priority-val" id="priority-val">5</span>
+      </div>
+
+      <button onclick="dispatchTask()" class="btn btn-accent" style="width:100%">Dispatch Task</button>
+    </div>
+
+    <div class="card">
+      <h3>Recent Tasks</h3>
+      <div id="recent-tasks-list" style="max-height:400px;overflow-y:auto">
+        <div style="color:var(--dim)">Loading...</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════════════════
+     TAB 4: HITL — human-in-the-loop response panel
+     ═══════════════════════════════════════════════════════════════════════════ -->
+
+<div class="tab-panel" id="panel-hitl">
+  <div style="max-width:900px;margin:0 auto;padding:16px">
+    <div class="card" style="min-height:auto">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+        <h3>Awaiting Human Input <span class="badge badge-pending" id="hitl-count" style="margin-left:8px">0</span></h3>
+        <button onclick="loadHITL()" class="btn btn-ghost btn-sm">Refresh</button>
+      </div>
+      <div id="hitl-list">
+        <div style="color:var(--dim);text-align:center;padding:20px">No tasks awaiting human input</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════════════════
+     TAB 5: QUEUE — task queue management with drag-to-reorder
+     ═══════════════════════════════════════════════════════════════════════════ -->
+
+<div class="tab-panel" id="panel-queue">
+  <div style="max-width:900px;margin:0 auto;padding:16px">
+    <div class="card" style="min-height:auto">
+      <div class="queue-header">
+        <h3>Task Queue</h3>
+        <div style="display:flex;gap:8px;align-items:center">
+          <span style="font-size:12px;color:var(--dim)" id="queue-count-label">0 tasks</span>
+          <button onclick="loadQueue()" class="btn btn-ghost btn-sm">Refresh</button>
+        </div>
+      </div>
+      <div id="queue-list">
+        <div style="color:var(--dim);text-align:center;padding:20px">Loading queue...</div>
+      </div>
+      <div id="queue-pager" style="margin-top:8px;display:flex;gap:8px;align-items:center;font-size:12px;color:var(--dim)"></div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════════════════
+     TAB 6: SETTINGS — fleet.toml editor
+     ═══════════════════════════════════════════════════════════════════════════ -->
+
+<div class="tab-panel" id="panel-settings">
+  <div style="max-width:900px;margin:0 auto;padding:16px">
+    <div class="card" style="min-height:auto">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+        <h3>Fleet Settings</h3>
+        <button onclick="loadSettings()" class="btn btn-ghost btn-sm">Reload</button>
+      </div>
+      <div id="settings-sections">
+        <div style="color:var(--dim);text-align:center;padding:20px">Loading settings...</div>
+      </div>
+      <div style="margin-top:16px;display:flex;gap:8px;justify-content:flex-end">
+        <button onclick="saveSettings()" class="btn btn-accent">Save Settings</button>
+      </div>
+      <div id="settings-note" style="color:var(--dim);font-size:11px;margin-top:8px"></div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════════════════
+     TAB 7: LOGS — live log viewer
+     ═══════════════════════════════════════════════════════════════════════════ -->
+
+<div class="tab-panel" id="panel-logs">
+  <div class="log-viewer">
+    <div class="card" style="min-height:auto">
+      <div class="log-toolbar">
+        <h3 style="margin-bottom:0">Logs</h3>
+        <select class="log-filter" id="log-level-filter" onchange="filterLogs()">
+          <option value="all">All Levels</option>
+          <option value="error">ERROR</option>
+          <option value="warning">WARNING</option>
+          <option value="info">INFO</option>
+          <option value="debug">DEBUG</option>
+        </select>
+        <label style="font-size:12px;color:var(--dim);display:flex;align-items:center;gap:4px">
+          <input type="checkbox" id="log-autoscroll" checked> Auto-scroll
+        </label>
+        <div style="margin-left:auto;display:flex;gap:8px">
+          <button onclick="clearLogs()" class="btn btn-ghost btn-sm">Clear</button>
+          <button onclick="downloadLogs()" class="btn btn-ghost btn-sm">Download</button>
+        </div>
+      </div>
+      <pre id="log-output" class="log-scroll"></pre>
+      <div style="display:flex;justify-content:space-between;margin-top:6px">
+        <span id="log-line-count" style="font-size:11px;color:var(--dim)">0 lines</span>
+        <span id="log-stream-status" style="font-size:11px;color:var(--dim)">Disconnected</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Toast notification container -->
+<div class="toast-container" id="toast-container"></div>
+
+<!-- ═══════════════════════════════════════════════════════════════════════════
+     JAVASCRIPT
+     ═══════════════════════════════════════════════════════════════════════════ -->
+
 <script>
-/* ── Theme Management ─────────────────────────────────────────────────────── */
-
-function getCookie(name) {
-  var match = document.cookie.match(new RegExp('(^| )' + name + '=([^;]+)'));
-  return match ? decodeURIComponent(match[2]) : null;
-}
-
-function setCookie(name, value, days) {
-  var d = new Date();
-  d.setTime(d.getTime() + (days || 365) * 24 * 60 * 60 * 1000);
-  document.cookie = name + '=' + encodeURIComponent(value) + ';expires=' + d.toUTCString() + ';path=/;SameSite=Lax';
-}
-
-function setTheme(theme) {
-  var valid = ['classic', 'modern', 'figma'];
-  if (valid.indexOf(theme) === -1) theme = 'figma';
-  document.documentElement.setAttribute('data-theme', theme);
-  setCookie('biged-theme', theme, 365);
-  /* Update pill active state */
-  var pills = document.querySelectorAll('.theme-pill');
-  for (var i = 0; i < pills.length; i++) {
-    var p = pills[i];
-    if (p.getAttribute('data-theme') === theme) {
-      p.classList.add('active');
-    } else {
-      p.classList.remove('active');
-    }
-  }
-  /* Persist to server (fire-and-forget) */
-  try {
-    fetch('/api/settings/theme', {
-      method: 'POST',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({theme: theme})
-    }).catch(function() {});
-  } catch(e) {}
-  /* Update chart colors for the new theme */
-  updateChartColors();
-}
-
-function initTheme() {
-  /* Priority: cookie > server default > figma */
-  var theme = getCookie('biged-theme') || 'figma';
-  setTheme(theme);
-}
-
-function updateChartColors() {
-  var style = getComputedStyle(document.documentElement);
-  var dimColor = style.getPropertyValue('--text-secondary').trim() || '#888';
-  var borderColor = style.getPropertyValue('--border').trim() || '#333';
-  var successColor = style.getPropertyValue('--success').trim() || '#4caf50';
-  var errorColor = style.getPropertyValue('--error').trim() || '#f44336';
-  if (activityChart) {
-    activityChart.data.datasets[0].backgroundColor = successColor;
-    activityChart.data.datasets[1].backgroundColor = errorColor;
-    activityChart.options.scales.x.ticks.color = dimColor;
-    activityChart.options.scales.y.ticks.color = dimColor;
-    activityChart.options.scales.x.grid.color = borderColor;
-    activityChart.options.scales.y.grid.color = borderColor;
-    activityChart.options.plugins.legend.labels.color = dimColor;
-    activityChart.update('none');
-  }
-  if (skillsChart) {
-    skillsChart.data.datasets[0].backgroundColor = successColor;
-    skillsChart.data.datasets[1].backgroundColor = errorColor;
-    skillsChart.options.scales.x.ticks.color = dimColor;
-    skillsChart.options.scales.y.ticks.color = dimColor;
-    skillsChart.options.scales.x.grid.color = borderColor;
-    skillsChart.options.plugins.legend.labels.color = dimColor;
-    skillsChart.update('none');
-  }
-}
-
-/* Apply theme immediately on load */
-initTheme();
-
-/* ── Core Utilities ───────────────────────────────────────────────────────── */
-
+/* ── Global State ─────────────────────────────────────────────────────────── */
 var activityChart = null;
 var skillsChart = null;
 var eventSource = null;
 
-/* Aggregate batch cache */
+// Aggregate batch cache
 var _dashCache = null;
 var _dashCacheTs = 0;
 var _DASH_CACHE_TTL = 5000;
 
+// Track loaded panels
+var _panelLoaded = { overview: false, agents: false, tasks: false, hitl: false, queue: false, settings: false, logs: false };
+
+/* ── Utility Functions ────────────────────────────────────────────────────── */
+
 function escapeHTML(s) {
   var div = document.createElement('div');
-  div.textContent = String(s);
+  div.textContent = String(s == null ? '' : s);
   return div.innerHTML;
 }
 
-function fetchJSON(url) {
+async function fetchJSON(url) {
   if (_dashCache && (Date.now() - _dashCacheTs) < _DASH_CACHE_TTL) {
     var key = url.startsWith('/api/') ? url.slice(5) : url;
     if (Object.prototype.hasOwnProperty.call(_dashCache, key)) {
-      return Promise.resolve(_dashCache[key]);
+      return _dashCache[key];
     }
   }
-  return fetch(url).then(function(r) {
+  try {
+    var r = await fetch(url);
     if (!r.ok) throw new Error('HTTP ' + r.status);
-    return r.json();
-  }).catch(function(e) {
+    return await r.json();
+  } catch(e) {
     console.error('fetchJSON error:', url, e);
     return {};
-  });
+  }
 }
 
-var BADGE_WHITELIST_SET = {};
-['done', 'failed', 'running', 'pending', 'idle', 'busy',
- 'offline', 'online', 'error', 'info', 'quarantined',
- 'sleeping', 'resting', 'active', 'disabled'].forEach(function(b) { BADGE_WHITELIST_SET[b] = true; });
+var BADGE_WHITELIST = new Set([
+  'done', 'failed', 'running', 'pending', 'idle', 'busy',
+  'offline', 'online', 'error', 'info', 'quarantined',
+  'sleeping', 'resting', 'active', 'disabled'
+]);
 
 function badge(status) {
   var s = (status || 'unknown').toLowerCase().replace(/[^a-z0-9-]/g, '-');
-  var cls = BADGE_WHITELIST_SET[s] ? s : 'info';
+  var cls = BADGE_WHITELIST.has(s) ? s : 'info';
   return '<span class="badge badge-' + cls + '">' + escapeHTML(status) + '</span>';
 }
 
@@ -801,10 +773,104 @@ function shortTime(dateStr) {
 }
 
 function tempColor(temp, sustained, burst) {
-  if (temp >= burst) return 'var(--error)';
-  if (temp >= sustained) return 'var(--warning)';
+  if (temp >= burst) return 'var(--red)';
+  if (temp >= sustained) return 'var(--orange)';
   if (temp >= sustained - 10) return 'var(--gold)';
-  return 'var(--success)';
+  return 'var(--green)';
+}
+
+/* ── Toast Notifications ──────────────────────────────────────────────────── */
+
+function showToast(message, type) {
+  type = type || 'info';
+  var container = document.getElementById('toast-container');
+  var toast = document.createElement('div');
+  toast.className = 'toast ' + type;
+  toast.textContent = message;
+  container.appendChild(toast);
+  setTimeout(function() {
+    toast.style.animation = 'toast-out 0.3s ease forwards';
+    setTimeout(function() { toast.remove(); }, 300);
+  }, 4000);
+}
+
+/* ── Confirm Dialog ───────────────────────────────────────────────────────── */
+
+function confirmAction(message) {
+  return window.confirm(message);
+}
+
+/* ── Tab Navigation ───────────────────────────────────────────────────────── */
+
+function switchTab(name) {
+  document.querySelectorAll('.tab-panel').forEach(function(p) { p.classList.remove('active'); });
+  document.querySelectorAll('.tab-btn').forEach(function(b) { b.classList.remove('active'); });
+
+  var panel = document.getElementById('panel-' + name);
+  var btn = document.querySelector('.tab-btn[data-tab="' + name + '"]');
+  if (panel) panel.classList.add('active');
+  if (btn) btn.classList.add('active');
+
+  // Lazy-load panel data on first visit
+  if (!_panelLoaded[name]) {
+    _panelLoaded[name] = true;
+    switch(name) {
+      case 'agents': loadAgentCards(); break;
+      case 'tasks': loadSkillPicker(); loadRecentTasks(); break;
+      case 'hitl': loadHITL(); break;
+      case 'queue': loadQueue(); break;
+      case 'settings': loadSettings(); break;
+      case 'logs': connectLogStream(); break;
+    }
+  }
+}
+
+/* ── Fleet Control ────────────────────────────────────────────────────────── */
+
+async function fleetAction(action) {
+  if (action === 'stop' && !confirmAction('Stop the fleet? All workers will be terminated.')) return;
+
+  var dot = document.getElementById('fleet-dot');
+  var text = document.getElementById('fleet-status-text');
+  dot.className = 'status-dot starting';
+  text.textContent = action === 'start' ? 'Starting...' : 'Stopping...';
+
+  try {
+    var r = await fetch('/api/fleet/' + action, { method: 'POST' });
+    var data = await r.json();
+    if (r.ok) {
+      showToast('Fleet ' + action + ' command sent', 'success');
+      setTimeout(updateFleetStatus, 2000);
+    } else {
+      showToast('Fleet ' + action + ' failed: ' + (data.error || 'Unknown error'), 'error');
+      updateFleetStatus();
+    }
+  } catch(e) {
+    showToast('Fleet ' + action + ' error: ' + e.message, 'error');
+    updateFleetStatus();
+  }
+}
+
+async function updateFleetStatus() {
+  var dot = document.getElementById('fleet-dot');
+  var text = document.getElementById('fleet-status-text');
+  try {
+    var data = await fetchJSON('/api/fleet/health');
+    var hasActive = (data.workers && data.workers.active > 0) || (data.supervisors && data.supervisors.length > 0);
+    if (hasActive) {
+      dot.className = 'status-dot';
+      text.textContent = 'Running';
+      text.style.color = 'var(--green)';
+    } else {
+      dot.className = 'status-dot stopped';
+      text.textContent = 'Stopped';
+      text.style.color = 'var(--red)';
+    }
+  } catch(e) {
+    dot.className = 'status-dot stopped';
+    text.textContent = 'Offline';
+    text.style.color = 'var(--dim)';
+  }
 }
 
 /* ── SSE Connection ───────────────────────────────────────────────────────── */
@@ -816,7 +882,7 @@ function connectSSE() {
   eventSource.onopen = function() {
     _sseRetries = 0;
     document.getElementById('connectionStatus').textContent = 'Live';
-    document.getElementById('liveDot').style.background = 'var(--success)';
+    document.getElementById('liveDot').style.background = 'var(--green)';
     document.title = 'BigEd CC Dashboard';
     var ov = document.getElementById('offlineOverlay');
     if (ov) ov.remove();
@@ -831,6 +897,12 @@ function connectSSE() {
         addAlertToBar(msg.data);
       } else if (msg.type === 'audit') {
         loadAuditTrail();
+      } else if (msg.type === 'hitl_response' || msg.type === 'task_cancelled' || msg.type === 'task_priority' || msg.type === 'task_requeued') {
+        if (_panelLoaded.hitl) loadHITL();
+        if (_panelLoaded.queue) loadQueue();
+      } else if (msg.type === 'trigger') {
+        if (_panelLoaded.tasks) loadRecentTasks();
+        if (_panelLoaded.queue) loadQueue();
       }
     } catch (err) {}
   };
@@ -839,33 +911,30 @@ function connectSSE() {
     _sseRetries = (_sseRetries || 0) + 1;
     if (_sseRetries >= 6) {
       document.getElementById('connectionStatus').textContent = 'BigEd CC Offline';
-      document.getElementById('liveDot').style.background = 'var(--text-secondary)';
+      document.getElementById('liveDot').style.background = 'var(--dim)';
       document.title = '[Offline] BigEd CC Dashboard';
       if (!document.getElementById('offlineOverlay')) {
         var ov = document.createElement('div');
         ov.id = 'offlineOverlay';
         ov.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.85);z-index:9999;display:flex;align-items:center;justify-content:center;flex-direction:column';
-        var inner = document.createElement('div');
-        inner.style.cssText = 'text-align:center';
-        var title = document.createElement('div');
-        title.style.cssText = 'color:var(--gold);font-size:24px;font-weight:bold';
-        title.textContent = 'BigEd CC Offline';
-        var sub = document.createElement('div');
-        sub.style.cssText = 'color:var(--text-secondary);margin-top:8px';
-        sub.textContent = 'The fleet has been shut down.';
-        var countdown = document.createElement('div');
-        countdown.id = 'offlineCountdown';
-        countdown.style.cssText = 'color:var(--text-secondary);margin-top:4px;font-size:13px';
-        countdown.textContent = 'Dashboard will clear in 60s';
-        var retryBtn = document.createElement('button');
-        retryBtn.textContent = 'Retry Connection';
-        retryBtn.style.cssText = 'margin-top:16px;padding:10px 28px;background:var(--accent);color:var(--accent-text);border:none;border-radius:var(--radius-sm);cursor:pointer;font-family:var(--font-sans);min-height:44px';
-        retryBtn.addEventListener('click', function() { location.reload(); });
-        inner.appendChild(title);
-        inner.appendChild(sub);
-        inner.appendChild(countdown);
-        inner.appendChild(retryBtn);
-        ov.appendChild(inner);
+        var ovTitle = document.createElement('div');
+        ovTitle.style.cssText = 'color:var(--gold);font-size:24px;font-weight:bold';
+        ovTitle.textContent = 'BigEd CC Offline';
+        var ovSub = document.createElement('div');
+        ovSub.style.cssText = 'color:var(--dim);margin-top:8px';
+        ovSub.textContent = 'The fleet has been shut down.';
+        var ovCountdown = document.createElement('div');
+        ovCountdown.id = 'offlineCountdown';
+        ovCountdown.style.cssText = 'color:var(--dim);margin-top:4px;font-size:13px';
+        ovCountdown.textContent = 'Dashboard will clear in 60s';
+        var ovBtn = document.createElement('button');
+        ovBtn.style.cssText = 'margin-top:16px;padding:8px 24px;background:var(--accent);color:white;border:none;border-radius:4px;cursor:pointer';
+        ovBtn.textContent = 'Retry Connection';
+        ovBtn.addEventListener('click', function() { location.reload(); });
+        ov.appendChild(ovTitle);
+        ov.appendChild(ovSub);
+        ov.appendChild(ovCountdown);
+        ov.appendChild(ovBtn);
         document.body.appendChild(ov);
         var _offlineSecs = 60;
         window._offlineTimer = setInterval(function() {
@@ -874,24 +943,23 @@ function connectSSE() {
           if (el) el.textContent = 'Dashboard will clear in ' + _offlineSecs + 's';
           if (_offlineSecs <= 0) {
             clearInterval(window._offlineTimer);
-            /* Clear page and show offline message */
-            while (document.body.firstChild) document.body.removeChild(document.body.firstChild);
-            var wrap = document.createElement('div');
-            wrap.style.cssText = 'display:flex;align-items:center;justify-content:center;height:100vh;background:var(--bg-primary);flex-direction:column';
-            var t1 = document.createElement('div');
-            t1.style.cssText = 'color:var(--gold);font-size:20px;font-weight:bold';
-            t1.textContent = 'BigEd CC';
-            var t2 = document.createElement('div');
-            t2.style.cssText = 'color:var(--text-secondary);margin-top:8px';
-            t2.textContent = 'Fleet offline \u2014 restart BigEd to reconnect';
-            var rb = document.createElement('button');
-            rb.textContent = 'Retry';
-            rb.style.cssText = 'margin-top:16px;padding:10px 28px;background:var(--accent);color:var(--accent-text);border:none;border-radius:var(--radius-sm);cursor:pointer;font-family:var(--font-sans);min-height:44px';
-            rb.addEventListener('click', function() { location.reload(); });
-            wrap.appendChild(t1);
-            wrap.appendChild(t2);
-            wrap.appendChild(rb);
-            document.body.appendChild(wrap);
+            document.body.textContent = '';
+            var wrapper = document.createElement('div');
+            wrapper.style.cssText = 'display:flex;align-items:center;justify-content:center;height:100vh;background:#1a1a1a;flex-direction:column';
+            var label = document.createElement('div');
+            label.style.cssText = 'color:#c8a84b;font-size:20px;font-weight:bold';
+            label.textContent = 'BigEd CC';
+            var sub = document.createElement('div');
+            sub.style.cssText = 'color:#888;margin-top:8px';
+            sub.textContent = 'Fleet offline \u2014 restart BigEd to reconnect';
+            var retryBtn = document.createElement('button');
+            retryBtn.style.cssText = 'margin-top:16px;padding:8px 24px;background:#b22222;color:white;border:none;border-radius:4px;cursor:pointer';
+            retryBtn.textContent = 'Retry';
+            retryBtn.addEventListener('click', function() { location.reload(); });
+            wrapper.appendChild(label);
+            wrapper.appendChild(sub);
+            wrapper.appendChild(retryBtn);
+            document.body.appendChild(wrapper);
             document.title = '[Offline] BigEd CC';
           }
         }, 1000);
@@ -899,100 +967,81 @@ function connectSSE() {
       return;
     }
     document.getElementById('connectionStatus').textContent = 'Reconnecting...';
-    document.getElementById('liveDot').style.background = 'var(--error)';
+    document.getElementById('liveDot').style.background = 'var(--red)';
     setTimeout(connectSSE, 5000);
   };
 }
 var _sseRetries = 0;
 
-/* ── DOM builder helpers ──────────────────────────────────────────────────── */
-
-function _buildStatRow(stats) {
-  /* stats: [{value, label, colorClass}] — builds stat-row content via DOM */
-  var frag = document.createDocumentFragment();
-  stats.forEach(function(s) {
-    var div = document.createElement('div');
-    div.className = 'stat' + (s.colorClass ? ' ' + s.colorClass : '');
-    var val = document.createElement('div');
-    val.className = 'value';
-    val.textContent = String(s.value);
-    var lbl = document.createElement('div');
-    lbl.className = 'label';
-    lbl.textContent = s.label;
-    div.appendChild(val);
-    div.appendChild(lbl);
-    frag.appendChild(div);
-  });
-  return frag;
-}
-
-function _clearElement(el) {
-  while (el.firstChild) el.removeChild(el.firstChild);
-}
-
 function updateStatusFromSSE(data) {
   var t = data.tasks;
   var total = t.DONE + t.FAILED + t.PENDING + t.RUNNING;
-  var taskEl = document.getElementById('taskStats');
-  _clearElement(taskEl);
-  taskEl.appendChild(_buildStatRow([
-    {value: t.DONE, label: 'Done', colorClass: 'green'},
-    {value: t.FAILED, label: 'Failed', colorClass: 'red'},
-    {value: t.RUNNING, label: 'Running', colorClass: 'orange'},
-    {value: t.PENDING, label: 'Pending', colorClass: 'blue'},
-    {value: total, label: 'Total', colorClass: 'gold'},
-  ]));
+
+  var taskStatsEl = document.getElementById('taskStats');
+  taskStatsEl.textContent = '';
+  var statsData = [
+    {cls: 'green', val: t.DONE, label: 'Done'},
+    {cls: 'red', val: t.FAILED, label: 'Failed'},
+    {cls: 'orange', val: t.RUNNING, label: 'Running'},
+    {cls: 'blue', val: t.PENDING, label: 'Pending'},
+    {cls: 'gold', val: total, label: 'Total'}
+  ];
+  statsData.forEach(function(s) {
+    var div = document.createElement('div');
+    div.className = 'stat ' + s.cls;
+    var valDiv = document.createElement('div');
+    valDiv.className = 'value';
+    valDiv.textContent = String(s.val);
+    var lblDiv = document.createElement('div');
+    lblDiv.className = 'label';
+    lblDiv.textContent = s.label;
+    div.appendChild(valDiv);
+    div.appendChild(lblDiv);
+    taskStatsEl.appendChild(div);
+  });
+
+  // Update queue badge
+  var qBadge = document.getElementById('queue-tab-badge');
+  if (t.PENDING > 0) { qBadge.style.display = 'inline'; qBadge.textContent = String(t.PENDING); }
+  else { qBadge.style.display = 'none'; }
 
   function agentDisplayName(a) {
-    if (['dr_ders', 'hw_supervisor'].indexOf(a.name) !== -1) return a.name;
+    if (['dr_ders', 'hw_supervisor'].includes(a.name)) return a.name;
     var task = a.current_task || a.role;
     return task + ' / ' + a.name;
   }
 
-  var priority = ['dr_ders', 'hw_supervisor'];
-  var pinned = data.agents.filter(function(a) { return priority.indexOf(a.name) !== -1; });
-  var busy = data.agents.filter(function(a) { return ['BUSY','ACTIVE','RUNNING'].indexOf(a.status) !== -1 && priority.indexOf(a.name) === -1; });
-  var idle = data.agents.filter(function(a) { return ['BUSY','ACTIVE','RUNNING'].indexOf(a.status) === -1 && priority.indexOf(a.name) === -1; });
+  var priorityNames = ['dr_ders', 'hw_supervisor'];
+  var pinned = data.agents.filter(function(a) { return priorityNames.includes(a.name); });
+  var busy = data.agents.filter(function(a) { return ['BUSY','ACTIVE','RUNNING'].includes(a.status) && !priorityNames.includes(a.name); });
+  var idle = data.agents.filter(function(a) { return !['BUSY','ACTIVE','RUNNING'].includes(a.status) && !priorityNames.includes(a.name); });
   var agentTbody = document.getElementById('agentTable');
   var wasExpanded = agentTbody.dataset.expanded === 'true';
 
-  function _agentRow(a, bold) {
+  agentTbody.textContent = '';
+  function addAgentRow(a, bold) {
     var tr = document.createElement('tr');
-    var tdName = document.createElement('td');
-    if (bold) {
-      var strong = document.createElement('strong');
-      strong.textContent = typeof bold === 'string' ? bold : agentDisplayName(a);
-      tdName.appendChild(strong);
-    } else {
-      tdName.textContent = agentDisplayName(a);
-    }
-    var tdRole = document.createElement('td');
-    tdRole.style.color = 'var(--text-secondary)';
-    tdRole.textContent = a.role;
-    var tdStatus = document.createElement('td');
-    var statusSpan = document.createElement('span');
-    var s = (a.status || 'unknown').toLowerCase().replace(/[^a-z0-9-]/g, '-');
-    statusSpan.className = 'badge badge-' + (BADGE_WHITELIST_SET[s] ? s : 'info');
-    statusSpan.textContent = a.status || 'unknown';
-    tdStatus.appendChild(statusSpan);
-    var tdSeen = document.createElement('td');
-    tdSeen.style.color = 'var(--text-secondary)';
-    tdSeen.textContent = timeAgo(a.last_heartbeat);
-    tr.appendChild(tdName);
-    tr.appendChild(tdRole);
-    tr.appendChild(tdStatus);
-    tr.appendChild(tdSeen);
-    return tr;
+    var td1 = document.createElement('td');
+    if (bold) { var st = document.createElement('strong'); st.textContent = agentDisplayName(a); td1.appendChild(st); }
+    else { td1.textContent = agentDisplayName(a); }
+    var td2 = document.createElement('td'); td2.style.color = 'var(--dim)'; td2.textContent = a.role;
+    var td3 = document.createElement('td');
+    var badgeSpan = document.createElement('span');
+    var bStatus = (a.status || 'unknown').toLowerCase().replace(/[^a-z0-9-]/g, '-');
+    badgeSpan.className = 'badge badge-' + (BADGE_WHITELIST.has(bStatus) ? bStatus : 'info');
+    badgeSpan.textContent = a.status || 'unknown';
+    td3.appendChild(badgeSpan);
+    var td4 = document.createElement('td'); td4.style.color = 'var(--dim)'; td4.textContent = timeAgo(a.last_heartbeat);
+    tr.appendChild(td1); tr.appendChild(td2); tr.appendChild(td3); tr.appendChild(td4);
+    agentTbody.appendChild(tr);
   }
-
-  _clearElement(agentTbody);
-  pinned.forEach(function(a) { agentTbody.appendChild(_agentRow(a, a.name)); });
-  busy.forEach(function(a) { agentTbody.appendChild(_agentRow(a, true)); });
+  pinned.forEach(function(a) { addAgentRow(a, true); });
+  busy.forEach(function(a) { addAgentRow(a, true); });
   if (idle.length > 0) {
     var toggleRow = document.createElement('tr');
     toggleRow.className = 'idle-toggle';
     toggleRow.style.cursor = 'pointer';
-    toggleRow.style.color = 'var(--text-secondary)';
+    toggleRow.style.color = 'var(--dim)';
     toggleRow.addEventListener('click', toggleIdleAgents);
     var toggleTd = document.createElement('td');
     toggleTd.colSpan = 4;
@@ -1000,11 +1049,7 @@ function updateStatusFromSSE(data) {
     toggleRow.appendChild(toggleTd);
     agentTbody.appendChild(toggleRow);
     if (wasExpanded) {
-      idle.forEach(function(a) {
-        var row = _agentRow(a, false);
-        row.className = 'idle-row';
-        agentTbody.appendChild(row);
-      });
+      idle.forEach(function(a) { addAgentRow(a, false); });
     }
   }
   document.getElementById('lastUpdate').textContent = 'Updated: ' + new Date().toLocaleTimeString();
@@ -1031,413 +1076,354 @@ function addAlertToBar(alert) {
   while (bar.children.length > 10) bar.lastChild.remove();
 }
 
-function ackAlert(id, el) {
-  fetch('/api/alerts/ack/' + id, {method: 'POST'}).catch(function() {});
+async function ackAlert(id, el) {
+  await fetch('/api/alerts/ack/' + id, {method: 'POST'});
   el.remove();
 }
 
-/* ── Load functions ───────────────────────────────────────────────────────── */
+/* ── Overview Panel Load Functions ────────────────────────────────────────── */
 
-function loadStatus() {
-  return fetchJSON('/api/status').then(updateStatusFromSSE);
+async function loadStatus() {
+  var data = await fetchJSON('/api/status');
+  updateStatusFromSSE(data);
 }
 
-function loadCodeStats() {
-  return fetchJSON('/api/code_stats').then(function(data) {
-    var el = document.getElementById('codeStats');
-    _clearElement(el);
-    el.appendChild(_buildStatRow([
-      {value: data.lines_added, label: 'Lines Added', colorClass: 'green'},
-      {value: data.lines_deleted, label: 'Lines Deleted', colorClass: 'red'},
-      {value: data.files_changed, label: 'Files Changed', colorClass: 'blue'},
-      {value: data.commits, label: 'Commits', colorClass: 'gold'},
-    ]));
+async function loadCodeStats() {
+  var data = await fetchJSON('/api/code_stats');
+  var el = document.getElementById('codeStats');
+  el.textContent = '';
+  [{cls:'green', val:data.lines_added, lbl:'Lines Added'},
+   {cls:'red', val:data.lines_deleted, lbl:'Lines Deleted'},
+   {cls:'blue', val:data.files_changed, lbl:'Files Changed'},
+   {cls:'gold', val:data.commits, lbl:'Commits'}].forEach(function(s) {
+    var div = document.createElement('div'); div.className = 'stat ' + s.cls;
+    var v = document.createElement('div'); v.className = 'value'; v.textContent = String(s.val == null ? '' : s.val);
+    var l = document.createElement('div'); l.className = 'label'; l.textContent = s.lbl;
+    div.appendChild(v); div.appendChild(l); el.appendChild(div);
   });
 }
 
-function loadThermal() {
-  return fetchJSON('/api/thermal').then(function(data) {
-    var th = data.thresholds || {};
+async function loadThermal() {
+  var data = await fetchJSON('/api/thermal');
+  var th = data.thresholds || {};
 
-    /* Build gauges via DOM */
-    var gaugeEl = document.getElementById('thermalGauge');
-    _clearElement(gaugeEl);
-    var gauges = [
-      {temp: data.gpu_temp_c, name: 'GPU', color: tempColor(data.gpu_temp_c, th.gpu_sustained||75, th.gpu_burst||78)},
-      {temp: data.cpu_temp_c, name: 'CPU', color: tempColor(data.cpu_temp_c, th.cpu_sustained||80, 90)},
-      {temp: data.ambient_estimate_c, name: 'Ambient (est)', color: 'var(--info)'},
-    ];
-    gauges.forEach(function(g) {
-      var div = document.createElement('div');
-      div.className = 'gauge';
-      var tempDiv = document.createElement('div');
-      tempDiv.className = 'temp';
-      tempDiv.style.color = g.color;
-      tempDiv.textContent = g.temp + '\u00b0C';
-      var nameDiv = document.createElement('div');
-      nameDiv.className = 'name';
-      nameDiv.textContent = g.name;
-      div.appendChild(tempDiv);
-      div.appendChild(nameDiv);
-      gaugeEl.appendChild(div);
-    });
+  var gaugeEl = document.getElementById('thermalGauge');
+  gaugeEl.textContent = '';
+  [{val: data.gpu_temp_c, color: tempColor(data.gpu_temp_c, th.gpu_sustained||75, th.gpu_burst||78), name: 'GPU'},
+   {val: data.cpu_temp_c, color: tempColor(data.cpu_temp_c, th.cpu_sustained||80, 90), name: 'CPU'},
+   {val: data.ambient_estimate_c, color: 'var(--blue)', name: 'Ambient (est)'}].forEach(function(g) {
+    var div = document.createElement('div'); div.className = 'gauge';
+    var tempDiv = document.createElement('div'); tempDiv.className = 'temp'; tempDiv.style.color = g.color;
+    tempDiv.textContent = String(g.val) + '\u00b0C';
+    var nameDiv = document.createElement('div'); nameDiv.className = 'name'; nameDiv.textContent = g.name;
+    div.appendChild(tempDiv); div.appendChild(nameDiv); gaugeEl.appendChild(div);
+  });
 
-    var statsEl = document.getElementById('thermalStats');
-    _clearElement(statsEl);
-    statsEl.appendChild(_buildStatRow([
-      {value: data.gpu_power_w + 'W', label: 'GPU Power'},
-      {value: data.gpu_fan_pct + '%', label: 'Fan'},
-      {value: data.gpu_vram_used_gb + '/' + data.gpu_vram_total_gb + 'GB', label: 'VRAM'},
-      {value: data.model_tier, label: 'Model Tier'},
-    ]));
+  var statsEl = document.getElementById('thermalStats');
+  statsEl.textContent = '';
+  [{val: data.gpu_power_w + 'W', lbl: 'GPU Power'},
+   {val: data.gpu_fan_pct + '%', lbl: 'Fan'},
+   {val: data.gpu_vram_used_gb + '/' + data.gpu_vram_total_gb + 'GB', lbl: 'VRAM'},
+   {val: data.model_tier, lbl: 'Model Tier'}].forEach(function(s) {
+    var div = document.createElement('div'); div.className = 'stat';
+    var v = document.createElement('div'); v.className = 'value'; v.textContent = String(s.val);
+    var l = document.createElement('div'); l.className = 'label'; l.textContent = s.lbl;
+    div.appendChild(v); div.appendChild(l); statsEl.appendChild(div);
+  });
 
-    var note = document.getElementById('thermalNote');
-    var notes = [];
-    if (data.gpu_temp_c === 0) notes.push('GPU');
-    if (data.cpu_temp_c === 0) notes.push('CPU');
-    if (notes.length > 0) {
-      note.textContent = '*0\u00b0C = ' + notes.join(', ') + ' sensor unavailable';
-      note.style.display = 'block';
-    } else {
-      note.style.display = 'none';
+  var note = document.getElementById('thermalNote');
+  var notes = [];
+  if (data.gpu_temp_c === 0) notes.push('GPU');
+  if (data.cpu_temp_c === 0) notes.push('CPU');
+  if (notes.length > 0) { note.textContent = '*0\u00b0C = ' + notes.join(', ') + ' sensor unavailable'; note.style.display = 'block'; }
+  else { note.style.display = 'none'; }
+  if (data._note) { note.textContent = data._note; note.style.display = 'block'; }
+}
+
+async function loadTraining() {
+  var data = await fetchJSON('/api/training');
+  var el = document.getElementById('trainingBadge');
+  if (data.locked) {
+    el.textContent = 'Training: active \u2014 ' + data.holder + ' (' + Math.round(data.elapsed_s / 60) + 'min)';
+    el.style.color = 'var(--orange)';
+  } else {
+    el.textContent = 'Training: idle';
+    el.style.color = 'var(--dim)';
+  }
+}
+
+async function loadModules() {
+  var data = await fetchJSON('/api/modules');
+  var el = document.getElementById('modulesList');
+  el.textContent = '';
+  var profile = document.createElement('div');
+  profile.style.cssText = 'color:var(--dim);margin-bottom:8px';
+  var strong = document.createElement('strong');
+  strong.textContent = data.profile || '';
+  profile.textContent = 'Profile: ';
+  profile.appendChild(strong);
+  el.appendChild(profile);
+  (data.modules || []).forEach(function(m) {
+    var item = document.createElement('div');
+    item.className = 'file-item';
+    var nameSpan = document.createElement('span');
+    nameSpan.className = 'name';
+    nameSpan.textContent = m.name + ' ';
+    var verSpan = document.createElement('span');
+    verSpan.style.color = 'var(--dim)';
+    verSpan.textContent = 'v' + m.version;
+    nameSpan.appendChild(verSpan);
+    var metaSpan = document.createElement('span');
+    metaSpan.className = 'meta';
+    var statusSpan = document.createElement('span');
+    statusSpan.style.color = m.enabled ? 'var(--green)' : 'var(--dim)';
+    statusSpan.textContent = m.enabled ? 'enabled' : 'disabled';
+    metaSpan.appendChild(statusSpan);
+    if (m.deprecated) {
+      var depSpan = document.createElement('span');
+      depSpan.style.color = 'var(--orange)';
+      depSpan.textContent = ' DEPRECATED';
+      metaSpan.appendChild(depSpan);
     }
-    if (data._note) {
-      note.textContent = data._note;
-      note.style.display = 'block';
-    }
+    item.appendChild(nameSpan);
+    item.appendChild(metaSpan);
+    el.appendChild(item);
   });
 }
 
-function loadTraining() {
-  return fetchJSON('/api/training').then(function(data) {
-    var el = document.getElementById('trainingBadge');
-    if (data.locked) {
-      el.textContent = 'Training: active \u2014 ' + data.holder + ' (' + Math.round(data.elapsed_s / 60) + 'min)';
-      el.style.color = 'var(--warning)';
-    } else {
-      el.textContent = 'Training: idle';
-      el.style.color = 'var(--text-secondary)';
-    }
+async function loadDataStats() {
+  var data = await fetchJSON('/api/data_stats');
+  var el = document.getElementById('dataStats');
+  el.textContent = '';
+  var entries = Object.entries(data);
+  if (entries.length === 0) {
+    el.textContent = 'No data';
+    el.style.color = 'var(--dim)';
+    return;
+  }
+  entries.forEach(function(e) {
+    var item = document.createElement('div');
+    item.className = 'file-item';
+    var nameSpan = document.createElement('span');
+    nameSpan.className = 'name';
+    nameSpan.textContent = e[0];
+    var metaSpan = document.createElement('span');
+    metaSpan.className = 'meta';
+    metaSpan.textContent = e[1].count + ' records' + (e[1].size_mb ? ' / ' + e[1].size_mb + 'MB' : '');
+    item.appendChild(nameSpan);
+    item.appendChild(metaSpan);
+    el.appendChild(item);
   });
 }
 
-function loadModules() {
-  return fetchJSON('/api/modules').then(function(data) {
-    var el = document.getElementById('modulesList');
-    _clearElement(el);
-    var profileDiv = document.createElement('div');
-    profileDiv.style.cssText = 'color:var(--text-secondary);margin-bottom:8px';
-    var profileStrong = document.createElement('strong');
-    profileStrong.textContent = data.profile || '';
-    profileDiv.appendChild(document.createTextNode('Profile: '));
-    profileDiv.appendChild(profileStrong);
-    el.appendChild(profileDiv);
-    (data.modules || []).forEach(function(m) {
-      var item = document.createElement('div');
-      item.className = 'file-item';
-      var nameSpan = document.createElement('span');
-      nameSpan.className = 'name';
-      nameSpan.textContent = m.name + ' ';
-      var verSpan = document.createElement('span');
-      verSpan.style.color = 'var(--text-secondary)';
-      verSpan.textContent = 'v' + m.version;
-      nameSpan.appendChild(verSpan);
-      var metaSpan = document.createElement('span');
-      metaSpan.className = 'meta';
-      var statusSpan = document.createElement('span');
-      statusSpan.style.color = m.enabled ? 'var(--success)' : 'var(--text-secondary)';
-      statusSpan.textContent = m.enabled ? 'enabled' : 'disabled';
-      metaSpan.appendChild(statusSpan);
-      if (m.deprecated) {
-        var depSpan = document.createElement('span');
-        depSpan.style.color = 'var(--warning)';
-        depSpan.textContent = ' DEPRECATED';
-        metaSpan.appendChild(depSpan);
+async function loadActivity() {
+  var data = await fetchJSON('/api/activity');
+  var labels = data.map(function(d) { return d.day.slice(5); });
+  var done = data.map(function(d) { return d.DONE; });
+  var failed = data.map(function(d) { return d.FAILED; });
+
+  if (activityChart) {
+    activityChart.data.labels = labels;
+    activityChart.data.datasets[0].data = done;
+    activityChart.data.datasets[1].data = failed;
+    activityChart.update();
+  } else {
+    activityChart = new Chart(document.getElementById('activityChart'), {
+      type: 'bar',
+      data: {
+        labels: labels,
+        datasets: [
+          { label: 'Done', data: done, backgroundColor: '#4caf50', borderRadius: 3 },
+          { label: 'Failed', data: failed, backgroundColor: '#f44336', borderRadius: 3 },
+        ]
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        plugins: { legend: { labels: { color: '#888', font: { size: 11 } } } },
+        scales: {
+          x: { stacked: true, ticks: { color: '#666', font: { size: 10 } }, grid: { color: '#222' } },
+          y: { stacked: true, ticks: { color: '#666' }, grid: { color: '#222' } },
+        }
       }
-      item.appendChild(nameSpan);
-      item.appendChild(metaSpan);
-      el.appendChild(item);
     });
-  });
+  }
 }
 
-function loadDataStats() {
-  return fetchJSON('/api/data_stats').then(function(data) {
-    var el = document.getElementById('dataStats');
-    _clearElement(el);
-    var entries = Object.entries(data);
-    if (entries.length === 0) {
-      var empty = document.createElement('div');
-      empty.style.color = 'var(--text-secondary)';
-      empty.textContent = 'No data';
-      el.appendChild(empty);
-      return;
-    }
-    entries.forEach(function(entry) {
-      var item = document.createElement('div');
-      item.className = 'file-item';
-      var nameSpan = document.createElement('span');
-      nameSpan.className = 'name';
-      nameSpan.textContent = entry[0];
-      var metaSpan = document.createElement('span');
-      metaSpan.className = 'meta';
-      metaSpan.textContent = entry[1].count + ' records' + (entry[1].size_mb ? ' / ' + entry[1].size_mb + 'MB' : '');
-      item.appendChild(nameSpan);
-      item.appendChild(metaSpan);
-      el.appendChild(item);
-    });
-  });
-}
+async function loadSkills() {
+  var data = await fetchJSON('/api/skills');
+  var entries = Object.entries(data).sort(function(a,b) { return b[1].total - a[1].total; });
+  var labels = entries.map(function(e) { return e[0]; });
+  var done = entries.map(function(e) { return e[1].DONE; });
+  var failed = entries.map(function(e) { return e[1].FAILED; });
 
-function loadActivity() {
-  return fetchJSON('/api/activity').then(function(data) {
-    var labels = data.map(function(d) { return d.day.slice(5); });
-    var done = data.map(function(d) { return d.DONE; });
-    var failed = data.map(function(d) { return d.FAILED; });
-
-    var style = getComputedStyle(document.documentElement);
-    var dimColor = style.getPropertyValue('--text-secondary').trim() || '#888';
-    var borderColor = style.getPropertyValue('--border').trim() || '#333';
-    var successColor = style.getPropertyValue('--success').trim() || '#4caf50';
-    var errorColor = style.getPropertyValue('--error').trim() || '#f44336';
-
-    if (activityChart) {
-      activityChart.data.labels = labels;
-      activityChart.data.datasets[0].data = done;
-      activityChart.data.datasets[1].data = failed;
-      activityChart.update();
-    } else {
-      activityChart = new Chart(document.getElementById('activityChart'), {
-        type: 'bar',
-        data: {
-          labels: labels,
-          datasets: [
-            { label: 'Done', data: done, backgroundColor: successColor, borderRadius: 3 },
-            { label: 'Failed', data: failed, backgroundColor: errorColor, borderRadius: 3 },
-          ]
-        },
-        options: {
-          responsive: true, maintainAspectRatio: false,
-          plugins: { legend: { labels: { color: dimColor, font: { size: 11 } } } },
-          scales: {
-            x: { stacked: true, ticks: { color: dimColor, font: { size: 10 } }, grid: { color: borderColor } },
-            y: { stacked: true, ticks: { color: dimColor }, grid: { color: borderColor } },
-          }
+  if (skillsChart) {
+    skillsChart.data.labels = labels;
+    skillsChart.data.datasets[0].data = done;
+    skillsChart.data.datasets[1].data = failed;
+    skillsChart.update();
+  } else {
+    skillsChart = new Chart(document.getElementById('skillsChart'), {
+      type: 'bar',
+      data: {
+        labels: labels,
+        datasets: [
+          { label: 'Done', data: done, backgroundColor: '#4caf50' },
+          { label: 'Failed', data: failed, backgroundColor: '#f44336' },
+        ]
+      },
+      options: {
+        indexAxis: 'y', responsive: true, maintainAspectRatio: false,
+        plugins: { legend: { labels: { color: '#888', font: { size: 11 } } } },
+        scales: {
+          x: { stacked: true, ticks: { color: '#666' }, grid: { color: '#222' } },
+          y: { stacked: true, ticks: { color: '#aaa', font: { size: 11 } }, grid: { display: false } },
         }
-      });
-    }
-  });
-}
-
-function loadSkills() {
-  return fetchJSON('/api/skills').then(function(data) {
-    var entries = Object.entries(data).sort(function(a,b) { return b[1].total - a[1].total; });
-    var labels = entries.map(function(e) { return e[0]; });
-    var done = entries.map(function(e) { return e[1].DONE; });
-    var failed = entries.map(function(e) { return e[1].FAILED; });
-
-    var style = getComputedStyle(document.documentElement);
-    var dimColor = style.getPropertyValue('--text-secondary').trim() || '#888';
-    var borderColor = style.getPropertyValue('--border').trim() || '#333';
-    var successColor = style.getPropertyValue('--success').trim() || '#4caf50';
-    var errorColor = style.getPropertyValue('--error').trim() || '#f44336';
-
-    if (skillsChart) {
-      skillsChart.data.labels = labels;
-      skillsChart.data.datasets[0].data = done;
-      skillsChart.data.datasets[1].data = failed;
-      skillsChart.update();
-    } else {
-      skillsChart = new Chart(document.getElementById('skillsChart'), {
-        type: 'bar',
-        data: {
-          labels: labels,
-          datasets: [
-            { label: 'Done', data: done, backgroundColor: successColor },
-            { label: 'Failed', data: failed, backgroundColor: errorColor },
-          ]
-        },
-        options: {
-          indexAxis: 'y', responsive: true, maintainAspectRatio: false,
-          plugins: { legend: { labels: { color: dimColor, font: { size: 11 } } } },
-          scales: {
-            x: { stacked: true, ticks: { color: dimColor }, grid: { color: borderColor } },
-            y: { stacked: true, ticks: { color: dimColor, font: { size: 11 } }, grid: { display: false } },
-          }
-        }
-      });
-    }
-  });
-}
-
-function loadDiscussions() {
-  return fetchJSON('/api/discussions').then(function(data) {
-    var el = document.getElementById('discussionTable');
-    _clearElement(el);
-    if (!data || data.length === 0) {
-      var tr = document.createElement('tr');
-      var td = document.createElement('td');
-      td.colSpan = 4;
-      td.style.color = 'var(--text-secondary)';
-      td.textContent = 'No discussions yet';
-      tr.appendChild(td);
-      el.appendChild(tr);
-      return;
-    }
-    data.slice(0, 15).forEach(function(d) {
-      var tr = document.createElement('tr');
-      var td1 = document.createElement('td'); td1.textContent = d.topic;
-      var td2 = document.createElement('td'); td2.style.color = 'var(--text-secondary)'; td2.textContent = d.agents.join(', ');
-      var td3 = document.createElement('td'); td3.textContent = d.rounds;
-      var td4 = document.createElement('td'); td4.textContent = d.contributions;
-      tr.appendChild(td1); tr.appendChild(td2); tr.appendChild(td3); tr.appendChild(td4);
-      el.appendChild(tr);
+      }
     });
+  }
+}
+
+async function loadDiscussions() {
+  var data = await fetchJSON('/api/discussions');
+  var el = document.getElementById('discussionTable');
+  el.textContent = '';
+  var items = (data || []).slice(0, 15);
+  if (items.length === 0) {
+    var tr = document.createElement('tr');
+    var td = document.createElement('td');
+    td.colSpan = 4; td.style.color = 'var(--dim)'; td.textContent = 'No discussions yet';
+    tr.appendChild(td); el.appendChild(tr);
+    return;
+  }
+  items.forEach(function(d) {
+    var tr = document.createElement('tr');
+    var td1 = document.createElement('td'); td1.textContent = d.topic;
+    var td2 = document.createElement('td'); td2.style.color = 'var(--dim)'; td2.textContent = (d.agents || []).join(', ');
+    var td3 = document.createElement('td'); td3.textContent = String(d.rounds);
+    var td4 = document.createElement('td'); td4.textContent = String(d.contributions);
+    tr.appendChild(td1); tr.appendChild(td2); tr.appendChild(td3); tr.appendChild(td4);
+    el.appendChild(tr);
   });
 }
 
-function loadReviews() {
-  return fetchJSON('/api/reviews').then(function(data) {
-    var el = document.getElementById('reviewList');
-    _clearElement(el);
-    if (!data || data.length === 0) {
-      var empty = document.createElement('div');
-      empty.style.color = 'var(--text-secondary)';
-      empty.textContent = 'No reviews yet';
-      el.appendChild(empty);
-      return;
-    }
-    data.slice(0, 20).forEach(function(r) {
-      var item = document.createElement('div');
-      item.className = 'file-item';
-      var nameSpan = document.createElement('span');
-      nameSpan.className = 'name';
-      nameSpan.textContent = r.file;
-      var metaSpan = document.createElement('span');
-      metaSpan.className = 'meta';
-      metaSpan.textContent = r.category + ' / ' + timeAgo(r.modified);
-      item.appendChild(nameSpan);
-      item.appendChild(metaSpan);
-      el.appendChild(item);
-    });
+async function loadReviews() {
+  var data = await fetchJSON('/api/reviews');
+  var el = document.getElementById('reviewList');
+  el.textContent = '';
+  var items = (data || []).slice(0, 20);
+  if (items.length === 0) {
+    el.textContent = 'No reviews yet';
+    el.style.color = 'var(--dim)';
+    return;
+  }
+  items.forEach(function(r) {
+    var item = document.createElement('div');
+    item.className = 'file-item';
+    var nameSpan = document.createElement('span');
+    nameSpan.className = 'name';
+    nameSpan.textContent = r.file;
+    var metaSpan = document.createElement('span');
+    metaSpan.className = 'meta';
+    metaSpan.textContent = r.category + ' / ' + timeAgo(r.modified);
+    item.appendChild(nameSpan);
+    item.appendChild(metaSpan);
+    el.appendChild(item);
   });
 }
 
-function loadKnowledge() {
-  return fetchJSON('/api/knowledge').then(function(data) {
-    var entries = Object.entries(data);
-    var totalFiles = entries.reduce(function(s, e) { return s + e[1].count; }, 0);
-    var statsEl = document.getElementById('knowledgeStats');
-    _clearElement(statsEl);
-    statsEl.appendChild(_buildStatRow([
-      {value: totalFiles, label: 'Total Files', colorClass: 'gold'},
-      {value: entries.length, label: 'Categories', colorClass: 'blue'},
-    ]));
-    var listEl = document.getElementById('knowledgeList');
-    _clearElement(listEl);
-    entries.sort(function(a,b) { return b[1].count - a[1].count; }).forEach(function(entry) {
-      var item = document.createElement('div');
-      item.className = 'file-item';
-      var nameSpan = document.createElement('span');
-      nameSpan.className = 'name';
-      nameSpan.textContent = entry[0] + '/';
-      var metaSpan = document.createElement('span');
-      metaSpan.className = 'meta';
-      metaSpan.textContent = entry[1].count + ' files';
-      item.appendChild(nameSpan);
-      item.appendChild(metaSpan);
-      listEl.appendChild(item);
-    });
+async function loadKnowledge() {
+  var data = await fetchJSON('/api/knowledge');
+  var entries = Object.entries(data);
+  var totalFiles = entries.reduce(function(s, e) { return s + e[1].count; }, 0);
+  var statsEl = document.getElementById('knowledgeStats');
+  statsEl.textContent = '';
+  [{cls:'gold', val:totalFiles, lbl:'Total Files'}, {cls:'blue', val:entries.length, lbl:'Categories'}].forEach(function(s) {
+    var div = document.createElement('div'); div.className = 'stat ' + s.cls;
+    var v = document.createElement('div'); v.className = 'value'; v.textContent = String(s.val);
+    var l = document.createElement('div'); l.className = 'label'; l.textContent = s.lbl;
+    div.appendChild(v); div.appendChild(l); statsEl.appendChild(div);
+  });
+  var listEl = document.getElementById('knowledgeList');
+  listEl.textContent = '';
+  entries.sort(function(a,b) { return b[1].count - a[1].count; }).forEach(function(e) {
+    var item = document.createElement('div');
+    item.className = 'file-item';
+    var nameSpan = document.createElement('span'); nameSpan.className = 'name'; nameSpan.textContent = e[0] + '/';
+    var metaSpan = document.createElement('span'); metaSpan.className = 'meta'; metaSpan.textContent = e[1].count + ' files';
+    item.appendChild(nameSpan); item.appendChild(metaSpan); listEl.appendChild(item);
   });
 }
 
-function loadRAG() {
-  return fetchJSON('/api/rag').then(function(data) {
-    var statsEl = document.getElementById('ragStats');
-    _clearElement(statsEl);
-    statsEl.appendChild(_buildStatRow([
-      {value: data.files, label: 'Files Indexed', colorClass: 'gold'},
-      {value: data.chunks, label: 'Chunks', colorClass: 'blue'},
-    ]));
-    var listEl = document.getElementById('ragSources');
-    _clearElement(listEl);
-    if (!data.sources || data.sources.length === 0) {
-      var empty = document.createElement('div');
-      empty.style.color = 'var(--text-secondary)';
-      empty.textContent = 'Not indexed yet';
-      listEl.appendChild(empty);
-      return;
-    }
-    data.sources.slice(0, 15).forEach(function(s) {
-      var item = document.createElement('div');
-      item.className = 'file-item';
-      var nameSpan = document.createElement('span');
-      nameSpan.className = 'name';
-      nameSpan.textContent = s.path;
-      var metaSpan = document.createElement('span');
-      metaSpan.className = 'meta';
-      metaSpan.textContent = s.chunks + ' chunks';
-      item.appendChild(nameSpan);
-      item.appendChild(metaSpan);
-      listEl.appendChild(item);
-    });
+async function loadRAG() {
+  var data = await fetchJSON('/api/rag');
+  var statsEl = document.getElementById('ragStats');
+  statsEl.textContent = '';
+  [{cls:'gold', val:data.files, lbl:'Files Indexed'}, {cls:'blue', val:data.chunks, lbl:'Chunks'}].forEach(function(s) {
+    var div = document.createElement('div'); div.className = 'stat ' + s.cls;
+    var v = document.createElement('div'); v.className = 'value'; v.textContent = String(s.val == null ? '' : s.val);
+    var l = document.createElement('div'); l.className = 'label'; l.textContent = s.lbl;
+    div.appendChild(v); div.appendChild(l); statsEl.appendChild(div);
+  });
+  var listEl = document.getElementById('ragSources');
+  listEl.textContent = '';
+  var sources = (data.sources || []).slice(0, 15);
+  if (sources.length === 0) {
+    listEl.textContent = 'Not indexed yet';
+    listEl.style.color = 'var(--dim)';
+    return;
+  }
+  sources.forEach(function(s) {
+    var item = document.createElement('div'); item.className = 'file-item';
+    var nameSpan = document.createElement('span'); nameSpan.className = 'name'; nameSpan.textContent = s.path;
+    var metaSpan = document.createElement('span'); metaSpan.className = 'meta'; metaSpan.textContent = s.chunks + ' chunks';
+    item.appendChild(nameSpan); item.appendChild(metaSpan); listEl.appendChild(item);
   });
 }
 
-function loadTimeline() {
-  return fetchJSON('/api/timeline').then(function(data) {
-    var el = document.getElementById('timeline');
-    _clearElement(el);
-    if (!data || data.length === 0) {
-      var empty = document.createElement('div');
-      empty.style.cssText = 'color:var(--text-secondary);padding:12px';
-      empty.textContent = 'No recent activity';
-      el.appendChild(empty);
-      return;
-    }
-    data.forEach(function(e) {
-      var div = document.createElement('div');
-      div.className = 'timeline-item';
-      var time = document.createElement('span');
-      time.className = 'time';
-      time.textContent = shortTime(e.time);
-      var agent = document.createElement('span');
-      agent.className = 'agent';
-      agent.textContent = e.agent;
-      var info = document.createElement('span');
-      var statusSpan = document.createElement('span');
-      var s = (e.status || 'unknown').toLowerCase().replace(/[^a-z0-9-]/g, '-');
-      statusSpan.className = 'badge badge-' + (BADGE_WHITELIST_SET[s] ? s : 'info');
-      statusSpan.textContent = e.status || '';
-      var detail = document.createTextNode(' ' + (e.detail || ''));
-      info.appendChild(statusSpan);
-      info.appendChild(detail);
-      div.appendChild(time);
-      div.appendChild(agent);
-      div.appendChild(info);
-      el.appendChild(div);
-    });
+async function loadTimeline() {
+  var data = await fetchJSON('/api/timeline');
+  var el = document.getElementById('timeline');
+  el.textContent = '';
+  if (!data || data.length === 0) {
+    var empty = document.createElement('div');
+    empty.style.cssText = 'color:var(--dim);padding:12px';
+    empty.textContent = 'No recent activity';
+    el.appendChild(empty);
+    return;
+  }
+  data.forEach(function(e) {
+    var div = document.createElement('div'); div.className = 'timeline-item';
+    var time = document.createElement('span'); time.className = 'time'; time.textContent = shortTime(e.time);
+    var agent = document.createElement('span'); agent.className = 'agent'; agent.textContent = e.agent;
+    var info = document.createElement('span');
+    var badgeSpan = document.createElement('span');
+    var bSt = (e.status || '').toLowerCase();
+    badgeSpan.className = 'badge badge-' + (BADGE_WHITELIST.has(bSt) ? bSt : 'info');
+    badgeSpan.textContent = e.status || '';
+    info.appendChild(badgeSpan);
+    info.appendChild(document.createTextNode(' ' + (e.detail || '')));
+    div.appendChild(time); div.appendChild(agent); div.appendChild(info);
+    el.appendChild(div);
   });
 }
 
-function loadAlerts() {
-  return fetchJSON('/api/alerts').then(function(data) {
-    var bar = document.getElementById('alertBar');
-    var bubble = document.getElementById('alertBubble');
-    _clearElement(bar);
-    var active = (data || []).filter(function(a) { return !a.acknowledged; }).slice(0, 10);
-    active.forEach(addAlertToBar);
-    if (active.length > 0) {
-      var hasCrit = active.some(function(a) { return a.level === 'critical'; });
-      bubble.className = 'alert-bubble has-alerts ' + (hasCrit ? 'critical' : 'warning');
-      bubble.textContent = active.length;
-      bubble.title = active.length + ' alert(s) \u2014 click to expand';
-    } else {
-      bubble.className = 'alert-bubble';
-      bubble.textContent = '';
-      bar.classList.remove('expanded');
-    }
-  });
+async function loadAlerts() {
+  var data = await fetchJSON('/api/alerts');
+  var bar = document.getElementById('alertBar');
+  var bubble = document.getElementById('alertBubble');
+  while (bar.firstChild) bar.removeChild(bar.firstChild);
+  var active = (Array.isArray(data) ? data : []).filter(function(a) { return !a.acknowledged; }).slice(0, 10);
+  active.forEach(addAlertToBar);
+  if (active.length > 0) {
+    var hasCrit = active.some(function(a) { return a.level === 'critical'; });
+    bubble.className = 'alert-bubble has-alerts ' + (hasCrit ? 'critical' : 'warning');
+    bubble.textContent = String(active.length);
+    bubble.title = active.length + ' alert(s) \u2014 click to expand';
+  } else {
+    bubble.className = 'alert-bubble';
+    bubble.textContent = '';
+    bar.classList.remove('expanded');
+  }
 }
 
 function toggleAlerts() {
@@ -1450,45 +1436,45 @@ function toggleIdleAgents() {
   loadStatus();
 }
 
-function loadAgentActivity() {
-  return fetchJSON('/api/timeline').then(function(data) {
-    var el = document.getElementById('activityFeed');
-    _clearElement(el);
-    (data || []).slice(0, 50).forEach(function(e) {
-      var div = document.createElement('div');
-      div.className = 'timeline-item';
-      var time = document.createElement('span');
-      time.className = 'time';
-      time.textContent = shortTime(e.time);
-      var agent = document.createElement('span');
-      agent.className = 'agent';
-      agent.textContent = e.agent;
-      var statusBadge = document.createElement('span');
-      var s = (e.status || '').toLowerCase();
-      statusBadge.className = 'badge badge-' + (BADGE_WHITELIST_SET[s] ? s : 'unknown');
-      statusBadge.textContent = e.status || '';
-      var detail = document.createElement('span');
-      detail.textContent = ' ' + (e.detail || '');
-      var info = document.createElement('span');
-      info.appendChild(statusBadge);
-      info.appendChild(detail);
-      div.appendChild(time);
-      div.appendChild(agent);
-      div.appendChild(info);
-      el.appendChild(div);
-    });
-    if (!data || data.length === 0) {
-      var empty = document.createElement('div');
-      empty.textContent = 'No recent activity';
-      empty.style.color = 'var(--text-secondary)';
-      empty.style.padding = '12px';
-      el.appendChild(empty);
-    }
+async function loadAgentActivity() {
+  var data = await fetchJSON('/api/timeline');
+  var el = document.getElementById('activityFeed');
+  while (el.firstChild) el.removeChild(el.firstChild);
+  (data || []).slice(0, 50).forEach(function(e) {
+    var div = document.createElement('div');
+    div.className = 'timeline-item';
+    var time = document.createElement('span');
+    time.className = 'time';
+    time.textContent = shortTime(e.time);
+    var agent = document.createElement('span');
+    agent.className = 'agent';
+    agent.textContent = e.agent;
+    var statusBadge = document.createElement('span');
+    var s = (e.status || '').toLowerCase();
+    statusBadge.className = 'badge badge-' + (BADGE_WHITELIST.has(s) ? s : 'unknown');
+    statusBadge.textContent = e.status || '';
+    var detail = document.createElement('span');
+    detail.textContent = ' ' + (e.detail || '');
+    var info = document.createElement('span');
+    info.appendChild(statusBadge);
+    info.appendChild(detail);
+    div.appendChild(time);
+    div.appendChild(agent);
+    div.appendChild(info);
+    el.appendChild(div);
   });
+  if (!data || data.length === 0) {
+    var empty = document.createElement('div');
+    empty.textContent = 'No recent activity';
+    empty.style.color = 'var(--dim)';
+    empty.style.padding = '12px';
+    el.appendChild(empty);
+  }
 }
 
-function loadCostTracker() {
-  return fetchJSON('/api/usage/dashboard').then(function(data) {
+async function loadCostTracker() {
+  try {
+    var data = await fetchJSON('/api/usage/dashboard');
     var summary = document.getElementById('costSummary');
     var details = document.getElementById('costDetails');
     var note = document.getElementById('costNote');
@@ -1498,146 +1484,123 @@ function loadCostTracker() {
     var month = (data.month || {})._total || {};
     var proj = data.projection || {};
 
-    _clearElement(summary);
-    summary.appendChild(_buildStatRow([
-      {value: '$' + (today.cost_usd || 0).toFixed(4), label: 'Today', colorClass: 'green'},
-      {value: '$' + (week.cost_usd || 0).toFixed(4), label: '7 Days', colorClass: 'blue'},
-      {value: '$' + (month.cost_usd || 0).toFixed(2), label: '30 Days', colorClass: 'gold'},
-      {value: proj.monthly_usd ? '$' + proj.monthly_usd.toFixed(2) : '\u2014', label: 'Proj/Month', colorClass: 'dim'},
-      {value: String(today.calls || 0), label: 'Calls Today', colorClass: 'orange'},
-    ]));
+    summary.textContent = '';
+    [{label: 'Today', value: '$' + (today.cost_usd || 0).toFixed(4), color: 'green'},
+     {label: '7 Days', value: '$' + (week.cost_usd || 0).toFixed(4), color: 'blue'},
+     {label: '30 Days', value: '$' + (month.cost_usd || 0).toFixed(2), color: 'gold'},
+     {label: 'Proj/Month', value: proj.monthly_usd ? '$' + proj.monthly_usd.toFixed(2) : '\u2014', color: 'dim'},
+     {label: 'Calls Today', value: String(today.calls || 0), color: 'orange'}
+    ].forEach(function(s) {
+      var div = document.createElement('div'); div.className = 'stat ' + s.color;
+      var val = document.createElement('div'); val.className = 'value'; val.textContent = s.value;
+      var lbl = document.createElement('div'); lbl.className = 'label'; lbl.textContent = s.label;
+      div.appendChild(val); div.appendChild(lbl); summary.appendChild(div);
+    });
 
-    /* Provider breakdown */
-    _clearElement(details);
+    details.textContent = '';
     var providers = ['claude', 'gemini', 'minimax', 'local'];
-    var providerColors = {claude: 'var(--gold)', gemini: 'var(--info)', minimax: 'var(--accent)', local: 'var(--success)'};
+    var providerColors = {claude: '#c8a84b', gemini: '#4fc3f7', minimax: '#a78bfa', local: '#4caf50'};
     var weekData = data.week || {};
     providers.forEach(function(p) {
       var pd = weekData[p];
       if (!pd) return;
       var row = document.createElement('div');
-      row.style.cssText = 'display:flex;justify-content:space-between;padding:2px 0;font-size:var(--font-size-sm)';
+      row.style.cssText = 'display:flex;justify-content:space-between;padding:2px 0;font-size:12px';
       var name = document.createElement('span');
-      name.textContent = p;
-      name.style.color = providerColors[p] || 'var(--text-secondary)';
-      name.style.fontWeight = 'bold';
+      name.textContent = p; name.style.color = providerColors[p] || 'var(--dim)'; name.style.fontWeight = 'bold';
       var cost = document.createElement('span');
       cost.textContent = '$' + (pd.cost_usd || 0).toFixed(4) + '  (' + (pd.calls || 0) + ' calls)';
-      cost.style.color = 'var(--text-secondary)';
-      row.appendChild(name);
-      row.appendChild(cost);
-      details.appendChild(row);
+      cost.style.color = 'var(--dim)';
+      row.appendChild(name); row.appendChild(cost); details.appendChild(row);
     });
 
-    /* Top skills */
     if (data.top_skills && data.top_skills.length > 0) {
       var skillHdr = document.createElement('div');
       skillHdr.textContent = 'Top skills by cost (7d):';
-      skillHdr.style.cssText = 'font-size:var(--font-size-xs);color:var(--text-secondary);margin-top:8px;margin-bottom:4px';
+      skillHdr.style.cssText = 'font-size:11px;color:var(--dim);margin-top:8px;margin-bottom:4px';
       details.appendChild(skillHdr);
       data.top_skills.slice(0, 5).forEach(function(s) {
         var row = document.createElement('div');
-        row.style.cssText = 'display:flex;justify-content:space-between;padding:1px 0;font-size:var(--font-size-xs);color:var(--text-primary)';
-        var name = document.createElement('span');
-        name.textContent = s.skill || '?';
+        row.style.cssText = 'display:flex;justify-content:space-between;padding:1px 0;font-size:11px;color:var(--text)';
+        var name = document.createElement('span'); name.textContent = s.skill || '?';
         var cost = document.createElement('span');
-        cost.textContent = '$' + (s.cost_usd || 0).toFixed(4);
-        cost.style.color = 'var(--text-secondary)';
-        row.appendChild(name);
-        row.appendChild(cost);
-        details.appendChild(row);
+        cost.textContent = '$' + (s.cost_usd || 0).toFixed(4); cost.style.color = 'var(--dim)';
+        row.appendChild(name); row.appendChild(cost); details.appendChild(row);
       });
     }
-
     note.textContent = 'Costs tracked locally per API call. Anthropic/Google do not expose account billing APIs.';
-  }).catch(function(e) {
-    console.error('Cost tracker error:', e);
-  });
+  } catch(e) { console.error('Cost tracker error:', e); }
 }
 
-function loadEvolution() {
-  return fetchJSON('/api/evolution').then(function(data) {
+async function loadEvolution() {
+  try {
+    var data = await fetchJSON('/api/evolution');
     var el = document.getElementById('evolutionStats');
-    _clearElement(el);
-
+    el.textContent = '';
     if (data.agents && data.agents.length > 0) {
       var table = document.createElement('table');
       var thead = document.createElement('thead');
       var headerRow = document.createElement('tr');
       ['Agent', 'Tasks', 'Done', 'IQ'].forEach(function(h) {
-        var th = document.createElement('th');
-        th.textContent = h;
-        headerRow.appendChild(th);
+        var th = document.createElement('th'); th.textContent = h; headerRow.appendChild(th);
       });
-      thead.appendChild(headerRow);
-      table.appendChild(thead);
-
+      thead.appendChild(headerRow); table.appendChild(thead);
       var tbody = document.createElement('tbody');
       data.agents.slice(0, 10).forEach(function(a) {
         var tr = document.createElement('tr');
-        var cells = [a.agent || '?', a.tasks, a.done, a.avg_iq || '\u2014'];
-        cells.forEach(function(val, i) {
-          var td = document.createElement('td');
-          td.textContent = String(val);
-          if (i > 0) td.style.color = 'var(--text-secondary)';
+        [a.agent || '?', a.tasks, a.done, a.avg_iq || '\u2014'].forEach(function(val, i) {
+          var td = document.createElement('td'); td.textContent = String(val);
+          if (i > 0) td.style.color = 'var(--dim)';
           tr.appendChild(td);
         });
         tbody.appendChild(tr);
       });
-      table.appendChild(tbody);
-      el.appendChild(table);
+      table.appendChild(tbody); el.appendChild(table);
     } else {
-      el.textContent = 'No agent data yet';
-      el.style.color = 'var(--text-secondary)';
+      el.textContent = 'No agent data yet'; el.style.color = 'var(--dim)';
     }
 
     var qel = document.getElementById('qualityTrend');
-    _clearElement(qel);
+    qel.textContent = '';
     if (data.quality_trend && data.quality_trend.length > 0) {
       data.quality_trend.forEach(function(d) {
         var row = document.createElement('div');
-        row.style.cssText = 'display:flex;justify-content:space-between;padding:2px 0;font-size:var(--font-size-sm)';
-        var day = document.createElement('span');
-        day.textContent = d.day;
-        day.style.color = 'var(--text-secondary)';
+        row.style.cssText = 'display:flex;justify-content:space-between;padding:2px 0;font-size:12px';
+        var day = document.createElement('span'); day.textContent = d.day; day.style.color = 'var(--dim)';
         var score = document.createElement('span');
         score.textContent = 'IQ: ' + (d.avg_score || '\u2014') + ' (' + d.scored_tasks + ' tasks)';
-        var color = (d.avg_score || 0) >= 0.7 ? 'var(--success)' : (d.avg_score || 0) >= 0.4 ? 'var(--warning)' : 'var(--error)';
-        score.style.color = color;
-        row.appendChild(day);
-        row.appendChild(score);
-        qel.appendChild(row);
+        score.style.color = (d.avg_score || 0) >= 0.7 ? 'var(--green)' : (d.avg_score || 0) >= 0.4 ? 'var(--orange)' : 'var(--red)';
+        row.appendChild(day); row.appendChild(score); qel.appendChild(row);
       });
     } else {
-      qel.textContent = 'No scored tasks yet';
-      qel.style.color = 'var(--text-secondary)';
+      qel.textContent = 'No scored tasks yet'; qel.style.color = 'var(--dim)';
     }
-  }).catch(function(e) {
-    console.error('Evolution load error:', e);
-  });
+  } catch(e) { console.error('Evolution load error:', e); }
 }
 
-function loadFilesystemAudit() {
-  return fetch('/api/filesystem/audit?limit=20').then(function(r) { return r.json(); }).then(function(d) {
+async function loadFilesystemAudit() {
+  try {
+    var d = await fetch('/api/filesystem/audit?limit=20').then(function(r) { return r.json(); });
     var note = document.getElementById('fsAuditNote');
     var tbody = document.getElementById('fsAuditTable');
     if (!d.log_exists) {
       note.textContent = 'Audit log not found \u2014 enable log_all_access in fleet.toml [filesystem] to start recording.';
-      _clearElement(tbody);
+      tbody.textContent = '';
       return;
     }
     note.textContent = d.entries.length === 0
       ? 'No entries yet.' : 'Showing ' + d.entries.length + ' most recent entries (newest first).';
-    _clearElement(tbody);
+    tbody.textContent = '';
     d.entries.forEach(function(e) {
       var tr = document.createElement('tr');
+      var color = e.status === 'DENY' ? 'var(--red)' : 'var(--green)';
       var cells = [
-        {text: (e.timestamp||'').replace('T',' '), style: 'padding:3px 8px;color:var(--text-secondary);white-space:nowrap'},
-        {text: e.status||'?', style: 'padding:3px 8px;color:' + (e.status === 'DENY' ? 'var(--error)' : 'var(--success)') + ';font-weight:bold'},
+        {text: (e.timestamp||'').replace('T',' '), style: 'padding:3px 8px;color:var(--dim);white-space:nowrap'},
+        {text: e.status||'?', style: 'padding:3px 8px;color:' + color + ';font-weight:bold'},
         {text: e.agent||'', style: 'padding:3px 8px'},
-        {text: e.skill||'', style: 'padding:3px 8px;color:var(--text-secondary)'},
+        {text: e.skill||'', style: 'padding:3px 8px;color:var(--dim)'},
         {text: e.action||'', style: 'padding:3px 8px'},
-        {text: e.path||e.raw||'', style: 'padding:3px 8px;font-size:var(--font-size-xs);word-break:break-all'},
+        {text: e.path||e.raw||'', style: 'padding:3px 8px;font-size:11px;word-break:break-all'},
       ];
       cells.forEach(function(c) {
         var td = document.createElement('td');
@@ -1647,26 +1610,27 @@ function loadFilesystemAudit() {
       });
       tbody.appendChild(tr);
     });
-  }).catch(function(ex) { console.error('Filesystem audit load error:', ex); });
+  } catch(ex) { console.error('Filesystem audit load error:', ex); }
 }
 
-/* ── Audit Trail ──────────────────────────────────────────────────────────── */
+// ── Audit Trail ──────────────────────────────────────────────────────────────
 var _auditOffset = 0;
 var _auditLimit = 50;
 
-function loadAuditTrail() {
-  var actor = document.getElementById('auditActorFilter').value;
-  var action = document.getElementById('auditActionFilter').value;
-  var fromDate = document.getElementById('auditFromDate').value;
-  var toDate = document.getElementById('auditToDate').value;
+async function loadAuditTrail() {
+  try {
+    var actor = document.getElementById('auditActorFilter').value;
+    var action = document.getElementById('auditActionFilter').value;
+    var fromDate = document.getElementById('auditFromDate').value;
+    var toDate = document.getElementById('auditToDate').value;
 
-  var url = '/api/audit?limit=' + _auditLimit + '&offset=' + _auditOffset;
-  if (actor) url += '&actor=' + encodeURIComponent(actor);
-  if (action) url += '&action=' + encodeURIComponent(action);
-  if (fromDate) url += '&from=' + encodeURIComponent(fromDate + 'T00:00:00');
-  if (toDate) url += '&to=' + encodeURIComponent(toDate + 'T23:59:59');
+    var url = '/api/audit?limit=' + _auditLimit + '&offset=' + _auditOffset;
+    if (actor) url += '&actor=' + encodeURIComponent(actor);
+    if (action) url += '&action=' + encodeURIComponent(action);
+    if (fromDate) url += '&from=' + encodeURIComponent(fromDate + 'T00:00:00');
+    if (toDate) url += '&to=' + encodeURIComponent(toDate + 'T23:59:59');
 
-  return fetch(url).then(function(r) { return r.json(); }).then(function(d) {
+    var d = await fetch(url).then(function(r) { return r.json(); });
     if (d.error) {
       document.getElementById('auditTrailNote').textContent = 'Error: ' + d.error;
       return;
@@ -1674,37 +1638,32 @@ function loadAuditTrail() {
 
     var events = d.events || [];
     var total = d.total || 0;
-    var noteEl = document.getElementById('auditTrailNote');
-    noteEl.textContent = total + ' total events' + (total > _auditLimit ? ' (showing ' + Math.min(_auditLimit, events.length) + ')' : '');
+    document.getElementById('auditTrailNote').textContent = total + ' total events' + (total > _auditLimit ? ' (showing ' + Math.min(_auditLimit, events.length) + ')' : '');
 
     var filters = d.filters || {};
     var actorSel = document.getElementById('auditActorFilter');
     var actionSel = document.getElementById('auditActionFilter');
     if (actorSel.options.length <= 1 && (filters.actors||[]).length > 0) {
       (filters.actors||[]).forEach(function(a) {
-        var opt = document.createElement('option');
-        opt.value = a; opt.textContent = a;
+        var opt = document.createElement('option'); opt.value = a; opt.textContent = a;
         actorSel.appendChild(opt);
       });
     }
     if (actionSel.options.length <= 1 && (filters.actions||[]).length > 0) {
       (filters.actions||[]).forEach(function(a) {
-        var opt = document.createElement('option');
-        opt.value = a; opt.textContent = a;
+        var opt = document.createElement('option'); opt.value = a; opt.textContent = a;
         actionSel.appendChild(opt);
       });
     }
 
     var tbody = document.getElementById('auditTrailTable');
-    _clearElement(tbody);
+    tbody.textContent = '';
     if (events.length === 0) {
       var tr = document.createElement('tr');
       var td = document.createElement('td');
-      td.colSpan = 6;
-      td.style.cssText = 'padding:8px;color:var(--text-secondary);text-align:center';
+      td.colSpan = 6; td.style.cssText = 'padding:8px;color:var(--dim);text-align:center';
       td.textContent = 'No audit events yet';
-      tr.appendChild(td);
-      tbody.appendChild(tr);
+      tr.appendChild(td); tbody.appendChild(tr);
     } else {
       events.forEach(function(e) {
         var tr = document.createElement('tr');
@@ -1712,47 +1671,45 @@ function loadAuditTrail() {
         var cost = e.cost_usd ? '$' + Number(e.cost_usd).toFixed(4) : '';
         var detail = (e.detail||'').length > 60 ? (e.detail||'').substring(0,57) + '...' : (e.detail||'');
         var cells = [
-          {text: ts, style: 'padding:3px 8px;white-space:nowrap;color:var(--text-secondary)'},
+          {text: ts, style: 'padding:3px 8px;white-space:nowrap;color:var(--dim)'},
           {text: e.actor||'', style: 'padding:3px 8px'},
           {text: e.action||'', style: 'padding:3px 8px'},
-          {text: e.resource||'', style: 'padding:3px 8px;font-size:var(--font-size-xs)'},
+          {text: e.resource||'', style: 'padding:3px 8px;font-size:11px'},
           {text: cost, style: 'padding:3px 8px;text-align:right;color:var(--accent)'},
-          {text: detail, style: 'padding:3px 8px;font-size:var(--font-size-xs);word-break:break-all'},
+          {text: detail, style: 'padding:3px 8px;font-size:11px;word-break:break-all'},
         ];
         cells.forEach(function(c) {
           var td = document.createElement('td');
-          td.style.cssText = c.style;
-          td.textContent = c.text;
+          td.style.cssText = c.style; td.textContent = c.text;
           tr.appendChild(td);
         });
         tbody.appendChild(tr);
       });
     }
 
-    /* Pager */
+    // Pager
     var pager = document.getElementById('auditTrailPager');
-    _clearElement(pager);
-    var pageNum = Math.floor(_auditOffset / _auditLimit) + 1;
+    pager.textContent = '';
     var totalPages = Math.max(1, Math.ceil(total / _auditLimit));
+    var currentPage = Math.floor(_auditOffset / _auditLimit) + 1;
     if (_auditOffset > 0) {
       var prevBtn = document.createElement('button');
-      prevBtn.className = 'export-btn';
+      prevBtn.style.cssText = 'padding:2px 8px;font-size:11px;cursor:pointer';
       prevBtn.textContent = 'Prev';
       prevBtn.addEventListener('click', function() { _auditOffset = Math.max(0, _auditOffset - _auditLimit); loadAuditTrail(); });
       pager.appendChild(prevBtn);
       pager.appendChild(document.createTextNode(' '));
     }
-    var pageText = document.createTextNode('Page ' + pageNum + ' of ' + totalPages);
-    pager.appendChild(pageText);
+    pager.appendChild(document.createTextNode('Page ' + currentPage + ' of ' + totalPages));
     if (_auditOffset + _auditLimit < total) {
       pager.appendChild(document.createTextNode(' '));
       var nextBtn = document.createElement('button');
-      nextBtn.className = 'export-btn';
+      nextBtn.style.cssText = 'padding:2px 8px;font-size:11px;cursor:pointer';
       nextBtn.textContent = 'Next';
       nextBtn.addEventListener('click', function() { _auditOffset += _auditLimit; loadAuditTrail(); });
       pager.appendChild(nextBtn);
     }
-  }).catch(function(ex) { console.error('Audit trail load error:', ex); });
+  } catch(ex) { console.error('Audit trail load error:', ex); }
 }
 
 function exportAudit(fmt) {
@@ -1768,57 +1725,760 @@ function exportAudit(fmt) {
   window.open(url, '_blank');
 }
 
-function loadAll() {
-  return fetch('/api/dashboard').then(function(r) { return r.ok ? r.json() : null; }).then(function(cache) {
-    _dashCache = cache;
-    _dashCacheTs = Date.now();
-  }).catch(function() {
-    _dashCache = null;
-  }).then(function() {
-    return Promise.all([
-      loadStatus(), loadCodeStats(), loadThermal(), loadTraining(),
-      loadActivity(), loadSkills(), loadDiscussions(), loadModules(),
-      loadReviews(), loadKnowledge(), loadRAG(), loadTimeline(),
-      loadDataStats(), loadAlerts(), loadAgentActivity(), loadCostTracker(),
-      loadEvolution(), loadFilesystemAudit(), loadAuditTrail(),
-    ]);
-  }).then(function() {
-    _dashCache = null;
-    document.getElementById('lastUpdate').textContent = 'Updated: ' + new Date().toLocaleTimeString();
+/* ══════════════════════════════════════════════════════════════════════════
+   PANEL 2: AGENT CARDS
+   ══════════════════════════════════════════════════════════════════════════ */
+
+async function loadAgentCards() {
+  var container = document.getElementById('agent-list');
+  try {
+    var data = await fetchJSON('/api/fleet/workers');
+    if (!data || data.error || !Array.isArray(data) || data.length === 0) {
+      container.textContent = '';
+      var msg = document.createElement('div');
+      msg.style.cssText = 'color:var(--dim);padding:16px;text-align:center';
+      msg.textContent = 'No agents found. Is the fleet running?';
+      container.appendChild(msg);
+      return;
+    }
+
+    container.textContent = '';
+    data.forEach(function(agent) {
+      var isAlive = agent.alive;
+      var statusText = agent.status || (isAlive ? 'IDLE' : 'OFFLINE');
+
+      var card = document.createElement('div');
+      card.className = 'agent-card' + (isAlive ? '' : ' disabled');
+
+      var header = document.createElement('div');
+      header.className = 'agent-header';
+
+      var nameDiv = document.createElement('div');
+      var nameEl = document.createElement('div');
+      nameEl.className = 'agent-name';
+      nameEl.textContent = agent.name;
+      var roleEl = document.createElement('div');
+      roleEl.className = 'agent-role';
+      roleEl.textContent = agent.role;
+      nameDiv.appendChild(nameEl);
+      nameDiv.appendChild(roleEl);
+
+      var controlDiv = document.createElement('div');
+      controlDiv.style.cssText = 'display:flex;align-items:center;gap:8px';
+      var badgeSpan = document.createElement('span');
+      var bSt = statusText.toLowerCase().replace(/[^a-z0-9-]/g, '-');
+      badgeSpan.className = 'badge badge-' + (BADGE_WHITELIST.has(bSt) ? bSt : 'info');
+      badgeSpan.textContent = statusText;
+      controlDiv.appendChild(badgeSpan);
+
+      var toggleLabel = document.createElement('label');
+      toggleLabel.className = 'toggle';
+      toggleLabel.title = (isAlive ? 'Disable' : 'Enable') + ' agent';
+      var checkbox = document.createElement('input');
+      checkbox.type = 'checkbox';
+      checkbox.checked = isAlive;
+      (function(agentName) {
+        checkbox.addEventListener('change', function() { toggleAgent(agentName, this.checked); });
+      })(agent.name);
+      var slider = document.createElement('span');
+      slider.className = 'slider';
+      toggleLabel.appendChild(checkbox);
+      toggleLabel.appendChild(slider);
+      controlDiv.appendChild(toggleLabel);
+
+      header.appendChild(nameDiv);
+      header.appendChild(controlDiv);
+
+      var taskDiv = document.createElement('div');
+      taskDiv.className = 'agent-task';
+      taskDiv.textContent = agent.current_task ? 'Task: ' + agent.current_task : 'No active task';
+
+      var seenDiv = document.createElement('div');
+      seenDiv.style.cssText = 'font-size:11px;color:var(--dim);margin-top:4px';
+      seenDiv.textContent = 'Last seen: ' + timeAgo(agent.last_heartbeat);
+
+      card.appendChild(header);
+      card.appendChild(taskDiv);
+      card.appendChild(seenDiv);
+      container.appendChild(card);
+    });
+  } catch(e) {
+    container.textContent = '';
+    var errDiv = document.createElement('div');
+    errDiv.style.cssText = 'color:var(--red);padding:16px';
+    errDiv.textContent = 'Error loading agents: ' + e.message;
+    container.appendChild(errDiv);
+  }
+}
+
+async function toggleAgent(name, enabled) {
+  var action = enabled ? 'enable' : 'disable';
+  try {
+    var r = await fetch('/api/fleet/worker/' + encodeURIComponent(name) + '/' + action, { method: 'POST' });
+    var data = await r.json();
+    if (r.ok) {
+      showToast(name + ' ' + action + 'd', 'success');
+    } else {
+      showToast('Failed to ' + action + ' ' + name + ': ' + (data.error || ''), 'error');
+    }
+    setTimeout(loadAgentCards, 1000);
+  } catch(e) {
+    showToast('Error: ' + e.message, 'error');
+  }
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   PANEL 3: TASK DISPATCH
+   ══════════════════════════════════════════════════════════════════════════ */
+
+async function loadSkillPicker() {
+  try {
+    var data = await fetchJSON('/api/skills');
+    var select = document.getElementById('skill-picker');
+    select.textContent = '';
+    var defaultOpt = document.createElement('option');
+    defaultOpt.value = '';
+    defaultOpt.textContent = '-- Select a skill --';
+    select.appendChild(defaultOpt);
+    Object.keys(data).sort().forEach(function(s) {
+      var opt = document.createElement('option');
+      opt.value = s;
+      opt.textContent = s + ' (' + (data[s].total || 0) + ' runs)';
+      select.appendChild(opt);
+    });
+  } catch(e) { console.error('Skill picker load error:', e); }
+}
+
+async function dispatchTask() {
+  var skill = document.getElementById('skill-picker').value;
+  if (!skill) { showToast('Please select a skill', 'error'); return; }
+
+  var payloadStr = document.getElementById('payload-input').value.trim();
+  var payload = {};
+  if (payloadStr) {
+    try { payload = JSON.parse(payloadStr); }
+    catch(e) { showToast('Invalid JSON payload: ' + e.message, 'error'); return; }
+  }
+
+  var priority = parseInt(document.getElementById('priority').value, 10);
+  var assignedTo = document.getElementById('task-agent').value.trim();
+
+  var body = { type: skill, payload: payload, priority: priority };
+  if (assignedTo) body.assigned_to = assignedTo;
+
+  try {
+    var r = await fetch('/api/trigger', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    var data = await r.json();
+    if (r.ok && data.task_id) {
+      showToast('Task dispatched: #' + data.task_id, 'success');
+      document.getElementById('payload-input').value = '';
+      loadRecentTasks();
+    } else {
+      showToast('Dispatch failed: ' + (data.error || 'Unknown error'), 'error');
+    }
+  } catch(e) { showToast('Dispatch error: ' + e.message, 'error'); }
+}
+
+async function loadRecentTasks() {
+  try {
+    var data = await fetchJSON('/api/timeline');
+    var el = document.getElementById('recent-tasks-list');
+    el.textContent = '';
+    if (!data || data.length === 0) {
+      var empty = document.createElement('div');
+      empty.style.cssText = 'color:var(--dim);text-align:center;padding:12px';
+      empty.textContent = 'No recent tasks';
+      el.appendChild(empty);
+      return;
+    }
+    data.slice(0, 30).forEach(function(t) {
+      var div = document.createElement('div');
+      div.style.cssText = 'display:flex;gap:10px;padding:6px 0;border-bottom:1px solid var(--bg3);font-size:12px;align-items:center';
+      var timeSpan = document.createElement('span');
+      timeSpan.style.cssText = 'color:var(--dim);min-width:50px';
+      timeSpan.textContent = shortTime(t.time);
+      var agentSpan = document.createElement('span');
+      agentSpan.style.cssText = 'color:var(--gold);min-width:70px';
+      agentSpan.textContent = t.agent;
+      var badgeSpan = document.createElement('span');
+      var bSt = (t.status || '').toLowerCase();
+      badgeSpan.className = 'badge badge-' + (BADGE_WHITELIST.has(bSt) ? bSt : 'info');
+      badgeSpan.textContent = t.status || '';
+      var detailSpan = document.createElement('span');
+      detailSpan.style.flex = '1';
+      detailSpan.textContent = t.detail || '';
+      div.appendChild(timeSpan);
+      div.appendChild(agentSpan);
+      div.appendChild(badgeSpan);
+      div.appendChild(detailSpan);
+      el.appendChild(div);
+    });
+  } catch(e) { console.error('Recent tasks error:', e); }
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   PANEL 4: HITL (Human-in-the-Loop)
+   ══════════════════════════════════════════════════════════════════════════ */
+
+async function loadHITL() {
+  try {
+    var data = await fetchJSON('/api/tasks/waiting-human');
+    var tasks = Array.isArray(data) ? data : [];
+    document.getElementById('hitl-count').textContent = String(tasks.length);
+    var tabBadge = document.getElementById('hitl-tab-badge');
+    if (tasks.length > 0) { tabBadge.style.display = 'inline'; tabBadge.textContent = String(tasks.length); }
+    else { tabBadge.style.display = 'none'; }
+
+    var list = document.getElementById('hitl-list');
+    list.textContent = '';
+    if (tasks.length === 0) {
+      var empty = document.createElement('div');
+      empty.style.cssText = 'color:var(--dim);text-align:center;padding:20px';
+      empty.textContent = 'No tasks awaiting human input';
+      list.appendChild(empty);
+      return;
+    }
+
+    for (var i = 0; i < tasks.length; i++) {
+      var t = tasks[i];
+      var questionData = {};
+      try { questionData = await fetchJSON('/api/tasks/' + t.id + '/question'); } catch(e) {}
+
+      var item = document.createElement('div');
+      item.className = 'hitl-item';
+
+      var meta = document.createElement('div');
+      meta.className = 'hitl-meta';
+      var metaLeft = document.createElement('span');
+      metaLeft.textContent = 'Task #' + t.id + ' \u2014 ' + (t.type || 'unknown');
+      var metaRight = document.createElement('span');
+      metaRight.textContent = (t.agent || '') + ' \u2022 ' + timeAgo(t.created_at);
+      meta.appendChild(metaLeft);
+      meta.appendChild(metaRight);
+
+      var question = document.createElement('div');
+      question.className = 'hitl-question';
+      question.textContent = questionData.question || t.question || 'Agent is requesting input.';
+
+      var textarea = document.createElement('textarea');
+      textarea.id = 'hitl-response-' + t.id;
+      textarea.placeholder = 'Type your response here...';
+
+      var actions = document.createElement('div');
+      actions.className = 'hitl-actions';
+      var rejectBtn = document.createElement('button');
+      rejectBtn.className = 'btn btn-ghost btn-sm';
+      rejectBtn.textContent = 'Reject';
+      (function(taskId) { rejectBtn.addEventListener('click', function() { rejectHITL(taskId); }); })(t.id);
+      var submitBtn = document.createElement('button');
+      submitBtn.className = 'btn btn-success btn-sm';
+      submitBtn.textContent = 'Submit Response';
+      (function(taskId) { submitBtn.addEventListener('click', function() { submitHITL(taskId); }); })(t.id);
+      actions.appendChild(rejectBtn);
+      actions.appendChild(submitBtn);
+
+      item.appendChild(meta);
+      item.appendChild(question);
+      item.appendChild(textarea);
+      item.appendChild(actions);
+      list.appendChild(item);
+    }
+  } catch(e) {
+    var list = document.getElementById('hitl-list');
+    list.textContent = '';
+    var err = document.createElement('div');
+    err.style.cssText = 'color:var(--red);padding:12px';
+    err.textContent = 'Error loading HITL tasks: ' + e.message;
+    list.appendChild(err);
+  }
+}
+
+async function submitHITL(taskId) {
+  var textarea = document.getElementById('hitl-response-' + taskId);
+  var response = textarea ? textarea.value.trim() : '';
+  if (!response) { showToast('Please enter a response', 'error'); return; }
+
+  try {
+    var r = await fetch('/api/tasks/' + taskId + '/respond', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ response: response }),
+    });
+    var data = await r.json();
+    if (r.ok) { showToast('Response submitted for task #' + taskId, 'success'); loadHITL(); }
+    else { showToast('Submit failed: ' + (data.error || ''), 'error'); }
+  } catch(e) { showToast('Error: ' + e.message, 'error'); }
+}
+
+async function rejectHITL(taskId) {
+  if (!confirmAction('Reject and cancel task #' + taskId + '?')) return;
+  try {
+    var r = await fetch('/api/tasks/' + taskId, { method: 'DELETE' });
+    var data = await r.json();
+    if (r.ok) { showToast('Task #' + taskId + ' rejected', 'info'); loadHITL(); }
+    else { showToast('Reject failed: ' + (data.error || ''), 'error'); }
+  } catch(e) { showToast('Error: ' + e.message, 'error'); }
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   PANEL 5: QUEUE MANAGEMENT
+   ══════════════════════════════════════════════════════════════════════════ */
+
+var _queuePage = 1;
+
+async function loadQueue() {
+  try {
+    var data = await fetchJSON('/api/tasks/queue?page=' + _queuePage + '&per_page=50');
+    var tasks = data.tasks || [];
+    var total = data.total || 0;
+
+    document.getElementById('queue-count-label').textContent = total + ' tasks';
+
+    var list = document.getElementById('queue-list');
+    list.textContent = '';
+    if (tasks.length === 0) {
+      var empty = document.createElement('div');
+      empty.style.cssText = 'color:var(--dim);text-align:center;padding:20px';
+      empty.textContent = 'Queue is empty';
+      list.appendChild(empty);
+      return;
+    }
+
+    tasks.forEach(function(t) {
+      var item = document.createElement('div');
+      item.className = 'queue-item';
+      item.draggable = true;
+      item.dataset.taskId = String(t.id);
+      item.dataset.priority = String(t.priority || 5);
+
+      var handle = document.createElement('span');
+      handle.className = 'drag-handle';
+      handle.title = 'Drag to reorder';
+      handle.textContent = '\u2630';
+
+      var skillSpan = document.createElement('span');
+      skillSpan.className = 'queue-skill';
+      skillSpan.textContent = t.type || 'unknown';
+
+      var priBadge = document.createElement('span');
+      priBadge.className = 'priority-badge';
+      priBadge.title = 'Priority';
+      priBadge.textContent = 'P' + (t.priority || 5);
+
+      var statusBadge = document.createElement('span');
+      var bSt = (t.status || '').toLowerCase();
+      statusBadge.className = 'badge badge-' + (BADGE_WHITELIST.has(bSt) ? bSt : 'info');
+      statusBadge.textContent = t.status || '';
+
+      var agentSpan = document.createElement('span');
+      agentSpan.className = 'queue-agent';
+      agentSpan.textContent = t.assigned_to ? t.assigned_to : 'unassigned';
+
+      var timeSpan = document.createElement('span');
+      timeSpan.style.cssText = 'font-size:11px;color:var(--dim)';
+      timeSpan.textContent = timeAgo(t.created_at);
+
+      item.appendChild(handle);
+      item.appendChild(skillSpan);
+      item.appendChild(priBadge);
+      item.appendChild(statusBadge);
+      item.appendChild(agentSpan);
+      item.appendChild(timeSpan);
+
+      if (t.status === 'PENDING') {
+        var cancelBtn = document.createElement('button');
+        cancelBtn.className = 'btn btn-danger btn-sm';
+        cancelBtn.title = 'Cancel task';
+        cancelBtn.textContent = '\u2715';
+        (function(taskId) { cancelBtn.addEventListener('click', function() { cancelTask(taskId); }); })(t.id);
+        item.appendChild(cancelBtn);
+      }
+      if (t.status === 'FAILED') {
+        var requeueBtn = document.createElement('button');
+        requeueBtn.className = 'btn btn-ghost btn-sm';
+        requeueBtn.title = 'Requeue task';
+        requeueBtn.textContent = '\u21BB';
+        (function(taskId) { requeueBtn.addEventListener('click', function() { requeueTask(taskId); }); })(t.id);
+        item.appendChild(requeueBtn);
+      }
+
+      // Drag events
+      (function(taskItem, taskData) {
+        taskItem.addEventListener('dragstart', function(e) {
+          e.dataTransfer.setData('text/plain', String(taskData.id));
+          taskItem.classList.add('dragging');
+        });
+        taskItem.addEventListener('dragend', function() { taskItem.classList.remove('dragging'); });
+        taskItem.addEventListener('dragover', function(e) { e.preventDefault(); });
+        taskItem.addEventListener('drop', function(e) {
+          e.preventDefault();
+          var draggedId = parseInt(e.dataTransfer.getData('text/plain'), 10);
+          if (draggedId !== taskData.id) {
+            reorderQueue(draggedId, taskData.priority || 5);
+          }
+        });
+      })(item, t);
+
+      list.appendChild(item);
+    });
+
+    // Pager
+    var pager = document.getElementById('queue-pager');
+    pager.textContent = '';
+    var totalPages = Math.max(1, Math.ceil(total / 50));
+    if (_queuePage > 1) {
+      var prevBtn = document.createElement('button');
+      prevBtn.className = 'btn btn-ghost btn-sm';
+      prevBtn.textContent = 'Prev';
+      prevBtn.addEventListener('click', function() { _queuePage--; loadQueue(); });
+      pager.appendChild(prevBtn);
+      pager.appendChild(document.createTextNode(' '));
+    }
+    pager.appendChild(document.createTextNode('Page ' + _queuePage + ' of ' + totalPages));
+    if (_queuePage < totalPages) {
+      pager.appendChild(document.createTextNode(' '));
+      var nextBtn = document.createElement('button');
+      nextBtn.className = 'btn btn-ghost btn-sm';
+      nextBtn.textContent = 'Next';
+      nextBtn.addEventListener('click', function() { _queuePage++; loadQueue(); });
+      pager.appendChild(nextBtn);
+    }
+  } catch(e) {
+    var list = document.getElementById('queue-list');
+    list.textContent = '';
+    var err = document.createElement('div');
+    err.style.cssText = 'color:var(--red);padding:12px';
+    err.textContent = 'Error loading queue: ' + e.message;
+    list.appendChild(err);
+  }
+}
+
+async function cancelTask(taskId) {
+  if (!confirmAction('Cancel task #' + taskId + '? This cannot be undone.')) return;
+  try {
+    var r = await fetch('/api/tasks/' + taskId, { method: 'DELETE' });
+    var data = await r.json();
+    if (r.ok) { showToast('Task #' + taskId + ' cancelled', 'info'); loadQueue(); }
+    else { showToast('Cancel failed: ' + (data.error || ''), 'error'); }
+  } catch(e) { showToast('Error: ' + e.message, 'error'); }
+}
+
+async function requeueTask(taskId) {
+  try {
+    var r = await fetch('/api/tasks/' + taskId + '/requeue', { method: 'POST' });
+    var data = await r.json();
+    if (r.ok) { showToast('Task #' + taskId + ' requeued', 'success'); loadQueue(); }
+    else { showToast('Requeue failed: ' + (data.error || ''), 'error'); }
+  } catch(e) { showToast('Error: ' + e.message, 'error'); }
+}
+
+async function reorderQueue(taskId, newPriority) {
+  try {
+    var r = await fetch('/api/tasks/' + taskId + '/priority', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ priority: newPriority }),
+    });
+    var data = await r.json();
+    if (r.ok) { showToast('Task #' + taskId + ' priority updated to ' + newPriority, 'success'); loadQueue(); }
+    else { showToast('Reorder failed: ' + (data.error || ''), 'error'); }
+  } catch(e) { showToast('Error: ' + e.message, 'error'); }
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   PANEL 6: SETTINGS EDITOR
+   ══════════════════════════════════════════════════════════════════════════ */
+
+async function loadSettings() {
+  try {
+    var thermalData = await fetchJSON('/api/thermal');
+    var triggerData = await fetchJSON('/api/trigger/status');
+
+    var container = document.getElementById('settings-sections');
+    container.textContent = '';
+
+    var sections = {
+      'Fleet': {
+        'max_workers': { type: 'number', value: '', hint: 'Maximum concurrent workers' },
+        'disabled_agents': { type: 'text', value: '', hint: 'Comma-separated list of disabled agent roles' },
+      },
+      'Models': {
+        'default_model': { type: 'text', value: '', hint: 'Default Ollama model (e.g. qwen3:8b)' },
+        'conductor_model': { type: 'text', value: '', hint: 'Conductor model (e.g. qwen3:4b)' },
+        'failsafe_model': { type: 'text', value: '', hint: 'Failsafe model (e.g. qwen3:0.6b)' },
+      },
+      'Thermal': {
+        'gpu_sustained': { type: 'number', value: (thermalData.thresholds || {}).gpu_sustained || 75, hint: 'GPU sustained temp threshold (C)' },
+        'gpu_burst': { type: 'number', value: (thermalData.thresholds || {}).gpu_burst || 78, hint: 'GPU burst temp threshold (C)' },
+      },
+      'Dashboard': {
+        'port': { type: 'number', value: 5555, hint: 'Dashboard server port' },
+        'poll_interval_s': { type: 'number', value: 30, hint: 'Hot data polling interval (seconds)' },
+      },
+    };
+
+    // Add trigger config if present
+    var triggers = triggerData.triggers || {};
+    if (Object.keys(triggers).length > 0) {
+      sections['Triggers'] = {};
+      Object.entries(triggers).forEach(function(e) {
+        sections['Triggers'][e[0]] = { type: 'text', value: String(e[1]), hint: 'Trigger config' };
+      });
+    }
+
+    var sectionNames = Object.keys(sections);
+    sectionNames.forEach(function(sectionName, idx) {
+      var fields = sections[sectionName];
+      if (Object.keys(fields).length === 0) return;
+
+      var section = document.createElement('div');
+      section.className = 'settings-section';
+
+      var header = document.createElement('div');
+      header.className = 'settings-section-header';
+      var headerText = document.createElement('span');
+      headerText.textContent = sectionName;
+      var headerArrow = document.createElement('span');
+      headerArrow.style.fontSize = '12px';
+      headerArrow.textContent = idx === 0 ? '\u25BE' : '\u25B8';
+      header.appendChild(headerText);
+      header.appendChild(headerArrow);
+      header.addEventListener('click', function() {
+        var body = header.nextElementSibling;
+        body.classList.toggle('open');
+        headerArrow.textContent = body.classList.contains('open') ? '\u25BE' : '\u25B8';
+      });
+
+      var body = document.createElement('div');
+      body.className = 'settings-section-body' + (idx === 0 ? ' open' : '');
+
+      Object.entries(fields).forEach(function(fe) {
+        var key = fe[0];
+        var spec = fe[1];
+        var row = document.createElement('div');
+        row.className = 'settings-row';
+
+        var label = document.createElement('div');
+        label.className = 'settings-key';
+        label.textContent = key;
+        if (spec.hint) label.title = spec.hint;
+
+        var input;
+        if (spec.type === 'boolean') {
+          input = document.createElement('label');
+          input.className = 'toggle';
+          var cb = document.createElement('input');
+          cb.type = 'checkbox';
+          cb.dataset.section = sectionName;
+          cb.dataset.key = key;
+          if (spec.value) cb.checked = true;
+          var sl = document.createElement('span');
+          sl.className = 'slider';
+          input.appendChild(cb);
+          input.appendChild(sl);
+        } else {
+          input = document.createElement('input');
+          input.type = spec.type === 'number' ? 'number' : 'text';
+          input.value = spec.value != null ? String(spec.value) : '';
+          input.dataset.section = sectionName;
+          input.dataset.key = key;
+          input.placeholder = spec.hint || '';
+          input.style.cssText = 'padding:4px 8px;border-radius:4px;border:1px solid var(--border);background:var(--bg);color:var(--text);font-size:12px;min-width:140px';
+        }
+
+        row.appendChild(label);
+        row.appendChild(input);
+        body.appendChild(row);
+      });
+
+      section.appendChild(header);
+      section.appendChild(body);
+      container.appendChild(section);
+    });
+
+    document.getElementById('settings-note').textContent = 'Settings are read from fleet.toml. Changes require fleet restart to take effect.';
+  } catch(e) {
+    var container = document.getElementById('settings-sections');
+    container.textContent = '';
+    var err = document.createElement('div');
+    err.style.cssText = 'color:var(--red);padding:12px';
+    err.textContent = 'Error loading settings: ' + e.message;
+    container.appendChild(err);
+  }
+}
+
+function saveSettings() {
+  var inputs = document.querySelectorAll('#settings-sections input[data-key]');
+  var changes = {};
+  inputs.forEach(function(inp) {
+    var section = inp.dataset.section;
+    var key = inp.dataset.key;
+    var val = inp.type === 'checkbox' ? inp.checked : inp.value;
+    if (!changes[section]) changes[section] = {};
+    changes[section][key] = val;
+  });
+  showToast('Settings saved (note: fleet.toml changes require restart). Collected ' + Object.keys(changes).length + ' sections.', 'info');
+  document.getElementById('settings-note').textContent = 'Settings collected. fleet.toml must be edited manually for persistent changes. Dashboard-side values updated.';
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   PANEL 7: LOG VIEWER
+   ══════════════════════════════════════════════════════════════════════════ */
+
+function connectLogStream() {
+  document.getElementById('log-stream-status').textContent = 'Connected (via SSE)';
+  loadLogHistory();
+  setInterval(function() {
+    if (document.getElementById('panel-logs').classList.contains('active')) {
+      loadLogHistory();
+    }
+  }, 5000);
+}
+
+async function loadLogHistory() {
+  try {
+    var data = await fetchJSON('/api/timeline');
+    if (!data || !Array.isArray(data)) return;
+
+    var output = document.getElementById('log-output');
+    output.textContent = '';
+
+    data.forEach(function(entry) {
+      var ts = (entry.time || '').replace('T', ' ');
+      var level = 'INFO';
+      var status = (entry.status || '').toUpperCase();
+      if (status === 'FAILED' || status === 'ERROR') level = 'ERROR';
+      else if (status === 'RUNNING' || status === 'BUSY') level = 'WARNING';
+      else if (status === 'DONE') level = 'INFO';
+      else level = 'DEBUG';
+
+      var span = document.createElement('span');
+      span.className = 'log-line-' + level.toLowerCase();
+      span.textContent = '[' + ts + '] [' + level + '] ' + (entry.agent || '?') + ': ' + (entry.detail || entry.status || '') + '\n';
+      output.appendChild(span);
+    });
+
+    // Add alerts as log entries
+    try {
+      var alerts = await fetchJSON('/api/alerts');
+      if (Array.isArray(alerts)) {
+        alerts.slice(0, 10).forEach(function(a) {
+          var lvl = a.level === 'critical' ? 'ERROR' : a.level === 'warning' ? 'WARNING' : 'INFO';
+          var span = document.createElement('span');
+          span.className = 'log-line-' + lvl.toLowerCase();
+          span.textContent = '[ALERT] [' + lvl + '] ' + (a.message || '') + '\n';
+          output.appendChild(span);
+        });
+      }
+    } catch(e) {}
+
+    updateLogLineCount();
+
+    if (document.getElementById('log-autoscroll').checked) {
+      output.scrollTop = output.scrollHeight;
+    }
+  } catch(e) { console.error('Log history error:', e); }
+}
+
+function filterLogs() {
+  var level = document.getElementById('log-level-filter').value;
+  var output = document.getElementById('log-output');
+  var spans = output.querySelectorAll('span');
+  spans.forEach(function(span) {
+    if (level === 'all') { span.style.display = ''; }
+    else { span.style.display = span.className.indexOf('log-line-' + level) !== -1 ? '' : 'none'; }
   });
 }
 
-/* Initial load + SSE connection */
+function clearLogs() {
+  document.getElementById('log-output').textContent = '';
+  updateLogLineCount();
+}
+
+function downloadLogs() {
+  var output = document.getElementById('log-output');
+  var text = output.textContent;
+  var blob = new Blob([text], { type: 'text/plain' });
+  var url = URL.createObjectURL(blob);
+  var a = document.createElement('a');
+  a.href = url;
+  a.download = 'fleet-logs-' + new Date().toISOString().slice(0,10) + '.txt';
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+function updateLogLineCount() {
+  var output = document.getElementById('log-output');
+  var count = output.querySelectorAll('span').length;
+  document.getElementById('log-line-count').textContent = count + ' lines';
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   LOAD ALL + POLLING
+   ══════════════════════════════════════════════════════════════════════════ */
+
+async function loadAll() {
+  try {
+    _dashCache = await fetch('/api/dashboard').then(function(r) { return r.ok ? r.json() : null; });
+    _dashCacheTs = Date.now();
+  } catch(e) { _dashCache = null; }
+  await Promise.all([
+    loadStatus(), loadCodeStats(), loadThermal(), loadTraining(),
+    loadActivity(), loadSkills(), loadDiscussions(), loadModules(),
+    loadReviews(), loadKnowledge(), loadRAG(), loadTimeline(),
+    loadDataStats(), loadAlerts(), loadAgentActivity(), loadCostTracker(),
+    loadEvolution(), loadFilesystemAudit(), loadAuditTrail(),
+  ]);
+  _dashCache = null;
+  document.getElementById('lastUpdate').textContent = 'Updated: ' + new Date().toLocaleTimeString();
+}
+
+// Initial load
+_panelLoaded.overview = true;
 loadAll();
 connectSSE();
+updateFleetStatus();
 
-/* Hot data — poll every 30s */
-setInterval(function() {
-  fetch('/api/dashboard').then(function(r) { return r.ok ? r.json() : null; }).then(function(cache) {
-    _dashCache = cache;
+// Hot data — poll every 30s
+setInterval(async function() {
+  try {
+    _dashCache = await fetch('/api/dashboard').then(function(r) { return r.ok ? r.json() : null; });
     _dashCacheTs = Date.now();
-  }).catch(function() {
-    _dashCache = null;
-  }).then(function() {
-    return Promise.all([
-      loadThermal(), loadTraining(), loadActivity(), loadSkills(),
-      loadReviews(), loadTimeline(), loadAlerts(),
-      loadAgentActivity(), loadCostTracker(), loadEvolution(),
-      loadFilesystemAudit(), loadAuditTrail(),
-    ]);
-  }).then(function() {
-    _dashCache = null;
-  });
+  } catch(e) { _dashCache = null; }
+  await Promise.all([
+    loadThermal(), loadTraining(), loadActivity(), loadSkills(),
+    loadReviews(), loadTimeline(), loadAlerts(),
+    loadAgentActivity(), loadCostTracker(), loadEvolution(),
+    loadFilesystemAudit(), loadAuditTrail(),
+  ]);
+  _dashCache = null;
+  updateFleetStatus();
 }, 30000);
 
-/* Cold data — poll every 5min */
-function loadColdData() {
-  return Promise.all([
+// Cold data — poll every 5min
+async function loadColdData() {
+  await Promise.all([
     loadKnowledge(), loadRAG(), loadCodeStats(), loadDataStats(), loadModules(),
   ]);
 }
 loadColdData();
 setInterval(loadColdData, 300000);
+
+// Auto-refresh active panel data every 5s
+setInterval(function() {
+  var activePanel = document.querySelector('.tab-panel.active');
+  if (!activePanel) return;
+  var id = activePanel.id.replace('panel-', '');
+  switch(id) {
+    case 'agents': if (_panelLoaded.agents) loadAgentCards(); break;
+    case 'hitl': if (_panelLoaded.hitl) loadHITL(); break;
+    case 'queue': if (_panelLoaded.queue) loadQueue(); break;
+  }
+}, 5000);
 </script>
 </body>
 </html>
