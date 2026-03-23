@@ -509,3 +509,11 @@ registered_claude_desktop = false
 hitl_auto_approve_timeout_min = 0       # 0 = off (wait forever)
 hitl_auto_approve_max_cost = 0          # 0 = no cost gate
 dashboard_base_url = "http://127.0.0.1:5555"
+
+# ── Compliance Reporting (v0.300.00b) ─────────────────────────────────
+[compliance]
+enabled = false                              # master switch for compliance module
+auto_generate = true                         # auto-generate reports on schedule
+schedule = "monthly"                         # daily | weekly | monthly
+report_types = ["soc2", "audit_summary", "sla"]  # report types to auto-generate
+retention_days = 365                         # keep reports for 1 year

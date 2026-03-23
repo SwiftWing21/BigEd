@@ -1589,6 +1589,14 @@ except Exception as _sso_exc:
     import logging as _sso_logging
     _sso_logging.getLogger("dashboard").debug("SSO module not loaded: %s", _sso_exc)
 
+# ── Compliance Reporting (v0.300.00b) ─────────────────────────────────────────
+try:
+    from compliance import create_compliance_blueprint
+    _compliance_bp = create_compliance_blueprint(_require_role)
+    app.register_blueprint(_compliance_bp)
+except ImportError:
+    pass  # compliance module optional
+
 
 # ── MCP Server Status (v0.31.00) ─────────────────────────────────────────────
 
