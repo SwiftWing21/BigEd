@@ -950,12 +950,26 @@ def main():
     # Start Dr. Ders (hw_supervisor) — respawned if it crashes
     start_hw_supervisor(config)
 
+    # Federation: auto-setup mTLS certs if enabled
+    try:
+        from fleet_tls import auto_setup as _tls_auto_setup, is_tls_enabled as _is_tls_enabled
+        _tls_auto_setup()
+    except Exception as _tls_exc:
+        log.debug("Fleet TLS auto-setup skipped: %s", _tls_exc)
+
     # Federation: announce rejoin to peers on startup (crash recovery)
     try:
         federation_cfg = config.get("federation", {})
         if federation_cfg.get("enabled") and not offline:
             device_name = config.get("naming", {}).get("device_name", "unknown")
             peers = federation_cfg.get("peers", [])
+            _fed_ssl_ctx = None
+            try:
+                from fleet_tls import is_tls_enabled, get_ssl_context
+                if is_tls_enabled():
+                    _fed_ssl_ctx = get_ssl_context("client")
+            except Exception:
+                pass
             for peer_url in peers:
                 try:
                     rejoin_data = json.dumps({
@@ -969,7 +983,10 @@ def main():
                         f"{peer_url}/api/federation/heartbeat",
                         data=rejoin_data, method="POST",
                         headers={"Content-Type": "application/json"})
-                    urllib.request.urlopen(req, timeout=5)
+                    if _fed_ssl_ctx:
+                        urllib.request.urlopen(req, timeout=5, context=_fed_ssl_ctx)
+                    else:
+                        urllib.request.urlopen(req, timeout=5)
                     log.info(f"Federation: rejoined peer {peer_url}")
                 except Exception:
                     log.debug(f"Federation: peer {peer_url} unreachable (will retry in heartbeat loop)")
@@ -1081,11 +1098,21 @@ def main():
                     max_capacity = config.get("fleet", {}).get("max_workers", 10) * 5
                     if pending / max(max_capacity, 1) > overflow_threshold:
                         fed_peers = federation_cfg.get("peers", [])
+                        _overflow_ssl = None
+                        try:
+                            from fleet_tls import is_tls_enabled, get_ssl_context
+                            if is_tls_enabled():
+                                _overflow_ssl = get_ssl_context("client")
+                        except Exception:
+                            pass
                         for peer_url in fed_peers:
                             try:
                                 # Check peer capacity
+                                _of_kwargs = {"timeout": 3}
+                                if _overflow_ssl:
+                                    _of_kwargs["context"] = _overflow_ssl
                                 with urllib.request.urlopen(
-                                    f"{peer_url}/api/federation/peers", timeout=3
+                                    f"{peer_url}/api/federation/peers", **_of_kwargs
                                 ) as r:
                                     peer_data = json.loads(r.read())  # noqa: F841
                                 # Forward oldest pending tasks to least-loaded peer
@@ -1527,6 +1554,14 @@ def main():
                         _total_vram = _gpu_info.get("total_vram_gb", 0.0)
                     except Exception:
                         pass
+                    # mTLS context for peer communication
+                    _hb_ssl_ctx = None
+                    try:
+                        from fleet_tls import is_tls_enabled, get_ssl_context
+                        if is_tls_enabled():
+                            _hb_ssl_ctx = get_ssl_context("client")
+                    except Exception:
+                        pass
                     peers = federation_cfg.get("peers", [])
                     for peer_url in peers:
                         try:
@@ -1541,7 +1576,10 @@ def main():
                                 f"{peer_url}/api/federation/heartbeat",
                                 data=body, method="POST",
                                 headers={"Content-Type": "application/json"})
-                            urllib.request.urlopen(req, timeout=3)
+                            if _hb_ssl_ctx:
+                                urllib.request.urlopen(req, timeout=3, context=_hb_ssl_ctx)
+                            else:
+                                urllib.request.urlopen(req, timeout=3)
                         except Exception:
                             pass
             except Exception:
