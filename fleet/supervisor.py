@@ -518,18 +518,38 @@ def stop_openclaw():
     openclaw_proc = None
 
 
+def _dashboard_port_alive(config):
+    """Check if the dashboard port is already responding (launched by boot.py)."""
+    dash_cfg = config.get("dashboard", {})
+    port = dash_cfg.get("port", 5555)
+    host = dash_cfg.get("bind_address", "127.0.0.1")
+    try:
+        import urllib.request
+        urllib.request.urlopen(f"http://{host}:{port}/api/health", timeout=2)
+        return True
+    except Exception:
+        return False
+
+
 def start_dashboard(config):
     global dashboard_proc
     if not config.get("dashboard", {}).get("enabled", False):
         log.info("Dashboard disabled in fleet.toml")
         return
+    # Skip if dashboard already running (e.g. launched by boot.py)
+    if _dashboard_port_alive(config):
+        log.info("Dashboard already running — skipping launch")
+        return
     dash_cfg = config.get("dashboard", {})
     port = dash_cfg.get("port", 5555)
     host = dash_cfg.get("bind_address", "127.0.0.1")
-    log.info(f"Starting dashboard on http://{host}:{port}")
+    dash_script = "web_app.py" if (FLEET_DIR / "web_app.py").exists() else "dashboard.py"
+    log.info(f"Starting dashboard ({dash_script}) on http://{host}:{port}")
     dashboard_proc = subprocess.Popen(
-        [PYTHON, str(FLEET_DIR / "dashboard.py"), "--port", str(port), "--host", host],
+        [PYTHON, str(FLEET_DIR / dash_script), "--port", str(port), "--host", host],
         cwd=str(FLEET_DIR),
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
         creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0),
     )
 
@@ -879,7 +899,7 @@ def _memory_watchdog(worker_procs_dict, config):
 
 
 def main():
-    global training_active, config, ollama_evicted_for_training
+    global training_active, config, ollama_evicted_for_training, dashboard_proc
 
     (FLEET_DIR / "logs").mkdir(parents=True, exist_ok=True)
     (FLEET_DIR / "knowledge" / "summaries").mkdir(parents=True, exist_ok=True)
@@ -1032,7 +1052,10 @@ def main():
               eco=config["fleet"]["eco_mode"], mode=mode_label.strip() or "normal",
               scaling="dynamic", core=len(ROLES), pool=len(dynamic_pool))
 
-    last_status = 0
+    # Write STATUS.md immediately so boot.py doesn't wait for the main loop
+    write_status_md()
+
+    last_status = time.time()  # just wrote it — reset timer
     last_training_check = 0
     last_stale_check = 0
     last_context_cleanup = 0
@@ -1065,6 +1088,7 @@ def main():
     global _last_research_trigger, _last_evolution_trigger, _last_results_mtime
 
     while True:
+      try:
         now = time.time()
 
         # Dynamic agent scaling — scale up/down based on task queue depth (every 30s)
@@ -1277,8 +1301,12 @@ def main():
                 start_openclaw(config)
         if not air_gap:
             if dashboard_proc and dashboard_proc.poll() is not None:
-                log.warning(f"Dashboard died (exit={dashboard_proc.returncode}) — restarting")
-                start_dashboard(config)
+                # Only respawn if nothing else is serving the port (boot.py may own it)
+                if not _dashboard_port_alive(config):
+                    log.warning(f"Dashboard died (exit={dashboard_proc.returncode}) — restarting")
+                    start_dashboard(config)
+                else:
+                    dashboard_proc = None  # boot.py owns it, stop tracking
 
         # Respawn Dr. Ders if crashed
         if hw_supervisor_proc and hw_supervisor_proc.poll() is not None:
@@ -1752,6 +1780,9 @@ def main():
             except Exception:
                 pass
 
+        time.sleep(5)
+      except Exception:
+        log.warning("Main loop iteration failed", exc_info=True)
         time.sleep(5)
 
 

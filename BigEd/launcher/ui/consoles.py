@@ -70,6 +70,7 @@ BigEd Command Reference
   /help skills           How to build, train, and evolve a custom skill
   /help dispatch         How to manually dispatch tasks to the fleet
   /figma                 Export current UI to Figma-compatible SVG
+  /figma-import          Import a Figma variables JSON to update UI theme
 
 Context shortcuts  (inject live data into this chat):
   Fleet Status           Attach live agent + task counts
@@ -524,7 +525,7 @@ Keep responses concise and action-oriented. Lead with the most important insight
     def _is_local_command(text: str) -> bool:
         """True if the message is a BigEd built-in command (no API call needed)."""
         t = text.strip().lower()
-        return t in ("?", "/list", "/figma") or t.startswith("/help")
+        return t in ("?", "/list", "/figma", "/figma-import") or t.startswith("/help")
 
     def _handle_command(self, text: str) -> None:
         """Render a BigEd response locally without calling the API."""
@@ -533,6 +534,8 @@ Keep responses concise and action-oriented. Lead with the most important insight
             self._append("biged", _BIGED_COMMANDS)
         elif t == "/figma":
             self._export_to_figma_svg()
+        elif t == "/figma-import":
+            self._import_from_figma()
         elif t == "/help":
             self._append("biged", _BIGED_HELP[""])
         elif t.startswith("/help "):
@@ -622,6 +625,38 @@ Keep responses concise and action-oriented. Lead with the most important insight
             self._append("system", f"UI exported successfully to SVG!\n\nLocation: {filename}\n\nDrag and drop this file directly into Figma to start improving the design.")
         except Exception as e:
             self._append("system", f"Failed to export UI: {e}")
+
+    def _import_from_figma(self) -> None:
+        """Import a Figma variables/tokens JSON to update the UI theme."""
+        try:
+            from customtkinter import filedialog
+            file_path = filedialog.askopenfilename(
+                title="Select Figma Theme JSON",
+                filetypes=[("JSON Files", "*.json")]
+            )
+            if not file_path:
+                self._append("system", "Import cancelled.")
+                return
+
+            import json
+            with open(file_path, 'r', encoding='utf-8') as f:
+                new_theme = json.load(f)
+
+            L = _launcher()
+            settings_file = L.HERE.parent / "data" / "settings.json"
+            settings_file.parent.mkdir(parents=True, exist_ok=True)
+
+            settings = {}
+            if settings_file.exists():
+                settings = json.loads(settings_file.read_text(encoding="utf-8"))
+
+            settings["theme_preset"] = "Figma"
+            settings["figma_custom_colors"] = new_theme
+
+            settings_file.write_text(json.dumps(settings, indent=2), encoding="utf-8")
+            self._append("system", "✓ Figma theme imported successfully!\n\nThe custom design tokens have been saved to settings.json.\nPlease restart BigEd to apply the new colors.")
+        except Exception as e:
+            self._append("system", f"Failed to import Figma theme: {e}")
 
     # ── Chat ──────────────────────────────────────────────────────────────────
     def _send(self):

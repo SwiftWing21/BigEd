@@ -67,10 +67,16 @@ class SSEClient:
         while self._running:
             try:
                 self._connect_and_read()
-            except Exception:
-                self._connected = False
+            except Exception as e:
+                if self._connected:
+                    self._connected = False
+                    self._dispatch("disconnected", {"error": str(e)})
+                self._dispatch("error", {"message": str(e)})
             if self._running:
-                time.sleep(self._reconnect_delay)
+                for _ in range(int(self._reconnect_delay * 10)):
+                    if not self._running:
+                        break
+                    time.sleep(0.1)
 
     def _connect_and_read(self):
         """Connect to SSE endpoint and read events."""
@@ -78,51 +84,53 @@ class SSEClient:
             self._url,
             headers={"Accept": "text/event-stream", "Cache-Control": "no-cache"},
         )
-        with urllib.request.urlopen(req, timeout=30) as resp:
-            self._connected = True
-            self._dispatch("connected", {})
+        try:
+            with urllib.request.urlopen(req, timeout=30) as resp:
+                self._connected = True
+                self._dispatch("connected", {})
 
-            buffer = ""
-            event_type = "message"
+                buffer = ""
+                event_type = "message"
 
-            while self._running:
-                try:
-                    # Read in larger chunks for performance (SSE lines split below)
-                    chunk = resp.read(4096).decode("utf-8", errors="replace")
-                    if not chunk:
-                        break  # connection closed
+                while self._running:
+                    try:
+                        # Read in larger chunks for performance (SSE lines split below)
+                        chunk = resp.read(4096).decode("utf-8", errors="replace")
+                        if not chunk:
+                            break  # connection closed
 
-                    buffer += chunk
+                        buffer += chunk
 
-                    # Process complete lines
-                    while "\n" in buffer:
-                        line, buffer = buffer.split("\n", 1)
-                        line = line.rstrip("\r")
+                        # Process complete lines
+                        while "\n" in buffer:
+                            line, buffer = buffer.split("\n", 1)
+                            line = line.rstrip("\r")
 
-                        if line.startswith("event:"):
-                            event_type = line[6:].strip()
-                        elif line.startswith("data:"):
-                            data_str = line[5:].strip()
-                            try:
-                                data = json.loads(data_str)
-                            except json.JSONDecodeError:
-                                data = {"raw": data_str}
-                            # Use event type from data if present
-                            actual_type = data.get("type", event_type)
-                            self._dispatch(actual_type, data)
-                            event_type = "message"  # reset
-                        elif line.startswith(":"):
-                            pass  # comment/keepalive
-                        elif line == "":
-                            pass  # empty line (event boundary)
+                            if line.startswith("event:"):
+                                event_type = line[6:].strip()
+                            elif line.startswith("data:"):
+                                data_str = line[5:].strip()
+                                try:
+                                    data = json.loads(data_str)
+                                except json.JSONDecodeError:
+                                    data = {"raw": data_str}
+                                # Use event type from data if present
+                                actual_type = data.get("type", event_type)
+                                self._dispatch(actual_type, data)
+                                event_type = "message"  # reset
+                            elif line.startswith(":"):
+                                pass  # comment/keepalive
+                            elif line == "":
+                                pass  # empty line (event boundary)
 
-                except Exception:
-                    if not self._running:
-                        break
-                    raise
-
-        self._connected = False
-        self._dispatch("disconnected", {})
+                    except Exception:
+                        if not self._running:
+                            break
+                        raise
+        finally:
+            if self._connected:
+                self._connected = False
+                self._dispatch("disconnected", {})
 
     def _dispatch(self, event_type: str, data: dict):
         """Dispatch event to registered callbacks."""

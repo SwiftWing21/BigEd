@@ -29,7 +29,7 @@ def _kill_fleet_processes(targets=None):
     """
     if targets is None:
         targets = ["supervisor.py", "hw_supervisor.py", "worker.py",
-                    "dashboard.py", "dispatch_marathon.py", "train.py", "nmap"]
+                   "dashboard.py", "web_app.py", "dispatch_marathon.py", "train.py", "nmap"]
     import psutil
     killed = []
     for proc in psutil.process_iter(['pid', 'name', 'cmdline']):
@@ -346,6 +346,7 @@ class BootManagerMixin:
                     return
                 result = subprocess.run(
                     [ollama_exe, "pull", target],
+                    stdin=subprocess.DEVNULL,
                     capture_output=True, text=True, timeout=600,
                     creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0),
                 )
@@ -713,6 +714,7 @@ class BootManagerMixin:
 
         self._ollama_proc = subprocess.Popen(
             [ollama_exe, "serve"],
+            stdin=subprocess.DEVNULL,
             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
             env=env,
             creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0),
@@ -806,6 +808,7 @@ class BootManagerMixin:
         subprocess.Popen(
             [_get_python(), str(hw_sup_path)],
             cwd=str(L.FLEET_DIR),
+            stdin=subprocess.DEVNULL,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
             creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0),
@@ -936,17 +939,20 @@ class BootManagerMixin:
             pass
 
         # Kill any existing supervisor process natively
-        _kill_fleet_processes(["supervisor.py"])
+        _kill_fleet_processes(["supervisor.py", "dashboard.py", "web_app.py"])
         time.sleep(1)
 
         # Ensure required directories exist
         for d in ["logs", "knowledge/summaries", "knowledge/reports"]:
             (L.FLEET_DIR / d).mkdir(parents=True, exist_ok=True)
 
+        # Dashboard is launched by the supervisor (not boot.py) to avoid port conflicts
+
         # Launch supervisor natively (like Dr. Ders)
         subprocess.Popen(
             [_get_python(), str(L.FLEET_DIR / "supervisor.py")],
             cwd=str(L.FLEET_DIR),
+            stdin=subprocess.DEVNULL,
             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
             creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0),
         )
