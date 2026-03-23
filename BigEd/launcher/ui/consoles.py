@@ -69,6 +69,7 @@ BigEd Command Reference
   /help review           How to review agent output and approve / reject tasks
   /help skills           How to build, train, and evolve a custom skill
   /help dispatch         How to manually dispatch tasks to the fleet
+  /figma                 Export current UI to Figma-compatible SVG
 
 Context shortcuts  (inject live data into this chat):
   Fleet Status           Attach live agent + task counts
@@ -523,13 +524,15 @@ Keep responses concise and action-oriented. Lead with the most important insight
     def _is_local_command(text: str) -> bool:
         """True if the message is a BigEd built-in command (no API call needed)."""
         t = text.strip().lower()
-        return t in ("?", "/list") or t.startswith("/help")
+        return t in ("?", "/list", "/figma") or t.startswith("/help")
 
     def _handle_command(self, text: str) -> None:
         """Render a BigEd response locally without calling the API."""
         t = text.strip().lower()
         if t in ("?", "/list"):
             self._append("biged", _BIGED_COMMANDS)
+        elif t == "/figma":
+            self._export_to_figma_svg()
         elif t == "/help":
             self._append("biged", _BIGED_HELP[""])
         elif t.startswith("/help "):
@@ -545,6 +548,80 @@ Keep responses concise and action-oriented. Lead with the most important insight
         """Show the BigEd intro if this console has no prior history."""
         if not self._history:
             self._append("biged", _BIGED_GREETING)
+
+    def _export_to_figma_svg(self) -> None:
+        """Dumps the parent launcher window's widget tree to an SVG file for Figma."""
+        try:
+            L = _launcher()
+            reports_dir = L.HERE.parent / "knowledge" / "reports"
+            reports_dir.mkdir(parents=True, exist_ok=True)
+            filename = reports_dir / f"ui_export_{int(time.time())}.svg"
+
+            # Export the main application window (parent) or fallback to console
+            target_window = self.master if self.master else self
+            target_window.update_idletasks()
+
+            width = target_window.winfo_width()
+            height = target_window.winfo_height()
+            svg_elements = []
+
+            def _get_hex_color(color_attr):
+                if isinstance(color_attr, (list, tuple)):
+                    mode_idx = 1 if ctk.get_appearance_mode().lower() == "dark" else 0
+                    color_attr = color_attr[mode_idx]
+                if color_attr and isinstance(color_attr, str):
+                    return color_attr
+                return "none"
+
+            def _walk_tree(w, abs_x, abs_y):
+                if not w.winfo_ismapped():
+                    return
+                
+                w_x = w.winfo_x()
+                w_y = w.winfo_y()
+                curr_x = abs_x + w_x
+                curr_y = abs_y + w_y
+                w_w = w.winfo_width()
+                w_h = w.winfo_height()
+
+                bg_color = "none"
+                try:
+                    if hasattr(w, "cget"):
+                        for attr in ["fg_color", "bg_color"]:
+                            try:
+                                val = w.cget(attr)
+                                if val and str(val).lower() != "transparent":
+                                    bg_color = _get_hex_color(val)
+                                    break
+                            except Exception: pass
+                except Exception: pass
+
+                if bg_color != "none" and w_w > 0 and w_h > 0:
+                    svg_elements.append(f'  <rect x="{curr_x}" y="{curr_y}" width="{w_w}" height="{w_h}" fill="{bg_color}" rx="4" />')
+
+                try:
+                    if hasattr(w, "cget"):
+                        text = w.cget("text")
+                        if isinstance(text, str) and text.strip():
+                            tc = _get_hex_color(w.cget("text_color")) if hasattr(w, "cget") else "#FFFFFF"
+                            if tc == "none": tc = "#FFFFFF"
+                            text_clean = text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+                            svg_elements.append(f'  <text x="{curr_x + 8}" y="{curr_y + (w_h/2) + 4}" fill="{tc}" font-family="sans-serif" font-size="12">{text_clean}</text>')
+                except Exception: pass
+
+                for child in w.winfo_children():
+                    _walk_tree(child, curr_x, curr_y)
+
+            _walk_tree(target_window, 0, 0)
+
+            svg_content = f'<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height}">\n'
+            svg_content += "\n".join(svg_elements)
+            svg_content += '\n</svg>'
+
+            filename.write_text(svg_content, encoding="utf-8")
+            self._append("system", f"UI exported successfully to SVG!\n\nLocation: {filename}\n\nDrag and drop this file directly into Figma to start improving the design.")
+        except Exception as e:
+            self._append("system", f"Failed to export UI: {e}")
 
     # ── Chat ──────────────────────────────────────────────────────────────────
     def _send(self):

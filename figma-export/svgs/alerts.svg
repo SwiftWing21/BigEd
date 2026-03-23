@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="600" height="120" viewBox="0 0 600 120">
+  <rect x="0" y="0" width="600" height="34" rx="4" fill="#3d1b1b"/>
+  <rect x="0" y="0" width="3" height="34" fill="#f44336"/>
+  <text x="16" y="21" font-family="Segoe UI, sans-serif" font-size="13" fill="#e2e2e2">Critical alert message text</text>
+  <rect x="0" y="42" width="600" height="34" rx="4" fill="#3d2e0e"/>
+  <rect x="0" y="42" width="3" height="34" fill="#ff9800"/>
+  <text x="16" y="63" font-family="Segoe UI, sans-serif" font-size="13" fill="#e2e2e2">Warning alert message text</text>
+  <rect x="0" y="84" width="600" height="34" rx="4" fill="#1b2a3d"/>
+  <rect x="0" y="84" width="3" height="34" fill="#42a5f5"/>
+  <text x="16" y="105" font-family="Segoe UI, sans-serif" font-size="13" fill="#e2e2e2">Info alert message text</text>
+</svg>

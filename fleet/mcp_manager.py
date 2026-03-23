@@ -317,6 +317,25 @@ def register_claude_desktop() -> bool:
         return False
 
 
+def init_vscode_mcp() -> bool:
+    """Create a starter .vscode/mcp.json if one doesn't exist.
+
+    This file is gitignored (may contain credentials). It provides the
+    VS Code Claude Code extension with MCP server configuration separate
+    from the root .mcp.json used by the CLI.
+
+    Returns True if created, False if already exists.
+    """
+    vscode_dir = PROJECT_ROOT / ".vscode"
+    mcp_path = vscode_dir / "mcp.json"
+    if mcp_path.exists():
+        return False
+    vscode_dir.mkdir(parents=True, exist_ok=True)
+    starter = {"servers": {}, "inputs": []}
+    mcp_path.write_text(json.dumps(starter, indent=2) + "\n", encoding="utf-8")
+    return True
+
+
 def unregister_claude_desktop() -> bool:
     """Remove biged-fleet from Claude Desktop's MCP config.
 
@@ -336,3 +355,25 @@ def unregister_claude_desktop() -> bool:
         return True
     except Exception:
         return False
+
+
+# ─── CLI entry point ─────────────────────────────────────────────────────────
+
+if __name__ == "__main__":
+    import sys as _sys
+
+    if "--init-vscode" in _sys.argv:
+        created = init_vscode_mcp()
+        path = PROJECT_ROOT / ".vscode" / "mcp.json"
+        if created:
+            print(f"Created starter VS Code MCP config: {path}")
+        else:
+            print(f"Already exists: {path}")
+        _sys.exit(0)
+
+    if "--status" in _sys.argv:
+        for s in get_all_server_status():
+            print(f"  {s['name']:20s}  {s['status']:12s}  ({s.get('category', '?')})")
+        _sys.exit(0)
+
+    print("Usage: python mcp_manager.py [--init-vscode | --status]")

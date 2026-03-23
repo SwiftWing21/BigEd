@@ -621,6 +621,129 @@ def cmd_advisories(args):
             print(f"{a['id']:<12} {a['severity']:<10} {a['created']:<12} {title}")
 
 
+def cmd_deploy(args):
+    """Remote fleet deployment — push config and skills to federation peers."""
+    sys.path.insert(0, str(FLEET_DIR))
+
+    if args.deploy_action == "push":
+        from remote_deploy import prepare_deployment, push_to_peer
+        from config import load_config
+
+        # Prepare package
+        print("Preparing deployment package...")
+        pkg_path = prepare_deployment(
+            include_skills=args.skills,
+            include_config=args.config,
+            include_models=False,
+        )
+        size_mb = pkg_path.stat().st_size / (1024 * 1024)
+        print(f"Package ready: {pkg_path.name} ({size_mb:.1f} MB)")
+
+        # Determine targets
+        if args.target == "all":
+            cfg = load_config()
+            targets = cfg.get("federation", {}).get("peers", [])
+            if not targets:
+                print("Error: No federation peers configured in fleet.toml [federation] peers")
+                sys.exit(1)
+            print(f"Pushing to {len(targets)} peers...")
+        else:
+            targets = [args.target]
+
+        # Push to each target
+        for peer_url in targets:
+            print(f"  -> {peer_url} ... ", end="", flush=True)
+            result = push_to_peer(peer_url, pkg_path, timeout=args.timeout)
+            if result.get("ok"):
+                resp = result.get("response", {})
+                status = resp.get("status", "sent")
+                deploy_id = resp.get("deploy_id", "?")
+                print(f"OK ({status}, id={deploy_id})")
+            else:
+                print(f"FAILED: {result.get('error', 'unknown')}")
+
+    elif args.deploy_action == "status":
+        if not args.deploy_id:
+            print("Error: --id required for status check")
+            sys.exit(1)
+        if args.target:
+            from remote_deploy import deploy_status
+            result = deploy_status(args.target, args.deploy_id)
+        else:
+            from remote_deploy import get_local_deploy_status
+            result = get_local_deploy_status(args.deploy_id)
+        print(json.dumps(result, indent=2))
+
+    elif args.deploy_action == "rollback":
+        if not args.deploy_id:
+            print("Error: --id required for rollback")
+            sys.exit(1)
+        if not args.target:
+            print("Error: --target required for rollback")
+            sys.exit(1)
+        from remote_deploy import rollback_peer
+        result = rollback_peer(args.target, args.deploy_id)
+        if result.get("ok"):
+            print(f"Rollback requested on {args.target}: {result.get('status', 'ok')}")
+        else:
+            print(f"Rollback failed: {result.get('error', 'unknown')}")
+
+    elif args.deploy_action == "history":
+        from remote_deploy import get_deployment_history
+        history = get_deployment_history(limit=20)
+        if not history:
+            print("No deployment history.")
+            return
+        print(f"{'ID':<30} {'Status':<18} {'Size':>8} {'Items':>6}")
+        print("-" * 70)
+        for d in history:
+            deploy_id = d.get("deploy_id", "?")[:28]
+            status = d.get("status", "?")
+            size = d.get("size_mb", 0)
+            manifest = d.get("manifest", {})
+            if isinstance(manifest, str):
+                try:
+                    manifest = json.loads(manifest)
+                except Exception:
+                    manifest = {}
+            items = len(manifest.get("contents", []))
+            print(f"{deploy_id:<30} {status:<18} {size:>6.1f}MB {items:>6}")
+
+    elif args.deploy_action == "pending":
+        from remote_deploy import get_pending_deployments
+        pending = get_pending_deployments()
+        if not pending:
+            print("No pending deployments.")
+            return
+        for p in pending:
+            deploy_id = p.get("deploy_id", "?")
+            size = p.get("size_mb", 0)
+            items = len(p.get("manifest", {}).get("contents", []))
+            print(f"  {deploy_id}  {size:.1f} MB  {items} items  [pending approval]")
+
+    elif args.deploy_action == "approve":
+        if not args.deploy_id:
+            print("Error: --id required for approve")
+            sys.exit(1)
+        from remote_deploy import approve_deployment
+        result = approve_deployment(args.deploy_id)
+        if result.get("ok"):
+            print(f"Deployment {args.deploy_id} approved and applied ({result.get('files_applied', 0)} files)")
+        else:
+            print(f"Approve failed: {result.get('error', 'unknown')}")
+
+    elif args.deploy_action == "reject":
+        if not args.deploy_id:
+            print("Error: --id required for reject")
+            sys.exit(1)
+        from remote_deploy import reject_deployment
+        result = reject_deployment(args.deploy_id)
+        if result.get("ok"):
+            print(f"Deployment {args.deploy_id} rejected")
+        else:
+            print(f"Reject failed: {result.get('error', 'unknown')}")
+
+
 def cmd_export(args):
     """Export fleet config, skills, and curricula to a portable tarball."""
     import tarfile
@@ -935,6 +1058,18 @@ def main():
     p_adv.add_argument("advisory_id", nargs="?", default=None,
                        help="Advisory ID (for dismiss)")
 
+    # Remote Deployment (v0.100.00b)
+    deploy_p = subparsers.add_parser("deploy", help="Remote fleet deployment — push to peers")
+    deploy_p.add_argument("deploy_action", choices=["push", "status", "rollback", "history", "pending", "approve", "reject"],
+                          help="push=send to peer, status=check, rollback=revert, history=list, pending=awaiting approval, approve/reject=HITL")
+    deploy_p.add_argument("--target", default=None, help="Peer URL (e.g. http://peer:5555) or 'all' for all peers")
+    deploy_p.add_argument("--id", dest="deploy_id", default=None, help="Deployment ID (for status/rollback/approve/reject)")
+    deploy_p.add_argument("--skills", action="store_true", default=True, help="Include skills (default: true)")
+    deploy_p.add_argument("--no-skills", dest="skills", action="store_false", help="Exclude skills")
+    deploy_p.add_argument("--config", action="store_true", default=True, help="Include config (default: true)")
+    deploy_p.add_argument("--no-config", dest="config", action="store_false", help="Exclude config")
+    deploy_p.add_argument("--timeout", type=int, default=60, help="Push timeout in seconds (default: 60)")
+
     # Fleet Export/Import (v0.30.00)
     export_p = subparsers.add_parser("export", help="Export fleet config, skills, and curricula to a portable tarball")
     export_p.add_argument("-o", "--output", default=None, help="Output file path (default: biged-fleet-export-<timestamp>.tar.gz)")
@@ -1016,6 +1151,8 @@ def main():
         cmd_hitl(args)
     elif args.command == "advisories":
         cmd_advisories(args)
+    elif args.command == "deploy":
+        cmd_deploy(args)
     elif args.command == "export":
         cmd_export(args)
     elif args.command == "import":

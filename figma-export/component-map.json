@@ -1,0 +1,59 @@
+{
+  "pages": [
+    {
+      "name": "Dashboard (Web)",
+      "description": "Flask-served HTML dashboard at localhost:5555",
+      "frame_size": "1600x900",
+      "components": [
+        "dashboard-header",
+        "dashboard-card (x14 instances \u2014 Task Summary, Thermal, Agents, Activity, Charts, etc.)",
+        "badges (done/failed/running/pending/idle/busy/online/offline/error)",
+        "alerts (critical/warning/info)",
+        "table-row (agents, audit trail, file access log)",
+        "thermal-gauge (CPU/GPU/VRAM)",
+        "buttons (refresh, filter, export CSV/JSON)"
+      ],
+      "layout": "CSS Grid \u2014 auto-fit minmax(380px, 1fr), max-width 1600px",
+      "responsive": "Single column below 800px"
+    },
+    {
+      "name": "Launcher (Desktop \u2014 CustomTkinter)",
+      "description": "Native dark-mode desktop app, brick theme",
+      "frame_size": "1200x800",
+      "components": [
+        "launcher-sidebar (sections: Fleet, Consoles, Settings)",
+        "launcher-counter-cards (total/idle/busy/pending/models)",
+        "omnibox (Ctrl+K command palette)",
+        "chat-bubbles (provider-colored: Ollama gold, Claude blue, Gemini green)",
+        "settings-glass-panel (frosted glass settings dialog)",
+        "buttons (primary/secondary/start/danger/small)"
+      ],
+      "layout": "Sidebar (200px) + Main content area"
+    }
+  ],
+  "design_system": {
+    "themes": [
+      "Classic (brick/dark)",
+      "Modern (midnight/deep blue)"
+    ],
+    "font_presets": [
+      "System Default (Segoe UI)",
+      "RuneScape",
+      "Consolas",
+      "Courier New"
+    ],
+    "icon": "icon_1024.png (master source, brick.ico derived)",
+    "scale_range": "0.75x to 1.5x (CTK widget scaling)",
+    "brand_color": "#00bcd4 (teal)"
+  },
+  "figma_import_instructions": [
+    "1. Import design-tokens.json as Figma Variables (Plugins \u2192 Tokens Studio or Variables import)",
+    "2. Drag SVGs into Figma canvas \u2014 they are pre-colored with exact production values",
+    "3. Convert each SVG to a Figma Component (right-click \u2192 Create Component)",
+    "4. Create two Color Modes: 'Classic' and 'Modern' using the theme token sets",
+    "5. Set up typography styles matching the font-size tokens",
+    "6. Copy icon_1024.png into Figma as a raster asset for the app icon",
+    "7. Build frames for 'Dashboard' (1600x900) and 'Launcher' (1200x800)",
+    "8. Assemble components following the layout descriptions above"
+  ]
+}

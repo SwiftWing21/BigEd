@@ -332,6 +332,11 @@ peer_cert = "peer.pem"
 peer_key = "peer-key.pem"
 verify_peers = true                # require valid peer certs
 
+[federation.deploy]
+auto_approve = false          # require manual approval on receive (HITL gate)
+max_package_mb = 50           # reject packages larger than this
+backup_before_deploy = true   # auto-backup before applying incoming deployment
+
 # v0.51.02b: Auto-save & Backup — periodic snapshots of fleet state
 [backup]
 enabled = true

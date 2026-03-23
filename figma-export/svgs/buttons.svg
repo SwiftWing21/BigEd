@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="500" height="40" viewBox="0 0 500 40">
+  <!-- Primary (accent) -->
+  <rect x="0" y="4" width="80" height="28" rx="4" fill="#b22222"/>
+  <text x="40" y="22" font-family="Segoe UI, sans-serif" font-size="12" fill="#fff" text-anchor="middle">Primary</text>
+  <!-- Secondary (outlined) -->
+  <rect x="96" y="4" width="80" height="28" rx="4" fill="#242424" stroke="#333"/>
+  <text x="136" y="22" font-family="Segoe UI, sans-serif" font-size="12" fill="#888" text-anchor="middle">Secondary</text>
+  <!-- Start (green bg) -->
+  <rect x="192" y="4" width="80" height="28" rx="4" fill="#1e3a1e"/>
+  <text x="232" y="22" font-family="Segoe UI, sans-serif" font-size="12" fill="#4caf50" text-anchor="middle">Start</text>
+  <!-- Danger -->
+  <rect x="288" y="4" width="80" height="28" rx="4" fill="#5a2020"/>
+  <text x="328" y="22" font-family="Segoe UI, sans-serif" font-size="12" fill="#f44336" text-anchor="middle">Danger</text>
+  <!-- Small inline -->
+  <rect x="384" y="8" width="60" height="20" rx="4" fill="#242424" stroke="#333"/>
+  <text x="414" y="22" font-family="Segoe UI, sans-serif" font-size="11" fill="#888" text-anchor="middle">Small</text>
+</svg>

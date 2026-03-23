@@ -143,6 +143,9 @@ fleet/knowledge/ml_results/
 fleet/knowledge/agent_cards.json
 fleet/data/
 
+# ── IDE — MCP config (may contain credentials; launch.json + tasks.json stay tracked)
+.vscode/mcp.json
+
 # ── OS junk ───────────────────────────────────────────────────────────────────
 .DS_Store
 Thumbs.db
