@@ -2525,6 +2525,647 @@ def api_task_requeue(task_id):
         return jsonify({"error": _safe_error(e)}), 500
 
 
+# ── Task Dispatch ────────────────────────────────────────────────────────────
+
+@app.route("/api/tasks/dispatch", methods=["POST"])
+@_require_role("operator")
+def api_task_dispatch():
+    """Submit a task to the fleet queue.
+
+    Body JSON:
+        skill (str):       required — skill name (e.g. "summarize", "code_review")
+        payload (dict):    optional — JSON payload for the skill
+        priority (int):    optional — 1-10, default 5
+        assigned_to (str): optional — target agent name
+    """
+    try:
+        if not _check_rate_limit("task_dispatch", max_per_min=30):
+            return jsonify({"error": "Rate limited"}), 429
+
+        data = request.get_json(silent=True)
+        if data is None:
+            return jsonify({"error": "Request body must be valid JSON"}), 400
+
+        skill = (data.get("skill") or "").strip()
+        if not skill:
+            return jsonify({"error": "skill is required"}), 400
+
+        # Validate skill name format
+        if not re.match(r'^[a-zA-Z0-9_]{1,64}$', skill):
+            return jsonify({"error": "Invalid skill name format"}), 400
+
+        payload = data.get("payload", {})
+        priority = data.get("priority", 5)
+        assigned_to = (data.get("assigned_to") or "").strip() or None
+
+        try:
+            priority = max(1, min(10, int(priority)))
+        except (TypeError, ValueError):
+            priority = 5
+
+        payload_json = json.dumps(payload) if isinstance(payload, dict) else str(payload)
+
+        sys.path.insert(0, str(FLEET_DIR))
+        import db
+        task_id = db.post_task(
+            type_=skill,
+            payload_json=payload_json,
+            priority=priority,
+            assigned_to=assigned_to,
+        )
+
+        _broadcast_sse({
+            "type": "task_dispatched",
+            "data": {"task_id": task_id, "skill": skill, "priority": priority},
+        })
+
+        return jsonify({
+            "status": "ok",
+            "task_id": task_id,
+            "skill": skill,
+            "priority": priority,
+            "assigned_to": assigned_to,
+        })
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+    except Exception as e:
+        return jsonify({"error": _safe_error(e)}), 500
+
+
+@app.route("/api/skills/available")
+def api_skills_available():
+    """List all registered skills with descriptions — for task dispatch picker.
+
+    Scans fleet/skills/*.py for SKILL_NAME and DESCRIPTION module-level constants.
+    Results are cached for 60 seconds.
+    """
+    try:
+        if not _check_rate_limit("skills_available", max_per_min=20):
+            return jsonify({"error": "Rate limited"}), 429
+
+        # Simple cache to avoid re-scanning on every call
+        now = time.time()
+        cache = getattr(api_skills_available, '_cache', None)
+        if cache and (now - cache['ts']) < 60:
+            return jsonify(cache['data'])
+
+        skills_dir = FLEET_DIR / "skills"
+        skills = []
+        if skills_dir.exists():
+            for f in sorted(skills_dir.glob("*.py")):
+                if f.name.startswith("_"):
+                    continue
+                try:
+                    content = f.read_text(encoding="utf-8", errors="ignore")
+                    skill_name = None
+                    description = None
+                    requires_network = False
+                    for line in content.splitlines()[:30]:
+                        line_s = line.strip()
+                        if line_s.startswith("SKILL_NAME"):
+                            # Extract value from: SKILL_NAME = "foo"
+                            m = re.match(r'^SKILL_NAME\s*=\s*["\'](.+?)["\']', line_s)
+                            if m:
+                                skill_name = m.group(1)
+                        elif line_s.startswith("DESCRIPTION"):
+                            m = re.match(r'^DESCRIPTION\s*=\s*["\'](.+?)["\']', line_s)
+                            if m:
+                                description = m.group(1)
+                        elif line_s.startswith("REQUIRES_NETWORK"):
+                            requires_network = "True" in line_s
+                    if skill_name:
+                        skills.append({
+                            "name": skill_name,
+                            "description": description or "",
+                            "requires_network": requires_network,
+                            "file": f.name,
+                        })
+                except Exception:
+                    pass
+
+        result = {"skills": skills, "total": len(skills)}
+        api_skills_available._cache = {'ts': now, 'data': result}
+        return jsonify(result)
+    except Exception as e:
+        return jsonify({"error": _safe_error(e), "skills": []}), 500
+
+
+# ── Queue Management (extended) ──────────────────────────────────────────────
+
+# Queue pause state — in-memory flag checked by workers
+_queue_paused = False
+
+@app.route("/api/queue")
+def api_queue():
+    """Full pending/running queue with ordering and pause state."""
+    try:
+        page = max(1, int(request.args.get("page", 1)))
+        per_page = min(200, max(1, int(request.args.get("per_page", 100))))
+        offset = (page - 1) * per_page
+
+        total_row = query(
+            "SELECT COUNT(*) as n FROM tasks WHERE status IN ('PENDING','RUNNING','WAITING')"
+        )
+        total = total_row[0]["n"] if total_row else 0
+
+        tasks = query(
+            "SELECT id, type, status, priority, assigned_to, created_at, payload_json "
+            "FROM tasks WHERE status IN ('PENDING','RUNNING','WAITING') "
+            "ORDER BY "
+            "  CASE status WHEN 'RUNNING' THEN 0 WHEN 'PENDING' THEN 1 ELSE 2 END, "
+            "  priority DESC, created_at ASC "
+            "LIMIT ? OFFSET ?",
+            (per_page, offset),
+        )
+        return jsonify({
+            "tasks": tasks,
+            "page": page,
+            "per_page": per_page,
+            "total": total,
+            "paused": _queue_paused,
+        })
+    except Exception as e:
+        return jsonify({"error": _safe_error(e)}), 500
+
+
+@app.route("/api/queue/reorder", methods=["POST"])
+@_require_role("operator")
+def api_queue_reorder():
+    """Reorder queue by setting priorities based on position.
+
+    Body JSON:
+        task_ids (list[int]): ordered list of task IDs — first = highest priority
+    """
+    try:
+        data = request.get_json(silent=True) or {}
+        task_ids = data.get("task_ids", [])
+        if not task_ids or not isinstance(task_ids, list):
+            return jsonify({"error": "task_ids must be a non-empty list of integers"}), 400
+
+        # Validate all are integers
+        try:
+            task_ids = [int(tid) for tid in task_ids]
+        except (TypeError, ValueError):
+            return jsonify({"error": "All task_ids must be integers"}), 400
+
+        if len(task_ids) > 200:
+            return jsonify({"error": "Maximum 200 tasks per reorder"}), 400
+
+        # Assign decreasing priorities: first = 10, last = 1
+        # Scale across the range
+        updated = []
+
+        sys.path.insert(0, str(FLEET_DIR))
+        import db
+
+        def _do():
+            with db.get_conn() as conn:
+                for i, tid in enumerate(task_ids):
+                    # Priority: 10 for first, scales down to 1
+                    prio = max(1, 10 - int(i * 9 / max(len(task_ids) - 1, 1)))
+                    result = conn.execute(
+                        "UPDATE tasks SET priority=? WHERE id=? AND status='PENDING'",
+                        (prio, tid),
+                    )
+                    if result.rowcount > 0:
+                        updated.append({"task_id": tid, "priority": prio})
+        db._retry_write(_do)
+
+        _broadcast_sse({
+            "type": "queue_reordered",
+            "data": {"updated_count": len(updated)},
+        })
+
+        return jsonify({
+            "status": "ok",
+            "updated": updated,
+            "total_updated": len(updated),
+        })
+    except Exception as e:
+        return jsonify({"error": _safe_error(e)}), 500
+
+
+@app.route("/api/queue/<int:task_id>", methods=["DELETE"])
+@_require_role("operator")
+def api_queue_remove(task_id):
+    """Remove a task from the queue — cancels a PENDING task."""
+    try:
+        rows = query("SELECT status FROM tasks WHERE id=?", (task_id,))
+        if not rows:
+            return jsonify({"error": "Task not found"}), 404
+        if rows[0]["status"] != "PENDING":
+            return jsonify({"error": "Only PENDING tasks can be removed from queue"}), 409
+
+        with get_conn() as conn:
+            conn.execute(
+                "UPDATE tasks SET status='FAILED', result_json=? WHERE id=? AND status='PENDING'",
+                (json.dumps({"error": "Removed from queue by operator"}), task_id),
+            )
+
+        _broadcast_sse({
+            "type": "queue_removed",
+            "data": {"task_id": task_id},
+        })
+        return jsonify({"status": "ok", "task_id": task_id, "removed": True})
+    except Exception as e:
+        return jsonify({"error": _safe_error(e)}), 500
+
+
+@app.route("/api/queue/pause", methods=["POST"])
+@_require_role("operator")
+def api_queue_pause():
+    """Pause queue processing — workers stop claiming new tasks."""
+    global _queue_paused
+    _queue_paused = True
+    _broadcast_sse({"type": "queue_paused", "data": {"paused": True}})
+    return jsonify({"status": "ok", "paused": True})
+
+
+@app.route("/api/queue/resume", methods=["POST"])
+@_require_role("operator")
+def api_queue_resume():
+    """Resume queue processing after a pause."""
+    global _queue_paused
+    _queue_paused = False
+    _broadcast_sse({"type": "queue_resumed", "data": {"paused": False}})
+    return jsonify({"status": "ok", "paused": False})
+
+
+@app.route("/api/queue/status")
+def api_queue_status():
+    """Return queue processing state (paused/active)."""
+    return jsonify({"paused": _queue_paused})
+
+
+# ── Settings Editor ──────────────────────────────────────────────────────────
+
+# Sections that can be edited via the API (safety: never expose security tokens)
+_EDITABLE_SECTIONS = {
+    "fleet", "models", "thermal", "training", "dashboard", "workers",
+    "idle", "backup", "review", "gpu", "naming", "affinity", "context",
+    "budgets", "triggers", "schedules", "assistant", "boot",
+}
+
+# Sections that are read-only via the API
+_READONLY_SECTIONS = {
+    "security", "ditl", "walkthrough", "enterprise", "filesystem",
+}
+
+# Schema descriptions for the settings editor UI
+_SETTINGS_SCHEMA = {
+    "fleet": {
+        "eco_mode": {"type": "bool", "description": "Reduce resource usage"},
+        "idle_enabled": {"type": "bool", "description": "Workers self-improve when idle"},
+        "idle_timeout_secs": {"type": "int", "description": "Seconds before idle mode activates"},
+        "max_workers": {"type": "int", "description": "Maximum active workers at boot"},
+        "offline_mode": {"type": "bool", "description": "Disable external API calls"},
+        "hitl_evolution": {"type": "bool", "description": "Require human approval for evolution"},
+    },
+    "models": {
+        "local": {"type": "str", "description": "Default local model (Ollama)"},
+        "complex": {"type": "str", "description": "Complex task model"},
+        "complex_provider": {"type": "str", "description": "Provider for complex tasks: claude | gemini | local"},
+        "conductor_model": {"type": "str", "description": "CPU-pinned chat model"},
+        "keep_alive_mins": {"type": "int", "description": "Minutes to keep models loaded"},
+    },
+    "thermal": {
+        "gpu_max_sustained_c": {"type": "int", "description": "Max sustained GPU temp (C)"},
+        "gpu_max_burst_c": {"type": "int", "description": "Hard GPU temp ceiling (C)"},
+        "cpu_max_sustained_c": {"type": "int", "description": "Max sustained CPU temp (C)"},
+        "cooldown_target_c": {"type": "int", "description": "Resume GPU below this temp (C)"},
+        "poll_interval_secs": {"type": "int", "description": "Temp check interval (seconds)"},
+    },
+    "dashboard": {
+        "enabled": {"type": "bool", "description": "Enable web dashboard"},
+        "port": {"type": "int", "description": "Dashboard port"},
+        "auto_open": {"type": "bool", "description": "Open browser on fleet boot"},
+        "bind_address": {"type": "str", "description": "Listen address (127.0.0.1 or 0.0.0.0)"},
+    },
+    "workers": {
+        "nice_level": {"type": "int", "description": "OS priority level"},
+        "cpu_limit_percent": {"type": "int", "description": "CPU limit per worker (%)"},
+        "coder_count": {"type": "int", "description": "Number of coder instances"},
+        "memory_limit_mb": {"type": "int", "description": "Max memory per worker (MB)"},
+    },
+    "backup": {
+        "enabled": {"type": "bool", "description": "Enable auto-save backups"},
+        "interval_secs": {"type": "int", "description": "Backup interval (seconds, min 180)"},
+        "depth": {"type": "int", "description": "Max backups to keep"},
+        "location": {"type": "str", "description": "Backup directory path"},
+    },
+    "training": {
+        "exclusive_lock": {"type": "bool", "description": "Only 1 training process at a time"},
+        "auto_pause_gpu_tasks": {"type": "bool", "description": "Pause GPU skills during training"},
+        "default_profile": {"type": "str", "description": "Training profile: conservative | aggressive | exploratory"},
+    },
+    "review": {
+        "enabled": {"type": "bool", "description": "Enable evaluator-optimizer review pass"},
+        "max_rounds": {"type": "int", "description": "Max review-reject cycles per task"},
+        "provider": {"type": "str", "description": "Review provider: api | subscription | local"},
+    },
+    "idle": {
+        "enabled": {"type": "bool", "description": "Enable idle self-improvement"},
+        "threshold_polls": {"type": "int", "description": "Idle polls before activation"},
+        "cooldown_secs": {"type": "int", "description": "Min seconds between idle runs"},
+    },
+    "gpu": {
+        "mode": {"type": "str", "description": "GPU mode: eco | full"},
+        "multi_gpu": {"type": "bool", "description": "Enable multi-GPU splitting"},
+    },
+    "context": {
+        "max_turns": {"type": "int", "description": "Sliding window context turns"},
+        "max_tokens": {"type": "int", "description": "Token budget for context"},
+        "stale_hours": {"type": "int", "description": "Clear contexts older than this"},
+    },
+}
+
+# In-memory theme preference (persists for session, not to TOML)
+_dashboard_theme = "dark"
+
+
+@app.route("/api/settings")
+def api_settings():
+    """Return fleet.toml as JSON with read-only sections marked."""
+    try:
+        cfg = _load_config()
+        result = {}
+        for section, values in cfg.items():
+            if isinstance(values, dict):
+                result[section] = {
+                    "values": values,
+                    "readonly": section in _READONLY_SECTIONS,
+                    "editable": section in _EDITABLE_SECTIONS,
+                }
+            else:
+                # Top-level scalar (rare in fleet.toml but handle gracefully)
+                result[section] = {
+                    "values": values,
+                    "readonly": True,
+                    "editable": False,
+                }
+        return jsonify({"status": "ok", "settings": result})
+    except Exception as e:
+        return jsonify({"error": _safe_error(e)}), 500
+
+
+@app.route("/api/settings/<section>", methods=["PUT"])
+@_require_role("operator")
+def api_settings_update(section):
+    """Update a TOML section. Body: {key: value, ...}
+
+    Only editable sections can be modified. Security/DITL/enterprise are read-only.
+    """
+    if not _check_rate_limit("settings_update", max_per_min=10):
+        return jsonify({"error": "Rate limited"}), 429
+
+    if section not in _EDITABLE_SECTIONS:
+        return jsonify({"error": f"Section '{section}' is read-only or does not exist"}), 403
+
+    # Validate section name format
+    if not re.match(r'^[a-zA-Z_][a-zA-Z0-9_]{0,63}$', section):
+        return jsonify({"error": "Invalid section name"}), 400
+
+    try:
+        data = request.get_json(silent=True)
+        if not data or not isinstance(data, dict):
+            return jsonify({"error": "Body must be a JSON object with key-value pairs"}), 400
+
+        # Read current TOML
+        toml_path = FLEET_DIR / "fleet.toml"
+        content = toml_path.read_text(encoding="utf-8")
+
+        # Apply updates line by line within the section
+        updated_keys = []
+        for key, value in data.items():
+            # Validate key format
+            if not re.match(r'^[a-zA-Z_][a-zA-Z0-9_]{0,63}$', key):
+                continue
+
+            # Format value for TOML
+            if isinstance(value, bool):
+                toml_val = "true" if value else "false"
+            elif isinstance(value, int):
+                toml_val = str(value)
+            elif isinstance(value, float):
+                toml_val = str(value)
+            elif isinstance(value, str):
+                toml_val = f'"{value}"'
+            elif isinstance(value, list):
+                # Format list items
+                items = []
+                for item in value:
+                    if isinstance(item, str):
+                        items.append(f'"{item}"')
+                    else:
+                        items.append(str(item))
+                toml_val = "[" + ", ".join(items) + "]"
+            else:
+                continue  # Skip unsupported types
+
+            # Try to replace existing key in the content
+            # Match: key = value (with optional comment)
+            pattern = rf'^({re.escape(key)}\s*=\s*).*$'
+            new_line = f'{key} = {toml_val}'
+            new_content = re.sub(pattern, new_line, content, count=1, flags=re.MULTILINE)
+
+            if new_content != content:
+                content = new_content
+                updated_keys.append(key)
+
+        if updated_keys:
+            toml_path.write_text(content, encoding="utf-8")
+
+            # Reload config cache
+            try:
+                from config import reload_config
+                reload_config()
+            except Exception:
+                pass
+
+        return jsonify({
+            "status": "ok",
+            "section": section,
+            "updated_keys": updated_keys,
+            "total_updated": len(updated_keys),
+        })
+    except Exception as e:
+        return jsonify({"error": _safe_error(e)}), 500
+
+
+@app.route("/api/settings/theme", methods=["GET", "POST"])
+def api_settings_theme():
+    """Get or update dashboard theme preference (in-memory, session-scoped).
+
+    GET: returns current theme
+    POST body JSON: {theme: "dark" | "light" | "system"}
+    """
+    global _dashboard_theme
+    if request.method == "GET":
+        return jsonify({"theme": _dashboard_theme})
+    try:
+        data = request.get_json(silent=True) or {}
+        theme = (data.get("theme") or "dark").strip().lower()
+        if theme not in ("dark", "light", "system"):
+            return jsonify({"error": "theme must be 'dark', 'light', or 'system'"}), 400
+        _dashboard_theme = theme
+        return jsonify({"status": "ok", "theme": _dashboard_theme})
+    except Exception as e:
+        return jsonify({"error": _safe_error(e)}), 500
+
+
+@app.route("/api/settings/schema")
+def api_settings_schema():
+    """Return editable sections with types and descriptions for UI form generation."""
+    return jsonify({
+        "status": "ok",
+        "schema": _SETTINGS_SCHEMA,
+        "editable_sections": sorted(_EDITABLE_SECTIONS),
+        "readonly_sections": sorted(_READONLY_SECTIONS),
+    })
+
+
+# ── Log Viewer ───────────────────────────────────────────────────────────────
+
+@app.route("/api/logs/stream")
+def api_logs_stream():
+    """SSE endpoint streaming log lines (tail -f style).
+
+    Reads from fleet/logs/supervisor.log and streams new lines.
+    Query params:
+        source: "supervisor" (default), "dashboard", or "worker"
+    """
+    import queue as queue_mod
+
+    source = request.args.get("source", "supervisor").strip()
+    allowed_sources = {
+        "supervisor": FLEET_DIR / "logs" / "supervisor.log",
+        "dashboard": FLEET_DIR / "logs" / "dashboard.log",
+    }
+
+    log_path = allowed_sources.get(source)
+    if log_path is None:
+        # Also allow worker logs: worker_<name>.log
+        if source.startswith("worker_") and re.match(r'^worker_[a-zA-Z0-9_-]+$', source):
+            log_path = FLEET_DIR / "logs" / f"{source}.log"
+        else:
+            return jsonify({"error": f"Unknown log source: {source}"}), 400
+
+    def generate():
+        try:
+            yield f"data: {{\"type\": \"connected\", \"source\": \"{source}\"}}\n\n"
+
+            if not log_path.exists():
+                yield f"data: {{\"type\": \"info\", \"line\": \"Log file not found: {log_path.name}\"}}\n\n"
+                return
+
+            # Start by sending last 50 lines
+            try:
+                with open(log_path, "r", encoding="utf-8", errors="replace") as f:
+                    lines = f.readlines()
+                    for line in lines[-50:]:
+                        line = line.rstrip()
+                        if line:
+                            escaped = json.dumps(line)
+                            yield f"data: {{\"type\": \"log\", \"line\": {escaped}}}\n\n"
+            except Exception:
+                pass
+
+            # Then tail for new lines
+            try:
+                with open(log_path, "r", encoding="utf-8", errors="replace") as f:
+                    f.seek(0, 2)  # Seek to end
+                    while True:
+                        line = f.readline()
+                        if line:
+                            line = line.rstrip()
+                            if line:
+                                escaped = json.dumps(line)
+                                yield f"data: {{\"type\": \"log\", \"line\": {escaped}}}\n\n"
+                        else:
+                            # No new data — send keepalive
+                            yield ": keepalive\n\n"
+                            time.sleep(1)
+            except GeneratorExit:
+                pass
+        except GeneratorExit:
+            pass
+
+    return Response(generate(), mimetype="text/event-stream",
+                    headers={"Cache-Control": "no-cache",
+                             "X-Accel-Buffering": "no"})
+
+
+@app.route("/api/logs/recent")
+def api_logs_recent():
+    """Last N log lines as JSON array.
+
+    Query params:
+        n (int):      number of lines (default 100, max 1000)
+        source (str): "supervisor" (default), "dashboard", or "worker_<name>"
+        filter (str): optional substring filter
+    """
+    try:
+        n = min(1000, max(1, int(request.args.get("n", 100))))
+        source = request.args.get("source", "supervisor").strip()
+        line_filter = request.args.get("filter", "").strip()
+
+        allowed_sources = {
+            "supervisor": FLEET_DIR / "logs" / "supervisor.log",
+            "dashboard": FLEET_DIR / "logs" / "dashboard.log",
+        }
+
+        log_path = allowed_sources.get(source)
+        if log_path is None:
+            if source.startswith("worker_") and re.match(r'^worker_[a-zA-Z0-9_-]+$', source):
+                log_path = FLEET_DIR / "logs" / f"{source}.log"
+            else:
+                return jsonify({"error": f"Unknown log source: {source}"}), 400
+
+        if not log_path.exists():
+            return jsonify({"lines": [], "total": 0, "source": source})
+
+        try:
+            with open(log_path, "r", encoding="utf-8", errors="replace") as f:
+                all_lines = f.readlines()
+        except Exception as e:
+            return jsonify({"error": _safe_error(e), "lines": []}), 500
+
+        # Apply filter if provided
+        if line_filter:
+            all_lines = [l for l in all_lines if line_filter.lower() in l.lower()]
+
+        # Return last N lines
+        recent = [l.rstrip() for l in all_lines[-n:] if l.strip()]
+
+        return jsonify({
+            "lines": recent,
+            "total": len(recent),
+            "source": source,
+            "log_path": str(log_path),
+        })
+    except Exception as e:
+        return jsonify({"error": _safe_error(e), "lines": []}), 500
+
+
+@app.route("/api/logs/sources")
+def api_logs_sources():
+    """List available log sources (files in fleet/logs/)."""
+    try:
+        logs_dir = FLEET_DIR / "logs"
+        sources = []
+        if logs_dir.exists():
+            for f in sorted(logs_dir.glob("*.log")):
+                sources.append({
+                    "name": f.stem,
+                    "file": f.name,
+                    "size_bytes": f.stat().st_size,
+                    "modified": datetime.fromtimestamp(f.stat().st_mtime).isoformat(),
+                })
+        return jsonify({"sources": sources, "total": len(sources)})
+    except Exception as e:
+        return jsonify({"error": _safe_error(e), "sources": []}), 500
+
+
 # ── Entry ────────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
