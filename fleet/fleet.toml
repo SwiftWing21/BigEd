@@ -313,6 +313,9 @@ enabled = false              # enable peer discovery and task forwarding
 peers = []                   # peer fleet URLs (e.g. ["http://192.168.1.50:5555", "http://fleet2.local:5555"])
 overflow_threshold = 0.85    # forward tasks to peers when local queue > 85% capacity
 peer_timeout_secs = 5        # timeout for peer health probes
+discovery_enabled = true     # auto-discover peers on local network (UDP broadcast + optional mDNS)
+discovery_port = 5556        # UDP port for discovery beacons
+discovery_method = "broadcast"  # "broadcast" = UDP only, "mdns" = zeroconf only, "both" = UDP + mDNS
 
 # v0.51.02b: Auto-save & Backup — periodic snapshots of fleet state
 [backup]

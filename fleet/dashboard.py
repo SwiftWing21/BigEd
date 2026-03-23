@@ -1975,6 +1975,30 @@ def api_federation_peers():
     return jsonify(peers)
 
 
+@app.route("/api/federation/discovered")
+def api_federation_discovered():
+    """List auto-discovered peers (separate from manually configured).
+
+    Returns peers found via UDP broadcast and/or mDNS, with online status.
+    """
+    try:
+        import discovery
+        discovered = discovery.get_discovered_peers()
+        all_peers = discovery.get_all_peers()
+        return jsonify({
+            "discovered": discovered,
+            "all_peers": all_peers,
+            "discovery_running": discovery._running,
+            "fleet_id": discovery._fleet_id,
+        })
+    except ImportError:
+        return jsonify({"discovered": [], "all_peers": [], "discovery_running": False,
+                        "fleet_id": "", "error": "discovery module not available"})
+    except Exception as e:
+        return jsonify({"discovered": [], "all_peers": [], "discovery_running": False,
+                        "fleet_id": "", "error": str(e)})
+
+
 # ── SLA Monitoring (0.135.00b — Enterprise & Multi-Tenant) ──────────────────
 
 @app.route("/api/sla")

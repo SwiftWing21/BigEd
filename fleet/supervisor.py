@@ -765,6 +765,12 @@ def write_status_md():
 def shutdown(sig, frame):
     log.info("Shutting down fleet...")
     _json_log("INFO", "supervisor_shutdown")
+    # Stop discovery first (daemon threads, fast cleanup)
+    try:
+        import discovery
+        discovery.stop_discovery()
+    except Exception:
+        pass
     stop_dashboard()
     stop_openclaw()
     stop_discord_bot()
@@ -950,10 +956,21 @@ def main():
     # Start Dr. Ders (hw_supervisor) — respawned if it crashes
     start_hw_supervisor(config)
 
-    # Federation: announce rejoin to peers on startup (crash recovery)
+    # Federation: start auto-discovery + announce rejoin to peers on startup
     try:
         federation_cfg = config.get("federation", {})
         if federation_cfg.get("enabled") and not offline:
+            # Start mesh auto-discovery (UDP broadcast + optional mDNS)
+            if federation_cfg.get("discovery_enabled", True):
+                try:
+                    import discovery
+                    dashboard_port = config.get("dashboard", {}).get("port", 5555)
+                    discovery.start_discovery(port=dashboard_port)
+                    log.info("Federation: mesh auto-discovery started")
+                except Exception:
+                    log.warning("Federation: auto-discovery failed to start", exc_info=True)
+
+            # Announce rejoin to manually configured peers (crash recovery)
             device_name = config.get("naming", {}).get("device_name", "unknown")
             peers = federation_cfg.get("peers", [])
             for peer_url in peers:
@@ -1080,7 +1097,13 @@ def main():
                     overflow_threshold = federation_cfg.get("overflow_threshold", 0.85)
                     max_capacity = config.get("fleet", {}).get("max_workers", 10) * 5
                     if pending / max(max_capacity, 1) > overflow_threshold:
-                        fed_peers = federation_cfg.get("peers", [])
+                        # Use auto-discovered + manual peers
+                        try:
+                            import discovery
+                            _all_peers = discovery.get_all_peers()
+                            fed_peers = [p["url"] for p in _all_peers if p.get("online", False)]
+                        except Exception:
+                            fed_peers = federation_cfg.get("peers", [])
                         for peer_url in fed_peers:
                             try:
                                 # Check peer capacity
@@ -1527,8 +1550,14 @@ def main():
                         _total_vram = _gpu_info.get("total_vram_gb", 0.0)
                     except Exception:
                         pass
-                    peers = federation_cfg.get("peers", [])
-                    for peer_url in peers:
+                    # Use auto-discovered + manual peers for heartbeat targets
+                    try:
+                        import discovery
+                        all_peers = discovery.get_all_peers()
+                        peer_urls = [p["url"] for p in all_peers]
+                    except Exception:
+                        peer_urls = federation_cfg.get("peers", [])
+                    for peer_url in peer_urls:
                         try:
                             status = {"fleet_id": config.get("naming", {}).get("device_name", ""),
                                       "agents": len(_get_running_workers()),
