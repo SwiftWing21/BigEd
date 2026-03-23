@@ -410,3 +410,18 @@ class RAGIndex:
             "index_size_bytes": index_size_bytes,
             "last_indexed": last_row["indexed"] if last_row else None,
         }
+
+
+def _register_views():
+    """Register RAG data source for Hybrid ViewPort."""
+    import view_registry
+    view_registry.register_source(
+        name="rag",
+        category="storage",
+        node_types=["index", "chunk", "query"],
+        edge_types=["indexes", "retrieves", "ranks"],
+        data_endpoint="/api/rag/graph",
+        icon="database",
+        layout_hint="cluster",
+        metrics=["chunk_count", "query_latency_ms"],
+    )

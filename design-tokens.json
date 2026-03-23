@@ -1,0 +1,103 @@
+{
+  "$schema": "https://design-tokens.github.io/community-group/format/",
+  "version": "2026-03-23T00:00:00Z",
+  "themes": {
+    "classic": {
+      "bg":           { "$type": "color", "$value": "#1a1a1a" },
+      "bg2":          { "$type": "color", "$value": "#242424" },
+      "bg3":          { "$type": "color", "$value": "#2d2d2d" },
+      "accent":       { "$type": "color", "$value": "#b22222" },
+      "accent-hover": { "$type": "color", "$value": "#8b0000" },
+      "gold":         { "$type": "color", "$value": "#c8a84b" },
+      "text":         { "$type": "color", "$value": "#e2e2e2" },
+      "dim":          { "$type": "color", "$value": "#888888" },
+      "glass-bg":     { "$type": "color", "$value": "#0f0f0f" },
+      "glass-nav":    { "$type": "color", "$value": "#141414" },
+      "glass-panel":  { "$type": "color", "$value": "#181818" },
+      "glass-hover":  { "$type": "color", "$value": "#222222" },
+      "glass-sel":    { "$type": "color", "$value": "#1a1a2e" },
+      "glass-border": { "$type": "color", "$value": "#2a2a2a" },
+      "card-radius":  { "$type": "dimension", "$value": "8px" },
+      "btn-radius":   { "$type": "dimension", "$value": "4px" }
+    },
+    "modern": {
+      "bg":           { "$type": "color", "$value": "#0f1117" },
+      "bg2":          { "$type": "color", "$value": "#1a1e2e" },
+      "bg3":          { "$type": "color", "$value": "#252a3a" },
+      "accent":       { "$type": "color", "$value": "#c0392b" },
+      "accent-hover": { "$type": "color", "$value": "#96281b" },
+      "gold":         { "$type": "color", "$value": "#d4a84b" },
+      "text":         { "$type": "color", "$value": "#ecf0f1" },
+      "dim":          { "$type": "color", "$value": "#7f8c8d" },
+      "glass-bg":     { "$type": "color", "$value": "#0a0d14" },
+      "glass-nav":    { "$type": "color", "$value": "#111520" },
+      "glass-panel":  { "$type": "color", "$value": "#161b28" },
+      "glass-hover":  { "$type": "color", "$value": "#1e2436" },
+      "glass-sel":    { "$type": "color", "$value": "#182040" },
+      "glass-border": { "$type": "color", "$value": "#2a3045" },
+      "card-radius":  { "$type": "dimension", "$value": "12px" },
+      "btn-radius":   { "$type": "dimension", "$value": "8px" }
+    },
+    "figma": {
+      "bg":           { "$type": "color", "$value": "#1e1e1e" },
+      "bg2":          { "$type": "color", "$value": "#2c2c2c" },
+      "bg3":          { "$type": "color", "$value": "#383838" },
+      "accent":       { "$type": "color", "$value": "#7c3aed" },
+      "accent-hover": { "$type": "color", "$value": "#6d28d9" },
+      "gold":         { "$type": "color", "$value": "#d4a84b" },
+      "text":         { "$type": "color", "$value": "#e0e0e0" },
+      "dim":          { "$type": "color", "$value": "#a0a0a0" },
+      "glass-bg":     { "$type": "color", "$value": "#1a1a1a" },
+      "glass-nav":    { "$type": "color", "$value": "#232323" },
+      "glass-panel":  { "$type": "color", "$value": "#2a2a2a" },
+      "glass-hover":  { "$type": "color", "$value": "#333333" },
+      "glass-sel":    { "$type": "color", "$value": "#3a3a3a" },
+      "glass-border": { "$type": "color", "$value": "#404040" },
+      "card-radius":  { "$type": "dimension", "$value": "12px" },
+      "btn-radius":   { "$type": "dimension", "$value": "8px" }
+    }
+  },
+  "shared": {
+    "status": {
+      "green":  { "$type": "color", "$value": "#4caf50" },
+      "orange": { "$type": "color", "$value": "#ff9800" },
+      "red":    { "$type": "color", "$value": "#f44336" }
+    },
+    "brand": {
+      "teal":   { "$type": "color", "$value": "#00bcd4" },
+      "blue":   { "$type": "color", "$value": "#4fc3f7" },
+      "cyan":   { "$type": "color", "$value": "#00bcd4" },
+      "yellow": { "$type": "color", "$value": "#ffd54f" }
+    },
+    "provider": {
+      "local":         { "$type": "color", "$value": "#d4a84b" },
+      "claude":        { "$type": "color", "$value": "#6b8afd" },
+      "gemini":        { "$type": "color", "$value": "#4caf50" },
+      "oauth":         { "$type": "color", "$value": "#9c7cfc" },
+      "bg-local":      { "$type": "color", "$value": "#2a2010" },
+      "bg-claude":     { "$type": "color", "$value": "#0d0d2a" },
+      "bg-gemini":     { "$type": "color", "$value": "#0d1a0d" }
+    },
+    "sidebar": {
+      "hover":      { "$type": "color", "$value": "#2a2a3a" },
+      "active-bg":  { "$type": "color", "$value": "#252535" },
+      "btn-radius": { "$type": "dimension", "$value": "6px" },
+      "btn-height": { "$type": "dimension", "$value": "30px" }
+    },
+    "action": {
+      "start-bg":     { "$type": "color", "$value": "#1e3a1e" },
+      "start-hover":  { "$type": "color", "$value": "#2a4a2a" },
+      "dash-bg":      { "$type": "color", "$value": "#1a2a3a" },
+      "dash-hover":   { "$type": "color", "$value": "#253545" },
+      "danger-bg":    { "$type": "color", "$value": "#5a2020" },
+      "danger-hover": { "$type": "color", "$value": "#6a2828" }
+    },
+    "spacing": {
+      "card-pad":      { "$type": "dimension", "$value": "4px" },
+      "btn-height":    { "$type": "dimension", "$value": "28px" },
+      "btn-height-sm": { "$type": "dimension", "$value": "20px" },
+      "tab-height":    { "$type": "dimension", "$value": "42px" },
+      "header-height": { "$type": "dimension", "$value": "60px" }
+    }
+  }
+}

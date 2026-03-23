@@ -275,3 +275,18 @@ def get_cluster_status() -> dict:
     Returns per-peer breakdown plus cluster totals.
     """
     return get_aggregated_capacity()
+
+
+def _register_views():
+    """Register federation data source for Hybrid ViewPort."""
+    import view_registry
+    view_registry.register_source(
+        name="federation",
+        category="external",
+        node_types=["fleet", "peer", "route"],
+        edge_types=["federates", "overflows", "syncs"],
+        data_endpoint="/api/federation/graph",
+        icon="globe",
+        layout_hint="tree",
+        metrics=["peer_count", "overflow_rate"],
+    )

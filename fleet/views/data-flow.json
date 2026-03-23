@@ -1,0 +1,16 @@
+{
+  "schema_version": 1,
+  "name": "data-flow",
+  "description": "All registered data sources and their connections",
+  "layout": "cluster",
+  "sources": ["supervisor", "rag", "autoresearch", "reinforcement", "federation"],
+  "edges": [
+    {"from": "supervisor:agent", "to": "rag:query", "type": "queries"},
+    {"from": "rag:chunk", "to": "autoresearch:dataset", "type": "feeds"},
+    {"from": "autoresearch:trainer", "to": "reinforcement:scorer", "type": "produces"},
+    {"from": "supervisor:supervisor", "to": "federation:fleet", "type": "federates"}
+  ],
+  "metrics_overlay": [],
+  "animation": {},
+  "zoom_breakpoints": {"labels": 0.5, "metrics": 0.8, "animation": 1.2}
+}

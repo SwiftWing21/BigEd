@@ -1,0 +1,19 @@
+{
+  "schema_version": 1,
+  "name": "training-pipeline",
+  "description": "Data flow from ingestion to model evaluation",
+  "layout": "swimlane",
+  "sources": ["rag", "autoresearch", "reinforcement"],
+  "lanes": [
+    {"name": "Ingestion", "sources": ["rag"]},
+    {"name": "Training", "sources": ["autoresearch"]},
+    {"name": "Evaluation", "sources": ["reinforcement"]}
+  ],
+  "edges": [
+    {"from": "rag:chunk", "to": "autoresearch:dataset", "type": "feeds"},
+    {"from": "autoresearch:trainer", "to": "reinforcement:scorer", "type": "produces"}
+  ],
+  "metrics_overlay": ["chunk_count", "epoch", "loss", "iq_score"],
+  "animation": {"feeds": "flow", "produces": "pulse"},
+  "zoom_breakpoints": {"labels": 0.5, "metrics": 0.8, "animation": 1.2}
+}

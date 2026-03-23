@@ -142,3 +142,18 @@ def _evict_gpu_models(config):
                 pass
     except Exception as e:
         log.warning(f"VRAM eviction best-effort failed: {e}")
+
+
+def _register_views():
+    """Register marathon/autoresearch data source for Hybrid ViewPort."""
+    import view_registry
+    view_registry.register_source(
+        name="autoresearch",
+        category="training",
+        node_types=["trainer", "evaluator", "dataset"],
+        edge_types=["trains_on", "produces", "evaluates"],
+        data_endpoint="/api/autoresearch/graph",
+        icon="flask",
+        layout_hint="swimlane",
+        metrics=["epoch", "loss", "accuracy"],
+    )

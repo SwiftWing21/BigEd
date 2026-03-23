@@ -1,0 +1,14 @@
+{
+  "schema_version": 1,
+  "name": "fleet-overview",
+  "description": "Supervisor hub-and-spoke: agents, workers, and skill dispatch",
+  "layout": "radial",
+  "sources": ["supervisor"],
+  "edges": [
+    {"from": "supervisor:supervisor", "to": "supervisor:agent", "type": "manages"},
+    {"from": "supervisor:agent", "to": "supervisor:worker", "type": "dispatches"}
+  ],
+  "metrics_overlay": ["uptime_s", "worker_count", "task_queue_depth"],
+  "animation": {"dispatches": "pulse", "heartbeat": "fade"},
+  "zoom_breakpoints": {"labels": 0.5, "metrics": 0.8, "animation": 1.2}
+}

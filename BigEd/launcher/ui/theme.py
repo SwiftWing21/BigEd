@@ -29,6 +29,8 @@ def load_custom_fonts():
 # Fonts loaded lazily — call load_custom_fonts() after window creation
 
 # ─── Theme Presets ──────────────────────────────────────────────────────────
+# Synced with design-tokens.json via fleet/token_bridge.py
+# Edit THEME_PRESETS here OR design-tokens.json — bridge keeps them aligned
 THEME_PRESETS = {
     "Classic": {
         "BG": "#1a1a1a", "BG2": "#242424", "BG3": "#2d2d2d",

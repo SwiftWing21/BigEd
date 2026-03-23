@@ -251,3 +251,17 @@ def _find_task_for_output(output_path, agent_name="", skill_type=""):
                 return dict(row)
 
     return None
+
+
+def _register_views():
+    """Register reinforcement data source for Hybrid ViewPort."""
+    import view_registry
+    view_registry.register_source(
+        name="reinforcement",
+        category="training",
+        node_types=["scorer", "feedback", "model"],
+        edge_types=["scores", "trains", "evaluates"],
+        data_endpoint="/api/reinforcement/graph",
+        layout_hint="swimlane",
+        metrics=["iq_score", "feedback_count"],
+    )

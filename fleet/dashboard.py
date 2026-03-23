@@ -1626,6 +1626,16 @@ try:
 except ImportError:
     pass  # payments module optional
 
+# ── Hybrid ViewPort — Views API (Phase 2) ────────────────────────────────────
+try:
+    from views_blueprint import views_bp
+    app.register_blueprint(views_bp)
+    # Auto-discover and register view data sources at startup
+    import view_registry
+    view_registry.discover_and_register()
+except ImportError:
+    pass  # views module optional
+
 
 # ── MCP Server Status (v0.31.00) ─────────────────────────────────────────────
 

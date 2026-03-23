@@ -1,0 +1,16 @@
+{
+  "schema_version": 1,
+  "name": "bottleneck-detector",
+  "description": "Data flow with animation and latency metrics for bottleneck detection",
+  "layout": "cluster",
+  "sources": ["supervisor", "rag", "autoresearch", "reinforcement", "federation"],
+  "edges": [
+    {"from": "supervisor:agent", "to": "rag:query", "type": "queries"},
+    {"from": "rag:chunk", "to": "autoresearch:dataset", "type": "feeds"},
+    {"from": "autoresearch:trainer", "to": "reinforcement:scorer", "type": "produces"},
+    {"from": "supervisor:supervisor", "to": "federation:fleet", "type": "federates"}
+  ],
+  "metrics_overlay": ["tok_s", "queue_depth", "query_latency_ms", "loss"],
+  "animation": {"queries": "flow", "feeds": "flow", "produces": "pulse", "federates": "fade"},
+  "zoom_breakpoints": {"labels": 0.4, "metrics": 0.6, "animation": 0.8}
+}

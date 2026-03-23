@@ -278,6 +278,7 @@ from ui.comm_tab import CommTabMixin
 from ui.tray import TrayManagerMixin
 from ui.ollama_manager import OllamaManagerMixin
 from ui.dispatch import DispatchMixin
+from ui.webview_manager import WebviewManagerMixin
 from ui.fleet_status import (
     parse_status, read_log_tail, get_hw_stats, count_pending_advisories,
     count_waiting_human, _check_supervisor_liveness, _zombie_sweep,
@@ -630,7 +631,7 @@ class CustomTabBar(ctk.CTkFrame):
 
 
 # ─── Main App ─────────────────────────────────────────────────────────────────
-class BigEdCC(TrayManagerMixin, BootManagerMixin, CommTabMixin, OllamaManagerMixin, DispatchMixin, ctk.CTk):
+class BigEdCC(TrayManagerMixin, BootManagerMixin, CommTabMixin, OllamaManagerMixin, DispatchMixin, WebviewManagerMixin, ctk.CTk):
     def __init__(self):
         super().__init__()
 
@@ -793,6 +794,12 @@ class BigEdCC(TrayManagerMixin, BootManagerMixin, CommTabMixin, OllamaManagerMix
                 mod.on_close()
             except Exception:
                 pass
+
+        # Close companion webview window
+        try:
+            self._close_graph_view()
+        except Exception:
+            pass
 
         # Stop system tray icon
         try:
@@ -1241,6 +1248,52 @@ class BigEdCC(TrayManagerMixin, BootManagerMixin, CommTabMixin, OllamaManagerMix
         Tooltip(self._btn_dashboard, "Open the Fleet Dashboard in your browser (localhost:5555)")
         if _fleet_mode() == "air_gap":
             self._btn_dashboard.configure(state="disabled", text="📊 Dashboard (air-gap)")
+
+        # Graph View — opens Hybrid ViewPort in companion window
+        graph_wrapper = ctk.CTkFrame(sb, fg_color="transparent", height=SB_BTN_HEIGHT)
+        graph_wrapper.pack(fill="x", padx=6, pady=2)
+        graph_wrapper.pack_propagate(False)
+        graph_accent = ctk.CTkFrame(graph_wrapper, fg_color="transparent",
+                                    width=3, corner_radius=1)
+        graph_accent.pack(side="left", fill="y", padx=(0, 3), pady=3)
+        self._btn_graph_view = ctk.CTkButton(
+            graph_wrapper, text="  🔗  Graph View", font=FONT_SM,
+            height=SB_BTN_HEIGHT,
+            fg_color="transparent", hover_color=SB_HOVER,
+            text_color=TEXT, anchor="w",
+            corner_radius=SB_BTN_RADIUS,
+            command=lambda: (self._sb_set_active(graph_wrapper, graph_accent),
+                             self._open_graph_view("fleet-overview")),
+        )
+        self._btn_graph_view.pack(side="left", fill="both", expand=True)
+        if not s["open"]:
+            graph_wrapper.pack_forget()
+        s["widgets"].append(graph_wrapper)
+        self._sb_buttons.append((graph_wrapper, graph_accent, self._btn_graph_view))
+        Tooltip(self._btn_graph_view, "Open the Hybrid ViewPort graph visualization")
+
+        # Graph (Browser) — fallback: open graph view in default browser
+        graph_br_wrapper = ctk.CTkFrame(sb, fg_color="transparent", height=SB_BTN_HEIGHT)
+        graph_br_wrapper.pack(fill="x", padx=6, pady=2)
+        graph_br_wrapper.pack_propagate(False)
+        graph_br_accent = ctk.CTkFrame(graph_br_wrapper, fg_color="transparent",
+                                       width=3, corner_radius=1)
+        graph_br_accent.pack(side="left", fill="y", padx=(0, 3), pady=3)
+        self._btn_graph_browser = ctk.CTkButton(
+            graph_br_wrapper, text="  🌐  Graph (Browser)", font=FONT_XS,
+            height=SB_BTN_HEIGHT,
+            fg_color="transparent", hover_color=SB_HOVER,
+            text_color=DIM, anchor="w",
+            corner_radius=SB_BTN_RADIUS,
+            command=lambda: (self._sb_set_active(graph_br_wrapper, graph_br_accent),
+                             self._open_graph_in_browser("fleet-overview")),
+        )
+        self._btn_graph_browser.pack(side="left", fill="both", expand=True)
+        if not s["open"]:
+            graph_br_wrapper.pack_forget()
+        s["widgets"].append(graph_br_wrapper)
+        self._sb_buttons.append((graph_br_wrapper, graph_br_accent, self._btn_graph_browser))
+        Tooltip(self._btn_graph_browser, "Open graph view in your default web browser")
 
         # ── RESEARCH ──────────────────────────────────────────────────────────
         s = section("RESEARCH")

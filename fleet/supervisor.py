@@ -1786,5 +1786,20 @@ def main():
         time.sleep(5)
 
 
+def _register_views():
+    """Register supervisor data source for Hybrid ViewPort."""
+    import view_registry
+    view_registry.register_source(
+        name="supervisor",
+        category="fleet",
+        node_types=["supervisor", "agent", "worker"],
+        edge_types=["manages", "dispatches", "heartbeat"],
+        data_endpoint="/api/fleet/graph",
+        icon="cpu",
+        layout_hint="radial",
+        metrics=["uptime_s", "worker_count", "task_queue_depth"],
+    )
+
+
 if __name__ == "__main__":
     main()
