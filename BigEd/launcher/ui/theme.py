@@ -48,6 +48,15 @@ THEME_PRESETS = {
         "GLASS_PANEL": "#161b28", "GLASS_HOVER": "#1e2436",
         "GLASS_SEL": "#182040", "GLASS_BORDER": "#2a3045",
     },
+    "Figma": {
+        "BG": "#1e1e1e", "BG2": "#2c2c2c", "BG3": "#383838",
+        "ACCENT": "#7c3aed", "ACCENT_H": "#6d28d9", "GOLD": "#d4a84b",
+        "TEXT": "#e0e0e0", "DIM": "#a0a0a0",
+        "CARD_RADIUS": 12, "BTN_RADIUS": 8,
+        "GLASS_BG": "#1a1a1a", "GLASS_NAV": "#232323",
+        "GLASS_PANEL": "#2a2a2a", "GLASS_HOVER": "#333333",
+        "GLASS_SEL": "#3a3a3a", "GLASS_BORDER": "#404040",
+    },
 }
 
 def _load_theme_pref() -> str:
@@ -56,12 +65,12 @@ def _load_theme_pref() -> str:
         settings_file = Path(__file__).resolve().parent.parent / "data" / "settings.json"
         if settings_file.exists():
             data = _json.loads(settings_file.read_text(encoding="utf-8"))
-            pref = data.get("theme_preset", "Modern")
+            pref = data.get("theme_preset", "Figma")
             if pref in THEME_PRESETS:
                 return pref
     except Exception:
         pass
-    return "Modern"  # new default for fresh installs
+    return "Figma"  # default for fresh installs (v0.170+)
 
 _active_theme_name = _load_theme_pref()
 _theme = THEME_PRESETS[_active_theme_name]

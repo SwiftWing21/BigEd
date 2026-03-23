@@ -151,6 +151,7 @@ port = 5555
 auto_open = true               # open dashboard in browser when fleet boot completes
 bind_address = "127.0.0.1"    # listen address — set "0.0.0.0" for remote access (requires TLS + auth)
 cors_origins = []              # allowed CORS origins for remote access (e.g. ["https://my-admin.example.com"])
+theme = "figma"                # dashboard theme: classic | modern | figma
 
 [openclaw]
 port = 18789
