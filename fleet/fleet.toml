@@ -429,6 +429,13 @@ deploy_agents = 2                # auto-deploy N extra agents during bonus
 prefer_claude = true             # route to Claude instead of local during bonus
 disable_budget_throttle = true   # bonus usage doesn't count against limits
 
+# ── v0.200: ML Task Routing — sklearn-based agent selection ─────────
+[routing]
+ml_enabled = true                        # use trained ML model for agent-to-skill routing
+retrain_interval_hours = 24              # auto-retrain model after this many hours
+min_training_samples = 50                # minimum completed tasks before first training
+fallback_to_iq = true                    # fall back to IQ-average heuristic if no model
+
 # ── Dispatch Bridge (Cowork Dispatch → Fleet) ──────────────────────
 [dispatch_bridge]
 enabled = true
