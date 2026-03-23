@@ -1608,6 +1608,24 @@ try:
 except ImportError:
     pass  # marketplace module optional
 
+try:
+    from control_plane import platform_bp
+    app.register_blueprint(platform_bp)
+except ImportError:
+    pass  # control_plane module optional
+
+try:
+    from self_service import self_service_bp
+    app.register_blueprint(self_service_bp)
+except ImportError:
+    pass  # self_service module optional
+
+try:
+    from payments import register_payment_routes
+    register_payment_routes(app)
+except ImportError:
+    pass  # payments module optional
+
 
 # ── MCP Server Status (v0.31.00) ─────────────────────────────────────────────
 
