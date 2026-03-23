@@ -879,6 +879,7 @@ class Tooltip:
 
 # ─── Boot sequence (extracted to ui/boot.py — TECH_DEBT 4.1) ─────────────────
 from ui.boot import BootManagerMixin, _kill_fleet_processes, _kill_ollama
+from ui.tray import TrayManagerMixin
 
 # ─── Custom Tab Bar ───────────────────────────────────────────────────────────
 class CustomTabBar(ctk.CTkFrame):
@@ -1220,7 +1221,7 @@ class CustomTabBar(ctk.CTkFrame):
 
 
 # ─── Main App ─────────────────────────────────────────────────────────────────
-class BigEdCC(BootManagerMixin, ctk.CTk):
+class BigEdCC(TrayManagerMixin, BootManagerMixin, ctk.CTk):
     def __init__(self):
         super().__init__()
 
@@ -1329,6 +1330,12 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
         if not _should_show_walkthrough():
             self._safe_after(1000, self._start_system)
 
+        # v0.175: System tray integration
+        self._init_tray()
+        if self._get_start_minimized() and not _should_show_walkthrough():
+            # Start minimized to tray — hide window immediately
+            self._safe_after(200, self._minimize_to_tray)
+
     _CLOSE_PREFS_FILE = DATA_DIR / "close_preferences.json"
 
     def _load_close_prefs(self):
@@ -1377,6 +1384,12 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
                 mod.on_close()
             except Exception:
                 pass
+
+        # Stop system tray icon
+        try:
+            self._stop_tray()
+        except Exception:
+            pass
 
     def _do_stop_and_close(self):
         """Graceful close: save task queue, unload models, kill agents, exit.
@@ -1452,7 +1465,20 @@ class BigEdCC(BootManagerMixin, ctk.CTk):
             pass
 
     def _on_close(self):
-        """Smart close dialog with remember-choice + countdown."""
+        """Smart close dialog with remember-choice + countdown.
+
+        If close_behavior is 'tray' and tray is available, minimize to tray
+        instead of showing the close dialog.
+        """
+        from ui.tray import _tray_available
+
+        # Check if close-to-tray is enabled
+        close_behavior = self._get_close_behavior()
+        if close_behavior == "tray" and _tray_available() and self._tray_icon is not None:
+            self._minimize_to_tray()
+            return
+
+        # Fall through to existing close behavior
         self._alive = False
         prefs = self._load_close_prefs()
         remembered = prefs.get("action")  # "stop" or "keep" or None
