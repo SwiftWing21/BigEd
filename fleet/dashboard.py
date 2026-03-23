@@ -1489,6 +1489,9 @@ app.register_blueprint(health_bp)
 from a2a import a2a_bp
 app.register_blueprint(a2a_bp)
 
+# ── Tenant Admin (v0.300.00b) ─────────────────────────────────────────────────
+from tenant_admin import tenant_bp
+app.register_blueprint(tenant_bp)
 
 # ── MCP Server Status (v0.31.00) ─────────────────────────────────────────────
 

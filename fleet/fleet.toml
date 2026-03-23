@@ -393,6 +393,14 @@ multi_tenant = false
 tenant_id = ""                    # This instance's tenant ID (empty = single-tenant)
 tenant_isolation = "database"     # database | schema | none
 
+# v0.300.00b: Tenant Admin Dashboard — self-service tenant management
+[enterprise.tenants]
+enabled = false                          # master switch for tenant admin API
+max_tenants = 100                        # hard cap on active tenants
+tenant_data_dir = "fleet/tenants"        # root dir for tenant data (skills, DB, config)
+default_max_agents = 5                   # default agent limit per tenant
+default_max_skills = 50                  # default skill limit per tenant
+
 # Event triggers — file watch, scheduled tasks, webhook dispatch
 [triggers]
 file_watch_enabled = true
