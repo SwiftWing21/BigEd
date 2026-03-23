@@ -429,6 +429,17 @@ deploy_agents = 2                # auto-deploy N extra agents during bonus
 prefer_claude = true             # route to Claude instead of local during bonus
 disable_budget_throttle = true   # bonus usage doesn't count against limits
 
+# ── Self-Healing Fleet + Performance Auto-Rollback (v0.200.00b) ───
+[self_healing]
+enabled = true
+health_sweep_interval = 60           # run health sweep every 60s in supervisor loop
+max_task_retries = 3                 # auto-retry failed tasks up to N times
+agent_stuck_timeout = 300            # 5 min no heartbeat = stuck agent
+circuit_breaker_threshold = 3        # failures to trip circuit breaker
+circuit_breaker_window = 300         # 5 min sliding window for failure counting
+auto_rollback_enabled = true         # restore skill from code_drafts on regression
+regression_threshold = 0.20          # 20% success rate drop = regression
+
 # ── Dispatch Bridge (Cowork Dispatch → Fleet) ──────────────────────
 [dispatch_bridge]
 enabled = true

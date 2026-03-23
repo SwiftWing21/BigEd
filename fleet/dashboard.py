@@ -1383,6 +1383,10 @@ def api_dag(parent_id):
 from process_control import fleet_bp
 app.register_blueprint(fleet_bp)
 
+# ── Self-Healing Fleet Health API (v0.200.00b) ────────────────────────────────
+from health_api import health_bp
+app.register_blueprint(health_bp)
+
 # ── A2A Protocol (Agent-to-Agent interoperability) ────────────────────────────
 from a2a import a2a_bp
 app.register_blueprint(a2a_bp)

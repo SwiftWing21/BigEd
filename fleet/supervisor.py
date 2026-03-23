@@ -1059,6 +1059,7 @@ def main():
     last_cost_anomaly_check = 0    # v0.170.04b: cost anomaly auto-throttle (every 10 min)
     COST_ANOMALY_INTERVAL = 600    # 10 minutes
     last_capacity_check = 0        # Claude capacity bonus window detection (every 5 min)
+    last_health_sweep = 0          # v0.200.00b: self-healing health sweep
     # v0.23 S3: Auto-Intelligence — periodic evolution + research dispatch
     # Intervals defined at module level: RESEARCH_INTERVAL (24h), EVOLUTION_INTERVAL (7d)
     global _last_research_trigger, _last_evolution_trigger, _last_results_mtime
@@ -1600,6 +1601,24 @@ def main():
                         _json_log("INFO", "cost_anomaly_cleared")
             except Exception:
                 pass  # cost anomaly check must never block supervisor
+
+        # v0.200.00b: Self-healing health sweep — recover stuck agents, retry failed tasks
+        _heal_cfg = config.get("self_healing", {})
+        _heal_interval = _heal_cfg.get("health_sweep_interval", 60)
+        if _heal_cfg.get("enabled", True) and now - last_health_sweep >= _heal_interval:
+            last_health_sweep = now
+            try:
+                from self_healing import run_health_sweep
+                sweep = run_health_sweep()
+                if sweep.get("recovered_agents") or sweep.get("retried_tasks"):
+                    log.info("Health sweep: recovered %d agents, retried %d tasks",
+                             len(sweep.get("recovered_agents", [])),
+                             len(sweep.get("retried_tasks", [])))
+                    _json_log("INFO", "health_sweep",
+                              recovered=len(sweep.get("recovered_agents", [])),
+                              retried=len(sweep.get("retried_tasks", [])))
+            except Exception:
+                pass  # self-healing must never block supervisor
 
         # Claude capacity bonus window check (every 5 min)
         if now - last_capacity_check >= 300:
