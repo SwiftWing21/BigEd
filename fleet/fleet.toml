@@ -510,6 +510,13 @@ hitl_auto_approve_timeout_min = 0       # 0 = off (wait forever)
 hitl_auto_approve_max_cost = 0          # 0 = no cost gate
 dashboard_base_url = "http://127.0.0.1:5555"
 
+# ── SaaS Control Plane (v0.400.00b) ──────────────────────────────────
+[platform]
+enabled = false                              # master switch for control plane API
+control_plane_mode = false                   # true = this instance is a control plane (manages other fleets)
+max_managed_fleets = 100                     # hard cap on tenant fleets managed by this control plane
+default_agent_count = 4                      # default agent count when provisioning a new fleet
+
 # ── Compliance Reporting (v0.300.00b) ─────────────────────────────────
 [compliance]
 enabled = false                              # master switch for compliance module
