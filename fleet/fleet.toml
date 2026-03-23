@@ -517,3 +517,10 @@ auto_generate = true                         # auto-generate reports on schedule
 schedule = "monthly"                         # daily | weekly | monthly
 report_types = ["soc2", "audit_summary", "sla"]  # report types to auto-generate
 retention_days = 365                         # keep reports for 1 year
+
+# ── Marketplace with Reviews (v0.400.00b) ───────────────────────────────
+[marketplace]
+enabled = false                                  # master switch for marketplace
+require_review_before_publish = true             # packages require admin review before listing
+allow_unverified_publishers = false              # only verified publishers can submit packages
+max_package_size_mb = 25                         # reject packages larger than this

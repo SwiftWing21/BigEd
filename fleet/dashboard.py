@@ -1597,6 +1597,13 @@ try:
 except ImportError:
     pass  # compliance module optional
 
+# ── Marketplace with Reviews (v0.400.00b) ─────────────────────────────────────
+try:
+    from marketplace import marketplace_bp
+    app.register_blueprint(marketplace_bp)
+except ImportError:
+    pass  # marketplace module optional
+
 
 # ── MCP Server Status (v0.31.00) ─────────────────────────────────────────────
 
