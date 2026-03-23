@@ -52,6 +52,52 @@ class McpPanelMixin:
         panel = ctk.CTkScrollableFrame(self._content, fg_color=GLASS_PANEL)
         self._panels["mcp"] = panel
 
+        # ── Dispatch Bridge ───────────────────────────────────────────
+        self._section_header(panel, "Dispatch Bridge")
+        dispatch_frame = ctk.CTkFrame(panel, fg_color=GLASS_BG, corner_radius=6)
+        dispatch_frame.pack(fill="x", padx=16, pady=(0, 12))
+
+        dispatch_inner = ctk.CTkFrame(dispatch_frame, fg_color="transparent")
+        dispatch_inner.pack(fill="x", padx=12, pady=10)
+
+        ctk.CTkLabel(
+            dispatch_inner,
+            text="Connect to Claude Desktop for mobile Dispatch",
+            font=FONT_XS, text_color=DIM, anchor="w",
+        ).pack(fill="x")
+
+        # Enable/disable toggle
+        self._dispatch_enabled_var = ctk.BooleanVar(
+            value=self._get_dispatch_enabled()
+        )
+        ctk.CTkSwitch(
+            dispatch_inner,
+            text="Enable Dispatch Bridge",
+            variable=self._dispatch_enabled_var,
+            command=self._toggle_dispatch_bridge,
+            font=FONT_SM,
+            progress_color=GREEN,
+            button_color=ACCENT,
+        ).pack(anchor="w", pady=(6, 0))
+
+        # Registration status label
+        self._dispatch_status_label = ctk.CTkLabel(
+            dispatch_inner,
+            text=self._get_dispatch_status_text(),
+            font=FONT_XS, text_color=DIM, anchor="w",
+        )
+        self._dispatch_status_label.pack(fill="x", pady=(4, 0))
+
+        # Register / Unregister button
+        self._dispatch_reg_btn = ctk.CTkButton(
+            dispatch_inner,
+            text="Register with Claude Desktop",
+            command=self._register_dispatch,
+            font=FONT_SM, width=200, height=28,
+            fg_color=ACCENT, hover_color=ACCENT_H,
+        )
+        self._dispatch_reg_btn.pack(anchor="w", pady=(6, 0))
+
         # ── Status overview ────────────────────────────────────────────
         self._section_header(panel, "Connected Servers")
         status_frame = ctk.CTkFrame(panel, fg_color=GLASS_BG, corner_radius=6)
@@ -331,6 +377,67 @@ class McpPanelMixin:
             self._refresh_mcp_status()
         except Exception as e:
             _log.warning("Custom MCP add failed: %s", e)
+
+    # ── Dispatch Bridge helpers ────────────────────────────────────────
+
+    def _get_dispatch_enabled(self) -> bool:
+        """Read dispatch_bridge.enabled from fleet.toml config."""
+        try:
+            config = _fleet_import("config")
+            return config.load_config().get("dispatch_bridge", {}).get("enabled", False)
+        except Exception:
+            _log.warning("Failed to read dispatch_bridge.enabled", exc_info=True)
+            return False
+
+    def _get_dispatch_status_text(self) -> str:
+        """Check Claude Desktop registration and return a status string."""
+        try:
+            mcp = _fleet_import("mcp_manager")
+            if mcp.is_registered_claude_desktop():
+                return "Status: Registered with Claude Desktop"
+            return "Status: Not registered"
+        except Exception:
+            _log.warning("Failed to check dispatch status", exc_info=True)
+            return "Status: Unknown"
+
+    def _toggle_dispatch_bridge(self):
+        """Update fleet.toml [dispatch_bridge] enabled value."""
+        try:
+            enabled = self._dispatch_enabled_var.get()
+            self._update_toml_value("dispatch_bridge", "enabled", enabled)
+        except Exception:
+            _log.warning("Failed to toggle dispatch bridge", exc_info=True)
+
+    def _register_dispatch(self):
+        """Register or unregister biged-fleet with Claude Desktop."""
+        try:
+            mcp = _fleet_import("mcp_manager")
+            from tkinter import messagebox
+
+            if mcp.is_registered_claude_desktop():
+                if messagebox.askyesno(
+                    "Dispatch Bridge",
+                    "BigEd is already registered with Claude Desktop.\n\n"
+                    "Unregister?",
+                ):
+                    mcp.unregister_claude_desktop()
+            else:
+                if mcp.register_claude_desktop():
+                    messagebox.showinfo(
+                        "Dispatch Bridge",
+                        "Registered with Claude Desktop!",
+                    )
+                else:
+                    messagebox.showwarning(
+                        "Dispatch Bridge",
+                        "Registration failed — check logs.",
+                    )
+            # Refresh the status label
+            self._dispatch_status_label.configure(
+                text=self._get_dispatch_status_text()
+            )
+        except Exception:
+            _log.warning("Dispatch registration action failed", exc_info=True)
 
     def _open_mcp_wizard(self):
         """Launch the MCP Integration Wizard modal."""
