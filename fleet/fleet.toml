@@ -524,3 +524,10 @@ auto_generate = true                         # auto-generate reports on schedule
 schedule = "monthly"                         # daily | weekly | monthly
 report_types = ["soc2", "audit_summary", "sla"]  # report types to auto-generate
 retention_days = 365                         # keep reports for 1 year
+
+# v0.400.00b: Self-Service Tenant Provisioning — sign-up to fleet-running flow
+[self_service]
+enabled = false                              # master switch for self-service registration
+require_email_verification = true            # require email verification before fleet provision
+default_plan = "free"                        # plan assigned on registration (free/starter/pro/enterprise)
+max_api_keys_per_tenant = 5                  # hard cap on active API keys per tenant
