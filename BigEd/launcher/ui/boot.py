@@ -589,6 +589,8 @@ class BootManagerMixin:
         self._safe_after(5000, self._hide_boot_progress)
         # Auto-open dashboard in browser if configured
         self._safe_after(1500, self._auto_open_dashboard)
+        # Prompt to register Dispatch Bridge in Claude Desktop (non-blocking)
+        self._safe_after(3000, self._check_dispatch_bridge_registration)
 
     def _auto_open_dashboard(self):
         """Open dashboard in default browser after boot, if enabled.
@@ -623,6 +625,53 @@ class BootManagerMixin:
             except Exception:
                 pass
         threading.Thread(target=_open, daemon=True).start()
+
+    def _check_dispatch_bridge_registration(self):
+        """Prompt user to register biged-fleet in Claude Desktop if enabled.
+
+        Non-critical — never blocks boot. Only shows the prompt when:
+        1. dispatch_bridge.enabled is true in fleet.toml
+        2. biged-fleet is not already registered in Claude Desktop
+        """
+        try:
+            L = _launcher()
+            import tomllib
+            with open(L.FLEET_TOML, "rb") as f:
+                cfg = tomllib.load(f)
+            dispatch = cfg.get("dispatch_bridge", {})
+            if not dispatch.get("enabled", False):
+                return
+
+            # Check registration — needs fleet/ on sys.path
+            if str(L.FLEET_DIR) not in sys.path:
+                sys.path.insert(0, str(L.FLEET_DIR))
+            from mcp_manager import is_registered_claude_desktop, register_claude_desktop
+
+            if is_registered_claude_desktop():
+                return
+
+            # Show prompt on main thread
+            def _prompt():
+                try:
+                    from tkinter import messagebox
+                    yes = messagebox.askyesno(
+                        "Dispatch Bridge",
+                        "Register BigEd fleet as an MCP server in Claude Desktop?\n\n"
+                        "This lets Claude Desktop send tasks directly to your fleet.",
+                    )
+                    if yes:
+                        ok = register_claude_desktop()
+                        if ok:
+                            self._log_output("Dispatch Bridge: registered in Claude Desktop.")
+                            self._show_toast("Dispatch Bridge registered", "#22aa44")
+                        else:
+                            self._log_output("Dispatch Bridge: registration failed.")
+                except Exception:
+                    pass
+
+            self._safe_after(0, _prompt)
+        except Exception:
+            pass
 
     # ── Individual boot stages ───────────────────────────────────────────
 
