@@ -116,6 +116,62 @@ class DisplayPanelMixin:
                       fg_color=BG3, progress_color=GOLD
                       ).pack(padx=12, pady=(4, 10), anchor="w")
 
+        # Section: System Tray
+        self._section_header(panel, "System Tray")
+        tray_frame = ctk.CTkFrame(panel, fg_color=GLASS_BG, corner_radius=6)
+        tray_frame.pack(fill="x", padx=16, pady=(0, 12))
+
+        # Check if pystray is available
+        from ui.tray import _tray_available
+        tray_ok = _tray_available()
+
+        tray_status = "pystray available" if tray_ok else "pystray not installed -- tray disabled"
+        ctk.CTkLabel(tray_frame, text=tray_status,
+                     font=FONT_SM, text_color=GOLD if tray_ok else DIM).pack(
+                         padx=12, pady=(10, 4), anchor="w")
+
+        # Close behavior: tray vs quit
+        close_row = ctk.CTkFrame(tray_frame, fg_color="transparent")
+        close_row.pack(fill="x", padx=12, pady=4)
+        ctk.CTkLabel(close_row, text="On window close:",
+                     font=FONT_SM, text_color=TEXT).pack(side="left")
+        self._close_behavior_var = ctk.StringVar(
+            value=prefs.get("close_behavior", "tray"))
+        ctk.CTkOptionMenu(
+            close_row, values=["tray", "quit"],
+            variable=self._close_behavior_var,
+            font=FONT_SM, width=140, height=28,
+            fg_color=BG3, button_color=GOLD, button_hover_color=ACCENT_H,
+            command=self._on_close_behavior_change,
+            state="normal" if tray_ok else "disabled",
+        ).pack(side="left", padx=(8, 0))
+
+        ctk.CTkLabel(tray_frame,
+                     text="'tray' = minimize to system tray, 'quit' = show close dialog",
+                     font=FONT_SM, text_color=DIM).pack(padx=12, pady=(0, 4), anchor="w")
+
+        # Start minimized
+        self._start_minimized_var = ctk.BooleanVar(
+            value=prefs.get("start_minimized", False))
+        ctk.CTkSwitch(tray_frame, text="Start minimized to tray",
+                      font=FONT_SM, text_color=TEXT,
+                      variable=self._start_minimized_var,
+                      command=self._save_display_prefs,
+                      fg_color=BG3, progress_color=GOLD,
+                      state="normal" if tray_ok else "disabled",
+                      ).pack(padx=12, pady=4, anchor="w")
+
+        # Tray notifications
+        self._tray_notif_var = ctk.BooleanVar(
+            value=prefs.get("tray_notifications", True))
+        ctk.CTkSwitch(tray_frame, text="Show HITL notifications in tray",
+                      font=FONT_SM, text_color=TEXT,
+                      variable=self._tray_notif_var,
+                      command=self._save_display_prefs,
+                      fg_color=BG3, progress_color=GOLD,
+                      state="normal" if tray_ok else "disabled",
+                      ).pack(padx=12, pady=(4, 10), anchor="w")
+
         # Section: Font
         self._section_header(panel, "Font")
         font_frame = ctk.CTkFrame(panel, fg_color=GLASS_BG, corner_radius=6)
@@ -177,7 +233,18 @@ class DisplayPanelMixin:
         data["remember_position"] = self._remember_pos_var.get()
         data["start_maximized"] = self._start_max_var.get()
         data["compact_mode"] = self._compact_var.get()
+        # System tray prefs
+        if hasattr(self, "_close_behavior_var"):
+            data["close_behavior"] = self._close_behavior_var.get()
+        if hasattr(self, "_start_minimized_var"):
+            data["start_minimized"] = self._start_minimized_var.get()
+        if hasattr(self, "_tray_notif_var"):
+            data["tray_notifications"] = self._tray_notif_var.get()
         L._save_settings(data)
+
+    def _on_close_behavior_change(self, choice):
+        """Handle close behavior option menu change."""
+        self._save_display_prefs()
 
     def _apply_scale(self):
         from tkinter import messagebox

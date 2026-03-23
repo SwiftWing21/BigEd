@@ -159,6 +159,9 @@ channel = "stable"           # stable | beta | dev
 
 [launcher]
 profile = "research"    # deployment profile: minimal | research | consulting | full
+close_behavior = "tray"       # "tray" = minimize to system tray on close | "quit" = show close dialog
+start_minimized = false       # true = start hidden in system tray, fleet boots in background
+tray_notifications = true     # show tray notifications for HITL requests
 
 [launcher.tabs]
 command_center = true   # always on — core fleet view
