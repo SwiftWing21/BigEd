@@ -124,6 +124,15 @@ CREATE TABLE IF NOT EXISTS idle_runs (
     result      TEXT,
     cost_usd    REAL DEFAULT 0.0
 );
+
+CREATE TABLE IF NOT EXISTS deployments (
+    deploy_id       TEXT PRIMARY KEY,
+    status          TEXT NOT NULL DEFAULT 'pending',
+    manifest_json   TEXT,
+    received_at     REAL,
+    applied_at      REAL,
+    size_mb         REAL DEFAULT 0.0
+);
 """
 
 
