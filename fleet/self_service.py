@@ -105,6 +105,7 @@ def _ensure_tables():
     try:
         conn = _get_conn()
         conn.executescript(SELF_SERVICE_SCHEMA)
+        conn.close()
         _tables_ensured = True
     except Exception:
         log.warning("self_service: failed to create tables", exc_info=True)

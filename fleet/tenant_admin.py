@@ -95,6 +95,7 @@ def _ensure_tenant_table():
     def _do():
         conn = _get_conn()
         conn.executescript(TENANT_SCHEMA)
+        conn.close()
     db._retry_write(_do)
 
 
