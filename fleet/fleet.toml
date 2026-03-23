@@ -393,6 +393,13 @@ multi_tenant = false
 tenant_id = ""                    # This instance's tenant ID (empty = single-tenant)
 tenant_isolation = "database"     # database | schema | none
 
+# v0.300.00b: Per-tenant encryption — Fernet-based field + file encryption
+[enterprise.encryption]
+enabled = false                       # toggle tenant encryption system
+key_rotation_days = 90                # recommend key rotation after N days
+encrypt_at_rest = true                # encrypt tenant DB fields at rest
+encrypt_task_payloads = false         # encrypt task payload_json (performance impact)
+
 # Event triggers — file watch, scheduled tasks, webhook dispatch
 [triggers]
 file_watch_enabled = true

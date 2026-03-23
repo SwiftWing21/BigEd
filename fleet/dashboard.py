@@ -1489,6 +1489,10 @@ app.register_blueprint(health_bp)
 from a2a import a2a_bp
 app.register_blueprint(a2a_bp)
 
+# ── Tenant Key Management (v0.300.00b — Enterprise Encryption) ────────────────
+from tenant_crypto_api import tenant_crypto_bp
+app.register_blueprint(tenant_crypto_bp)
+
 
 # ── MCP Server Status (v0.31.00) ─────────────────────────────────────────────
 
