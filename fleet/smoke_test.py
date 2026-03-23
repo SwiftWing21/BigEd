@@ -460,6 +460,79 @@ def test_ssrf_blocked():
         return True, "browser_crawl._check_ssrf not found (may use different pattern)"
 
 
+def test_new_module_imports():
+    """New module imports: all v0.100-v0.400 modules import cleanly."""
+    new_modules = [
+        "discovery", "federation_router", "fleet_tls", "remote_deploy",
+        "federation_hitl", "federation_data", "ml_router", "self_healing",
+        "health_api", "skill_recommender", "ab_testing", "dag_builder",
+        "predictive_scaler", "mcp_server", "dispatch_bridge", "intent",
+        "sso", "tenant_crypto", "tenant_crypto_api", "billing", "compliance",
+        "tenant_admin", "control_plane", "self_service", "payments",
+        "marketplace", "geo_fleet", "geo_api",
+    ]
+    failures = []
+    for mod in new_modules:
+        try:
+            importlib.import_module(mod)
+        except Exception as e:
+            failures.append(f"{mod}: {e}")
+    if failures:
+        return False, f"{len(failures)}/{len(new_modules)} failed: {'; '.join(failures[:3])}"
+    return True, f"{len(new_modules)} modules imported"
+
+
+def test_fastmcp_available():
+    """FastMCP library is importable."""
+    try:
+        import fastmcp  # noqa: F401
+        version = getattr(fastmcp, "__version__", "unknown")
+        return True, f"fastmcp {version}"
+    except Exception as e:
+        return False, f"import fastmcp failed: {e}"
+
+
+def test_db_schema_complete():
+    """DB schema: expected tables exist in fleet.db."""
+    import db
+    db.init_db()
+    expected = [
+        "tasks", "agents", "messages", "usage", "idle_runs", "locks", "notes",
+    ]
+    with db.get_conn() as conn:
+        rows = conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table'"
+        ).fetchall()
+    existing = {r["name"] if isinstance(r, dict) else r[0] for r in rows}
+    missing = [t for t in expected if t not in existing]
+    if missing:
+        return False, f"missing tables: {missing}"
+    return True, f"{len(existing)} tables, all {len(expected)} expected present"
+
+
+def test_fleet_toml_sections():
+    """fleet.toml: key sections exist."""
+    from config import load_config
+    cfg = load_config()
+    required_sections = [
+        "fleet", "models", "workers", "dashboard", "federation",
+        "routing", "self_healing", "billing", "platform", "compliance",
+    ]
+    missing = [s for s in required_sections if s not in cfg]
+    if missing:
+        return False, f"missing sections: {missing}"
+    return True, f"{len(cfg)} sections, all {len(required_sections)} required present"
+
+
+def test_dashboard_importable():
+    """Dashboard module imports without crash."""
+    try:
+        importlib.import_module("dashboard")
+        return True, "dashboard imported OK"
+    except Exception as e:
+        return False, f"import dashboard failed: {e}"
+
+
 def test_thermal_readings():
     """10. GPU thermal readings available (if GPU present)."""
     try:
@@ -541,6 +614,11 @@ def main():
         ("Regression detector skill", test_regression_detector_skill),
         ("Packet optimizer skill", test_packet_optimizer_skill),
         ("Screenshot diff skill", test_screenshot_diff_skill),
+        ("New module imports", test_new_module_imports),
+        ("FastMCP available", test_fastmcp_available),
+        ("DB schema complete", test_db_schema_complete),
+        ("fleet.toml sections", test_fleet_toml_sections),
+        ("Dashboard importable", test_dashboard_importable),
     ])
 
     if not args.fast:
