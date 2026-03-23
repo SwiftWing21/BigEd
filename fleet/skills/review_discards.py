@@ -7,6 +7,7 @@ All results saved to knowledge/reports/ and returned to Ollama context.
 """
 SKILL_NAME = "review_discards"
 DESCRIPTION = "Watch results.tsv and trigger tiered reviews:"
+REQUIRES_NETWORK = False
 
 import csv
 import json

@@ -24,6 +24,7 @@ from pathlib import Path
 
 SKILL_NAME = "code_write"
 DESCRIPTION = "Code write skill — invokes aider-chat to create or edit files using local Ollama"
+REQUIRES_NETWORK = False
 
 from config import GITHUB_OWNER
 

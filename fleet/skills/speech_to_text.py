@@ -51,17 +51,15 @@ def _ditl_guard(text: str, config: dict, log) -> str:
             # Audit log: record that PHI was detected in voice input
             if ditl.get("audit_all_phi_access"):
                 try:
-                    import sqlite3
-                    conn = sqlite3.connect(str(FLEET_DIR / "fleet.db"), timeout=5)
-                    try:
-                        conn.execute(
-                            "INSERT INTO phi_audit (user_id, action, data_scope, phi_detected, deidentified) "
-                            "VALUES (?, ?, ?, ?, ?)",
-                            ("voice_input", "stt_transcribe", f"stripped_{result['stripped_count']}_identifiers", 1, 1)
-                        )
-                        conn.commit()
-                    finally:
-                        conn.close()
+                    import db as fleet_db
+                    def _do_audit():
+                        with fleet_db.get_conn() as conn:
+                            conn.execute(
+                                "INSERT INTO phi_audit (user_id, action, data_scope, phi_detected, deidentified) "
+                                "VALUES (?, ?, ?, ?, ?)",
+                                ("voice_input", "stt_transcribe", f"stripped_{result['stripped_count']}_identifiers", 1, 1)
+                            )
+                    fleet_db._retry_write(_do_audit)
                 except Exception:
                     pass
 

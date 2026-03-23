@@ -5,6 +5,7 @@ Used to facilitate multi-agent "discussion" rounds before synthesis.
 """
 SKILL_NAME = "discuss"
 DESCRIPTION = "Structured discussion skill — agent reads accumulated research/messages,"
+REQUIRES_NETWORK = False
 
 import json
 from datetime import datetime

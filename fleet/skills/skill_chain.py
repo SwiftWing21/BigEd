@@ -22,6 +22,7 @@ from pathlib import Path
 
 SKILL_NAME = "skill_chain"
 DESCRIPTION = "Skill chain — runs a sequence of skills, piping each output as input to the next"
+REQUIRES_NETWORK = False
 
 FLEET_DIR = Path(__file__).parent.parent
 KNOWLEDGE_DIR = FLEET_DIR / "knowledge"

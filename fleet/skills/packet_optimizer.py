@@ -18,7 +18,6 @@ Usage:
 import json
 import logging
 import os
-import sqlite3
 import time
 from datetime import datetime
 from pathlib import Path
@@ -64,12 +63,14 @@ def _audit(config, log) -> dict:
     findings = []
     stats = {"total_calls": 0, "total_input_bytes": 0, "total_output_bytes": 0}
 
-    db_path = FLEET_DIR / "fleet.db"
-    if not db_path.exists():
-        return {"error": "fleet.db not found"}
+    import sys
+    sys.path.insert(0, str(FLEET_DIR))
+    import db as fleet_db
 
-    conn = sqlite3.connect(str(db_path), timeout=10)
-    conn.row_factory = sqlite3.Row
+    try:
+        conn = fleet_db.get_conn()
+    except Exception:
+        return {"error": "fleet.db not found"}
 
     # ── 1. API call sizes (from usage table) ──────────────────────────────
     try:

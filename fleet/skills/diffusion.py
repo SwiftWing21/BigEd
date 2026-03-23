@@ -22,6 +22,7 @@ Models download from HuggingFace on first run (~5GB SD1.5, ~7GB SDXL, ~3GB x4 up
 """
 SKILL_NAME = "diffusion"
 DESCRIPTION = "Local image generation via Stable Diffusion (HuggingFace diffusers)."
+REQUIRES_NETWORK = False
 
 import gc
 from datetime import datetime

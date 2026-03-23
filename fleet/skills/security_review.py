@@ -29,6 +29,7 @@ from pathlib import Path
 
 SKILL_NAME = "security_review"
 DESCRIPTION = "Security review skill — scans fleet skill files for security vulnerabilities"
+REQUIRES_NETWORK = False
 
 FLEET_DIR = Path(__file__).parent.parent
 SKILLS_DIR = FLEET_DIR / "skills"

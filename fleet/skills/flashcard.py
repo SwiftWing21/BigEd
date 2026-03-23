@@ -1,6 +1,7 @@
 """Generate Q&A flashcards from existing knowledge summaries."""
 SKILL_NAME = "flashcard"
 DESCRIPTION = "Generate Q&A flashcards from existing knowledge summaries."
+REQUIRES_NETWORK = False
 
 import json
 import random

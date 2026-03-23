@@ -23,6 +23,7 @@ from skills._models import call_complex
 
 SKILL_NAME = "code_discuss"
 DESCRIPTION = "Code discussion skill — coder agents read accumulated code context and prior"
+REQUIRES_NETWORK = False
 
 FLEET_DIR = Path(__file__).parent.parent
 KNOWLEDGE_DIR = FLEET_DIR / "knowledge"

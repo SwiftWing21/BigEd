@@ -37,6 +37,7 @@ from pathlib import Path
 
 SKILL_NAME = "ingest"
 DESCRIPTION = "File/folder ingest skill — imports documents into the fleet RAG index."
+REQUIRES_NETWORK = False
 
 FLEET_DIR = Path(__file__).parent.parent
 KNOWLEDGE_DIR = FLEET_DIR / "knowledge"

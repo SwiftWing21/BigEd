@@ -20,6 +20,7 @@ from skills._models import call_complex
 
 SKILL_NAME = "code_write_review"
 DESCRIPTION = "Code write review — reviews aider-generated code and produces an approval/reject"
+REQUIRES_NETWORK = False
 
 FLEET_DIR = Path(__file__).parent.parent
 KNOWLEDGE_DIR = FLEET_DIR / "knowledge"

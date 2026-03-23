@@ -24,6 +24,7 @@ from pathlib import Path
 
 SKILL_NAME = "fma_review"
 DESCRIPTION = "FMA review skill — coder agents review BigEd CC files and discuss"
+REQUIRES_NETWORK = False
 
 FLEET_DIR = Path(__file__).parent.parent
 KNOWLEDGE_DIR = FLEET_DIR / "knowledge"

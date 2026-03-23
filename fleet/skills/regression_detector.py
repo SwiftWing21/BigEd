@@ -28,7 +28,7 @@ Usage:
 import json
 import logging
 import re
-import sqlite3
+import sys
 from datetime import datetime
 from pathlib import Path
 
@@ -96,7 +96,9 @@ def run(payload: dict, config: dict, log=None) -> dict:
 
 
 def _get_conn():
-    return sqlite3.connect(str(FLEET_DIR / "fleet.db"), timeout=10)
+    sys.path.insert(0, str(FLEET_DIR))
+    import db
+    return db.get_conn()
 
 
 def _letter_grade(score: float) -> str:
@@ -109,7 +111,7 @@ def _letter_grade(score: float) -> str:
 def _audit(config, log) -> dict:
     """Scan for quality regressions and hallucination patterns."""
     conn = _get_conn()
-    conn.row_factory = sqlite3.Row
+    # row_factory already set by db.get_conn()
     findings = []
 
     # ── 1. Quality regression detection ───────────────────────────────────
@@ -230,7 +232,7 @@ def _audit(config, log) -> dict:
 def _grade_report(config, log) -> dict:
     """Generate quality grade report (A-F scale per skill and agent)."""
     conn = _get_conn()
-    conn.row_factory = sqlite3.Row
+    # row_factory already set by db.get_conn()
 
     # Per-skill grades
     skill_grades = []
@@ -362,7 +364,7 @@ def _hallucination_check(payload, config, log) -> dict:
         return {"error": "task_id required"}
 
     conn = _get_conn()
-    conn.row_factory = sqlite3.Row
+    # row_factory already set by db.get_conn()
     task = conn.execute(
         "SELECT id, type, result_json, intelligence_score, assigned_to FROM tasks WHERE id=?",
         (task_id,)
@@ -423,7 +425,7 @@ def _generate_sop(config, log) -> dict:
     report in knowledge/reports/.
     """
     conn = _get_conn()
-    conn.row_factory = sqlite3.Row
+    # row_factory already set by db.get_conn()
 
     # Analyze common task sequences (parent → child)
     sequences = conn.execute("""

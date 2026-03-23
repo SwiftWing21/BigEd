@@ -5,6 +5,7 @@ Uses Sonnet for synthesis quality — this is a high-value, infrequent call.
 """
 SKILL_NAME = "synthesize"
 DESCRIPTION = "Synthesize all agent discussion contributions + research into a final document."
+REQUIRES_NETWORK = False
 
 import json
 from datetime import date

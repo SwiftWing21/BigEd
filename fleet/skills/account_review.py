@@ -9,7 +9,6 @@ Payload:
   focus       str   "upgrades" | "cost" | "all" (default: "all")
   threshold   int   usage_pct threshold to flag for upgrade (default: 70)
 """
-import sqlite3
 from datetime import datetime
 from pathlib import Path
 
@@ -17,6 +16,7 @@ from skills._models import call_complex
 
 SKILL_NAME = "account_review"
 DESCRIPTION = "Account review skill — analyzes all tracked service accounts, usage vs free tier"
+REQUIRES_NETWORK = False
 
 FLEET_DIR     = Path(__file__).parent.parent
 KNOWLEDGE_DIR = FLEET_DIR / "knowledge"
@@ -43,13 +43,16 @@ def _read_accounts():
     if not LAUNCHER_DB.exists():
         return []
     try:
-        con = sqlite3.connect(str(LAUNCHER_DB))
-        con.row_factory = sqlite3.Row
-        rows = con.execute(
-            "SELECT * FROM accounts ORDER BY upgrade_priority DESC, category, service"
-        ).fetchall()
-        con.close()
-        return [dict(r) for r in rows]
+        import sqlite3
+        con = sqlite3.connect(str(LAUNCHER_DB), timeout=10)
+        try:
+            con.row_factory = sqlite3.Row
+            rows = con.execute(
+                "SELECT * FROM accounts ORDER BY upgrade_priority DESC, category, service"
+            ).fetchall()
+            return [dict(r) for r in rows]
+        finally:
+            con.close()
     except Exception as e:
         return [{"error": str(e)}]
 

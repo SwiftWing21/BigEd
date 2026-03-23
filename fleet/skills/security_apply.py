@@ -11,6 +11,7 @@ from pathlib import Path
 
 SKILL_NAME = "security_apply"
 DESCRIPTION = "Security apply skill — executes approved fixes from a pending advisory."
+REQUIRES_NETWORK = False
 
 FLEET_DIR = Path(__file__).parent.parent
 PENDING_DIR = FLEET_DIR / "knowledge" / "security" / "pending"

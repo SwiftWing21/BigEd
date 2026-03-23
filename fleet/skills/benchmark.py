@@ -18,6 +18,7 @@ from pathlib import Path
 
 SKILL_NAME = "benchmark"
 DESCRIPTION = "Benchmark skill — runs a skill N times with varied payloads, measures latency,"
+REQUIRES_NETWORK = False
 
 FLEET_DIR = Path(__file__).parent.parent
 REPORTS_DIR = FLEET_DIR / "knowledge" / "reports"

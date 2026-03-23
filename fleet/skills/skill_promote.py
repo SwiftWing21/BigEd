@@ -21,6 +21,7 @@ from pathlib import Path
 
 SKILL_NAME = "skill_promote"
 DESCRIPTION = "Skill promote — moves a tested+reviewed draft from code_drafts/ into skills/."
+REQUIRES_NETWORK = False
 
 FLEET_DIR = Path(__file__).parent.parent
 SKILLS_DIR = FLEET_DIR / "skills"

@@ -186,11 +186,11 @@ def _verify_fleet(payload: dict, config: dict) -> str:
 
     # Try DB first — agents table tracks supervisor PIDs
     try:
-        import sqlite3
+        sys.path.insert(0, str(FLEET_DIR))
+        import db as fleet_db
         db_path = FLEET_DIR / "fleet.db"
         if db_path.exists():
-            conn = sqlite3.connect(str(db_path), timeout=5)
-            conn.row_factory = sqlite3.Row
+            conn = fleet_db.get_conn()
             rows = conn.execute(
                 "SELECT name, pid, status, last_heartbeat FROM agents WHERE role='supervisor'"
             ).fetchall()
