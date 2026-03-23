@@ -410,6 +410,14 @@ tokens_per_dollar = 1000000          # 1M tokens per dollar (base rate)
 base_monthly = 0                     # flat monthly fee per tenant
 overage_rate = 0.001                 # per-1K-token overage charge above quota
 
+# v0.300.00b: Tenant Admin Dashboard — self-service tenant management
+[enterprise.tenants]
+enabled = false                          # master switch for tenant admin API
+max_tenants = 100                        # hard cap on active tenants
+tenant_data_dir = "fleet/tenants"        # root dir for tenant data (skills, DB, config)
+default_max_agents = 5                   # default agent limit per tenant
+default_max_skills = 50                  # default skill limit per tenant
+
 # Event triggers — file watch, scheduled tasks, webhook dispatch
 [triggers]
 file_watch_enabled = true
