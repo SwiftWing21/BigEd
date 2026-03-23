@@ -134,6 +134,15 @@ config:
   # Federation
   federationEnabled: false
   federationPeers: []
+  # Geo-distributed fleets
+  geoEnabled: false
+  geoDefaultRegion: "local"
+  geoLatencyRouting: true
+  geoAutoscaleEnabled: false
+  geoAutoscaleCheckInterval: 60
+  geoAutoscaleTargetUtilization: 0.7
+  geoAutoscaleMinAgents: 2
+  geoAutoscaleMaxAgents: 20
 
 # -- Secrets (API keys, tokens)
 secrets:

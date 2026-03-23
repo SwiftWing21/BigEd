@@ -1568,6 +1568,10 @@ app.register_blueprint(fleet_bp)
 from health_api import health_bp
 app.register_blueprint(health_bp)
 
+# ── Geo-Distributed Fleets (v0.400.00b) ───────────────────────────────────────
+from geo_api import geo_bp
+app.register_blueprint(geo_bp)
+
 # ── A2A Protocol (Agent-to-Agent interoperability) ────────────────────────────
 from a2a import a2a_bp
 app.register_blueprint(a2a_bp)

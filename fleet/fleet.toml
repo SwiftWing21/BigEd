@@ -510,6 +510,26 @@ hitl_auto_approve_timeout_min = 0       # 0 = off (wait forever)
 hitl_auto_approve_max_cost = 0          # 0 = no cost gate
 dashboard_base_url = "http://127.0.0.1:5555"
 
+# ── Geo-Distributed Fleets + Auto-Scaling (v0.400.00b) ────────────────
+[geo]
+enabled = false                             # master switch for geo-distributed fleet management
+default_region = "local"                    # fallback region when no IP prefix match
+latency_routing = true                      # use IP-prefix mapping for nearest-region routing
+
+[geo.autoscale]
+enabled = false                             # enable per-region auto-scaling loop
+check_interval = 60                         # seconds between auto-scale checks
+target_utilization = 0.7                    # target utilization ratio (0.0-1.0)
+min_agents = 2                              # global default minimum agents per region
+max_agents = 20                             # global default maximum agents per region
+
+# IP-prefix to region mapping — override for production deployments
+# Keys are IP prefixes, values are region names (must match fleet_regions.name)
+# [geo.ip_prefixes]
+# "10." = "local"
+# "172." = "local"
+# "192.168." = "local"
+
 # ── Compliance Reporting (v0.300.00b) ─────────────────────────────────
 [compliance]
 enabled = false                              # master switch for compliance module
