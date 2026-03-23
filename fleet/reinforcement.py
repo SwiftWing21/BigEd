@@ -17,7 +17,7 @@ log = logging.getLogger("reinforcement")
 # ── Constants ────────────────────────────────────────────────────────────────
 IQ_BOOST = 0.05       # IQ bump on approval
 IQ_CAP = 1.0          # maximum intelligence_score
-AGE_OUT_DAYS = 7       # days before unreviewed outputs become neutral
+AGE_OUT_DAYS = 3       # days before unreviewed outputs become neutral
 
 
 def process_approved(output_path, agent_name, skill_type):

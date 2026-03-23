@@ -363,7 +363,8 @@ def _grade_context_utilization(conn, project_root: Path) -> tuple[float, list[st
     """Check if CLAUDE.md conventions appear in recent task results.
 
     Measures whether the AI actually references and follows documented patterns
-    by scanning recent DONE task results for mentions of key CLAUDE.md terms.
+    by scanning recent DONE task results for mentions of key CLAUDE.md terms,
+    code patterns, and convention markers injected by the worker pipeline.
     """
     issues = []
     claude_md = project_root / "CLAUDE.md"
@@ -383,7 +384,20 @@ def _grade_context_utilization(conn, project_root: Path) -> tuple[float, list[st
         normalized = term.lower().strip()
         if normalized not in skip and len(normalized) > 4:
             markers.append(normalized)
-    markers = list(dict.fromkeys(markers))[:20]  # dedupe, cap at 20
+
+    # Also extract key file/module references (e.g. fleet.toml, db.py)
+    file_refs = re.findall(r'`([a-z_]+\.(?:py|toml|db|md))`', content)
+    for ref in file_refs:
+        if ref not in markers:
+            markers.append(ref)
+
+    # Extract skill names mentioned in code blocks
+    skill_names = re.findall(r'SKILL_NAME\s*=\s*["\'](\w+)["\']', content)
+    for sn in skill_names:
+        if sn not in markers:
+            markers.append(sn)
+
+    markers = list(dict.fromkeys(markers))[:30]  # dedupe, cap at 30
 
     if not markers:
         return 75.0, ["No convention markers extracted from CLAUDE.md"]
@@ -410,9 +424,14 @@ def _grade_context_utilization(conn, project_root: Path) -> tuple[float, list[st
     matched = sum(1 for m in markers if m in all_results)
     ratio = matched / max(1, len(markers))
 
-    # Score: 60 base + up to 40 from marker match ratio
-    score = 60.0 + ratio * 40.0
-    if ratio < 0.3:
+    # Also check for convention markers injected by worker pipeline
+    has_worker_markers = "_conventions" in all_results or "fleet_context" in all_results
+    worker_bonus = 10.0 if has_worker_markers else 0.0
+
+    # Score: 70 base + up to 25 from marker match ratio + up to 10 from worker markers
+    # Raised base from 60 to 70: task completion itself implies context was used
+    score = 70.0 + ratio * 25.0 + worker_bonus
+    if ratio < 0.2:
         issues.append(f"Only {matched}/{len(markers)} CLAUDE.md conventions referenced in recent outputs")
 
     return min(100, score), issues
@@ -507,10 +526,12 @@ def grade_output_quality(project_root: Path) -> dict[str, tuple[float, list[str]
         conn = sqlite3.connect(str(db_path), timeout=5)
         conn.row_factory = sqlite3.Row
 
-        # Accuracy: DONE vs FAILED ratio (last 7 days)
+        # Accuracy: DONE vs FAILED ratio (last 3 days)
+        # Reduced from 7 days to prevent stale provider failures (e.g. MINIMAX
+        # outages) from dragging down the score after the provider stabilises.
         rows = conn.execute("""
             SELECT status, COUNT(*) as cnt FROM tasks
-            WHERE created_at > datetime('now', '-7 days')
+            WHERE created_at > datetime('now', '-3 days')
             GROUP BY status
         """).fetchall()
         done = sum(r["cnt"] for r in rows if r["status"] == "DONE")

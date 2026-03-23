@@ -1029,39 +1029,88 @@ class CustomTabBar(ctk.CTkFrame):
     def set_badge(self, name: str, count: int) -> None:
         """Show/hide a red count badge on a tab. count=0 hides it."""
         lbl = self._tab_badges.get(name)
-        if not lbl:
+        if not lbl or not self._widget_alive(lbl):
             return
-        if count > 0:
-            lbl.configure(text=str(count) if count < 100 else "99+")
-            lbl.place(relx=1.0, rely=0.0, x=-12, y=4, anchor="ne")
-        else:
-            lbl.place_forget()
+        try:
+            if count > 0:
+                lbl.configure(text=str(count) if count < 100 else "99+")
+                lbl.place(relx=1.0, rely=0.0, x=-12, y=4, anchor="ne")
+            else:
+                lbl.place_forget()
+        except Exception:
+            pass  # badge display is non-critical
 
     def tab(self, name: str) -> ctk.CTkFrame:
         """Return the content frame for a tab (used when building tab contents)."""
-        return self._tab_frames[name]
+        frame = self._tab_frames.get(name)
+        if frame is None or not frame.winfo_exists():
+            # Recreate destroyed content frame
+            frame = ctk.CTkFrame(self._content, fg_color=BG, corner_radius=0)
+            frame.grid(row=0, column=0, sticky="nsew")
+            frame.grid_remove()
+            self._tab_frames[name] = frame
+            import logging
+            logging.getLogger("launcher").warning("Recreated destroyed tab frame: %s", name)
+        return frame
+
+    def _widget_alive(self, widget) -> bool:
+        """Check if a tkinter widget still exists and is valid."""
+        try:
+            return widget is not None and widget.winfo_exists()
+        except Exception:
+            return False
 
     def set(self, name: str) -> None:
         """Switch to the named tab (lazy-builds deferred tabs on first view)."""
         if name not in self._tab_frames:
             return
+
+        # Verify tab frame still exists — recreate if destroyed (e.g. theme change)
+        if not self._widget_alive(self._tab_frames.get(name)):
+            self._rebuild_tab_widgets(name)
+
         # Tab switching is instant — ≡ menu handles navigation for overflow tabs
         # Build lazy tab content on first view
         app = self.winfo_toplevel()
         if hasattr(app, '_lazy_tabs') and name in app._lazy_tabs and name not in app._built_tabs:
+            self._tab_frames[name] = self.tab(name)  # ensure frame is alive
             app._lazy_tabs[name](self._tab_frames[name])
             app._built_tabs.add(name)
         # Deactivate previous
         if self._active and self._active in self._tab_buttons:
-            self._tab_buttons[self._active].configure(
-                text_color=DIM, fg_color="transparent")
-            self._tab_indicators[self._active].configure(fg_color="transparent")
-            self._tab_frames[self._active].grid_remove()
+            if self._widget_alive(self._tab_buttons.get(self._active)):
+                self._tab_buttons[self._active].configure(
+                    text_color=DIM, fg_color="transparent")
+            if self._widget_alive(self._tab_indicators.get(self._active)):
+                self._tab_indicators[self._active].configure(fg_color="transparent")
+            if self._widget_alive(self._tab_frames.get(self._active)):
+                self._tab_frames[self._active].grid_remove()
         # Activate new
         self._active = name
-        self._tab_buttons[name].configure(text_color=GOLD, fg_color=BG3)
-        self._tab_indicators[name].configure(fg_color=ACCENT)
-        self._tab_frames[name].grid()
+        if self._widget_alive(self._tab_buttons.get(name)):
+            self._tab_buttons[name].configure(text_color=GOLD, fg_color=BG3)
+        if self._widget_alive(self._tab_indicators.get(name)):
+            self._tab_indicators[name].configure(fg_color=ACCENT)
+        if self._widget_alive(self._tab_frames.get(name)):
+            self._tab_frames[name].grid()
+        else:
+            # Last resort: recreate and show
+            self._rebuild_tab_widgets(name)
+            self._tab_frames[name].grid()
+
+    def _rebuild_tab_widgets(self, name: str) -> None:
+        """Recreate a tab's content frame if it was destroyed."""
+        import logging
+        log = logging.getLogger("launcher")
+        log.warning("Rebuilding destroyed tab widgets: %s", name)
+        frame = ctk.CTkFrame(self._content, fg_color=BG, corner_radius=0)
+        frame.grid(row=0, column=0, sticky="nsew")
+        frame.grid_remove()
+        self._tab_frames[name] = frame
+        # Mark for lazy rebuild on next view
+        app = self.winfo_toplevel()
+        if hasattr(app, '_built_tabs') and name in app._built_tabs:
+            app._built_tabs.discard(name)
 
     def get(self) -> str:
         """Return the name of the currently active tab."""
