@@ -1018,7 +1018,7 @@ def get_fleet_status():
             s: conn.execute(
                 "SELECT COUNT(*) as n FROM tasks WHERE status=?", (s,)
             ).fetchone()['n']
-            for s in ('PENDING', 'RUNNING', 'DONE', 'FAILED', 'WAITING', 'REVIEW', 'WAITING_HUMAN')
+            for s in ('PENDING', 'RUNNING', 'DONE', 'FAILED', 'WAITING', 'REVIEW', 'WAITING_HUMAN', 'FORWARDED')
         }
         return {'agents': [dict(a) for a in agents], 'tasks': counts}
 

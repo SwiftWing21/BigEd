@@ -123,6 +123,7 @@ def _ensure_tables():
     def _do():
         conn = _get_conn()
         conn.executescript(MARKETPLACE_SCHEMA)
+        conn.close()
 
     db._retry_write(_do)
 
