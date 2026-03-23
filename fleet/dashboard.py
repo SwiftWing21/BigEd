@@ -1304,6 +1304,89 @@ def api_usage_regression():
         return jsonify({"error": _safe_error(e)}), 500
 
 
+# ── Billing / Metering per Tenant (v0.300.00b) ───────────────────────────────
+
+@app.route("/api/billing/<tenant_id>/usage")
+def api_billing_usage(tenant_id):
+    """Per-tenant usage summary for a billing period."""
+    try:
+        sys.path.insert(0, str(FLEET_DIR))
+        from billing import get_tenant_usage
+        period = request.args.get("period", "month")
+        return jsonify(get_tenant_usage(tenant_id, period))
+    except Exception as e:
+        return jsonify({"error": _safe_error(e)}), 500
+
+
+@app.route("/api/billing/<tenant_id>/invoice")
+def api_billing_invoice(tenant_id):
+    """Itemized invoice for a tenant."""
+    try:
+        sys.path.insert(0, str(FLEET_DIR))
+        from billing import calculate_invoice, export_invoice_csv
+        period = request.args.get("period", "month")
+        fmt = request.args.get("format", "json")
+        if fmt == "csv":
+            csv_data = export_invoice_csv(tenant_id, period)
+            return Response(csv_data, mimetype="text/csv",
+                            headers={"Content-Disposition":
+                                     f"attachment; filename=invoice_{tenant_id}_{period}.csv"})
+        return jsonify(calculate_invoice(tenant_id, period))
+    except Exception as e:
+        return jsonify({"error": _safe_error(e)}), 500
+
+
+@app.route("/api/billing/<tenant_id>/quota")
+def api_billing_quota(tenant_id):
+    """Quota status — current usage vs limits."""
+    try:
+        sys.path.insert(0, str(FLEET_DIR))
+        from billing import get_quota_usage
+        return jsonify(get_quota_usage(tenant_id))
+    except Exception as e:
+        return jsonify({"error": _safe_error(e)}), 500
+
+
+@app.route("/api/billing/<tenant_id>/quota", methods=["PUT"])
+@_require_role("admin")
+def api_billing_quota_update(tenant_id):
+    """Update quota limits for a tenant (admin only)."""
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({"error": "JSON body required"}), 400
+        sys.path.insert(0, str(FLEET_DIR))
+        from billing import set_quota, get_quota
+        set_quota(tenant_id, data)
+        return jsonify({"status": "updated", "quota": get_quota(tenant_id)})
+    except Exception as e:
+        return jsonify({"error": _safe_error(e)}), 500
+
+
+@app.route("/api/billing/overview")
+@_require_role("admin")
+def api_billing_overview():
+    """Admin view — usage across all tenants."""
+    try:
+        sys.path.insert(0, str(FLEET_DIR))
+        from billing import get_all_tenant_usage
+        period = request.args.get("period", "month")
+        return jsonify({"period": period, "tenants": get_all_tenant_usage(period)})
+    except Exception as e:
+        return jsonify({"error": _safe_error(e)}), 500
+
+
+@app.route("/api/billing/pricing")
+def api_billing_pricing():
+    """Current pricing tiers from config."""
+    try:
+        sys.path.insert(0, str(FLEET_DIR))
+        from billing import get_pricing
+        return jsonify(get_pricing())
+    except Exception as e:
+        return jsonify({"error": _safe_error(e)}), 500
+
+
 # ── Evolution Leaderboard & Quality Metrics ───────────────────────────────────
 
 @app.route("/api/evolution")
