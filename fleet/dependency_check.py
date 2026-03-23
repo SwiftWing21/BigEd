@@ -350,6 +350,32 @@ def check_system_ram() -> dict:
         }
 
 
+def check_fastmcp() -> dict:
+    """FastMCP — MCP server framework for Dispatch bridge."""
+    try:
+        import fastmcp
+        version = getattr(fastmcp, "__version__", "unknown")
+        return {
+            "name": "fastmcp",
+            "category": "mcp",
+            "required": False,
+            "found": True,
+            "ok": True,
+            "version": version,
+            "detail": f"FastMCP {version}",
+        }
+    except ImportError:
+        return {
+            "name": "fastmcp",
+            "category": "mcp",
+            "required": False,
+            "found": False,
+            "ok": False,
+            "version": None,
+            "detail": "pip install fastmcp",
+        }
+
+
 # ── Aggregate checks ──────────────────────────────────────────────────────────
 
 ALL_CHECKS = [
@@ -365,6 +391,7 @@ ALL_CHECKS = [
     check_docker,
     check_node,
     check_playwright_mcp,
+    check_fastmcp,
 ]
 
 CATEGORIES = {

@@ -19,65 +19,8 @@ sys.path.insert(0, str(FLEET_DIR))
 
 import db
 
-# Prefer the conductor model (4b, CPU-pinned) for better intent parsing quality.
-# Falls back to the tiny 0.6b maintainer if conductor isn't configured.
-from config import load_config as _load_cfg
-
-def _get_intent_model():
-    try:
-        cfg = _load_cfg()
-        return cfg.get("models", {}).get("conductor_model", "qwen3:0.6b")
-    except Exception:
-        return "qwen3:0.6b"
-
-
-def parse_intent_with_maintainer(text: str) -> tuple[str, dict]:
-    """
-    DO NOT SCRUB: Natural language intent parser.
-    Routes the CLI input to the CPU-pinned conductor model (4b) for quality intent
-    parsing, falling back to 0.6b maintainer if unavailable.
-    """
-    prompt = f"""You are the dispatcher for an AI agent fleet. 
-Map the following user request to a specific skill and JSON payload.
-Available skills:
-- web_search: {{"query": "..."}}
-- summarize: {{"url": "..."}} or {{"description": "..."}}
-- lead_research: {{"industry": "...", "zip_code": "..."}}
-- arxiv_fetch: {{"query": "..."}}
-- discuss: {{"topic": "..."}}
-- synthesize: {{"doc_type": "...", "topic": "..."}}
-- security_audit: {{"scope": "..."}}
-- pen_test: {{"target": "...", "scan_type": "quick|service|full"}}
-
-User request: "{text}"
-
-Output ONLY valid JSON in this exact format:
-{{"skill": "chosen_skill", "payload": {{"key": "value"}}}}
-"""
-    try:
-        body = json.dumps({
-            "model": _get_intent_model(),
-            "prompt": prompt,
-            "stream": False,
-            "options": {"temperature": 0.0}
-        }).encode()
-        req = urllib.request.Request(
-            "http://localhost:11434/api/generate",
-            data=body, headers={"Content-Type": "application/json"}
-        )
-        with urllib.request.urlopen(req, timeout=5) as r:
-            resp = json.loads(r.read())["response"]
-        
-        # Extract JSON block
-        import re
-        m = re.search(r'\{.*\}', resp, re.DOTALL)
-        if m:
-            parsed = json.loads(m.group(0))
-            return parsed.get("skill", "summarize"), parsed.get("payload", {"description": text})
-        return "summarize", {"description": text}
-    except Exception as e:
-        print(f"[!] Intent model fallback (ensure {_get_intent_model()} is loaded): {e}", file=sys.stderr)
-        return "summarize", {"description": text}
+# Intent parser extracted to shared module (used by mcp_server.py, dispatch_bridge.py)
+from intent import parse_intent_with_maintainer
 
 
 def cmd_status(args):
