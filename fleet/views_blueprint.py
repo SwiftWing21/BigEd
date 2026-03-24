@@ -182,7 +182,7 @@ def api_views_graph(name):
             "sources": [name],
         }
 
-    # Aggregate data from registered sources
+    # Aggregate LIVE data from fleet DB
     import view_registry
     sources_data = []
     requested_sources = config.get("sources", [])
@@ -191,33 +191,226 @@ def api_views_graph(name):
         source = view_registry.get_source(src_name)
         if source is None:
             continue
-        # Build placeholder graph data from source metadata
-        # (Real data comes from source data_endpoints in future phases)
-        nodes = [
-            {"id": f"{src_name}:{nt}", "type": nt, "source": src_name, "status": "IDLE"}
-            for nt in source.get("node_types", [])
-        ]
-        edges = [
-            {
-                "source": f"{src_name}:{source.get('node_types', ['unknown'])[0]}",
-                "target": f"{src_name}:{nt}",
-                "type": et,
-                "weight": 1,
-            }
-            for et, nt in zip(
-                source.get("edge_types", []),
-                source.get("node_types", [])[1:] or ["unknown"],
-            )
-        ]
-        sources_data.append({
-            "source": src_name,
-            "nodes": nodes,
-            "edges": edges,
-            "color": source.get("color", "#888"),
-            "icon": source.get("icon", "circle"),
-        })
+        live = _fetch_live_source_data(src_name, source)
+        sources_data.append(live)
 
     return jsonify({"sources": sources_data, "view": config})
+
+
+def _fetch_live_source_data(src_name: str, source: dict) -> dict:
+    """Fetch real-time graph data for a registered source from the fleet DB."""
+    import db
+
+    nodes = []
+    edges = []
+    color = source.get("color", "#888")
+    icon = source.get("icon", "circle")
+
+    try:
+        if src_name == "supervisor":
+            nodes, edges = _graph_supervisor(db)
+        elif src_name == "rag":
+            nodes, edges = _graph_rag(db)
+        elif src_name == "reinforcement":
+            nodes, edges = _graph_reinforcement(db)
+        elif src_name == "federation":
+            nodes, edges = _graph_federation(db)
+        elif src_name == "autoresearch":
+            nodes, edges = _graph_autoresearch(db)
+        else:
+            # Fallback: metadata-only nodes
+            nodes = [
+                {"id": f"{src_name}:{nt}", "type": nt, "source": src_name, "status": "IDLE"}
+                for nt in source.get("node_types", [])
+            ]
+    except Exception:
+        log.warning("Failed to fetch live data for source %s", src_name, exc_info=True)
+
+    return {"source": src_name, "nodes": nodes, "edges": edges, "color": color, "icon": icon}
+
+
+def _graph_supervisor(db) -> tuple:
+    """Live fleet graph: supervisor hub → agents → their current tasks."""
+    nodes = []
+    edges = []
+
+    # Hub node
+    nodes.append({
+        "id": "supervisor:hub",
+        "type": "supervisor",
+        "source": "supervisor",
+        "label": "FLEET",
+        "status": "ACTIVE",
+    })
+
+    # Live agents from DB
+    with db.get_conn() as conn:
+        agents = conn.execute("""
+            SELECT a.name, a.role, a.status, a.current_task_id,
+                   t.type as task_type, t.status as task_status
+            FROM agents a
+            LEFT JOIN tasks t ON a.current_task_id = t.id
+            WHERE a.last_heartbeat >= datetime('now', '-120 seconds')
+            ORDER BY a.name
+        """).fetchall()
+
+    for a in agents:
+        agent_id = f"supervisor:{a['name']}"
+        status = a["status"] or "IDLE"
+        label = a["name"]
+        if a["task_type"]:
+            label = f"{a['name']} ({a['task_type']})"
+
+        nodes.append({
+            "id": agent_id,
+            "type": "agent",
+            "source": "supervisor",
+            "label": label,
+            "status": status,
+            "metrics": {
+                "role": a["role"] or "",
+                "task": a["task_type"] or "",
+                "task_status": a["task_status"] or "",
+            },
+        })
+        edges.append({
+            "source": "supervisor:hub",
+            "target": agent_id,
+            "type": "manages",
+            "weight": 3 if status == "BUSY" else 1,
+        })
+
+    # Task counts as metrics on the hub
+    with db.get_conn() as conn:
+        counts = {}
+        for s in ("PENDING", "RUNNING", "DONE", "FAILED"):
+            row = conn.execute("SELECT COUNT(*) as n FROM tasks WHERE status=?", (s,)).fetchone()
+            counts[s] = row["n"] if row else 0
+
+    nodes[0]["metrics"] = {
+        "agents": len(agents),
+        "pending": counts.get("PENDING", 0),
+        "running": counts.get("RUNNING", 0),
+        "done": counts.get("DONE", 0),
+        "failed": counts.get("FAILED", 0),
+    }
+
+    return nodes, edges
+
+
+def _graph_rag(db) -> tuple:
+    """RAG graph: index stats as nodes."""
+    nodes = []
+    edges = []
+
+    try:
+        from pathlib import Path as _P
+        rag_db = _P(__file__).resolve().parent / "rag.db"
+        if rag_db.exists():
+            import sqlite3
+            conn = sqlite3.connect(str(rag_db), timeout=5)
+            conn.row_factory = sqlite3.Row
+            row = conn.execute("SELECT COUNT(*) as n FROM chunks_meta").fetchone()
+            chunk_count = row["n"] if row else 0
+            sources = conn.execute(
+                "SELECT source, COUNT(*) as n FROM chunks_meta GROUP BY source ORDER BY n DESC LIMIT 10"
+            ).fetchall()
+            conn.close()
+
+            nodes.append({
+                "id": "rag:index", "type": "index", "source": "rag",
+                "label": f"RAG Index ({chunk_count} chunks)", "status": "ACTIVE",
+                "metrics": {"chunk_count": chunk_count},
+            })
+            for s in sources:
+                src_id = f"rag:src:{s['source'][:20]}"
+                nodes.append({
+                    "id": src_id, "type": "chunk", "source": "rag",
+                    "label": f"{s['source'][:25]} ({s['n']})", "status": "IDLE",
+                    "metrics": {"chunks": s["n"]},
+                })
+                edges.append({"source": src_id, "target": "rag:index", "type": "indexes", "weight": s["n"]})
+        else:
+            nodes.append({"id": "rag:index", "type": "index", "source": "rag", "label": "RAG (no DB)", "status": "OFFLINE"})
+    except Exception:
+        log.warning("rag graph data failed", exc_info=True)
+        nodes.append({"id": "rag:index", "type": "index", "source": "rag", "label": "RAG", "status": "ERROR"})
+
+    return nodes, edges
+
+
+def _graph_reinforcement(db) -> tuple:
+    """Reinforcement graph: feedback counts."""
+    nodes = []
+    edges = []
+
+    try:
+        with db.get_conn() as conn:
+            row = conn.execute(
+                "SELECT COUNT(*) as n FROM output_feedback WHERE verdict='approved'"
+            ).fetchone()
+            approved = row["n"] if row else 0
+            row = conn.execute(
+                "SELECT COUNT(*) as n FROM output_feedback WHERE verdict='rejected'"
+            ).fetchone()
+            rejected = row["n"] if row else 0
+
+        nodes.append({
+            "id": "reinforcement:scorer", "type": "scorer", "source": "reinforcement",
+            "label": f"Feedback ({approved} approved, {rejected} rejected)",
+            "status": "ACTIVE" if (approved + rejected) > 0 else "IDLE",
+            "metrics": {"approved": approved, "rejected": rejected},
+        })
+    except Exception:
+        log.warning("reinforcement graph data failed", exc_info=True)
+        nodes.append({"id": "reinforcement:scorer", "type": "scorer", "source": "reinforcement", "label": "Feedback", "status": "IDLE"})
+
+    return nodes, edges
+
+
+def _graph_federation(db) -> tuple:
+    """Federation graph: peer status."""
+    nodes = [{"id": "federation:local", "type": "fleet", "source": "federation", "label": "Local Fleet", "status": "ACTIVE"}]
+    edges = []
+    # Federation peers are in-memory in dashboard.py — minimal placeholder for now
+    return nodes, edges
+
+
+def _graph_autoresearch(db) -> tuple:
+    """Autoresearch graph: training status + best result."""
+    nodes = []
+    edges = []
+
+    try:
+        from pathlib import Path as _P
+        results_path = _P(__file__).resolve().parent.parent / "autoresearch" / "results.tsv"
+        if results_path.exists():
+            import csv
+            with open(results_path, "r", encoding="utf-8") as f:
+                rows = list(csv.DictReader(f, delimiter="\t"))
+            scored = [r for r in rows if r.get("val_bpb") and float(r.get("val_bpb", 999)) > 0]
+            best_bpb = min(float(r["val_bpb"]) for r in scored) if scored else None
+
+            nodes.append({
+                "id": "autoresearch:trainer", "type": "trainer", "source": "autoresearch",
+                "label": f"Autoresearch ({len(rows)} runs)",
+                "status": "ACTIVE",
+                "metrics": {"total_runs": len(rows), "best_bpb": best_bpb},
+            })
+            if best_bpb:
+                nodes.append({
+                    "id": "autoresearch:best", "type": "evaluator", "source": "autoresearch",
+                    "label": f"Best: {best_bpb:.4f} bpb",
+                    "status": "IDLE",
+                })
+                edges.append({"source": "autoresearch:trainer", "target": "autoresearch:best", "type": "produces", "weight": 2})
+        else:
+            nodes.append({"id": "autoresearch:trainer", "type": "trainer", "source": "autoresearch", "label": "Autoresearch (no data)", "status": "OFFLINE"})
+    except Exception:
+        log.warning("autoresearch graph data failed", exc_info=True)
+        nodes.append({"id": "autoresearch:trainer", "type": "trainer", "source": "autoresearch", "label": "Autoresearch", "status": "ERROR"})
+
+    return nodes, edges
 
 
 # ── GET /static/<path:filename> — serve static files ─────────────────────────
