@@ -163,11 +163,14 @@ name = "biged"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "axum",
  "biged-core",
  "biged-server",
  "biged-supervisor",
  "clap",
+ "serde_json",
  "tokio",
+ "tower",
  "tracing",
  "tracing-subscriber",
 ]

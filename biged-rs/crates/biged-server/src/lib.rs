@@ -18,7 +18,22 @@ pub struct AppState {
 }
 
 pub fn router(state: AppState) -> Router {
-    Router::new().with_state(state)
+    Router::new()
+        // Fleet status
+        .route("/api/status", axum::routing::get(handlers::fleet::status))
+        .route("/api/health", axum::routing::get(handlers::fleet::health))
+        .route("/api/thermal", axum::routing::get(handlers::fleet::thermal))
+        .route(
+            "/api/dashboard/batch",
+            axum::routing::get(handlers::fleet::dashboard_batch),
+        )
+        .route("/api/alerts", axum::routing::get(handlers::fleet::alerts))
+        .route(
+            "/api/tasks",
+            axum::routing::get(handlers::fleet::tasks).post(handlers::fleet::post_task),
+        )
+        .route("/api/agents", axum::routing::get(handlers::fleet::agents))
+        .with_state(state)
 }
 
 /// Start the HTTP server on the configured port.

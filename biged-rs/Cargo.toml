@@ -25,6 +25,7 @@ reqwest = { version = "0.12", features = ["json"] }
 dashmap = "6"
 chrono = { version = "0.4", features = ["serde"] }
 axum = "0.8"
+tower = "0.5"
 
 [package]
 name = "biged"
@@ -41,3 +42,8 @@ tokio.workspace = true
 tracing.workspace = true
 tracing-subscriber.workspace = true
 anyhow.workspace = true
+
+[dev-dependencies]
+tower.workspace = true
+serde_json.workspace = true
+axum.workspace = true
