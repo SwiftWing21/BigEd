@@ -1633,6 +1633,17 @@ try:
     # Auto-discover and register view data sources at startup
     import view_registry
     view_registry.discover_and_register()
+    # Register knowledge graph source (scans skills for I/O folder mappings)
+    view_registry.register_source(
+        name="knowledge",
+        category="knowledge",
+        node_types=["skill", "folder", "agent"],
+        edge_types=["reads", "writes", "produces"],
+        data_endpoint="/api/views/graph/knowledge-graph",
+        icon="book",
+        layout_hint="tree",
+        metrics=["file_count", "total_size_mb"],
+    )
 except ImportError:
     pass  # views module optional
 

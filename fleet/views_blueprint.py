@@ -217,6 +217,8 @@ def _fetch_live_source_data(src_name: str, source: dict) -> dict:
             nodes, edges = _graph_federation(db)
         elif src_name == "autoresearch":
             nodes, edges = _graph_autoresearch(db)
+        elif src_name == "knowledge":
+            nodes, edges = _graph_knowledge(db)
         else:
             # Fallback: metadata-only nodes
             nodes = [
@@ -554,3 +556,169 @@ def api_experiments_reject(exp_id):
     except Exception:
         log.warning("Failed to reject experiment %d", exp_id, exc_info=True)
         return jsonify({"error": "Failed to reject experiment"}), 500
+
+
+# ── Knowledge Graph Data ─────────────────────────────────────────────────────
+
+# Skill → output folder mapping (derived from codebase analysis)
+_SKILL_IO_MAP = {
+    # skill_name: {"output": "knowledge/subdir", "input": [...optional read sources]}
+    "code_review":      {"output": "code_reviews",     "agent": "coder"},
+    "code_discuss":     {"output": "code_discussion",  "agent": "coder"},
+    "code_quality":     {"output": "quality/reviews",  "agent": "coder"},
+    "code_write":       {"output": "code_writes",      "agent": "coder"},
+    "code_refactor":    {"output": "code_writes/refactors", "agent": "coder"},
+    "code_write_review": {"output": "code_writes/reviews", "agent": "coder"},
+    "skill_draft":      {"output": "code_drafts",      "agent": "coder"},
+    "deploy_skill":     {"output": "code_drafts",      "agent": "coder", "input": ["code_drafts"]},
+    "code_index":       {"output": "code_index.jsonl",  "agent": "coder"},
+    "fma_review":       {"output": "fma_reviews",      "agent": "coder"},
+    "security_review":  {"output": "security/reviews", "agent": "security"},
+    "security_audit":   {"output": "security",         "agent": "security"},
+    "pen_test":         {"output": "security",         "agent": "security"},
+    "evaluate":         {"output": "evaluations",      "agent": "analyst"},
+    "analyze_results":  {"output": "reports",          "agent": "analyst", "input": ["autoresearch"]},
+    "discuss":          {"output": "discussion",       "agent": "researcher"},
+    "summarize":        {"output": "summaries",        "agent": "researcher"},
+    "web_search":       {"output": "summaries",        "agent": "researcher"},
+    "arxiv_fetch":      {"output": "summaries",        "agent": "researcher"},
+    "ingest":           {"output": "ingests",          "agent": "researcher"},
+    "rag_query":        {"output": None,               "agent": "researcher", "input": ["rag.db"]},
+    "browser_crawl":    {"output": "browser",          "agent": "researcher"},
+    "web_crawl":        {"output": "summaries",        "agent": "researcher"},
+    "flashcard":        {"output": "flashcards.jsonl",  "agent": "archivist"},
+    "knowledge_prune":  {"output": None,               "agent": "archivist", "input": ["knowledge/*"]},
+    "plan_workload":    {"output": "reports",          "agent": "planner"},
+    "marathon_log":     {"output": "marathon",         "agent": "analyst"},
+    "skill_train":      {"output": "skill_training",   "agent": "coder"},
+    "skill_evolve":     {"output": "evolution",        "agent": "coder"},
+    "stability_report": {"output": "stability",        "agent": "analyst"},
+    "lead_research":    {"output": "leads",            "agent": "sales"},
+    "marketing":        {"output": "reports",          "agent": "sales"},
+    "account_review":   {"output": "reports",          "agent": "account_manager"},
+    "curriculum_update": {"output": "reports",         "agent": "researcher"},
+    "diffusion":        {"output": "diffusion",        "agent": "researcher"},
+    "generate_image":   {"output": "diffusion",        "agent": "researcher"},
+    "vision_analyze":   {"output": "screenshots",      "agent": "researcher"},
+    "screenshot_diff":  {"output": "screenshots",      "agent": "researcher"},
+    "benchmark":        {"output": "reports",          "agent": "coder"},
+    "rag_eval":         {"output": "models",           "agent": "ds_rag"},
+    "embedding_train":  {"output": "models/embeddings", "agent": "ds_rag"},
+    "reranker_train":   {"output": "models/reranker",  "agent": "ds_rag"},
+    "rag_benchmark":    {"output": "models",           "agent": "ds_rag", "input": ["rag.db"]},
+    "router_analyze":   {"output": None,               "agent": "ds_fleet"},
+    "router_retrain":   {"output": "data",             "agent": "ds_fleet"},
+    "scaler_train":     {"output": "data",             "agent": "ds_fleet"},
+    "cost_analyze":     {"output": None,               "agent": "ds_fleet"},
+    "autoresearch_analyze": {"output": None,           "agent": "ds_research", "input": ["autoresearch"]},
+    "autoresearch_trial": {"output": "autoresearch",   "agent": "ds_research"},
+    "checkpoint_eval":  {"output": None,               "agent": "ds_research", "input": ["autoresearch"]},
+}
+
+
+def _graph_knowledge(db) -> tuple:
+    """Knowledge graph: agents → skills → folders, with live file counts."""
+    import os
+
+    nodes = []
+    edges = []
+    seen_folders = set()
+    seen_agents = set()
+    knowledge_dir = FLEET_DIR / "knowledge"
+
+    # Scan actual knowledge subdirectories for file counts
+    folder_stats = {}
+    if knowledge_dir.exists():
+        for entry in knowledge_dir.iterdir():
+            if entry.is_dir():
+                try:
+                    count = sum(1 for _ in entry.rglob("*") if _.is_file())
+                    size_bytes = sum(f.stat().st_size for f in entry.rglob("*") if f.is_file())
+                except Exception:
+                    count, size_bytes = 0, 0
+                folder_stats[entry.name] = {"files": count, "size_mb": round(size_bytes / 1048576, 1)}
+            elif entry.is_file():
+                try:
+                    folder_stats[entry.name] = {"files": 1, "size_mb": round(entry.stat().st_size / 1048576, 1)}
+                except Exception:
+                    folder_stats[entry.name] = {"files": 1, "size_mb": 0}
+
+    # Build graph from skill I/O map
+    for skill_name, io in _SKILL_IO_MAP.items():
+        skill_id = f"knowledge:skill:{skill_name}"
+        agent_role = io.get("agent", "unknown")
+        output_folder = io.get("output")
+        input_sources = io.get("input", [])
+
+        # Skill node
+        nodes.append({
+            "id": skill_id,
+            "type": "skill",
+            "source": "knowledge",
+            "label": skill_name,
+            "status": "ACTIVE",
+            "metrics": {"agent": agent_role},
+        })
+
+        # Agent node (deduplicated)
+        agent_id = f"knowledge:agent:{agent_role}"
+        if agent_role not in seen_agents:
+            seen_agents.add(agent_role)
+            nodes.append({
+                "id": agent_id,
+                "type": "agent",
+                "source": "knowledge",
+                "label": agent_role,
+                "status": "ACTIVE",
+            })
+        edges.append({
+            "source": agent_id,
+            "target": skill_id,
+            "type": "runs",
+            "weight": 1,
+        })
+
+        # Output folder node + edge
+        if output_folder:
+            folder_key = output_folder.split("/")[0]  # top-level folder
+            folder_id = f"knowledge:folder:{output_folder}"
+            if output_folder not in seen_folders:
+                seen_folders.add(output_folder)
+                stats = folder_stats.get(folder_key, {"files": 0, "size_mb": 0})
+                nodes.append({
+                    "id": folder_id,
+                    "type": "folder",
+                    "source": "knowledge",
+                    "label": f"knowledge/{output_folder}",
+                    "status": "ACTIVE" if stats["files"] > 0 else "IDLE",
+                    "metrics": {"file_count": stats["files"], "size_mb": stats["size_mb"]},
+                })
+            edges.append({
+                "source": skill_id,
+                "target": folder_id,
+                "type": "writes",
+                "weight": 2,
+            })
+
+        # Input sources
+        for inp in input_sources:
+            inp_id = f"knowledge:folder:{inp}"
+            if inp not in seen_folders:
+                seen_folders.add(inp)
+                stats = folder_stats.get(inp.split("/")[0], {"files": 0, "size_mb": 0})
+                nodes.append({
+                    "id": inp_id,
+                    "type": "folder",
+                    "source": "knowledge",
+                    "label": f"knowledge/{inp}" if not inp.endswith(".db") else inp,
+                    "status": "ACTIVE" if stats["files"] > 0 else "IDLE",
+                    "metrics": {"file_count": stats["files"], "size_mb": stats["size_mb"]},
+                })
+            edges.append({
+                "source": inp_id,
+                "target": skill_id,
+                "type": "reads",
+                "weight": 1,
+            })
+
+    return nodes, edges

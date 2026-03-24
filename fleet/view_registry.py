@@ -21,6 +21,7 @@ CATEGORY_DEFAULTS: dict[str, dict] = {
     "storage":  {"icon": "database", "color": "#4fc3f7", "layout_hint": "cluster"},
     "external": {"icon": "globe",    "color": "#9c7cfc", "layout_hint": "tree"},
     "security": {"icon": "shield",   "color": "#f44336", "layout_hint": "cluster"},
+    "knowledge": {"icon": "book",   "color": "#66bb6a", "layout_hint": "tree"},
 }
 
 # ---------------------------------------------------------------------------
