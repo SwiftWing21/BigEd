@@ -1,5 +1,9 @@
 use biged_bridge::loader::SkillLoader;
 use biged_bridge::runner::SkillRunner;
+use biged_bridge::worker::Worker;
+use biged_bridge::BridgeConfig;
+use biged_core::db::Db;
+use biged_core::types::TaskStatus;
 use std::path::PathBuf;
 
 fn fleet_dir() -> PathBuf {
@@ -89,4 +93,47 @@ fn test_runner_handles_missing_skill() {
         &serde_json::json!({}),
     );
     assert!(result.is_err());
+}
+
+#[tokio::test]
+async fn test_worker_processes_task() {
+    let fd = fleet_dir();
+    if !fd.join("skills").exists() {
+        return;
+    }
+
+    let db = Db::in_memory().unwrap();
+    db.register_agent("test_worker", "coder").unwrap();
+    let task_id = db.post_task("autoresearch_analyze", "{}", 5, None).unwrap();
+
+    let config = BridgeConfig::new(fd.clone());
+    let worker = Worker::new(db.clone(), config, serde_json::json!({})).expect("worker should init");
+
+    let processed = worker.process_one("coder").await;
+    assert!(processed.is_ok(), "process_one failed: {:?}", processed.err());
+    assert!(processed.unwrap(), "should have processed a task");
+
+    let task = db.get_task(task_id).unwrap().unwrap();
+    assert!(
+        task.status == TaskStatus::Done || task.status == TaskStatus::Failed,
+        "task should be done or failed, got: {:?}", task.status
+    );
+}
+
+#[tokio::test]
+async fn test_worker_empty_queue() {
+    let fd = fleet_dir();
+    if !fd.join("skills").exists() {
+        return;
+    }
+
+    let db = Db::in_memory().unwrap();
+    db.register_agent("test_worker", "coder").unwrap();
+
+    let config = BridgeConfig::new(fd.clone());
+    let worker = Worker::new(db, config, serde_json::json!({})).expect("worker should init");
+
+    let processed = worker.process_one("coder").await;
+    assert!(processed.is_ok());
+    assert!(!processed.unwrap(), "should return false — no tasks");
 }
