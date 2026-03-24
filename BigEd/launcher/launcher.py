@@ -180,7 +180,36 @@ def load_model_cfg() -> dict:
         return defaults
 
 
-def _quick_key_check(env_name: str) -> bool:
+def _load_secrets_to_env():
+    """Load all key=value pairs from ~/.secrets into os.environ.
+
+    Called once at launcher startup so chat functions and fleet workers
+    can access API keys via os.environ without knowing about ~/.secrets.
+    """
+    secrets = Path.home() / ".secrets"
+    if not secrets.exists():
+        return
+    try:
+        for line in secrets.read_text(errors="ignore").splitlines():
+            line = line.strip()
+            if not line or line.startswith("#"):
+                continue
+            if line.startswith("export "):
+                line = line[7:].strip()
+            if "=" not in line:
+                continue
+            k, _, v = line.partition("=")
+            k = k.strip()
+            v = v.strip().strip('"').strip("'")
+            if k and v and v != "REPLACE_ME":
+                os.environ.setdefault(k, v)  # don't override existing env vars
+    except Exception:
+        pass
+
+_load_secrets_to_env()  # load on import
+
+
+def _has_api_key(env_name: str) -> bool:
     """Fast check if an API key is configured (env var or ~/.secrets).
 
     Does NOT validate the key — just checks if a non-empty value exists.
