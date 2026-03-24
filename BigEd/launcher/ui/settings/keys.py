@@ -146,8 +146,10 @@ class KeysPanelMixin:
             ("Google AI", "GEMINI_API_KEY", "Gemini — review pass, fallback reasoning"),
             ("HuggingFace", "HF_TOKEN", "Model downloads, dataset access"),
             ("GitHub", "GITHUB_TOKEN", "PR sync, code search, issue tracking"),
+            ("Brave", "BRAVE_API_KEY", "Web search tier 1 — 2k free queries/month"),
+            ("Tavily", "TAVILY_API_KEY", "Web search tier 2 — fallback after Brave"),
+            ("OpenAI", "OPENAI_API_KEY", "OpenAI API — optional embedding/fallback"),
             ("Discord", "DISCORD_BOT_TOKEN", "Fleet chat bridge"),
-            ("Brave", "BRAVE_API_KEY", "Web search API"),
         ]
 
         self._key_card_dots = {}  # env_var -> (dot_label, status_label)
@@ -200,17 +202,7 @@ class KeysPanelMixin:
             if has_key:
                 self._launch_key_probe(env_key, raw_val)
 
-        # Full key manager button
-        self._section_header(panel, "Advanced")
-        adv_frame = ctk.CTkFrame(panel, fg_color=GLASS_BG, corner_radius=6)
-        adv_frame.pack(fill="x", padx=16, pady=(0, 12))
-        ctk.CTkLabel(adv_frame, text="Add, rotate, and manage API keys with the full key manager.",
-                     font=FONT_XS, text_color=DIM
-                     ).pack(padx=12, pady=(10, 4), anchor="w")
-        ctk.CTkButton(adv_frame, text="Open Key Manager", font=FONT_SM,
-                      width=150, height=28, fg_color=ACCENT, hover_color=ACCENT_H,
-                      command=lambda: KeyManagerDialog(self._parent)
-                      ).pack(padx=12, pady=(0, 10), anchor="w")
+        # All keys now shown in cards above — old Key Manager dialog removed
 
     def _launch_key_probe(self, env_key: str, raw_val: str):
         """Run validation probe in background thread, update card dot on completion."""
