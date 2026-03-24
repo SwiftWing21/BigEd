@@ -199,3 +199,23 @@ async fn test_set_theme() {
         .unwrap();
     assert_eq!(resp.status(), StatusCode::OK);
 }
+
+// ── Task 7: SSE streaming ──────────────────────────────────────────────────
+
+#[tokio::test]
+async fn test_sse_stream_connects() {
+    let state = test_state();
+    let app = biged_server::router(state);
+    let resp = app
+        .oneshot(Request::get("/api/stream").body(Body::empty()).unwrap())
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let ct = resp
+        .headers()
+        .get("content-type")
+        .unwrap()
+        .to_str()
+        .unwrap();
+    assert!(ct.contains("text/event-stream"));
+}

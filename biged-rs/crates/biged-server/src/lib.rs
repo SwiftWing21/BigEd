@@ -60,6 +60,8 @@ pub fn router(state: AppState) -> Router {
             "/api/discussions",
             axum::routing::get(handlers::skills::discussions),
         )
+        // SSE stream
+        .route("/api/stream", axum::routing::get(sse::stream))
         // Settings
         .route(
             "/api/settings/theme",

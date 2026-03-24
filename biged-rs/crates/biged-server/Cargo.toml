@@ -14,3 +14,6 @@ serde.workspace = true
 serde_json.workspace = true
 tracing.workspace = true
 anyhow.workspace = true
+futures.workspace = true
+async-stream.workspace = true
+tokio-stream.workspace = true

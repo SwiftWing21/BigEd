@@ -26,6 +26,9 @@ dashmap = "6"
 chrono = { version = "0.4", features = ["serde"] }
 axum = "0.8"
 tower = "0.5"
+futures = "0.3"
+async-stream = "0.3"
+tokio-stream = { version = "0.1", features = ["sync"] }
 
 [package]
 name = "biged"
