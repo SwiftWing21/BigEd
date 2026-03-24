@@ -55,9 +55,9 @@ THEME_PRESETS = {
         "ACCENT": "#3b82f6", "ACCENT_H": "#2563eb", "GOLD": "#f59e0b",
         "TEXT": "#e2e8f0", "DIM": "#64748b",
         "CARD_RADIUS": 10, "BTN_RADIUS": 8,
-        "GLASS_BG": "#0f1419", "GLASS_NAV": "#141b27",
-        "GLASS_PANEL": "#1a1f2e", "GLASS_HOVER": "#2a2f3e",
-        "GLASS_SEL": "#1e3a5f", "GLASS_BORDER": "#1e293b",
+        "GLASS_BG": "#131922", "GLASS_NAV": "#171e2c",
+        "GLASS_PANEL": "#1e2535", "GLASS_HOVER": "#2a334a",
+        "GLASS_SEL": "#1e3a5f", "GLASS_BORDER": "#334155",
     },
 }
 

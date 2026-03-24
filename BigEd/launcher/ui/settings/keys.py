@@ -153,7 +153,8 @@ class KeysPanelMixin:
         self._key_card_dots = {}  # env_var -> (dot_label, status_label)
 
         for i, (name, env_key, desc) in enumerate(key_defs):
-            card = ctk.CTkFrame(keys_grid, fg_color=GLASS_BG, corner_radius=6, height=76)
+            card = ctk.CTkFrame(keys_grid, fg_color=GLASS_BG, corner_radius=6, height=76,
+                               border_width=1, border_color=GLASS_BORDER)
             card.grid(row=i // 2, column=i % 2, padx=4, pady=4, sticky="nsew")
             card.grid_propagate(False)
 
