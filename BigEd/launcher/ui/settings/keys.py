@@ -39,7 +39,7 @@ _VALIDATION_PROBES = {
         },
         # Minimal body — will return 400 (bad request) for valid key, 401 for invalid
         "body": b'{"model":"claude-haiku-4-5-20250515","max_tokens":1,"messages":[{"role":"user","content":"x"}]}',
-        "valid_codes": {200, 400, 429},  # 400 = valid key, bad request; 429 = rate limited
+        "valid_codes": {200, 400, 404, 429},  # 400 = valid key, bad request; 404 = model not found (key valid); 429 = rate limited
     },
     "GEMINI_API_KEY": {
         "url_fn": lambda key: f"https://generativelanguage.googleapis.com/v1beta/models?key={key}",
