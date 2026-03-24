@@ -22,8 +22,8 @@ def _load_settings():
 
 class Module:
     NAME = "ingestion"
-    LABEL = "Ingestion"
-    VERSION = "0.23"
+    LABEL = "Files"
+    VERSION = "0.24"
     DEFAULT_ENABLED = True
     DEPENDS_ON = []
 
@@ -83,6 +83,155 @@ class Module:
         FLEET_DIR = launcher.FLEET_DIR
 
     def build_tab(self, parent):
+        self._parent = parent
+        parent.grid_columnconfigure(0, weight=1)
+        parent.grid_rowconfigure(1, weight=1)
+
+        # ── Mode toggle: Import | Knowledge ──────────────────────────
+        mode_bar = ctk.CTkFrame(parent, fg_color="transparent", height=32)
+        mode_bar.grid(row=0, column=0, sticky="ew", pady=(4, 0))
+        mode_bar.grid_columnconfigure(1, weight=1)
+
+        self._mode_var = ctk.StringVar(value="Import")
+        ctk.CTkSegmentedButton(
+            mode_bar, values=["Import", "Knowledge"],
+            variable=self._mode_var,
+            font=FONT_SM, height=28, width=220,
+            selected_color=ACCENT, selected_hover_color=ACCENT_H,
+            unselected_color=BG3, unselected_hover_color=BG2,
+            command=self._switch_mode,
+        ).pack(side="left", padx=(0, 12))
+
+        # ── Import mode container ────────────────────────────────────
+        self._import_frame = ctk.CTkFrame(parent, fg_color="transparent")
+        self._knowledge_frame = ctk.CTkFrame(parent, fg_color="transparent")
+
+        # Build import UI inside _import_frame
+        self._build_import_ui(self._import_frame)
+        # Build knowledge UI inside _knowledge_frame
+        self._build_knowledge_ui(self._knowledge_frame)
+
+        # Show import by default
+        self._import_frame.grid(row=1, column=0, sticky="nsew")
+        self._import_frame.grid_columnconfigure(0, weight=1)
+        self._import_frame.grid_rowconfigure(0, weight=1)
+
+    def _switch_mode(self, mode):
+        if mode == "Import":
+            self._knowledge_frame.grid_remove()
+            self._import_frame.grid(row=1, column=0, sticky="nsew")
+        else:
+            self._import_frame.grid_remove()
+            self._knowledge_frame.grid(row=1, column=0, sticky="nsew")
+            self._refresh_knowledge()
+
+    def _build_knowledge_ui(self, parent):
+        """Knowledge browser — view fleet-generated artifacts."""
+        parent.grid_columnconfigure(0, weight=1)
+        parent.grid_rowconfigure(1, weight=1)
+
+        hdr = ctk.CTkFrame(parent, fg_color="transparent")
+        hdr.grid(row=0, column=0, sticky="ew", pady=(4, 6))
+        hdr.grid_columnconfigure(1, weight=1)
+
+        ctk.CTkLabel(hdr, text="Category:", font=FONT_SM,
+                     text_color=DIM).grid(row=0, column=0, padx=(0, 6))
+
+        categories = ["All", "Code Reviews", "Security", "Quality", "Drafts",
+                       "Reports", "Evaluations", "Stability", "Refactors",
+                       "Outcomes", "Freshness", "Personalities", "Sync"]
+        self._know_cat_var = ctk.StringVar(value="All")
+        self._know_dirs = {
+            "All": None, "Code Reviews": "code_reviews", "Security": "security",
+            "Quality": "quality", "Drafts": "code_drafts", "Reports": "reports",
+            "Evaluations": "evaluations", "Stability": "stability",
+            "Refactors": "refactors", "Outcomes": "outcomes",
+            "Freshness": "freshness", "Personalities": "personalities",
+            "Sync": "sync",
+        }
+        ctk.CTkOptionMenu(
+            hdr, values=categories, variable=self._know_cat_var,
+            font=FONT_SM, fg_color=BG3, button_color=ACCENT,
+            button_hover_color=ACCENT_H, height=26, width=160,
+            command=lambda _: self._refresh_knowledge(),
+        ).grid(row=0, column=1, sticky="w")
+
+        ctk.CTkButton(hdr, text="Refresh", font=FONT_SM, height=26, width=80,
+                      fg_color=BG3, hover_color=BG,
+                      command=self._refresh_knowledge
+                      ).grid(row=0, column=2, sticky="e")
+
+        content = ctk.CTkFrame(parent, fg_color=BG)
+        content.grid(row=1, column=0, sticky="nsew")
+        content.grid_columnconfigure(0, weight=1)
+        content.grid_columnconfigure(1, weight=3)
+        content.grid_rowconfigure(0, weight=1)
+
+        self._know_list = ctk.CTkScrollableFrame(content, fg_color=BG2, corner_radius=4)
+        self._know_list.grid(row=0, column=0, sticky="nsew", padx=(0, 4))
+        self._know_list.grid_columnconfigure(0, weight=1)
+
+        preview_frame = ctk.CTkFrame(content, fg_color=BG2, corner_radius=4)
+        preview_frame.grid(row=0, column=1, sticky="nsew")
+        preview_frame.grid_rowconfigure(1, weight=1)
+        preview_frame.grid_columnconfigure(0, weight=1)
+
+        self._know_preview_label = ctk.CTkLabel(
+            preview_frame, text="Select a file to preview", font=FONT_SM,
+            text_color=DIM, anchor="w")
+        self._know_preview_label.grid(row=0, column=0, padx=8, pady=(4, 2), sticky="w")
+
+        self._know_preview = ctk.CTkTextbox(
+            preview_frame, font=("Consolas", 10), fg_color=BG2,
+            text_color="#c8c8c8", wrap="word", corner_radius=0)
+        self._know_preview.grid(row=1, column=0, sticky="nsew", padx=4)
+
+        self._know_items = []
+
+    def _refresh_knowledge(self):
+        for w in self._know_items:
+            w.destroy()
+        self._know_items.clear()
+
+        cat = self._know_cat_var.get() if self._know_cat_var else "All"
+        knowledge = FLEET_DIR / "knowledge"
+        subdir = self._know_dirs.get(cat)
+        files = []
+        if subdir:
+            d = knowledge / subdir
+            if d.exists():
+                files = sorted(d.rglob("*"), key=lambda f: f.stat().st_mtime
+                               if f.is_file() else 0, reverse=True)
+                files = [f for f in files if f.is_file()]
+        else:
+            if knowledge.exists():
+                files = sorted(knowledge.rglob("*"), key=lambda f: f.stat().st_mtime
+                               if f.is_file() else 0, reverse=True)
+                files = [f for f in files if f.is_file()][:200]
+
+        for f in files:
+            rel = str(f.relative_to(knowledge))
+            btn = ctk.CTkButton(
+                self._know_list, text=rel, font=FONT_XS,
+                fg_color="transparent", hover_color=BG3,
+                text_color=TEXT, anchor="w", height=24,
+                command=lambda p=f: self._preview_file(p))
+            btn.pack(fill="x", padx=2, pady=1)
+            self._know_items.append(btn)
+
+    def _preview_file(self, path):
+        self._know_preview_label.configure(text=path.name)
+        self._know_preview.configure(state="normal")
+        self._know_preview.delete("1.0", "end")
+        try:
+            text = path.read_text(encoding="utf-8", errors="replace")[:10000]
+            self._know_preview.insert("end", text)
+        except Exception as e:
+            self._know_preview.insert("end", f"Cannot preview: {e}")
+        self._know_preview.configure(state="disabled")
+
+    def _build_import_ui(self, parent):
+        """Original import UI — file browser + ingest controls."""
         parent.grid_columnconfigure(0, weight=1)
         parent.grid_rowconfigure(1, weight=1)
 

@@ -24,7 +24,7 @@ class Module:
     NAME = "outputs"
     LABEL = "Outputs"
     VERSION = "0.24"
-    DEFAULT_ENABLED = True
+    DEFAULT_ENABLED = False  # merged into Files (mod_ingestion) tab
     DEPENDS_ON = []
 
     _DIRS = {
