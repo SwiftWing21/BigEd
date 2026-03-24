@@ -1743,16 +1743,34 @@ class BigEdCC(TrayManagerMixin, BootManagerMixin, CommTabMixin, OllamaManagerMix
             command=self._pq_start)
         self._pq_start_btn.pack(side="left", padx=2)
 
-        # ── Right column: Log + Task Output ──────────────────────────────────
+        # ── Right column: Neural Activity + Log + Task Output ─────────────────
         right = ctk.CTkFrame(parent, fg_color=BG, corner_radius=0)
         right.grid(row=0, column=1, sticky="nsew", padx=(4, 0))
         right.grid_columnconfigure(0, weight=1)
-        right.grid_rowconfigure(0, weight=3)
-        right.grid_rowconfigure(1, weight=2)
+        right.grid_rowconfigure(0, weight=0)   # neural lanes (fixed height)
+        right.grid_rowconfigure(1, weight=3)   # log
+        right.grid_rowconfigure(2, weight=2)   # output
+
+        # Neural Activity canvas
+        neural_frame = ctk.CTkFrame(right, fg_color=BG2, corner_radius=6, height=130)
+        neural_frame.grid(row=0, column=0, sticky="ew", pady=(0, 4))
+        neural_frame.grid_propagate(False)
+        neural_frame.grid_columnconfigure(0, weight=1)
+        neural_frame.grid_rowconfigure(1, weight=1)
+        ctk.CTkLabel(neural_frame, text="NEURAL ACTIVITY",
+                     font=("RuneScape Bold 12", 9, "bold"), text_color=GOLD,
+                     anchor="w").grid(row=0, column=0, padx=8, pady=(4, 0), sticky="w")
+        import tkinter as tk
+        self._neural_canvas = tk.Canvas(
+            neural_frame, bg=BG2, highlightthickness=0, height=100)
+        self._neural_canvas.grid(row=1, column=0, sticky="nsew", padx=4, pady=(0, 4))
+        self._neural_data = None
+        self._neural_poll_id = None
+        self._safe_after(3000, self._poll_neural_lanes)
 
         # Log panel
         log_frame = ctk.CTkFrame(right, fg_color=BG2, corner_radius=6)
-        log_frame.grid(row=0, column=0, sticky="nsew", pady=(0, 4))
+        log_frame.grid(row=1, column=0, sticky="nsew", pady=(0, 4))
         log_frame.grid_rowconfigure(1, weight=1)
         log_frame.grid_columnconfigure(0, weight=1)
 
@@ -1768,7 +1786,7 @@ class BigEdCC(TrayManagerMixin, BootManagerMixin, CommTabMixin, OllamaManagerMix
 
         # Task output panel
         out_frame = ctk.CTkFrame(right, fg_color=BG2, corner_radius=6)
-        out_frame.grid(row=1, column=0, sticky="nsew")
+        out_frame.grid(row=2, column=0, sticky="nsew")
         out_frame.grid_rowconfigure(1, weight=1)
         out_frame.grid_columnconfigure(0, weight=1)
 
@@ -1785,6 +1803,90 @@ class BigEdCC(TrayManagerMixin, BootManagerMixin, CommTabMixin, OllamaManagerMix
                                   font=("RuneScape Plain 11", 10), fg_color=BG3, hover_color=BG2,
                                   command=self._copy_output)
         copy_btn.place(relx=1.0, x=-4, y=4, anchor="ne")
+
+    # ── Neural Activity rendering ────────────────────────────────────────────
+
+    def _poll_neural_lanes(self):
+        """Fetch lane data from dashboard API and redraw canvas."""
+        def _fetch():
+            try:
+                import json
+                import urllib.request
+                url = f"http://localhost:{self._dashboard_port}/api/activity/lanes?hours=24"
+                with urllib.request.urlopen(url, timeout=5) as resp:
+                    self._neural_data = json.loads(resp.read())
+                self.after(0, self._render_neural_canvas)
+            except Exception:
+                pass  # dashboard not up yet
+        import threading
+        threading.Thread(target=_fetch, daemon=True).start()
+        self._neural_poll_id = self._safe_after(15000, self._poll_neural_lanes)
+
+    def _render_neural_canvas(self):
+        """Draw agent/model lanes with status bars on the tkinter Canvas."""
+        c = self._neural_canvas
+        c.delete("all")
+        if not self._neural_data:
+            return
+        lanes = self._neural_data.get("lanes", [])
+        if not lanes:
+            c.create_text(c.winfo_width() // 2, 40, text="No activity",
+                          fill="#64748b", font=("Consolas", 10))
+            return
+
+        w = c.winfo_width() or 400
+        h = c.winfo_height() or 100
+        label_w = 80
+        bar_start = label_w + 8
+        bar_w = w - bar_start - 10
+        max_lanes = min(len(lanes), 8)
+        lane_h = min(14, (h - 8) / max(max_lanes, 1))
+        gap = 2
+        max_total = max(l["total"] for l in lanes) or 1
+
+        kind_color = {"agent": "#10b981", "model": "#a78bfa"}
+        status_color = {"done": "#10b981", "failed": "#ef4444", "running": "#3b82f6"}
+
+        for i in range(max_lanes):
+            lane = lanes[i]
+            y = 4 + i * (lane_h + gap)
+            kc = kind_color.get(lane.get("kind"), "#64748b")
+
+            # Kind dot
+            c.create_oval(label_w, y + 3, label_w + 6, y + 9, fill=kc, outline="")
+
+            # Track background
+            c.create_rectangle(bar_start, y, bar_start + bar_w, y + lane_h,
+                               fill="#1a1f2e", outline="")
+
+            # Stacked segments
+            scale = bar_w / max_total
+            cx = bar_start
+            for status in ("done", "failed", "running"):
+                val = lane.get(status, 0)
+                if val <= 0:
+                    continue
+                seg_w = max(val * scale, 2)
+                c.create_rectangle(cx, y + 1, cx + seg_w, y + lane_h - 1,
+                                   fill=status_color.get(status, "#64748b"), outline="")
+                cx += seg_w
+
+            # Label
+            name = lane.get("agent", "?")
+            if len(name) > 11:
+                name = name[:10] + "\u2026"
+            is_active = lane.get("running", 0) > 0
+            c.create_text(label_w - 4, y + lane_h / 2,
+                          text=name, anchor="e",
+                          fill="#e2e8f0" if is_active else "#94a3b8",
+                          font=("Consolas", 8, "bold" if is_active else ""))
+
+            # Count
+            badge = str(lane["total"])
+            if lane.get("cost"):
+                badge += f" ${lane['cost']}"
+            c.create_text(cx + 4, y + lane_h / 2, text=badge, anchor="w",
+                          fill="#64748b", font=("Consolas", 7))
 
     # ── Tab 1: Agents ─────────────────────────────────────────────────────────
     def _build_tab_agents(self, parent):
