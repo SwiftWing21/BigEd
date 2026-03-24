@@ -362,6 +362,26 @@ def init_db():
             )
         """)
         conn.execute("CREATE INDEX IF NOT EXISTS idx_expr_results_exp ON experiment_results(experiment_id, variant)")
+        # ML Experiments — structured experiment lifecycle for ML data scientists (v0.400.00b)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS ml_experiments (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                agent TEXT NOT NULL,
+                experiment_type TEXT NOT NULL,
+                hypothesis TEXT,
+                config_json TEXT,
+                metrics_before_json TEXT,
+                metrics_after_json TEXT,
+                status TEXT NOT NULL DEFAULT 'PROPOSED',
+                auto_approved INTEGER NOT NULL DEFAULT 0,
+                artifact_path TEXT,
+                previous_artifact TEXT,
+                created_at REAL NOT NULL,
+                completed_at REAL
+            )
+        """)
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_ml_exp_agent ON ml_experiments(agent, status)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_ml_exp_type ON ml_experiments(experiment_type, status)")
 
 
 def update_intelligence_score(task_id, score):

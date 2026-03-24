@@ -10,7 +10,7 @@ discord_bot_enabled = true   # lightweight Discord-only bridge to biged-fleetcha
 offline_mode = false         # true = no internet; external API skills gracefully degrade, local Ollama works
 air_gap_mode = false         # true = max isolation (implies offline_mode); no sockets, no secrets, skill whitelist
 api_keys_required = false    # false = fleet works local-only (no Claude/Gemini keys needed); true = require at least one provider
-disabled_agents = ["sales", "onboarding", "implementation", "legal", "account_manager"]  # agents excluded from fleet boot
+disabled_agents = ["sales", "onboarding", "implementation", "legal", "account_manager", "ds_rag", "ds_fleet", "ds_research"]  # agents excluded from fleet boot
 hitl_evolution = false           # true = evolution proposals go to WAITING_HUMAN for operator approval
 
 # Agent naming — themes and multi-device identity
@@ -497,6 +497,18 @@ fallback_to_iq = true                    # fall back to IQ-average heuristic if 
 ab_testing_enabled = true
 min_samples_per_variant = 20       # minimum trials per variant before evaluation
 auto_promote_threshold = 0.95      # promote if variant p-value < 0.05 AND success rate > this
+auto_approve = false               # ML experiment auto-approval master switch
+
+[experiments.auto_approve_types]
+evaluation = true
+data_collection = true
+embedding_train = false
+reranker_train = false
+router_retrain = false
+autoresearch_trial = false
+
+[experiments.auto_windows]
+windows = []
 
 # ── Autonomous DAG Builder (v0.200.00b) ─────────────────────────────
 [dag]

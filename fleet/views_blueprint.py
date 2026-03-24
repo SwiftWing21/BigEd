@@ -302,3 +302,62 @@ def api_views_config_delete(name):
     except Exception:
         log.warning("Failed to delete view config %r", name, exc_info=True)
         return jsonify({"error": "Failed to delete view config"}), 500
+
+
+# ── Experiment API ───────────────────────────────────────────────────────
+
+@views_bp.route("/api/experiments")
+def api_experiments_list():
+    """List recent experiments."""
+    try:
+        from experiment import ExperimentFramework
+        fw = ExperimentFramework()
+        agent = request.args.get("agent")
+        exp_type = request.args.get("type")
+        limit = int(request.args.get("limit", 50))
+        experiments = fw.history(agent=agent, experiment_type=exp_type, limit=limit)
+        return jsonify({"experiments": experiments, "count": len(experiments)})
+    except Exception:
+        log.warning("Failed to list experiments", exc_info=True)
+        return jsonify({"error": "Failed to list experiments"}), 500
+
+
+@views_bp.route("/api/experiments/pending")
+def api_experiments_pending():
+    """List experiments awaiting HITL approval."""
+    try:
+        from experiment import ExperimentFramework
+        fw = ExperimentFramework()
+        pending = fw.pending_approval()
+        return jsonify({"pending": pending, "count": len(pending)})
+    except Exception:
+        log.warning("Failed to list pending experiments", exc_info=True)
+        return jsonify({"error": "Failed to list pending experiments"}), 500
+
+
+@views_bp.route("/api/experiments/<int:exp_id>/approve", methods=["POST"])
+def api_experiments_approve(exp_id):
+    """Approve a pending experiment."""
+    try:
+        from experiment import ExperimentFramework
+        fw = ExperimentFramework()
+        if fw.approve(exp_id):
+            return jsonify({"status": "approved", "id": exp_id})
+        return jsonify({"error": "Cannot approve experiment"}), 400
+    except Exception:
+        log.warning("Failed to approve experiment %d", exp_id, exc_info=True)
+        return jsonify({"error": "Failed to approve experiment"}), 500
+
+
+@views_bp.route("/api/experiments/<int:exp_id>/reject", methods=["POST"])
+def api_experiments_reject(exp_id):
+    """Reject a pending experiment."""
+    try:
+        from experiment import ExperimentFramework
+        fw = ExperimentFramework()
+        if fw.reject(exp_id):
+            return jsonify({"status": "rejected", "id": exp_id})
+        return jsonify({"error": "Cannot reject experiment"}), 400
+    except Exception:
+        log.warning("Failed to reject experiment %d", exp_id, exc_info=True)
+        return jsonify({"error": "Failed to reject experiment"}), 500

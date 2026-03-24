@@ -54,7 +54,7 @@ End every roadmap with an Audit Coverage Check section.
 - `fleet/filesystem_guard.py` — SOC 2 file access control
 
 ## Fleet Status
-- Skills: 86 | Dashboard: 190+ endpoints (across dashboard.py + 9 blueprints) | Smoke: 22/22
+- Skills: 97+ | Dashboard: 190+ endpoints (across dashboard.py + 10 blueprints) | Smoke: 27/27
 - Dynamic agent scaling: 4 core + demand-based | Dr. Ders: event-driven wake-up timer
 - Security: P0-P2 hardened (XSS, SQL injection, thread safety, zombie cleanup)
 - Backup: auto-save every 20min, configurable depth/location
@@ -183,6 +183,10 @@ except Exception:
 | `fleet/sso.py` | SSO / OIDC / SAML | Enterprise identity federation |
 | `fleet/billing.py` | Usage-based billing | Per-tenant metering, quotas, invoices |
 | `fleet/control_plane.py` | SaaS control plane | Fleet provisioning, health aggregation |
+| `fleet/experiment.py` | ML experiment framework | Propose/run/eval/deploy lifecycle, autonomy dial |
+| `fleet/view_registry.py` | Hybrid ViewPort data sources | Register graph-renderable modules |
+| `fleet/views_blueprint.py` | ViewPort + experiment REST API | 16 endpoints: views, configs, experiments |
+| `fleet/token_bridge.py` | Design token sync | JSON → CSS custom properties |
 | `BigEd/launcher/launcher.py` | Desktop GUI entry point | UI layout, boot flow, settings panels |
 
 ## Local Machine — CLAUDE.USER.md
@@ -210,7 +214,7 @@ python -c "import sys; sys.path.insert(0,'fleet'); from system_info import gener
 
 ### Data layer
 - **FleetDB** (`fleet/data_access.py`): unified DAL — agent counts, tasks, token speeds, HITL
-- **RAG** (`fleet/rag.py` + `rag.db`): vector store — `rag_index` writes, `rag_query` reads
+- **RAG** (`fleet/rag.py` + `rag.db`): BM25/FTS5 + optional vector search — `search()`, `hybrid_search()`, `rerank()`
 - **Config** (`fleet/config.py`): TOML loader — `load_config()`, `is_offline()`, `is_air_gap()`
 - **MCP** (`fleet/mcp_manager.py`): server registry — `.mcp.json`, probes, skill routing
 - **System** (`fleet/system_info.py`): hardware detection — `detect_system()`, `generate_user_md()`

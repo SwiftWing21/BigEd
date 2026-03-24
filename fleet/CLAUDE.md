@@ -14,16 +14,19 @@
 | planner | Workload planning — queues 5-500 tasks by fleet state |
 | legal | Legal drafts + compliance |
 | account_manager | Account reviews |
+| ds_rag | RAG quality: embedding training, reranker, benchmarks |
+| ds_fleet | Fleet ML: routing model, predictive scaler, cost analysis |
+| ds_research | Autoresearch: experiment analysis, trials, checkpoint eval |
 
-`disabled_agents` in fleet.toml `[fleet]` excludes roles from boot (default: sales, onboarding, implementation, legal, account_manager).
+`disabled_agents` in fleet.toml `[fleet]` excludes roles from boot (default: sales, onboarding, implementation, legal, account_manager, ds_rag, ds_fleet, ds_research).
 
 ## Quick Reference
 - Status: `python lead_client.py status`
 - Start: `python supervisor.py` (native Windows) or `nohup uv run python supervisor.py >> logs/supervisor.log 2>&1 &` (Linux/WSL)
-- Smoke: `python smoke_test.py --fast` (22/22)
+- Smoke: `python smoke_test.py --fast` (27/27)
 - Deps: `python dependency_check.py` (11 checks)
 - Export: `python lead_client.py export` | Import: `python lead_client.py import <file>`
-- Skills: 86 registered | Dashboard: 190+ endpoints (across dashboard.py + 9 blueprints)
+- Skills: 97+ registered | Dashboard: 190+ endpoints (across dashboard.py + 10 blueprints)
 - Security advisories: `knowledge/security/pending/advisory_<id>.md`
 - Process control: REST API (`/api/fleet/*`)
 
@@ -66,6 +69,10 @@ Drafts are **never auto-deployed** — review before copying to `skills/`.
 - `data_access.py` — FleetDB DAL (all DB queries go through here)
 - `providers.py` — Multi-backend ABC (Ollama, llama.cpp, llamafile) + HuggingFace search
 - `idle_evolution.py` — Weighted random skill selection, per-agent cooldown, cross-worker dedup
+- `experiment.py` — ML experiment framework (propose/run/eval/deploy/rollback, autonomy dial)
+- `view_registry.py` — Hybrid ViewPort data source registry (5 sources, category defaults)
+- `views_blueprint.py` — ViewPort + experiment REST API (16 endpoints)
+- `token_bridge.py` — Design token sync (W3C DTCG JSON → CSS custom properties)
 
 ## Offline / Air-Gap Modes
 - `offline_mode = true`: external API rejected, local Ollama works, Discord/OpenClaw skipped

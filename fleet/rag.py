@@ -3,7 +3,8 @@ RAG engine — indexes .md files into SQLite FTS5 for retrieval-augmented genera
 
 No external dependencies — uses Python's built-in sqlite3 with FTS5.
 Chunks documents by heading sections, stores metadata, and provides
-BM25-ranked search results.
+BM25-ranked search results.  Optionally supports vector search and
+reranking when sentence-transformers models are present in fleet/models/.
 
 Usage:
     from rag import RAGIndex
@@ -11,14 +12,19 @@ Usage:
     idx.rebuild()                        # full re-index
     idx.update()                         # incremental (changed files only)
     results = idx.search("fleet GPU")    # BM25-ranked chunks
+    results = idx.hybrid_search("GPU")   # BM25 + vector (if model present)
+    results = idx.rerank("GPU", results) # cross-encoder rerank (if model present)
 """
 import hashlib
+import logging
 import os
 import re
 import sqlite3
 import time
 from datetime import datetime
 from pathlib import Path
+
+log = logging.getLogger("rag")
 
 FLEET_DIR = Path(__file__).parent
 PROJECT_DIR = FLEET_DIR.parent
@@ -312,6 +318,196 @@ class RAGIndex:
             }
             for row in rows
         ]
+
+    # ------------------------------------------------------------------
+    # Pluggable vector search + reranker hooks (optional dependencies)
+    # ------------------------------------------------------------------
+
+    def _load_embedding_model(self):
+        """Load a SentenceTransformer embedding model from fleet/models/embeddings/.
+
+        Caches the model on ``self._embed_model`` so it is loaded at most once.
+        Returns the model, or None if sentence-transformers is not installed or
+        no .pt model file exists in the expected directory.
+        """
+        if hasattr(self, "_embed_model"):
+            return self._embed_model
+
+        self._embed_model = None
+        model_dir = FLEET_DIR / "models" / "embeddings"
+
+        if not model_dir.exists():
+            log.debug("Embedding model directory not found: %s", model_dir)
+            return None
+
+        # Find the most recent .pt file
+        pt_files = sorted(model_dir.glob("*.pt"), key=lambda p: p.stat().st_mtime, reverse=True)
+        if not pt_files:
+            log.debug("No .pt embedding model found in %s", model_dir)
+            return None
+
+        try:
+            from sentence_transformers import SentenceTransformer
+        except ImportError:
+            log.debug("sentence-transformers not installed — vector search unavailable")
+            return None
+
+        try:
+            self._embed_model = SentenceTransformer(str(pt_files[0]))
+            log.debug("Loaded embedding model: %s", pt_files[0].name)
+        except Exception:
+            log.warning("Failed to load embedding model from %s", pt_files[0], exc_info=True)
+            self._embed_model = None
+
+        return self._embed_model
+
+    def vector_search(self, query: str, limit: int = 8) -> list[dict]:
+        """Semantic vector search across all indexed chunks.
+
+        Encodes the query and all stored chunks using a SentenceTransformer
+        model, then ranks by cosine similarity.  Falls back to BM25
+        (``self.search``) if no embedding model is available or on any error.
+        """
+        try:
+            model = self._load_embedding_model()
+            if model is None:
+                return self.search(query, limit)
+
+            import numpy as np
+
+            # Fetch all chunks from the metadata table
+            with self._get_conn() as conn:
+                rows = conn.execute(
+                    "SELECT rowid, source, heading, text FROM chunks_meta"
+                ).fetchall()
+
+            if not rows:
+                return []
+
+            texts = [row["text"] for row in rows]
+
+            # Encode query and corpus (normalize for cosine via dot product)
+            query_vec = model.encode(query, normalize_embeddings=True)
+            corpus_vecs = model.encode(texts, normalize_embeddings=True)
+
+            # Cosine similarity via dot product on normalized vectors
+            scores = np.dot(corpus_vecs, query_vec)
+
+            # Top-k indices (descending score)
+            top_indices = np.argsort(scores)[::-1][:limit]
+
+            results = []
+            for idx in top_indices:
+                row = rows[idx]
+                results.append({
+                    "source": row["source"],
+                    "heading": row["heading"],
+                    "text": row["text"],
+                    "score": round(float(scores[idx]), 4),
+                })
+            return results
+
+        except Exception:
+            log.warning("vector_search failed — falling back to BM25", exc_info=True)
+            return self.search(query, limit)
+
+    def hybrid_search(self, query: str, limit: int = 8, bm25_weight: float = 0.4) -> list[dict]:
+        """Hybrid BM25 + vector search with reciprocal rank fusion (RRF).
+
+        Runs both BM25 and vector search (each returning ``2 * limit``
+        candidates), then fuses rankings using RRF with ``k=60``::
+
+            rrf_score = weight / (rank + 60)
+
+        Falls back gracefully: if vector search is unavailable the result
+        is equivalent to a plain BM25 search.
+        """
+        k = 60
+        fetch = limit * 2
+        vector_weight = 1.0 - bm25_weight
+
+        bm25_results = self.search(query, fetch)
+        vector_results = self.vector_search(query, fetch)
+
+        # Build a dict keyed by (source, heading, text) → cumulative RRF score
+        fused: dict[tuple, dict] = {}
+
+        def _key(r: dict) -> tuple:
+            return (r["source"], r["heading"], r["text"])
+
+        for rank, r in enumerate(bm25_results, start=1):
+            ky = _key(r)
+            entry = fused.setdefault(ky, {"source": r["source"], "heading": r["heading"],
+                                          "text": r["text"], "score": 0.0})
+            entry["score"] += bm25_weight / (rank + k)
+
+        for rank, r in enumerate(vector_results, start=1):
+            ky = _key(r)
+            entry = fused.setdefault(ky, {"source": r["source"], "heading": r["heading"],
+                                          "text": r["text"], "score": 0.0})
+            entry["score"] += vector_weight / (rank + k)
+
+        # Sort descending by fused score, return top results
+        ranked = sorted(fused.values(), key=lambda x: x["score"], reverse=True)[:limit]
+        for r in ranked:
+            r["score"] = round(r["score"], 4)
+        return ranked
+
+    def rerank(self, query: str, results: list[dict], limit: int = 8) -> list[dict]:
+        """Rerank search results using a CrossEncoder model.
+
+        Looks for the most recent model in ``fleet/models/reranker/``.
+        If no model is found or sentence-transformers is not installed,
+        returns the original results truncated to *limit*.
+        """
+        if not results:
+            return results
+
+        reranker_dir = FLEET_DIR / "models" / "reranker"
+
+        if not reranker_dir.exists():
+            log.debug("Reranker model directory not found: %s", reranker_dir)
+            return results[:limit]
+
+        # Accept .pt files or directories (HuggingFace-style saved models)
+        model_candidates = sorted(
+            [p for p in reranker_dir.iterdir() if p.is_file() or p.is_dir()],
+            key=lambda p: p.stat().st_mtime,
+            reverse=True,
+        )
+        # Filter out hidden/meta files
+        model_candidates = [p for p in model_candidates if not p.name.startswith(".")]
+
+        if not model_candidates:
+            log.debug("No reranker model found in %s", reranker_dir)
+            return results[:limit]
+
+        try:
+            from sentence_transformers import CrossEncoder
+        except ImportError:
+            log.debug("sentence-transformers not installed — reranking unavailable")
+            return results[:limit]
+
+        try:
+            cross_encoder = CrossEncoder(str(model_candidates[0]))
+            pairs = [(query, r["text"]) for r in results]
+            scores = cross_encoder.predict(pairs)
+
+            # Pair each result with its cross-encoder score, sort descending
+            scored = sorted(zip(results, scores), key=lambda x: x[1], reverse=True)
+            reranked = []
+            for r, s in scored[:limit]:
+                reranked.append({
+                    "source": r["source"],
+                    "heading": r["heading"],
+                    "text": r["text"],
+                    "score": round(float(s), 4),
+                })
+            return reranked
+
+        except Exception:
+            log.warning("Reranking failed — returning original order", exc_info=True)
+            return results[:limit]
 
     def search_by_source(self, source_pattern: str, limit: int = 20) -> list[dict]:
         """List chunks from a specific source file pattern."""

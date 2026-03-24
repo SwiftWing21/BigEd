@@ -55,7 +55,7 @@ def _json_log(level, event, **kwargs):
     entry = {"ts": _t.strftime("%Y-%m-%dT%H:%M:%S"), "level": level, "event": event, **kwargs}
     print(_json.dumps(entry), flush=True)
 
-BASE_ROLES = ["researcher", "coder", "archivist", "analyst", "sales", "onboarding", "implementation", "security", "planner", "legal", "account_manager"]
+BASE_ROLES = ["researcher", "coder", "archivist", "analyst", "sales", "onboarding", "implementation", "security", "planner", "legal", "account_manager", "ds_rag", "ds_fleet", "ds_research"]
 PYTHON = sys.executable
 
 # ── Dynamic Agent Scaling ──────────────────────────────────────────────────────
