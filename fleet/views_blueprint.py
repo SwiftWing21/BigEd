@@ -784,6 +784,8 @@ _SKILL_IO_MAP = {
     "evaluate":               {"output": "evaluations",         "agent": "analyst"},
     "marathon_log":           {"output": "marathon",            "agent": "analyst"},
     "quality_flywheel":       {"output": "flywheel",            "agent": "analyst", "input": ["knowledge/*"]},
+    "outcome_tracker":        {"output": "outcomes",            "agent": "analyst", "input": ["tasks"]},
+    "prompt_optimize":        {"output": "prompt_optimization", "agent": "analyst", "input": ["tasks"]},
     "regression_detector":    {"output": "reports",             "agent": "analyst"},
     "stability_report":       {"output": "stability",           "agent": "analyst"},
     # --- archivist ---

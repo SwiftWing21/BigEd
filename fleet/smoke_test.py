@@ -446,6 +446,30 @@ def test_screenshot_diff_skill():
     return ok, f"SKILL_NAME={SKILL_NAME}, COMPLEXITY={COMPLEXITY}, verdict={result.get('verdict')}"
 
 
+def test_outcome_tracker_skill():
+    """Outcome tracker: module exports + dry run."""
+    from skills.outcome_tracker import SKILL_NAME, DESCRIPTION, REQUIRES_NETWORK, run
+    if SKILL_NAME != "outcome_tracker":
+        return False, f"SKILL_NAME mismatch: {SKILL_NAME}"
+    import db
+    db.init_db()
+    result = run({"hours": 1, "min_tasks": 1}, {})
+    ok = isinstance(result, dict) and result.get("status") == "ok"
+    return ok, f"SKILL_NAME={SKILL_NAME}, keys={list(result.keys())[:3]}"
+
+
+def test_prompt_optimize_skill():
+    """Prompt optimize: module exports + dry run."""
+    from skills.prompt_optimize import SKILL_NAME, DESCRIPTION, REQUIRES_NETWORK, run
+    if SKILL_NAME != "prompt_optimize":
+        return False, f"SKILL_NAME mismatch: {SKILL_NAME}"
+    import db
+    db.init_db()
+    result = run({"hours": 1, "min_samples": 1}, {})
+    ok = isinstance(result, dict) and result.get("status") in ("ok", "skip")
+    return ok, f"SKILL_NAME={SKILL_NAME}, status={result.get('status')}, keys={list(result.keys())[:3]}"
+
+
 def test_path_traversal_blocked():
     """Security: path traversal in code_review is blocked."""
     try:
@@ -702,6 +726,8 @@ def main():
         ("Regression detector skill", test_regression_detector_skill),
         ("Packet optimizer skill", test_packet_optimizer_skill),
         ("Screenshot diff skill", test_screenshot_diff_skill),
+        ("Outcome tracker skill", test_outcome_tracker_skill),
+        ("Prompt optimize skill", test_prompt_optimize_skill),
         ("New module imports", test_new_module_imports),
         ("FastMCP available", test_fastmcp_available),
         ("DB schema complete", test_db_schema_complete),

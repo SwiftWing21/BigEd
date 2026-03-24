@@ -6,6 +6,8 @@
 <title>Fleet Dashboard v2</title>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/cytoscape/3.28.1/cytoscape.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/dagre/0.8.5/dagre.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/cytoscape-dagre/2.5.0/cytoscape-dagre.min.js"></script>
 <style>
 /* ── Theme Tokens ─────────────────────────────────────────────────────────── */
 :root {
@@ -971,6 +973,29 @@ textarea.input {
 }
 .doc-child.open .doc-child-body { display: block; }
 
+/* ── Flowchart (Cytoscape inline graphs in docs) ─────────────────────────── */
+.doc-flowchart {
+  width: 100%;
+  height: 320px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--card);
+  margin: 12px 0;
+  position: relative;
+}
+.doc-flowchart-label {
+  position: absolute;
+  top: 6px;
+  right: 10px;
+  font-size: 10px;
+  color: var(--muted-foreground);
+  background: var(--muted);
+  padding: 1px 6px;
+  border-radius: 4px;
+  z-index: 1;
+  pointer-events: none;
+}
+
 /* ── Toast ────────────────────────────────────────────────────────────────── */
 .toast-container {
   position: fixed;
@@ -1184,6 +1209,9 @@ textarea.input {
     </button>
     <button class="nav-item" data-section="docs" onclick="showSection('docs')">
       <span class="nav-icon">&#128214;</span> Docs
+    </button>
+    <button class="nav-item" data-section="views" onclick="showSection('views')">
+      <span class="nav-icon">&#9673;</span> Views
     </button>
     <button class="nav-item" data-section="settings" onclick="showSection('settings')">
       <span class="nav-icon">&#9881;</span> Settings
@@ -1622,6 +1650,27 @@ textarea.input {
   </div>
 </div>
 
+<!-- ═══════════════════════════════════════════════════════════════════════
+     10. VIEWS (ViewPort)
+     ═══════════════════════════════════════════════════════════════════ -->
+<div id="section-views" class="section">
+  <div class="section-header">
+    <div class="section-title">Views</div>
+    <div class="section-desc">ViewPort graph browser — data sources, saved views, and builder</div>
+  </div>
+  <div style="display:flex;gap:8px;margin-bottom:16px">
+    <a href="/view/builder" target="_blank" class="btn btn-primary" style="text-decoration:none">Open View Builder</a>
+  </div>
+  <div class="glass-panel" style="margin-bottom:16px">
+    <h3 style="margin-bottom:12px;font-size:14px;font-weight:600">Saved Views</h3>
+    <div id="views-configs-list"><div class="spinner"></div></div>
+  </div>
+  <div class="glass-panel">
+    <h3 style="margin-bottom:12px;font-size:14px;font-weight:600">Data Sources</h3>
+    <div id="views-sources-list"><div class="spinner"></div></div>
+  </div>
+</div>
+
   </div><!-- /.main-content -->
 </div><!-- /.main-wrapper -->
 </div><!-- /.app-layout -->
@@ -1715,6 +1764,7 @@ function loadSectionData(name) {
     case 'analytics': loadAnalytics(); break;
     case 'docs': if (!_currentDocSlug) loadDoc('roadmap'); break;
     case 'settings': loadSettings(); break;
+    case 'views': loadViews(); break;
   }
 }
 
@@ -3166,7 +3216,10 @@ function renderDoc(data) {
     // Header
     var header = document.createElement('div');
     header.className = 'doc-section-header';
-    header.addEventListener('click', function() { div.classList.toggle('open'); });
+    header.addEventListener('click', function() {
+      div.classList.toggle('open');
+      if (div.classList.contains('open')) initFlowchartsIn(div);
+    });
 
     var chevron = document.createElement('span');
     chevron.className = 'doc-section-chevron';
@@ -3200,9 +3253,7 @@ function renderDoc(data) {
     body.className = 'doc-section-body';
 
     if (sec.body) {
-      var bodyText = document.createElement('div');
-      bodyText.textContent = sec.body;
-      body.appendChild(bodyText);
+      renderDocBody(body, sec.body);
     }
 
     // Children (h3 subsections)
@@ -3224,11 +3275,14 @@ function renderDoc(data) {
           childBadge.textContent = child.status.replace('_', ' ');
           childTitle.appendChild(childBadge);
         }
-        childTitle.addEventListener('click', function() { childDiv.classList.toggle('open'); });
+        childTitle.addEventListener('click', function() {
+          childDiv.classList.toggle('open');
+          if (childDiv.classList.contains('open')) initFlowchartsIn(childDiv);
+        });
 
         var childBody = document.createElement('div');
         childBody.className = 'doc-child-body';
-        childBody.textContent = child.body || '';
+        renderDocBody(childBody, child.body || '');
 
         childDiv.appendChild(childTitle);
         childDiv.appendChild(childBody);
@@ -3274,6 +3328,298 @@ function filterDocSections() {
   });
 
   document.getElementById('docs-count').textContent = visible + '/' + sections.length + ' sections';
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   9b. DOCS — FLOWCHART RENDERER (Cytoscape.js + dagre)
+   ══════════════════════════════════════════════════════════════════════ */
+var _flowchartCounter = 0;
+
+/**
+ * Parse simple flowchart syntax into Cytoscape elements.
+ *
+ * Supported syntax (one statement per line):
+ *   A --> B          edge from A to B
+ *   A --> B --> C    chained edges
+ *   A[My Label]      define label for node A
+ *   A(Round Label)   define label for node A (round style treated same)
+ *
+ * Returns { nodes: [{data:{id,label}}], edges: [{data:{source,target}}] }
+ */
+function parseFlowchart(src) {
+  var nodeLabels = {};
+  var edgeSet = {};
+  var nodeIds = {};
+  var lines = src.split('\n');
+
+  for (var i = 0; i < lines.length; i++) {
+    var line = lines[i].trim();
+    if (!line || line.indexOf('```') === 0) continue;
+
+    // Detect node label definitions: A[Label text] or A(Label text)
+    var labelMatch = line.match(/^([A-Za-z0-9_]+)\s*[\[\(](.+?)[\]\)]\s*$/);
+    if (labelMatch && line.indexOf('-->') < 0) {
+      nodeLabels[labelMatch[1]] = labelMatch[2];
+      nodeIds[labelMatch[1]] = true;
+      continue;
+    }
+
+    // Detect inline labels in edge chains: A[Label] --> B[Label]
+    var inlinePattern = /([A-Za-z0-9_]+)\s*[\[\(]([^\]\)]+)[\]\)]/g;
+    var inlineMatch;
+    while ((inlineMatch = inlinePattern.exec(line)) !== null) {
+      nodeLabels[inlineMatch[1]] = inlineMatch[2];
+    }
+
+    // Strip inline labels for edge parsing
+    var cleanLine = line.replace(/\s*[\[\(][^\]\)]+[\]\)]/g, '');
+
+    // Detect edges: A --> B (possibly chained: A --> B --> C)
+    if (cleanLine.indexOf('-->') >= 0) {
+      var parts = cleanLine.split(/\s*-->\s*/);
+      for (var j = 0; j < parts.length; j++) {
+        var nodeId = parts[j].trim();
+        if (nodeId) nodeIds[nodeId] = true;
+        if (j > 0) {
+          var prevId = parts[j - 1].trim();
+          var curId = parts[j].trim();
+          if (prevId && curId) {
+            edgeSet[prevId + '|' + curId] = { source: prevId, target: curId };
+          }
+        }
+      }
+    }
+  }
+
+  var nodes = [];
+  var ids = Object.keys(nodeIds);
+  for (var k = 0; k < ids.length; k++) {
+    nodes.push({ data: { id: ids[k], label: nodeLabels[ids[k]] || ids[k] } });
+  }
+
+  var edges = [];
+  var edgeKeys = Object.keys(edgeSet);
+  for (var m = 0; m < edgeKeys.length; m++) {
+    edges.push({ data: edgeSet[edgeKeys[m]] });
+  }
+
+  return { nodes: nodes, edges: edges };
+}
+
+/**
+ * Render a flowchart into a container using Cytoscape + dagre layout.
+ */
+function renderFlowchartInto(container, flowchartSrc) {
+  if (typeof cytoscape === 'undefined') {
+    container.textContent = 'Cytoscape.js not loaded';
+    return;
+  }
+
+  var parsed = parseFlowchart(flowchartSrc);
+  if (parsed.nodes.length === 0) {
+    container.textContent = '(empty flowchart)';
+    return;
+  }
+
+  var elements = parsed.nodes.concat(parsed.edges);
+
+  // dagre if available, otherwise cose
+  var layoutName = 'cose';
+  try {
+    if (typeof cytoscapeDagre !== 'undefined' || typeof dagre !== 'undefined') {
+      layoutName = 'dagre';
+    }
+  } catch (e) { /* ignore */ }
+
+  var cy = cytoscape({
+    container: container,
+    elements: elements,
+    layout: {
+      name: layoutName,
+      rankDir: 'TB',
+      nodeSep: 50,
+      rankSep: 60,
+      padding: 20
+    },
+    style: [
+      {
+        selector: 'node',
+        style: {
+          'label': 'data(label)',
+          'text-valign': 'center',
+          'text-halign': 'center',
+          'background-color': '#3b82f6',
+          'color': '#fff',
+          'font-size': '12px',
+          'width': 'label',
+          'height': 'label',
+          'padding': '12px',
+          'shape': 'round-rectangle',
+          'text-wrap': 'wrap',
+          'text-max-width': '120px',
+          'border-width': 1,
+          'border-color': '#2563eb'
+        }
+      },
+      {
+        selector: 'edge',
+        style: {
+          'width': 2,
+          'line-color': '#94a3b8',
+          'target-arrow-color': '#64748b',
+          'target-arrow-shape': 'triangle',
+          'curve-style': 'bezier',
+          'arrow-scale': 1.2
+        }
+      }
+    ],
+    userZoomingEnabled: true,
+    userPanningEnabled: true,
+    boxSelectionEnabled: false
+  });
+
+  cy.on('layoutstop', function() {
+    cy.fit(undefined, 20);
+  });
+}
+
+/**
+ * Render body text for a doc section, detecting flowchart/mermaid fenced blocks
+ * and preparing them for deferred Cytoscape rendering on section open.
+ */
+function renderDocBody(parentEl, bodyText) {
+  if (!bodyText) return;
+
+  // Split on fenced flowchart/mermaid blocks
+  var parts = bodyText.split(/(```(?:flowchart|mermaid)\n[\s\S]*?```)/);
+
+  for (var i = 0; i < parts.length; i++) {
+    var part = parts[i];
+    if (!part) continue;
+
+    var fcMatch = part.match(/^```(?:flowchart|mermaid)\n([\s\S]*?)```$/);
+    if (fcMatch) {
+      _flowchartCounter++;
+      var containerId = 'doc-flowchart-' + _flowchartCounter;
+
+      var wrapper = document.createElement('div');
+      wrapper.style.position = 'relative';
+
+      var label = document.createElement('div');
+      label.className = 'doc-flowchart-label';
+      label.textContent = 'flowchart';
+
+      var graphDiv = document.createElement('div');
+      graphDiv.className = 'doc-flowchart';
+      graphDiv.id = containerId;
+      graphDiv.dataset.flowchartSrc = fcMatch[1];
+      graphDiv.dataset.rendered = 'false';
+
+      wrapper.appendChild(label);
+      wrapper.appendChild(graphDiv);
+      parentEl.appendChild(wrapper);
+    } else {
+      var textDiv = document.createElement('div');
+      textDiv.textContent = part;
+      parentEl.appendChild(textDiv);
+    }
+  }
+}
+
+/**
+ * Find unrendered flowchart containers inside a parent element and render them.
+ * Called when a doc section is expanded (becomes visible).
+ */
+function initFlowchartsIn(parentEl) {
+  var charts = parentEl.querySelectorAll('.doc-flowchart[data-rendered="false"]');
+  for (var i = 0; i < charts.length; i++) {
+    var el = charts[i];
+    el.dataset.rendered = 'true';
+    renderFlowchartInto(el, el.dataset.flowchartSrc || '');
+  }
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   10. VIEWS (ViewPort)
+   ══════════════════════════════════════════════════════════════════════ */
+function loadViews() {
+  Promise.all([
+    apiFetch('/api/views/configs'),
+    apiFetch('/api/views/sources')
+  ]).then(function(results) {
+    var configs = (results[0] && results[0].configs) || [];
+    var sources = (results[1] && results[1].sources) || [];
+
+    // Render saved view configs
+    var cfgEl = document.getElementById('views-configs-list');
+    cfgEl.textContent = '';
+    if (configs.length === 0) {
+      var empty = document.createElement('div');
+      empty.className = 'text-muted';
+      empty.textContent = 'No saved views yet. Use the View Builder to create one.';
+      cfgEl.appendChild(empty);
+    } else {
+      configs.forEach(function(cfg) {
+        var row = document.createElement('div');
+        row.style.cssText = 'display:flex;align-items:center;gap:12px;padding:8px 0;border-bottom:1px solid var(--border)';
+        var link = document.createElement('a');
+        link.href = '/view/graph/' + encodeURIComponent(cfg.name);
+        link.target = '_blank';
+        link.style.cssText = 'font-weight:600;font-size:13px';
+        link.textContent = cfg.name;
+        var desc = document.createElement('span');
+        desc.className = 'text-muted';
+        desc.style.fontSize = '12px';
+        desc.textContent = cfg.description || '';
+        var layout = document.createElement('span');
+        layout.className = 'badge badge-muted';
+        layout.style.cssText = 'margin-left:auto;font-size:10px';
+        layout.textContent = cfg.layout || 'cluster';
+        row.appendChild(link);
+        row.appendChild(desc);
+        row.appendChild(layout);
+        cfgEl.appendChild(row);
+      });
+    }
+
+    // Render data sources
+    var srcEl = document.getElementById('views-sources-list');
+    srcEl.textContent = '';
+    if (sources.length === 0) {
+      var noSrc = document.createElement('div');
+      noSrc.className = 'text-muted';
+      noSrc.textContent = 'No data sources registered.';
+      srcEl.appendChild(noSrc);
+    } else {
+      sources.forEach(function(src) {
+        var row = document.createElement('div');
+        row.style.cssText = 'display:flex;align-items:center;gap:12px;padding:8px 0;border-bottom:1px solid var(--border)';
+        var name = document.createElement('a');
+        name.href = '/view/graph/' + encodeURIComponent(src.name);
+        name.target = '_blank';
+        name.style.cssText = 'font-weight:600;font-size:13px';
+        name.textContent = src.name;
+        var cat = document.createElement('span');
+        cat.className = 'badge badge-muted';
+        cat.style.cssText = 'font-size:10px';
+        cat.textContent = src.category || 'data';
+        var types = document.createElement('span');
+        types.className = 'text-muted';
+        types.style.fontSize = '12px';
+        types.textContent = (src.node_types || []).join(', ');
+        row.appendChild(name);
+        row.appendChild(cat);
+        row.appendChild(types);
+        srcEl.appendChild(row);
+      });
+    }
+  }).catch(function(err) {
+    console.error('loadViews error:', err);
+    var cfgEl = document.getElementById('views-configs-list');
+    cfgEl.textContent = 'Failed to load views.';
+    var srcEl = document.getElementById('views-sources-list');
+    srcEl.textContent = '';
+  });
 }
 
 /* ══════════════════════════════════════════════════════════════════════════
