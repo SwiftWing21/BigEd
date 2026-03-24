@@ -1644,6 +1644,17 @@ try:
         layout_hint="tree",
         metrics=["file_count", "total_size_mb"],
     )
+    view_registry.register_source(
+        name="universe",
+        category="fleet",
+        node_types=["agent", "skill", "task", "folder", "model", "config", "message"],
+        edge_types=["runs", "writes", "reads", "assigned", "uses_model", "communicates", "costs"],
+        data_endpoint="/api/views/graph/universe",
+        icon="globe",
+        color="#7c3aed",
+        layout_hint="cluster",
+        metrics=["node_count", "edge_count"],
+    )
 except ImportError:
     pass  # views module optional
 

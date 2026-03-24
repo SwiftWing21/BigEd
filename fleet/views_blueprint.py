@@ -219,6 +219,8 @@ def _fetch_live_source_data(src_name: str, source: dict) -> dict:
             nodes, edges = _graph_autoresearch(db)
         elif src_name == "knowledge":
             nodes, edges = _graph_knowledge(db)
+        elif src_name == "universe":
+            nodes, edges = _graph_universe(db)
         else:
             # Fallback: metadata-only nodes
             nodes = [
@@ -720,5 +722,206 @@ def _graph_knowledge(db) -> tuple:
                 "type": "reads",
                 "weight": 1,
             })
+
+    return nodes, edges
+
+
+def _graph_universe(db) -> tuple:
+    """Full-program graph: agents, skills, tasks, folders, models, messages, config."""
+    nodes = []
+    edges = []
+
+    # Track IDs to avoid duplicates
+    seen = set()
+
+    def _add_node(node_id, **kwargs):
+        if node_id not in seen:
+            seen.add(node_id)
+            nodes.append({"id": node_id, **kwargs})
+
+    def _add_edge(src, tgt, etype, weight=1):
+        edges.append({"source": src, "target": tgt, "type": etype, "weight": weight})
+
+    knowledge_dir = FLEET_DIR / "knowledge"
+    agents = []
+
+    try:
+        # ── 1. AGENTS (live from DB) ────────────────────────────────────
+        with db.get_conn() as conn:
+            agents = conn.execute("""
+                SELECT name, role, status, current_task_id
+                FROM agents
+                WHERE last_heartbeat >= datetime('now', '-300 seconds')
+                ORDER BY name
+            """).fetchall()
+
+        for a in agents:
+            aid = f"agent:{a['name']}"
+            _add_node(aid, type="agent", source="universe",
+                      label=a["name"], status=a["status"] or "IDLE",
+                      metrics={"role": a["role"] or ""})
+
+        # ── 2. SKILLS (all registered) ──────────────────────────────────
+        skills_dir = FLEET_DIR / "skills"
+        if skills_dir.exists():
+            import importlib
+            import sys
+            sys.path.insert(0, str(FLEET_DIR))
+            for f in sorted(skills_dir.glob("*.py")):
+                if f.name.startswith("_"):
+                    continue
+                mod_name = f.stem
+                sid = f"skill:{mod_name}"
+                try:
+                    mod = importlib.import_module(f"skills.{mod_name}")
+                    skill_name = getattr(mod, "SKILL_NAME", mod_name)
+                    net = getattr(mod, "REQUIRES_NETWORK", False)
+                    _add_node(sid, type="skill", source="universe",
+                              label=skill_name, status="ACTIVE",
+                              metrics={"network": net})
+                except Exception:
+                    _add_node(sid, type="skill", source="universe",
+                              label=mod_name, status="ERROR")
+
+        # ── 3. RECENT TASKS (last 200) ─────────────────────────────────
+        with db.get_conn() as conn:
+            tasks = conn.execute("""
+                SELECT id, type, status, assigned_to, created_at
+                FROM tasks
+                WHERE created_at >= datetime('now', '-24 hours')
+                ORDER BY id DESC LIMIT 200
+            """).fetchall()
+
+        for t in tasks:
+            tid = f"task:{t['id']}"
+            _add_node(tid, type="task", source="universe",
+                      label=f"#{t['id']} {t['type'] or '?'}",
+                      status=t["status"] or "PENDING")
+            # Task → agent (assigned)
+            if t["assigned_to"]:
+                agent_id = f"agent:{t['assigned_to']}"
+                _add_edge(agent_id, tid, "assigned", 2)
+            # Task → skill
+            if t["type"]:
+                skill_id = f"skill:{t['type']}"
+                _add_edge(tid, skill_id, "runs", 1)
+
+        # ── 4. KNOWLEDGE FOLDERS (with file counts) ────────────────────
+        if knowledge_dir.exists():
+            for entry in sorted(knowledge_dir.iterdir()):
+                if entry.is_dir():
+                    try:
+                        count = sum(1 for _ in entry.rglob("*") if _.is_file())
+                    except Exception:
+                        count = 0
+                    fid = f"folder:{entry.name}"
+                    _add_node(fid, type="folder", source="universe",
+                              label=f"knowledge/{entry.name}",
+                              status="ACTIVE" if count > 0 else "IDLE",
+                              metrics={"file_count": count})
+
+        # ── 5. MODELS (from Ollama / hw_state.json) ────────────────────
+        try:
+            import json as _json
+            hw_path = FLEET_DIR / "hw_state.json"
+            if hw_path.exists():
+                hw = _json.loads(hw_path.read_text(encoding="utf-8"))
+                loaded = hw.get("loaded_models", [])
+                if isinstance(loaded, list):
+                    for m in loaded:
+                        name = m if isinstance(m, str) else m.get("name", "unknown")
+                        mid = f"model:{name}"
+                        _add_node(mid, type="model", source="universe",
+                                  label=name, status="ACTIVE")
+                # Also get configured models from fleet.toml
+                from config import load_config
+                cfg = load_config()
+                for tier_name, model_name in cfg.get("models", {}).get("tiers", {}).items():
+                    mid = f"model:{model_name}"
+                    _add_node(mid, type="model", source="universe",
+                              label=f"{model_name} ({tier_name})", status="IDLE")
+        except Exception:
+            log.warning("universe: model data failed", exc_info=True)
+
+        # ── 6. RECENT MESSAGES (agent-to-agent, last 100) ──────────────
+        with db.get_conn() as conn:
+            msgs = conn.execute("""
+                SELECT from_agent, channel, COUNT(*) as n
+                FROM messages
+                WHERE created_at >= datetime('now', '-24 hours')
+                GROUP BY from_agent, channel
+                ORDER BY n DESC LIMIT 50
+            """).fetchall()
+
+        for m in msgs:
+            if m["from_agent"]:
+                agent_id = f"agent:{m['from_agent']}"
+                chan_id = f"channel:{m['channel'] or 'fleet'}"
+                _add_node(chan_id, type="message", source="universe",
+                          label=f"#{m['channel'] or 'fleet'}", status="ACTIVE")
+                _add_edge(agent_id, chan_id, "communicates", m["n"])
+
+        # ── 7. USAGE/COST (skill → model, last 24h) ────────────────────
+        with db.get_conn() as conn:
+            usage = conn.execute("""
+                SELECT skill, model, SUM(cost_usd) as cost, COUNT(*) as calls
+                FROM usage
+                WHERE timestamp >= datetime('now', '-24 hours')
+                GROUP BY skill, model
+                ORDER BY cost DESC LIMIT 100
+            """).fetchall()
+
+        for u in usage:
+            if u["skill"] and u["model"]:
+                skill_id = f"skill:{u['skill']}"
+                model_id = f"model:{u['model']}"
+                _add_node(model_id, type="model", source="universe",
+                          label=u["model"], status="ACTIVE")
+                _add_edge(skill_id, model_id, "uses_model",
+                          max(1, int((u["cost"] or 0) * 1000)))
+
+        # ── 8. CROSS-SOURCE EDGES (the glue) ───────────────────────────
+        # Import the skill I/O map from the knowledge graph
+        for skill_name, io in _SKILL_IO_MAP.items():
+            skill_id = f"skill:{skill_name}"
+            # Skill → output folder
+            output = io.get("output")
+            if output:
+                folder_key = output.split("/")[0]
+                folder_id = f"folder:{folder_key}"
+                try:
+                    existing_dirs = [e.name for e in knowledge_dir.iterdir()] if knowledge_dir.exists() else []
+                except Exception:
+                    existing_dirs = []
+                if folder_key in existing_dirs:
+                    _add_edge(skill_id, folder_id, "writes", 2)
+            # Input folder → skill
+            for inp in io.get("input", []):
+                inp_key = inp.split("/")[0]
+                inp_id = f"folder:{inp_key}"
+                _add_edge(inp_id, skill_id, "reads", 1)
+            # Agent role → skill
+            agent_role = io.get("agent")
+            if agent_role:
+                # Find actual agents with this role
+                for a in agents:
+                    if a["role"] == agent_role:
+                        _add_edge(f"agent:{a['name']}", skill_id, "runs", 1)
+
+        # ── 9. CONFIG SECTIONS (from fleet.toml) ───────────────────────
+        try:
+            from config import load_config
+            cfg = load_config()
+            for section in list(cfg.keys())[:20]:  # Top 20 config sections
+                if isinstance(cfg[section], dict):
+                    cid = f"config:{section}"
+                    _add_node(cid, type="config", source="universe",
+                              label=f"[{section}]", status="IDLE",
+                              metrics={"keys": len(cfg[section])})
+        except Exception:
+            pass
+
+    except Exception:
+        log.warning("universe graph failed", exc_info=True)
 
     return nodes, edges
