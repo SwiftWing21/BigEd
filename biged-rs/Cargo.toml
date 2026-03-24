@@ -23,6 +23,7 @@ anyhow = "1"
 nvml-wrapper = "0.11"
 reqwest = { version = "0.12", features = ["json"] }
 dashmap = "6"
+pyo3 = { version = "0.28", features = ["auto-initialize"] }
 chrono = { version = "0.4", features = ["serde"] }
 axum = "0.8"
 tower = "0.5"
@@ -40,6 +41,7 @@ rust-version.workspace = true
 biged-core = { path = "crates/biged-core" }
 biged-supervisor = { path = "crates/biged-supervisor" }
 biged-server = { path = "crates/biged-server" }
+biged-bridge = { path = "crates/biged-bridge" }
 clap.workspace = true
 tokio.workspace = true
 tracing.workspace = true
