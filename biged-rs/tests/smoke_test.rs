@@ -1,5 +1,7 @@
 use biged_core::config::FleetConfig;
 use biged_core::db::Db;
+use std::sync::Arc;
+use tokio::sync::RwLock;
 
 #[test]
 fn smoke_config_parses() {
@@ -43,4 +45,18 @@ async fn smoke_event_bus() {
         event,
         biged_supervisor::events::FleetEvent::ConfigReloaded
     ));
+}
+
+#[tokio::test]
+async fn smoke_server_router_builds() {
+    let db = Db::in_memory().unwrap();
+    let (tx, _rx) = biged_supervisor::events::create_event_bus(10);
+    let state = biged_server::AppState {
+        db,
+        events: tx,
+        config: Arc::new(RwLock::new(FleetConfig::default())),
+        fleet_dir: std::path::PathBuf::from("."),
+    };
+    let _router = biged_server::router(state);
+    // If we get here, router construction succeeded
 }

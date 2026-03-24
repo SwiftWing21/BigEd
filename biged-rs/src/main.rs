@@ -39,6 +39,26 @@ async fn main() -> anyhow::Result<()> {
             tracing::info!("Starting BigEd supervisor");
             biged_supervisor::supervisor::run().await?;
         }
+        Some(Commands::Serve) => {
+            tracing::info!("Starting BigEd HTTP server");
+            let fleet_dir = std::env::current_dir()?.join("fleet");
+            let config_path = fleet_dir.join("fleet.toml");
+            let config = if config_path.exists() {
+                biged_core::config::FleetConfig::from_file(&config_path)?
+            } else {
+                biged_core::config::FleetConfig::default()
+            };
+            let db_path = fleet_dir.join("fleet.db");
+            let db = biged_core::db::Db::open(&db_path)?;
+            let (tx, _rx) = biged_supervisor::events::create_event_bus(256);
+            let state = biged_server::AppState {
+                db,
+                events: tx,
+                config: std::sync::Arc::new(tokio::sync::RwLock::new(config)),
+                fleet_dir,
+            };
+            biged_server::run(state).await?;
+        }
         Some(Commands::Migrate) => {
             tracing::info!("Running database migration");
         }
