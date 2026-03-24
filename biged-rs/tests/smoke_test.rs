@@ -60,3 +60,16 @@ async fn smoke_server_router_builds() {
     let _router = biged_server::router(state);
     // If we get here, router construction succeeded
 }
+
+#[test]
+fn smoke_bridge_config() {
+    let config = biged_bridge::BridgeConfig::new(std::path::PathBuf::from("fleet"));
+    assert_eq!(
+        config.timeout_for("code_write"),
+        std::time::Duration::from_secs(900)
+    );
+    assert_eq!(
+        config.timeout_for("unknown_skill"),
+        std::time::Duration::from_secs(600)
+    );
+}

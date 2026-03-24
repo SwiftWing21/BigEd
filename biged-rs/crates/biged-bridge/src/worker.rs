@@ -81,9 +81,7 @@ impl Worker {
 
         let result = tokio::time::timeout(
             timeout,
-            tokio::task::spawn_blocking(move || {
-                runner.run_skill(&skill_name, &payload, &config)
-            }),
+            tokio::task::spawn_blocking(move || runner.run_skill(&skill_name, &payload, &config)),
         )
         .await;
 
@@ -92,7 +90,10 @@ impl Worker {
             Ok(Err(join_err)) => Err(anyhow::anyhow!("Skill task panicked: {}", join_err)),
             Err(_) => {
                 error!("Skill '{}' timed out after {:?}", skill, timeout);
-                Err(anyhow::anyhow!("Skill timed out after {} seconds", timeout.as_secs()))
+                Err(anyhow::anyhow!(
+                    "Skill timed out after {} seconds",
+                    timeout.as_secs()
+                ))
             }
         }
     }

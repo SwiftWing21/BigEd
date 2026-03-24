@@ -107,16 +107,22 @@ async fn test_worker_processes_task() {
     let task_id = db.post_task("autoresearch_analyze", "{}", 5, None).unwrap();
 
     let config = BridgeConfig::new(fd.clone());
-    let worker = Worker::new(db.clone(), config, serde_json::json!({})).expect("worker should init");
+    let worker =
+        Worker::new(db.clone(), config, serde_json::json!({})).expect("worker should init");
 
     let processed = worker.process_one("coder").await;
-    assert!(processed.is_ok(), "process_one failed: {:?}", processed.err());
+    assert!(
+        processed.is_ok(),
+        "process_one failed: {:?}",
+        processed.err()
+    );
     assert!(processed.unwrap(), "should have processed a task");
 
     let task = db.get_task(task_id).unwrap().unwrap();
     assert!(
         task.status == TaskStatus::Done || task.status == TaskStatus::Failed,
-        "task should be done or failed, got: {:?}", task.status
+        "task should be done or failed, got: {:?}",
+        task.status
     );
 }
 

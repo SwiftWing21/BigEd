@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 use crate::error::{CoreError, Result};
 
@@ -10,7 +10,7 @@ use crate::error::{CoreError, Result};
 ///
 /// Every section uses `#[serde(default)]` so the parser tolerates missing keys,
 /// and `#[serde(flatten)] extra` captures unknown sections without error.
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct FleetConfig {
     pub fleet: FleetSection,
@@ -59,7 +59,7 @@ impl FleetConfig {
 
 // ── [fleet] ─────────────────────────────────────────────────────────────────
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct FleetSection {
     pub offline_mode: bool,
@@ -112,7 +112,7 @@ impl Default for FleetSection {
 
 // ── [models] ────────────────────────────────────────────────────────────────
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct ModelsSection {
     pub local: String,
@@ -146,7 +146,7 @@ impl Default for ModelsSection {
 
 // ── [dashboard] ─────────────────────────────────────────────────────────────
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct DashboardSection {
     pub enabled: bool,
@@ -176,7 +176,7 @@ impl Default for DashboardSection {
 
 // ── [workers] ────────────────────────────────────────────────────────────────
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct WorkersSection {
     pub max_workers: u32,
@@ -204,7 +204,7 @@ impl Default for WorkersSection {
 
 // ── [thermal] ────────────────────────────────────────────────────────────────
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct ThermalSection {
     pub gpu_target_c: u32,
@@ -244,7 +244,7 @@ impl Default for ThermalSection {
 
 // ── [budgets] ────────────────────────────────────────────────────────────────
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct BudgetsSection {
     pub period: String,
@@ -267,7 +267,7 @@ impl Default for BudgetsSection {
 
 // ── [backup] ─────────────────────────────────────────────────────────────────
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct BackupSection {
     pub enabled: bool,

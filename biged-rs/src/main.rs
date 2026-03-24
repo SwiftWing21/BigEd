@@ -59,6 +59,22 @@ async fn main() -> anyhow::Result<()> {
             };
             biged_server::run(state).await?;
         }
+        Some(Commands::Worker) => {
+            tracing::info!("Starting BigEd worker");
+            let fleet_dir = std::env::current_dir()?.join("fleet");
+            let config_path = fleet_dir.join("fleet.toml");
+            let fleet_config = if config_path.exists() {
+                biged_core::config::FleetConfig::from_file(&config_path)?
+            } else {
+                biged_core::config::FleetConfig::default()
+            };
+            let db_path = fleet_dir.join("fleet.db");
+            let db = biged_core::db::Db::open(&db_path)?;
+            let bridge_config = biged_bridge::BridgeConfig::new(fleet_dir);
+            let fleet_config_json = serde_json::to_value(&fleet_config)?;
+            let worker = biged_bridge::worker::Worker::new(db, bridge_config, fleet_config_json)?;
+            worker.run_loop("coder").await?;
+        }
         Some(Commands::Migrate) => {
             tracing::info!("Running database migration");
         }
