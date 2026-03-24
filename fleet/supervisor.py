@@ -1300,13 +1300,14 @@ def main():
                 log.warning(f"OpenClaw died (exit={openclaw_proc.returncode}) — restarting")
                 start_openclaw(config)
         if not air_gap:
-            if dashboard_proc and dashboard_proc.poll() is not None:
+            _dp = dashboard_proc  # read global once — avoids Python 3.14 UnboundLocalError
+            if _dp and _dp.poll() is not None:
                 # Only respawn if nothing else is serving the port (boot.py may own it)
                 if not _dashboard_port_alive(config):
-                    log.warning(f"Dashboard died (exit={dashboard_proc.returncode}) — restarting")
+                    log.warning(f"Dashboard died (exit={_dp.returncode}) — restarting")
                     start_dashboard(config)
                 else:
-                    dashboard_proc = None  # boot.py owns it, stop tracking
+                    stop_dashboard()  # boot.py owns it, stop tracking
 
         # Respawn Dr. Ders if crashed
         if hw_supervisor_proc and hw_supervisor_proc.poll() is not None:
