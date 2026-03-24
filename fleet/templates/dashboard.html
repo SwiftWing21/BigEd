@@ -828,6 +828,19 @@ textarea.input {
   background: var(--card);
 }
 
+/* ── Neural Lane Graph ────────────────────────────────────────────────────── */
+.neural-lane-wrap {
+  position: relative;
+  height: 280px;
+  background: linear-gradient(180deg, rgba(15,23,42,0.6) 0%, rgba(30,41,59,0.4) 100%);
+  border-radius: 8px;
+  overflow: hidden;
+}
+.neural-lane-wrap canvas {
+  width: 100% !important;
+  height: 100% !important;
+}
+
 /* ── Chart Container ──────────────────────────────────────────────────────── */
 .chart-wrap {
   position: relative;
@@ -1299,20 +1312,21 @@ textarea.input {
     </div>
   </div>
 
-  <!-- Activity Overview + Thermal Row -->
+  <!-- Neural Lane Graph + Thermal Row -->
   <div class="grid-2 mb-24">
     <div class="card">
       <div class="card-header">
-        <span class="card-title">Activity Overview</span>
-        <button class="btn btn-ghost btn-sm" onclick="loadActivityChart()">&#8635; Refresh</button>
+        <span class="card-title">Neural Activity</span>
+        <button class="btn btn-ghost btn-sm" onclick="loadNeuralLanes()">&#8635; Refresh</button>
       </div>
-      <div class="chart-wrap">
-        <canvas id="chart-activity-bubble"></canvas>
+      <div class="neural-lane-wrap">
+        <canvas id="neural-lane-canvas"></canvas>
       </div>
       <div class="chart-legend">
-        <span class="chart-legend-item"><span class="chart-legend-dot" style="background:var(--success)"></span> Done</span>
-        <span class="chart-legend-item"><span class="chart-legend-dot" style="background:var(--danger)"></span> Failed</span>
-        <span class="chart-legend-item"><span class="chart-legend-dot" style="background:var(--info)"></span> Pending</span>
+        <span class="chart-legend-item"><span class="chart-legend-dot" style="background:#10b981"></span> Agents</span>
+        <span class="chart-legend-item"><span class="chart-legend-dot" style="background:#a78bfa"></span> Models</span>
+        <span class="chart-legend-item"><span class="chart-legend-dot" style="background:#f59e0b"></span> Skills</span>
+        <span class="chart-legend-item"><span class="chart-legend-dot" style="background:#06b6d4"></span> Knowledge</span>
       </div>
     </div>
     <div class="card">
@@ -1953,54 +1967,269 @@ function loadThermal() {
   }).catch(function() {});
 }
 
-function loadActivityChart() {
-  apiFetch('/api/activity').then(function(data) {
-    var ctx = document.getElementById('chart-activity-bubble');
-    if (!ctx) return;
-    if (_charts.actBubble) _charts.actBubble.destroy();
+/* ── Neural Lane Graph ──────────────────────────────────────────────────── */
+var _neuralAnim = null;
+var _neuralData = null;
+var _neuralPulses = [];
 
-    var labels = data.map(function(d) { return d.day.slice(5); });
-    var doneArr = data.map(function(d) { return d.DONE || 0; });
-    var failArr = data.map(function(d) { return d.FAILED || 0; });
-    var pendArr = data.map(function(d) { return d.PENDING || 0; });
-
-    function toBubbles(arr, yOff) {
-      return arr.map(function(v, i) { return { x: i, y: v + yOff, r: Math.max(3, Math.sqrt(v) * 3) }; });
+function loadNeuralLanes() {
+  apiFetch('/api/activity/lanes?hours=24').then(function(data) {
+    _neuralData = data;
+    _neuralPulses = [];
+    // Seed initial pulses from timeline
+    if (data.timeline) {
+      data.timeline.forEach(function(t, i) {
+        _neuralPulses.push({
+          agent: t.agent, skill: t.skill, status: t.status,
+          x: 0.3 + Math.random() * 0.6, alpha: 0.3 + Math.random() * 0.5,
+          speed: 0.002 + Math.random() * 0.003, size: 3 + Math.random() * 4
+        });
+      });
     }
-
-    _charts.actBubble = new Chart(ctx, {
-      type: 'bubble',
-      data: {
-        labels: labels,
-        datasets: [
-          { label: 'Done', data: toBubbles(doneArr, 0), backgroundColor: 'rgba(16,185,129,0.5)', borderColor: 'rgba(16,185,129,0.8)' },
-          { label: 'Failed', data: toBubbles(failArr, 0), backgroundColor: 'rgba(239,68,68,0.5)', borderColor: 'rgba(239,68,68,0.8)' },
-          { label: 'Pending', data: toBubbles(pendArr, 0), backgroundColor: 'rgba(59,130,246,0.5)', borderColor: 'rgba(59,130,246,0.8)' },
-        ]
-      },
-      options: {
-        responsive: true,
-        maintainAspectRatio: false,
-        plugins: {
-          legend: { display: false },
-          tooltip: {
-            callbacks: {
-              title: function(items) { return labels[items[0].dataIndex] || ''; },
-              label: function(item) { return item.dataset.label + ': ' + item.raw.y; }
-            }
-          }
-        },
-        scales: {
-          x: {
-            type: 'linear',
-            ticks: { callback: function(v) { return labels[v] || ''; }, color: chartMuted(), maxTicksLimit: 10 },
-            grid: { color: chartBorder() }
-          },
-          y: { ticks: { color: chartMuted() }, grid: { color: chartBorder() } }
-        }
-      }
-    });
+    if (!_neuralAnim) {
+      _neuralAnim = requestAnimationFrame(renderNeuralFrame);
+    }
   }).catch(function() {});
+}
+
+function renderNeuralFrame() {
+  var canvas = document.getElementById('neural-lane-canvas');
+  if (!canvas || !_neuralData) { _neuralAnim = null; return; }
+  var rect = canvas.parentElement.getBoundingClientRect();
+  var dpr = window.devicePixelRatio || 1;
+  canvas.width = rect.width * dpr;
+  canvas.height = rect.height * dpr;
+  var ctx = canvas.getContext('2d');
+  ctx.scale(dpr, dpr);
+  var w = rect.width, h = rect.height;
+  ctx.clearRect(0, 0, w, h);
+
+  var lanes = _neuralData.lanes || [];
+  var skills = _neuralData.skills || [];
+  var folders = _neuralData.folders || [];
+  var channels = _neuralData.channels || [];
+  var edges = _neuralData.edges || [];
+
+  if (lanes.length === 0 && skills.length === 0) {
+    ctx.fillStyle = 'rgba(148,163,184,0.5)';
+    ctx.font = '13px system-ui, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('No activity in last 24h', w / 2, h / 2);
+    _neuralAnim = null; return;
+  }
+
+  // Layout: left labels | bars | right sidebar (skills/folders)
+  var labelW = 85, barStart = labelW + 8, sideW = 110;
+  var barW = w - barStart - sideW - 10;
+  var maxLanes = Math.min(lanes.length, 12);
+  var laneH = Math.min(24, (h - 30) / Math.max(maxLanes, 1));
+  var laneGap = 3;
+  var topOff = 12;
+  var maxTotal = Math.max.apply(null, lanes.map(function(l) { return l.total; })) || 1;
+
+  // Kind colors
+  var kindColor = { agent: '#10b981', model: '#a78bfa' };
+  var statusColor = { done: '#10b981', failed: '#ef4444', running: '#3b82f6' };
+
+  // ── DRAW LANES ──────────────────────────────────────────────────
+  var laneMap = {};
+  for (var i = 0; i < maxLanes; i++) {
+    var lane = lanes[i];
+    var y = topOff + i * (laneH + laneGap);
+    var kc = kindColor[lane.kind] || '#64748b';
+
+    // Kind indicator dot
+    ctx.fillStyle = kc;
+    ctx.globalAlpha = 0.8;
+    ctx.beginPath();
+    ctx.arc(labelW + 2, y + laneH / 2, 3, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.globalAlpha = 1;
+
+    // Lane track
+    ctx.fillStyle = 'rgba(255,255,255,0.03)';
+    ctx.beginPath();
+    ctx.roundRect(barStart, y, barW, laneH, 3);
+    ctx.fill();
+
+    // Stacked bar segments
+    var scale = barW / maxTotal;
+    var cx = barStart;
+    [{ v: lane.done, c: statusColor.done },
+     { v: lane.failed, c: statusColor.failed },
+     { v: lane.running, c: statusColor.running }].forEach(function(seg) {
+      if (seg.v <= 0) return;
+      var segW = Math.max(seg.v * scale, 2);
+      ctx.globalAlpha = 0.65;
+      ctx.fillStyle = seg.c;
+      ctx.beginPath();
+      ctx.roundRect(cx, y + 2, segW, laneH - 4, 2);
+      ctx.fill();
+      ctx.globalAlpha = 1;
+      cx += segW;
+    });
+
+    // Label
+    var isActive = lane.running > 0;
+    ctx.fillStyle = isActive ? '#e2e8f0' : '#94a3b8';
+    ctx.font = (isActive ? 'bold ' : '') + '10px system-ui, sans-serif';
+    ctx.textAlign = 'right';
+    ctx.textBaseline = 'middle';
+    var label = lane.agent.length > 12 ? lane.agent.slice(0, 11) + '\u2026' : lane.agent;
+    ctx.fillText(label, labelW - 4, y + laneH / 2);
+
+    // Count + cost badge
+    ctx.fillStyle = '#64748b';
+    ctx.font = '9px system-ui, sans-serif';
+    ctx.textAlign = 'left';
+    var badge = lane.total + '';
+    if (lane.cost) badge += ' $' + lane.cost;
+    if (lane.tokens) badge += ' ' + Math.round(lane.tokens / 1000) + 'k tok';
+    ctx.fillText(badge, cx + 5, y + laneH / 2);
+
+    lane._y = y;
+    lane._laneH = laneH;
+    laneMap[lane.agent] = i;
+  }
+
+  // ── NEURAL EDGES (bezier curves between lanes sharing skills) ───
+  ctx.globalAlpha = 0.1;
+  ctx.strokeStyle = '#818cf8';
+  ctx.lineWidth = 1;
+  edges.forEach(function(e) {
+    var si = laneMap[e.source], ti = laneMap[e.target];
+    if (si === undefined || ti === undefined) return;
+    var sy = topOff + si * (laneH + laneGap) + laneH / 2;
+    var ty = topOff + ti * (laneH + laneGap) + laneH / 2;
+    var mx = barStart - 12;
+    ctx.beginPath();
+    ctx.moveTo(barStart, sy);
+    ctx.bezierCurveTo(mx, sy, mx, ty, barStart, ty);
+    ctx.stroke();
+  });
+  ctx.globalAlpha = 1;
+
+  // ── RIGHT SIDEBAR: top skills + knowledge folders ───────────────
+  var sideX = barStart + barW + 12;
+  var sy = topOff;
+
+  // Top skills
+  ctx.fillStyle = '#f59e0b';
+  ctx.font = 'bold 9px system-ui, sans-serif';
+  ctx.textAlign = 'left';
+  ctx.fillText('TOP SKILLS', sideX, sy + 4);
+  sy += 12;
+  var maxSkills = Math.min(skills.length, 5);
+  for (var si = 0; si < maxSkills; si++) {
+    var sk = skills[si];
+    var skName = sk.skill.length > 13 ? sk.skill.slice(0, 12) + '\u2026' : sk.skill;
+    ctx.fillStyle = '#94a3b8';
+    ctx.font = '9px system-ui, sans-serif';
+    ctx.fillText(skName, sideX, sy + 4);
+    // Mini bar
+    var skBarW = 40;
+    var skFill = Math.max(2, (sk.done / (sk.total || 1)) * skBarW);
+    ctx.fillStyle = 'rgba(245,158,11,0.15)';
+    ctx.fillRect(sideX + 70, sy - 2, skBarW, 10);
+    ctx.fillStyle = sk.failed > 0 ? '#ef4444' : '#f59e0b';
+    ctx.globalAlpha = 0.7;
+    ctx.fillRect(sideX + 70, sy - 2, skFill, 10);
+    ctx.globalAlpha = 1;
+    ctx.fillStyle = '#64748b';
+    ctx.font = '8px system-ui, sans-serif';
+    ctx.textAlign = 'right';
+    ctx.fillText(sk.total + '', sideX + 70 + skBarW + 14, sy + 4);
+    ctx.textAlign = 'left';
+    sy += 14;
+  }
+
+  // Knowledge folders
+  if (folders.length > 0) {
+    sy += 6;
+    ctx.fillStyle = '#06b6d4';
+    ctx.font = 'bold 9px system-ui, sans-serif';
+    ctx.fillText('KNOWLEDGE', sideX, sy + 4);
+    sy += 12;
+    var maxFolders = Math.min(folders.length, 4);
+    for (var fi = 0; fi < maxFolders; fi++) {
+      var fo = folders[fi];
+      ctx.fillStyle = '#94a3b8';
+      ctx.font = '9px system-ui, sans-serif';
+      ctx.fillText(fo.name.length > 11 ? fo.name.slice(0, 10) + '\u2026' : fo.name, sideX, sy + 4);
+      ctx.fillStyle = '#64748b';
+      ctx.font = '8px system-ui, sans-serif';
+      ctx.textAlign = 'right';
+      ctx.fillText(fo.files + ' files', sideX + sideW - 8, sy + 4);
+      ctx.textAlign = 'left';
+      sy += 13;
+    }
+  }
+
+  // Message channels
+  if (channels.length > 0) {
+    sy += 6;
+    ctx.fillStyle = '#818cf8';
+    ctx.font = 'bold 9px system-ui, sans-serif';
+    ctx.fillText('CHANNELS', sideX, sy + 4);
+    sy += 12;
+    var maxCh = Math.min(channels.length, 3);
+    for (var ci = 0; ci < maxCh; ci++) {
+      var ch = channels[ci];
+      ctx.fillStyle = '#94a3b8';
+      ctx.font = '9px system-ui, sans-serif';
+      ctx.fillText('#' + ch.channel, sideX, sy + 4);
+      ctx.fillStyle = '#64748b';
+      ctx.font = '8px system-ui, sans-serif';
+      ctx.textAlign = 'right';
+      ctx.fillText(ch.count + ' msgs', sideX + sideW - 8, sy + 4);
+      ctx.textAlign = 'left';
+      sy += 13;
+    }
+  }
+
+  // ── ANIMATED PULSES ─────────────────────────────────────────────
+  _neuralPulses.forEach(function(p) {
+    var li = laneMap[p.agent];
+    if (li === undefined) return;
+    var lane = lanes[li];
+    var py = lane._y + lane._laneH / 2;
+    var px = barStart + p.x * barW;
+    var col = statusColor[p.status.toLowerCase()] || statusColor.done;
+
+    // Glow
+    ctx.globalAlpha = p.alpha * 0.35;
+    ctx.fillStyle = col;
+    ctx.beginPath();
+    ctx.arc(px, py, p.size * 2.5, 0, Math.PI * 2);
+    ctx.fill();
+    // Core
+    ctx.globalAlpha = p.alpha;
+    ctx.beginPath();
+    ctx.arc(px, py, p.size, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.globalAlpha = 1;
+
+    // Advance
+    p.x += p.speed;
+    p.alpha -= 0.003;
+    if (p.x > 1.1 || p.alpha <= 0) {
+      p.x = -0.05;
+      p.alpha = 0.3 + Math.random() * 0.5;
+      p.speed = 0.002 + Math.random() * 0.003;
+      var active = lanes.filter(function(l) { return l.total > 0; });
+      if (active.length > 0) {
+        var rl = active[Math.floor(Math.random() * active.length)];
+        p.agent = rl.agent;
+        p.status = rl.running > 0 ? 'RUNNING' : (rl.failed > 0 && Math.random() < 0.2 ? 'FAILED' : 'DONE');
+      }
+    }
+  });
+
+  _neuralAnim = requestAnimationFrame(renderNeuralFrame);
+}
+
+function loadActivityChart() {
+  loadNeuralLanes();
 }
 
 function loadDashSettings() {

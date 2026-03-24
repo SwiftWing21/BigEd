@@ -508,6 +508,134 @@ def api_activity():
     return jsonify(result)
 
 
+@app.route("/api/activity/lanes")
+def api_activity_lanes():
+    """Universe-level activity data for neural lane graph visualization.
+
+    Returns agent lanes, skill nodes, model nodes, knowledge folders,
+    message channels, and usage cost — matching the universe graph view.
+    """
+    hours = request.args.get("hours", 24, type=int)
+
+    # ── 1. AGENT LANES (tasks by agent) ─────────────────────────────
+    agent_rows = query("""
+        SELECT assigned_to, type, status, COUNT(*) as n,
+               MAX(created_at) as last_active
+        FROM tasks
+        WHERE created_at >= datetime('now', ? || ' hours')
+          AND assigned_to IS NOT NULL
+        GROUP BY assigned_to, type, status
+        ORDER BY assigned_to, n DESC
+    """, (f"-{hours}",))
+    lanes = {}
+    for r in agent_rows:
+        agent = r["assigned_to"]
+        if agent not in lanes:
+            lanes[agent] = {"agent": agent, "kind": "agent", "skills": {},
+                            "total": 0, "done": 0, "failed": 0, "running": 0,
+                            "last_active": r["last_active"]}
+        skill = r["type"] or "unknown"
+        lanes[agent]["skills"].setdefault(skill, 0)
+        lanes[agent]["skills"][skill] += r["n"]
+        lanes[agent]["total"] += r["n"]
+        st = r["status"].lower()
+        if st in ("done", "failed", "running"):
+            lanes[agent][st] += r["n"]
+
+    # ── 2. MODEL LANES (usage by model) ─────────────────────────────
+    model_rows = query("""
+        SELECT model, SUM(input_tokens + output_tokens) as tokens,
+               SUM(cost_usd) as cost, COUNT(*) as calls
+        FROM usage
+        WHERE created_at >= datetime('now', ? || ' hours')
+        GROUP BY model ORDER BY calls DESC
+    """, (f"-{hours}",))
+    for r in model_rows:
+        mid = "model:" + (r["model"] or "unknown")
+        lanes[mid] = {
+            "agent": r["model"] or "unknown", "kind": "model",
+            "total": r["calls"], "done": r["calls"], "failed": 0, "running": 0,
+            "tokens": r["tokens"] or 0,
+            "cost": round(r["cost"] or 0, 4),
+            "skills": {}, "last_active": None,
+        }
+
+    # ── 3. SKILL ACTIVITY (top skills by volume) ────────────────────
+    skill_rows = query("""
+        SELECT type, status, COUNT(*) as n
+        FROM tasks
+        WHERE created_at >= datetime('now', ? || ' hours')
+          AND type IS NOT NULL
+        GROUP BY type, status ORDER BY n DESC LIMIT 30
+    """, (f"-{hours}",))
+    skill_summary = {}
+    for r in skill_rows:
+        s = r["type"]
+        skill_summary.setdefault(s, {"skill": s, "done": 0, "failed": 0, "total": 0})
+        skill_summary[s]["total"] += r["n"]
+        if r["status"] == "DONE":
+            skill_summary[s]["done"] += r["n"]
+        elif r["status"] == "FAILED":
+            skill_summary[s]["failed"] += r["n"]
+
+    # ── 4. KNOWLEDGE FOLDERS ────────────────────────────────────────
+    knowledge_dir = Path(__file__).parent / "knowledge"
+    folders = []
+    if knowledge_dir.exists():
+        for entry in sorted(knowledge_dir.iterdir()):
+            if entry.is_dir() and entry.name != "__pycache__":
+                try:
+                    count = sum(1 for f in entry.rglob("*") if f.is_file())
+                except Exception:
+                    count = 0
+                if count > 0:
+                    folders.append({"name": entry.name, "files": count})
+
+    # ── 5. MESSAGE CHANNELS ─────────────────────────────────────────
+    msg_rows = query("""
+        SELECT channel, COUNT(*) as n
+        FROM messages
+        WHERE created_at >= datetime('now', ? || ' hours')
+        GROUP BY channel ORDER BY n DESC LIMIT 10
+    """, (f"-{hours}",))
+    channels = [{"channel": r["channel"] or "fleet", "count": r["n"]} for r in msg_rows]
+
+    # ── 6. NEURAL EDGES (agent↔skill, skill↔model) ─────────────────
+    edges = []
+    skill_agents = {}
+    for agent, data in lanes.items():
+        if data.get("kind") != "agent":
+            continue
+        for skill in data["skills"]:
+            skill_agents.setdefault(skill, []).append(agent)
+    for skill, agents in skill_agents.items():
+        if len(agents) > 1:
+            for i in range(len(agents) - 1):
+                edges.append({"source": agents[i], "target": agents[i + 1],
+                              "skill": skill, "type": "shared_skill"})
+
+    # ── 7. TIMELINE (recent pulses) ─────────────────────────────────
+    recent = query("""
+        SELECT id, assigned_to, type, status, created_at
+        FROM tasks
+        WHERE created_at >= datetime('now', '-2 hours')
+          AND assigned_to IS NOT NULL
+        ORDER BY created_at DESC LIMIT 50
+    """)
+    timeline = [{"id": r["id"], "agent": r["assigned_to"], "skill": r["type"],
+                 "status": r["status"], "time": r["created_at"]} for r in recent]
+
+    return jsonify({
+        "lanes": sorted(lanes.values(), key=lambda x: -x["total"]),
+        "skills": sorted(skill_summary.values(), key=lambda x: -x["total"]),
+        "folders": folders,
+        "channels": channels,
+        "edges": edges,
+        "timeline": timeline,
+        "hours": hours,
+    })
+
+
 @app.route("/api/skills")
 def api_skills():
     rows = query("""
