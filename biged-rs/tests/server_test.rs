@@ -99,3 +99,39 @@ async fn test_agents_endpoint() {
     let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
     assert!(!json.as_array().unwrap().is_empty());
 }
+
+// ── Task 4: Activity handlers ─────────────────────────────────────────────
+
+#[tokio::test]
+async fn test_activity_endpoint() {
+    let state = test_state();
+    state.db.post_task("test", "{}", 5, None).unwrap();
+    let app = biged_server::router(state);
+    let resp = app
+        .oneshot(Request::get("/api/activity").body(Body::empty()).unwrap())
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+}
+
+#[tokio::test]
+async fn test_agent_cards_endpoint() {
+    let state = test_state();
+    state.db.register_agent("w1", "coder").unwrap();
+    state.db.register_agent("w2", "researcher").unwrap();
+    let app = biged_server::router(state);
+    let resp = app
+        .oneshot(
+            Request::get("/api/agent-cards")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let body = axum::body::to_bytes(resp.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+    assert!(json.get("cards").is_some());
+}

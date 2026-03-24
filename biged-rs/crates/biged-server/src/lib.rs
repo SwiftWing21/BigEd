@@ -33,6 +33,19 @@ pub fn router(state: AppState) -> Router {
             axum::routing::get(handlers::fleet::tasks).post(handlers::fleet::post_task),
         )
         .route("/api/agents", axum::routing::get(handlers::fleet::agents))
+        // Activity
+        .route(
+            "/api/activity",
+            axum::routing::get(handlers::activity::activity),
+        )
+        .route(
+            "/api/agent-cards",
+            axum::routing::get(handlers::activity::agent_cards),
+        )
+        .route(
+            "/api/agents/performance",
+            axum::routing::get(handlers::activity::agents_performance),
+        )
         .with_state(state)
 }
 
