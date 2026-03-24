@@ -30,16 +30,13 @@ def _launcher():
 # Each probe returns True (valid), False (invalid), or None (could not reach).
 _VALIDATION_PROBES = {
     "ANTHROPIC_API_KEY": {
-        "url": "https://api.anthropic.com/v1/messages",
-        "method": "POST",
+        "url": "https://api.anthropic.com/v1/models",
+        "method": "GET",
         "headers_fn": lambda key: {
             "x-api-key": key,
             "anthropic-version": "2023-06-01",
-            "content-type": "application/json",
         },
-        # Minimal body — will return 400 (bad request) for valid key, 401 for invalid
-        "body": b'{"model":"claude-haiku-4-5-20250515","max_tokens":1,"messages":[{"role":"user","content":"x"}]}',
-        "valid_codes": {200, 400, 404, 429},  # 400 = valid key, bad request; 404 = model not found (key valid); 429 = rate limited
+        "valid_codes": {200},  # Models list — 200 = valid key, 401 = invalid
     },
     "GEMINI_API_KEY": {
         "url_fn": lambda key: f"https://generativelanguage.googleapis.com/v1beta/models?key={key}",
