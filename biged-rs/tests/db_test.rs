@@ -80,3 +80,68 @@ fn test_queue_depth() {
 
     assert_eq!(db.queue_depth().unwrap(), 3);
 }
+
+#[test]
+fn test_all_agents() {
+    let db = Db::in_memory().unwrap();
+    db.register_agent("a1", "coder").unwrap();
+    db.register_agent("a2", "researcher").unwrap();
+    let agents = db.all_agents().unwrap();
+    assert_eq!(agents.len(), 2);
+}
+
+#[test]
+fn test_task_counts_by_status() {
+    let db = Db::in_memory().unwrap();
+    db.post_task("a", "{}", 5, None).unwrap();
+    db.post_task("b", "{}", 5, None).unwrap();
+    db.register_agent("w1", "coder").unwrap();
+    db.claim_task("coder").unwrap();
+
+    let counts = db.task_counts_by_status().unwrap();
+    assert_eq!(*counts.get("PENDING").unwrap_or(&0), 1);
+    assert_eq!(*counts.get("RUNNING").unwrap_or(&0), 1);
+}
+
+#[test]
+fn test_task_counts_by_skill() {
+    let db = Db::in_memory().unwrap();
+    db.post_task("code_review", "{}", 5, None).unwrap();
+    db.post_task("code_review", "{}", 5, None).unwrap();
+    db.post_task("test_skill", "{}", 5, None).unwrap();
+
+    let counts = db.task_counts_by_skill().unwrap();
+    assert_eq!(counts.len(), 2);
+}
+
+#[test]
+fn test_recent_tasks() {
+    let db = Db::in_memory().unwrap();
+    db.post_task("a", "{}", 5, None).unwrap();
+    db.post_task("b", "{}", 5, None).unwrap();
+    db.post_task("c", "{}", 5, None).unwrap();
+
+    let tasks = db.recent_tasks(2).unwrap();
+    assert_eq!(tasks.len(), 2);
+}
+
+#[test]
+fn test_activity_by_day() {
+    let db = Db::in_memory().unwrap();
+    db.post_task("a", "{}", 5, None).unwrap();
+    db.register_agent("w1", "coder").unwrap();
+    db.claim_task("coder").unwrap();
+
+    let activity = db.activity_by_day(30).unwrap();
+    assert!(!activity.is_empty());
+}
+
+#[test]
+fn test_all_messages() {
+    let db = Db::in_memory().unwrap();
+    db.post_message("agent1", Some("agent2"), "fleet", "hello")
+        .unwrap();
+    let msgs = db.recent_messages("fleet", 10).unwrap();
+    assert_eq!(msgs.len(), 1);
+    assert_eq!(msgs[0].body, "hello");
+}
