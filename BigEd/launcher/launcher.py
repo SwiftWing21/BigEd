@@ -1263,7 +1263,9 @@ class BigEdCC(TrayManagerMixin, BootManagerMixin, CommTabMixin, OllamaManagerMix
             text_color=TEXT, anchor="w",
             corner_radius=SB_BTN_RADIUS,
             command=lambda: (self._sb_set_active(graph_wrapper, graph_accent),
-                             self._open_graph_view("fleet-overview")),
+                             self._open_graph_view(self._graph_view_var.get()
+                                                   if hasattr(self, '_graph_view_var')
+                                                   else "fleet-overview")),
         )
         self._btn_graph_view.pack(side="left", fill="both", expand=True)
         if not s["open"]:
@@ -1271,6 +1273,26 @@ class BigEdCC(TrayManagerMixin, BootManagerMixin, CommTabMixin, OllamaManagerMix
         s["widgets"].append(graph_wrapper)
         self._sb_buttons.append((graph_wrapper, graph_accent, self._btn_graph_view))
         Tooltip(self._btn_graph_view, "Open the Hybrid ViewPort graph visualization")
+
+        # Graph view selector dropdown
+        graph_views = ["fleet-overview", "universe", "knowledge-graph",
+                       "data-flow", "bottleneck-detector", "training-pipeline"]
+        self._graph_view_var = ctk.StringVar(value="fleet-overview")
+        graph_sel_wrapper = ctk.CTkFrame(sb, fg_color="transparent", height=SB_BTN_HEIGHT)
+        graph_sel_wrapper.pack(fill="x", padx=6, pady=1)
+        graph_sel_wrapper.pack_propagate(False)
+        ctk.CTkFrame(graph_sel_wrapper, fg_color="transparent",
+                      width=3, corner_radius=1).pack(side="left", fill="y", padx=(0, 3), pady=3)
+        graph_sel = ctk.CTkOptionMenu(
+            graph_sel_wrapper, variable=self._graph_view_var,
+            values=graph_views, font=FONT_XS, height=22, width=120,
+            fg_color=BG3, button_color=BG2, button_hover_color=ACCENT,
+            command=lambda v: self._open_graph_view(v),
+        )
+        graph_sel.pack(side="left", fill="x", expand=True, padx=(6, 6))
+        if not s["open"]:
+            graph_sel_wrapper.pack_forget()
+        s["widgets"].append(graph_sel_wrapper)
 
         # Graph (Browser) — fallback: open graph view in default browser
         graph_br_wrapper = ctk.CTkFrame(sb, fg_color="transparent", height=SB_BTN_HEIGHT)
@@ -1286,7 +1308,9 @@ class BigEdCC(TrayManagerMixin, BootManagerMixin, CommTabMixin, OllamaManagerMix
             text_color=DIM, anchor="w",
             corner_radius=SB_BTN_RADIUS,
             command=lambda: (self._sb_set_active(graph_br_wrapper, graph_br_accent),
-                             self._open_graph_in_browser("fleet-overview")),
+                             self._open_graph_in_browser(self._graph_view_var.get()
+                                                         if hasattr(self, '_graph_view_var')
+                                                         else "fleet-overview")),
         )
         self._btn_graph_browser.pack(side="left", fill="both", expand=True)
         if not s["open"]:

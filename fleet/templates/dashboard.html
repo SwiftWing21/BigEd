@@ -2109,82 +2109,127 @@ function renderNeuralFrame() {
   });
   ctx.globalAlpha = 1;
 
-  // ── RIGHT SIDEBAR: top skills + knowledge folders ───────────────
+  // ── RIGHT SIDEBAR: scrollable panel ──────────────────────────────
   var sideX = barStart + barW + 12;
-  var sy = topOff;
+  var sideTop = topOff;
+  var sideBottom = h - 4;
+  var sideAvail = sideBottom - sideTop;
 
-  // Top skills
-  ctx.fillStyle = '#f59e0b';
-  ctx.font = 'bold 9px system-ui, sans-serif';
-  ctx.textAlign = 'left';
-  ctx.fillText('TOP SKILLS', sideX, sy + 4);
-  sy += 12;
-  var maxSkills = Math.min(skills.length, 5);
-  for (var si = 0; si < maxSkills; si++) {
-    var sk = skills[si];
-    var skName = sk.skill.length > 13 ? sk.skill.slice(0, 12) + '\u2026' : sk.skill;
-    ctx.fillStyle = '#94a3b8';
-    ctx.font = '9px system-ui, sans-serif';
-    ctx.fillText(skName, sideX, sy + 4);
-    // Mini bar
-    var skBarW = 40;
-    var skFill = Math.max(2, (sk.done / (sk.total || 1)) * skBarW);
-    ctx.fillStyle = 'rgba(245,158,11,0.15)';
-    ctx.fillRect(sideX + 70, sy - 2, skBarW, 10);
-    ctx.fillStyle = sk.failed > 0 ? '#ef4444' : '#f59e0b';
-    ctx.globalAlpha = 0.7;
-    ctx.fillRect(sideX + 70, sy - 2, skFill, 10);
-    ctx.globalAlpha = 1;
-    ctx.fillStyle = '#64748b';
-    ctx.font = '8px system-ui, sans-serif';
-    ctx.textAlign = 'right';
-    ctx.fillText(sk.total + '', sideX + 70 + skBarW + 14, sy + 4);
-    ctx.textAlign = 'left';
-    sy += 14;
+  // Build sidebar items into virtual list, then render with scroll
+  var sideItems = [];
+  // Skills section
+  if (skills.length > 0) {
+    sideItems.push({ type: 'header', text: 'TOP SKILLS', color: '#f59e0b' });
+    skills.forEach(function(sk) {
+      sideItems.push({ type: 'skill', skill: sk });
+    });
+  }
+  // Knowledge
+  if (folders.length > 0) {
+    sideItems.push({ type: 'header', text: 'KNOWLEDGE', color: '#06b6d4' });
+    folders.forEach(function(fo) {
+      sideItems.push({ type: 'folder', folder: fo });
+    });
+  }
+  // Channels
+  if (channels.length > 0) {
+    sideItems.push({ type: 'header', text: 'CHANNELS', color: '#818cf8' });
+    channels.forEach(function(ch) {
+      sideItems.push({ type: 'channel', channel: ch });
+    });
   }
 
-  // Knowledge folders
-  if (folders.length > 0) {
-    sy += 6;
-    ctx.fillStyle = '#06b6d4';
-    ctx.font = 'bold 9px system-ui, sans-serif';
-    ctx.fillText('KNOWLEDGE', sideX, sy + 4);
-    sy += 12;
-    var maxFolders = Math.min(folders.length, 4);
-    for (var fi = 0; fi < maxFolders; fi++) {
-      var fo = folders[fi];
+  // Compute total content height
+  var itemH = { header: 16, skill: 14, folder: 13, channel: 13 };
+  var totalSideH = 0;
+  sideItems.forEach(function(it) { totalSideH += itemH[it.type] || 13; });
+
+  // Scroll state (mouse wheel on canvas)
+  if (!window._neuralSideScroll) window._neuralSideScroll = 0;
+  var maxScroll = Math.max(0, totalSideH - sideAvail);
+  window._neuralSideScroll = Math.max(0, Math.min(window._neuralSideScroll, maxScroll));
+  var scrollY = window._neuralSideScroll;
+
+  // Clip sidebar region
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(sideX - 2, sideTop - 2, sideW + 4, sideAvail + 4);
+  ctx.clip();
+
+  var sy = sideTop - scrollY;
+  sideItems.forEach(function(it) {
+    var ih = itemH[it.type] || 13;
+    // Skip items fully above or below viewport
+    if (sy + ih < sideTop - 2 || sy > sideBottom + 2) { sy += ih; return; }
+
+    if (it.type === 'header') {
+      sy += 4;
+      ctx.fillStyle = it.color;
+      ctx.font = 'bold 9px system-ui, sans-serif';
+      ctx.textAlign = 'left';
+      ctx.fillText(it.text, sideX, sy + 4);
+      sy += ih - 4;
+    } else if (it.type === 'skill') {
+      var sk = it.skill;
+      var skName = sk.skill.length > 13 ? sk.skill.slice(0, 12) + '\u2026' : sk.skill;
       ctx.fillStyle = '#94a3b8';
       ctx.font = '9px system-ui, sans-serif';
+      ctx.textAlign = 'left';
+      ctx.fillText(skName, sideX, sy + 4);
+      var skBarW = 40;
+      var skFill = Math.max(2, (sk.done / (sk.total || 1)) * skBarW);
+      ctx.fillStyle = 'rgba(245,158,11,0.15)';
+      ctx.fillRect(sideX + 70, sy - 2, skBarW, 10);
+      ctx.fillStyle = sk.failed > 0 ? '#ef4444' : '#f59e0b';
+      ctx.globalAlpha = 0.7;
+      ctx.fillRect(sideX + 70, sy - 2, skFill, 10);
+      ctx.globalAlpha = 1;
+      ctx.fillStyle = '#64748b';
+      ctx.font = '8px system-ui, sans-serif';
+      ctx.textAlign = 'right';
+      ctx.fillText(sk.total + '', sideX + 70 + skBarW + 14, sy + 4);
+      ctx.textAlign = 'left';
+      sy += ih;
+    } else if (it.type === 'folder') {
+      var fo = it.folder;
+      ctx.fillStyle = '#94a3b8';
+      ctx.font = '9px system-ui, sans-serif';
+      ctx.textAlign = 'left';
       ctx.fillText(fo.name.length > 11 ? fo.name.slice(0, 10) + '\u2026' : fo.name, sideX, sy + 4);
       ctx.fillStyle = '#64748b';
       ctx.font = '8px system-ui, sans-serif';
       ctx.textAlign = 'right';
       ctx.fillText(fo.files + ' files', sideX + sideW - 8, sy + 4);
       ctx.textAlign = 'left';
-      sy += 13;
-    }
-  }
-
-  // Message channels
-  if (channels.length > 0) {
-    sy += 6;
-    ctx.fillStyle = '#818cf8';
-    ctx.font = 'bold 9px system-ui, sans-serif';
-    ctx.fillText('CHANNELS', sideX, sy + 4);
-    sy += 12;
-    var maxCh = Math.min(channels.length, 3);
-    for (var ci = 0; ci < maxCh; ci++) {
-      var ch = channels[ci];
+      sy += ih;
+    } else if (it.type === 'channel') {
+      var ch = it.channel;
       ctx.fillStyle = '#94a3b8';
       ctx.font = '9px system-ui, sans-serif';
+      ctx.textAlign = 'left';
       ctx.fillText('#' + ch.channel, sideX, sy + 4);
       ctx.fillStyle = '#64748b';
       ctx.font = '8px system-ui, sans-serif';
       ctx.textAlign = 'right';
       ctx.fillText(ch.count + ' msgs', sideX + sideW - 8, sy + 4);
       ctx.textAlign = 'left';
-      sy += 13;
+      sy += ih;
     }
+  });
+
+  ctx.restore();
+
+  // Scroll indicator (thin track on right edge if content overflows)
+  if (maxScroll > 0) {
+    var trackX = sideX + sideW + 1;
+    var thumbH = Math.max(12, (sideAvail / totalSideH) * sideAvail);
+    var thumbY = sideTop + (scrollY / maxScroll) * (sideAvail - thumbH);
+    ctx.fillStyle = 'rgba(255,255,255,0.08)';
+    ctx.fillRect(trackX, sideTop, 3, sideAvail);
+    ctx.fillStyle = 'rgba(255,255,255,0.25)';
+    ctx.beginPath();
+    ctx.roundRect(trackX, thumbY, 3, thumbH, 1.5);
+    ctx.fill();
   }
 
   // ── ANIMATED PULSES ─────────────────────────────────────────────
@@ -2227,6 +2272,17 @@ function renderNeuralFrame() {
 
   _neuralAnim = requestAnimationFrame(renderNeuralFrame);
 }
+
+// Wire mouse wheel scrolling on the neural lane canvas sidebar
+(function() {
+  var c = document.getElementById('neural-lane-canvas');
+  if (c) c.addEventListener('wheel', function(e) {
+    if (!window._neuralSideScroll && window._neuralSideScroll !== 0) return;
+    window._neuralSideScroll = (window._neuralSideScroll || 0) + e.deltaY * 0.5;
+    if (window._neuralSideScroll < 0) window._neuralSideScroll = 0;
+    e.preventDefault();
+  }, { passive: false });
+})();
 
 function loadActivityChart() {
   loadNeuralLanes();
