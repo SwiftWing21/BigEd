@@ -1,3 +1,11 @@
+<!-- doc-revision
+  doc: AUDIT_TRACKER.md
+  revision: 1
+  updated: 2026-03-20
+  updatedBy: unknown
+  metrics: skills=130+ endpoints=236 smoke=38 tables=20
+  status: stale (hasn't been updated since 0.110.00b)
+-->
 # BigEd CC — Audit Tracker
 
 > **Purpose:** Ongoing audit log for Sonnet to maintain S-tier or near-S-tier standards across all dimensions.

@@ -1,3 +1,11 @@
+<!-- doc-revision
+  doc: ROADMAP.md
+  revision: 2
+  updated: 2026-03-24
+  updatedBy: claude-opus-4.6
+  metrics: skills=130+ endpoints=236 smoke=38 tables=20
+  status: current (release gate + audit coverage updated)
+-->
 # BigEd CC Roadmap
 
 > **Goal of 1.0:** Autonomous, cross-platform, verifiably safe agent fleet.

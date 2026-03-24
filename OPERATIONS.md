@@ -1,3 +1,11 @@
+<!-- doc-revision
+  doc: OPERATIONS.md
+  revision: 2
+  updated: 2026-03-24
+  updatedBy: claude-opus-4.6
+  metrics: skills=130+ endpoints=236 smoke=38 tables=20
+  status: current (uv run replaced, companion ref fixed)
+-->
 # BigEd CC — Operations Manual
 
 > Complete ops runbook: quick start, CLI reference, platform troubleshooting,

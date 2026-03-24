@@ -1,3 +1,11 @@
+<!-- doc-revision
+  doc: SETUP.md
+  revision: 1
+  updated: 2026-03-20
+  updatedBy: unknown
+  metrics: skills=130+ endpoints=236 smoke=38 tables=20
+  status: current
+-->
 # First-Time Setup Guide
 
 This guide walks you through everything needed to run BigEd CC for the first

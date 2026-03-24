@@ -1,3 +1,11 @@
+<!-- doc-revision
+  doc: FRAMEWORK_BLUEPRINT.md
+  revision: 2
+  updated: 2026-03-24
+  updatedBy: claude-opus-4.6
+  metrics: skills=130+ endpoints=236 smoke=38 tables=20
+  status: stale (body sections 2-16 still v0.41-era, header updated)
+-->
 # BigEd CC — Framework Blueprint
 
 > **Last refreshed:** v0.400.00b (2026-03-23) | **Skills:** 130+ | **Endpoints:** 190+ | **DB tables:** 20 | **Smoke:** 33/33
