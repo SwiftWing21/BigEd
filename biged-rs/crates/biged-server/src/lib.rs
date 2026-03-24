@@ -46,6 +46,20 @@ pub fn router(state: AppState) -> Router {
             "/api/agents/performance",
             axum::routing::get(handlers::activity::agents_performance),
         )
+        // Skills + knowledge
+        .route("/api/skills", axum::routing::get(handlers::skills::skills))
+        .route(
+            "/api/knowledge",
+            axum::routing::get(handlers::skills::knowledge),
+        )
+        .route(
+            "/api/timeline",
+            axum::routing::get(handlers::skills::timeline),
+        )
+        .route(
+            "/api/discussions",
+            axum::routing::get(handlers::skills::discussions),
+        )
         .with_state(state)
 }
 

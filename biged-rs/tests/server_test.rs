@@ -100,7 +100,7 @@ async fn test_agents_endpoint() {
     assert!(!json.as_array().unwrap().is_empty());
 }
 
-// ── Task 4: Activity handlers ─────────────────────────────────────────────
+// ── Task 4: Activity handlers ──────────────────────────────────────────────
 
 #[tokio::test]
 async fn test_activity_endpoint() {
@@ -134,4 +134,30 @@ async fn test_agent_cards_endpoint() {
         .unwrap();
     let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
     assert!(json.get("cards").is_some());
+}
+
+// ── Task 5: Skills + knowledge handlers ───────────────────────────────────
+
+#[tokio::test]
+async fn test_skills_endpoint() {
+    let state = test_state();
+    state.db.post_task("code_review", "{}", 5, None).unwrap();
+    state.db.post_task("test_skill", "{}", 5, None).unwrap();
+    let app = biged_server::router(state);
+    let resp = app
+        .oneshot(Request::get("/api/skills").body(Body::empty()).unwrap())
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+}
+
+#[tokio::test]
+async fn test_timeline_endpoint() {
+    let state = test_state();
+    let app = biged_server::router(state);
+    let resp = app
+        .oneshot(Request::get("/api/timeline").body(Body::empty()).unwrap())
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
 }
