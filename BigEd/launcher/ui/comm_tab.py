@@ -735,7 +735,11 @@ class CommTabMixin:
                 result = stt_run({"action": "listen", "duration_secs": 5}, config, log)
 
                 if "text" in result and result["text"]:
-                    self._safe_after(0, lambda t=result["text"]: self._manual_chat_entry.insert(0, t))
+                    def _insert_stt(t=result["text"]):
+                        self._manual_chat_entry.delete(0, "end")
+                        self._manual_chat_entry.insert(0, t)
+                        self._manual_chat_entry.focus_set()
+                    self._safe_after(0, _insert_stt)
                     self._safe_after(0, lambda: self._append_chat_response(
                         f"[Transcribed: {result.get('backend', '?')}]"))
                 else:
