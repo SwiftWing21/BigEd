@@ -294,9 +294,9 @@ def test_ha_fallback():
     """HA fallback chain builds correctly from config."""
     from skills._models import FALLBACK_CHAIN
     # Verify chain exists and has expected providers
-    assert len(FALLBACK_CHAIN) == 4, f"Expected 4 providers, got {len(FALLBACK_CHAIN)}"
+    assert len(FALLBACK_CHAIN) == 3, f"Expected 3 providers, got {len(FALLBACK_CHAIN)}"
     assert "claude" in FALLBACK_CHAIN
-    assert "minimax" in FALLBACK_CHAIN
+    assert "gemini" in FALLBACK_CHAIN
     assert "local" in FALLBACK_CHAIN
     return True, f"chain: {' > '.join(FALLBACK_CHAIN)}"
 
@@ -533,6 +533,79 @@ def test_dashboard_importable():
         return False, f"import dashboard failed: {e}"
 
 
+def test_view_registry():
+    """View registry: sources registered and discoverable."""
+    try:
+        import view_registry
+        view_registry.clear()
+        view_registry.register_source("test_src", "fleet", ["a"], ["b"], "/api/test")
+        src = view_registry.get_source("test_src")
+        if not src or src["name"] != "test_src":
+            return False, "register/get round-trip failed"
+        sources = view_registry.get_sources()
+        if len(sources) != 1:
+            return False, f"expected 1 source, got {len(sources)}"
+        view_registry.clear()
+        return True, "register/get/clear OK"
+    except Exception as e:
+        return False, str(e)
+
+
+def test_experiment_framework():
+    """Experiment framework: propose/get/history round-trip."""
+    try:
+        from experiment import ExperimentFramework
+        fw = ExperimentFramework()
+        eid = fw.propose("test_agent", "evaluation", "test hypothesis", {"key": "val"})
+        exp = fw.get(eid)
+        if not exp:
+            return False, "proposed experiment not found"
+        if exp["agent"] != "test_agent":
+            return False, f"agent mismatch: {exp['agent']}"
+        history = fw.history(agent="test_agent")
+        if len(history) < 1:
+            return False, "history empty after propose"
+        return True, f"propose #{eid}, get OK, history={len(history)}"
+    except Exception as e:
+        return False, str(e)
+
+
+def test_token_bridge():
+    """Token bridge: generates valid CSS from design tokens."""
+    try:
+        from token_bridge import generate_css, check_staleness
+        css = generate_css()
+        if "--bg:" not in css:
+            return False, "CSS missing --bg variable"
+        if "--accent:" not in css:
+            return False, "CSS missing --accent variable"
+        if "data-theme" not in css:
+            return False, "CSS missing theme overrides"
+        staleness = check_staleness()
+        return True, f"CSS OK ({len(css)} bytes), staleness checked"
+    except Exception as e:
+        return False, str(e)
+
+
+def test_docs_api():
+    """Docs API: markdown parser returns structured sections."""
+    try:
+        from views_blueprint import _parse_markdown_sections
+        test_md = "## Section One\nContent here\n### Sub A\nSub content\n## Section Two [DONE]\nDone content"
+        sections = _parse_markdown_sections(test_md)
+        if len(sections) < 2:
+            return False, f"expected 2+ sections, got {len(sections)}"
+        if not sections[0].get("children"):
+            return False, "first section missing children"
+        # Check status detection
+        done_section = [s for s in sections if s.get("status") == "done"]
+        if not done_section:
+            return False, "DONE status not detected"
+        return True, f"{len(sections)} sections parsed, status detection OK"
+    except Exception as e:
+        return False, str(e)
+
+
 def test_thermal_readings():
     """10. GPU thermal readings available (if GPU present)."""
     try:
@@ -619,6 +692,10 @@ def main():
         ("DB schema complete", test_db_schema_complete),
         ("fleet.toml sections", test_fleet_toml_sections),
         ("Dashboard importable", test_dashboard_importable),
+        ("View registry", test_view_registry),
+        ("Experiment framework", test_experiment_framework),
+        ("Token bridge", test_token_bridge),
+        ("Docs API", test_docs_api),
     ])
 
     if not args.fast:
