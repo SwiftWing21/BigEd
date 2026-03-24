@@ -252,12 +252,18 @@ class CommTabMixin:
         self._comm_req_label.configure(
             text=f"{arrow} {n} agent request{'s' if n != 1 else ''}",
             text_color=color)
+        parent = self._comm_request_frame.master
         if self._comm_requests_collapsed:
             self._comm_request_frame.grid_remove()
+            # Give all space to the chat console when requests are collapsed
+            parent.grid_rowconfigure(1, weight=0)
+            parent.grid_rowconfigure(2, weight=1)
         else:
             h = min(300, max(60, n * 60))
             self._comm_request_frame.configure(height=h)
             self._comm_request_frame.grid(row=1, column=0, sticky="ew")
+            parent.grid_rowconfigure(1, weight=1)
+            parent.grid_rowconfigure(2, weight=0)
 
     # ── Unified Console helpers ──────────────────────────────────────────
 
