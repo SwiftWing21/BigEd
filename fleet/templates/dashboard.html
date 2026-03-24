@@ -629,7 +629,8 @@ textarea.input {
   position: absolute;
   cursor: pointer;
   inset: 0;
-  background: var(--muted);
+  background: rgba(100, 116, 139, 0.4);
+  border: 1px solid rgba(148, 163, 184, 0.3);
   border-radius: 22px;
   transition: 0.2s;
 }
@@ -639,15 +640,17 @@ textarea.input {
   height: 16px;
   width: 16px;
   left: 3px;
-  bottom: 3px;
-  background: #fff;
+  bottom: 2px;
+  background: rgba(203, 213, 225, 0.9);
   border-radius: 50%;
   transition: 0.2s;
 }
 .toggle input:checked + .toggle-slider {
   background: var(--primary);
+  border-color: var(--primary);
 }
 .toggle input:checked + .toggle-slider::before {
+  background: #fff;
   transform: translateX(18px);
 }
 
