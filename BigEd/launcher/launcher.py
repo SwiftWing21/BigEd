@@ -2427,8 +2427,8 @@ class BigEdCC(TrayManagerMixin, BootManagerMixin, CommTabMixin, OllamaManagerMix
 
         win = ctk.CTkToplevel(self)
         win.title("Add Agent" if not agent.get("name") else f"Edit Agent — {agent.get('name')}")
-        win.geometry("480x520")
-        win.resizable(False, False)
+        win.geometry("480x620")
+        win.resizable(False, True)
         win.configure(fg_color=BG)
         win.grab_set()
         try:
