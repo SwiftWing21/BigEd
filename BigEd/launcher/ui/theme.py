@@ -51,13 +51,13 @@ THEME_PRESETS = {
         "GLASS_SEL": "#182040", "GLASS_BORDER": "#2a3045",
     },
     "Figma": {
-        "BG": "#1e1e1e", "BG2": "#2c2c2c", "BG3": "#383838",
-        "ACCENT": "#7c3aed", "ACCENT_H": "#6d28d9", "GOLD": "#d4a84b",
-        "TEXT": "#e0e0e0", "DIM": "#a0a0a0",
-        "CARD_RADIUS": 12, "BTN_RADIUS": 8,
-        "GLASS_BG": "#1a1a1a", "GLASS_NAV": "#232323",
-        "GLASS_PANEL": "#2a2a2a", "GLASS_HOVER": "#333333",
-        "GLASS_SEL": "#3a3a3a", "GLASS_BORDER": "#404040",
+        "BG": "#0a0e1a", "BG2": "#1a1f2e", "BG3": "#2a2f3e",
+        "ACCENT": "#3b82f6", "ACCENT_H": "#2563eb", "GOLD": "#f59e0b",
+        "TEXT": "#e2e8f0", "DIM": "#64748b",
+        "CARD_RADIUS": 10, "BTN_RADIUS": 8,
+        "GLASS_BG": "#0f1419", "GLASS_NAV": "#141b27",
+        "GLASS_PANEL": "#1a1f2e", "GLASS_HOVER": "#2a2f3e",
+        "GLASS_SEL": "#1e3a5f", "GLASS_BORDER": "#1e293b",
     },
 }
 
@@ -93,9 +93,9 @@ TEXT     = _theme["TEXT"]
 DIM      = _theme["DIM"]
 
 # Status
-GREEN    = "#4caf50"
-ORANGE   = "#ff9800"
-RED      = "#f44336"
+GREEN    = "#10b981"
+ORANGE   = "#f59e0b"
+RED      = "#ef4444"
 
 # Provider colors (for Fleet Comm unified console)
 PROVIDER_LOCAL    = "#d4a84b"   # gold — Ollama
@@ -157,16 +157,16 @@ CYAN     = "#00bcd4"
 YELLOW   = "#ffd54f"
 
 # Subtle backgrounds (sidebar buttons, hover states)
-BG_START   = "#1e3a1e"   # fleet start button
-BG_START_H = "#2a4a2a"   # fleet start hover
-BG_DASH    = "#1a2a3a"   # dashboard button
-BG_DASH_H  = "#253545"   # dashboard hover
-BG_DANGER  = "#5a2020"   # uninstall/destructive
-BG_DANGER_H = "#6a2828"  # destructive hover
+BG_START   = "#064e3b"   # fleet start button
+BG_START_H = "#065f46"   # fleet start hover
+BG_DASH    = "#1e3a5f"   # dashboard button
+BG_DASH_H  = "#1e40af"   # dashboard hover
+BG_DANGER  = "#7f1d1d"   # uninstall/destructive
+BG_DANGER_H = "#991b1b"  # destructive hover
 
 # Sidebar (modernized — accent bars, rounded buttons, active state)
-SB_HOVER      = "#2a2a3a"   # button hover (subtle purple-gray)
-SB_ACTIVE_BG  = "#252535"   # active item background tint
+SB_HOVER      = "#1e293b"   # button hover (slate hover)
+SB_ACTIVE_BG  = "#1e3a5f"   # active item background tint (blue-tinted)
 SB_BTN_RADIUS = 6           # rounded button corners
 SB_BTN_HEIGHT = 30          # standard sidebar button height
 FONT_SB_SECTION = (_preset["bold"], 11, "bold")  # section header (slightly larger)

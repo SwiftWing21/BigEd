@@ -3,27 +3,27 @@
 /* Do not edit manually — edit design-tokens.json instead */
 
 :root {
-  --bg: #1e1e1e;
-  --bg2: #2c2c2c;
-  --bg3: #383838;
-  --accent: #7c3aed;
-  --accent-hover: #6d28d9;
-  --gold: #d4a84b;
-  --text: #e0e0e0;
-  --dim: #a0a0a0;
-  --glass-bg: #1a1a1a;
-  --glass-nav: #232323;
-  --glass-panel: #2a2a2a;
-  --glass-hover: #333333;
-  --glass-sel: #3a3a3a;
-  --glass-border: #404040;
-  --card-radius: 12px;
+  --bg: #0a0e1a;
+  --bg2: #1a1f2e;
+  --bg3: #2a2f3e;
+  --accent: #3b82f6;
+  --accent-hover: #2563eb;
+  --gold: #f59e0b;
+  --text: #e2e8f0;
+  --dim: #64748b;
+  --glass-bg: #0f1419;
+  --glass-nav: #141b27;
+  --glass-panel: #1a1f2e;
+  --glass-hover: #2a2f3e;
+  --glass-sel: #1e3a5f;
+  --glass-border: #1e293b;
+  --card-radius: 10px;
   --btn-radius: 8px;
 
   /* Shared tokens */
-  --status-green: #4caf50;
-  --status-orange: #ff9800;
-  --status-red: #f44336;
+  --status-green: #10b981;
+  --status-orange: #f59e0b;
+  --status-red: #ef4444;
   --brand-teal: #00bcd4;
   --brand-blue: #4fc3f7;
   --brand-cyan: #00bcd4;
@@ -35,16 +35,16 @@
   --provider-bg-local: #2a2010;
   --provider-bg-claude: #0d0d2a;
   --provider-bg-gemini: #0d1a0d;
-  --sidebar-hover: #2a2a3a;
-  --sidebar-active-bg: #252535;
+  --sidebar-hover: #1e293b;
+  --sidebar-active-bg: #1e3a5f;
   --sidebar-btn-radius: 6px;
   --sidebar-btn-height: 30px;
-  --action-start-bg: #1e3a1e;
-  --action-start-hover: #2a4a2a;
-  --action-dash-bg: #1a2a3a;
-  --action-dash-hover: #253545;
-  --action-danger-bg: #5a2020;
-  --action-danger-hover: #6a2828;
+  --action-start-bg: #064e3b;
+  --action-start-hover: #065f46;
+  --action-dash-bg: #1e3a5f;
+  --action-dash-hover: #1e40af;
+  --action-danger-bg: #7f1d1d;
+  --action-danger-hover: #991b1b;
   --spacing-card-pad: 4px;
   --spacing-btn-height: 28px;
   --spacing-btn-height-sm: 20px;
