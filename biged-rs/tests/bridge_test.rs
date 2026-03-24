@@ -143,3 +143,61 @@ async fn test_worker_empty_queue() {
     assert!(processed.is_ok());
     assert!(!processed.unwrap(), "should return false — no tasks");
 }
+
+/// Test running multiple skills through the bridge to verify
+/// the module cache works across different skill modules.
+#[test]
+fn test_runner_multiple_skills() {
+    let fd = fleet_dir();
+    if !fd.join("skills").exists() {
+        return;
+    }
+
+    let runner = SkillRunner::new(&fd).expect("runner should init");
+    let empty = serde_json::json!({});
+    let config = serde_json::json!({
+        "models": { "local": "qwen3:8b", "complex": "claude-sonnet-4-6" }
+    });
+
+    // Run autoresearch_analyze (no network, returns quickly)
+    let r1 = runner.run_skill("autoresearch_analyze", &empty, &config);
+    assert!(r1.is_ok(), "autoresearch_analyze failed: {:?}", r1.err());
+    assert_eq!(runner.loader().cached_count(), 1);
+
+    // Run it again — should use cache
+    let r2 = runner.run_skill("autoresearch_analyze", &empty, &config);
+    assert!(r2.is_ok());
+    assert_eq!(runner.loader().cached_count(), 1, "cache should still be 1");
+}
+
+#[tokio::test]
+async fn test_worker_full_lifecycle() {
+    let fd = fleet_dir();
+    if !fd.join("skills").exists() {
+        return;
+    }
+
+    let db = Db::in_memory().unwrap();
+    db.register_agent("lifecycle_worker", "coder").unwrap();
+
+    // Post 3 tasks
+    db.post_task("autoresearch_analyze", "{}", 5, None).unwrap();
+    db.post_task("autoresearch_analyze", "{}", 5, None).unwrap();
+    db.post_task("autoresearch_analyze", "{}", 5, None).unwrap();
+
+    let config = BridgeConfig::new(fd.clone());
+    let worker = Worker::new(db.clone(), config, serde_json::json!({})).expect("worker");
+
+    // Process all 3
+    for _ in 0..3 {
+        let processed = worker.process_one("coder").await.unwrap();
+        assert!(processed);
+    }
+
+    // Queue should now be empty
+    let processed = worker.process_one("coder").await.unwrap();
+    assert!(!processed, "queue should be empty");
+
+    // All tasks should be done or failed (none pending)
+    assert_eq!(db.queue_depth().unwrap(), 0);
+}
