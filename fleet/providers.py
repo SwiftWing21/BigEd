@@ -503,7 +503,7 @@ def get_optimal_agent_for_skill(skill_name: str, config: dict,
 
 
 # v0.45: HA fallback cascade — if primary fails, try next provider
-FALLBACK_CHAIN = ["claude", "gemini", "minimax", "local"]
+FALLBACK_CHAIN = ["claude", "gemini", "local"]
 
 
 def calculate_cost(usage, model_id: str) -> float:
