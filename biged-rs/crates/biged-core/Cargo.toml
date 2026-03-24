@@ -1,0 +1,15 @@
+[package]
+name = "biged-core"
+version = "0.1.0"
+edition.workspace = true
+
+[dependencies]
+rusqlite.workspace = true
+r2d2.workspace = true
+r2d2_sqlite.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+toml.workspace = true
+tracing.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
