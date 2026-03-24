@@ -143,6 +143,7 @@ dependencies = [
  "chrono",
  "nvml-wrapper",
  "reqwest",
+ "rusqlite",
  "serde",
  "serde_json",
  "tokio",

@@ -3,8 +3,7 @@ use biged_core::config::FleetConfig;
 #[test]
 fn test_parse_existing_fleet_toml() {
     // Read the real fleet.toml from the project root (one level up from biged-rs/)
-    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../fleet/fleet.toml");
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../fleet/fleet.toml");
     let cfg = FleetConfig::from_file(&path).expect("should parse existing fleet.toml");
 
     assert!(!cfg.fleet.offline_mode, "offline_mode should be false");
@@ -41,7 +40,10 @@ gpu_target_c = 70
     assert_eq!(cfg.thermal.gpu_target_c, 70);
 
     // Defaults for fields not provided in the minimal TOML
-    assert!(!cfg.fleet.air_gap_mode, "air_gap_mode should default to false");
+    assert!(
+        !cfg.fleet.air_gap_mode,
+        "air_gap_mode should default to false"
+    );
     assert_eq!(
         cfg.fleet.disabled_agents,
         vec![

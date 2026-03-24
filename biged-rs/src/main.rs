@@ -37,7 +37,7 @@ async fn main() -> anyhow::Result<()> {
     match cli.command {
         Some(Commands::Supervisor) | None => {
             tracing::info!("Starting BigEd supervisor");
-            // TODO: biged_supervisor::supervisor::run().await?;
+            biged_supervisor::supervisor::run().await?;
         }
         Some(Commands::Migrate) => {
             tracing::info!("Running database migration");

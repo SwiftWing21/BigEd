@@ -9,6 +9,7 @@ nvidia = ["nvml-wrapper"]
 
 [dependencies]
 biged-core = { path = "../biged-core" }
+rusqlite.workspace = true
 tokio.workspace = true
 tracing.workspace = true
 anyhow.workspace = true
