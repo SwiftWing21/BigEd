@@ -28,15 +28,12 @@ pub async fn agent_cards(State(state): State<AppState>) -> Result<Json<Value>, A
     let agents = state.db.all_agents()?;
     let mut by_role: HashMap<String, Vec<Value>> = HashMap::new();
     for agent in agents {
-        by_role
-            .entry(agent.role.clone())
-            .or_default()
-            .push(json!({
-                "name": agent.name,
-                "status": agent.status,
-                "current_task_id": agent.current_task_id,
-                "last_heartbeat": agent.last_heartbeat,
-            }));
+        by_role.entry(agent.role.clone()).or_default().push(json!({
+            "name": agent.name,
+            "status": agent.status,
+            "current_task_id": agent.current_task_id,
+            "last_heartbeat": agent.last_heartbeat,
+        }));
     }
     let cards: Vec<Value> = by_role
         .into_iter()
