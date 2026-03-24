@@ -2,7 +2,7 @@
 
 > A personal education project born from wanting to understand software and AI models at a deeper level. What started as a learning exercise turned into something I genuinely didn't expect.
 
-BigEd CC is a centralized model manager toolkit that lets you control local LLMs (via Ollama), API-based LLMs (Claude, Gemini), and OAuth models (via VS Code with pre-configured files and a first-time walkthrough). It grew out of curiosity and vibe-coding sessions into a 93-skill autonomous agent fleet — and I'm still figuring out what it all means.
+BigEd CC is a centralized model manager toolkit that lets you control local LLMs (via Ollama), API-based LLMs (Claude, Gemini), and OAuth models (via VS Code with pre-configured files and a first-time walkthrough). It grew out of curiosity and vibe-coding sessions into a 130+ skill autonomous agent fleet — and I'm still figuring out what it all means.
 
 This is not a product. It's a reference project for anyone curious about multi-model orchestration, agent lifecycle patterns, or what happens when you let AI help build the thing that manages AI.
 
@@ -11,7 +11,7 @@ This is not a product. It's a reference project for anyone curious about multi-m
 ## What It Does
 
 - **Model Management** — Switch between local (Ollama), Claude, and Gemini from one interface. See which model is active, what it costs, and how fast it responds.
-- **93 AI Skills** — Code review, security audit, web research, ML training, knowledge indexing, and more — all dispatched to agents automatically.
+- **130+ AI Skills** — Code review, security audit, web research, ML training, knowledge indexing, and more — all dispatched to agents automatically.
 - **Dynamic Agent Scaling** — 4 core agents + demand-based scaling up to 16, based on your hardware.
 - **Dr. Ders** — A hardware supervisor that monitors thermals, VRAM, and model health so things don't melt.
 - **Fleet Dashboard** — Real-time web UI at localhost:5555 showing agent status, task queues, and performance metrics.
@@ -42,7 +42,7 @@ Download Setup.exe from Releases → Run → Follow wizard
 git clone https://github.com/SwiftWing21/BigEd.git
 cd BigEd
 python fleet/dependency_check.py          # pre-flight check
-python fleet/smoke_test.py --fast         # verify 22/22 tests
+python fleet/smoke_test.py --fast         # verify 33/33 tests
 python BigEd/launcher/launcher.py         # launch GUI
 ```
 
@@ -54,7 +54,7 @@ BigEd CC
 │   ├── ui/             — Settings, consoles, dialogs, boot sequence
 │   ├── modules/        — Pluggable modules (Intelligence, Ingestion, Outputs)
 │   └── fonts/          — Custom pixel fonts
-├── fleet/              — 93-skill AI worker fleet
+├── fleet/              — 130+ skill AI worker fleet
 │   ├── supervisor.py   — Process lifecycle + dynamic scaling
 │   ├── hw_supervisor.py — Dr. Ders (thermal + model management)
 │   ├── dashboard.py    — Web dashboard (localhost:5555)

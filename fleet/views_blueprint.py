@@ -788,6 +788,11 @@ _SKILL_IO_MAP = {
     "prompt_optimize":        {"output": "prompt_optimization", "agent": "analyst", "input": ["tasks"]},
     "regression_detector":    {"output": "reports",             "agent": "analyst"},
     "stability_report":       {"output": "stability",           "agent": "analyst"},
+    # --- analyst (P3) ---
+    "doc_freshness":          {"output": "freshness",            "agent": "analyst", "input": ["*.md"]},
+    "model_eval_framework":   {"output": "evaluations",          "agent": "analyst", "input": ["ollama"]},
+    "agent_personality_tune":  {"output": "personalities",       "agent": "analyst", "input": ["tasks"]},
+    "cross_fleet_knowledge_sync": {"output": "sync",             "agent": "analyst", "input": ["knowledge/*"]},
     # --- archivist ---
     "flashcard":              {"output": "flashcards.jsonl",    "agent": "archivist"},
     "knowledge_prune":        {"output": None,                  "agent": "archivist", "input": ["knowledge/*"]},
@@ -896,6 +901,7 @@ _SKILL_IO_MAP = {
     "security_apply":         {"output": "security/applied",    "agent": "security"},
     "security_audit":         {"output": "security",            "agent": "security"},
     "security_review":        {"output": "security/reviews",    "agent": "security"},
+    "mcp_probe":              {"output": "mcp",                 "agent": "security", "input": [".mcp.json"]},
 }
 
 

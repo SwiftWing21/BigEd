@@ -3,7 +3,7 @@
 ## Quick Start
 ```bash
 python fleet/dependency_check.py          # pre-flight check (11 deps)
-python fleet/smoke_test.py --fast         # 22/22 smoke tests
+python fleet/smoke_test.py --fast         # 33/33 smoke tests
 python BigEd/launcher/launcher.py         # launch GUI (boots fleet automatically)
 python fleet/lead_client.py status        # CLI fleet status
 python fleet/lead_client.py task "your instruction here"  # dispatch a task
@@ -42,7 +42,7 @@ End every roadmap with an Audit Coverage Check section.
 - Roadmap: `ROADMAP.md`
 
 ## Structure
-- `fleet/` — 86-skill AI worker fleet (Ollama + Claude/Gemini)
+- `fleet/` — 130+ skill AI worker fleet (Ollama + Claude/Gemini)
 - `BigEd/` — launcher GUI + compliance docs
 - `autoresearch/` — ML training pipeline
 - `deploy/` — Kubernetes Helm chart for enterprise deployment
@@ -54,7 +54,7 @@ End every roadmap with an Audit Coverage Check section.
 - `fleet/filesystem_guard.py` — SOC 2 file access control
 
 ## Fleet Status
-- Skills: 97+ | Dashboard: 190+ endpoints (across dashboard.py + 10 blueprints) | Smoke: 27/27
+- Skills: 130+ | Dashboard: 190+ endpoints (across dashboard.py + 10 blueprints) | Smoke: 33/33
 - Dynamic agent scaling: 4 core + demand-based | Dr. Ders: event-driven wake-up timer
 - Security: P0-P2 hardened (XSS, SQL injection, thread safety, zombie cleanup)
 - Backup: auto-save every 20min, configurable depth/location
@@ -245,6 +245,12 @@ python -c "import sys; sys.path.insert(0,'fleet'); from system_info import gener
 - **Local Ollama**: qwen3:8b (default GPU) | qwen3:4b (conductor CPU) | qwen3:0.6b (failsafe CPU)
   - Routing: `providers.py LOCAL_COMPLEXITY_ROUTING` + `fleet.toml [models.tiers]`
 - **MiniMax** (planned): M2.5 as mid-tier provider
+
+## Session Handoff
+- **Read `SESSION_HANDOFF.md` at the start of every session** for context on recent work
+- **Update it before ending** with what you did, next priorities, and current metrics
+- Run `doc_freshness` skill periodically (`python fleet/skills/doc_freshness.py`) to catch stale doc values
+- Keep `GEMINI_DOC_CLEANUP.md` as a reference for known doc debt
 
 ## Dev Mode
 - `DEV_MODE = True` during alpha (shows BUILD, debug, idle controls)

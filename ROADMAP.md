@@ -83,7 +83,7 @@ Example progression:
 **Stability Gate Checklist (every milestone merge to main):**
 ```
 ## Release Gate: v0.XX
-- Smoke tests: 10/10
+- Smoke tests: 33/33
 - Soak tests: 13/13
 - GUI smoke test: pass (v0.33+)
 - TECH_DEBT.md: reviewed, no P0
@@ -1478,7 +1478,7 @@ Completed 2026-03-22. Three new skill systems:
 
 ## Audit Coverage Check (per AUDIT_TRACKER.md)
 
-> Reviewed at v0.110.00b (2026-03-20).
+> Reviewed at v0.400.00b (2026-03-23). Skills: 130+, Smoke: 33/33, DB: 20 tables, Endpoints: 190+.
 
 - **Criteria fully covered:** All 12 dimensions at A or S grade
 - **Criteria partially covered:** None

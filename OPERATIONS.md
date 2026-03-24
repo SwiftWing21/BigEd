@@ -2,7 +2,9 @@
 
 > Complete ops runbook: quick start, CLI reference, platform troubleshooting,
 > skill/module authoring, deployment, monitoring, backup, and recovery.
-> Companion to `FRAMEWORK_BLUEPRINT.md` (architecture) and `ROADMAP_v030_v040.md` (future work).
+> Companion to `FRAMEWORK_BLUEPRINT.md` (architecture) and `ROADMAP.md` (future work).
+>
+> **Platform note:** Commands below use `python` directly. On Linux/macOS with uv installed, you may prefix with `uv run`. On Windows (Git Bash), always use `python` directly — `uv run` is WSL-only.
 
 ---
 
@@ -10,24 +12,24 @@
 
 ```bash
 # 1. Start fleet
-uv run python fleet/supervisor.py              # Linux/macOS — direct
+python fleet/supervisor.py              # Linux/macOS — direct
 # Windows: either run inside WSL, or set BIGED_NATIVE_WINDOWS=1
 
 # 2. Start dashboard (web UI on http://localhost:5555)
-uv run python fleet/dashboard.py
+python fleet/dashboard.py
 
 # 3. Start launcher (tkinter desktop app)
 python BigEd/launcher/launcher.py
 
 # 4. Check fleet health
-uv run python fleet/lead_client.py status
+python fleet/lead_client.py status
 ```
 
 ---
 
 ## CLI Reference
 
-All commands below are run as `uv run python fleet/lead_client.py <command>`.
+All commands below are run as `python fleet/lead_client.py <command>`.
 
 ### Fleet Status & Control
 
@@ -94,7 +96,7 @@ All commands below are run as `uv run python fleet/lead_client.py <command>`.
 | Issue | Windows | Linux | macOS |
 |-------|---------|-------|-------|
 | **Ollama not starting** | Check Windows Ollama installer; verify `http://localhost:11434` responds. Restart: `taskkill /f /im ollama.exe && ollama serve` | `systemctl status ollama` or `ollama serve &`. Check `journalctl -u ollama` | `brew services start ollama`. Check `brew services list` |
-| **Fleet not starting** | Run inside WSL: `wsl -d Ubuntu -- bash -c "cd /mnt/c/.../fleet && uv run python supervisor.py"`. Or set `BIGED_NATIVE_WINDOWS=1` for native mode | Direct: `uv run python supervisor.py` | Direct: `uv run python supervisor.py` |
+| **Fleet not starting** | Run inside WSL: `wsl -d Ubuntu -- bash -c "cd /mnt/c/.../fleet && python supervisor.py"`. Or set `BIGED_NATIVE_WINDOWS=1` for native mode | Direct: `python supervisor.py` | Direct: `python supervisor.py` |
 | **Dashboard won't launch** | Ensure Flask installed: `uv pip install flask`. Check port 5555: `netstat -an \| findstr 5555` | `ss -tlnp \| grep 5555`. Kill squatter: `fuser -k 5555/tcp` | `lsof -i :5555`. Kill: `kill $(lsof -t -i :5555)` |
 | **Launcher won't start** | Check Python has tkinter: `python -c "import tkinter"`. Usually bundled on Windows | `sudo apt install python3-tk` (Debian/Ubuntu) or `sudo pacman -S tk` (Arch) | `brew install python-tk@3.11` |
 | **Auto-boot not working** | Check Task Scheduler: `schtasks /query /tn BigEdFleet`. Re-run `install-service` if missing | `systemctl --user status biged-fleet`. Check `~/.config/systemd/user/biged-fleet.service` | `launchctl list \| grep biged`. Check `~/Library/LaunchAgents/com.biged.fleet.plist` |
@@ -206,13 +208,13 @@ Skills without this flag (or with `REQUIRES_NETWORK = False`) are allowed in all
 cd fleet
 
 # Verify all skills import cleanly
-uv run python smoke_test.py --fast
+python smoke_test.py --fast
 
 # Test a single skill directly
-uv run python -c "from skills.my_skill import run; print(run({'query': 'test'}, {}))"
+python -c "from skills.my_skill import run; print(run({'query': 'test'}, {}))"
 
 # Test via fleet dispatch (requires running supervisor)
-uv run python lead_client.py dispatch my_skill '{"query": "test"}' --wait
+python lead_client.py dispatch my_skill '{"query": "test"}' --wait
 ```
 
 ---
@@ -411,20 +413,20 @@ Same steps as Linux. Additional notes:
 **Windows:**
 ```bash
 # Start fleet (WSL)
-wsl -d Ubuntu -- bash -c "cd /mnt/c/.../fleet && nohup uv run python supervisor.py >> logs/supervisor.log 2>&1 &"
+wsl -d Ubuntu -- bash -c "cd /mnt/c/.../fleet && nohup python supervisor.py >> logs/supervisor.log 2>&1 &"
 
 # Start hardware supervisor (WSL, optional — GPU systems only)
-wsl -d Ubuntu -- bash -c "cd /mnt/c/.../fleet && nohup uv run python hw_supervisor.py >> logs/hw_supervisor.log 2>&1 &"
+wsl -d Ubuntu -- bash -c "cd /mnt/c/.../fleet && nohup python hw_supervisor.py >> logs/hw_supervisor.log 2>&1 &"
 
 # Start dashboard (WSL or Windows)
-uv run python fleet/dashboard.py              # default http://localhost:5555
-uv run python fleet/dashboard.py --port 8080  # custom port
+python fleet/dashboard.py              # default http://localhost:5555
+python fleet/dashboard.py --port 8080  # custom port
 
 # Start launcher (Windows native)
 python BigEd/launcher/launcher.py
 
 # Stop fleet — graceful
-wsl -d Ubuntu -- uv run python lead_client.py broadcast '{"type": "pause"}'
+wsl -d Ubuntu -- python lead_client.py broadcast '{"type": "pause"}'
 # Stop fleet — force
 wsl -d Ubuntu -- pkill -f supervisor.py
 ```
@@ -433,11 +435,11 @@ wsl -d Ubuntu -- pkill -f supervisor.py
 ```bash
 # Start fleet (native — no WSL)
 cd fleet
-nohup uv run python supervisor.py >> logs/supervisor.log 2>&1 &
-nohup uv run python hw_supervisor.py >> logs/hw_supervisor.log 2>&1 &  # optional, GPU only
+nohup python supervisor.py >> logs/supervisor.log 2>&1 &
+nohup python hw_supervisor.py >> logs/hw_supervisor.log 2>&1 &  # optional, GPU only
 
 # Start dashboard
-uv run python dashboard.py
+python dashboard.py
 
 # Start launcher
 python BigEd/launcher/launcher.py
@@ -445,29 +447,29 @@ python BigEd/launcher/launcher.py
 # Stop fleet
 pkill -f supervisor.py
 # Or gracefully:
-uv run python lead_client.py broadcast '{"type": "pause"}'
+python lead_client.py broadcast '{"type": "pause"}'
 ```
 
 ### Health Checks
 
 ```bash
 # Fleet status (agents + task counts)
-uv run python lead_client.py status
+python lead_client.py status
 
 # Check specific agent log
-uv run python lead_client.py logs researcher --tail 50
+python lead_client.py logs researcher --tail 50
 
 # Verify DB integrity
-uv run python -c "import db; db.init_db(); print(db.get_fleet_status())"
+python -c "import db; db.init_db(); print(db.get_fleet_status())"
 
 # Quick smoke test (imports + connectivity)
-uv run python smoke_test.py --fast
+python smoke_test.py --fast
 
 # Extended soak test
-uv run python soak_test.py
+python soak_test.py
 
 # Platform detection (shell, network tools, bridge type)
-uv run python lead_client.py detect-cli
+python lead_client.py detect-cli
 ```
 
 ### Log Locations
@@ -718,7 +720,7 @@ pkill -f supervisor.py
 cp ~/BigEd-backups/<latest>/fleet.db fleet/fleet.db
 
 # Restart — supervisor recreates missing tables on boot
-uv run python fleet/supervisor.py
+python fleet/supervisor.py
 ```
 
 **RAG re-ingestion (after rag.db loss):**
@@ -727,15 +729,15 @@ uv run python fleet/supervisor.py
 cp ~/BigEd-backups/<latest>/rag.db fleet/rag.db
 
 # Or re-ingest documents (rebuilds the index)
-uv run python lead_client.py task "re-index all knowledge documents"
+python lead_client.py task "re-index all knowledge documents"
 ```
 
 **Secrets recovery:**
 ```bash
 # Secrets live in ~/.secrets, not in the backup
 # Re-set if lost:
-uv run python fleet/lead_client.py secret set ANTHROPIC_API_KEY <key>
-uv run python fleet/lead_client.py secret set GEMINI_API_KEY <key>
+python fleet/lead_client.py secret set ANTHROPIC_API_KEY <key>
+python fleet/lead_client.py secret set GEMINI_API_KEY <key>
 ```
 
 **Knowledge artifact recovery:**

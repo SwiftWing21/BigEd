@@ -470,6 +470,55 @@ def test_prompt_optimize_skill():
     return ok, f"SKILL_NAME={SKILL_NAME}, status={result.get('status')}, keys={list(result.keys())[:3]}"
 
 
+def test_model_eval_framework_skill():
+    """Model eval framework: module exports + contract check."""
+    from skills.model_eval_framework import SKILL_NAME, DESCRIPTION, REQUIRES_NETWORK, run
+    if SKILL_NAME != "model_eval_framework":
+        return False, f"SKILL_NAME mismatch: {SKILL_NAME}"
+    return True, f"SKILL_NAME={SKILL_NAME}, REQUIRES_NETWORK={REQUIRES_NETWORK}"
+
+
+def test_mcp_probe_skill():
+    """MCP probe: module exports + contract check."""
+    from skills.mcp_probe import SKILL_NAME, DESCRIPTION, REQUIRES_NETWORK, run
+    if SKILL_NAME != "mcp_probe":
+        return False, f"SKILL_NAME mismatch: {SKILL_NAME}"
+    return True, f"SKILL_NAME={SKILL_NAME}, REQUIRES_NETWORK={REQUIRES_NETWORK}"
+
+
+def test_agent_personality_tune_skill():
+    """Agent personality tune: module exports + dry run."""
+    from skills.agent_personality_tune import SKILL_NAME, DESCRIPTION, REQUIRES_NETWORK, run
+    if SKILL_NAME != "agent_personality_tune":
+        return False, f"SKILL_NAME mismatch: {SKILL_NAME}"
+    import db
+    db.init_db()
+    result = run({"agent": "test_agent", "hours": 1}, {})
+    ok = isinstance(result, dict) and result.get("status") in ("ok", "skip")
+    return ok, f"SKILL_NAME={SKILL_NAME}, status={result.get('status')}"
+
+
+def test_cross_fleet_knowledge_sync_skill():
+    """Cross fleet knowledge sync: module exports + dry run."""
+    from skills.cross_fleet_knowledge_sync import SKILL_NAME, DESCRIPTION, REQUIRES_NETWORK, run
+    if SKILL_NAME != "cross_fleet_knowledge_sync":
+        return False, f"SKILL_NAME mismatch: {SKILL_NAME}"
+    result = run({}, {})
+    ok = isinstance(result, dict) and result.get("status") in ("ok", "skip")
+    return ok, f"SKILL_NAME={SKILL_NAME}, status={result.get('status')}"
+
+
+def test_doc_freshness_skill():
+    """Doc freshness: standalone audit runs without error."""
+    from skills.doc_freshness import SKILL_NAME, run
+    if SKILL_NAME != "doc_freshness":
+        return False, f"SKILL_NAME mismatch: {SKILL_NAME}"
+    result = run({}, {})
+    ok = isinstance(result, dict) and result.get("status") == "ok"
+    stale = result.get("stale_count", -1)
+    return ok, f"SKILL_NAME={SKILL_NAME}, stale_refs={stale}"
+
+
 def test_path_traversal_blocked():
     """Security: path traversal in code_review is blocked."""
     try:
@@ -728,6 +777,11 @@ def main():
         ("Screenshot diff skill", test_screenshot_diff_skill),
         ("Outcome tracker skill", test_outcome_tracker_skill),
         ("Prompt optimize skill", test_prompt_optimize_skill),
+        ("Model eval framework skill", test_model_eval_framework_skill),
+        ("MCP probe skill", test_mcp_probe_skill),
+        ("Agent personality tune skill", test_agent_personality_tune_skill),
+        ("Cross fleet knowledge sync skill", test_cross_fleet_knowledge_sync_skill),
+        ("Doc freshness skill", test_doc_freshness_skill),
         ("New module imports", test_new_module_imports),
         ("FastMCP available", test_fastmcp_available),
         ("DB schema complete", test_db_schema_complete),
