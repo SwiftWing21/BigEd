@@ -809,12 +809,15 @@ _SKILL_IO_MAP = {
     "github_interact":        {"output": None,                  "agent": "coder"},
     "github_sync":            {"output": None,                  "agent": "coder"},
     "hitl_respond":           {"output": None,                  "agent": "coder"},
+    "html_accessibility":     {"output": "quality",             "agent": "coder"},
     "home_assistant":         {"output": "home_assistant",      "agent": "coder"},
+    "js_lint":                {"output": "quality",             "agent": "coder"},
     "mqtt_inspect":           {"output": "mqtt",                "agent": "coder"},
     "product_release":        {"output": "releases",            "agent": "coder"},
     "refactor_verify":        {"output": None,                  "agent": "coder"},
     "screenshot":             {"output": "screenshots",         "agent": "coder"},
     "service_manager":        {"output": None,                  "agent": "coder"},
+    "sql_review":             {"output": "quality",             "agent": "coder"},
     "skill_chain":            {"output": "chains",              "agent": "coder"},
     "skill_draft":            {"output": "code_drafts",         "agent": "coder"},
     "skill_evolve":           {"output": "evolution",           "agent": "coder"},
@@ -856,6 +859,7 @@ _SKILL_IO_MAP = {
     # --- legal ---
     "legal_draft":            {"output": "legal",               "agent": "legal"},
     # --- planner ---
+    "config_validate":        {"output": "quality",             "agent": "planner"},
     "plan_workload":          {"output": "reports",             "agent": "planner"},
     "swarm_consensus":        {"output": "consensus",           "agent": "planner"},
     "swarm_intelligence":     {"output": "swarm",               "agent": "planner"},
