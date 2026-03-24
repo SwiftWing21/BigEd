@@ -74,7 +74,7 @@ biged migrate            # DB migration from Python-era fleet.db
 
 - `r2d2::Pool<SqliteConnectionManager>` with 4-8 connections
 - Same schema, same WAL mode, same 20 tables
-- `claim_task()` uses atomic `UPDATE...RETURNING` — double-claiming race eliminated
+- `claim_task()` uses atomic `UPDATE...WHERE(SELECT)` through pooled connections — eliminates competing raw connections that cause the current race
 - `rusqlite::busy_handler` with jittered backoff replaces Python's `_retry_write`
 - Single pool instance — impossible to bypass WAL configuration
 
@@ -229,10 +229,13 @@ During migration: Flask stays running on port 5556 as fallback. Rust serves on 5
 ### Static assets
 
 ```
-static/
+fleet/templates/
 ├── dashboard.html      # current file, works as-is against axum
+├── view_graph.html     # graph view full-chrome template
+├── view_embed.html     # graph view embed template
+└── view_builder.html   # drag-and-drop view builder
+fleet/static/
 ├── view_engine.js      # Cytoscape graph renderer
-├── view_graph.html     # graph view templates
 └── tokens.css          # design tokens
 ```
 
@@ -378,7 +381,175 @@ clap = { version = "4", features = ["derive"] }
 
 ---
 
-## 10. What Stays Python
+## 10. Additional Subsystems
+
+### RAG Engine (rag.py → biged-core)
+
+Separate `rag.db` with FTS5 full-text search + optional vector embeddings. biged-core manages a second `r2d2` pool for `rag.db`. FTS5 queries ported to `rusqlite` (FTS5 is a SQLite extension, works natively). Future option: replace FTS5 with `tantivy` crate for better performance. Vector search stays Python-side (sentence-transformers) called via bridge.
+
+### Security (security.py → biged-server)
+
+All security primitives migrate to axum tower middleware:
+- RBAC token validation → custom `tower::Layer`
+- CORS → `tower-http::cors::CorsLayer`
+- Rate limiting → `tower_governor` or custom layer
+- TLS cert generation → `rcgen` crate
+- CSRF → `axum-extra` or custom header check
+
+### Backup System (backup_manager.py → biged-supervisor)
+
+Becomes an 8th tokio task in the supervisor: `backup_loop` (every 1200s, configurable). Snapshots `fleet.db`, `rag.db`, `fleet.toml`, `knowledge/` to backup directory.
+
+### Messaging Bridges (Discord, OpenClaw, FleetBridge)
+
+Stay as Python processes spawned by biged-supervisor via `tokio::process::Command`. They communicate through SQLite messages table (unchanged). Low priority for Rust port — they work fine as-is.
+
+### MCP Manager (mcp_manager.py)
+
+Stays Python, called via bridge when skills need MCP routing. The `.mcp.json` config is read by biged-core for probe/health checks.
+
+### Enterprise Modules (SSO, billing, compliance, marketplace, geo-fleet)
+
+Stay as Python modules called via bridge or served as separate Flask endpoints proxied through biged-server. Deep Python library dependencies (python-jose, pysaml2) make Rust ports impractical. Migrate to Rust only if/when Rust equivalents mature.
+
+---
+
+## 11. Skill Contract Normalization
+
+The bridge must handle 4 observed `run()` signatures:
+
+| Variant | Count | Example |
+|---------|-------|---------|
+| `run(payload, config)` | ~120 | Most skills |
+| `run(payload, config, log)` | ~8 | Takes a logger |
+| `run(task, context)` | ~3 | Different param names |
+| Module-level imports | ~5 | `from skills._models import call_complex` at top |
+
+**Strategy:** Bridge inspects `inspect.signature(module.run)` at load time and builds an adapter:
+- 2-arg: call as `run(payload, config)`
+- 3-arg: inject a Python `logging.Logger` as third arg
+- Different names: positional dispatch (payload=first, config=second)
+- Module-level imports: work as-is since `sys.path` includes `fleet/` and `fleet/skills/`
+
+**Pre-Phase-0 audit:** Normalize all skills to canonical 2-arg `run(payload, config)` in the Python codebase before Rust bridge is built. Logger available via `logging.getLogger(__name__)` inside run() (current convention).
+
+---
+
+## 12. Testing Strategy
+
+### Per-crate unit tests
+- Rust `#[test]` modules in each crate
+- `biged-core`: config parsing, DB operations, task queue semantics
+- `biged-supervisor`: scaling decisions, event dispatch, thermal thresholds
+- `biged-server`: endpoint response format, auth middleware
+- `biged-bridge`: skill loading, signature detection, timeout behavior
+
+### Integration tests
+- Bridge + real Python skills (run all 130+ through PyO3)
+- Server + DB (full endpoint test suite)
+- Supervisor + bridge + server (end-to-end task lifecycle)
+
+### Behavior parity tests
+- Run identical inputs through Python fleet and Rust binary, compare outputs
+- Automated regression suite that catches any behavior drift
+
+### Smoke test parity
+- Port existing 38-test smoke suite to Rust integration tests
+- Must pass before any phase gate
+
+### Performance benchmarks
+- Baseline: Python fleet (task/s, latency, memory, startup time)
+- Target: 10x task throughput, 50x startup, 5x memory reduction
+- Measured at each phase gate
+
+---
+
+## 13. CI/CD Strategy
+
+### GitHub Actions matrix
+```yaml
+strategy:
+  matrix:
+    os: [windows-latest, ubuntu-latest, macos-latest]
+    include:
+      - os: ubuntu-latest
+        target: aarch64-unknown-linux-gnu  # ARM cross-compile
+      - os: ubuntu-latest
+        target: wasm32-unknown-unknown     # WASM build
+```
+
+### Build requirements per runner
+- Rust toolchain (rustup)
+- Python 3.12+ (for PyO3 bridge tests)
+- ONNX Runtime shared libs (for `ort` crate)
+- `wasm-bindgen-cli` + `wasm-opt` (WASM target only)
+
+### Caching
+- `actions/cache` for `~/.cargo/registry` and `target/` directory
+- Separate cache keys per OS + Cargo.lock hash
+
+### Artifacts
+- Native binaries per platform (Windows .exe, Linux binary, macOS binary)
+- WASM bundle (static/wasm/)
+- Installers: MSI (Windows), .deb + .AppImage (Linux), .dmg (macOS)
+
+---
+
+## 14. Error Handling Strategy
+
+### Crate-level error types
+```rust
+// biged-core
+#[derive(thiserror::Error, Debug)]
+pub enum CoreError {
+    #[error("database: {0}")]
+    Db(#[from] rusqlite::Error),
+    #[error("config: {0}")]
+    Config(#[from] toml::de::Error),
+    #[error("task queue full")]
+    QueueFull,
+}
+
+// biged-bridge
+#[derive(thiserror::Error, Debug)]
+pub enum BridgeError {
+    #[error("skill not found: {0}")]
+    SkillNotFound(String),
+    #[error("skill timeout after {0:?}")]
+    Timeout(Duration),
+    #[error("python: {0}")]
+    Python(#[from] pyo3::PyErr),
+}
+```
+
+- Library crates (`biged-core`, `biged-bridge`): `thiserror` for typed errors
+- Application code (`biged-supervisor`, `biged-server`): `anyhow::Result` for ergonomic propagation
+- All errors logged via `tracing::error!` before propagation
+
+### Logging/observability
+
+- `tracing-subscriber` with JSON formatting (matches existing `_json_log`)
+- Per-component log files in `fleet/logs/` (same layout as Python)
+- Python skill logs captured by redirecting `logging.Logger` output to Rust's tracing via PyO3 handler
+- Structured fields: `agent`, `skill`, `task_id`, `duration_ms` on every span
+
+---
+
+## 15. Rollback Plan
+
+| Phase | Rollback |
+|-------|----------|
+| Phase 1 (Supervisor) | Kill Rust binary, restart `python supervisor.py`. Same DB, same config. |
+| Phase 2 (Server) | Point nginx back to Flask on port 5556. Static assets unchanged. |
+| Phase 3 (Bridge) | If PyO3 fails: fall back to subprocess JSON protocol. Rust spawns `python -c "import skills.X; print(json.dumps(skills.X.run(...)))"` per task. 10x slower but functional. |
+| Phase 4 (GUI) | Keep customtkinter launcher alongside. Both can coexist pointing at same server. |
+| Phase 5 (WASM) | Serve old `dashboard.html` at `/` instead of WASM app. |
+
+**Decision point:** If Phase 3 bridge can't handle >90% of skills transparently after 2 weeks of effort, fall back to subprocess protocol and revisit PyO3 after skill normalization.
+
+---
+
+## 16. What Stays Python
 
 | Component | Reason |
 |---|---|
@@ -395,7 +566,7 @@ clap = { version = "4", features = ["derive"] }
 |---|---|
 | PyO3 bridge complexity | Start with subprocess JSON protocol as fallback. PyO3 is the optimization |
 | egui missing customtkinter widgets | egui has extensive widget library. Custom widgets easy via `Painter` |
-| WASM binary size | `wasm-opt` + tree shaking. Target <5MB |
+| WASM binary size | `wasm-opt -Os` + tree shaking + lazy component loading. Baseline measured in Phase 5, target 8-12MB |
 | Migration duration | Each phase is independently deployable. Can ship Phase 1-3 without GUI |
 | Skill compatibility | Bridge intercepts `import db` transparently. Zero skill changes required |
 | Cross-compilation | `cross` tool handles all targets. CI matrix: windows-latest, ubuntu-latest, macos-latest |
