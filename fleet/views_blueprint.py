@@ -7,6 +7,7 @@ view config serving, static file serving, and the drag-and-drop view builder.
 Registered in dashboard.py alongside other blueprints.
 """
 import logging
+import re
 from pathlib import Path
 
 from flask import Blueprint, Response, jsonify, request, send_from_directory
@@ -499,6 +500,218 @@ def api_views_config_delete(name):
     except Exception:
         log.warning("Failed to delete view config %r", name, exc_info=True)
         return jsonify({"error": "Failed to delete view config"}), 500
+
+
+# ── Docs API — structured markdown parsing ───────────────────────────────
+
+_DOC_FILES = [
+    ("roadmap", "ROADMAP.md", "Active plan, version history"),
+    ("blueprint", "FRAMEWORK_BLUEPRINT.md", "Architecture spec, data schema, endpoints"),
+    ("audit", "AUDIT_TRACKER.md", "Grading rubric, scoreboard"),
+    ("operations", "OPERATIONS.md", "Runbook, CLI reference, troubleshooting"),
+    ("cross-platform", "CROSS_PLATFORM.md", "Platform matrix, FleetBridge"),
+    ("contributing", "CONTRIBUTING.md", "Contributor guide, code standards"),
+    ("setup", "SETUP.md", "First-time install walkthrough"),
+]
+
+_SLUG_MAP = {slug: filename for slug, filename, _ in _DOC_FILES}
+
+
+@views_bp.route("/api/docs")
+def api_docs_list():
+    """List available documentation files."""
+    project_root = FLEET_DIR.parent
+    docs = []
+    for slug, filename, desc in _DOC_FILES:
+        path = project_root / filename
+        if path.exists():
+            size = path.stat().st_size
+            docs.append({"slug": slug, "filename": filename, "description": desc,
+                         "size_bytes": size, "exists": True})
+        else:
+            docs.append({"slug": slug, "filename": filename, "description": desc,
+                         "size_bytes": 0, "exists": False})
+    return jsonify({"docs": docs, "count": len([d for d in docs if d["exists"]])})
+
+
+@views_bp.route("/api/docs/<slug>")
+def api_docs_get(slug):
+    """Parse a markdown doc into structured, filterable sections."""
+    project_root = FLEET_DIR.parent
+    filename = _SLUG_MAP.get(slug)
+    if not filename:
+        return jsonify({"error": "Unknown doc", "slug": slug}), 404
+
+    path = project_root / filename
+    if not path.exists():
+        return jsonify({"error": "File not found", "filename": filename}), 404
+
+    try:
+        text = path.read_text(encoding="utf-8")
+        sections = _parse_markdown_sections(text)
+
+        # Extract metadata for filtering
+        statuses = set()
+        versions = set()
+        for s in sections:
+            if s.get("status"):
+                statuses.add(s["status"])
+            if s.get("version"):
+                versions.add(s["version"])
+            for sub in s.get("children", []):
+                if sub.get("status"):
+                    statuses.add(sub["status"])
+                if sub.get("version"):
+                    versions.add(sub["version"])
+
+        return jsonify({
+            "slug": slug,
+            "filename": filename,
+            "title": sections[0]["title"] if sections else filename,
+            "sections": sections,
+            "filters": {
+                "statuses": sorted(statuses),
+                "versions": sorted(versions),
+            },
+            "total_sections": sum(1 + len(s.get("children", [])) for s in sections),
+        })
+    except Exception:
+        log.warning("Failed to parse doc %s", slug, exc_info=True)
+        return jsonify({"error": "Failed to parse document"}), 500
+
+
+@views_bp.route("/api/docs/<slug>/search")
+def api_docs_search(slug):
+    """Search within a doc's sections."""
+    query = request.args.get("q", "").lower().strip()
+    if not query:
+        return jsonify({"error": "Missing query parameter 'q'"}), 400
+
+    filename = _SLUG_MAP.get(slug)
+    if not filename:
+        return jsonify({"error": "Unknown doc"}), 404
+    path = FLEET_DIR.parent / filename
+    if not path.exists():
+        return jsonify({"error": "File not found"}), 404
+
+    try:
+        text = path.read_text(encoding="utf-8")
+        sections = _parse_markdown_sections(text)
+
+        matches = []
+        for s in sections:
+            if query in s["title"].lower() or query in s.get("body", "").lower():
+                matches.append({"title": s["title"], "level": s["level"],
+                               "status": s.get("status"), "snippet": s.get("body", "")[:200]})
+            for child in s.get("children", []):
+                if query in child["title"].lower() or query in child.get("body", "").lower():
+                    matches.append({"title": child["title"], "level": child["level"],
+                                   "parent": s["title"], "status": child.get("status"),
+                                   "snippet": child.get("body", "")[:200]})
+
+        return jsonify({"query": query, "matches": matches, "count": len(matches)})
+    except Exception:
+        log.warning("Failed to search doc %s", slug, exc_info=True)
+        return jsonify({"error": "Search failed"}), 500
+
+
+def _parse_markdown_sections(text: str) -> list[dict]:
+    """Parse markdown into a tree of sections with metadata extraction."""
+    lines = text.split("\n")
+    sections = []
+    current_h2 = None
+    current_h3 = None
+    buffer = []
+
+    def _flush_buffer():
+        return "\n".join(buffer).strip()
+
+    def _extract_metadata(title: str, body: str) -> dict:
+        """Extract status, version, and tags from section content."""
+        meta = {}
+
+        # Status detection
+        title_lower = title.lower()
+        if "[done]" in title_lower or "\u2713" in title or "DONE" in title:
+            meta["status"] = "done"
+        elif "[x]" in body.lower()[:200] and "[ ]" not in body[:200]:
+            meta["status"] = "done"
+        elif "in progress" in title_lower or "WIP" in title:
+            meta["status"] = "in_progress"
+        elif "[ ]" in body[:500]:
+            meta["status"] = "not_started"
+        elif "completed" in title_lower:
+            meta["status"] = "done"
+
+        # Version detection (v0.XX, 0.XXX.YYb, etc)
+        ver_match = re.search(r'v?(\d+\.\d+(?:\.\d+)?(?:b)?)', title)
+        if ver_match:
+            meta["version"] = ver_match.group(1)
+
+        return meta
+
+    for line in lines:
+        if line.startswith("## ") and not line.startswith("### "):
+            # Flush previous h3
+            if current_h3 is not None:
+                current_h3["body"] = _flush_buffer()
+                buffer = []
+            # Flush previous h2
+            if current_h2 is not None:
+                if current_h3 is None:
+                    current_h2["body"] = _flush_buffer()
+                    buffer = []
+                sections.append(current_h2)
+
+            title = line[3:].strip()
+            current_h2 = {
+                "title": title,
+                "level": 2,
+                "body": "",
+                "children": [],
+                **_extract_metadata(title, ""),
+            }
+            current_h3 = None
+            buffer = []
+
+        elif line.startswith("### "):
+            # Flush previous h3 or h2 body
+            if current_h3 is not None:
+                current_h3["body"] = _flush_buffer()
+                buffer = []
+            elif current_h2 is not None and not current_h2.get("children"):
+                current_h2["body"] = _flush_buffer()
+                buffer = []
+
+            title = line[4:].strip()
+            current_h3 = {
+                "title": title,
+                "level": 3,
+                "body": "",
+                **_extract_metadata(title, ""),
+            }
+            if current_h2 is not None:
+                current_h2["children"].append(current_h3)
+            buffer = []
+
+        else:
+            buffer.append(line)
+
+    # Flush remaining
+    if current_h3 is not None:
+        current_h3["body"] = _flush_buffer()
+    elif current_h2 is not None:
+        current_h2["body"] = _flush_buffer()
+    if current_h2 is not None:
+        # Update metadata with body content
+        body_text = current_h2["body"]
+        for child in current_h2.get("children", []):
+            body_text += " " + child.get("body", "")
+            child.update(_extract_metadata(child["title"], child.get("body", "")))
+        current_h2.update(_extract_metadata(current_h2["title"], body_text))
+        sections.append(current_h2)
+
+    return sections
 
 
 # ── Experiment API ───────────────────────────────────────────────────────
