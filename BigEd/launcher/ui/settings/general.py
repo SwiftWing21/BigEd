@@ -47,9 +47,9 @@ class GeneralPanelMixin:
 
         ctk.CTkLabel(theme_frame, text="Theme", font=FONT_SM,
                      text_color=TEXT).grid(row=0, column=0, padx=12, pady=10, sticky="w")
-        self._theme_var = ctk.StringVar(value=L._active_theme)
+        self._theme_var = ctk.StringVar(value=getattr(L, '_active_theme', 'Default'))
         ctk.CTkOptionMenu(
-            theme_frame, values=list(L.AGENT_THEMES.keys()),
+            theme_frame, values=list(getattr(L, 'AGENT_THEMES', {"default": {}}).keys()),
             variable=self._theme_var, font=FONT_SM,
             fg_color=BG3, button_color=ACCENT, button_hover_color=ACCENT_H,
             height=30, width=160,
@@ -74,7 +74,8 @@ class GeneralPanelMixin:
             "security", "planner",
         ]
         for i, role in enumerate(all_roles):
-            theme_map = L.AGENT_THEMES.get(L._active_theme, L.AGENT_THEMES["default"])
+            _themes = getattr(L, 'AGENT_THEMES', {"default": {}})
+            theme_map = _themes.get(getattr(L, '_active_theme', 'default'), _themes.get("default", {}))
             base = re.sub(r'_\d+$', '', role)
             suffix = role[len(base):]
             theme_default = theme_map.get(base, base.title())
@@ -88,7 +89,7 @@ class GeneralPanelMixin:
                                  border_color=GLASS_BORDER, text_color=TEXT,
                                  placeholder_text=theme_default, height=28)
             entry.grid(row=i, column=1, sticky="ew", padx=(0, 10), pady=2)
-            current = L._custom_names.get(role, "")
+            current = getattr(L, '_custom_names', {}).get(role, "")
             if current:
                 entry.insert(0, current)
             self._name_entries[role] = entry
@@ -111,8 +112,9 @@ class GeneralPanelMixin:
         behavior_frame = ctk.CTkFrame(panel, fg_color=GLASS_BG, corner_radius=6)
         behavior_frame.pack(fill="x", padx=16, pady=(0, 12))
 
+        _gcp = getattr(self._parent, '_get_complex_provider', lambda: "local")
         self._claude_research_var2 = ctk.BooleanVar(
-            value=self._parent._get_complex_provider() == "claude")
+            value=_gcp() == "claude")
         ctk.CTkSwitch(
             behavior_frame, text="  Claude for research decisions",
             variable=self._claude_research_var2,

@@ -112,10 +112,11 @@ class HardwarePanelMixin:
                                text_color=DIM)
         sub_lbl.place(x=12, y=58)
 
-        # Usage bar at bottom
-        bar_bg = ctk.CTkFrame(card, fg_color=BG3, height=4, corner_radius=2)
+        # Usage bar at bottom — use tk.Frame for place() compatibility
+        import tkinter as tk
+        bar_bg = tk.Frame(card, bg=BG3, height=4)
         bar_bg.place(x=12, rely=1.0, y=-12, relwidth=1.0, width=-24)
-        bar_fill = ctk.CTkFrame(bar_bg, fg_color=color, height=4, corner_radius=2)
+        bar_fill = tk.Frame(bar_bg, bg=color, height=4)
         bar_fill.place(x=0, y=0, relwidth=0.0)
 
         return {"card": card, "value": val_lbl, "subtitle": sub_lbl, "bar": bar_fill, "color": color}

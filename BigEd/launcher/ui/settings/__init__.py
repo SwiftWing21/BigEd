@@ -150,16 +150,35 @@ class SettingsDialog(
         self._content.grid_columnconfigure(0, weight=1)
         self._content.grid_rowconfigure(0, weight=1)
 
-        # Build all panels (methods from mixins)
-        self._build_general_panel()
-        self._build_display_panel()
-        self._build_models_panel()
-        self._build_hardware_panel()
-        self._build_keys_panel()
-        self._build_review_panel()
-        self._build_operations_panel()
-        self._build_mcp_panel()
-        self._build_consoles_panel()
+        # Build all panels (methods from mixins) — catch errors per-panel
+        builders = [
+            ("general",    self._build_general_panel),
+            ("display",    self._build_display_panel),
+            ("models",     self._build_models_panel),
+            ("hardware",   self._build_hardware_panel),
+            ("keys",       self._build_keys_panel),
+            ("review",     self._build_review_panel),
+            ("operations", self._build_operations_panel),
+            ("mcp",        self._build_mcp_panel),
+            ("consoles",   self._build_consoles_panel),
+        ]
+        for key, builder in builders:
+            try:
+                builder()
+            except Exception as e:
+                # Create error placeholder so the panel isn't empty
+                import logging
+                logging.getLogger("settings").warning(
+                    "Settings panel '%s' failed to build: %s", key, e, exc_info=True)
+                if key not in self._panels:
+                    err_panel = ctk.CTkScrollableFrame(
+                        self._content, fg_color=GLASS_PANEL)
+                    self._panels[key] = err_panel
+                    self._section_header(err_panel, f"{key} (Error)")
+                    ctk.CTkLabel(
+                        err_panel, text=f"Panel failed to load:\n{e}",
+                        font=FONT_SM, text_color=RED, wraplength=500,
+                    ).pack(padx=16, pady=16)
 
     def _show_section(self, key: str):
         if self._active_section == key:

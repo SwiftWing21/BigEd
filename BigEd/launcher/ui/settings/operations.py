@@ -39,7 +39,7 @@ class OperationsPanelMixin:
         recover_frame = ctk.CTkFrame(panel, fg_color="transparent")
         recover_frame.pack(fill="x", padx=16, pady=(0, 12))
         _ops_card(recover_frame, "↺", "Recover All",
-                  self._parent._recover_all,
+                  getattr(self._parent, '_recover_all', lambda: None),
                   "Kill and restart Ollama + supervisor + all workers")
 
         # Security
@@ -47,13 +47,13 @@ class OperationsPanelMixin:
         sec_frame = ctk.CTkFrame(panel, fg_color="transparent")
         sec_frame.pack(fill="x", padx=16, pady=(0, 12))
         _ops_card(sec_frame, "🔍", "Security Audit",
-                  self._parent._run_audit,
+                  getattr(self._parent, '_run_audit', lambda: None),
                   "Audit all fleet skills and configs")
         _ops_card(sec_frame, "🌐", "Pen Test",
-                  self._parent._run_pentest,
+                  getattr(self._parent, '_run_pentest', lambda: None),
                   "Network service scan of local environment")
         _ops_card(sec_frame, "📂", "Advisories",
-                  self._parent._open_advisories,
+                  getattr(self._parent, '_open_advisories', lambda: None),
                   "View and apply pending security advisories")
 
         # Marathon
@@ -61,13 +61,13 @@ class OperationsPanelMixin:
         marathon_frame = ctk.CTkFrame(panel, fg_color="transparent")
         marathon_frame.pack(fill="x", padx=16, pady=(0, 12))
         _ops_card(marathon_frame, "🏃", "Start Marathon",
-                  self._parent._start_marathon,
+                  getattr(self._parent, '_start_marathon', lambda: None),
                   "8-hour discussion + lead research + synthesis run")
         _ops_card(marathon_frame, "📋", "Marathon Log",
-                  self._parent._show_marathon_log,
+                  getattr(self._parent, '_show_marathon_log', lambda: None),
                   "Tail marathon.log — current phase and output")
         _ops_card(marathon_frame, "⏹", "Stop Marathon",
-                  self._parent._stop_marathon,
+                  getattr(self._parent, '_stop_marathon', lambda: None),
                   "Kill the running marathon process",
                   "#5a2020", "#6a2828")
 
