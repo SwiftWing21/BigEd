@@ -161,3 +161,41 @@ async fn test_timeline_endpoint() {
         .unwrap();
     assert_eq!(resp.status(), StatusCode::OK);
 }
+
+// ── Task 6: Settings handlers ──────────────────────────────────────────────
+
+#[tokio::test]
+async fn test_get_theme() {
+    let state = test_state();
+    let app = biged_server::router(state);
+    let resp = app
+        .oneshot(
+            Request::get("/api/settings/theme")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let body = axum::body::to_bytes(resp.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+    assert!(json.get("theme").is_some());
+}
+
+#[tokio::test]
+async fn test_set_theme() {
+    let state = test_state();
+    let app = biged_server::router(state);
+    let resp = app
+        .oneshot(
+            Request::post("/api/settings/theme")
+                .header("content-type", "application/json")
+                .body(Body::from(r#"{"theme":"figma"}"#))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+}

@@ -60,6 +60,20 @@ pub fn router(state: AppState) -> Router {
             "/api/discussions",
             axum::routing::get(handlers::skills::discussions),
         )
+        // Settings
+        .route(
+            "/api/settings/theme",
+            axum::routing::get(handlers::settings::get_theme)
+                .post(handlers::settings::set_theme),
+        )
+        .route(
+            "/api/fleet/worker/{name}/disable",
+            axum::routing::post(handlers::settings::disable_worker),
+        )
+        .route(
+            "/api/fleet/worker/{name}/enable",
+            axum::routing::post(handlers::settings::enable_worker),
+        )
         .with_state(state)
 }
 
