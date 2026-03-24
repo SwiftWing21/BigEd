@@ -2299,7 +2299,7 @@ function loadDashSettings() {
       if (!d.settings[section]) return;
       var vals = d.settings[section].values || {};
       var box = document.createElement('div');
-      box.style.cssText = 'background:var(--muted);border-radius:8px;padding:12px';
+      box.style.cssText = 'background:var(--muted);border-radius:8px;padding:12px;overflow:hidden;min-width:0';
       var title = document.createElement('div');
       title.style.cssText = 'font-weight:600;color:var(--foreground);margin-bottom:6px;font-size:12px;text-transform:uppercase';
       title.textContent = section;
@@ -2309,13 +2309,16 @@ function loadDashSettings() {
         var v = vals[k];
         if (typeof v === 'boolean') v = v ? 'On' : 'Off';
         if (typeof v === 'object') v = JSON.stringify(v);
+        var vStr = String(v);
         var row = document.createElement('div');
-        row.style.cssText = 'display:flex;justify-content:space-between;font-size:11px;padding:2px 0';
+        row.style.cssText = 'display:flex;justify-content:space-between;gap:8px;font-size:11px;padding:2px 0;min-width:0';
         var lbl = document.createElement('span');
+        lbl.style.cssText = 'flex-shrink:0;white-space:nowrap';
         lbl.textContent = k;
         var val = document.createElement('span');
-        val.style.cssText = 'color:var(--foreground);font-weight:500';
-        val.textContent = String(v);
+        val.style.cssText = 'color:var(--foreground);font-weight:500;text-align:right;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0';
+        val.textContent = vStr;
+        val.title = vStr;  // full value on hover
         row.appendChild(lbl);
         row.appendChild(val);
         box.appendChild(row);
