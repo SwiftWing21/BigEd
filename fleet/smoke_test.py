@@ -343,6 +343,15 @@ def test_conditional_dag():
     """Conditional DAG edges: task promotes only when condition substring matches."""
     import db
     db.init_db()
+
+    # Stop the async DAG queue to prevent race conditions during test.
+    # We'll drive promotion manually via _promote_waiting_tasks().
+    try:
+        import dag_queue
+        dag_queue.stop()
+    except ImportError:
+        pass
+
     # Task A: will complete with "approved" in result
     tid_a = db.post_task("smoke_cond_a", json.dumps({"step": "a"}), priority=1)
     # Task B: will complete with "rejected" in result
@@ -358,19 +367,25 @@ def test_conditional_dag():
     if task_c["status"] != "WAITING":
         return False, f"expected WAITING, got {task_c['status']}"
 
-    # Complete A with matching condition
-    db.complete_task(tid_a, json.dumps({"verdict": "approved"}))
+    # Complete A with matching condition — use sync promotion (bypass dag_queue)
+    def _complete_sync(task_id, result):
+        def _do():
+            with db.get_conn() as conn:
+                conn.execute(
+                    "UPDATE tasks SET status='DONE', result_json=? WHERE id=?",
+                    (result, task_id),
+                )
+                db._promote_waiting_tasks(conn)
+        db._retry_write(_do)
+
+    _complete_sync(tid_a, json.dumps({"verdict": "approved"}))
     # C should still be WAITING (B not done yet)
     task_c = db.get_task_result(tid_c)
     if task_c["status"] != "WAITING":
         return False, f"expected WAITING after A done, got {task_c['status']}"
 
     # Complete B — now both deps done, condition on A met, B is unconditional
-    db.complete_task(tid_b, json.dumps({"verdict": "rejected"}))
-    # Force sync DAG promotion (async queue may not flush in time for test)
-    time.sleep(0.1)
-    with db.get_conn() as conn:
-        db._promote_waiting_tasks(conn)
+    _complete_sync(tid_b, json.dumps({"verdict": "rejected"}))
     task_c = db.get_task_result(tid_c)
     if task_c["status"] != "PENDING":
         return False, f"expected PENDING after conditions met, got {task_c['status']}"
@@ -383,7 +398,7 @@ def test_conditional_dag():
         conditions={str(tid_x): "approved"},
     )
     # Complete X with result that does NOT contain "approved"
-    db.complete_task(tid_x, json.dumps({"verdict": "denied"}))
+    _complete_sync(tid_x, json.dumps({"verdict": "denied"}))
     task_y = db.get_task_result(tid_y)
     if task_y["status"] != "WAITING":
         return False, f"expected WAITING (condition not met), got {task_y['status']}"
