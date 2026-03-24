@@ -1609,6 +1609,39 @@ textarea.input {
       <div class="chart-wrap"><canvas id="chart-agent-perf"></canvas></div>
     </div>
   </div>
+
+  <!-- Neural Activity (full-width, from universe lane data) -->
+  <div class="card mb-24">
+    <div class="card-header">
+      <span class="card-title">Neural Activity Map</span>
+      <button class="btn btn-ghost btn-sm" onclick="loadAnalyticsLanes()">&#8635; Refresh</button>
+    </div>
+    <div class="neural-lane-wrap" style="height:320px">
+      <canvas id="analytics-neural-canvas"></canvas>
+    </div>
+    <div class="chart-legend">
+      <span class="chart-legend-item"><span class="chart-legend-dot" style="background:#10b981"></span> Agents</span>
+      <span class="chart-legend-item"><span class="chart-legend-dot" style="background:#a78bfa"></span> Models</span>
+      <span class="chart-legend-item"><span class="chart-legend-dot" style="background:#f59e0b"></span> Skills</span>
+      <span class="chart-legend-item"><span class="chart-legend-dot" style="background:#06b6d4"></span> Knowledge</span>
+    </div>
+  </div>
+
+  <!-- Skill Distribution + Model Utilization -->
+  <div class="grid-2 mb-24">
+    <div class="card">
+      <div class="card-header">
+        <span class="card-title">Top Skills (24h)</span>
+      </div>
+      <div class="chart-wrap"><canvas id="chart-skill-dist"></canvas></div>
+    </div>
+    <div class="card">
+      <div class="card-header">
+        <span class="card-title">Model Utilization</span>
+      </div>
+      <div class="chart-wrap"><canvas id="chart-model-util"></canvas></div>
+    </div>
+  </div>
 </div>
 
 <!-- ═══════════════════════════════════════════════════════════════════════
@@ -3090,6 +3123,9 @@ function loadAnalytics() {
   loadTasksTimeChart();
   loadCostProviderChart();
   loadAgentPerfChart();
+  loadAnalyticsLanes();
+  loadSkillDistChart();
+  loadModelUtilChart();
 }
 
 function loadTokenUsageChart() {
@@ -3247,6 +3283,195 @@ function loadAgentPerfChart() {
         scales: {
           x: { ticks: { color: chartMuted(), font: { size: 10 } }, grid: { display: false } },
           y: { ticks: { color: chartMuted() }, grid: { color: chartBorder() } }
+        }
+      }
+    });
+  }).catch(function() {});
+}
+
+/* ── Analytics: Neural Lane Map ─────────────────────────────────────────── */
+var _analyticsNeuralAnim = null;
+var _analyticsNeuralData = null;
+var _analyticsNeuralPulses = [];
+
+function loadAnalyticsLanes() {
+  apiFetch('/api/activity/lanes?hours=24').then(function(data) {
+    _analyticsNeuralData = data;
+    _analyticsNeuralPulses = [];
+    (data.timeline || []).forEach(function(t) {
+      _analyticsNeuralPulses.push({
+        agent: t.agent, skill: t.skill, status: t.status,
+        x: Math.random(), alpha: 0.3 + Math.random() * 0.5,
+        speed: 0.001 + Math.random() * 0.002, size: 2 + Math.random() * 3
+      });
+    });
+    if (!_analyticsNeuralAnim) _analyticsNeuralAnim = requestAnimationFrame(renderAnalyticsNeuralFrame);
+  }).catch(function() {});
+}
+
+function renderAnalyticsNeuralFrame() {
+  var canvas = document.getElementById('analytics-neural-canvas');
+  if (!canvas || !_analyticsNeuralData) { _analyticsNeuralAnim = null; return; }
+  if (canvas.offsetParent === null) { _analyticsNeuralAnim = requestAnimationFrame(renderAnalyticsNeuralFrame); return; }
+  var rect = canvas.parentElement.getBoundingClientRect();
+  var dpr = window.devicePixelRatio || 1;
+  canvas.width = rect.width * dpr; canvas.height = rect.height * dpr;
+  var ctx = canvas.getContext('2d'); ctx.scale(dpr, dpr);
+  var w = rect.width, h = rect.height; ctx.clearRect(0, 0, w, h);
+  var lanes = _analyticsNeuralData.lanes || [];
+  var skills = _analyticsNeuralData.skills || [];
+  var folders = _analyticsNeuralData.folders || [];
+  var edges = _analyticsNeuralData.edges || [];
+  if (lanes.length === 0) {
+    ctx.fillStyle = 'rgba(148,163,184,0.5)'; ctx.font = '13px system-ui, sans-serif';
+    ctx.textAlign = 'center'; ctx.fillText('No activity in last 24h', w / 2, h / 2);
+    _analyticsNeuralAnim = null; return;
+  }
+  var labelW = 90, barStart = labelW + 8, sideW = 120;
+  var barW = w - barStart - sideW - 10;
+  var maxLanes = Math.min(lanes.length, 14);
+  var laneH = Math.min(22, (h - 30) / Math.max(maxLanes, 1));
+  var laneGap = 2, topOff = 10;
+  var maxTotal = Math.max.apply(null, lanes.map(function(l) { return l.total; })) || 1;
+  var kindColor = { agent: '#10b981', model: '#a78bfa' };
+  var statusColor = { done: '#10b981', failed: '#ef4444', running: '#3b82f6' };
+  var laneMap = {};
+  for (var i = 0; i < maxLanes; i++) {
+    var lane = lanes[i]; var y = topOff + i * (laneH + laneGap);
+    ctx.fillStyle = kindColor[lane.kind] || '#64748b'; ctx.globalAlpha = 0.8;
+    ctx.beginPath(); ctx.arc(labelW + 2, y + laneH / 2, 3, 0, Math.PI * 2); ctx.fill(); ctx.globalAlpha = 1;
+    ctx.fillStyle = 'rgba(255,255,255,0.03)'; ctx.beginPath(); ctx.roundRect(barStart, y, barW, laneH, 3); ctx.fill();
+    var scale = barW / maxTotal, cx = barStart;
+    [{v:lane.done,c:statusColor.done},{v:lane.failed,c:statusColor.failed},{v:lane.running,c:statusColor.running}].forEach(function(s){
+      if(s.v<=0)return; var sw=Math.max(s.v*scale,2); ctx.globalAlpha=0.65; ctx.fillStyle=s.c;
+      ctx.beginPath(); ctx.roundRect(cx,y+2,sw,laneH-4,2); ctx.fill(); ctx.globalAlpha=1; cx+=sw;
+    });
+    ctx.fillStyle = lane.running > 0 ? '#e2e8f0' : '#94a3b8';
+    ctx.font = (lane.running > 0 ? 'bold ' : '') + '10px system-ui, sans-serif';
+    ctx.textAlign = 'right'; ctx.textBaseline = 'middle';
+    ctx.fillText(lane.agent.length > 12 ? lane.agent.slice(0, 11) + '\u2026' : lane.agent, labelW - 4, y + laneH / 2);
+    ctx.fillStyle = '#64748b'; ctx.font = '9px system-ui, sans-serif'; ctx.textAlign = 'left';
+    ctx.fillText(lane.total + (lane.cost ? ' $' + lane.cost : ''), cx + 5, y + laneH / 2);
+    lane._y = y; lane._laneH = laneH; laneMap[lane.agent] = i;
+  }
+  ctx.globalAlpha = 0.1; ctx.strokeStyle = '#818cf8'; ctx.lineWidth = 1;
+  edges.forEach(function(e) {
+    var si = laneMap[e.source], ti = laneMap[e.target]; if (si === undefined || ti === undefined) return;
+    var sy2 = topOff + si * (laneH + laneGap) + laneH / 2, ty2 = topOff + ti * (laneH + laneGap) + laneH / 2;
+    ctx.beginPath(); ctx.moveTo(barStart, sy2); ctx.bezierCurveTo(barStart - 12, sy2, barStart - 12, ty2, barStart, ty2); ctx.stroke();
+  }); ctx.globalAlpha = 1;
+  var sideX = barStart + barW + 12, sy = topOff, sideBottom = h - 4;
+  ctx.save(); ctx.beginPath(); ctx.rect(sideX - 2, topOff - 2, sideW + 4, sideBottom - topOff + 4); ctx.clip();
+  if (skills.length > 0) {
+    ctx.fillStyle = '#f59e0b'; ctx.font = 'bold 9px system-ui, sans-serif'; ctx.textAlign = 'left';
+    ctx.fillText('TOP SKILLS', sideX, sy + 4); sy += 12;
+    skills.slice(0, 8).forEach(function(sk) { if (sy > sideBottom) return;
+      ctx.fillStyle = '#94a3b8'; ctx.font = '9px system-ui, sans-serif'; ctx.textAlign = 'left';
+      ctx.fillText(sk.skill.length > 14 ? sk.skill.slice(0, 13) + '\u2026' : sk.skill, sideX, sy + 4);
+      ctx.fillStyle = '#64748b'; ctx.font = '8px system-ui, sans-serif'; ctx.textAlign = 'right';
+      ctx.fillText(sk.total + '', sideX + sideW - 8, sy + 4); ctx.textAlign = 'left'; sy += 13;
+    });
+  }
+  if (folders.length > 0 && sy < sideBottom - 20) {
+    sy += 4; ctx.fillStyle = '#06b6d4'; ctx.font = 'bold 9px system-ui, sans-serif';
+    ctx.fillText('KNOWLEDGE', sideX, sy + 4); sy += 12;
+    folders.slice(0, 5).forEach(function(fo) { if (sy > sideBottom) return;
+      ctx.fillStyle = '#94a3b8'; ctx.font = '9px system-ui, sans-serif'; ctx.textAlign = 'left';
+      ctx.fillText(fo.name.length > 11 ? fo.name.slice(0, 10) + '\u2026' : fo.name, sideX, sy + 4);
+      ctx.fillStyle = '#64748b'; ctx.font = '8px system-ui, sans-serif'; ctx.textAlign = 'right';
+      ctx.fillText(fo.files + '', sideX + sideW - 8, sy + 4); ctx.textAlign = 'left'; sy += 13;
+    });
+  }
+  ctx.restore();
+  _analyticsNeuralPulses.forEach(function(p) {
+    var li = laneMap[p.agent]; if (li === undefined) return;
+    var lane = lanes[li], py = lane._y + lane._laneH / 2, px = barStart + p.x * barW;
+    var col = statusColor[p.status.toLowerCase()] || statusColor.done;
+    ctx.globalAlpha = p.alpha * 0.35; ctx.fillStyle = col;
+    ctx.beginPath(); ctx.arc(px, py, p.size * 2, 0, Math.PI * 2); ctx.fill();
+    ctx.globalAlpha = p.alpha; ctx.beginPath(); ctx.arc(px, py, p.size, 0, Math.PI * 2); ctx.fill(); ctx.globalAlpha = 1;
+    p.x += p.speed; p.alpha -= 0.002;
+    if (p.x > 1.1 || p.alpha <= 0) {
+      p.x = -0.05; p.alpha = 0.3 + Math.random() * 0.5; p.speed = 0.001 + Math.random() * 0.002;
+      var active = lanes.filter(function(l) { return l.total > 0; });
+      if (active.length) { var rl = active[Math.floor(Math.random() * active.length)]; p.agent = rl.agent; p.status = rl.running > 0 ? 'RUNNING' : 'DONE'; }
+    }
+  });
+  _analyticsNeuralAnim = requestAnimationFrame(renderAnalyticsNeuralFrame);
+}
+
+/* ── Analytics: Skill Distribution chart ───────────────────────────────── */
+function loadSkillDistChart() {
+  apiFetch('/api/activity/lanes?hours=24').then(function(data) {
+    var ctx = document.getElementById('chart-skill-dist');
+    if (!ctx) return;
+    if (_charts.skillDist) _charts.skillDist.destroy();
+    var skills = (data.skills || []).slice(0, 12);
+    var labels = skills.map(function(s) { return s.skill; });
+    _charts.skillDist = new Chart(ctx, {
+      type: 'bar',
+      data: {
+        labels: labels,
+        datasets: [
+          { label: 'Done', data: skills.map(function(s) { return s.done; }),
+            backgroundColor: 'rgba(16,185,129,0.6)', borderRadius: 3 },
+          { label: 'Failed', data: skills.map(function(s) { return s.failed; }),
+            backgroundColor: 'rgba(239,68,68,0.6)', borderRadius: 3 }
+        ]
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false, indexAxis: 'y',
+        plugins: { legend: { labels: { color: chartMuted(), font: { size: 10 } } } },
+        scales: {
+          x: { stacked: true, ticks: { color: chartMuted() }, grid: { color: chartBorder() } },
+          y: { stacked: true, ticks: { color: chartMuted(), font: { size: 9 } }, grid: { display: false } }
+        }
+      }
+    });
+  }).catch(function() {});
+}
+
+/* ── Analytics: Model Utilization chart ────────────────────────────────── */
+function loadModelUtilChart() {
+  apiFetch('/api/activity/lanes?hours=24').then(function(data) {
+    var ctx = document.getElementById('chart-model-util');
+    if (!ctx) return;
+    if (_charts.modelUtil) _charts.modelUtil.destroy();
+    var models = (data.lanes || []).filter(function(l) { return l.kind === 'model'; }).slice(0, 8);
+    if (models.length === 0) {
+      var empty = document.createElement('div');
+      empty.style.cssText = 'display:flex;align-items:center;justify-content:center;height:100%;color:var(--muted-foreground);font-size:13px';
+      empty.textContent = 'No model usage in last 24h';
+      ctx.parentElement.textContent = '';
+      ctx.parentElement.appendChild(empty);
+      return;
+    }
+    var labels = models.map(function(m) { return m.agent; });
+    var colors = ['#a78bfa', '#818cf8', '#6366f1', '#4f46e5', '#4338ca', '#3730a3', '#312e81', '#1e1b4b'];
+    _charts.modelUtil = new Chart(ctx, {
+      type: 'doughnut',
+      data: {
+        labels: labels,
+        datasets: [{
+          data: models.map(function(m) { return m.total; }),
+          backgroundColor: colors.slice(0, models.length),
+          borderWidth: 0,
+        }]
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        plugins: {
+          legend: { position: 'bottom', labels: { color: chartMuted(), font: { size: 10 } } },
+          tooltip: {
+            callbacks: {
+              label: function(item) {
+                var m = models[item.dataIndex];
+                var tok = m.tokens ? ' (' + Math.round(m.tokens / 1000) + 'k tok)' : '';
+                var cost = m.cost ? ' $' + m.cost : '';
+                return item.label + ': ' + m.total + ' calls' + tok + cost;
+              }
+            }
+          }
         }
       }
     });
