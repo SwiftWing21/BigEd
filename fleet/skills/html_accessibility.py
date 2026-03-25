@@ -31,6 +31,7 @@ DESCRIPTION = (
 VERSION = "1.0.0"
 COMPLEXITY = "medium"
 REQUIRES_NETWORK = False
+SUITE = ""
 
 
 def run(payload, config):

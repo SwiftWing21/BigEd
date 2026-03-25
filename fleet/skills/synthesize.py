@@ -8,6 +8,7 @@ DESCRIPTION = "Synthesize all agent discussion contributions + research into a f
 VERSION = "1.0.0"
 COMPLEXITY = "medium"
 REQUIRES_NETWORK = False
+SUITE = "content"
 
 import json
 from datetime import date

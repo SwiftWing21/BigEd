@@ -4,6 +4,7 @@ DESCRIPTION = "Index Python functions/classes in a directory using AST parsing."
 VERSION = "1.0.0"
 COMPLEXITY = "simple"
 REQUIRES_NETWORK = False
+SUITE = ""
 
 import ast
 import json

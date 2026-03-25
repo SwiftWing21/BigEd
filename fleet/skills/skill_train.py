@@ -32,6 +32,7 @@ DESCRIPTION = "Skill trainer v2 — autoresearch-style iterative improvement loo
 VERSION = "1.0.0"
 COMPLEXITY = "medium"
 REQUIRES_NETWORK = False
+SUITE = "ml"
 
 FLEET_DIR = Path(__file__).parent.parent
 SKILLS_DIR = FLEET_DIR / "skills"

@@ -41,6 +41,7 @@ VERSION = "1.0.0"
 COMPLEXITY = "medium"
 COMPLEXITY = "medium"
 REQUIRES_NETWORK = False
+SUITE = "ml"
 
 GRADE_THRESHOLDS = {
     "A": 0.85, "B": 0.70, "C": 0.55, "D": 0.40, "F": 0.0,

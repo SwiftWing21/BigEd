@@ -18,6 +18,8 @@ DESCRIPTION = "Benchmark all RAG retrieval strategies (BM25, vector, hybrid) wit
 VERSION = "1.0.0"
 COMPLEXITY = "medium"
 REQUIRES_NETWORK = False
+SUITE = "rag"
+TAGS = ['retrieval', 'benchmark']
 
 FLEET_DIR = Path(__file__).parent.parent
 

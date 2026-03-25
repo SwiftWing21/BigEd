@@ -9,6 +9,7 @@ DESCRIPTION = "Import autoresearch ML training results into fleet knowledge and 
 VERSION = "1.0.0"
 COMPLEXITY = "medium"
 REQUIRES_NETWORK = False
+SUITE = "ml"
 
 FLEET_DIR = Path(__file__).parent.parent
 AUTORESEARCH_DIR = FLEET_DIR.parent / "autoresearch"

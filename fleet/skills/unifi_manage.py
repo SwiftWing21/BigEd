@@ -29,6 +29,8 @@ VERSION = "1.0.0"
 COMPLEXITY = "medium"
 
 REQUIRES_NETWORK = True
+SUITE = ""
+TAGS = ['network']
 
 
 def _unifi_session(host, user, password, site="default"):

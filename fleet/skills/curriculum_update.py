@@ -25,6 +25,7 @@ DESCRIPTION = "Curriculum update — analyzes completed work, skill gaps, and re
 VERSION = "1.0.0"
 COMPLEXITY = "medium"
 REQUIRES_NETWORK = False
+SUITE = ""
 
 FLEET_DIR = Path(__file__).parent.parent
 CURRICULA_DIR = FLEET_DIR / "idle_curricula"

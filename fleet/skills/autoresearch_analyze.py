@@ -8,6 +8,7 @@ DESCRIPTION = "Parse autoresearch results.tsv, rank by val_bpb, detect plateau, 
 VERSION = "1.0.0"
 COMPLEXITY = "medium"
 REQUIRES_NETWORK = False
+SUITE = "ml"
 
 log = logging.getLogger(__name__)
 

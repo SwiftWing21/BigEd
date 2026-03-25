@@ -10,6 +10,7 @@ DESCRIPTION = "Track task outcome trends: success rates, regressions, per-skill/
 VERSION = "1.0.0"
 COMPLEXITY = "medium"
 REQUIRES_NETWORK = False
+SUITE = "ml"
 
 
 def run(payload, config):

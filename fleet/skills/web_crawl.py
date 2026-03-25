@@ -25,6 +25,8 @@ VERSION = "1.0.0"
 COMPLEXITY = "medium"
 
 REQUIRES_NETWORK = True
+SUITE = "research"
+TAGS = ['network']
 
 _EMAIL_RE = re.compile(r'[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}')
 _PHONE_RE = re.compile(r'(?:\+1[\s\-.]?)?\(?\d{3}\)?[\s\-.]?\d{3}[\s\-.]?\d{4}')

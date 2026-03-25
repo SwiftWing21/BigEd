@@ -25,6 +25,7 @@ DESCRIPTION = "Skill chain — runs a sequence of skills, piping each output as 
 VERSION = "1.0.0"
 COMPLEXITY = "complex"
 REQUIRES_NETWORK = False
+SUITE = ""
 
 FLEET_DIR = Path(__file__).parent.parent
 KNOWLEDGE_DIR = FLEET_DIR / "knowledge"

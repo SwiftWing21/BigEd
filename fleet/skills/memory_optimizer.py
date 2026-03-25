@@ -36,6 +36,7 @@ DESCRIPTION = "Analyze and reduce RAM/VRAM pressure across fleet operations."
 VERSION = "1.0.0"
 COMPLEXITY = "medium"
 REQUIRES_NETWORK = False
+SUITE = "ops"
 
 log = logging.getLogger(SKILL_NAME)
 

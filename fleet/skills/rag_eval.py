@@ -20,6 +20,8 @@ DESCRIPTION = "RAG evaluation — builds eval datasets from task history and ben
 VERSION = "1.0.0"
 COMPLEXITY = "medium"
 REQUIRES_NETWORK = False
+SUITE = "rag"
+TAGS = ['evaluation']
 
 FLEET_DIR = Path(__file__).parent.parent
 MODELS_DIR = FLEET_DIR / "models"

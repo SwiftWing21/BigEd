@@ -10,6 +10,7 @@ DESCRIPTION = "Generate synthetic JSONL training datasets for the autoresearch M
 VERSION = "1.0.0"
 COMPLEXITY = "medium"
 REQUIRES_NETWORK = False  # can use local Ollama
+SUITE = "content"
 
 FLEET_DIR = Path(__file__).parent.parent
 DATASETS_DIR = FLEET_DIR / "knowledge" / "datasets"

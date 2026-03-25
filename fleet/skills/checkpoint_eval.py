@@ -8,6 +8,7 @@ DESCRIPTION = "List and rank autoresearch checkpoints by val_bpb, recommend best
 VERSION = "1.0.0"
 COMPLEXITY = "medium"
 REQUIRES_NETWORK = False
+SUITE = "ml"
 
 log = logging.getLogger(__name__)
 

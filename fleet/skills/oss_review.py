@@ -17,6 +17,8 @@ DESCRIPTION = "Discover, pre-rate, and review open-source projects (single or sw
 VERSION = "2.0.0"
 COMPLEXITY = "medium"
 REQUIRES_NETWORK = True
+SUITE = ""
+TAGS = ['network']
 
 # ── Swarm constants ────────────────────────────────────────────────────────────
 LENSES = {

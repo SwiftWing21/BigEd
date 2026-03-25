@@ -19,6 +19,7 @@ DESCRIPTION = "Account review skill — analyzes all tracked service accounts, u
 VERSION = "1.0.0"
 COMPLEXITY = "simple"
 REQUIRES_NETWORK = False
+SUITE = ""
 
 FLEET_DIR     = Path(__file__).parent.parent
 KNOWLEDGE_DIR = FLEET_DIR / "knowledge"

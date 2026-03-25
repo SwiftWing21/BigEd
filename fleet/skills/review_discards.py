@@ -10,6 +10,7 @@ DESCRIPTION = "Watch results.tsv and trigger tiered reviews:"
 VERSION = "1.0.0"
 COMPLEXITY = "simple"
 REQUIRES_NETWORK = False
+SUITE = "ml"
 
 import csv
 import json

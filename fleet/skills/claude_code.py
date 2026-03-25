@@ -14,6 +14,8 @@ DESCRIPTION = "Deep code analysis via Claude Code CLI — review, refactor, docu
 VERSION = "1.0.0"
 COMPLEXITY = "complex"
 REQUIRES_NETWORK = True
+SUITE = ""
+TAGS = ['network']
 
 FLEET_DIR = Path(__file__).parent.parent
 PROJECT_DIR = FLEET_DIR.parent

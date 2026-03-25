@@ -24,6 +24,7 @@ DESCRIPTION = "Write progress snapshots for long-running projects to maintain co
 VERSION = "1.0.0"
 COMPLEXITY = "simple"
 REQUIRES_NETWORK = False
+SUITE = "ops"
 
 FLEET_DIR = Path(__file__).parent.parent
 MARATHON_DIR = FLEET_DIR / "knowledge" / "marathon"

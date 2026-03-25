@@ -4,6 +4,7 @@ DESCRIPTION = "Analyze autoresearch results.tsv and write a report."
 VERSION = "1.0.0"
 COMPLEXITY = "medium"
 REQUIRES_NETWORK = False
+SUITE = "ml"
 
 import csv
 from datetime import date

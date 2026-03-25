@@ -10,6 +10,7 @@ DESCRIPTION = "Analyze task prompt patterns and recommend improvements for highe
 VERSION = "1.0.0"
 COMPLEXITY = "medium"
 REQUIRES_NETWORK = False
+SUITE = ""
 
 
 def run(payload, config):

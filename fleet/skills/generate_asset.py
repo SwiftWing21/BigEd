@@ -12,6 +12,7 @@ DESCRIPTION = "Designer skill — generates visual assets with PIL."
 VERSION = "1.0.0"
 COMPLEXITY = "medium"
 REQUIRES_NETWORK = False
+SUITE = "content"
 
 FLEET_DIR   = Path(__file__).parent.parent
 DESIGN_DIR  = FLEET_DIR / "knowledge" / "design"

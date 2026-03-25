@@ -8,6 +8,7 @@ DESCRIPTION = "Auto-generate markdown API documentation for Python modules using
 VERSION = "1.0.0"
 COMPLEXITY = "medium"
 REQUIRES_NETWORK = False
+SUITE = "content"
 
 
 def run(payload, config):

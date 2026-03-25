@@ -25,6 +25,7 @@ DESCRIPTION = "Local image generation via Stable Diffusion (HuggingFace diffuser
 VERSION = "1.0.0"
 COMPLEXITY = "medium"
 REQUIRES_NETWORK = False
+SUITE = "content"
 
 import gc
 from datetime import datetime

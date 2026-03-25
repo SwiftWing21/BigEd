@@ -30,6 +30,7 @@ DESCRIPTION = "Validate fleet.toml schema and detect configuration drift."
 VERSION = "2.0.0"
 COMPLEXITY = "medium"
 REQUIRES_NETWORK = False
+SUITE = "ops"
 
 log = logging.getLogger(__name__)
 

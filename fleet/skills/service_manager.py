@@ -10,6 +10,7 @@ DESCRIPTION = "Verify and manage system services (auto-boot, Ollama, fleet proce
 VERSION = "1.0.0"
 COMPLEXITY = "medium"
 REQUIRES_NETWORK = False
+SUITE = "ops"
 
 FLEET_DIR = Path(__file__).parent.parent
 

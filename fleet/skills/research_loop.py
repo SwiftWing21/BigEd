@@ -9,6 +9,7 @@ DESCRIPTION = "Autonomous research cycle — detect gaps, research, synthesize, 
 VERSION = "1.0.0"
 COMPLEXITY = "medium"
 REQUIRES_NETWORK = False
+SUITE = "research"
 
 FLEET_DIR = Path(__file__).parent.parent
 KNOWLEDGE_DIR = FLEET_DIR / "knowledge"

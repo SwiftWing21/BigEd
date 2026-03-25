@@ -26,6 +26,7 @@ DESCRIPTION = "Capture screenshots for UX testing, documentation, and GitHub ref
 VERSION = "1.0.0"
 COMPLEXITY = "simple"
 REQUIRES_NETWORK = False
+SUITE = ""
 
 log = logging.getLogger(SKILL_NAME)
 

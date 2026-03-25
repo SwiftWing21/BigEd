@@ -27,6 +27,7 @@ DESCRIPTION = "Code write skill — invokes aider-chat to create or edit files u
 VERSION = "1.0.0"
 COMPLEXITY = "complex"
 REQUIRES_NETWORK = False
+SUITE = ""
 
 from config import GITHUB_OWNER
 

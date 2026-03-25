@@ -18,6 +18,7 @@ DESCRIPTION = "LLM-based semantic evaluation of task output quality (Tier 2 scor
 VERSION = "1.0.0"
 COMPLEXITY = "medium"
 REQUIRES_NETWORK = False  # Uses local Ollama model
+SUITE = "ml"
 
 log = logging.getLogger(__name__)
 

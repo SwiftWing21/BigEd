@@ -8,6 +8,7 @@ DESCRIPTION = "Structured discussion skill — agent reads accumulated research/
 VERSION = "1.0.0"
 COMPLEXITY = "medium"
 REQUIRES_NETWORK = False
+SUITE = ""
 
 import json
 from datetime import datetime

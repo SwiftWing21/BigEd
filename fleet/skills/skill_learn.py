@@ -27,6 +27,7 @@ DESCRIPTION = "Skill learn — analyzes task failure patterns, discussion gaps, 
 VERSION = "1.0.0"
 COMPLEXITY = "complex"
 REQUIRES_NETWORK = False
+SUITE = "ml"
 
 FLEET_DIR = Path(__file__).parent.parent
 KNOWLEDGE_DIR = FLEET_DIR / "knowledge"

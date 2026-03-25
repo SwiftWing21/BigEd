@@ -7,6 +7,7 @@ DESCRIPTION = "Generate a daily digest of knowledge artifacts across all categor
 VERSION = "1.0.0"
 COMPLEXITY = "medium"
 REQUIRES_NETWORK = False
+SUITE = "ops"
 
 
 def run(payload, config):

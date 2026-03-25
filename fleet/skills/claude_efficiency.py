@@ -34,6 +34,7 @@ VERSION = "1.0.0"
 COMPLEXITY = "simple"
 COMPLEXITY = "simple"
 REQUIRES_NETWORK = False  # analyzes local data, doesn't call APIs
+SUITE = "ops"
 
 log = logging.getLogger(SKILL_NAME)
 

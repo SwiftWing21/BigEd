@@ -9,6 +9,7 @@ DESCRIPTION = "Detect and archive stale or bloated knowledge files"
 VERSION = "1.0.0"
 COMPLEXITY = "simple"
 REQUIRES_NETWORK = False
+SUITE = "ops"
 
 FLEET_DIR = Path(__file__).parent.parent
 KNOWLEDGE_DIR = FLEET_DIR / "knowledge"

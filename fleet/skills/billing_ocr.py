@@ -20,6 +20,7 @@ DESCRIPTION = "OCR billing screenshots from Claude/Gemini dashboards to reconcil
 VERSION = "1.0.0"
 COMPLEXITY = "simple"
 REQUIRES_NETWORK = False  # Uses local Ollama vision model
+SUITE = ""
 
 log = logging.getLogger(SKILL_NAME)
 

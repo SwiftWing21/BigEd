@@ -15,6 +15,7 @@ DESCRIPTION = "Audit docs for stale skill counts, versions, endpoint counts, and
 VERSION = "1.0.0"
 COMPLEXITY = "medium"
 REQUIRES_NETWORK = False
+SUITE = "ops"
 
 log = logging.getLogger(__name__)
 

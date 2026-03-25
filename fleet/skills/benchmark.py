@@ -21,6 +21,7 @@ DESCRIPTION = "Benchmark skill — runs a skill N times with varied payloads, me
 VERSION = "1.0.0"
 COMPLEXITY = "simple"
 REQUIRES_NETWORK = False
+SUITE = "ml"
 
 FLEET_DIR = Path(__file__).parent.parent
 REPORTS_DIR = FLEET_DIR / "knowledge" / "reports"

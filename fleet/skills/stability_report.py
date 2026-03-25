@@ -12,6 +12,7 @@ DESCRIPTION = "Analyze resolution data for failure patterns, severity breakdown,
 VERSION = "1.0.0"
 COMPLEXITY = "simple"
 REQUIRES_NETWORK = False
+SUITE = "ops"
 
 FLEET_DIR = Path(__file__).parent.parent
 RESOLUTIONS_PATH = FLEET_DIR / "data" / "resolutions.jsonl"

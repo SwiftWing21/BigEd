@@ -38,6 +38,8 @@ VERSION = "1.0.0"
 COMPLEXITY = "medium"
 
 REQUIRES_NETWORK = True
+SUITE = "ops"
+TAGS = ['network']
 
 # Core skills every product variant needs
 CORE_SKILLS = [

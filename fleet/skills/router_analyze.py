@@ -18,6 +18,7 @@ DESCRIPTION = "Analyze ML router performance — success rates by skill and agen
 VERSION = "1.0.0"
 COMPLEXITY = "medium"
 REQUIRES_NETWORK = False
+SUITE = "ml"
 
 log = logging.getLogger(__name__)
 

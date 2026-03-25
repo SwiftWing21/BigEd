@@ -10,6 +10,7 @@ DESCRIPTION = "Propose and run an autoresearch training trial via the Experiment
 VERSION = "1.0.0"
 COMPLEXITY = "medium"
 REQUIRES_NETWORK = False
+SUITE = "ml"
 
 log = logging.getLogger(__name__)
 

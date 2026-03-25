@@ -30,6 +30,8 @@ VERSION = "1.0.0"
 COMPLEXITY = "complex"
 
 REQUIRES_NETWORK = True
+SUITE = "research"
+TAGS = ['network']
 
 
 def _search(query, config):

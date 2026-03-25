@@ -30,6 +30,7 @@ VERSION = "1.0.0"
 COMPLEXITY = "medium"
 COMPLEXITY = "simple"
 REQUIRES_NETWORK = False
+SUITE = ""
 
 log = logging.getLogger(SKILL_NAME)
 

@@ -27,6 +27,7 @@ DESCRIPTION = "FMA review skill — coder agents review BigEd CC files and discu
 VERSION = "1.0.0"
 COMPLEXITY = "medium"
 REQUIRES_NETWORK = False
+SUITE = ""
 
 FLEET_DIR = Path(__file__).parent.parent
 KNOWLEDGE_DIR = FLEET_DIR / "knowledge"

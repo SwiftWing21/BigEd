@@ -18,6 +18,7 @@ DESCRIPTION = "RAG index skill — rebuilds or incrementally updates the RAG sea
 VERSION = "1.0.0"
 COMPLEXITY = "simple"
 REQUIRES_NETWORK = False
+SUITE = "rag"
 
 FLEET_DIR = Path(__file__).parent.parent
 sys.path.insert(0, str(FLEET_DIR))

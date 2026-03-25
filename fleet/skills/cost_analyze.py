@@ -17,6 +17,7 @@ DESCRIPTION = "Analyze fleet API costs per skill/model with tier-downgrade recom
 VERSION = "1.0.0"
 COMPLEXITY = "medium"
 REQUIRES_NETWORK = False
+SUITE = "ops"
 
 log = logging.getLogger(__name__)
 

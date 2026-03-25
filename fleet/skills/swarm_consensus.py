@@ -9,6 +9,8 @@ DESCRIPTION = "Force multiple agents to debate and reach consensus before execut
 VERSION = "1.0.0"
 COMPLEXITY = "complex"
 REQUIRES_NETWORK = False
+SUITE = "swarm"
+TAGS = ['multi-agent']
 
 FLEET_DIR = Path(__file__).parent.parent
 

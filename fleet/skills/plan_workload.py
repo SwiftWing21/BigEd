@@ -20,6 +20,7 @@ DESCRIPTION = "Workload planner — surveys fleet state and queues a batch of ta
 VERSION = "1.0.0"
 COMPLEXITY = "complex"
 REQUIRES_NETWORK = False
+SUITE = "ops"
 
 FLEET_DIR = Path(__file__).parent.parent
 KNOWLEDGE_DIR = FLEET_DIR / "knowledge"

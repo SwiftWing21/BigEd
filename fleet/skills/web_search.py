@@ -21,6 +21,8 @@ VERSION = "1.0.0"
 COMPLEXITY = "medium"
 
 REQUIRES_NETWORK = True
+SUITE = "research"
+TAGS = ['search', 'network']
 
 
 def _log_provider(query, provider, success):

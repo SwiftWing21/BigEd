@@ -32,6 +32,7 @@ DESCRIPTION = "Legal document drafting skill — generates business legal docume
 VERSION = "1.0.0"
 COMPLEXITY = "complex"
 REQUIRES_NETWORK = False
+SUITE = ""
 
 FLEET_DIR   = Path(__file__).parent.parent
 LEGAL_DIR   = FLEET_DIR / "knowledge" / "legal"

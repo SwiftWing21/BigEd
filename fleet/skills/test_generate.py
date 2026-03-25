@@ -5,6 +5,7 @@ DESCRIPTION = "Generate pytest-compatible unit tests for a Python module."
 VERSION = "1.0.0"
 COMPLEXITY = "medium"
 REQUIRES_NETWORK = False
+SUITE = "content"
 
 
 def run(payload, config):

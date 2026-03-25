@@ -9,6 +9,7 @@ DESCRIPTION = "Encrypt fleet.db using SQLCipher (AES-256) for data-at-rest prote
 VERSION = "1.0.0"
 COMPLEXITY = "medium"
 REQUIRES_NETWORK = False
+SUITE = "ops"
 
 FLEET_DIR = Path(__file__).parent.parent
 DB_PATH = FLEET_DIR / "fleet.db"

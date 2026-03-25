@@ -3,6 +3,7 @@ DESCRIPTION = "Generate structured retrospective: achievements, failures, action
 VERSION = "1.0.0"
 COMPLEXITY = "medium"
 REQUIRES_NETWORK = False
+SUITE = ""
 
 
 def run(payload, config):

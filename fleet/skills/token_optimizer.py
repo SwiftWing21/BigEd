@@ -24,6 +24,7 @@ DESCRIPTION = "Analyze fleet token usage and recommend cost optimizations."
 VERSION = "1.0.0"
 COMPLEXITY = "medium"
 REQUIRES_NETWORK = False
+SUITE = "ops"
 
 log = logging.getLogger(SKILL_NAME)
 

@@ -22,6 +22,8 @@ DESCRIPTION = "Dispatch webhook notifications for fleet events via HTTP POST."
 VERSION = "1.0.0"
 COMPLEXITY = "medium"
 REQUIRES_NETWORK = True
+SUITE = "ops"
+TAGS = ['network']
 
 FLEET_DIR = Path(__file__).parent.parent
 KNOWLEDGE_DIR = FLEET_DIR / "knowledge"

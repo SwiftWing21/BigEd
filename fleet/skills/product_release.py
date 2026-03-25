@@ -27,6 +27,8 @@ VERSION = "1.0.0"
 COMPLEXITY = "medium"
 
 REQUIRES_NETWORK = True
+SUITE = "ops"
+TAGS = ['network']
 
 
 def _git(args, cwd):

@@ -8,6 +8,7 @@ DESCRIPTION = "Help operator draft HITL responses for fleet agents via VS Code"
 VERSION = "1.0.0"
 COMPLEXITY = "medium"
 REQUIRES_NETWORK = False
+SUITE = ""
 
 
 def run(payload: dict, config: dict) -> dict:

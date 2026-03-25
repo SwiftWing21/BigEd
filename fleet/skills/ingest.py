@@ -40,6 +40,7 @@ DESCRIPTION = "File/folder ingest skill — imports documents into the fleet RAG
 VERSION = "1.0.0"
 COMPLEXITY = "simple"
 REQUIRES_NETWORK = False
+SUITE = "rag"
 
 FLEET_DIR = Path(__file__).parent.parent
 KNOWLEDGE_DIR = FLEET_DIR / "knowledge"

@@ -28,6 +28,7 @@ DESCRIPTION = "Local-first speech-to-text for voice input. Privacy-first: audio 
 VERSION = "1.0.0"
 COMPLEXITY = "medium"
 REQUIRES_NETWORK = False
+SUITE = ""
 
 log = logging.getLogger(SKILL_NAME)
 

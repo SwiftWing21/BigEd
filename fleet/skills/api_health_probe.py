@@ -12,6 +12,8 @@ DESCRIPTION = "Probe configured API endpoints for health, record status and late
 VERSION = "1.0.0"
 COMPLEXITY = "medium"
 REQUIRES_NETWORK = True
+SUITE = "ops"
+TAGS = ['network']
 
 FLEET_DIR = Path(__file__).parent.parent
 KNOWLEDGE_DIR = FLEET_DIR / "knowledge"

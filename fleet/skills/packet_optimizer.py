@@ -31,6 +31,7 @@ VERSION = "1.0.0"
 COMPLEXITY = "simple"
 COMPLEXITY = "simple"
 REQUIRES_NETWORK = False
+SUITE = "ops"
 
 # Target sizes (bytes) — anything above triggers optimization recommendation
 TARGETS = {

@@ -7,6 +7,7 @@ DESCRIPTION = "Analyze model performance and recommend upgrades via HITL approva
 VERSION = "1.0.0"
 COMPLEXITY = "medium"
 REQUIRES_NETWORK = False
+SUITE = "ml"
 FLEET_DIR = Path(__file__).parent.parent
 
 # Known model quality tiers (higher = more intelligent)

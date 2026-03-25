@@ -10,6 +10,8 @@ DESCRIPTION = "Rotate API keys — automated for Slack/AWS, semi-automated for o
 VERSION = "1.0.0"
 COMPLEXITY = "medium"
 REQUIRES_NETWORK = True
+SUITE = "ops"
+TAGS = ['network']
 
 FLEET_DIR = Path(__file__).parent.parent
 SECRETS_FILE = Path.home() / ".secrets"

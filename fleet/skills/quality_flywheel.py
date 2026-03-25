@@ -12,6 +12,7 @@ VERSION = "1.0.0"
 COMPLEXITY = "medium"
 COMPLEXITY = "complex"
 REQUIRES_NETWORK = False
+SUITE = ""
 
 FLEET_DIR = Path(__file__).parent.parent
 

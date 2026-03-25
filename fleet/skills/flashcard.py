@@ -4,6 +4,7 @@ DESCRIPTION = "Generate Q&A flashcards from existing knowledge summaries."
 VERSION = "1.0.0"
 COMPLEXITY = "simple"
 REQUIRES_NETWORK = False
+SUITE = "content"
 
 import json
 import random

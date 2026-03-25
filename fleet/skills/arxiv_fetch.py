@@ -13,6 +13,8 @@ VERSION = "1.0.0"
 COMPLEXITY = "medium"
 
 REQUIRES_NETWORK = True
+SUITE = "research"
+TAGS = ['papers', 'network']
 
 
 def run(payload, config):

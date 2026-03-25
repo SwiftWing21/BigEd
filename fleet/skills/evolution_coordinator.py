@@ -9,6 +9,7 @@ DESCRIPTION = "Coordinate multi-agent skill evolution with leaderboard tracking"
 VERSION = "1.0.0"
 COMPLEXITY = "complex"
 REQUIRES_NETWORK = False
+SUITE = "ops"
 
 FLEET_DIR = Path(__file__).parent.parent
 EVOLUTION_LOG = FLEET_DIR / "knowledge" / "evolution" / "evolution_log.jsonl"

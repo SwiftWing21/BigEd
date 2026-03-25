@@ -16,6 +16,7 @@ DESCRIPTION = "Analyze skill dependencies — imports, DB tables, circular deps,
 VERSION = "1.0.0"
 COMPLEXITY = "medium"
 REQUIRES_NETWORK = False
+SUITE = ""
 
 FLEET_DIR = Path(__file__).parent.parent
 SKILLS_DIR = FLEET_DIR / "skills"

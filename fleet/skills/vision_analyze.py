@@ -40,6 +40,7 @@ VERSION = "1.0.0"
 COMPLEXITY = "medium"
 
 REQUIRES_NETWORK = False
+SUITE = ""
 
 DEFAULT_PROMPTS = {
     "describe": "Describe this image in detail. Include objects, colors, layout, text, and any notable features.",

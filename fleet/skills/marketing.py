@@ -33,6 +33,8 @@ VERSION = "1.0.0"
 COMPLEXITY = "medium"
 
 REQUIRES_NETWORK = True
+SUITE = "content"
+TAGS = ['network']
 
 sys.path.insert(0, str(Path(__file__).parent))
 

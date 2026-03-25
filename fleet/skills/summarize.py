@@ -4,6 +4,8 @@ DESCRIPTION = "Summarize text from a URL, file path, or raw description."
 VERSION = "1.0.0"
 COMPLEXITY = "simple"
 REQUIRES_NETWORK = True  # fetches URLs via httpx
+SUITE = "content"
+TAGS = ['network']
 
 import re
 from datetime import date

@@ -27,6 +27,8 @@ VERSION = "1.0.0"
 COMPLEXITY = "medium"
 
 REQUIRES_NETWORK = True
+SUITE = "content"
+TAGS = ['network']
 
 # Owner/name slugs — Replicate resolves to latest version automatically
 _MODEL_SLUGS = {

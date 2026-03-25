@@ -32,6 +32,8 @@ VERSION = "1.0.0"
 COMPLEXITY = "medium"
 
 REQUIRES_NETWORK = True
+SUITE = ""
+TAGS = ['network']
 
 
 def run(payload, config):

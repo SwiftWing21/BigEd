@@ -35,6 +35,8 @@ VERSION = "1.0.0"
 COMPLEXITY = "medium"
 
 REQUIRES_NETWORK = True
+SUITE = "research"
+TAGS = ['network']
 
 _HAS_PLAYWRIGHT = None  # lazy check
 _MCP_CHECKED = None      # (available: bool, url: str|None)
