@@ -25,7 +25,7 @@ pub async fn health(State(state): State<AppState>) -> Result<Json<Value>, AppErr
             "supervisor": true,
             "dashboard": true,
         },
-        "version": "0.400.00b",
+        "version": env!("CARGO_PKG_VERSION"),
         "dashboard_port": config.dashboard.port,
     })))
 }

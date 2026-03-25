@@ -27,7 +27,7 @@ pub async fn metrics(State(state): State<AppState>) -> Result<Json<Value>, AppEr
         .db
         .all_agents()?
         .iter()
-        .filter(|a| a.status == "busy")
+        .filter(|a| a.status.eq_ignore_ascii_case("busy") || a.status.eq_ignore_ascii_case("running"))
         .count();
     let queue_depth = pending + running;
 
