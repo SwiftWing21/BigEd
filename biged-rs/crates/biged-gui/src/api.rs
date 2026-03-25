@@ -1,17 +1,28 @@
 use anyhow::Result;
 use serde::Deserialize;
+use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
 /// Fleet status snapshot from /api/status.
+/// Matches server response: `{ "agents": [...], "tasks": {"PENDING": N, ...} }`
 #[derive(Debug, Clone, Default, Deserialize)]
 pub struct FleetStatus {
-    pub version: Option<String>,
-    pub uptime_secs: Option<f64>,
-    pub agent_count: Option<u32>,
-    pub task_pending: Option<u32>,
-    pub task_running: Option<u32>,
-    pub task_done: Option<u64>,
-    pub task_failed: Option<u64>,
+    #[serde(default)]
+    pub agents: Vec<AgentInfo>,
+    #[serde(default)]
+    pub tasks: HashMap<String, i64>,
+}
+
+impl FleetStatus {
+    /// Number of agents reported in this status snapshot.
+    pub fn agent_count(&self) -> usize {
+        self.agents.len()
+    }
+
+    /// Get a task count by status key (e.g. "PENDING", "DONE", "FAILED", "RUNNING").
+    pub fn task_count(&self, key: &str) -> i64 {
+        self.tasks.get(key).copied().unwrap_or(0)
+    }
 }
 
 /// Agent info from /api/agents.
@@ -26,17 +37,24 @@ pub struct AgentInfo {
 /// Activity lane data from /api/activity.
 #[derive(Debug, Clone, Deserialize)]
 pub struct ActivityLane {
+    #[serde(alias = "day")]
     pub name: String,
+    #[serde(alias = "DONE", default)]
     pub done: u32,
+    #[serde(alias = "FAILED", default)]
     pub failed: u32,
+    #[serde(alias = "RUNNING", default)]
     pub running: u32,
 }
 
 /// Thermal info from /api/thermal.
 #[derive(Debug, Clone, Default, Deserialize)]
 pub struct ThermalInfo {
+    #[serde(alias = "gpu_temp_c")]
     pub gpu_temp: Option<f32>,
+    #[serde(alias = "cpu_temp_c")]
     pub cpu_temp: Option<f32>,
+    #[serde(alias = "thermal_state")]
     pub action: Option<String>,
 }
 
