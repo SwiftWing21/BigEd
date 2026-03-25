@@ -7,19 +7,27 @@ Checks:
   - Value range violations (ports 1-65535, percentages 0-100, timeouts > 0)
   - Unknown top-level sections (possible typos or custom extensions)
 
-Payload:
+Actions (via payload ``action`` key):
+  validate  (default) — schema validation, output to knowledge/quality/
+  drift               — compare fleet.toml against a saved baseline snapshot
+
+Payload (validate):
   strict   bool  treat warnings as errors (default false)
 
-Output: knowledge/quality/config_validate_<date>.md
-Returns: {errors, warnings, infos, issues: [{level, message}]}
+Payload (drift):
+  reset    bool  overwrite baseline with current config (default false)
+
+Output (validate): knowledge/quality/config_validate_<date>.md
+Output (drift):    knowledge/config/drift_<date>.md
 """
+import json
 import logging
-from datetime import datetime
+from datetime import datetime, date
 from pathlib import Path
 
 SKILL_NAME = "config_validate"
-DESCRIPTION = "Validate fleet.toml against expected schema — missing keys, type mismatches, invalid values."
-VERSION = "1.0.0"
+DESCRIPTION = "Validate fleet.toml schema and detect configuration drift."
+VERSION = "2.0.0"
 COMPLEXITY = "medium"
 REQUIRES_NETWORK = False
 
@@ -28,6 +36,10 @@ log = logging.getLogger(__name__)
 FLEET_DIR = Path(__file__).parent.parent
 KNOWLEDGE_DIR = FLEET_DIR / "knowledge"
 QUALITY_DIR = KNOWLEDGE_DIR / "quality"
+
+# ── Drift detection constants ──────────────────────────────────────────────────
+CONFIG_DIR = KNOWLEDGE_DIR / "config"
+BASELINE_FILE = CONFIG_DIR / "fleet_toml_baseline.json"
 
 # ── Expected schema ───────────────────────────────────────────────────────────
 # Each section maps to {key: {type, required, min?, max?}}.
@@ -398,8 +410,146 @@ def _save_report(issues, cfg_path):
     return str(report_path)
 
 
+# ── Drift helpers ─────────────────────────────────────────────────────────────
+
+def _flatten(data, prefix=""):
+    """Flatten a nested dict into dot-separated key-value pairs."""
+    flat = {}
+    for k, v in data.items():
+        key = f"{prefix}.{k}" if prefix else k
+        if isinstance(v, dict):
+            flat.update(_flatten(v, key))
+        else:
+            flat[key] = v
+    return flat
+
+
+def _diff(baseline, current):
+    """Compute added, removed, and changed keys between two flat dicts."""
+    base_keys = set(baseline.keys())
+    curr_keys = set(current.keys())
+
+    added = sorted(curr_keys - base_keys)
+    removed = sorted(base_keys - curr_keys)
+    changed = []
+    for k in sorted(base_keys & curr_keys):
+        if str(baseline[k]) != str(current[k]):
+            changed.append((k, baseline[k], current[k]))
+
+    return added, removed, changed
+
+
+def _build_drift_report(added, removed, changed, is_first_run):
+    """Render the drift report as Markdown."""
+    today = date.today().isoformat()
+    lines = [f"# Config Drift Report — {today}", ""]
+
+    if is_first_run:
+        lines.append("**First run — baseline saved.** No drift to report.")
+        lines.append("")
+        return "\n".join(lines)
+
+    total = len(added) + len(removed) + len(changed)
+    lines.append(
+        f"**Total drifts:** {total} | "
+        f"Added: {len(added)} | Removed: {len(removed)} | Changed: {len(changed)}"
+    )
+    lines.append("")
+
+    if not total:
+        lines.append("No configuration drift detected. Fleet.toml matches baseline.")
+        lines.append("")
+        return "\n".join(lines)
+
+    if added:
+        lines.extend(["## Added Keys", ""] + [f"- `{k}`" for k in added] + [""])
+    if removed:
+        lines.extend(["## Removed Keys", ""] + [f"- `{k}`" for k in removed] + [""])
+    if changed:
+        lines.extend([
+            "## Changed Keys", "",
+            "| Key | Baseline | Current |",
+            "|-----|----------|---------|",
+        ] + [f"| `{k}` | `{old}` | `{new}` |" for k, old, new in changed] + [""])
+
+    return "\n".join(lines)
+
+
+def _run_drift(payload, config):
+    """Detect configuration drift — action: drift."""
+    CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+
+    toml_path = FLEET_DIR / "fleet.toml"
+    if not toml_path.exists():
+        return {"status": "error", "message": "fleet.toml not found"}
+
+    try:
+        import config as cfg_mod
+        parsed = cfg_mod.load_config()
+    except Exception:
+        log.warning("config_validate drift: failed to parse fleet.toml", exc_info=True)
+        return {"status": "error", "message": "Failed to parse fleet.toml"}
+
+    current = _flatten(parsed)
+    reset = payload.get("reset", False)
+    is_first_run = not BASELINE_FILE.exists() or reset
+
+    if is_first_run:
+        try:
+            BASELINE_FILE.write_text(json.dumps(current, indent=2, default=str), encoding="utf-8")
+        except Exception:
+            log.warning("config_validate drift: failed to save baseline", exc_info=True)
+            return {"status": "error", "message": "Failed to save baseline"}
+        report = _build_drift_report([], [], [], is_first_run=True)
+        added, removed, changed = [], [], []
+    else:
+        try:
+            baseline = json.loads(BASELINE_FILE.read_text(encoding="utf-8"))
+        except Exception:
+            log.warning("config_validate drift: failed to read baseline", exc_info=True)
+            return {"status": "error", "message": "Failed to read baseline"}
+
+        added, removed, changed = _diff(baseline, current)
+        report = _build_drift_report(added, removed, changed, is_first_run=False)
+
+        # Update baseline after diffing
+        try:
+            BASELINE_FILE.write_text(json.dumps(current, indent=2, default=str), encoding="utf-8")
+        except Exception:
+            log.warning("config_validate drift: failed to update baseline", exc_info=True)
+
+    today = date.today().isoformat()
+    report_path = CONFIG_DIR / f"drift_{today}.md"
+    try:
+        report_path.write_text(report, encoding="utf-8")
+    except Exception:
+        log.warning("config_validate drift: failed to write report", exc_info=True)
+        return {"status": "error", "message": "Failed to write drift report"}
+
+    return {
+        "status": "ok",
+        "saved_to": str(report_path),
+        "first_run": is_first_run,
+        "added": len(added),
+        "removed": len(removed),
+        "changed": len(changed),
+        "total_keys": len(current),
+        "result": (
+            f"Config drift: {len(added)} added, {len(removed)} removed, "
+            f"{len(changed)} changed — report saved to {report_path}"
+        ),
+    }
+
+
+# ── Main entry point ──────────────────────────────────────────────────────────
+
 def run(payload: dict, config: dict) -> dict:
-    """Validate fleet.toml against the expected schema."""
+    """Validate fleet.toml or detect drift depending on ``action``."""
+    action = payload.get("action", "validate")
+    if action == "drift":
+        return _run_drift(payload, config)
+
+    # Default: schema validation
     import config as cfg_mod  # lazy import
 
     try:
