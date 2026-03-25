@@ -123,18 +123,31 @@ pub async fn post_task(
     State(state): State<AppState>,
     Json(payload): Json<Value>,
 ) -> Result<Json<Value>, AppError> {
+    // Validate skill name
     let skill = payload
         .get("skill")
         .and_then(|v| v.as_str())
         .unwrap_or("unknown");
+    if skill.is_empty() || skill.len() > 100 {
+        return Err(AppError(anyhow::anyhow!("Invalid skill name")));
+    }
+
+    // Validate payload size (max 1MB)
     let body = payload
         .get("payload")
         .map(|v| v.to_string())
         .unwrap_or_else(|| "{}".into());
+    if body.len() > 1_048_576 {
+        return Err(AppError(anyhow::anyhow!("Payload too large")));
+    }
+
+    // Validate priority range
     let priority = payload
         .get("priority")
         .and_then(|v| v.as_i64())
-        .unwrap_or(5) as i32;
+        .unwrap_or(5);
+    let priority = priority.clamp(0, 100) as i32;
+
     let id = state.db.post_task(skill, &body, priority, None)?;
     Ok(Json(json!({ "id": id, "status": "PENDING" })))
 }
