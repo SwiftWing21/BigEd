@@ -4,13 +4,14 @@ Adversarial reviewer — evaluates skill outputs for quality, correctness, and s
 Called by worker.py when [review] enabled = true and the skill is high-stakes.
 Uses the configured review provider (api=Claude, subscription=Gemini, local=Ollama).
 
-Returns: {"verdict": "PASS"|"FAIL", "critique": "...", "confidence": 0.0-1.0}
+Returns: {"verdict": "PASS"|"FAIL"|"HOLD", "critique": "...", "confidence": 0.0-1.0}
 """
 import json
-import os
-import time
+import logging
 import urllib.request
 from pathlib import Path
+
+log = logging.getLogger(__name__)
 
 FLEET_DIR = Path(__file__).parent.parent
 
@@ -52,7 +53,6 @@ def run(payload, config):
     result = payload.get("result", {})
 
     review_cfg = config.get("review", {})
-    provider = review_cfg.get("provider", "local")
 
     user_prompt = (
         f"## Skill: {skill_name}\n\n"
@@ -72,17 +72,16 @@ def run(payload, config):
         )
 
     try:
-        if provider == "api":
-            response = _review_claude(REVIEW_SYSTEM_PROMPT, user_prompt, review_cfg)
-        elif provider == "subscription":
-            response = _review_gemini(REVIEW_SYSTEM_PROMPT, user_prompt, review_cfg)
+        provider = review_cfg.get("provider", "local")
+        if provider == "local":
+            raw = _review_local(REVIEW_SYSTEM_PROMPT, user_prompt, config)
         else:
-            response = _review_local(REVIEW_SYSTEM_PROMPT, user_prompt, config)
+            raw = _review_api(REVIEW_SYSTEM_PROMPT, user_prompt, review_cfg, config)
 
-        return _parse_verdict(response)
+        return _parse_verdict(raw)
     except Exception as e:
-        # Review infrastructure failure = auto-PASS (don't block work)
-        return {"verdict": "PASS", "critique": f"Review error (auto-pass): {e}", "confidence": 0.0}
+        log.warning("Review failed: %s — holding for human review", e)
+        return {"verdict": "HOLD", "critique": f"Review error (held for human): {e}", "confidence": 0.0}
 
 
 def _parse_verdict(text):
@@ -115,30 +114,13 @@ def _parse_verdict(text):
     return {"verdict": "PASS", "critique": text[:500], "confidence": 0.3}
 
 
-def _review_claude(system, user, review_cfg):
-    """Review via Claude API."""
-    import anthropic
-    client = anthropic.Anthropic(api_key=os.environ.get("ANTHROPIC_API_KEY"))
-    model = review_cfg.get("claude_model", "claude-sonnet-4-6")
-    time.sleep(0.3)  # throttle
-    resp = client.messages.create(
-        model=model, max_tokens=512,
-        system=system,
-        messages=[{"role": "user", "content": user}],
+def _review_api(system, user, review_cfg, config):
+    """Review via configured API provider, routed through call_complex()."""
+    from skills._models import call_complex
+    return call_complex(
+        system=system, user=user, config=config,
+        max_tokens=512, skill_name="_review",
     )
-    return resp.content[0].text
-
-
-def _review_gemini(system, user, review_cfg):
-    """Review via Gemini API."""
-    import google.generativeai as genai
-    genai.configure(api_key=os.environ.get("GEMINI_API_KEY"))
-    model = genai.GenerativeModel(
-        model_name=review_cfg.get("gemini_model", "gemini-2.0-flash"),
-        system_instruction=system,
-    )
-    resp = model.generate_content(user, generation_config={"max_output_tokens": 512})
-    return resp.text
 
 
 def _review_local(system, user, config):
