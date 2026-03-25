@@ -128,15 +128,31 @@ impl BackupManager {
     }
 
     /// Resolve `~` in the configured backup location to the user home directory.
+    /// Strips `..` components to prevent path traversal attacks (the backup
+    /// location is user-configurable via PUT /api/settings).
     fn resolve_backup_location(&self) -> PathBuf {
         let loc = &self.config.location;
-        if loc.starts_with("~/") || loc.starts_with("~\\") {
-            // Use HOME on Unix, USERPROFILE on Windows
-            if let Some(home) = std::env::var_os("HOME").or_else(|| std::env::var_os("USERPROFILE"))
-            {
-                return PathBuf::from(home).join(&loc[2..]);
+        let raw = if loc.starts_with("~/") || loc.starts_with("~\\") {
+            let home = std::env::var("HOME")
+                .or_else(|_| std::env::var("USERPROFILE"))
+                .unwrap_or_else(|_| ".".into());
+            PathBuf::from(home).join(&loc[2..])
+        } else {
+            PathBuf::from(loc)
+        };
+
+        // Normalize path components to prevent traversal
+        let mut normalized = PathBuf::new();
+        for component in raw.components() {
+            match component {
+                std::path::Component::ParentDir => {
+                    warn!("Backup path contains '..', removing component");
+                    // Don't go up — just skip
+                }
+                other => normalized.push(other),
             }
         }
-        PathBuf::from(loc)
+
+        normalized
     }
 }
