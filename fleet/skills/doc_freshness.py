@@ -47,15 +47,14 @@ def _count_endpoints():
 def _count_db_tables():
     """Count tables in fleet.db."""
     try:
-        import sqlite3
+        import db
         db_path = FLEET_DIR / "fleet.db"
         if not db_path.exists():
             return 0
-        conn = sqlite3.connect(str(db_path))
+        conn = db.get_conn()
         tables = conn.execute(
             "SELECT COUNT(*) FROM sqlite_master WHERE type='table'"
         ).fetchone()[0]
-        conn.close()
         return tables
     except Exception:
         return 0

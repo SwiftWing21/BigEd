@@ -3,6 +3,7 @@ import json
 import logging
 import os
 import re
+import sqlite3
 import time
 from datetime import datetime, timezone
 from pathlib import Path
@@ -522,8 +523,8 @@ def grade_output_quality(project_root: Path) -> dict[str, tuple[float, list[str]
         return results
 
     try:
-        import sqlite3
-        conn = sqlite3.connect(str(db_path), timeout=5)
+        import db
+        conn = db.get_conn()
         conn.row_factory = sqlite3.Row
 
         # Accuracy: DONE vs FAILED ratio (last 3 days)
