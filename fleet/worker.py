@@ -250,6 +250,16 @@ def run_skill(skill_name, payload, config, log):
         log.warning(f"Skill '{skill_name}' blocked by air-gap mode")
         raise PermissionError(f"Skill '{skill_name}' not in air-gap whitelist")
 
+    # Also check module-level REQUIRES_NETWORK for skills not in whitelist
+    if is_air_gap(config):
+        try:
+            mod = importlib.import_module(f"skills.{skill_name}")
+            if getattr(mod, "REQUIRES_NETWORK", False):
+                if skill_name not in AIR_GAP_SKILLS:
+                    return {"status": "error", "error": f"Skill {skill_name} requires network (air-gap mode)"}
+        except Exception:
+            pass
+
     # Offline mode: check REQUIRES_NETWORK on the skill module
     if is_offline(config):
         try:
