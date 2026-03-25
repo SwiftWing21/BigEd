@@ -510,6 +510,14 @@ def get_optimal_agent_for_skill(skill_name: str, config: dict,
 FALLBACK_CHAIN = ["claude", "gemini", "local"]
 
 
+def _get_fallback_chain(provider: str, config: dict) -> list[str]:
+    """Get fallback chain for a provider from fleet.toml [api_gate]."""
+    gate_cfg = config.get("api_gate", {})
+    providers_cfg = gate_cfg.get("providers", {})
+    provider_cfg = providers_cfg.get(provider, {})
+    return provider_cfg.get("fallback", gate_cfg.get("fallback_chain", ["local"]))
+
+
 def calculate_cost(usage, model_id: str) -> float:
     """Calculate USD cost from usage object and model pricing."""
     rates = PRICING.get(model_id, PRICING["claude-sonnet-4-6"])
@@ -618,7 +626,15 @@ def get_provider_status() -> dict:
 
 
 def _call_claude(system: str, user: str, models: dict, max_tokens: int, cache_system: bool = True,
-                  skill_name: str = "unknown", task_id=None, agent_name=None) -> str:
+                  skill_name: str = "unknown", task_id=None, agent_name=None,
+                  purpose: str = "task", config: dict = None) -> str:
+    import api_gate
+    allowed, reason = api_gate.check("claude", purpose, config)
+    if not allowed:
+        raise RuntimeError(f"API gate blocked claude: {reason}")
+
+    _start = time.time()
+
     api_key = os.environ.get("ANTHROPIC_API_KEY")
     if not api_key:
         _audit_auth_failure("claude", skill_name, "ANTHROPIC_API_KEY not set")
@@ -646,15 +662,24 @@ def _call_claude(system: str, user: str, models: dict, max_tokens: int, cache_sy
             # CT-1: Capture usage (async — off hot path)
             try:
                 model_id = models.get("complex", "claude-sonnet-4-6")
+                cost = calculate_cost(resp.usage, model_id)
                 async_log_usage(
                     skill=skill_name, model=model_id,
                     input_tokens=resp.usage.input_tokens,
                     output_tokens=resp.usage.output_tokens,
                     cache_read_tokens=getattr(resp.usage, "cache_read_input_tokens", 0) or 0,
                     cache_create_tokens=getattr(resp.usage, "cache_creation_input_tokens", 0) or 0,
-                    cost_usd=calculate_cost(resp.usage, model_id),
+                    cost_usd=cost,
                     task_id=task_id, agent=agent_name,
                     provider="claude",
+                )
+                api_gate.record_call(
+                    provider="claude", skill=skill_name, agent=agent_name or "",
+                    input_tokens=resp.usage.input_tokens,
+                    output_tokens=resp.usage.output_tokens,
+                    cost_usd=cost,
+                    latency_ms=int((time.time() - _start) * 1000),
+                    purpose=purpose,
                 )
             except Exception:
                 pass  # Usage logging must never break skill execution
@@ -669,7 +694,15 @@ def _call_claude(system: str, user: str, models: dict, max_tokens: int, cache_sy
 
 
 def _call_gemini(system: str, user: str, models: dict, max_tokens: int,
-                 skill_name: str = "unknown", task_id=None, agent_name=None) -> str:
+                 skill_name: str = "unknown", task_id=None, agent_name=None,
+                 purpose: str = "task", config: dict = None) -> str:
+    import api_gate
+    allowed, reason = api_gate.check("gemini", purpose, config)
+    if not allowed:
+        raise RuntimeError(f"API gate blocked gemini: {reason}")
+
+    _start = time.time()
+
     import google.generativeai as genai
     api_key = os.environ.get("GEMINI_API_KEY")
     if not api_key:
@@ -702,19 +735,26 @@ def _call_gemini(system: str, user: str, models: dict, max_tokens: int,
     try:
         usage = resp.usage_metadata
         if usage:
+            in_tok = getattr(usage, "prompt_token_count", 0) or 0
+            out_tok = getattr(usage, "candidates_token_count", 0) or 0
+            cost = calculate_cost_simple(in_tok, out_tok, model_name)
             async_log_usage(
                 skill=skill_name,
                 model=model_name,
-                input_tokens=getattr(usage, "prompt_token_count", 0) or 0,
-                output_tokens=getattr(usage, "candidates_token_count", 0) or 0,
+                input_tokens=in_tok,
+                output_tokens=out_tok,
                 cache_read_tokens=getattr(usage, "cached_content_token_count", 0) or 0,
                 cache_create_tokens=0,
-                cost_usd=calculate_cost_simple(
-                    getattr(usage, "prompt_token_count", 0) or 0,
-                    getattr(usage, "candidates_token_count", 0) or 0,
-                    model_name),
+                cost_usd=cost,
                 task_id=task_id, agent=agent_name,
                 provider="gemini",
+            )
+            api_gate.record_call(
+                provider="gemini", skill=skill_name, agent=agent_name or "",
+                input_tokens=in_tok, output_tokens=out_tok,
+                cost_usd=cost,
+                latency_ms=int((time.time() - _start) * 1000),
+                purpose=purpose,
             )
     except Exception:
         pass
@@ -722,8 +762,16 @@ def _call_gemini(system: str, user: str, models: dict, max_tokens: int,
 
 
 def _call_minimax(system: str, user: str, config: dict, max_tokens: int = 2048,
-                   skill_name: str = "unknown", task_id=None, agent_name=None) -> str:
+                   skill_name: str = "unknown", task_id=None, agent_name=None,
+                   purpose: str = "task") -> str:
     """Call MiniMax API (OpenAI-compatible format)."""
+    import api_gate
+    allowed, reason = api_gate.check("minimax", purpose, config)
+    if not allowed:
+        raise RuntimeError(f"API gate blocked minimax: {reason}")
+
+    _start = time.time()
+
     import json, urllib.request
     api_key = os.environ.get("MINIMAX_API_KEY", "")
     if not api_key:
@@ -754,14 +802,24 @@ def _call_minimax(system: str, user: str, config: dict, max_tokens: int = 2048,
 
     response = data["choices"][0]["message"]["content"]
     usage = data.get("usage", {})
+    in_tok = usage.get("prompt_tokens", 0)
+    out_tok = usage.get("completion_tokens", 0)
+    cost = calculate_cost_simple(in_tok, out_tok, model)
 
     # Log usage
     async_log_usage(
         skill=skill_name, model=model, provider="minimax",
-        input_tokens=usage.get("prompt_tokens", 0),
-        output_tokens=usage.get("completion_tokens", 0),
-        cost_usd=calculate_cost_simple(usage.get("prompt_tokens", 0), usage.get("completion_tokens", 0), model),
+        input_tokens=in_tok,
+        output_tokens=out_tok,
+        cost_usd=cost,
         task_id=task_id, agent=agent_name,
+    )
+    api_gate.record_call(
+        provider="minimax", skill=skill_name, agent=agent_name or "",
+        input_tokens=in_tok, output_tokens=out_tok,
+        cost_usd=cost,
+        latency_ms=int((time.time() - _start) * 1000),
+        purpose=purpose,
     )
 
     return response
