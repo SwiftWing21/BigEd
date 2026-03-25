@@ -1,9 +1,0 @@
-GitHub Repo Description Updates
-================================
-Run these from any terminal with `gh` authenticated:
-
-BigEd (core):
-gh repo edit SwiftWing21/BigEd --description "Local AI agent fleet platform — 80 skills, multi-model orchestration (Ollama/Claude/Gemini), enterprise guardrails. A personal vibe-coding experiment exploring the limits of AI-assisted development. Open to review."
-
-BigEd-ModuleHub (extensions):
-gh repo edit SwiftWing21/BigEd-ModuleHub --description "Optional non-core modules for BigEd CC — CRM, Ingestion, Onboarding, and other UI extensions loaded at runtime via the module system."
