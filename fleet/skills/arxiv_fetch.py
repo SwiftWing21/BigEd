@@ -5,6 +5,7 @@ from datetime import date
 from pathlib import Path
 
 import httpx
+import logging
 
 NS = {"atom": "http://www.w3.org/2005/Atom"}
 SKILL_NAME = "arxiv_fetch"
@@ -15,6 +16,7 @@ COMPLEXITY = "medium"
 REQUIRES_NETWORK = True
 SUITE = "research"
 TAGS = ['papers', 'network']
+log = logging.getLogger(SKILL_NAME)
 
 
 def run(payload, config):

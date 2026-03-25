@@ -11,6 +11,7 @@ Payload:
 """
 from datetime import datetime
 from pathlib import Path
+import logging
 
 from skills._models import call_complex
 
@@ -20,6 +21,7 @@ VERSION = "1.0.0"
 COMPLEXITY = "simple"
 REQUIRES_NETWORK = False
 SUITE = ""
+log = logging.getLogger(SKILL_NAME)
 
 FLEET_DIR     = Path(__file__).parent.parent
 KNOWLEDGE_DIR = FLEET_DIR / "knowledge"

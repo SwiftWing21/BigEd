@@ -21,6 +21,7 @@ import re
 import urllib.request
 from datetime import datetime
 from pathlib import Path
+import logging
 
 FLEET_DIR = Path(__file__).parent.parent
 KNOWLEDGE_DIR = FLEET_DIR / "knowledge"
@@ -33,6 +34,7 @@ COMPLEXITY = "medium"
 REQUIRES_NETWORK = True
 SUITE = ""
 TAGS = ['network']
+log = logging.getLogger(SKILL_NAME)
 
 
 def _validate_entity_id(entity_id):

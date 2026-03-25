@@ -26,6 +26,7 @@ import json
 import shutil
 from datetime import datetime
 from pathlib import Path
+import logging
 
 SKILL_NAME = "skill_train"
 DESCRIPTION = "Skill trainer v2 — autoresearch-style iterative improvement loop for fleet skill"
@@ -33,6 +34,7 @@ VERSION = "1.0.0"
 COMPLEXITY = "medium"
 REQUIRES_NETWORK = False
 SUITE = "ml"
+log = logging.getLogger(SKILL_NAME)
 
 FLEET_DIR = Path(__file__).parent.parent
 SKILLS_DIR = FLEET_DIR / "skills"

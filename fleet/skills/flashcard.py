@@ -1,10 +1,12 @@
 """Generate Q&A flashcards from existing knowledge summaries."""
+import logging
 SKILL_NAME = "flashcard"
 DESCRIPTION = "Generate Q&A flashcards from existing knowledge summaries."
 VERSION = "1.0.0"
 COMPLEXITY = "simple"
 REQUIRES_NETWORK = False
 SUITE = "content"
+log = logging.getLogger(SKILL_NAME)
 
 import json
 import random

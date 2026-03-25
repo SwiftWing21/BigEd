@@ -8,6 +8,7 @@ import shutil
 import subprocess
 from datetime import datetime
 from pathlib import Path
+import logging
 
 SKILL_NAME = "claude_code"
 DESCRIPTION = "Deep code analysis via Claude Code CLI — review, refactor, document, test generation"
@@ -16,6 +17,7 @@ COMPLEXITY = "complex"
 REQUIRES_NETWORK = True
 SUITE = ""
 TAGS = ['network']
+log = logging.getLogger(SKILL_NAME)
 
 FLEET_DIR = Path(__file__).parent.parent
 PROJECT_DIR = FLEET_DIR.parent

@@ -3,6 +3,7 @@ import os
 import shutil
 from datetime import datetime
 from pathlib import Path
+import logging
 
 SKILL_NAME = "db_encrypt"
 DESCRIPTION = "Encrypt fleet.db using SQLCipher (AES-256) for data-at-rest protection"
@@ -10,6 +11,7 @@ VERSION = "1.0.0"
 COMPLEXITY = "medium"
 REQUIRES_NETWORK = False
 SUITE = "ops"
+log = logging.getLogger(SKILL_NAME)
 
 FLEET_DIR = Path(__file__).parent.parent
 DB_PATH = FLEET_DIR / "fleet.db"

@@ -1,11 +1,13 @@
 """Generate pytest-compatible unit tests for a Python module."""
 
+import logging
 SKILL_NAME = "test_generate"
 DESCRIPTION = "Generate pytest-compatible unit tests for a Python module."
 VERSION = "1.0.0"
 COMPLEXITY = "medium"
 REQUIRES_NETWORK = False
 SUITE = "content"
+log = logging.getLogger(SKILL_NAME)
 
 
 def run(payload, config):

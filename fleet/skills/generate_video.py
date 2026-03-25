@@ -17,6 +17,7 @@ from datetime import datetime
 from pathlib import Path
 
 import httpx
+import logging
 
 KNOWLEDGE_DIR = Path(__file__).parent.parent / "knowledge"
 VIDEOS_DIR    = KNOWLEDGE_DIR / "marketing" / "videos"
@@ -29,6 +30,7 @@ COMPLEXITY = "medium"
 REQUIRES_NETWORK = True
 SUITE = "content"
 TAGS = ['network']
+log = logging.getLogger(SKILL_NAME)
 
 # Owner/name slugs — Replicate resolves to latest version automatically
 _MODEL_SLUGS = {

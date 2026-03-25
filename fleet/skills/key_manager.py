@@ -12,6 +12,7 @@ Actions:
 import os
 import re
 from pathlib import Path
+import logging
 
 from skills._models import call_complex
 
@@ -27,6 +28,7 @@ COMPLEXITY = "medium"
 REQUIRES_NETWORK = True
 SUITE = "ops"
 TAGS = ['network']
+log = logging.getLogger(SKILL_NAME)
 
 
 

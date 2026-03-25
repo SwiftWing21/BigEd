@@ -3,6 +3,7 @@ import json
 from collections import Counter, defaultdict
 from datetime import datetime
 from pathlib import Path
+import logging
 
 SKILL_NAME = "swarm_intelligence"
 DESCRIPTION = "Swarm behavior — agent specialization tracking, task decomposition, adaptive affinity"
@@ -11,6 +12,7 @@ COMPLEXITY = "complex"
 REQUIRES_NETWORK = False
 SUITE = "swarm"
 TAGS = ['multi-agent']
+log = logging.getLogger(SKILL_NAME)
 
 FLEET_DIR = Path(__file__).parent.parent
 SPECIALIZATION_FILE = FLEET_DIR / "knowledge" / "swarm" / "specializations.json"

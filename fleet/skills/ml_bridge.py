@@ -3,6 +3,7 @@ import csv
 import json
 from datetime import datetime
 from pathlib import Path
+import logging
 
 SKILL_NAME = "ml_bridge"
 DESCRIPTION = "Import autoresearch ML training results into fleet knowledge and dashboard"
@@ -10,6 +11,7 @@ VERSION = "1.0.0"
 COMPLEXITY = "medium"
 REQUIRES_NETWORK = False
 SUITE = "ml"
+log = logging.getLogger(SKILL_NAME)
 
 FLEET_DIR = Path(__file__).parent.parent
 AUTORESEARCH_DIR = FLEET_DIR.parent / "autoresearch"

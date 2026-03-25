@@ -18,6 +18,7 @@ Returns: {status, session_id, snapshot_number, file_path}
 import re
 from datetime import datetime
 from pathlib import Path
+import logging
 
 SKILL_NAME = "marathon_log"
 DESCRIPTION = "Write progress snapshots for long-running projects to maintain context across sessions"
@@ -25,6 +26,7 @@ VERSION = "1.0.0"
 COMPLEXITY = "simple"
 REQUIRES_NETWORK = False
 SUITE = "ops"
+log = logging.getLogger(SKILL_NAME)
 
 FLEET_DIR = Path(__file__).parent.parent
 MARATHON_DIR = FLEET_DIR / "knowledge" / "marathon"

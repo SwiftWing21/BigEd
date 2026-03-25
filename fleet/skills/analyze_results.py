@@ -1,10 +1,12 @@
 """Analyze autoresearch results.tsv and write a report."""
+import logging
 SKILL_NAME = "analyze_results"
 DESCRIPTION = "Analyze autoresearch results.tsv and write a report."
 VERSION = "1.0.0"
 COMPLEXITY = "medium"
 REQUIRES_NETWORK = False
 SUITE = "ml"
+log = logging.getLogger(SKILL_NAME)
 
 import csv
 from datetime import date

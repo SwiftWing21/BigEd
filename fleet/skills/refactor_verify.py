@@ -8,6 +8,7 @@ import ast
 import importlib
 import sys
 from pathlib import Path
+import logging
 
 SKILL_NAME = "refactor_verify"
 DESCRIPTION = "Verify codebase integrity after refactors — imports, signatures, launch patterns"
@@ -15,6 +16,7 @@ VERSION = "1.0.0"
 COMPLEXITY = "medium"
 REQUIRES_NETWORK = False
 SUITE = ""
+log = logging.getLogger(SKILL_NAME)
 
 FLEET_DIR = Path(__file__).parent.parent
 

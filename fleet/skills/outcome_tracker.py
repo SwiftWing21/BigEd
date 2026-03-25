@@ -5,12 +5,14 @@ and degrading skills/agents.  Generates a markdown report with actionable
 insights saved to knowledge/outcomes/.
 """
 
+import logging
 SKILL_NAME = "outcome_tracker"
 DESCRIPTION = "Track task outcome trends: success rates, regressions, per-skill/agent breakdowns."
 VERSION = "1.0.0"
 COMPLEXITY = "medium"
 REQUIRES_NETWORK = False
 SUITE = "ml"
+log = logging.getLogger(SKILL_NAME)
 
 
 def run(payload, config):

@@ -21,6 +21,7 @@ import subprocess
 import sys
 from datetime import datetime
 from pathlib import Path
+import logging
 
 SKILL_NAME = "code_write"
 DESCRIPTION = "Code write skill — invokes aider-chat to create or edit files using local Ollama"
@@ -28,6 +29,7 @@ VERSION = "1.0.0"
 COMPLEXITY = "complex"
 REQUIRES_NETWORK = False
 SUITE = ""
+log = logging.getLogger(SKILL_NAME)
 
 from config import GITHUB_OWNER
 

@@ -13,6 +13,7 @@ Usage:
 """
 import os
 from pathlib import Path
+import logging
 
 SKILL_NAME = "oom_prevent"
 DESCRIPTION = "Estimate VRAM/RAM requirements and prevent out-of-memory crashes"
@@ -20,6 +21,7 @@ VERSION = "1.0.0"
 COMPLEXITY = "complex"
 REQUIRES_NETWORK = False
 SUITE = "ops"
+log = logging.getLogger(SKILL_NAME)
 
 FLEET_DIR = Path(__file__).parent.parent
 

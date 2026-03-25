@@ -1,11 +1,13 @@
 """Generate categorized changelog from git commit history."""
 
+import logging
 SKILL_NAME = "changelog_generate"
 DESCRIPTION = "Generate categorized changelog from git commit history."
 VERSION = "1.0.0"
 COMPLEXITY = "medium"
 REQUIRES_NETWORK = False
 SUITE = "content"
+log = logging.getLogger(SKILL_NAME)
 
 
 def run(payload, config):

@@ -13,6 +13,7 @@ Returns:
 """
 import sys
 from pathlib import Path
+import logging
 
 from skills._models import call_complex
 
@@ -23,6 +24,7 @@ COMPLEXITY = "simple"
 REQUIRES_NETWORK = False
 SUITE = "rag"
 TAGS = ['retrieval']
+log = logging.getLogger(SKILL_NAME)
 
 FLEET_DIR = Path(__file__).parent.parent
 sys.path.insert(0, str(FLEET_DIR))

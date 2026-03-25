@@ -5,6 +5,7 @@ Searches for healthcare, accounting/tax, and legal businesses near 95076 (Watson
 import json
 from datetime import date
 from pathlib import Path
+import logging
 
 TARGET_ZIPS = ["95076", "95003", "95010", "95019", "95060", "95062", "95065", "95066", "95073"]
 INDUSTRIES = {
@@ -32,6 +33,7 @@ COMPLEXITY = "complex"
 REQUIRES_NETWORK = True
 SUITE = "research"
 TAGS = ['network']
+log = logging.getLogger(SKILL_NAME)
 
 
 def _search(query, config):

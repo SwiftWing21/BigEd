@@ -1,10 +1,12 @@
 """Index Python functions/classes in a directory using AST parsing."""
+import logging
 SKILL_NAME = "code_index"
 DESCRIPTION = "Index Python functions/classes in a directory using AST parsing."
 VERSION = "1.0.0"
 COMPLEXITY = "simple"
 REQUIRES_NETWORK = False
 SUITE = ""
+log = logging.getLogger(SKILL_NAME)
 
 import ast
 import json

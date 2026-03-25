@@ -12,6 +12,7 @@ import os
 from pathlib import Path
 
 import httpx
+import logging
 
 HEADERS = {"User-Agent": "fleet-agent/1.0"}
 WATERFALL_LOG = Path(__file__).parent.parent / "knowledge" / "search_waterfall.jsonl"
@@ -23,6 +24,7 @@ COMPLEXITY = "medium"
 REQUIRES_NETWORK = True
 SUITE = "research"
 TAGS = ['search', 'network']
+log = logging.getLogger(SKILL_NAME)
 
 
 def _log_provider(query, provider, success):

@@ -27,6 +27,7 @@ import urllib.request
 import xml.etree.ElementTree as ET
 from datetime import date, datetime
 from pathlib import Path
+import logging
 
 from skills._dispatch import dispatch_action
 from skills._models import call_complex
@@ -37,6 +38,7 @@ VERSION = "1.0.0"
 REQUIRES_NETWORK = True   # pen_test and cve use network; others do not
 COMPLEXITY = "medium"
 SUITE = "security"
+log = logging.getLogger(SKILL_NAME)
 
 # ---------------------------------------------------------------------------
 # Directory layout

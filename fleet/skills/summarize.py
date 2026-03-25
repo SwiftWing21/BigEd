@@ -1,4 +1,5 @@
 """Summarize text from a URL, file path, or raw description."""
+import logging
 SKILL_NAME = "summarize"
 DESCRIPTION = "Summarize text from a URL, file path, or raw description."
 VERSION = "1.0.0"
@@ -6,6 +7,7 @@ COMPLEXITY = "simple"
 REQUIRES_NETWORK = True  # fetches URLs via httpx
 SUITE = "content"
 TAGS = ['network']
+log = logging.getLogger(SKILL_NAME)
 
 import re
 from datetime import date

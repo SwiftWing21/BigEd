@@ -3,6 +3,7 @@ import shutil
 import sys
 from datetime import datetime, timedelta
 from pathlib import Path
+import logging
 
 SKILL_NAME = "knowledge_prune"
 DESCRIPTION = "Detect and archive stale or bloated knowledge files"
@@ -10,6 +11,7 @@ VERSION = "1.0.0"
 COMPLEXITY = "simple"
 REQUIRES_NETWORK = False
 SUITE = "ops"
+log = logging.getLogger(SKILL_NAME)
 
 FLEET_DIR = Path(__file__).parent.parent
 KNOWLEDGE_DIR = FLEET_DIR / "knowledge"

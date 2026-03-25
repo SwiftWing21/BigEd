@@ -3,6 +3,7 @@ import json
 import time
 from datetime import datetime
 from pathlib import Path
+import logging
 
 SKILL_NAME = "evolution_coordinator"
 DESCRIPTION = "Coordinate multi-agent skill evolution with leaderboard tracking"
@@ -10,6 +11,7 @@ VERSION = "1.0.0"
 COMPLEXITY = "complex"
 REQUIRES_NETWORK = False
 SUITE = "ops"
+log = logging.getLogger(SKILL_NAME)
 
 FLEET_DIR = Path(__file__).parent.parent
 EVOLUTION_LOG = FLEET_DIR / "knowledge" / "evolution" / "evolution_log.jsonl"

@@ -3,12 +3,14 @@
 Usage from Claude Code:  /hitl-respond
 Reads pending hitl-response-{id}.md files, shows context, helps draft response.
 """
+import logging
 SKILL_NAME = "hitl_respond"
 DESCRIPTION = "Help operator draft HITL responses for fleet agents via VS Code"
 VERSION = "1.0.0"
 COMPLEXITY = "medium"
 REQUIRES_NETWORK = False
 SUITE = ""
+log = logging.getLogger(SKILL_NAME)
 
 
 def run(payload: dict, config: dict) -> dict:

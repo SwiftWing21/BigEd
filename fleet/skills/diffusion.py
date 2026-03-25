@@ -20,12 +20,14 @@ Pipeline examples:
 Requires: pip install diffusers transformers accelerate torch
 Models download from HuggingFace on first run (~5GB SD1.5, ~7GB SDXL, ~3GB x4 upscaler).
 """
+import logging
 SKILL_NAME = "diffusion"
 DESCRIPTION = "Local image generation via Stable Diffusion (HuggingFace diffusers)."
 VERSION = "1.0.0"
 COMPLEXITY = "medium"
 REQUIRES_NETWORK = False
 SUITE = "content"
+log = logging.getLogger(SKILL_NAME)
 
 import gc
 from datetime import datetime

@@ -6,6 +6,7 @@ import urllib.error
 import urllib.request
 from datetime import date
 from pathlib import Path
+import logging
 
 SKILL_NAME = "api_health_probe"
 DESCRIPTION = "Probe configured API endpoints for health, record status and latency."
@@ -14,6 +15,7 @@ COMPLEXITY = "medium"
 REQUIRES_NETWORK = True
 SUITE = "ops"
 TAGS = ['network']
+log = logging.getLogger(SKILL_NAME)
 
 FLEET_DIR = Path(__file__).parent.parent
 KNOWLEDGE_DIR = FLEET_DIR / "knowledge"

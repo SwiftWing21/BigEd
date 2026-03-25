@@ -10,6 +10,7 @@ import subprocess
 import time
 from datetime import datetime
 from pathlib import Path
+import logging
 
 # ── Skill metadata ────────────────────────────────────────────────────────────
 
@@ -19,6 +20,7 @@ VERSION = "1.0.0"
 REQUIRES_NETWORK = True   # GitHub sub-actions need network; git-only actions still work offline
 COMPLEXITY = "medium"
 SUITE = "git"
+log = logging.getLogger(SKILL_NAME)
 
 # ── Constants ─────────────────────────────────────────────────────────────────
 

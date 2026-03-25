@@ -21,6 +21,7 @@ Output:
 import json
 from datetime import datetime
 from pathlib import Path
+import logging
 
 SKILL_NAME = "fma_review"
 DESCRIPTION = "FMA review skill — coder agents review BigEd CC files and discuss"
@@ -28,6 +29,7 @@ VERSION = "1.0.0"
 COMPLEXITY = "medium"
 REQUIRES_NETWORK = False
 SUITE = ""
+log = logging.getLogger(SKILL_NAME)
 
 FLEET_DIR = Path(__file__).parent.parent
 KNOWLEDGE_DIR = FLEET_DIR / "knowledge"

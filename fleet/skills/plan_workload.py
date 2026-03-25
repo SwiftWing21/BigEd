@@ -14,6 +14,7 @@ import json
 import re
 from datetime import datetime
 from pathlib import Path
+import logging
 
 SKILL_NAME = "plan_workload"
 DESCRIPTION = "Workload planner — surveys fleet state and queues a batch of tasks."
@@ -21,6 +22,7 @@ VERSION = "1.0.0"
 COMPLEXITY = "complex"
 REQUIRES_NETWORK = False
 SUITE = "ops"
+log = logging.getLogger(SKILL_NAME)
 
 FLEET_DIR = Path(__file__).parent.parent
 KNOWLEDGE_DIR = FLEET_DIR / "knowledge"

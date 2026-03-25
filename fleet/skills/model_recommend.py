@@ -1,6 +1,7 @@
 """HITL model recommendation — analyze fleet performance and recommend upgrades via operator approval."""
 import json, os, tempfile, urllib.request
 from pathlib import Path
+import logging
 
 SKILL_NAME = "model_recommend"
 DESCRIPTION = "Analyze model performance and recommend upgrades via HITL approval"
@@ -8,6 +9,8 @@ VERSION = "1.0.0"
 COMPLEXITY = "medium"
 REQUIRES_NETWORK = False
 SUITE = "ml"
+log = logging.getLogger(SKILL_NAME)
+
 FLEET_DIR = Path(__file__).parent.parent
 
 # Known model quality tiers (higher = more intelligent)

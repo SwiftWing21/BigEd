@@ -6,6 +6,7 @@ Saves outputs to knowledge/design/
 import json
 from datetime import datetime
 from pathlib import Path
+import logging
 
 SKILL_NAME = "generate_asset"
 DESCRIPTION = "Designer skill — generates visual assets with PIL."
@@ -13,6 +14,7 @@ VERSION = "1.0.0"
 COMPLEXITY = "medium"
 REQUIRES_NETWORK = False
 SUITE = "content"
+log = logging.getLogger(SKILL_NAME)
 
 FLEET_DIR   = Path(__file__).parent.parent
 DESIGN_DIR  = FLEET_DIR / "knowledge" / "design"

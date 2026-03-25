@@ -23,6 +23,7 @@ Output: knowledge/quality/a11y_report_<date>.md
 Returns: {files_scanned, total_issues, errors, warnings, infos, saved_to}
 """
 
+import logging
 SKILL_NAME = "html_accessibility"
 DESCRIPTION = (
     "Check HTML templates for accessibility issues "
@@ -32,6 +33,7 @@ VERSION = "1.0.0"
 COMPLEXITY = "medium"
 REQUIRES_NETWORK = False
 SUITE = ""
+log = logging.getLogger(SKILL_NAME)
 
 
 def run(payload, config):

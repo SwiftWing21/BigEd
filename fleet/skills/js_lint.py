@@ -26,6 +26,7 @@ Returns: {files_scanned, issues_found, errors, warnings, infos}
 import re
 from datetime import datetime
 from pathlib import Path
+import logging
 
 SKILL_NAME = "js_lint"
 DESCRIPTION = (
@@ -36,6 +37,7 @@ VERSION = "1.0.0"
 COMPLEXITY = "medium"
 REQUIRES_NETWORK = False
 SUITE = ""
+log = logging.getLogger(SKILL_NAME)
 
 FLEET_DIR = Path(__file__).parent.parent
 KNOWLEDGE_DIR = FLEET_DIR / "knowledge"

@@ -21,6 +21,7 @@ import re
 from collections import Counter
 from datetime import datetime
 from pathlib import Path
+import logging
 
 SKILL_NAME = "skill_learn"
 DESCRIPTION = "Skill learn — analyzes task failure patterns, discussion gaps, and fleet"
@@ -28,6 +29,7 @@ VERSION = "1.0.0"
 COMPLEXITY = "complex"
 REQUIRES_NETWORK = False
 SUITE = "ml"
+log = logging.getLogger(SKILL_NAME)
 
 FLEET_DIR = Path(__file__).parent.parent
 KNOWLEDGE_DIR = FLEET_DIR / "knowledge"

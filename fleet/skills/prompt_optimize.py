@@ -5,12 +5,14 @@ successful vs failed tasks, generates optimization recommendations,
 and saves a report to knowledge/prompt_optimization/.
 """
 
+import logging
 SKILL_NAME = "prompt_optimize"
 DESCRIPTION = "Analyze task prompt patterns and recommend improvements for higher success rates."
 VERSION = "1.0.0"
 COMPLEXITY = "medium"
 REQUIRES_NETWORK = False
 SUITE = ""
+log = logging.getLogger(SKILL_NAME)
 
 
 def run(payload, config):

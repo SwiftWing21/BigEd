@@ -2,12 +2,14 @@
 Knowledge digest skill — scans knowledge/ subdirectories, counts new files
 in the last N hours, summarizes activity per category, and saves a daily digest.
 """
+import logging
 SKILL_NAME = "knowledge_digest"
 DESCRIPTION = "Generate a daily digest of knowledge artifacts across all categories."
 VERSION = "1.0.0"
 COMPLEXITY = "medium"
 REQUIRES_NETWORK = False
 SUITE = "ops"
+log = logging.getLogger(SKILL_NAME)
 
 
 def run(payload, config):

@@ -4,6 +4,7 @@ import os
 import subprocess
 import sys
 from pathlib import Path
+import logging
 
 SKILL_NAME = "service_manager"
 DESCRIPTION = "Verify and manage system services (auto-boot, Ollama, fleet processes)"
@@ -11,6 +12,7 @@ VERSION = "1.0.0"
 COMPLEXITY = "medium"
 REQUIRES_NETWORK = False
 SUITE = "ops"
+log = logging.getLogger(SKILL_NAME)
 
 FLEET_DIR = Path(__file__).parent.parent
 

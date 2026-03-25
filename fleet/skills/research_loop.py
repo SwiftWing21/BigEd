@@ -3,6 +3,7 @@ import json
 from datetime import datetime
 from pathlib import Path
 from collections import Counter
+import logging
 
 SKILL_NAME = "research_loop"
 DESCRIPTION = "Autonomous research cycle — detect gaps, research, synthesize, generate training data"
@@ -10,6 +11,7 @@ VERSION = "1.0.0"
 COMPLEXITY = "medium"
 REQUIRES_NETWORK = False
 SUITE = "research"
+log = logging.getLogger(SKILL_NAME)
 
 FLEET_DIR = Path(__file__).parent.parent
 KNOWLEDGE_DIR = FLEET_DIR / "knowledge"

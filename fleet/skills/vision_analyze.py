@@ -27,6 +27,7 @@ import os
 import urllib.request
 from datetime import datetime
 from pathlib import Path
+import logging
 
 FLEET_DIR = Path(__file__).parent.parent
 KNOWLEDGE_DIR = FLEET_DIR / "knowledge"
@@ -41,6 +42,7 @@ COMPLEXITY = "medium"
 
 REQUIRES_NETWORK = False
 SUITE = ""
+log = logging.getLogger(SKILL_NAME)
 
 DEFAULT_PROMPTS = {
     "describe": "Describe this image in detail. Include objects, colors, layout, text, and any notable features.",

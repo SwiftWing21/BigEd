@@ -19,6 +19,7 @@ Returns: {roles_updated, tasks_added, tasks_removed, preview}
 import re
 import sys
 from pathlib import Path
+import logging
 
 SKILL_NAME = "curriculum_update"
 DESCRIPTION = "Curriculum update — analyzes completed work, skill gaps, and review findings"
@@ -26,6 +27,7 @@ VERSION = "1.0.0"
 COMPLEXITY = "medium"
 REQUIRES_NETWORK = False
 SUITE = ""
+log = logging.getLogger(SKILL_NAME)
 
 FLEET_DIR = Path(__file__).parent.parent
 CURRICULA_DIR = FLEET_DIR / "idle_curricula"

@@ -23,6 +23,7 @@ import os
 import sys
 from datetime import datetime
 from pathlib import Path
+import logging
 
 FLEET_DIR     = Path(__file__).parent.parent
 KNOWLEDGE_DIR = FLEET_DIR / "knowledge"
@@ -35,6 +36,7 @@ COMPLEXITY = "medium"
 REQUIRES_NETWORK = True
 SUITE = "content"
 TAGS = ['network']
+log = logging.getLogger(SKILL_NAME)
 
 sys.path.insert(0, str(Path(__file__).parent))
 

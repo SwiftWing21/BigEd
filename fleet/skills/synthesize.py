@@ -3,12 +3,14 @@ Synthesize all agent discussion contributions + research into a final document.
 Used to produce business pitch, agent prep docs, or strategic reports.
 Uses Sonnet for synthesis quality — this is a high-value, infrequent call.
 """
+import logging
 SKILL_NAME = "synthesize"
 DESCRIPTION = "Synthesize all agent discussion contributions + research into a final document."
 VERSION = "1.0.0"
 COMPLEXITY = "medium"
 REQUIRES_NETWORK = False
 SUITE = "content"
+log = logging.getLogger(SKILL_NAME)
 
 import json
 from datetime import date

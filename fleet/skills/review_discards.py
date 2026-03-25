@@ -5,12 +5,14 @@ Watch results.tsv and trigger tiered reviews:
   - Any new val_bpb improvement (keep) → Sonnet 4.6 improvement review
 All results saved to knowledge/reports/ and returned to Ollama context.
 """
+import logging
 SKILL_NAME = "review_discards"
 DESCRIPTION = "Watch results.tsv and trigger tiered reviews:"
 VERSION = "1.0.0"
 COMPLEXITY = "simple"
 REQUIRES_NETWORK = False
 SUITE = "ml"
+log = logging.getLogger(SKILL_NAME)
 
 import csv
 import json

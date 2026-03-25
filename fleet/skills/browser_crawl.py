@@ -24,6 +24,7 @@ import json
 import os
 from datetime import datetime
 from pathlib import Path
+import logging
 from urllib.parse import urlparse
 
 FLEET_DIR = Path(__file__).parent.parent
@@ -37,6 +38,7 @@ COMPLEXITY = "medium"
 REQUIRES_NETWORK = True
 SUITE = "research"
 TAGS = ['network']
+log = logging.getLogger(SKILL_NAME)
 
 _HAS_PLAYWRIGHT = None  # lazy check
 _MCP_CHECKED = None      # (available: bool, url: str|None)

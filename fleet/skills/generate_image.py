@@ -16,6 +16,7 @@ from datetime import datetime
 from pathlib import Path
 
 import httpx
+import logging
 
 KNOWLEDGE_DIR = Path(__file__).parent.parent / "knowledge"
 IMAGES_DIR    = KNOWLEDGE_DIR / "marketing" / "images"
@@ -28,6 +29,7 @@ COMPLEXITY = "medium"
 REQUIRES_NETWORK = True
 SUITE = "content"
 TAGS = ['network']
+log = logging.getLogger(SKILL_NAME)
 
 
 def run(payload, config):

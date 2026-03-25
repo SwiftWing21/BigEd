@@ -12,6 +12,7 @@ from html.parser import HTMLParser
 from pathlib import Path
 
 import httpx
+import logging
 
 KNOWLEDGE_DIR = Path(__file__).parent.parent / "knowledge"
 HEADERS = {
@@ -27,6 +28,7 @@ COMPLEXITY = "medium"
 REQUIRES_NETWORK = True
 SUITE = "research"
 TAGS = ['network']
+log = logging.getLogger(SKILL_NAME)
 
 _EMAIL_RE = re.compile(r'[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}')
 _PHONE_RE = re.compile(r'(?:\+1[\s\-.]?)?\(?\d{3}\)?[\s\-.]?\d{3}[\s\-.]?\d{4}')

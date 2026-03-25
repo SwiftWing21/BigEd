@@ -32,6 +32,7 @@ import threading
 import traceback
 from datetime import datetime
 from pathlib import Path
+import logging
 
 from skills._dispatch import dispatch_action
 
@@ -41,6 +42,7 @@ VERSION = "1.0.0"
 REQUIRES_NETWORK = False
 COMPLEXITY = "medium"
 SUITE = "skill_lifecycle"
+log = logging.getLogger(SKILL_NAME)
 
 # ---------------------------------------------------------------------------
 # Shared constants

@@ -12,6 +12,7 @@ Returns: {files_indexed, total_chunks, ...}
 """
 import sys
 from pathlib import Path
+import logging
 
 SKILL_NAME = "rag_index"
 DESCRIPTION = "RAG index skill — rebuilds or incrementally updates the RAG search index."
@@ -19,6 +20,7 @@ VERSION = "1.0.0"
 COMPLEXITY = "simple"
 REQUIRES_NETWORK = False
 SUITE = "rag"
+log = logging.getLogger(SKILL_NAME)
 
 FLEET_DIR = Path(__file__).parent.parent
 sys.path.insert(0, str(FLEET_DIR))

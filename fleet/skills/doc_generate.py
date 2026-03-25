@@ -3,12 +3,14 @@ Documentation generator skill — uses AST to extract classes, functions,
 docstrings, and signatures from Python modules. Produces a markdown API
 reference.
 """
+import logging
 SKILL_NAME = "doc_generate"
 DESCRIPTION = "Auto-generate markdown API documentation for Python modules using AST."
 VERSION = "1.0.0"
 COMPLEXITY = "medium"
 REQUIRES_NETWORK = False
 SUITE = "content"
+log = logging.getLogger(SKILL_NAME)
 
 
 def run(payload, config):

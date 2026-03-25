@@ -3,6 +3,7 @@ import json
 import sys
 from datetime import datetime
 from pathlib import Path
+import logging
 from skills._models import call_complex, get_last_provider
 
 SKILL_NAME = "dataset_synthesize"
@@ -11,6 +12,7 @@ VERSION = "1.0.0"
 COMPLEXITY = "medium"
 REQUIRES_NETWORK = False  # can use local Ollama
 SUITE = "content"
+log = logging.getLogger(SKILL_NAME)
 
 FLEET_DIR = Path(__file__).parent.parent
 DATASETS_DIR = FLEET_DIR / "knowledge" / "datasets"

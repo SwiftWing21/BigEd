@@ -3,6 +3,7 @@ import json
 import time
 from datetime import datetime
 from pathlib import Path
+import logging
 
 SKILL_NAME = "swarm_consensus"
 DESCRIPTION = "Force multiple agents to debate and reach consensus before executing complex tasks"
@@ -11,6 +12,7 @@ COMPLEXITY = "complex"
 REQUIRES_NETWORK = False
 SUITE = "swarm"
 TAGS = ['multi-agent']
+log = logging.getLogger(SKILL_NAME)
 
 FLEET_DIR = Path(__file__).parent.parent
 

@@ -6,6 +6,7 @@ import json
 from datetime import datetime
 from pathlib import Path
 from collections import Counter
+import logging
 
 SKILL_NAME = "stability_report"
 DESCRIPTION = "Analyze resolution data for failure patterns, severity breakdown, and MTTR"
@@ -13,6 +14,7 @@ VERSION = "1.0.0"
 COMPLEXITY = "simple"
 REQUIRES_NETWORK = False
 SUITE = "ops"
+log = logging.getLogger(SKILL_NAME)
 
 FLEET_DIR = Path(__file__).parent.parent
 RESOLUTIONS_PATH = FLEET_DIR / "data" / "resolutions.jsonl"

@@ -26,6 +26,7 @@ from datetime import datetime
 from pathlib import Path
 
 from config import GITHUB_OWNER, GITHUB_REPO
+import logging
 
 FLEET_DIR = Path(__file__).parent.parent
 KNOWLEDGE_DIR = FLEET_DIR / "knowledge"
@@ -40,6 +41,7 @@ COMPLEXITY = "medium"
 REQUIRES_NETWORK = True
 SUITE = "ops"
 TAGS = ['network']
+log = logging.getLogger(SKILL_NAME)
 
 # Core skills every product variant needs
 CORE_SKILLS = [

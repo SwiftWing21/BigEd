@@ -4,6 +4,7 @@ import os
 import time
 from datetime import datetime
 from pathlib import Path
+import logging
 
 SKILL_NAME = "secret_rotate"
 DESCRIPTION = "Rotate API keys — automated for Slack/AWS, semi-automated for others"
@@ -12,6 +13,7 @@ COMPLEXITY = "medium"
 REQUIRES_NETWORK = True
 SUITE = "ops"
 TAGS = ['network']
+log = logging.getLogger(SKILL_NAME)
 
 FLEET_DIR = Path(__file__).parent.parent
 SECRETS_FILE = Path.home() / ".secrets"
