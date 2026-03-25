@@ -103,15 +103,15 @@ pub fn router(state: AppState) -> Router {
         .with_state(state)
 }
 
-/// Start the HTTP server on the configured port.
+/// Start the HTTP server on the configured address and port.
 pub async fn run(state: AppState) -> anyhow::Result<()> {
-    let port = {
+    let addr = {
         let cfg = state.config.read().await;
-        cfg.dashboard.port
+        format!("{}:{}", cfg.dashboard.bind_address, cfg.dashboard.port)
     };
     let app = router(state);
-    let listener = tokio::net::TcpListener::bind(format!("0.0.0.0:{}", port)).await?;
-    tracing::info!("Server listening on port {}", port);
+    let listener = tokio::net::TcpListener::bind(&addr).await?;
+    tracing::info!("Server listening on {}", addr);
     axum::serve(listener, app).await?;
     Ok(())
 }

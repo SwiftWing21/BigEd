@@ -87,6 +87,23 @@ async fn main() -> anyhow::Result<()> {
         Some(Commands::Gui { server_url }) => {
             biged_gui::run_gui(&server_url).expect("GUI failed");
         }
+        Some(Commands::Thermal) => {
+            tracing::info!("Starting thermal monitor");
+            let fleet_dir = std::env::current_dir()?.join("fleet");
+            let config_path = fleet_dir.join("fleet.toml");
+            let config = if config_path.exists() {
+                biged_core::config::FleetConfig::from_file(&config_path)?
+            } else {
+                biged_core::config::FleetConfig::default()
+            };
+            let (tx, _rx) = biged_supervisor::events::create_event_bus(256);
+            let mut monitor = biged_supervisor::thermal::ThermalMonitor::new(
+                std::sync::Arc::new(tokio::sync::RwLock::new(config)),
+                tx,
+                fleet_dir,
+            );
+            monitor.run().await;
+        }
         _ => {
             tracing::warn!("Command not yet implemented");
         }
