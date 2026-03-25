@@ -52,9 +52,7 @@ impl SkillLoader {
             let module_name = format!("skills.{}", skill_name);
             let module = importlib
                 .call_method1("import_module", (module_name.as_str(),))
-                .map_err(|e| {
-                    anyhow::anyhow!("Failed to import skill '{}': {}", skill_name, e)
-                })?;
+                .map_err(|e| anyhow::anyhow!("Failed to import skill '{}': {}", skill_name, e))?;
 
             // Verify the skill contract: must have a run() callable
             if !module.hasattr("run")? {

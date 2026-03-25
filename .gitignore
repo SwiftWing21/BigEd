@@ -93,6 +93,7 @@ BigEd/launcher/data/
 
 # ── Local machine config (personal hardware/env/MCP — never committed) ────────
 CLAUDE.USER.md
+SESSION_HANDOFF.md
 .mcp.json
 push.sh
 
@@ -145,6 +146,12 @@ fleet/data/
 
 # ── IDE — MCP config (may contain credentials; launch.json + tasks.json stay tracked)
 .vscode/mcp.json
+
+# ── Junk / temp artifacts (should never be tracked anywhere) ───────────────
+.clone/
+ziXHiPfz
+model-manager.plugin
+repo-descriptions.txt
 
 # ── OS junk ───────────────────────────────────────────────────────────────────
 .DS_Store

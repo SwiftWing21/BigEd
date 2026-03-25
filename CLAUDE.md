@@ -37,8 +37,9 @@ All roadmap items must reference grading logic from `audit_tracker.md`. Format:
 End every roadmap with an Audit Coverage Check section.
 
 ## Version Scheme
-- Alpha: `0.XX.00` milestones + `0.XX.YY` patches
+- Beta: `0.XXX.00b` milestones + `0.XXX.YYb` patches (b suffix until 1.000.00 graduation)
 - Milestones: S-Tier infrastructure | Patches: UX, agent quality, bug fixes
+- Major: `0.X00.00b` (0.100=Multi-Fleet, 0.200=Intelligent Orchestration, 0.300=Enterprise, 0.400=SaaS)
 - Roadmap: `ROADMAP.md`
 
 ## Structure
@@ -236,7 +237,7 @@ python -c "import sys; sys.path.insert(0,'fleet'); from system_info import gener
 
 ## API
 - Throttle 20% of rate limits, 300ms min between requests
-- HA fallback: Claude → Gemini → Local (circuit breaker, 3 failures/5min)
+- HA fallback: Claude → Gemini → MiniMax → Local (circuit breaker, 3 failures/5min)
 
 ## Model Tiers (API + Local)
 - **Haiku** (`claude-haiku-4-5`): Sub-agents, high-volume routing
