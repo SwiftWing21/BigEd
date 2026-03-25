@@ -80,6 +80,15 @@ pub async fn disable_worker(
     if !config.fleet.disabled_agents.contains(&name) {
         config.fleet.disabled_agents.push(name.clone());
     }
+
+    // Persist to fleet.toml
+    let toml_str = toml::to_string_pretty(&*config)
+        .map_err(|e| AppError(anyhow::anyhow!("serialize toml: {e}")))?;
+    let toml_path = state.fleet_dir.join("fleet.toml");
+    tokio::fs::write(&toml_path, toml_str)
+        .await
+        .map_err(|e| AppError(anyhow::anyhow!("write fleet.toml: {e}")))?;
+
     Ok(Json(json!({
         "status": "disabled",
         "agent": name,
@@ -94,6 +103,15 @@ pub async fn enable_worker(
 ) -> Result<Json<Value>, AppError> {
     let mut config = state.config.write().await;
     config.fleet.disabled_agents.retain(|a| a != &name);
+
+    // Persist to fleet.toml
+    let toml_str = toml::to_string_pretty(&*config)
+        .map_err(|e| AppError(anyhow::anyhow!("serialize toml: {e}")))?;
+    let toml_path = state.fleet_dir.join("fleet.toml");
+    tokio::fs::write(&toml_path, toml_str)
+        .await
+        .map_err(|e| AppError(anyhow::anyhow!("write fleet.toml: {e}")))?;
+
     Ok(Json(json!({
         "status": "enabled",
         "agent": name,
