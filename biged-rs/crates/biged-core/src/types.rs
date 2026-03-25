@@ -33,7 +33,10 @@ impl TaskStatus {
             "WAITING_HUMAN" => Self::WaitingHuman,
             "REVIEW" => Self::Review,
             "FORWARDED" => Self::Forwarded,
-            _ => Self::Pending,
+            other => {
+                tracing::warn!("Unknown task status from DB: '{}', defaulting to Pending", other);
+                Self::Pending
+            }
         }
     }
 }
