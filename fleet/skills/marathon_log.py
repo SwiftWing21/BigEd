@@ -15,7 +15,6 @@ Payload:
 Output: knowledge/marathon/{session_id}.md
 Returns: {status, session_id, snapshot_number, file_path}
 """
-import json
 import re
 from datetime import datetime
 from pathlib import Path
@@ -83,16 +82,16 @@ def run(payload, config):
     notes = payload.get("notes", "")
 
     if not session_id:
-        return json.dumps({"status": "error", "error": "No session_id provided"})
+        return {"status": "error", "error": "No session_id provided"}
     if not goal:
-        return json.dumps({"status": "error", "error": "No goal provided"})
+        return {"status": "error", "error": "No goal provided"}
     if not next_step:
-        return json.dumps({"status": "error", "error": "No next_step provided"})
+        return {"status": "error", "error": "No next_step provided"}
 
     try:
         MARATHON_DIR.mkdir(parents=True, exist_ok=True)
     except Exception as e:
-        return json.dumps({"status": "error", "error": f"Cannot create marathon dir: {e}"})
+        return {"status": "error", "error": f"Cannot create marathon dir: {e}"}
 
     file_path = MARATHON_DIR / f"{session_id}.md"
 
@@ -139,11 +138,11 @@ def run(payload, config):
             header = f"# Marathon Log: {session_id}\n\n"
             file_path.write_text(header + snapshot, encoding="utf-8")
     except Exception as e:
-        return json.dumps({"status": "error", "error": f"Write failed: {e}"})
+        return {"status": "error", "error": f"Write failed: {e}"}
 
-    return json.dumps({
+    return {
         "status": "logged",
         "session_id": session_id,
         "snapshot_number": snapshot_number,
         "file_path": str(file_path),
-    })
+    }

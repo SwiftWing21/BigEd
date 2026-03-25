@@ -11,7 +11,6 @@ Usage:
     else:
         # requeue or scale down model first
 """
-import json
 import os
 from pathlib import Path
 
@@ -49,20 +48,26 @@ CPU_ONLY_SKILLS = {
 }
 
 
-def run(payload: dict, config: dict) -> str:
+def run(payload: dict, config: dict) -> dict:
     """Check OOM risk for a skill or get current memory status."""
     action = payload.get("action", "status")
 
     if action == "status":
-        return json.dumps(_get_memory_status())
+        result = _get_memory_status()
+        result.setdefault("status", "ok")
+        return result
     elif action == "check":
         skill = payload.get("skill", "")
-        return json.dumps(check_oom_risk(skill, config))
+        result = check_oom_risk(skill, config)
+        result.setdefault("status", "ok")
+        return result
     elif action == "estimate":
         skill = payload.get("skill", "")
-        return json.dumps(_estimate_requirements(skill, config))
+        result = _estimate_requirements(skill, config)
+        result.setdefault("status", "ok")
+        return result
     else:
-        return json.dumps({"error": f"Unknown action: {action}"})
+        return {"status": "error", "error": f"Unknown action: {action}"}
 
 
 def _get_memory_status() -> dict:

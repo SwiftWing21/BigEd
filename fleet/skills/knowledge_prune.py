@@ -1,5 +1,4 @@
 """0.10.00: Knowledge pruning — detect bloat and archive stale knowledge files."""
-import json
 import shutil
 import sys
 from datetime import datetime, timedelta
@@ -13,7 +12,7 @@ FLEET_DIR = Path(__file__).parent.parent
 KNOWLEDGE_DIR = FLEET_DIR / "knowledge"
 ARCHIVE_DIR = KNOWLEDGE_DIR / "_archive"
 
-def run(payload: dict, config: dict) -> str:
+def run(payload: dict, config: dict) -> dict:
     action = payload.get("action", "scan")
     stale_days = payload.get("stale_days", 30)
 
@@ -24,7 +23,7 @@ def run(payload: dict, config: dict) -> str:
     elif action == "stats":
         return _knowledge_stats()
     else:
-        return json.dumps({"error": f"Unknown action: {action}"})
+        return {"status": "error", "error": f"Unknown action: {action}"}
 
 def _scan_for_bloat(stale_days):
     """Scan knowledge dirs for oversized or stale files."""
@@ -49,7 +48,7 @@ def _scan_for_bloat(stale_days):
                 "total_size_kb": round(sum(f.stat().st_size for f in md_files) / 1024, 1),
             })
 
-    return json.dumps({"status": "ok", "findings": findings, "stale_threshold_days": stale_days})
+    return {"status": "ok", "findings": findings, "stale_threshold_days": stale_days}
 
 def _archive_stale(stale_days, dry_run=True):
     """Move stale files to _archive directory, then clean stale RAG entries."""
@@ -81,11 +80,11 @@ def _archive_stale(stale_days, dry_run=True):
         except Exception:
             pass  # RAG cleanup is best-effort
 
-    return json.dumps({
+    return {
         "status": "ok", "dry_run": dry_run,
         "archived": len(archived), "rag_stale_cleaned": rag_cleaned,
         "files": archived[:20],
-    })
+    }
 
 def _knowledge_stats():
     """Overall knowledge directory statistics."""
@@ -98,4 +97,4 @@ def _knowledge_stats():
             "files": len([f for f in files if f.is_file()]),
             "size_kb": round(sum(f.stat().st_size for f in files if f.is_file()) / 1024, 1),
         }
-    return json.dumps({"status": "ok", "directories": stats})
+    return {"status": "ok", "directories": stats}

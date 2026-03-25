@@ -185,7 +185,7 @@ def _gen_tinystories(topic: str, index: int, config: dict) -> dict | None:
 # Main entry point
 # ---------------------------------------------------------------------------
 
-def run(payload: dict, config: dict) -> str:
+def run(payload: dict, config: dict) -> dict:
     format_type = payload.get("format", "conversation")  # conversation | instruction | tinystories
     topic = payload.get("topic", "general knowledge")
     count = min(payload.get("count", 10), 50)  # cap at 50 per call
@@ -232,7 +232,7 @@ def run(payload: dict, config: dict) -> str:
     print(f"[dataset_synthesize] Copied training data to autoresearch: {output_path.name}", file=sys.stderr)
     copied_to_autoresearch = True
 
-    return json.dumps({
+    return {
         "status": "ok",
         "format": format_type,
         "count": len(entries),
@@ -240,4 +240,4 @@ def run(payload: dict, config: dict) -> str:
         "output": str(output_path),
         "topic": topic,
         "copied_to_autoresearch": copied_to_autoresearch,
-    })
+    }

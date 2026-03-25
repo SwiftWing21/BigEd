@@ -6,7 +6,6 @@ Run after: module extraction, WSL→native migration, skill migration, API chang
 """
 import ast
 import importlib
-import json
 import sys
 from pathlib import Path
 
@@ -17,21 +16,27 @@ REQUIRES_NETWORK = False
 FLEET_DIR = Path(__file__).parent.parent
 
 
-def run(payload: dict, config: dict) -> str:
+def run(payload: dict, config: dict) -> dict:
     action = payload.get("action", "full")
     if action == "full":
         return _full_verify()
     elif action == "imports":
-        return json.dumps(_check_imports())
+        result = _check_imports()
+        result.setdefault("status", "ok")
+        return result
     elif action == "skills":
-        return json.dumps(_check_skills())
+        result = _check_skills()
+        result.setdefault("status", "ok")
+        return result
     elif action == "launch":
-        return json.dumps(_check_launch_patterns())
+        result = _check_launch_patterns()
+        result.setdefault("status", "ok")
+        return result
     else:
-        return json.dumps({"error": f"Unknown action: {action}"})
+        return {"status": "error", "error": f"Unknown action: {action}"}
 
 
-def _full_verify() -> str:
+def _full_verify() -> dict:
     results = {
         "imports": _check_imports(),
         "skills": _check_skills(),
@@ -46,7 +51,8 @@ def _full_verify() -> str:
         "failed": failed,
         "status": "CLEAN" if failed == 0 else "ISSUES_FOUND",
     }
-    return json.dumps(results)
+    results["status"] = "ok"
+    return results
 
 
 def _check_imports() -> dict:

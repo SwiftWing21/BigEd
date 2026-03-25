@@ -3,7 +3,6 @@ Claude Code integration — headless mode for deep code review, refactoring, and
 Uses `claude -p` (print mode) which runs non-interactively and exits.
 Falls back to call_complex() if Claude Code CLI is not installed.
 """
-import json
 import os
 import shutil
 import subprocess
@@ -21,7 +20,7 @@ KNOWLEDGE_DIR = FLEET_DIR / "knowledge" / "claude_code"
 _CLAUDE_CLI = shutil.which("claude")
 
 
-def run(payload: dict, config: dict) -> str:
+def run(payload: dict, config: dict) -> dict:
     action = payload.get("action", "review")
 
     if not _CLAUDE_CLI:
@@ -40,7 +39,7 @@ def run(payload: dict, config: dict) -> str:
     elif action == "status":
         return _check_status()
     else:
-        return json.dumps({"error": f"Unknown action: {action}"})
+        return {"status": "error", "error": f"Unknown action: {action}"}
 
 
 def _run_claude(prompt: str, cwd: str = None, timeout: int = 300) -> dict:
@@ -98,8 +97,7 @@ def _review(payload):
     else:
         prompt = f"Review the codebase for {focus}. Focus on the most critical issues."
 
-    result = _run_claude(prompt)
-    return json.dumps(result)
+    return _run_claude(prompt)
 
 
 def _refactor(payload):
@@ -108,13 +106,12 @@ def _refactor(payload):
     principles = payload.get("principles", "DRY, readability, performance")
 
     if not target:
-        return json.dumps({"error": "file required for refactoring"})
+        return {"status": "error", "error": "file required for refactoring"}
 
     prompt = (f"Refactor {target} applying these principles: {principles}. "
               f"Show the specific changes as a diff. Do NOT change external behavior.")
 
-    result = _run_claude(prompt)
-    return json.dumps(result)
+    return _run_claude(prompt)
 
 
 def _document(payload):
@@ -123,12 +120,11 @@ def _document(payload):
     style = payload.get("style", "concise docstrings + module overview")
 
     if not target:
-        return json.dumps({"error": "file or module required"})
+        return {"status": "error", "error": "file or module required"}
 
     prompt = f"Document {target} with {style}. Include function signatures, parameters, return types, and usage examples."
 
-    result = _run_claude(prompt)
-    return json.dumps(result)
+    return _run_claude(prompt)
 
 
 def _generate_tests(payload):
@@ -137,14 +133,13 @@ def _generate_tests(payload):
     framework = payload.get("framework", "pytest-style assertions")
 
     if not target:
-        return json.dumps({"error": "file required for test generation"})
+        return {"status": "error", "error": "file required for test generation"}
 
     prompt = (f"Generate comprehensive tests for {target} using {framework}. "
               f"Cover edge cases, error paths, and main functionality. "
               f"Output runnable test code.")
 
-    result = _run_claude(prompt, timeout=180)
-    return json.dumps(result)
+    return _run_claude(prompt, timeout=180)
 
 
 def _custom_prompt(payload):
@@ -154,21 +149,21 @@ def _custom_prompt(payload):
     timeout = payload.get("timeout", 300)
 
     if not prompt:
-        return json.dumps({"error": "prompt required"})
+        return {"status": "error", "error": "prompt required"}
 
     # SOC 2 Security: Prevent path traversal
     from skills._security import safe_path
     resolved_cwd = safe_path(requested_cwd)
     if not resolved_cwd:
-        return json.dumps({"error": f"Invalid or unauthorized working directory: {requested_cwd}"})
+        return {"status": "error", "error": f"Invalid or unauthorized working directory: {requested_cwd}"}
 
-    result = _run_claude(prompt, cwd=str(resolved_cwd), timeout=timeout)
-    return json.dumps(result)
+    return _run_claude(prompt, cwd=str(resolved_cwd), timeout=timeout)
 
 
 def _check_status():
     """Check Claude Code CLI availability and version."""
     status = {
+        "status": "ok",
         "cli_found": bool(_CLAUDE_CLI),
         "cli_path": _CLAUDE_CLI,
     }
@@ -187,7 +182,7 @@ def _check_status():
     status["vscode_found"] = bool(code)
     status["vscode_path"] = code
 
-    return json.dumps(status)
+    return status
 
 
 def _save_output(label, output):
@@ -212,6 +207,6 @@ def _fallback(payload, config):
         user = f"Action: {action}. Target: {target}"
 
         result = call_complex(system, user, config, skill_name="claude_code")
-        return json.dumps({"status": "fallback", "output": result, "note": "Claude Code CLI not found — used API fallback"})
+        return {"status": "fallback", "output": result, "note": "Claude Code CLI not found — used API fallback"}
     except Exception as e:
-        return json.dumps({"error": f"Fallback failed: {e}"})
+        return {"status": "error", "error": f"Fallback failed: {e}"}

@@ -94,7 +94,7 @@ def run(payload, config):
     dry_run = payload.get("dry_run", True)
 
     if not file_path:
-        return json.dumps({"error": "No file_path provided"})
+        return {"status": "error", "error": "No file_path provided"}
 
     target = Path(file_path)
 
@@ -102,12 +102,12 @@ def run(payload, config):
     try:
         content = target.read_text(encoding="utf-8", errors="ignore")
     except FileNotFoundError:
-        return json.dumps({"error": f"File not found: {file_path}"})
+        return {"status": "error", "error": f"File not found: {file_path}"}
     except Exception as e:
-        return json.dumps({"error": f"Cannot read file: {e}"})
+        return {"status": "error", "error": f"Cannot read file: {e}"}
 
     if not content.strip():
-        return json.dumps({"error": f"File is empty: {file_path}"})
+        return {"status": "error", "error": f"File is empty: {file_path}"}
 
     # Step 2: Build refactoring prompt
     principles_str = ", ".join(principles)
@@ -131,11 +131,12 @@ def run(payload, config):
             skill_name=SKILL_NAME,
         )
     except Exception as e:
-        return json.dumps({
+        return {
+            "status": "error",
             "file_path": file_path,
             "principles": principles,
             "error": f"Model call failed: {e}",
-        })
+        }
 
     # Step 4: Parse response
     result = _parse_refactor_response(response)
@@ -201,4 +202,5 @@ def run(payload, config):
     if not dry_run:
         out["refactored_code"] = refactored_code
 
-    return json.dumps(out)
+    out["status"] = "ok"
+    return out

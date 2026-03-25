@@ -12,7 +12,7 @@ FLEET_DIR = Path(__file__).parent.parent
 KNOWLEDGE_DIR = FLEET_DIR / "knowledge"
 
 
-def run(payload: dict, config: dict) -> str:
+def run(payload: dict, config: dict) -> dict:
     action = payload.get("action", "detect_gaps")
 
     if action == "detect_gaps":
@@ -22,14 +22,14 @@ def run(payload: dict, config: dict) -> str:
     elif action == "quality_scores":
         return _get_quality_scores()
     else:
-        return json.dumps({"error": f"Unknown action: {action}"})
+        return {"status": "error", "error": f"Unknown action: {action}"}
 
 
 def _detect_knowledge_gaps():
     """Scan knowledge/ for thin coverage areas."""
     coverage = {}
     if not KNOWLEDGE_DIR.exists():
-        return json.dumps({"gaps": [], "coverage": {}})
+        return {"status": "ok", "gaps": [], "coverage": {}}
 
     for subdir in sorted(KNOWLEDGE_DIR.iterdir()):
         if not subdir.is_dir() or subdir.name.startswith("_"):
@@ -49,7 +49,7 @@ def _detect_knowledge_gaps():
         elif stats["size_kb"] < 5:
             gaps.append({"area": name, "reason": f"only {stats['size_kb']}KB content", "priority": "medium"})
 
-    return json.dumps({"gaps": gaps, "coverage": coverage, "total_areas": len(coverage)})
+    return {"status": "ok", "gaps": gaps, "coverage": coverage, "total_areas": len(coverage)}
 
 
 def _run_research_cycle(payload, config):
@@ -61,13 +61,13 @@ def _run_research_cycle(payload, config):
     topic = payload.get("topic")
     if not topic:
         # Auto-detect from gaps
-        gaps_result = json.loads(_detect_knowledge_gaps())
+        gaps_result = _detect_knowledge_gaps()
         gaps = gaps_result.get("gaps", [])
         if gaps:
             import random
             topic = random.choice(gaps[:3])["area"]  # pick from top 3 gaps
         else:
-            return json.dumps({"status": "no_gaps", "message": "Knowledge base is well-covered"})
+            return {"status": "no_gaps", "message": "Knowledge base is well-covered"}
 
     # Dispatch research chain
     tasks = []
@@ -87,12 +87,12 @@ def _run_research_cycle(payload, config):
     }), priority=2, depends_on=[t2])
     tasks.append({"step": "training_data", "task_id": t3, "skill": "dataset_synthesize"})
 
-    return json.dumps({
+    return {
         "status": "dispatched",
         "topic": topic,
         "tasks": tasks,
         "pipeline": "research → summarize → training_data",
-    })
+    }
 
 
 def _get_quality_scores():
@@ -135,6 +135,6 @@ def _get_quality_scores():
             })
         scored.sort(key=lambda x: -x["success_rate"])
 
-        return json.dumps({"quality_scores": scored})
+        return {"status": "ok", "quality_scores": scored}
     except Exception as e:
-        return json.dumps({"error": str(e)})
+        return {"status": "error", "error": str(e)}

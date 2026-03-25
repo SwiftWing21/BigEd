@@ -72,9 +72,9 @@ def run(payload, config):
     strict = payload.get("strict", False)
 
     if not skill_name:
-        return json.dumps({"verdict": "FAIL", "error": "No skill_name provided"})
+        return {"status": "error", "verdict": "FAIL", "error": "No skill_name provided"}
     if not output:
-        return json.dumps({"verdict": "FAIL", "error": "No output provided"})
+        return {"status": "error", "verdict": "FAIL", "error": "No output provided"}
 
     # Serialize output if dict
     if isinstance(output, dict):
@@ -104,13 +104,14 @@ def run(payload, config):
             skill_name=SKILL_NAME,
         )
     except Exception as e:
-        return json.dumps({
+        return {
+            "status": "error",
             "verdict": "FAIL",
             "skill_name": skill_name,
             "criteria": criteria,
             "critique": f"Evaluation model error: {e}",
             "suggestions": [],
-        })
+        }
 
     # Step 3: Parse response
     result = _parse_eval_response(response)
@@ -155,4 +156,5 @@ def run(payload, config):
     if strict or suggestions:
         out["suggestions"] = suggestions
 
-    return json.dumps(out)
+    out["status"] = "ok"
+    return out

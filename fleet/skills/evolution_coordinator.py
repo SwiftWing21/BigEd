@@ -13,7 +13,7 @@ EVOLUTION_LOG = FLEET_DIR / "knowledge" / "evolution" / "evolution_log.jsonl"
 LEADERBOARD = FLEET_DIR / "knowledge" / "evolution" / "leaderboard.json"
 
 
-def run(payload: dict, config: dict) -> str:
+def run(payload: dict, config: dict) -> dict:
     action = payload.get("action", "evolve")
 
     if action == "evolve":
@@ -25,7 +25,7 @@ def run(payload: dict, config: dict) -> str:
     elif action == "status":
         return _evolution_status()
     else:
-        return json.dumps({"error": f"Unknown action: {action}"})
+        return {"status": "error", "error": f"Unknown action: {action}"}
 
 
 def _coordinate_evolution(payload, config):
@@ -46,7 +46,9 @@ def _coordinate_evolution(payload, config):
     # Log evolution attempt
     _log_evolution(skill, "started", result.get("task_ids", []))
 
-    return json.dumps(result)
+    if "status" not in result:
+        result["status"] = "ok"
+    return result
 
 
 def _cross_skill_learning(payload, config):
@@ -57,7 +59,7 @@ def _cross_skill_learning(payload, config):
 
     improved_skill = payload.get("skill", "")
     if not improved_skill:
-        return json.dumps({"error": "skill required"})
+        return {"status": "error", "error": "skill required"}
 
     # Find skills that commonly run after the improved skill
     related = _find_related_skills(improved_skill)
@@ -71,7 +73,7 @@ def _cross_skill_learning(payload, config):
         }), priority=2)
         triggered.append({"skill": related_skill, "task_id": tid})
 
-    return json.dumps({"status": "triggered", "source": improved_skill, "related": triggered})
+    return {"status": "triggered", "source": improved_skill, "related": triggered}
 
 
 def _find_related_skills(skill_name):
@@ -93,25 +95,27 @@ def _find_related_skills(skill_name):
 def _get_leaderboard():
     """Evolution leaderboard — which skills improved most, which agents contributed."""
     if not LEADERBOARD.exists():
-        return json.dumps({"skills": [], "agents": [], "message": "No evolution data yet"})
+        return {"status": "ok", "skills": [], "agents": [], "message": "No evolution data yet"}
     try:
         data = json.loads(LEADERBOARD.read_text(encoding="utf-8"))
-        return json.dumps(data)
+        if "status" not in data:
+            data["status"] = "ok"
+        return data
     except Exception:
-        return json.dumps({"skills": [], "agents": []})
+        return {"status": "ok", "skills": [], "agents": []}
 
 
 def _evolution_status():
     """Current evolution activity."""
     if not EVOLUTION_LOG.exists():
-        return json.dumps({"total": 0, "recent": []})
+        return {"status": "ok", "total": 0, "recent": []}
     entries = []
     for line in EVOLUTION_LOG.read_text(encoding="utf-8").splitlines()[-20:]:
         try:
             entries.append(json.loads(line))
         except Exception:
             continue
-    return json.dumps({"total": len(entries), "recent": entries[-10:]})
+    return {"status": "ok", "total": len(entries), "recent": entries[-10:]}
 
 
 def _log_evolution(skill, status, task_ids=None):

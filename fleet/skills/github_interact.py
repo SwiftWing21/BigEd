@@ -61,7 +61,7 @@ def _api(method: str, path: str, body: dict | None = None) -> dict:
 
 # ---- actions ---------------------------------------------------------------
 
-def _list_issues(repo: str, payload: dict) -> str:
+def _list_issues(repo: str, payload: dict) -> dict:
     state = payload.get("state", "open")
     labels = payload.get("labels", "")
     per_page = min(int(payload.get("per_page", 30)), 100)
@@ -71,7 +71,7 @@ def _list_issues(repo: str, payload: dict) -> str:
         path += f"&labels={labels}"
     result = _api("GET", path)
     if "error" in result:
-        return json.dumps(result)
+        return {"status": "error", **result}
     issues = [
         {
             "number": i["number"],
@@ -85,16 +85,16 @@ def _list_issues(repo: str, payload: dict) -> str:
         }
         for i in result["data"]
     ]
-    out = {"issues": issues, "count": len(issues), "rate_remaining": result.get("rate_remaining")}
+    out = {"status": "ok", "issues": issues, "count": len(issues), "rate_remaining": result.get("rate_remaining")}
     if result.get("rate_warning"):
         out["rate_warning"] = result["rate_warning"]
-    return json.dumps(out)
+    return out
 
 
-def _create_issue(repo: str, payload: dict) -> str:
+def _create_issue(repo: str, payload: dict) -> dict:
     title = payload.get("title")
     if not title:
-        return json.dumps({"error": "title required"})
+        return {"status": "error", "error": "title required"}
     body = {
         "title": title,
         "body": payload.get("body", ""),
@@ -107,9 +107,10 @@ def _create_issue(repo: str, payload: dict) -> str:
         body["milestone"] = int(payload["milestone"])
     result = _api("POST", f"/repos/{repo}/issues", body)
     if "error" in result:
-        return json.dumps(result)
+        return {"status": "error", **result}
     d = result["data"]
     out = {
+        "status": "ok",
         "created": True,
         "number": d["number"],
         "url": d["html_url"],
@@ -117,21 +118,22 @@ def _create_issue(repo: str, payload: dict) -> str:
     }
     if result.get("rate_warning"):
         out["rate_warning"] = result["rate_warning"]
-    return json.dumps(out)
+    return out
 
 
-def _comment_issue(repo: str, payload: dict) -> str:
+def _comment_issue(repo: str, payload: dict) -> dict:
     number = payload.get("number")
     comment_body = payload.get("body") or payload.get("comment")
     if not number:
-        return json.dumps({"error": "number required (issue/PR number)"})
+        return {"status": "error", "error": "number required (issue/PR number)"}
     if not comment_body:
-        return json.dumps({"error": "body required (comment text)"})
+        return {"status": "error", "error": "body required (comment text)"}
     result = _api("POST", f"/repos/{repo}/issues/{number}/comments", {"body": comment_body})
     if "error" in result:
-        return json.dumps(result)
+        return {"status": "error", **result}
     d = result["data"]
     out = {
+        "status": "ok",
         "commented": True,
         "comment_id": d["id"],
         "url": d["html_url"],
@@ -139,19 +141,20 @@ def _comment_issue(repo: str, payload: dict) -> str:
     }
     if result.get("rate_warning"):
         out["rate_warning"] = result["rate_warning"]
-    return json.dumps(out)
+    return out
 
 
-def _close_issue(repo: str, payload: dict) -> str:
+def _close_issue(repo: str, payload: dict) -> dict:
     number = payload.get("number")
     if not number:
-        return json.dumps({"error": "number required (issue/PR number)"})
+        return {"status": "error", "error": "number required (issue/PR number)"}
     reason = payload.get("state_reason", "completed")  # "completed" or "not_planned"
     result = _api("PATCH", f"/repos/{repo}/issues/{number}", {"state": "closed", "state_reason": reason})
     if "error" in result:
-        return json.dumps(result)
+        return {"status": "error", **result}
     d = result["data"]
     out = {
+        "status": "ok",
         "closed": True,
         "number": d["number"],
         "title": d["title"],
@@ -159,17 +162,17 @@ def _close_issue(repo: str, payload: dict) -> str:
     }
     if result.get("rate_warning"):
         out["rate_warning"] = result["rate_warning"]
-    return json.dumps(out)
+    return out
 
 
-def _list_prs(repo: str, payload: dict) -> str:
+def _list_prs(repo: str, payload: dict) -> dict:
     state = payload.get("state", "open")
     per_page = min(int(payload.get("per_page", 30)), 100)
     page = int(payload.get("page", 1))
     path = f"/repos/{repo}/pulls?state={state}&per_page={per_page}&page={page}"
     result = _api("GET", path)
     if "error" in result:
-        return json.dumps(result)
+        return {"status": "error", **result}
     prs = [
         {
             "number": p["number"],
@@ -184,20 +187,20 @@ def _list_prs(repo: str, payload: dict) -> str:
         }
         for p in result["data"]
     ]
-    out = {"pull_requests": prs, "count": len(prs), "rate_remaining": result.get("rate_remaining")}
+    out = {"status": "ok", "pull_requests": prs, "count": len(prs), "rate_remaining": result.get("rate_remaining")}
     if result.get("rate_warning"):
         out["rate_warning"] = result["rate_warning"]
-    return json.dumps(out)
+    return out
 
 
-def _create_pr(repo: str, payload: dict) -> str:
+def _create_pr(repo: str, payload: dict) -> dict:
     title = payload.get("title")
     head = payload.get("head")
     base = payload.get("base", "main")
     if not title:
-        return json.dumps({"error": "title required"})
+        return {"status": "error", "error": "title required"}
     if not head:
-        return json.dumps({"error": "head branch required"})
+        return {"status": "error", "error": "head branch required"}
     body = {
         "title": title,
         "head": head,
@@ -207,9 +210,10 @@ def _create_pr(repo: str, payload: dict) -> str:
     }
     result = _api("POST", f"/repos/{repo}/pulls", body)
     if "error" in result:
-        return json.dumps(result)
+        return {"status": "error", **result}
     d = result["data"]
     out = {
+        "status": "ok",
         "created": True,
         "number": d["number"],
         "url": d["html_url"],
@@ -219,22 +223,23 @@ def _create_pr(repo: str, payload: dict) -> str:
     }
     if result.get("rate_warning"):
         out["rate_warning"] = result["rate_warning"]
-    return json.dumps(out)
+    return out
 
 
 # ---- entry point -----------------------------------------------------------
 
-def run(payload: dict, config: dict) -> str:
+def run(payload: dict, config: dict) -> dict:
     """Dispatch GitHub interaction actions."""
     action = payload.get("action", "list_issues")
     repo = payload.get("repo")  # "owner/repo" format
     if not repo:
-        return json.dumps({"error": "repo required (e.g., 'owner/repo')"})
+        return {"status": "error", "error": "repo required (e.g., 'owner/repo')"}
 
     if not os.environ.get("GITHUB_TOKEN"):
-        return json.dumps({
+        return {
+            "status": "error",
             "error": "GITHUB_TOKEN not set. Add: export GITHUB_TOKEN='ghp_...' to ~/.secrets",
-        })
+        }
 
     actions = {
         "list_issues": _list_issues,
@@ -246,5 +251,5 @@ def run(payload: dict, config: dict) -> str:
     }
     fn = actions.get(action)
     if not fn:
-        return json.dumps({"error": f"Unknown action: {action}. Valid: {', '.join(actions)}"})
+        return {"status": "error", "error": f"Unknown action: {action}. Valid: {', '.join(actions)}"}
     return fn(repo, payload)

@@ -10,7 +10,7 @@ REQUIRES_NETWORK = False
 
 FLEET_DIR = Path(__file__).parent.parent
 
-def run(payload: dict, config: dict) -> str:
+def run(payload: dict, config: dict) -> dict:
     """Orchestrate a multi-agent debate on a topic before dispatching execution."""
     topic = payload.get("topic", "")
     participants = payload.get("participants", ["coder_1", "security", "researcher"])
@@ -19,7 +19,7 @@ def run(payload: dict, config: dict) -> str:
     execution_payload = payload.get("execution_payload", {})
 
     if not topic:
-        return json.dumps({"error": "topic required"})
+        return {"status": "error", "error": "topic required"}
 
     import sys
     sys.path.insert(0, str(FLEET_DIR))
@@ -111,7 +111,7 @@ def run(payload: dict, config: dict) -> str:
         encoding="utf-8"
     )
 
-    return json.dumps({
+    return {
         "status": "ok",
         "discussion_id": discussion_id,
         "participants": participants,
@@ -119,4 +119,4 @@ def run(payload: dict, config: dict) -> str:
         "synthesis": synthesis,
         "execution_task_id": task_id,
         "record": str(record),
-    })
+    }

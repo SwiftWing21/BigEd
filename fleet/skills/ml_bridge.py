@@ -13,7 +13,7 @@ AUTORESEARCH_DIR = FLEET_DIR.parent / "autoresearch"
 KNOWLEDGE_DIR = FLEET_DIR / "knowledge" / "ml_results"
 
 
-def run(payload: dict, config: dict) -> str:
+def run(payload: dict, config: dict) -> dict:
     action = payload.get("action", "import_results")
 
     if action == "import_results":
@@ -23,7 +23,7 @@ def run(payload: dict, config: dict) -> str:
     elif action == "best_run":
         return _get_best_run()
     else:
-        return json.dumps({"error": f"Unknown action: {action}"})
+        return {"status": "error", "error": f"Unknown action: {action}"}
 
 
 def _parse_tsv(path: Path) -> list[dict]:
@@ -61,20 +61,20 @@ def _load_results() -> list[dict]:
         return []
 
 
-def _import_results() -> str:
+def _import_results() -> dict:
     """Read autoresearch/results.tsv, save structured JSON, log to fleet.db usage table."""
     results = _load_results()
     if not results:
-        return json.dumps({
+        return {
             "status": "no_data",
             "message": "No results.tsv found or file is empty",
-        })
+        }
 
     # Ensure output directory exists
     try:
         KNOWLEDGE_DIR.mkdir(parents=True, exist_ok=True)
     except Exception as e:
-        return json.dumps({"status": "error", "error": f"Cannot create output dir: {e}"})
+        return {"status": "error", "error": f"Cannot create output dir: {e}"}
 
     # Build structured output
     timestamp = datetime.now().strftime("%Y%m%d")
@@ -90,7 +90,7 @@ def _import_results() -> str:
     try:
         out_path.write_text(json.dumps(export, indent=2), encoding="utf-8")
     except Exception as e:
-        return json.dumps({"status": "error", "error": f"Write failed: {e}"})
+        return {"status": "error", "error": f"Write failed: {e}"}
 
     # Log summary to fleet.db usage table for cost tracking integration
     try:
@@ -108,21 +108,21 @@ def _import_results() -> str:
     except Exception:
         pass  # non-critical — don't fail import over logging
 
-    return json.dumps({
+    return {
         "status": "imported",
         "total_runs": len(results),
         "output_file": str(out_path),
-    })
+    }
 
 
-def _get_summary() -> str:
+def _get_summary() -> dict:
     """Aggregate results: total runs, best val_bpb, avg improvement, param ranges."""
     results = _load_results()
     if not results:
-        return json.dumps({
+        return {
             "status": "no_data",
             "message": "No results.tsv found or file is empty",
-        })
+        }
 
     val_bpbs = [r["val_bpb"] for r in results if isinstance(r.get("val_bpb"), (int, float))]
     params = [r["params"] for r in results if isinstance(r.get("params"), (int, float))]
@@ -146,24 +146,24 @@ def _get_summary() -> str:
     if params:
         summary["param_range"] = {"min": min(params), "max": max(params)}
 
-    return json.dumps({"status": "ok", "summary": summary})
+    return {"status": "ok", "summary": summary}
 
 
-def _get_best_run() -> str:
+def _get_best_run() -> dict:
     """Find the run with lowest val_bpb and return its full config."""
     results = _load_results()
     if not results:
-        return json.dumps({
+        return {
             "status": "no_data",
             "message": "No results.tsv found or file is empty",
-        })
+        }
 
     scored = [r for r in results if isinstance(r.get("val_bpb"), (int, float))]
     if not scored:
-        return json.dumps({
+        return {
             "status": "no_data",
             "message": "No runs have a valid val_bpb value",
-        })
+        }
 
     best = min(scored, key=lambda r: r["val_bpb"])
-    return json.dumps({"status": "ok", "best_run": best})
+    return {"status": "ok", "best_run": best}

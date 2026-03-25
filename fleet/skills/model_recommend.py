@@ -23,13 +23,13 @@ TIER_LABELS = {"local": "default worker", "default": "default tier", "mid": "mid
 SPEED_RANK = {"fastest": 3, "fast": 2, "medium": 1}  # higher = faster
 
 
-def run(payload: dict, config: dict) -> str:
+def run(payload: dict, config: dict) -> dict:
     action = payload.get("action", "analyze")
     if action == "analyze":
         return _analyze_and_recommend(config)
     elif action == "apply":
         return _apply_recommendation(payload, config)
-    return json.dumps({"error": f"Unknown action: {action}"})
+    return {"status": "error", "error": f"Unknown action: {action}"}
 
 
 def _get_installed(config):
@@ -91,7 +91,7 @@ def _analyze_and_recommend(config):
     import sys; sys.path.insert(0, str(FLEET_DIR)); import db
     installed = _get_installed(config)
     if not installed:
-        return json.dumps({"status": "skip", "reason": "Cannot reach Ollama"})
+        return {"status": "skip", "reason": "Cannot reach Ollama"}
 
     current = _get_current(config)
     _get_usage_stats()  # collected for future scoring; not blocking recommendations yet
@@ -104,7 +104,7 @@ def _analyze_and_recommend(config):
                          "reason": upgrade["reason"]})
 
     if not recs:
-        return json.dumps({"status": "ok", "message": "All models optimal", "checked": len(current)})
+        return {"status": "ok", "message": "All models optimal", "checked": len(current)}
     hitl_ids = []
     for rec in recs:
         tid = db.post_task("model_recommend", json.dumps({
@@ -115,21 +115,21 @@ def _analyze_and_recommend(config):
             f"for {rec['label']}.\nExpected improvement: {rec['reason']}\n"
             f"Reply 'approve' to apply, 'reject' to dismiss.")
         hitl_ids.append(tid)
-    return json.dumps({"status": "recommendations_pending", "count": len(recs),
-                        "recommendations": recs, "hitl_task_ids": hitl_ids})
+    return {"status": "recommendations_pending", "count": len(recs),
+            "recommendations": recs, "hitl_task_ids": hitl_ids}
 
 
 def _apply_recommendation(payload, config):
     tier, model = payload.get("tier"), payload.get("model")
     previous = payload.get("previous")
     if not tier or not model:
-        return json.dumps({"error": "Missing 'tier' or 'model' in payload"})
+        return {"status": "error", "error": "Missing 'tier' or 'model' in payload"}
 
     resp = payload.get("_human_response", "").strip().lower()
     if resp == "reject":
-        return json.dumps({"status": "rejected", "tier": tier, "model": model})
+        return {"status": "rejected", "tier": tier, "model": model}
     if resp != "approve":
-        return json.dumps({"status": "waiting", "message": "Awaiting operator approval"})
+        return {"status": "waiting", "message": "Awaiting operator approval"}
 
     try:
         import tomlkit
@@ -145,6 +145,6 @@ def _apply_recommendation(payload, config):
         with os.fdopen(tmp_fd, "w", encoding="utf-8") as f:
             f.write(tomlkit.dumps(doc))
         os.replace(tmp_path, str(fleet_toml))
-        return json.dumps({"status": "applied", "tier": tier, "model": model, "previous": previous})
+        return {"status": "applied", "tier": tier, "model": model, "previous": previous}
     except Exception as e:
-        return json.dumps({"error": str(e), "tier": tier, "model": model})
+        return {"status": "error", "error": str(e), "tier": tier, "model": model}

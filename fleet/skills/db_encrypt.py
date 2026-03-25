@@ -1,5 +1,4 @@
 """0.06.00: Database encryption — migrate plaintext SQLite to SQLCipher."""
-import json
 import os
 import shutil
 from datetime import datetime
@@ -13,7 +12,7 @@ FLEET_DIR = Path(__file__).parent.parent
 DB_PATH = FLEET_DIR / "fleet.db"
 
 
-def run(payload: dict, config: dict) -> str:
+def run(payload: dict, config: dict) -> dict:
     action = payload.get("action", "status")
 
     if action == "status":
@@ -21,19 +20,19 @@ def run(payload: dict, config: dict) -> str:
     elif action == "encrypt":
         key = payload.get("key") or os.environ.get("BIGED_DB_KEY", "")
         if not key:
-            return json.dumps({"error": "Encryption key required. Set BIGED_DB_KEY in ~/.secrets or pass key in payload."})
+            return {"status": "error", "error": "Encryption key required. Set BIGED_DB_KEY in ~/.secrets or pass key in payload."}
         return _encrypt_db(key)
     elif action == "verify":
         key = payload.get("key") or os.environ.get("BIGED_DB_KEY", "")
         return _verify_encrypted(key)
     else:
-        return json.dumps({"error": f"Unknown action: {action}"})
+        return {"status": "error", "error": f"Unknown action: {action}"}
 
 
 def _check_status():
     """Check if fleet.db is encrypted."""
     if not DB_PATH.exists():
-        return json.dumps({"status": "no_db", "path": str(DB_PATH)})
+        return {"status": "no_db", "path": str(DB_PATH)}
 
     # Try opening with standard sqlite3 — if it works, it's plaintext
     import sqlite3
@@ -42,10 +41,10 @@ def _check_status():
         conn.execute("SELECT count(*) FROM sqlite_master")
         conn.close()
         size_mb = round(DB_PATH.stat().st_size / 1e6, 2)
-        return json.dumps({"encrypted": False, "size_mb": size_mb, "path": str(DB_PATH)})
+        return {"status": "ok", "encrypted": False, "size_mb": size_mb, "path": str(DB_PATH)}
     except sqlite3.DatabaseError:
         size_mb = round(DB_PATH.stat().st_size / 1e6, 2)
-        return json.dumps({"encrypted": True, "size_mb": size_mb, "path": str(DB_PATH)})
+        return {"status": "ok", "encrypted": True, "size_mb": size_mb, "path": str(DB_PATH)}
 
 
 def _encrypt_db(key: str):
@@ -53,10 +52,10 @@ def _encrypt_db(key: str):
     try:
         from sqlcipher3 import dbapi2 as sqlcipher
     except ImportError:
-        return json.dumps({"error": "sqlcipher3-wheels not installed. Run: pip install sqlcipher3-wheels"})
+        return {"status": "error", "error": "sqlcipher3-wheels not installed. Run: pip install sqlcipher3-wheels"}
 
     if not DB_PATH.exists():
-        return json.dumps({"error": f"Database not found: {DB_PATH}"})
+        return {"status": "error", "error": f"Database not found: {DB_PATH}"}
 
     # Backup first
     backup_path = DB_PATH.with_suffix(f".plaintext.{datetime.now().strftime('%Y%m%d_%H%M%S')}.bak")
@@ -89,34 +88,34 @@ def _encrypt_db(key: str):
 
         if count == 0:
             encrypted_path.unlink()
-            return json.dumps({"error": "Encryption verification failed — encrypted DB has no tables"})
+            return {"status": "error", "error": "Encryption verification failed — encrypted DB has no tables"}
 
         # Swap files
         os.replace(str(encrypted_path), str(DB_PATH))
 
-        return json.dumps({
+        return {
             "status": "encrypted",
             "backup": str(backup_path),
             "tables": count,
             "size_mb": round(DB_PATH.stat().st_size / 1e6, 2),
-        })
+        }
     except Exception as e:
         # Restore backup on failure
         if backup_path.exists() and not DB_PATH.exists():
             shutil.copy2(backup_path, DB_PATH)
         if encrypted_path.exists():
             encrypted_path.unlink()
-        return json.dumps({"error": f"Encryption failed: {e}", "backup": str(backup_path)})
+        return {"status": "error", "error": f"Encryption failed: {e}", "backup": str(backup_path)}
 
 
 def _verify_encrypted(key: str):
     """Verify an encrypted DB can be opened with the given key."""
     if not key:
-        return json.dumps({"error": "Key required for verification"})
+        return {"status": "error", "error": "Key required for verification"}
     try:
         from sqlcipher3 import dbapi2 as sqlcipher
     except ImportError:
-        return json.dumps({"error": "sqlcipher3-wheels not installed"})
+        return {"status": "error", "error": "sqlcipher3-wheels not installed"}
 
     try:
         conn = sqlcipher.connect(str(DB_PATH))
@@ -125,11 +124,12 @@ def _verify_encrypted(key: str):
         agents = conn.execute("SELECT count(*) FROM agents").fetchone()[0]
         tasks = conn.execute("SELECT count(*) FROM tasks").fetchone()[0]
         conn.close()
-        return json.dumps({
+        return {
+            "status": "ok",
             "verified": True,
             "tables": tables,
             "agents": agents,
             "tasks": tasks,
-        })
+        }
     except Exception as e:
-        return json.dumps({"verified": False, "error": str(e)})
+        return {"status": "error", "verified": False, "error": str(e)}

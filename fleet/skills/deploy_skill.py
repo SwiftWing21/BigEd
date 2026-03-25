@@ -15,7 +15,6 @@ Returns: {status, skill_name, deployed_to, verification, affinity_note}
 """
 import ast
 import importlib
-import json
 import re
 import shutil
 from datetime import datetime
@@ -93,7 +92,7 @@ def run(payload, config):
 
     skill_name = payload.get("skill_name", "")
     if not skill_name:
-        return json.dumps({"status": "failed", "error": "No skill_name provided"})
+        return {"status": "failed", "error": "No skill_name provided"}
 
     source_path = Path(payload.get("source_path", str(DRAFTS_DIR)))
     affinity_roles = payload.get("affinity_roles", [])
@@ -102,32 +101,32 @@ def run(payload, config):
     # Step 1: Find the draft
     draft = _find_draft(skill_name, source_path)
     if not draft:
-        return json.dumps({
+        return {
             "status": "failed",
             "skill_name": skill_name,
             "error": f"No draft found for '{skill_name}' in {source_path}",
-        })
+        }
 
     # Step 2: Validate structure
     valid, validation_msg = _validate_skill(draft)
     if not valid:
-        return json.dumps({
+        return {
             "status": "failed",
             "skill_name": skill_name,
             "error": validation_msg,
             "draft": str(draft),
-        })
+        }
 
     # Step 3: Copy to skills/
     target = SKILLS_DIR / f"{skill_name}.py"
     try:
         shutil.copy2(draft, target)
     except Exception as e:
-        return json.dumps({
+        return {
             "status": "failed",
             "skill_name": skill_name,
             "error": f"Copy failed: {e}",
-        })
+        }
 
     # Step 4: Affinity note
     affinity_note = ""
@@ -161,10 +160,10 @@ def run(payload, config):
     except Exception:
         pass  # Log failure must not break deployment
 
-    return json.dumps({
+    return {
         "status": "deployed",
         "skill_name": skill_name,
         "deployed_to": str(target),
         "verification": verification,
         "affinity_note": affinity_note,
-    })
+    }

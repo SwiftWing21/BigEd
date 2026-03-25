@@ -12,7 +12,7 @@ REQUIRES_NETWORK = True
 FLEET_DIR = Path(__file__).parent.parent
 
 
-def run(payload: dict, config: dict) -> str:
+def run(payload: dict, config: dict) -> dict:
     action = payload.get("action", "check")
     host = config.get("models", {}).get("ollama_host", "http://localhost:11434")
 
@@ -35,7 +35,7 @@ def run(payload: dict, config: dict) -> str:
     elif action == "debug":
         return _debug_models(host, payload.get("target"), payload.get("clean", False))
     else:
-        return json.dumps({"error": f"Unknown action: {action}"})
+        return {"status": "error", "error": f"Unknown action: {action}"}
 
 
 def _get_installed(host):
@@ -83,7 +83,8 @@ def _check_models(config, host):
     missing = [m for m in needed if m not in installed]
     extra = [m for m in installed if m not in needed]
 
-    return json.dumps({
+    return {
+        "status": "ok",
         "installed": installed,
         "loaded": loaded,
         "needed": needed,
@@ -91,13 +92,13 @@ def _check_models(config, host):
         "extra": extra,
         "ready": len(missing) == 0,
         "summary": f"{len(installed)} installed, {len(missing)} missing, {len(loaded)} loaded"
-    })
+    }
 
 
 def _pull_model(model_name, host):
     """Pull a single model from Ollama registry."""
     if not model_name:
-        return json.dumps({"error": "model name required"})
+        return {"status": "error", "error": "model name required"}
     try:
         body = json.dumps({"name": model_name}).encode()
         req = urllib.request.Request(
@@ -112,15 +113,15 @@ def _pull_model(model_name, host):
             try:
                 status = json.loads(line)
                 if status.get("status") == "success":
-                    return json.dumps({"status": "installed", "model": model_name})
+                    return {"status": "installed", "model": model_name}
                 if "error" in status:
-                    return json.dumps({"status": "error", "model": model_name, "error": status["error"]})
+                    return {"status": "error", "model": model_name, "error": status["error"]}
             except json.JSONDecodeError:
                 continue
 
-        return json.dumps({"status": "completed", "model": model_name})
+        return {"status": "completed", "model": model_name}
     except Exception as e:
-        return json.dumps({"status": "error", "model": model_name, "error": str(e)})
+        return {"status": "error", "model": model_name, "error": str(e)}
 
 
 def _install_missing(config, host):
@@ -130,27 +131,27 @@ def _install_missing(config, host):
     missing = [m for m in needed if m not in installed]
 
     if not missing:
-        return json.dumps({"status": "all_installed", "count": len(installed)})
+        return {"status": "all_installed", "count": len(installed)}
 
     results = []
     for model in missing:
-        result = json.loads(_pull_model(model, host))
+        result = _pull_model(model, host)
         results.append(result)
 
     success = sum(1 for r in results if r.get("status") in ("installed", "completed"))
-    return json.dumps({
+    return {
         "status": "done",
         "pulled": success,
         "failed": len(results) - success,
         "details": results,
-    })
+    }
 
 
 def _list_profiles():
     """List available model profiles from model_profiles.toml."""
     profiles_path = FLEET_DIR / "model_profiles.toml"
     if not profiles_path.exists():
-        return json.dumps({"error": "model_profiles.toml not found"})
+        return {"status": "error", "error": "model_profiles.toml not found"}
     try:
         import tomllib
         with open(profiles_path, "rb") as f:
@@ -163,9 +164,9 @@ def _list_profiles():
                     "conductor": val.get("conductor_model"),
                     "description": val.get("description", ""),
                 }
-        return json.dumps({"profiles": profiles})
+        return {"status": "ok", "profiles": profiles}
     except Exception as e:
-        return json.dumps({"error": str(e)})
+        return {"status": "error", "error": str(e)}
 
 
 def _apply_profile(profile_name, config):
@@ -173,15 +174,15 @@ def _apply_profile(profile_name, config):
     profiles_path = FLEET_DIR / "model_profiles.toml"
     fleet_toml = FLEET_DIR / "fleet.toml"
     if not profiles_path.exists():
-        return json.dumps({"error": "model_profiles.toml not found"})
+        return {"status": "error", "error": "model_profiles.toml not found"}
     try:
         import tomllib, tomlkit, tempfile
         with open(profiles_path, "rb") as f:
             profiles = tomllib.load(f)
 
         if profile_name not in profiles:
-            return json.dumps({"error": f"Profile '{profile_name}' not found",
-                             "available": list(profiles.keys())})
+            return {"status": "error", "error": f"Profile '{profile_name}' not found",
+                    "available": list(profiles.keys())}
 
         profile = profiles[profile_name]
 
@@ -203,9 +204,9 @@ def _apply_profile(profile_name, config):
             f.write(tomlkit.dumps(doc))
         os.replace(tmp_path, str(fleet_toml))
 
-        return json.dumps({"status": "applied", "profile": profile_name, "config": profile})
+        return {"status": "applied", "profile": profile_name, "config": profile}
     except Exception as e:
-        return json.dumps({"error": str(e)})
+        return {"status": "error", "error": str(e)}
 
 
 def _detect_hardware():
@@ -232,12 +233,13 @@ def _detect_hardware():
         hw["gpu_name"] = None
         hw["gpu_vram_gb"] = 0
 
-    return json.dumps(hw)
+    hw["status"] = "ok"
+    return hw
 
 
 def _recommend_profile():
     """Recommend a model profile based on detected hardware."""
-    hw = json.loads(_detect_hardware())
+    hw = _detect_hardware()
 
     gpu_vram = hw.get("gpu_vram_gb", 0)
     ram = hw.get("ram_total_gb", 0)
@@ -258,7 +260,7 @@ def _recommend_profile():
         profile = "minimal"
         reason = f"Limited resources ({ram}GB RAM) — minimal footprint"
 
-    return json.dumps({"recommended": profile, "reason": reason, "hardware": hw})
+    return {"status": "ok", "recommended": profile, "reason": reason, "hardware": hw}
 
 
 def _check_model_updates(config, host):
@@ -279,7 +281,7 @@ def _check_model_updates(config, host):
             data = json.loads(r.read())
         local_models = {m["name"]: m for m in data.get("models", [])}
     except Exception:
-        return json.dumps({"error": "Cannot reach Ollama", "updates": []})
+        return {"status": "error", "error": "Cannot reach Ollama", "updates": []}
 
     # Check each needed model for available updates via /api/show
     for model_name in needed:
@@ -353,12 +355,13 @@ def _check_model_updates(config, host):
             "suggestions": suggestions[:5],  # top 5
         }
 
-    return json.dumps({
+    return {
+        "status": "ok",
         "models": updates,
         "suggestions": suggestions,
         "hitl_recommendation": hitl_recommendation,
         "summary": f"{len(updates)} models checked, {len(suggestions)} alternatives found",
-    })
+    }
 
 
 def _debug_models(host, target=None, clean=False):
@@ -383,6 +386,9 @@ def _debug_models(host, target=None, clean=False):
             report = debug_models.clean_idle(host, target)
         else:
             report = debug_models.diagnose(host, target)
-        return json.dumps(report, default=str)
+        # report is already a dict from debug_models
+        if isinstance(report, dict) and "status" not in report:
+            report["status"] = "ok"
+        return report
     except RuntimeError as e:
-        return json.dumps({"error": str(e)})
+        return {"status": "error", "error": str(e)}

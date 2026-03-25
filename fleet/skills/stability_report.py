@@ -16,15 +16,15 @@ RESOLUTIONS_PATH = FLEET_DIR / "data" / "resolutions.jsonl"
 REPORTS_DIR = FLEET_DIR / "knowledge" / "reports"
 
 
-def run(payload: dict, config: dict) -> str:
+def run(payload: dict, config: dict) -> dict:
     """Analyze resolutions.jsonl and produce a stability report."""
     resolutions = _load_resolutions()
 
     if not resolutions:
-        return json.dumps({
+        return {
             "status": "no_data",
             "message": "No resolution data found. File: data/resolutions.jsonl"
-        })
+        }
 
     analysis = _analyze(resolutions)
     report_md = _format_report(analysis, resolutions)
@@ -36,19 +36,19 @@ def run(payload: dict, config: dict) -> str:
         REPORTS_DIR.mkdir(parents=True, exist_ok=True)
         report_path.write_text(report_md, encoding="utf-8")
     except Exception as e:
-        return json.dumps({
+        return {
             "status": "error",
             "error": f"Report write failed: {e}",
             "total_resolutions": len(resolutions),
             **analysis,
-        })
+        }
 
-    return json.dumps({
+    return {
         "status": "ok",
         "total_resolutions": len(resolutions),
         "report_path": str(report_path),
         **analysis,
-    })
+    }
 
 
 def _load_resolutions():

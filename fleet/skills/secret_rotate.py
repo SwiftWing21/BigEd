@@ -24,7 +24,7 @@ PROVIDERS = {
 }
 
 
-def run(payload: dict, config: dict) -> str:
+def run(payload: dict, config: dict) -> dict:
     action = payload.get("action", "status")
 
     if action == "status":
@@ -37,7 +37,7 @@ def run(payload: dict, config: dict) -> str:
     elif action == "deactivate":
         return _deactivate_key(payload.get("key"))
     else:
-        return json.dumps({"error": f"Unknown action: {action}"})
+        return {"status": "error", "error": f"Unknown action: {action}"}
 
 
 def _load_metadata():
@@ -76,7 +76,7 @@ def _get_status():
                     "console_url": provider.get("console_url"),
                 }
 
-    return json.dumps({"keys": keys, "total": len(keys)})
+    return {"status": "ok", "keys": keys, "total": len(keys)}
 
 
 def _key_age_days(meta):
@@ -98,13 +98,13 @@ def _check_key_ages(max_days):
         age = _key_age_days(meta)
         if age and age > max_days:
             expired.append({"key": key_name, "age_days": age, "max_days": max_days})
-    return json.dumps({"expired": expired, "checked": len(metadata)})
+    return {"status": "ok", "expired": expired, "checked": len(metadata)}
 
 
 def _rotate_key(key_name):
     """Rotate a specific key. Auto for Slack/AWS, semi-auto for others."""
     if not key_name:
-        return json.dumps({"error": "key name required"})
+        return {"status": "error", "error": "key name required"}
 
     provider = PROVIDERS.get(key_name, {})
 
@@ -116,7 +116,7 @@ def _rotate_key(key_name):
             return _rotate_aws()
 
     # Semi-automated: deactivate old + instruct operator
-    return json.dumps({
+    return {
         "status": "semi_automated",
         "key": key_name,
         "instruction": f"1. Go to {provider.get('console_url', 'provider console')}\n"
@@ -124,7 +124,7 @@ def _rotate_key(key_name):
                        f"3. Run: lead_client.py secret set {key_name} <new_value>\n"
                        f"4. The old key remains active until you deactivate it",
         "console_url": provider.get("console_url"),
-    })
+    }
 
 
 def _rotate_slack():
@@ -132,7 +132,7 @@ def _rotate_slack():
     token = os.environ.get("SLACK_BOT_TOKEN", "")
     refresh = os.environ.get("SLACK_REFRESH_TOKEN", "")
     if not token or not refresh:
-        return json.dumps({"error": "SLACK_BOT_TOKEN and SLACK_REFRESH_TOKEN required"})
+        return {"status": "error", "error": "SLACK_BOT_TOKEN and SLACK_REFRESH_TOKEN required"}
 
     import urllib.request
     try:
@@ -154,10 +154,10 @@ def _rotate_slack():
             _update_secret("SLACK_BOT_TOKEN", new_token)
             _update_secret("SLACK_REFRESH_TOKEN", new_refresh)
             _record_rotation("SLACK_BOT_TOKEN")
-            return json.dumps({"status": "rotated", "key": "SLACK_BOT_TOKEN"})
-        return json.dumps({"error": f"Slack rotation failed: {result.get('error')}"})
+            return {"status": "rotated", "key": "SLACK_BOT_TOKEN"}
+        return {"status": "error", "error": f"Slack rotation failed: {result.get('error')}"}
     except Exception as e:
-        return json.dumps({"error": f"Slack rotation error: {e}"})
+        return {"status": "error", "error": f"Slack rotation error: {e}"}
 
 
 def _rotate_aws():
@@ -182,9 +182,9 @@ def _rotate_aws():
             iam.update_access_key(UserName=user, AccessKeyId=old_id, Status="Inactive")
 
         _record_rotation("AWS_ACCESS_KEY_ID")
-        return json.dumps({"status": "rotated", "key": "AWS_ACCESS_KEY_ID", "new_id": new_id[:8] + "..."})
+        return {"status": "rotated", "key": "AWS_ACCESS_KEY_ID", "new_id": new_id[:8] + "..."}
     except Exception as e:
-        return json.dumps({"error": f"AWS rotation error: {e}"})
+        return {"status": "error", "error": f"AWS rotation error: {e}"}
 
 
 def _deactivate_key(key_name):
@@ -193,10 +193,10 @@ def _deactivate_key(key_name):
         # Anthropic Admin API can deactivate
         admin_key = os.environ.get("ANTHROPIC_ADMIN_KEY", "")
         if not admin_key:
-            return json.dumps({"error": "ANTHROPIC_ADMIN_KEY required for deactivation"})
+            return {"status": "error", "error": "ANTHROPIC_ADMIN_KEY required for deactivation"}
         # Would call Admin API here
-        return json.dumps({"status": "not_implemented", "note": "Anthropic Admin API deactivation planned"})
-    return json.dumps({"status": "manual", "instruction": f"Deactivate {key_name} manually at provider console"})
+        return {"status": "not_implemented", "note": "Anthropic Admin API deactivation planned"}
+    return {"status": "manual", "instruction": f"Deactivate {key_name} manually at provider console"}
 
 
 def _update_secret(key_name, value):

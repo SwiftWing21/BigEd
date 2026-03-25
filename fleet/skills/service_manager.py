@@ -20,7 +20,7 @@ _LINUX_SERVICE_NAME = "biged-fleet"
 _REPAIRABLE = {"ollama", "supervisor", "hw_supervisor", "dr_ders", "autoboot"}
 
 
-def run(payload: dict, config: dict) -> str:
+def run(payload: dict, config: dict) -> dict:
     action = payload.get("action", "status")
 
     actions = {
@@ -32,17 +32,17 @@ def run(payload: dict, config: dict) -> str:
     }
     fn = actions.get(action)
     if not fn:
-        return json.dumps({"error": f"Unknown action: {action}", "valid_actions": list(actions)})
+        return {"status": "error", "error": f"Unknown action: {action}", "valid_actions": list(actions)}
     return fn(payload, config)
 
 
 # ── status ───────────────────────────────────────────────────────────────────
 
-def _check_all_services(payload: dict, config: dict) -> str:
+def _check_all_services(payload: dict, config: dict) -> dict:
     """Cross-platform check of autoboot, Ollama, supervisor, hw_supervisor."""
-    autoboot = json.loads(_verify_autoboot(payload, config))
-    ollama = json.loads(_verify_ollama(payload, config))
-    fleet = json.loads(_verify_fleet(payload, config))
+    autoboot = _verify_autoboot(payload, config)
+    ollama = _verify_ollama(payload, config)
+    fleet = _verify_fleet(payload, config)
 
     # Derive overall health
     all_ok = (
@@ -52,18 +52,18 @@ def _check_all_services(payload: dict, config: dict) -> str:
         and fleet.get("hw_supervisor", {}).get("running", False)
     )
 
-    return json.dumps({
+    return {
         "status": "ok" if all_ok else "degraded",
         "platform": sys.platform,
         "autoboot": autoboot,
         "ollama": ollama,
         "fleet": fleet,
-    })
+    }
 
 
 # ── verify_autoboot ──────────────────────────────────────────────────────────
 
-def _verify_autoboot(payload: dict, config: dict) -> str:
+def _verify_autoboot(payload: dict, config: dict) -> dict:
     """Check if the auto-boot service is installed and enabled."""
     result = {"installed": False, "enabled": False, "detail": ""}
 
@@ -81,7 +81,7 @@ def _verify_autoboot(payload: dict, config: dict) -> str:
     except Exception as e:
         result["error"] = str(e)
 
-    return json.dumps(result)
+    return result
 
 
 def _check_autoboot_windows() -> dict:
@@ -152,7 +152,7 @@ def _check_autoboot_linux() -> dict:
 
 # ── verify_ollama ────────────────────────────────────────────────────────────
 
-def _verify_ollama(payload: dict, config: dict) -> str:
+def _verify_ollama(payload: dict, config: dict) -> dict:
     """Check if Ollama is reachable at the configured host."""
     host = config.get("models", {}).get("ollama_host", "http://localhost:11434")
     result = {"host": host, "reachable": False}
@@ -172,12 +172,12 @@ def _verify_ollama(payload: dict, config: dict) -> str:
     except Exception as e:
         result["error"] = str(e)
 
-    return json.dumps(result)
+    return result
 
 
 # ── verify_fleet ─────────────────────────────────────────────────────────────
 
-def _verify_fleet(payload: dict, config: dict) -> str:
+def _verify_fleet(payload: dict, config: dict) -> dict:
     """Check if supervisor and Dr. Ders PIDs are running."""
     result = {
         "supervisor": {"running": False, "pid": None},
@@ -229,7 +229,7 @@ def _verify_fleet(payload: dict, config: dict) -> str:
         except Exception:
             pass
 
-    return json.dumps(result)
+    return result
 
 
 def _is_pid_alive(pid: int) -> bool:
@@ -256,16 +256,17 @@ def _is_pid_alive(pid: int) -> bool:
 
 # ── repair ───────────────────────────────────────────────────────────────────
 
-def _repair_service(payload: dict, config: dict) -> str:
+def _repair_service(payload: dict, config: dict) -> dict:
     """Attempt to restart a named service (with safety checks)."""
     service = payload.get("service", "")
     if not service:
-        return json.dumps({"error": "No service specified", "repairable": sorted(_REPAIRABLE)})
+        return {"status": "error", "error": "No service specified", "repairable": sorted(_REPAIRABLE)}
     if service not in _REPAIRABLE:
-        return json.dumps({
+        return {
+            "status": "error",
             "error": f"Service '{service}' not in allowed list",
             "repairable": sorted(_REPAIRABLE),
-        })
+        }
 
     try:
         if service == "ollama":
@@ -277,12 +278,12 @@ def _repair_service(payload: dict, config: dict) -> str:
         elif service == "autoboot":
             return _repair_autoboot()
     except Exception as e:
-        return json.dumps({"error": str(e), "service": service})
+        return {"status": "error", "error": str(e), "service": service}
 
-    return json.dumps({"error": "Unhandled service", "service": service})
+    return {"status": "error", "error": "Unhandled service", "service": service}
 
 
-def _repair_ollama(config: dict) -> str:
+def _repair_ollama(config: dict) -> dict:
     """Start Ollama serve if not already running."""
     host = config.get("models", {}).get("ollama_host", "http://localhost:11434")
 
@@ -290,7 +291,7 @@ def _repair_ollama(config: dict) -> str:
     try:
         import urllib.request
         with urllib.request.urlopen(f"{host.rstrip('/')}/api/tags", timeout=5):
-            return json.dumps({"service": "ollama", "action": "none", "detail": "Already running"})
+            return {"status": "ok", "service": "ollama", "action": "none", "detail": "Already running"}
     except Exception:
         pass
 
@@ -316,33 +317,35 @@ def _repair_ollama(config: dict) -> str:
                 env=env,
                 start_new_session=True,
             )
-        return json.dumps({
+        return {
+            "status": "ok",
             "service": "ollama",
             "action": "started",
             "pid": proc.pid,
             "gpu_mode": gpu_mode,
-        })
+        }
     except FileNotFoundError:
-        return json.dumps({"service": "ollama", "error": "ollama binary not found in PATH"})
+        return {"status": "error", "service": "ollama", "error": "ollama binary not found in PATH"}
     except Exception as e:
-        return json.dumps({"service": "ollama", "error": str(e)})
+        return {"status": "error", "service": "ollama", "error": str(e)}
 
 
-def _repair_supervisor() -> str:
+def _repair_supervisor() -> dict:
     """Start supervisor.py if not running."""
     # Safety: check if already running via DB
-    check = json.loads(_verify_fleet({}, {}))
+    check = _verify_fleet({}, {})
     if check.get("supervisor", {}).get("running"):
-        return json.dumps({
+        return {
+            "status": "ok",
             "service": "supervisor",
             "action": "none",
             "detail": "Already running",
             "pid": check["supervisor"].get("pid"),
-        })
+        }
 
     script = FLEET_DIR / "supervisor.py"
     if not script.exists():
-        return json.dumps({"service": "supervisor", "error": f"Not found: {script}"})
+        return {"status": "error", "service": "supervisor", "error": f"Not found: {script}"}
 
     try:
         if sys.platform == "win32":
@@ -359,25 +362,26 @@ def _repair_supervisor() -> str:
                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
                 start_new_session=True,
             )
-        return json.dumps({"service": "supervisor", "action": "started", "pid": proc.pid})
+        return {"status": "ok", "service": "supervisor", "action": "started", "pid": proc.pid}
     except Exception as e:
-        return json.dumps({"service": "supervisor", "error": str(e)})
+        return {"status": "error", "service": "supervisor", "error": str(e)}
 
 
-def _repair_hw_supervisor() -> str:
+def _repair_hw_supervisor() -> dict:
     """Start Dr. Ders (hw_supervisor.py) if not running."""
-    check = json.loads(_verify_fleet({}, {}))
+    check = _verify_fleet({}, {})
     if check.get("dr_ders", {}).get("running"):
-        return json.dumps({
+        return {
+            "status": "ok",
             "service": "dr_ders",
             "action": "none",
             "detail": "Already running",
             "pid": check["dr_ders"].get("pid"),
-        })
+        }
 
     script = FLEET_DIR / "hw_supervisor.py"
     if not script.exists():
-        return json.dumps({"service": "dr_ders", "error": f"Not found: {script}"})
+        return {"status": "error", "service": "dr_ders", "error": f"Not found: {script}"}
 
     try:
         if sys.platform == "win32":
@@ -394,17 +398,17 @@ def _repair_hw_supervisor() -> str:
                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
                 start_new_session=True,
             )
-        return json.dumps({"service": "dr_ders", "action": "started", "pid": proc.pid})
+        return {"status": "ok", "service": "dr_ders", "action": "started", "pid": proc.pid}
     except Exception as e:
-        return json.dumps({"service": "dr_ders", "error": str(e)})
+        return {"status": "error", "service": "dr_ders", "error": str(e)}
 
 
-def _repair_autoboot() -> str:
+def _repair_autoboot() -> dict:
     """Re-install the auto-boot service using fleet/services.py."""
     try:
         sys.path.insert(0, str(FLEET_DIR))
         import services
         services.install_service(FLEET_DIR)
-        return json.dumps({"service": "autoboot", "action": "reinstalled"})
+        return {"status": "ok", "service": "autoboot", "action": "reinstalled"}
     except Exception as e:
-        return json.dumps({"service": "autoboot", "error": str(e)})
+        return {"status": "error", "service": "autoboot", "error": str(e)}

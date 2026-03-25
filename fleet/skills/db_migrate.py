@@ -1,5 +1,4 @@
 """0.06.00: Schema migration skill — versioned ALTER TABLE with rollback support."""
-import json
 import logging
 from pathlib import Path
 
@@ -12,7 +11,7 @@ MIGRATIONS_DIR = FLEET_DIR / "migrations"
 log = logging.getLogger("db_migrate")
 
 
-def run(payload: dict, config: dict) -> str:
+def run(payload: dict, config: dict) -> dict:
     action = payload.get("action", "status")
 
     if action == "status":
@@ -22,7 +21,7 @@ def run(payload: dict, config: dict) -> str:
     elif action == "plan":
         return _plan_migrations(payload.get("target_version"))
     else:
-        return json.dumps({"error": f"Unknown action: {action}"})
+        return {"status": "error", "error": f"Unknown action: {action}"}
 
 
 def _get_current_version():
@@ -53,13 +52,14 @@ def _get_status():
     available = _list_migrations()
     latest = max((m["version"] for m in available), default=0)
     pending = [m for m in available if m["version"] > current]
-    return json.dumps({
+    return {
+        "status": "ok",
         "current_version": current,
         "latest_available": latest,
         "pending_migrations": len(pending),
         "pending": pending,
         "up_to_date": current >= latest,
-    })
+    }
 
 
 def _plan_migrations(target_version=None):
@@ -70,12 +70,13 @@ def _plan_migrations(target_version=None):
         pending = [m for m in available if current < m["version"] <= target_version]
     else:
         pending = [m for m in available if m["version"] > current]
-    return json.dumps({
+    return {
+        "status": "ok",
         "current_version": current,
         "target_version": target_version or max((m["version"] for m in pending), default=current),
         "migrations_to_apply": pending,
         "dry_run": True,
-    })
+    }
 
 
 def _run_migrations(target_version=None):
@@ -92,7 +93,7 @@ def _run_migrations(target_version=None):
         pending = [m for m in available if m["version"] > current]
 
     if not pending:
-        return json.dumps({"status": "up_to_date", "version": current})
+        return {"status": "up_to_date", "version": current}
 
     applied = []
     try:
@@ -104,16 +105,16 @@ def _run_migrations(target_version=None):
                 applied.append(migration["file"])
 
         new_version = _get_current_version()
-        return json.dumps({
+        return {
             "status": "ok",
             "previous_version": current,
             "new_version": new_version,
             "applied": applied,
-        })
+        }
     except Exception as e:
-        return json.dumps({
+        return {
             "status": "error",
             "error": str(e),
             "applied_before_error": applied,
             "current_version": _get_current_version(),
-        })
+        }

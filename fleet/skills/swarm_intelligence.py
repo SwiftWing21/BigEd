@@ -12,7 +12,7 @@ FLEET_DIR = Path(__file__).parent.parent
 SPECIALIZATION_FILE = FLEET_DIR / "knowledge" / "swarm" / "specializations.json"
 
 
-def run(payload: dict, config: dict) -> str:
+def run(payload: dict, config: dict) -> dict:
     action = payload.get("action", "analyze")
 
     if action == "analyze":
@@ -26,7 +26,7 @@ def run(payload: dict, config: dict) -> str:
     elif action == "swarm_status":
         return _swarm_status()
     else:
-        return json.dumps({"error": f"Unknown action: {action}"})
+        return {"status": "error", "error": f"Unknown action: {action}"}
 
 
 def _analyze_specializations():
@@ -75,16 +75,16 @@ def _analyze_specializations():
         # Save
         _save_specializations(specializations)
 
-        return json.dumps({"specializations": specializations, "agents_analyzed": len(agents)})
+        return {"status": "ok", "specializations": specializations, "agents_analyzed": len(agents)}
     except Exception as e:
-        return json.dumps({"error": str(e)})
+        return {"status": "error", "error": str(e)}
 
 
 def _recommend_affinity_updates():
     """Recommend affinity routing changes based on observed performance."""
     specs = _load_specializations()
     if not specs:
-        return json.dumps({"recommendations": [], "message": "Run analyze first"})
+        return {"status": "ok", "recommendations": [], "message": "Run analyze first"}
 
     from config import load_config
     config = load_config()
@@ -106,7 +106,7 @@ def _recommend_affinity_updates():
                 "reason": "High success rate on these skills",
             })
 
-    return json.dumps({"recommendations": recommendations})
+    return {"status": "ok", "recommendations": recommendations}
 
 
 def _decompose_complex_task(payload, config):
@@ -118,7 +118,7 @@ def _decompose_complex_task(payload, config):
 
     task_description = payload.get("description", "")
     if not task_description:
-        return json.dumps({"error": "description required"})
+        return {"status": "error", "error": "description required"}
 
     # Ask LLM to decompose
     system = """You are a project manager decomposing a complex task into subtasks.
@@ -137,7 +137,7 @@ Output JSON: {"subtasks": [{"skill": "...", "agent": "...", "description": "..."
             parsed = json.loads(result)
             subtasks = parsed.get("subtasks", [])
         except json.JSONDecodeError:
-            return json.dumps({"status": "parse_error", "raw": result[:500]})
+            return {"status": "parse_error", "raw": result[:500]}
 
         # Dispatch as task chain
         task_ids = []
@@ -154,13 +154,13 @@ Output JSON: {"subtasks": [{"skill": "...", "agent": "...", "description": "..."
             name_to_id[st.get("description", f"task_{len(task_ids)}")] = tid
             task_ids.append({"skill": st["skill"], "agent": st.get("agent"), "task_id": tid})
 
-        return json.dumps({
+        return {
             "status": "decomposed",
             "subtasks": len(task_ids),
             "tasks": task_ids,
-        })
+        }
     except Exception as e:
-        return json.dumps({"error": str(e)})
+        return {"status": "error", "error": str(e)}
 
 
 def _agent_fitness_report():
@@ -200,19 +200,20 @@ def _agent_fitness_report():
                 })
 
             report.sort(key=lambda x: (-x["tasks_done"], -x["success_rate"]))
-            return json.dumps({"agents": report})
+            return {"status": "ok", "agents": report}
     except Exception as e:
-        return json.dumps({"error": str(e)})
+        return {"status": "error", "error": str(e)}
 
 
 def _swarm_status():
     """Overall swarm intelligence status."""
     specs = _load_specializations()
-    return json.dumps({
+    return {
+        "status": "ok",
         "agents_with_specializations": len(specs),
         "total_specializations": sum(len(v) for v in specs.values()),
         "specialization_file": str(SPECIALIZATION_FILE),
-    })
+    }
 
 
 def _save_specializations(data):

@@ -1,5 +1,4 @@
 """0.10.00: RAG compression — deduplicate and consolidate knowledge chunks."""
-import json
 from datetime import datetime
 from pathlib import Path
 from skills._models import call_complex
@@ -11,17 +10,17 @@ REQUIRES_NETWORK = False
 FLEET_DIR = Path(__file__).parent.parent
 KNOWLEDGE_DIR = FLEET_DIR / "knowledge"
 
-def run(payload: dict, config: dict) -> str:
+def run(payload: dict, config: dict) -> dict:
     target_dir = payload.get("directory", "summaries")
     max_files = payload.get("max_files", 20)
 
     source = KNOWLEDGE_DIR / target_dir
     if not source.exists():
-        return json.dumps({"status": "no_data", "directory": target_dir})
+        return {"status": "no_data", "directory": target_dir}
 
     files = sorted(source.glob("*.md"), key=lambda f: f.stat().st_mtime)[:max_files]
     if len(files) < 2:
-        return json.dumps({"status": "nothing_to_compress", "files": len(files)})
+        return {"status": "nothing_to_compress", "files": len(files)}
 
     # Read all file contents
     contents = {}
@@ -42,10 +41,10 @@ def run(payload: dict, config: dict) -> str:
         report_path.parent.mkdir(parents=True, exist_ok=True)
         report_path.write_text(f"# Knowledge Compression Report\n\n{result}", encoding="utf-8")
 
-        return json.dumps({
+        return {
             "status": "ok",
             "files_analyzed": len(contents),
             "report": str(report_path),
-        })
+        }
     except Exception as e:
-        return json.dumps({"status": "error", "error": str(e)})
+        return {"status": "error", "error": str(e)}
