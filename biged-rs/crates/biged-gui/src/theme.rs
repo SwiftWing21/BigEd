@@ -1,4 +1,4 @@
-use egui::{Color32, CornerRadius, FontFamily, FontId, Stroke, Visuals};
+use egui::{Color32, CornerRadius, Stroke, Visuals};
 
 // ── Background layers
 pub const BG: Color32 = Color32::from_rgb(0x1a, 0x1a, 0x1a);
@@ -49,18 +49,6 @@ pub const FONT_XS: f32 = 10.0;
 pub const FONT_HEADING: f32 = 16.0;
 pub const FONT_TITLE: f32 = 18.0;
 pub const FONT_STAT: f32 = 22.0;
-
-pub fn font_body() -> FontId {
-    FontId::new(FONT_BODY, FontFamily::Proportional)
-}
-
-pub fn font_mono() -> FontId {
-    FontId::new(FONT_SM, FontFamily::Monospace)
-}
-
-pub fn font_heading() -> FontId {
-    FontId::new(FONT_HEADING, FontFamily::Proportional)
-}
 
 /// Apply BigEd dark theme to egui context.
 pub fn apply_theme(ctx: &egui::Context) {

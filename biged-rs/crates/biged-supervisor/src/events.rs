@@ -71,8 +71,6 @@ impl FleetEvent {
 
 /// Event bus using tokio broadcast channel.
 pub type EventSender = tokio::sync::broadcast::Sender<FleetEvent>;
-pub type EventReceiver = tokio::sync::broadcast::Receiver<FleetEvent>;
-
-pub fn create_event_bus(capacity: usize) -> (EventSender, EventReceiver) {
+pub fn create_event_bus(capacity: usize) -> (EventSender, tokio::sync::broadcast::Receiver<FleetEvent>) {
     tokio::sync::broadcast::channel(capacity)
 }
