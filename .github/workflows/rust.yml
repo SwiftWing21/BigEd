@@ -47,13 +47,13 @@ jobs:
         run: echo "PYO3_PYTHON=$(which python3 || which python)" >> $GITHUB_ENV
 
       - name: cargo check
-        run: cargo check --workspace
+        run: cargo check --workspace --locked
 
       - name: cargo test
-        run: cargo test --workspace
+        run: cargo test --workspace --locked
 
       - name: cargo clippy
-        run: cargo clippy --workspace -- -D warnings
+        run: cargo clippy --workspace --locked -- -D warnings
 
       - name: cargo fmt
         run: cargo fmt --check
@@ -82,5 +82,17 @@ jobs:
           key: ubuntu-wasm-cargo-${{ hashFiles('biged-rs/Cargo.lock') }}
 
       - name: Check WASM target
-        run: cargo check --target wasm32-unknown-unknown -p biged-wasm
+        run: cargo check --locked --target wasm32-unknown-unknown -p biged-wasm
         continue-on-error: true  # May fail until all deps are WASM-compatible
+
+  audit:
+    name: Security Audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install cargo-audit
+        run: cargo install cargo-audit
+      - name: Run audit
+        run: cd biged-rs && cargo audit
+        continue-on-error: true
