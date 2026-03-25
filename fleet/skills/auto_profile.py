@@ -16,6 +16,7 @@ Usage:
     lead_client.py task '{"type": "auto_profile", "payload": {"action": "generate"}}'
 """
 import json
+import logging
 import os
 import sys
 from pathlib import Path
@@ -25,6 +26,8 @@ AUTORESEARCH_DIR = FLEET_DIR.parent / "autoresearch"
 SKILL_NAME = "auto_profile"
 DESCRIPTION = "Generate optimal fleet + training profiles for any hardware."
 REQUIRES_NETWORK = False
+
+log = logging.getLogger(SKILL_NAME)
 
 # Model VRAM sizes (approximate, GB)
 MODEL_SIZES = {
@@ -56,7 +59,7 @@ WORKER_TIERS = [
 ]
 
 
-def run(payload: dict, config: dict, log) -> dict:
+def run(payload: dict, config: dict) -> dict:
     action = payload.get("action", "detect")
     if action == "detect":
         return _detect(config, log)

@@ -8,7 +8,7 @@ DESCRIPTION = "Help operator draft HITL responses for fleet agents via VS Code"
 REQUIRES_NETWORK = False
 
 
-def run(task: dict, context: dict) -> dict:
+def run(payload: dict, config: dict) -> dict:
     import db
     from pathlib import Path
 

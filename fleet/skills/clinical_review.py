@@ -17,6 +17,7 @@ All PHI is de-identified before stage outputs are stored.
 Each stage logs to the phi_audit table for HIPAA compliance tracking.
 """
 import json
+import logging
 import secrets
 from datetime import datetime
 from pathlib import Path
@@ -28,6 +29,8 @@ REQUIRES_NETWORK = False
 
 FLEET_DIR = Path(__file__).parent.parent
 DITL_DIR = FLEET_DIR / "knowledge" / "ditl"
+
+log = logging.getLogger(SKILL_NAME)
 
 
 # ---------------------------------------------------------------------------
@@ -457,7 +460,7 @@ def _stage_validate_signoff(pipeline_id, operator_response, expected_hex):
 # Main pipeline orchestration
 # ---------------------------------------------------------------------------
 
-def _run_review_pipeline(payload, config, log=None):
+def _run_review_pipeline(payload, config):
     """Execute the full 5-stage clinical review pipeline."""
     document = payload.get("document", payload.get("text", ""))
     if not document:
@@ -467,8 +470,7 @@ def _run_review_pipeline(payload, config, log=None):
     phi_audit_ids = []
     stages = []
 
-    if log:
-        log.info(f"Clinical review pipeline {pipeline_id} — starting intake")
+    log.info(f"Clinical review pipeline {pipeline_id} — starting intake")
 
     # ── Stage 1: Intake ──────────────────────────────────────────────────
     intake_result, phi_detected = _stage_intake(document, config)
@@ -488,8 +490,7 @@ def _run_review_pipeline(payload, config, log=None):
         "phi_detected": phi_detected,
     })
 
-    if log:
-        log.info(f"  Stage 1 (intake) complete — PHI detected: {phi_detected}")
+    log.info(f"  Stage 1 (intake) complete — PHI detected: {phi_detected}")
 
     # ── Stage 2: Analysis ────────────────────────────────────────────────
     analysis_result = _stage_analysis(intake_result, config)
@@ -508,8 +509,7 @@ def _run_review_pipeline(payload, config, log=None):
         "result": analysis_result,
     })
 
-    if log:
-        log.info(f"  Stage 2 (analysis) complete — risk: {analysis_result.get('risk_level', '?')}")
+    log.info(f"  Stage 2 (analysis) complete — risk: {analysis_result.get('risk_level', '?')}")
 
     # ── Stage 3: Recommendation ──────────────────────────────────────────
     recommendation_result = _stage_recommendation(intake_result, analysis_result, config)
@@ -528,8 +528,7 @@ def _run_review_pipeline(payload, config, log=None):
         "result": recommendation_result,
     })
 
-    if log:
-        log.info(f"  Stage 3 (recommendation) complete — decision: {recommendation_result.get('decision', '?')}")
+    log.info(f"  Stage 3 (recommendation) complete — decision: {recommendation_result.get('decision', '?')}")
 
     # ── Stage 4: Peer Review ─────────────────────────────────────────────
     peer_result = _stage_peer_review(intake_result, analysis_result, recommendation_result, config)
@@ -548,8 +547,7 @@ def _run_review_pipeline(payload, config, log=None):
         "result": peer_result,
     })
 
-    if log:
-        log.info(f"  Stage 4 (peer review) complete — agrees: {peer_result.get('agrees', '?')}")
+    log.info(f"  Stage 4 (peer review) complete — agrees: {peer_result.get('agrees', '?')}")
 
     # ── Stage 5: Create HITL sign-off gate ───────────────────────────────
     signoff_result = _stage_create_signoff(pipeline_id, stages, config)
@@ -568,8 +566,7 @@ def _run_review_pipeline(payload, config, log=None):
         "confirmation_hex": signoff_result["confirmation_hex"],
     })
 
-    if log:
-        log.info(f"  Stage 5 (sign-off) — WAITING_HUMAN, code: {signoff_result['confirmation_hex']}")
+    log.info(f"  Stage 5 (sign-off) — WAITING_HUMAN, code: {signoff_result['confirmation_hex']}")
 
     # ── Assemble final record ────────────────────────────────────────────
     record = {
@@ -584,13 +581,12 @@ def _run_review_pipeline(payload, config, log=None):
 
     _save_pipeline_record(pipeline_id, record)
 
-    if log:
-        log.info(f"Clinical review pipeline {pipeline_id} complete — awaiting operator sign-off")
+    log.info(f"Clinical review pipeline {pipeline_id} complete — awaiting operator sign-off")
 
     return record
 
 
-def _handle_signoff_response(payload, config, log=None):
+def _handle_signoff_response(payload, config):
     """Handle an operator's response to a sign-off request."""
     pipeline_id = payload.get("pipeline_id")
     operator_response = payload.get("_human_response", payload.get("response", ""))
@@ -624,8 +620,7 @@ def _handle_signoff_response(payload, config, log=None):
         record["stages"][-1]["operator_action"] = result.get("operator_action", "unknown")
     _save_pipeline_record(pipeline_id, record)
 
-    if log:
-        log.info(f"Clinical review {pipeline_id} sign-off: {result['status']}")
+    log.info(f"Clinical review {pipeline_id} sign-off: {result['status']}")
 
     return {
         "pipeline_id": pipeline_id,
@@ -635,7 +630,7 @@ def _handle_signoff_response(payload, config, log=None):
     }
 
 
-def _get_pipeline_status(payload, config, log=None):
+def _get_pipeline_status(payload, config):
     """Check the status of a pipeline by ID."""
     pipeline_id = payload.get("pipeline_id")
     if not pipeline_id:
@@ -662,7 +657,7 @@ def _get_pipeline_status(payload, config, log=None):
     }
 
 
-def _get_pipeline_history(payload, config, log=None):
+def _get_pipeline_history(payload, config):
     """List recent pipeline runs from the ditl directory."""
     DITL_DIR.mkdir(parents=True, exist_ok=True)
     limit = payload.get("limit", 20)
@@ -693,7 +688,7 @@ def _get_pipeline_history(payload, config, log=None):
 # Skill entry point
 # ---------------------------------------------------------------------------
 
-def run(payload: dict, config: dict, log=None) -> dict:
+def run(payload: dict, config: dict) -> dict:
     """Main entry point — dispatched by worker.py.
 
     Actions:
@@ -706,15 +701,15 @@ def run(payload: dict, config: dict, log=None) -> dict:
 
     # If this is a sign-off callback (has _human_response or is type clinical_review_signoff)
     if payload.get("_human_response") or payload.get("type") == "clinical_review_signoff":
-        return _handle_signoff_response(payload, config, log)
+        return _handle_signoff_response(payload, config)
 
     if action == "review":
-        return _run_review_pipeline(payload, config, log)
+        return _run_review_pipeline(payload, config)
     elif action == "status":
-        return _get_pipeline_status(payload, config, log)
+        return _get_pipeline_status(payload, config)
     elif action == "history":
-        return _get_pipeline_history(payload, config, log)
+        return _get_pipeline_history(payload, config)
     elif action == "signoff":
-        return _handle_signoff_response(payload, config, log)
+        return _handle_signoff_response(payload, config)
     else:
         return {"error": f"Unknown action: {action}", "valid_actions": ["review", "status", "history", "signoff"]}

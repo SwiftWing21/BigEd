@@ -14,6 +14,7 @@ Usage:
     lead_client.py task '{"type": "token_optimizer", "payload": {"action": "recommend"}}'
 """
 import json
+import logging
 import os
 from pathlib import Path
 
@@ -21,6 +22,8 @@ FLEET_DIR = Path(__file__).parent.parent
 SKILL_NAME = "token_optimizer"
 DESCRIPTION = "Analyze fleet token usage and recommend cost optimizations."
 REQUIRES_NETWORK = False
+
+log = logging.getLogger(SKILL_NAME)
 
 
 # ── Cost efficiency rules ────────────────────────────────────────────────────
@@ -105,21 +108,21 @@ HAIKU_ELIGIBLE_SKILLS = {
 }
 
 
-def run(payload: dict, config: dict, log) -> dict:
+def run(payload: dict, config: dict) -> dict:
     """Run token optimization analysis."""
     action = payload.get("action", "audit")
 
     if action == "audit":
-        return _audit_usage(config, log)
+        return _audit_usage(config)
     elif action == "recommend":
-        return _recommend_optimizations(config, log)
+        return _recommend_optimizations(config)
     elif action == "apply":
-        return _apply_optimizations(config, log)
+        return _apply_optimizations(config)
     else:
         return {"error": f"Unknown action: {action}. Use: audit, recommend, apply"}
 
 
-def _audit_usage(config, log) -> dict:
+def _audit_usage(config) -> dict:
     """Analyze recent token usage patterns and identify waste."""
     import sys
     sys.path.insert(0, str(FLEET_DIR))
@@ -241,9 +244,9 @@ def _audit_usage(config, log) -> dict:
     return result
 
 
-def _recommend_optimizations(config, log) -> dict:
+def _recommend_optimizations(config) -> dict:
     """Return applicable optimization rules with estimated savings."""
-    audit = _audit_usage(config, log)
+    audit = _audit_usage(config)
 
     recommendations = []
     for rule in EFFICIENCY_RULES:
@@ -265,7 +268,7 @@ def _recommend_optimizations(config, log) -> dict:
     }
 
 
-def _apply_optimizations(config, log) -> dict:
+def _apply_optimizations(config) -> dict:
     """Apply automatic optimizations where safe (local-first routing)."""
     applied = []
 

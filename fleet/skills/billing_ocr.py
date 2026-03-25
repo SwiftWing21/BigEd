@@ -8,6 +8,7 @@ Usage:
     lead_client.py task '{"type": "billing_ocr", "payload": {"image_path": "/path/to/screenshot.png", "provider": "claude"}}'
 """
 import json
+import logging
 import os
 import base64
 import urllib.request
@@ -18,8 +19,10 @@ SKILL_NAME = "billing_ocr"
 DESCRIPTION = "OCR billing screenshots from Claude/Gemini dashboards to reconcile local cost tracking."
 REQUIRES_NETWORK = False  # Uses local Ollama vision model
 
+log = logging.getLogger(SKILL_NAME)
 
-def run(payload: dict, config: dict, log) -> dict:
+
+def run(payload: dict, config: dict) -> dict:
     """Process a billing screenshot and extract cost/usage data."""
     image_path = payload.get("image_path", "")
     provider = payload.get("provider", "auto")  # claude, gemini, auto
@@ -61,7 +64,7 @@ def run(payload: dict, config: dict, log) -> dict:
 
     # Optionally update local usage DB
     if billing.get("costs") and payload.get("update_db", False):
-        _update_local_usage(billing, config, log)
+        _update_local_usage(billing, config)
 
     return {
         "provider": provider,
@@ -104,7 +107,7 @@ def _parse_billing_response(text: str, provider: str) -> dict:
     return {"raw": text, "parse_failed": True}
 
 
-def _update_local_usage(billing: dict, config: dict, log):
+def _update_local_usage(billing: dict, config: dict):
     """Reconcile OCR billing data with local usage table."""
     try:
         import sys

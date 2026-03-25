@@ -15,6 +15,7 @@ Actions:
 Privacy: audio never stored beyond transcription. Local-first by default.
 """
 import json
+import logging
 import os
 import subprocess
 import sys
@@ -26,8 +27,10 @@ SKILL_NAME = "speech_to_text"
 DESCRIPTION = "Local-first speech-to-text for voice input. Privacy-first: audio never stored."
 REQUIRES_NETWORK = False
 
+log = logging.getLogger(SKILL_NAME)
 
-def _ditl_guard(text: str, config: dict, log) -> str:
+
+def _ditl_guard(text: str, config: dict) -> str:
     """HIPAA compliance guard — de-identify transcribed text if DITL enabled.
 
     When DITL forces compliance:
@@ -73,41 +76,41 @@ def _ditl_guard(text: str, config: dict, log) -> str:
     return text
 
 
-def run(payload: dict, config: dict, log) -> dict:
+def run(payload: dict, config: dict) -> dict:
     action = payload.get("action", "check")
 
     if action == "check":
-        return _check_availability(config, log)
+        return _check_availability(config)
     elif action == "transcribe":
-        result = _transcribe(payload, config, log)
+        result = _transcribe(payload, config)
         if "text" in result:
-            result["text"] = _ditl_guard(result["text"], config, log)
+            result["text"] = _ditl_guard(result["text"], config)
         return result
     elif action == "listen":
-        result = _listen(payload, config, log)
+        result = _listen(payload, config)
         if "text" in result:
-            result["text"] = _ditl_guard(result["text"], config, log)
+            result["text"] = _ditl_guard(result["text"], config)
         return result
     elif action == "wake_listen":
-        result = _wake_word_listen(payload, config, log)
+        result = _wake_word_listen(payload, config)
         if result.get("command"):
-            result["command"] = _ditl_guard(result["command"], config, log)
+            result["command"] = _ditl_guard(result["command"], config)
         return result
     elif action == "command":
         # De-identify before command parsing
         if payload.get("text"):
-            payload["text"] = _ditl_guard(payload["text"], config, log)
-        return _process_voice_command(payload, config, log)
+            payload["text"] = _ditl_guard(payload["text"], config)
+        return _process_voice_command(payload, config)
     elif action == "reminder":
         # De-identify reminder text if DITL active
         if payload.get("text"):
-            payload["text"] = _ditl_guard(payload["text"], config, log)
-        return _add_reminder(payload, config, log)
+            payload["text"] = _ditl_guard(payload["text"], config)
+        return _add_reminder(payload, config)
     else:
         return {"error": f"Unknown action: {action}"}
 
 
-def _check_availability(config, log) -> dict:
+def _check_availability(config) -> dict:
     """Check which STT backends are available."""
     backends = {}
 
@@ -147,7 +150,7 @@ def _check_availability(config, log) -> dict:
     }
 
 
-def _transcribe(payload, config, log) -> dict:
+def _transcribe(payload, config) -> dict:
     """Transcribe an audio file to text."""
     audio_path = payload.get("audio_path", "")
     if not audio_path or not Path(audio_path).exists():
@@ -194,7 +197,7 @@ def _transcribe(payload, config, log) -> dict:
     return {"error": "No STT backend available. Install: pip install faster-whisper"}
 
 
-def _listen(payload, config, log) -> dict:
+def _listen(payload, config) -> dict:
     """Capture audio from microphone and transcribe."""
     duration = payload.get("duration_secs", 5)
 
@@ -219,7 +222,7 @@ def _listen(payload, config, log) -> dict:
             wf.writeframes(audio.tobytes())
 
         # Transcribe
-        result = _transcribe({"audio_path": tmp.name}, config, log)
+        result = _transcribe({"audio_path": tmp.name}, config)
 
         # Clean up audio immediately (privacy)
         try:
@@ -236,7 +239,7 @@ def _listen(payload, config, log) -> dict:
         return {"error": f"Microphone capture failed: {e}"}
 
 
-def _wake_word_listen(payload, config, log) -> dict:
+def _wake_word_listen(payload, config) -> dict:
     """Listen for wake word, then capture and transcribe."""
     wake_word = config.get("assistant", {}).get("wake_word", "hey biged")
     if not wake_word:
@@ -248,7 +251,7 @@ def _wake_word_listen(payload, config, log) -> dict:
     log.info(f"Listening for wake word: '{wake_word}' ({max_attempts} attempts)")
 
     for attempt in range(max_attempts):
-        result = _listen({"duration_secs": duration}, config, log)
+        result = _listen({"duration_secs": duration}, config)
         if "text" in result and result["text"]:
             text_lower = result["text"].lower().strip()
             if wake_word.lower() in text_lower:
@@ -257,7 +260,7 @@ def _wake_word_listen(payload, config, log) -> dict:
                 if not command:
                     # Wake word alone — listen again for the command
                     log.info("Wake word detected — listening for command...")
-                    cmd_result = _listen({"duration_secs": 5}, config, log)
+                    cmd_result = _listen({"duration_secs": 5}, config)
                     command = cmd_result.get("text", "")
                 return {
                     "wake_detected": True,
@@ -269,7 +272,7 @@ def _wake_word_listen(payload, config, log) -> dict:
     return {"wake_detected": False, "attempts": max_attempts}
 
 
-def _process_voice_command(payload, config, log) -> dict:
+def _process_voice_command(payload, config) -> dict:
     """Parse a voice command into a fleet action."""
     text = payload.get("text", "").lower().strip()
     if not text:
@@ -338,7 +341,7 @@ def text_to_speech(text: str, config: dict = None) -> dict:
         return {"error": f"TTS failed: {e}"}
 
 
-def _transcribe_cloud(audio_path, config, log) -> dict:
+def _transcribe_cloud(audio_path, config) -> dict:
     """Cloud STT fallback (requires API key). NOT used by default."""
     stt_cfg = config.get("assistant", {})
     if stt_cfg.get("stt_local_only", True):
@@ -347,7 +350,7 @@ def _transcribe_cloud(audio_path, config, log) -> dict:
     return {"error": "No cloud STT provider configured. Set stt_local_only=false and add API key."}
 
 
-def _add_reminder(payload, config, log) -> dict:
+def _add_reminder(payload, config) -> dict:
     """Add a reminder to local file-based calendar."""
     text = payload.get("text", "")
     when = payload.get("when", "")

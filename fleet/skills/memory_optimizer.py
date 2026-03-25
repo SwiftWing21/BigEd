@@ -23,6 +23,7 @@ Usage:
 """
 import gc
 import json
+import logging
 import os
 import subprocess
 import sys
@@ -34,6 +35,8 @@ SKILL_NAME = "memory_optimizer"
 DESCRIPTION = "Analyze and reduce RAM/VRAM pressure across fleet operations."
 REQUIRES_NETWORK = False
 
+log = logging.getLogger(SKILL_NAME)
+
 # Thresholds
 RAM_WARNING_PCT = 75
 RAM_CRITICAL_PCT = 85
@@ -42,7 +45,7 @@ VRAM_CRITICAL_PCT = 90
 MIN_WORKERS = 2
 
 
-def run(payload: dict, config: dict, log) -> dict:
+def run(payload: dict, config: dict) -> dict:
     """Run memory optimization."""
     action = payload.get("action", "audit")
 

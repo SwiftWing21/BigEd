@@ -396,7 +396,7 @@ def _save_report(issues, cfg_path):
     return str(report_path)
 
 
-def run(task: dict, context: dict) -> dict:
+def run(payload: dict, config: dict) -> dict:
     """Validate fleet.toml against the expected schema."""
     import config as cfg_mod  # lazy import
 
@@ -408,14 +408,6 @@ def run(task: dict, context: dict) -> dict:
             "status": "error",
             "error": "Failed to load fleet.toml — check file exists and is valid TOML",
         }
-
-    payload = task.get("payload") or {}
-    if isinstance(payload, str):
-        try:
-            import json
-            payload = json.loads(payload)
-        except Exception:
-            payload = {}
 
     strict = payload.get("strict", False)
 

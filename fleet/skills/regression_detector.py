@@ -76,21 +76,19 @@ HALLUCINATION_MARKERS = [
 ]
 
 
-def run(payload: dict, config: dict, log=None) -> dict:
-    if log is None:
-        log = logging.getLogger(__name__)
+def run(payload: dict, config: dict) -> dict:
     action = payload.get("action", "audit")
 
     if action == "audit":
-        return _audit(config, log)
+        return _audit(config)
     elif action == "grade":
-        return _grade_report(config, log)
+        return _grade_report(config)
     elif action == "track":
-        return _track_note(payload, config, log)
+        return _track_note(payload, config)
     elif action == "hallcheck":
-        return _hallucination_check(payload, config, log)
+        return _hallucination_check(payload, config)
     elif action == "sop":
-        return _generate_sop(config, log)
+        return _generate_sop(config)
     else:
         return {"error": f"Unknown action: {action}"}
 
@@ -108,7 +106,7 @@ def _letter_grade(score: float) -> str:
     return "F"
 
 
-def _audit(config, log) -> dict:
+def _audit(config) -> dict:
     """Scan for quality regressions and hallucination patterns."""
     conn = _get_conn()
     # row_factory already set by db.get_conn()
@@ -229,7 +227,7 @@ def _audit(config, log) -> dict:
     return {"findings": findings, "checked_at": datetime.utcnow().isoformat()}
 
 
-def _grade_report(config, log) -> dict:
+def _grade_report(config) -> dict:
     """Generate quality grade report (A-F scale per skill and agent)."""
     conn = _get_conn()
     # row_factory already set by db.get_conn()
@@ -332,7 +330,7 @@ def _grade_report(config, log) -> dict:
     }
 
 
-def _track_note(payload, config, log) -> dict:
+def _track_note(payload, config) -> dict:
     """Add a tracking note for a specific task or skill regression."""
     task_id = payload.get("task_id")
     skill = payload.get("skill", "")
@@ -357,7 +355,7 @@ def _track_note(payload, config, log) -> dict:
     return {"saved": str(note_file), "note": note}
 
 
-def _hallucination_check(payload, config, log) -> dict:
+def _hallucination_check(payload, config) -> dict:
     """Deep hallucination check on a specific task result."""
     task_id = payload.get("task_id")
     if not task_id:
@@ -417,7 +415,7 @@ def _hallucination_check(payload, config, log) -> dict:
     }
 
 
-def _generate_sop(config, log) -> dict:
+def _generate_sop(config) -> dict:
     """Generate Standard Operating Procedures from fleet behavior patterns.
 
     Analyzes parent→child task sequences in the DB to discover common workflows.

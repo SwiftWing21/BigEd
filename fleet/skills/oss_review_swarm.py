@@ -23,26 +23,24 @@ LENSES = {
                   "data handling practices, supply chain integrity, dependency hygiene.",
 }
 
-def run(payload: dict, config: dict, log=None) -> dict:
-    if log is None:
-        log = logging.getLogger(__name__)
+def run(payload: dict, config: dict) -> dict:
     action = payload.get("action", "review")
 
     if action == "review":
-        return _swarm_review(payload, config, log)
+        return _swarm_review(payload, config)
     elif action == "watchlist_add":
-        return _watchlist_add(payload, config, log)
+        return _watchlist_add(payload, config)
     elif action == "watchlist_remove":
-        return _watchlist_remove(payload, config, log)
+        return _watchlist_remove(payload, config)
     elif action == "compare":
-        return _compare(payload, config, log)
+        return _compare(payload, config)
     elif action in ("discover", "pre_rate", "report"):
         from skills.oss_review import run as light_run
-        return light_run(payload, config, log)
+        return light_run(payload, config)
     else:
         return {"error": f"Unknown action: {action}"}
 
-def _swarm_review(payload, config, log):
+def _swarm_review(payload, config):
     """Run 4 specialized review agents + synthesis."""
     url = payload.get("url", "")
     if not url:
@@ -50,7 +48,7 @@ def _swarm_review(payload, config, log):
 
     # Pre-rate first
     from skills.oss_review import _pre_rate
-    rating = _pre_rate(payload, config, log)
+    rating = _pre_rate(payload, config)
     if "error" in rating:
         return rating
 
@@ -166,7 +164,7 @@ def _findings_similar(f1, f2):
     overlap = len(words1 & words2) / max(1, min(len(words1), len(words2)))
     return overlap > 0.5
 
-def _watchlist_add(payload, config, log):
+def _watchlist_add(payload, config):
     """Add project to regression tracking watchlist."""
     url = payload.get("url", "")
     frequency = payload.get("frequency", "weekly")
@@ -185,7 +183,7 @@ def _watchlist_add(payload, config, log):
     db._retry_write(_do)
     return {"added": f"{owner}/{repo}", "frequency": frequency}
 
-def _watchlist_remove(payload, config, log):
+def _watchlist_remove(payload, config):
     """Remove project from watchlist."""
     url = payload.get("url", "")
     if not url:
@@ -197,7 +195,7 @@ def _watchlist_remove(payload, config, log):
     db._retry_write(_do)
     return {"removed": url}
 
-def _compare(payload, config, log):
+def _compare(payload, config):
     """Compare current review against stored baseline."""
     url = payload.get("url", "")
     if not url:
@@ -210,7 +208,7 @@ def _compare(payload, config, log):
     baseline = json.loads(row["baseline_json"])
 
     # Run fresh review
-    current = _swarm_review(payload, config, log)
+    current = _swarm_review(payload, config)
     if "error" in current:
         return current
 

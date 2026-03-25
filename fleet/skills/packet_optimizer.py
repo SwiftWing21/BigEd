@@ -41,24 +41,22 @@ TARGETS = {
 }
 
 
-def run(payload: dict, config: dict, log=None) -> dict:
-    if log is None:
-        log = logging.getLogger(__name__)
+def run(payload: dict, config: dict) -> dict:
     action = payload.get("action", "audit")
 
     if action == "audit":
-        return _audit(config, log)
+        return _audit(config)
     elif action == "optimize":
-        return _optimize(config, log)
+        return _optimize(config)
     elif action == "benchmark":
-        return _benchmark(config, log)
+        return _benchmark(config)
     elif action == "evolve":
-        return _evolve(config, log)
+        return _evolve(config)
     else:
         return {"error": f"Unknown action: {action}"}
 
 
-def _audit(config, log) -> dict:
+def _audit(config) -> dict:
     """Snapshot current packet sizes across all communication channels."""
     findings = []
     stats = {"total_calls": 0, "total_input_bytes": 0, "total_output_bytes": 0}
@@ -222,9 +220,9 @@ def _audit(config, log) -> dict:
     }
 
 
-def _optimize(config, log) -> dict:
+def _optimize(config) -> dict:
     """Generate optimization recommendations based on audit."""
-    audit = _audit(config, log)
+    audit = _audit(config)
     recommendations = []
 
     for f in audit.get("findings", []):
@@ -265,7 +263,7 @@ def _optimize(config, log) -> dict:
     }
 
 
-def _benchmark(config, log) -> dict:
+def _benchmark(config) -> dict:
     """Compare packet sizes before/after optimization on a sample task."""
     # Run a simple summarize task and measure sizes
     try:
@@ -312,13 +310,13 @@ def _benchmark(config, log) -> dict:
         return {"error": f"Benchmark failed: {e}"}
 
 
-def _evolve(config, log) -> dict:
+def _evolve(config) -> dict:
     """Auto-research compression strategies for fleet communications.
 
     This action is designed for idle evolution — it researches new
     optimization techniques and logs discoveries for operator review.
     """
-    audit = _audit(config, log)
+    audit = _audit(config)
 
     # Identify top 3 skills by bandwidth usage
     api_data = audit.get("api_breakdown", [])

@@ -250,7 +250,7 @@ def _save_report(findings: list[dict], files_scanned: int) -> Path:
 
 # ── Skill entry point ────────────────────────────────────────────────
 
-def run(task: dict, context: dict) -> dict:
+def run(payload: dict, config: dict) -> dict:
     """Lint JavaScript/HTML files for common issues.
 
     Payload fields:
@@ -260,8 +260,8 @@ def run(task: dict, context: dict) -> dict:
 
     Returns dict with files_scanned, issues_found, errors, warnings, infos.
     """
-    file_path = task.get("file") or task.get("payload", {}).get("file")
-    dir_path = task.get("directory") or task.get("payload", {}).get("directory")
+    file_path = payload.get("file") or payload.get("payload", {}).get("file")
+    dir_path = payload.get("directory") or payload.get("payload", {}).get("directory")
 
     files: list[Path] = []
 

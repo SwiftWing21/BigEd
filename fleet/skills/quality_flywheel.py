@@ -14,38 +14,36 @@ REQUIRES_NETWORK = False
 FLEET_DIR = Path(__file__).parent.parent
 
 
-def run(payload: dict, config: dict, log=None) -> dict:
-    if log is None:
-        log = logging.getLogger(__name__)
+def run(payload: dict, config: dict) -> dict:
     action = payload.get("action", "audit")
 
     if action == "audit":
-        return _audit(payload, config, log)
+        return _audit(payload, config)
     elif action == "gaps":
-        return _gaps(payload, config, log)
+        return _gaps(payload, config)
     elif action == "draft":
-        return _draft(payload, config, log)
+        return _draft(payload, config)
     elif action == "apply":
-        return _apply(payload, config, log)
+        return _apply(payload, config)
     elif action == "history":
-        return _history(payload, config, log)
+        return _history(payload, config)
     elif action == "calibrate":
-        return _calibrate(payload, config, log)
+        return _calibrate(payload, config)
     elif action == "discover":
         from skills._flywheel_core import discover_novel_patterns
         project_root = Path(payload.get("project_path", str(FLEET_DIR.parent)))
         return {"discoveries": discover_novel_patterns(project_root)}
     elif action == "regression_check":
-        return _regression_check(payload, config, log)
+        return _regression_check(payload, config)
     elif action == "verify":
-        return _verify(payload, config, log)
+        return _verify(payload, config)
     elif action == "s_tier":
-        return _s_tier(payload, config, log)
+        return _s_tier(payload, config)
     else:
         return {"error": f"Unknown action: {action}"}
 
 
-def _audit(payload, config, log):
+def _audit(payload, config):
     """Run full 10-dimension audit."""
     from skills._flywheel_core import run_full_audit, format_audit_report, FLYWHEEL_DIR
 
@@ -81,13 +79,13 @@ def _audit(payload, config, log):
     }
 
 
-def _gaps(payload, config, log):
+def _gaps(payload, config):
     """Show gap analysis only."""
-    result = _audit(payload, config, log)
+    result = _audit(payload, config)
     return {"gaps": result.get("gaps", []), "overall_grade": result.get("overall_grade")}
 
 
-def _draft(payload, config, log):
+def _draft(payload, config):
     """Generate proposed context file improvements."""
     from skills._flywheel_core import run_full_audit, FLYWHEEL_DIR, DRAFTS_DIR
 
@@ -156,7 +154,7 @@ def _draft(payload, config, log):
     return {"drafts": drafts, "count": len(drafts)}
 
 
-def _apply(payload, config, log):
+def _apply(payload, config):
     """Apply an approved draft to CLAUDE.md and re-grade."""
     from skills._flywheel_core import DRAFTS_DIR
 
@@ -181,7 +179,7 @@ def _apply(payload, config, log):
     claude_md.write_text(updated, encoding="utf-8")
 
     # Re-grade to verify improvement
-    re_audit = _audit(payload, config, log)
+    re_audit = _audit(payload, config)
 
     # Log to reinforcement
     try:
@@ -200,7 +198,7 @@ def _apply(payload, config, log):
     }
 
 
-def _history(payload, config, log):
+def _history(payload, config):
     """Show score trend over time."""
     project_root = str(Path(payload.get("project_path", str(FLEET_DIR.parent))))
     days = payload.get("days", 30)
@@ -217,7 +215,7 @@ def _history(payload, config, log):
         return {"error": str(e)}
 
 
-def _calibrate(payload, config, log):
+def _calibrate(payload, config):
     """Re-calibrate rubric weights from feedback history."""
     # Check which dimensions have most approved vs rejected drafts
     try:
@@ -247,7 +245,7 @@ def _calibrate(payload, config, log):
         return {"error": str(e)}
 
 
-def _regression_check(payload, config, log):
+def _regression_check(payload, config):
     """Check if S-tier has been maintained for 7+ consecutive days.
 
     Returns a lock status dict. When s_tier_locked is True, the project
@@ -326,7 +324,7 @@ def _parse_llm_grades(response: str) -> dict[str, float]:
     return grades
 
 
-def _verify(payload, config, log):
+def _verify(payload, config):
     """Multi-agent verification: run evidence audit twice independently, compare scores.
 
     First run uses the deterministic grading engine. Second run uses an LLM
@@ -409,7 +407,7 @@ def _verify(payload, config, log):
     }
 
 
-def _s_tier(payload, config, log):
+def _s_tier(payload, config):
     """Full S-tier assessment: evidence audit + hallucination check.
 
     This is the complete S-tier pipeline:

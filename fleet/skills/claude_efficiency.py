@@ -22,6 +22,7 @@ Usage:
     lead_client.py task '{"type": "claude_efficiency", "payload": {"action": "report"}}'
 """
 import json
+import logging
 import sys
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
@@ -31,6 +32,8 @@ SKILL_NAME = "claude_efficiency"
 DESCRIPTION = "Optimize Claude API usage — caching, batching, MCP routing, capacity windows"
 COMPLEXITY = "simple"
 REQUIRES_NETWORK = False  # analyzes local data, doesn't call APIs
+
+log = logging.getLogger(SKILL_NAME)
 
 # ── Constants ────────────────────────────────────────────────────────────────
 
@@ -274,7 +277,7 @@ def get_savings_potential(config: dict) -> dict:
 
 # ── Action handlers ──────────────────────────────────────────────────────────
 
-def _action_audit(config: dict, log) -> dict:
+def _action_audit(config: dict) -> dict:
     """Analyze cost_tracking data, find Claude-using skills, check caching."""
     sys.path.insert(0, str(FLEET_DIR))
 
@@ -401,13 +404,12 @@ def _action_audit(config: dict, log) -> dict:
     finally:
         conn.close()
 
-    if log:
-        log.info(f"Claude efficiency audit: ${result.get('total_claude_cost_30d', 0):.4f} "
-                 f"Claude spend, {result['findings_count']} findings")
+    log.info(f"Claude efficiency audit: ${result.get('total_claude_cost_30d', 0):.4f} "
+             f"Claude spend, {result['findings_count']} findings")
     return result
 
 
-def _action_optimize(config: dict, log) -> dict:
+def _action_optimize(config: dict) -> dict:
     """Generate optimization recommendations (read-only, never auto-modifies)."""
     savings = get_savings_potential(config)
 
@@ -431,13 +433,12 @@ def _action_optimize(config: dict, log) -> dict:
         ],
     }
 
-    if log:
-        log.info(f"Optimization: {savings['savings_pct']}% potential savings "
-                 f"(${savings['projected_savings_30d']:.2f}/month)")
+    log.info(f"Optimization: {savings['savings_pct']}% potential savings "
+             f"(${savings['projected_savings_30d']:.2f}/month)")
     return report
 
 
-def _action_capacity_check(config: dict, log) -> dict:
+def _action_capacity_check(config: dict) -> dict:
     """Check current time against fleet.toml [capacity] windows."""
     capacity = config.get("capacity", {})
     et_now = _get_et_now()
@@ -455,8 +456,7 @@ def _action_capacity_check(config: dict, log) -> dict:
 
     if not capacity.get("enabled", False):
         result["message"] = "Capacity tracking not enabled. Add [capacity] to fleet.toml."
-        if log:
-            log.info("Capacity check: not enabled")
+        log.info("Capacity check: not enabled")
         return result
 
     # Check each window
@@ -534,13 +534,12 @@ def _action_capacity_check(config: dict, log) -> dict:
         else:
             result["message"] = "Weekend — check window config for weekend_all_day"
 
-    if log:
-        log.info(f"Capacity check: bonus={'yes' if result['bonus_active'] else 'no'} "
-                 f"at {et_now.strftime('%H:%M ET')}")
+    log.info(f"Capacity check: bonus={'yes' if result['bonus_active'] else 'no'} "
+             f"at {et_now.strftime('%H:%M ET')}")
     return result
 
 
-def _action_batch_queue(config: dict, log) -> dict:
+def _action_batch_queue(config: dict) -> dict:
     """Identify non-urgent pending tasks eligible for batch API."""
     sys.path.insert(0, str(FLEET_DIR))
 
@@ -609,19 +608,18 @@ def _action_batch_queue(config: dict, log) -> dict:
     finally:
         conn.close()
 
-    if log:
-        log.info(f"Batch queue: {len(result['eligible_tasks'])} pending eligible, "
-                 f"{len(result['summary'].get('recent_batchable_skills', []))} "
-                 f"recently batchable skills")
+    log.info(f"Batch queue: {len(result['eligible_tasks'])} pending eligible, "
+             f"{len(result['summary'].get('recent_batchable_skills', []))} "
+             f"recently batchable skills")
     return result
 
 
-def _action_report(config: dict, log) -> dict:
+def _action_report(config: dict) -> dict:
     """Generate comprehensive savings report."""
     # Gather all data
-    audit = _action_audit(config, log)
+    audit = _action_audit(config)
     savings = get_savings_potential(config)
-    capacity = _action_capacity_check(config, log)
+    capacity = _action_capacity_check(config)
 
     if "error" in audit:
         return audit
@@ -742,15 +740,14 @@ def _action_report(config: dict, log) -> dict:
         "bonus_active": capacity.get("bonus_active", False),
     }
 
-    if log:
-        log.info(f"Efficiency report saved: {report_path} "
-                 f"(${savings.get('projected_savings_30d', 0):.2f} potential savings)")
+    log.info(f"Efficiency report saved: {report_path} "
+             f"(${savings.get('projected_savings_30d', 0):.2f} potential savings)")
     return result
 
 
 # ── Skill entry point ────────────────────────────────────────────────────────
 
-def run(payload: dict, config: dict, log=None) -> dict:
+def run(payload: dict, config: dict) -> dict:
     """Run claude_efficiency skill.
 
     Actions:
@@ -777,4 +774,4 @@ def run(payload: dict, config: dict, log=None) -> dict:
             "valid_actions": list(actions.keys()),
         }
 
-    return handler(config, log)
+    return handler(config)

@@ -23,6 +23,7 @@ Usage:
     lead_client.py task '{"type": "hardware_profiler", "payload": {"action": "recommend"}}'
 """
 import json
+import logging
 import os
 import platform
 import sys
@@ -32,6 +33,8 @@ FLEET_DIR = Path(__file__).parent.parent
 SKILL_NAME = "hardware_profiler"
 DESCRIPTION = "Identify deployment class and optimize fleet configuration for any hardware."
 REQUIRES_NETWORK = False
+
+log = logging.getLogger(SKILL_NAME)
 
 
 # ── Deployment class definitions ─────────────────────────────────────────────
@@ -117,7 +120,7 @@ PROFILES = {
 }
 
 
-def run(payload: dict, config: dict, log) -> dict:
+def run(payload: dict, config: dict) -> dict:
     action = payload.get("action", "detect")
 
     if action == "detect":

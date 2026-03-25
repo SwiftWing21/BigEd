@@ -12,23 +12,21 @@ DESCRIPTION = "Discover, pre-rate, and review open-source projects (single agent
 COMPLEXITY = "medium"
 REQUIRES_NETWORK = True
 
-def run(payload: dict, config: dict, log=None) -> dict:
-    if log is None:
-        log = logging.getLogger(__name__)
+def run(payload: dict, config: dict) -> dict:
     action = payload.get("action", "review")
 
     if action == "discover":
-        return _discover(payload, config, log)
+        return _discover(payload, config)
     elif action == "pre_rate":
-        return _pre_rate(payload, config, log)
+        return _pre_rate(payload, config)
     elif action == "review":
-        return _review(payload, config, log)
+        return _review(payload, config)
     elif action == "report":
-        return _report(payload, config, log)
+        return _report(payload, config)
     else:
         return {"error": f"Unknown action: {action}"}
 
-def _discover(payload, config, log):
+def _discover(payload, config):
     """Search for projects by topic, return pre-rated candidates."""
     query = payload.get("query", "")
     limit = payload.get("limit", 5)
@@ -37,7 +35,7 @@ def _discover(payload, config, log):
 
     # Use web_search skill for discovery
     from skills.web_search import run as ws_run
-    search_result = ws_run({"query": f"{query} site:github.com"}, config, log)
+    search_result = ws_run({"query": f"{query} site:github.com"}, config)
     results = search_result.get("results", [])
 
     from skills._oss_core import parse_github_url, fetch_github_repo, pre_rate
@@ -69,7 +67,7 @@ def _discover(payload, config, log):
     candidates.sort(key=lambda x: x["stars"], reverse=True)
     return {"query": query, "candidates": candidates, "count": len(candidates)}
 
-def _pre_rate(payload, config, log):
+def _pre_rate(payload, config):
     """Quick traffic-light rating of a specific project."""
     url = payload.get("url", "")
     if not url:
@@ -99,7 +97,7 @@ def _pre_rate(payload, config, log):
     rating["url"] = url
     return rating
 
-def _review(payload, config, log):
+def _review(payload, config):
     """Full single-agent review of a project."""
     url = payload.get("url", "")
     focus = payload.get("focus", "")
@@ -107,7 +105,7 @@ def _review(payload, config, log):
         return {"error": "url required"}
 
     # Pre-rate first
-    rating = _pre_rate(payload, config, log)
+    rating = _pre_rate(payload, config)
     if "error" in rating:
         return rating
 
@@ -187,9 +185,9 @@ def _review(payload, config, log):
         "saved_to": str(report_path),
     }
 
-def _report(payload, config, log):
+def _report(payload, config):
     """Quick report card — grades only, no deep findings."""
-    result = _review(payload, config, log)
+    result = _review(payload, config)
     # Strip detailed findings for lighter output
     result.pop("findings_count", None)
     return result

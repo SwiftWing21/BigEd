@@ -19,6 +19,7 @@ Usage:
     lead_client.py task '{"type": "screenshot_diff", "payload": {"action": "batch", "pairs": [...]}}'
 """
 import hashlib
+import logging
 import os
 from pathlib import Path
 
@@ -28,22 +29,24 @@ DESCRIPTION = "Compare two screenshots for visual regression. Returns pass/warn/
 COMPLEXITY = "simple"
 REQUIRES_NETWORK = False
 
+log = logging.getLogger(SKILL_NAME)
+
 THRESHOLD_WARN = 1.0   # % pixels changed → warn
 THRESHOLD_FAIL = 5.0   # % pixels changed → fail
 
 
-def run(payload: dict, config: dict, log) -> dict:
+def run(payload: dict, config: dict) -> dict:
     action = payload.get("action", "diff")
 
     if action == "diff":
-        return _diff(payload, log)
+        return _diff(payload)
     elif action == "batch":
-        return _batch(payload, log)
+        return _batch(payload)
     else:
         return {"error": f"Unknown action: {action}"}
 
 
-def _diff(payload: dict, log) -> dict:
+def _diff(payload: dict) -> dict:
     before_path = payload.get("before_path", "")
     after_path = payload.get("after_path", "")
     skip_if_missing = payload.get("skip_if_missing", False)
@@ -122,7 +125,7 @@ def _diff(payload: dict, log) -> dict:
         }
 
 
-def _batch(payload: dict, log) -> dict:
+def _batch(payload: dict) -> dict:
     """Compare multiple screenshot pairs and return a summary verdict."""
     pairs = payload.get("pairs", [])
     if not pairs:
@@ -133,7 +136,7 @@ def _batch(payload: dict, log) -> dict:
 
     for pair in pairs:
         merged = {**pair, "skip_if_missing": pair.get("skip_if_missing", True)}
-        result = _diff(merged, log)
+        result = _diff(merged)
         results.append({
             "before": pair.get("before_path", ""),
             "after": pair.get("after_path", ""),

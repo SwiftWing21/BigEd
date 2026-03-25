@@ -13,6 +13,7 @@ Usage:
     lead_client.py task '{"type": "screenshot", "payload": {"action": "region", "x": 0, "y": 0, "w": 1920, "h": 1080}}'
 """
 import json
+import logging
 import os
 import sys
 import time
@@ -24,10 +25,12 @@ SKILL_NAME = "screenshot"
 DESCRIPTION = "Capture screenshots for UX testing, documentation, and GitHub reference images."
 REQUIRES_NETWORK = False
 
+log = logging.getLogger(SKILL_NAME)
+
 SCREENSHOT_DIR = FLEET_DIR / "knowledge" / "screenshots"
 
 
-def run(payload: dict, config: dict, log) -> dict:
+def run(payload: dict, config: dict) -> dict:
     """Capture a screenshot based on action type."""
     action = payload.get("action", "full")
     label = payload.get("label", "")  # optional label for filename
