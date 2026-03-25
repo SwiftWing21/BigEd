@@ -5,9 +5,24 @@ use std::path::Path;
 use std::sync::Arc;
 use tracing::{debug, info};
 
+/// A cached skill module together with its run() arity (2 or 3).
+pub struct LoadedSkill {
+    pub module: Py<PyAny>,
+    pub arity: usize,
+}
+
+impl LoadedSkill {
+    fn clone_ref(&self, py: Python<'_>) -> Self {
+        Self {
+            module: self.module.clone_ref(py),
+            arity: self.arity,
+        }
+    }
+}
+
 /// Caches imported Python skill modules for reuse.
 pub struct SkillLoader {
-    cache: Arc<DashMap<String, Py<PyAny>>>,
+    cache: Arc<DashMap<String, LoadedSkill>>,
 }
 
 impl SkillLoader {
@@ -35,19 +50,20 @@ impl SkillLoader {
         })
     }
 
-    /// Load a skill module by name. Returns a cached reference if available.
-    pub fn load(&self, skill_name: &str) -> anyhow::Result<Py<PyAny>> {
+    /// Load a skill module by name. Returns a cached `LoadedSkill` if available.
+    pub fn load(&self, skill_name: &str) -> anyhow::Result<LoadedSkill> {
         // Check cache first — clone_ref requires the GIL
         if self.cache.contains_key(skill_name) {
-            let cloned = Python::attach(|py| self.cache.get(skill_name).map(|r| r.clone_ref(py)));
-            if let Some(module) = cloned {
+            let cloned =
+                Python::attach(|py| self.cache.get(skill_name).map(|r| r.clone_ref(py)));
+            if let Some(skill) = cloned {
                 debug!("Cache hit for skill: {}", skill_name);
-                return Ok(module);
+                return Ok(skill);
             }
         }
 
-        // Import the module via importlib
-        let module = Python::attach(|py| -> anyhow::Result<Py<PyAny>> {
+        // Import the module via importlib and inspect run() arity
+        let loaded = Python::attach(|py| -> anyhow::Result<LoadedSkill> {
             let importlib = py.import("importlib")?;
             let module_name = format!("skills.{}", skill_name);
             let module = importlib
@@ -59,13 +75,27 @@ impl SkillLoader {
                 anyhow::bail!("Skill '{}' has no run() function", skill_name);
             }
 
-            debug!("Loaded skill: {}", skill_name);
-            Ok(module.into_any().unbind())
+            // Inspect the run() function's arity via inspect.signature
+            let run_fn = module.getattr("run")?;
+            let inspect = py.import("inspect")?;
+            let sig = inspect.call_method1("signature", (run_fn,))?;
+            let params = sig.getattr("parameters")?;
+            let param_count = params.call_method0("__len__")?.extract::<usize>()?;
+
+            debug!(
+                "Loaded skill: {} (arity={})",
+                skill_name, param_count
+            );
+
+            Ok(LoadedSkill {
+                module: module.into_any().unbind(),
+                arity: param_count,
+            })
         })?;
 
         // Store in cache and return a clone for the caller
-        let ret = Python::attach(|py| module.clone_ref(py));
-        self.cache.insert(skill_name.to_string(), module);
+        let ret = Python::attach(|py| loaded.clone_ref(py));
+        self.cache.insert(skill_name.to_string(), loaded);
         Ok(ret)
     }
 

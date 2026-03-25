@@ -14,7 +14,8 @@ impl SkillRunner {
         Ok(Self { loader })
     }
 
-    /// Execute a skill's `run(payload, config)` function.
+    /// Execute a skill's `run(payload, config)` or `run(payload, config, log)` function.
+    /// Automatically detects 3-arg skills and provides a Python logger.
     /// Returns the result as a `serde_json::Value`.
     pub fn run_skill(
         &self,
@@ -22,16 +23,22 @@ impl SkillRunner {
         payload: &serde_json::Value,
         config: &serde_json::Value,
     ) -> anyhow::Result<serde_json::Value> {
-        let module = self.loader.load(skill_name)?;
+        let skill = self.loader.load(skill_name)?;
 
         Python::attach(|py| {
             // Convert JSON values to Python dicts via json.loads
             let payload_dict = json_to_pydict(py, payload)?;
             let config_dict = json_to_pydict(py, config)?;
 
-            // Call module.run(payload, config) — module is Py<PyAny> (unbound)
-            let run_fn = module.getattr(py, "run")?;
-            let result = run_fn.call1(py, (payload_dict, config_dict));
+            // Call module.run — pass a logger as 3rd arg when arity >= 3
+            let run_fn = skill.module.getattr(py, "run")?;
+            let result = if skill.arity >= 3 {
+                let logging = py.import("logging")?;
+                let logger = logging.call_method1("getLogger", (skill_name,))?;
+                run_fn.call1(py, (payload_dict, config_dict, logger))
+            } else {
+                run_fn.call1(py, (payload_dict, config_dict))
+            };
 
             match result {
                 Ok(py_result) => {
