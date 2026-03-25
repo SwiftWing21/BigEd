@@ -2,7 +2,7 @@
 
 **Date:** 2026-03-25
 **Status:** Approved (design phase)
-**Scope:** 132 skills, 28,620 lines, 6 existing helpers
+**Scope:** 125 skills (132 files total), 28,620 lines, 6 existing helpers
 **Priority Order:** Plugin Contract (3) -> Suite Consolidation (1) -> Shared Patterns (2)
 **Estimated Savings:** ~3,200 lines (11% reduction)
 
@@ -12,11 +12,11 @@
 
 ### 1.1 Problem
 
-- 132 skills, no formal contract
+- 125 skills, no formal contract
 - Inconsistent `run()` signatures: `(task, context)`, `(payload, config)`, `(payload, config, log)`, `(payload, config, log=None)`
 - 27 skills return `str` instead of `dict` (double-serialization bug in worker.py)
 - 8 skills require `log` as 3rd positional arg — worker.py only passes 2 (broken at runtime)
-- Metadata is ad-hoc: SKILL_NAME present in 125/125, DESCRIPTION in ~87/125, VERSION in 0/125
+- Metadata is ad-hoc: SKILL_NAME in 125/125, DESCRIPTION in 125/125, VERSION in 0/125
 - COMPLEXITY routing lives in a disconnected dict in `providers.py`, not on skills themselves
 - Marketplace has no way to auto-generate manifests from skill metadata
 
@@ -37,7 +37,7 @@ REQUIRES_NETWORK = False       # bool: True if skill calls external APIs
 COMPLEXITY = "simple"          # "simple" | "medium" | "complex" — drives model routing
 TIMEOUT = 600                  # int: max seconds (overrides DEFAULT_SKILL_TIMEOUT)
 AUTHOR = ""                    # str: "agent:coder_1" or "human:max"
-SUITE = ""                     # str: domain grouping ("code", "security", "ml", "ops", "research")
+SUITE = ""                     # str: domain grouping ("code", "security", "ml", "model", "git", "skill_lifecycle", "research", "ops")
 TAGS = []                      # list[str]: free-form searchable tags
 ```
 
@@ -142,7 +142,7 @@ Integrated into `smoke_test.py` for compliance reporting.
 |-------|------|---------------|------|
 | **0** | Add `_contract.py` validator + worker.py result coercion safety net | 0 | None |
 | **1** | Fix 27 str-returning skills (`return json.dumps({...})` -> `return {...}`) | 27 | Very low |
-| **2** | Fix 15 non-standard signatures (8 broken `log`, 3 `task/context`, 7 `log=None`) | 15 | Low |
+| **2** | Fix 18 non-standard signatures (8 broken `log`, 3 `task/context`, 7 `log=None`) | 18 | Low |
 | **3** | Add `VERSION` + `COMPLEXITY` to all skills; refactor `providers.py` to read from modules | 125 | Low |
 | **4** | Incrementally add optional metadata (`SUITE`, `TAGS`, capability declarations) | Ongoing | None |
 
@@ -207,7 +207,7 @@ def _experiment_lifecycle(agent, exp_type, hypothesis, config, train_fn, eval_fn
 **Keeping separate:** `fma_review.py` (slimmed to ~80 lines, delegates to code_suite)
 **Current:** 1,454 lines -> **~1,050 lines**
 
-Key dedup: `PERSPECTIVE_FOCUS` dict (3 copies -> 1), `_pick_file()` (2 copies -> 1), discussion thread loading (2 identical SQL queries -> 1), JSON response parsing (2 implementations -> shared `_llm_parse`).
+Key dedup: `PERSPECTIVE_FOCUS` dict (3 copies -> 1, note: `code_write_review.py` also has a copy — it stays separate but should import from the suite), `_pick_file()` (2 copies with different signatures — `code_review` returns `Path | None`, `fma_review` returns `tuple[Path, str]`; unify to `Path | None` with status as separate return), discussion thread loading (2 identical SQL queries -> 1), JSON response parsing (2 implementations -> shared `_llm_parse`).
 
 Subactions: `review`, `quality`, `refactor`, `discuss`, `evaluate`, `pair`
 
@@ -261,41 +261,58 @@ Subactions: `draft`, `test`, `evolve`, `promote`, `deploy`
 
 ### 2.4 Backward Compatibility
 
-Worker.py routing shim — old task types transparently dispatch to suites:
+Worker.py routing shim — old task types transparently dispatch to suites.
+
+**Naming convention:** All suite files drop the `_suite` suffix to match existing skill naming (e.g., `ml_train.py`, `code_suite.py`, `model_suite.py`). Module names in the routing table must exactly match filenames.
 
 ```python
 SUITE_ROUTING = {
+    # code_suite.py
     "code_review":     ("code_suite",             "review"),
     "code_quality":    ("code_suite",             "quality"),
     "code_refactor":   ("code_suite",             "refactor"),
     "code_discuss":    ("code_suite",             "discuss"),
     "evaluate":        ("code_suite",             "evaluate"),
     "pair_program":    ("code_suite",             "pair"),
-    "embedding_train": ("ml_train",               "embedding"),
-    "reranker_train":  ("ml_train",               "reranker"),
-    "router_retrain":  ("ml_train",               "router"),
-    "scaler_train":    ("ml_train",               "scaler"),
+    # ml_train_suite.py
+    "embedding_train": ("ml_train_suite",         "embedding"),
+    "reranker_train":  ("ml_train_suite",         "reranker"),
+    "router_retrain":  ("ml_train_suite",         "router"),
+    "scaler_train":    ("ml_train_suite",         "scaler"),
+    # security_suite.py
     "security_audit":  ("security_suite",         "audit"),
     "security_review": ("security_suite",         "code_scan"),
     "security_apply":  ("security_suite",         "apply"),
     "pen_test":        ("security_suite",         "pentest"),
     "cve_watch":       ("security_suite",         "cve"),
     "sql_review":      ("security_suite",         "sql"),
+    # git_suite.py
     "git_manager":     ("git_suite",              "status"),
-    "github_sync":     ("git_suite",              "auth"),
+    "github_sync":     ("git_suite",              "sync"),
     "github_interact": ("git_suite",              "list_issues"),
+    # model_suite.py
     "model_manager":   ("model_suite",            "check"),
     "hardware_profiler":("model_suite",           "detect"),
     "auto_profile":    ("model_suite",            "auto_generate"),
-    "skill_draft":     ("skill_lifecycle",        "draft"),
-    "skill_test":      ("skill_lifecycle",        "test"),
-    "skill_evolve":    ("skill_lifecycle",        "evolve"),
-    "skill_promote":   ("skill_lifecycle",        "promote"),
-    "deploy_skill":    ("skill_lifecycle",        "deploy"),
+    # skill_lifecycle_suite.py
+    "skill_draft":     ("skill_lifecycle_suite",  "draft"),
+    "skill_test":      ("skill_lifecycle_suite",  "test"),
+    "skill_evolve":    ("skill_lifecycle_suite",  "evolve"),
+    "skill_promote":   ("skill_lifecycle_suite",  "promote"),
+    "deploy_skill":    ("skill_lifecycle_suite",  "deploy"),
 }
 ```
 
-When `skill_name` is found in `SUITE_ROUTING`, worker injects `action` into payload and dispatches to the suite module instead.
+**Critical:** The shim uses `setdefault` so it only injects the default action when the caller did not already specify one. This preserves existing multi-action dispatching (e.g., `git_manager` tasks that already carry `{"action": "commit"}`):
+
+```python
+if skill_name in SUITE_ROUTING:
+    suite_module, default_action = SUITE_ROUTING[skill_name]
+    payload.setdefault("action", default_action)
+    skill_name = suite_module
+```
+
+**Rollback kill-switch:** A config flag `[fleet] suite_routing_enabled = true` in fleet.toml allows disabling the routing shim during the deprecation period. When false, worker.py dispatches to original skill files (which remain as `_deprecated_<name>.py` during the transition).
 
 ### 2.5 Implementation Order
 
@@ -310,10 +327,11 @@ When `skill_name` is found in `SUITE_ROUTING`, worker injects `action` into payl
 ### 2.6 Deprecation Strategy
 
 1. Create suite file with all subactions
-2. Add routing shim in worker.py
+2. Add routing shim in worker.py (with `suite_routing_enabled` kill-switch in fleet.toml)
 3. Update `idle_evolution.py` skill weights
 4. Rename old files to `_deprecated_<name>.py` for one release cycle
-5. Remove deprecated files in next milestone
+5. If regression detected: set `suite_routing_enabled = false` to revert to original files
+6. Remove deprecated files in next milestone
 
 ---
 
@@ -445,12 +463,12 @@ Add `log = logging.getLogger(SKILL_NAME)` to each skill during Phase 2-3 of cont
 
 | Helper | Lines | Importers | Verdict |
 |--------|-------|-----------|---------|
-| `_models.py` | 256 | 32 | Healthy, well-used |
-| `_flywheel_core.py` | 891 | 1 | Decompose (P4) |
-| `_watchdog.py` | 298 | 1 | Fine — supervisor-facing |
-| `_oss_core.py` | 194 | 2 | Appropriately scoped |
+| `_models.py` | 256 | ~31 skills (~39 total) | Healthy, well-used |
+| `_flywheel_core.py` | 891 | 1 skill | Decompose (P4) |
+| `_watchdog.py` | 298 | 1 skill + 3 fleet-level (worker, supervisor, soak_test) | Cross-boundary usage |
+| `_oss_core.py` | 194 | 2 skills | Appropriately scoped |
 | `_review.py` | 164 | 0 skills (worker.py only) | Fine — pipeline component |
-| `_security.py` | 75 | 1 | Underused — more file-path skills should use `safe_path` |
+| `_security.py` | 75 | 2 (claude_code.py + discord_bot.py) | Underused — more file-path skills should use `safe_path` |
 
 ### 3.3 Priority Summary
 
@@ -463,8 +481,8 @@ Add `log = logging.getLogger(SKILL_NAME)` to each skill during Phase 2-3 of cont
 | P4 | Decompose `_flywheel_core.py` | 0 (refactor) | Easy |
 | P5 | `_http.py` (10 skills) | ~200 | Medium |
 | P6 | `_dispatch.py` (38 skills + suites) | ~250 | Easy |
-| P7 | Logging bootstrap (97 skills) | ~100 | Easy |
-| **Total** | | **~1,360** | |
+| P7 | Logging bootstrap (97 skills) | 0 (quality improvement, adds ~97 lines) | Easy |
+| **Total** | | **~1,260** | |
 
 ---
 
@@ -472,12 +490,12 @@ Add `log = logging.getLogger(SKILL_NAME)` to each skill during Phase 2-3 of cont
 
 | Workstream | Lines Saved | Skills Affected |
 |------------|-------------|-----------------|
-| Suite Consolidation | ~1,850 | 46 skills -> 8 suites |
-| Shared Patterns | ~1,360 | 57+ skills |
-| **Total** | **~3,200 (11%)** | |
+| Suite Consolidation | ~1,850 | 31 skills -> 6 suites + 2 consolidations |
+| Shared Patterns | ~1,260 | 57+ skills |
+| **Total** | **~3,110 (11%)** | |
 
 **Additional benefits:**
-- Formal contract with validation for all 132 skills
+- Formal contract with validation for all 125 skills
 - 27 double-serialization bugs fixed
 - 8 broken `log` param skills fixed
 - 97 skills gain logging
@@ -491,8 +509,8 @@ Add `log = logging.getLogger(SKILL_NAME)` to each skill during Phase 2-3 of cont
 1. Create `_contract.py` validator
 2. Add worker.py result coercion
 3. Fix 27 str-returning skills
-4. Fix 15 non-standard signatures
-5. Fix 2 raw sqlite3 violations
+4. Fix 18 non-standard signatures
+5. Fix 2 raw sqlite3 violations (note: worker.py line 535 also has raw sqlite3 for PHI audit — known debt, out of scope)
 6. Add `VERSION` + `COMPLEXITY` to all skills
 
 **Phase B — Shared Helpers (enables suites):**
