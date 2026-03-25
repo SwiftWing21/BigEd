@@ -30,6 +30,8 @@ tower = "0.5"
 futures = "0.3"
 async-stream = "0.3"
 tokio-stream = { version = "0.1", features = ["sync"] }
+eframe = "0.31"
+egui = "0.31"
 
 [package]
 name = "biged"
@@ -42,6 +44,7 @@ biged-core = { path = "crates/biged-core" }
 biged-supervisor = { path = "crates/biged-supervisor" }
 biged-server = { path = "crates/biged-server" }
 biged-bridge = { path = "crates/biged-bridge" }
+biged-gui = { path = "crates/biged-gui" }
 clap.workspace = true
 tokio.workspace = true
 tracing.workspace = true
