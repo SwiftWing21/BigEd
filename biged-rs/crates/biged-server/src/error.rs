@@ -6,13 +6,23 @@ pub struct AppError(pub anyhow::Error);
 
 impl IntoResponse for AppError {
     fn into_response(self) -> Response {
-        let status = match self.0.downcast_ref::<CoreError>() {
-            Some(CoreError::TaskNotFound(_)) => StatusCode::NOT_FOUND,
-            Some(CoreError::Db(_) | CoreError::Pool(_)) => StatusCode::INTERNAL_SERVER_ERROR,
-            _ => StatusCode::INTERNAL_SERVER_ERROR,
+        tracing::error!("Request error: {:?}", self.0);
+
+        let (status, message) = if let Some(core_err) = self.0.downcast_ref::<CoreError>() {
+            match core_err {
+                CoreError::TaskNotFound(_) => {
+                    (StatusCode::NOT_FOUND, "Resource not found")
+                }
+                CoreError::ConfigNotFound(_) => {
+                    (StatusCode::NOT_FOUND, "Configuration not found")
+                }
+                _ => (StatusCode::INTERNAL_SERVER_ERROR, "Internal server error"),
+            }
+        } else {
+            (StatusCode::INTERNAL_SERVER_ERROR, "Internal server error")
         };
-        let body = serde_json::json!({ "error": self.0.to_string() });
-        (status, axum::Json(body)).into_response()
+
+        (status, axum::Json(serde_json::json!({"error": message}))).into_response()
     }
 }
 
