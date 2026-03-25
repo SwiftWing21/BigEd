@@ -1,4 +1,4 @@
-use clap::{Parser, Subcommand};
+﻿use clap::{Parser, Subcommand};
 
 #[derive(Parser)]
 #[command(name = "biged", version, about = "BigEd CC - Autonomous Agent Fleet")]
@@ -23,6 +23,12 @@ enum Commands {
     Thermal,
     /// Migrate database from Python fleet
     Migrate,
+    /// Launch desktop GUI
+    Gui {
+        /// Server URL to connect to
+        #[arg(long, default_value = "http://localhost:5555")]
+        server_url: String,
+    },
 }
 
 #[tokio::main]
@@ -77,6 +83,9 @@ async fn main() -> anyhow::Result<()> {
         }
         Some(Commands::Migrate) => {
             tracing::info!("Running database migration");
+        }
+        Some(Commands::Gui { server_url }) => {
+            biged_gui::run_gui(&server_url).expect("GUI failed");
         }
         _ => {
             tracing::warn!("Command not yet implemented");
