@@ -107,6 +107,8 @@ async fn test_backup_prune_removes_old_beyond_depth() {
         .expect("Timed out")
         .expect("Channel error");
 
+    // Give prune time to complete after backup event
+    tokio::time::sleep(std::time::Duration::from_millis(500)).await;
     handle.abort();
 
     // After prune: 5 old + 1 new = 6, depth=3, so 3 should remain

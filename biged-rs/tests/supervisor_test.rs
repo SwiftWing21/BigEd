@@ -392,14 +392,21 @@ async fn test_health_checker_detects_stale_agents() {
     let db = Db::in_memory().unwrap();
     let (tx, _rx) = create_event_bus(100);
 
-    // Register an agent — its heartbeat is set to "now"
+    // Register an agent, then backdate its heartbeat to 10 minutes ago
     db.register_agent("stale_worker", "coder").unwrap();
+    {
+        let pool = db.pool_ref();
+        let conn = pool.get().unwrap();
+        conn.execute(
+            "UPDATE agents SET last_heartbeat = datetime('now', '-600 seconds') WHERE name = 'stale_worker'",
+            [],
+        ).unwrap();
+    }
 
     let checker = biged_supervisor::health::HealthChecker::new(db.clone(), tx);
 
-    // With a 0-second stale threshold, the agent should immediately be marked offline
-    // (since any heartbeat is technically "in the past" by the time we check)
-    checker.check_agent_health(0).await.unwrap();
+    // With a 60-second threshold, the 10-min-old heartbeat should be stale
+    checker.check_agent_health(60).await.unwrap();
 
     let agent = db.get_agent("stale_worker").unwrap().unwrap();
     assert_eq!(
@@ -439,14 +446,23 @@ async fn test_health_checker_recover_stale_tasks() {
     let id = db.post_task("stuck_skill", "{}", 5, None).unwrap();
     db.claim_task("coder").unwrap();
 
-    // Task is now RUNNING
+    // Task is now RUNNING — backdate it so it looks stale
+    {
+        let pool = db.pool_ref();
+        let conn = pool.get().unwrap();
+        conn.execute(
+            "UPDATE tasks SET created_at = datetime('now', '-600 seconds') WHERE id = ?1",
+            [id],
+        ).unwrap();
+    }
+
     let task = db.get_task(id).unwrap().unwrap();
     assert_eq!(task.status, biged_core::types::TaskStatus::Running);
 
     let checker = biged_supervisor::health::HealthChecker::new(db.clone(), tx);
 
-    // With timeout 0, any RUNNING task is considered stale
-    let recovered = checker.recover_stale_tasks(0).await.unwrap();
+    // 60s threshold — the 10-min-old task should be recovered
+    let recovered = checker.recover_stale_tasks(60).await.unwrap();
     assert!(recovered >= 1, "Should recover at least 1 stale task");
 
     // Task should be back to PENDING
