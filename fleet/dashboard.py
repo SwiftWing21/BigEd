@@ -1432,6 +1432,53 @@ def api_usage_regression():
         return jsonify({"error": _safe_error(e)}), 500
 
 
+# -- API Gate -----------------------------------------------------------------
+
+@app.route("/api/gate/status")
+def api_gate_status():
+    import api_gate
+    return jsonify(api_gate.status())
+
+@app.route("/api/gate/enable", methods=["POST"])
+def api_gate_enable():
+    import api_gate
+    data = request.get_json(silent=True) or {}
+    budget = float(data.get("budget", 0))
+    providers = data.get("providers", [])
+    ttl = data.get("ttl_hours")
+    drain = data.get("drain_mode", "graceful")
+    if budget <= 0:
+        return jsonify({"error": "budget must be > 0"}), 400
+    if not providers:
+        return jsonify({"error": "at least one provider required"}), 400
+    cfg = _load_config()
+    from config import is_offline, is_air_gap
+    if is_offline(cfg) or is_air_gap(cfg):
+        return jsonify({"error": "Cannot enable API gate — offline_mode or air_gap_mode is active"}), 409
+    result = api_gate.enable(budget, providers, ttl, drain)
+    return jsonify(result)
+
+@app.route("/api/gate/disable", methods=["POST"])
+def api_gate_disable():
+    import api_gate
+    return jsonify(api_gate.disable())
+
+@app.route("/api/gate/drain-mode", methods=["PUT"])
+def api_gate_drain_mode():
+    import api_gate
+    data = request.get_json(silent=True) or {}
+    mode = data.get("mode", "graceful")
+    if mode not in ("graceful", "hard"):
+        return jsonify({"error": "mode must be 'graceful' or 'hard'"}), 400
+    return jsonify(api_gate.set_drain_mode(mode))
+
+@app.route("/api/gate/ring")
+def api_gate_ring():
+    import api_gate
+    limit = request.args.get("limit", 200, type=int)
+    return jsonify(api_gate.get_ring(limit))
+
+
 # ── Billing / Metering per Tenant (v0.300.00b) ───────────────────────────────
 
 @app.route("/api/billing/<tenant_id>/usage")
