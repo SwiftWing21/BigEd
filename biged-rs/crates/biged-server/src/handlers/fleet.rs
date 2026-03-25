@@ -17,13 +17,23 @@ pub async fn status(State(state): State<AppState>) -> Result<Json<Value>, AppErr
 /// GET /api/health — unified health check
 pub async fn health(State(state): State<AppState>) -> Result<Json<Value>, AppError> {
     let config = state.config.read().await;
-    let db_ok = state.db.table_names().is_ok();
+    let db_healthy = state.db.queue_depth().is_ok();
+    // Supervisor is healthy if agents exist with recent heartbeats
+    let supervisor_healthy = match state.db.all_agents() {
+        Ok(agents) => agents.iter().any(|a| a.last_heartbeat.is_some()),
+        Err(_) => false,
+    };
+    let status = if supervisor_healthy && db_healthy {
+        "healthy"
+    } else {
+        "degraded"
+    };
     Ok(Json(json!({
-        "status": if db_ok { "healthy" } else { "unhealthy" },
+        "status": status,
         "subsystems": {
-            "fleet_db": db_ok,
-            "supervisor": true,
+            "supervisor": supervisor_healthy,
             "dashboard": true,
+            "database": db_healthy,
         },
         "version": env!("CARGO_PKG_VERSION"),
         "dashboard_port": config.dashboard.port,
