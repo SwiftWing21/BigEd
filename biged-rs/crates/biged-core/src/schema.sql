@@ -2,11 +2,13 @@
 -- (audit/experiment tables created lazily by their respective modules)
 
 CREATE TABLE IF NOT EXISTS agents (
-    name            TEXT PRIMARY KEY,
-    role            TEXT,
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    name            TEXT UNIQUE NOT NULL,
+    role            TEXT NOT NULL,
     status          TEXT DEFAULT 'IDLE',
+    current_task_id INTEGER,
     last_heartbeat  TEXT,
-    current_task_id INTEGER
+    pid             INTEGER
 );
 
 CREATE TABLE IF NOT EXISTS tasks (
@@ -32,11 +34,27 @@ CREATE TABLE IF NOT EXISTS tasks (
 CREATE TABLE IF NOT EXISTS messages (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
     from_agent  TEXT NOT NULL,
-    to_agent    TEXT,
-    channel     TEXT DEFAULT 'fleet',
-    body        TEXT NOT NULL,
+    to_agent    TEXT NOT NULL,
     created_at  TEXT DEFAULT (datetime('now')),
-    read        INTEGER DEFAULT 0
+    read_at     TEXT,
+    body_json   TEXT,
+    channel     TEXT DEFAULT 'fleet'
+);
+
+CREATE TABLE IF NOT EXISTS notes (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    channel    TEXT NOT NULL,
+    from_agent TEXT NOT NULL,
+    created_at TEXT DEFAULT (datetime('now')),
+    body_json  TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_notes_channel_created
+    ON notes (channel, created_at);
+
+CREATE TABLE IF NOT EXISTS locks (
+    name        TEXT PRIMARY KEY,
+    holder      TEXT NOT NULL,
+    acquired_at TEXT DEFAULT (datetime('now'))
 );
 
 CREATE TABLE IF NOT EXISTS usage (
@@ -52,25 +70,20 @@ CREATE TABLE IF NOT EXISTS usage (
     task_id             INTEGER
 );
 
-CREATE TABLE IF NOT EXISTS locks (
-    name       TEXT PRIMARY KEY,
-    holder     TEXT,
-    acquired   TEXT DEFAULT (datetime('now'))
-);
-
-CREATE TABLE IF NOT EXISTS notes (
-    id         INTEGER PRIMARY KEY AUTOINCREMENT,
-    channel    TEXT NOT NULL,
-    body       TEXT NOT NULL,
-    created_at TEXT DEFAULT (datetime('now'))
+CREATE TABLE IF NOT EXISTS trusted_models (
+    model       TEXT PRIMARY KEY,
+    trusted_at  TEXT DEFAULT (datetime('now')),
+    accept_count INTEGER DEFAULT 0,
+    notes       TEXT DEFAULT ''
 );
 
 CREATE TABLE IF NOT EXISTS idle_runs (
-    id         INTEGER PRIMARY KEY AUTOINCREMENT,
-    agent      TEXT NOT NULL,
-    skill      TEXT NOT NULL,
-    cost_usd   REAL DEFAULT 0.0,
-    created_at TEXT DEFAULT (datetime('now'))
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    created_at  TEXT NOT NULL DEFAULT (datetime('now')),
+    agent       TEXT NOT NULL,
+    skill       TEXT NOT NULL,
+    result      TEXT,
+    cost_usd    REAL DEFAULT 0.0
 );
 
 CREATE TABLE IF NOT EXISTS output_feedback (
@@ -82,15 +95,8 @@ CREATE TABLE IF NOT EXISTS output_feedback (
     created_at TEXT DEFAULT (datetime('now'))
 );
 
-CREATE TABLE IF NOT EXISTS trusted_models (
-    model       TEXT PRIMARY KEY,
-    trusted_at  TEXT DEFAULT (datetime('now')),
-    accept_count INTEGER DEFAULT 0,
-    notes       TEXT DEFAULT ''
-);
-
 CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status);
 CREATE INDEX IF NOT EXISTS idx_tasks_type ON tasks(type);
 CREATE INDEX IF NOT EXISTS idx_tasks_assigned ON tasks(assigned_to);
-CREATE INDEX IF NOT EXISTS idx_messages_to ON messages(to_agent, read);
+CREATE INDEX IF NOT EXISTS idx_messages_to ON messages(to_agent, read_at);
 CREATE INDEX IF NOT EXISTS idx_usage_created ON usage(created_at);

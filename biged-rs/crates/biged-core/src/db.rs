@@ -66,7 +66,7 @@ impl Db {
     pub fn register_agent(&self, name: &str, role: &str) -> Result<()> {
         let conn = self.pool.get()?;
         conn.execute(
-            "INSERT OR REPLACE INTO agents (name, role, status, last_heartbeat)
+            "INSERT OR IGNORE INTO agents (name, role, status, last_heartbeat)
              VALUES (?1, ?2, 'IDLE', datetime('now'))",
             params![name, role],
         )?;
@@ -345,10 +345,11 @@ impl Db {
         body: &str,
     ) -> Result<i64> {
         let conn = self.pool.get()?;
+        let to_agent = to.unwrap_or("broadcast");
         conn.execute(
-            "INSERT INTO messages (from_agent, to_agent, channel, body)
+            "INSERT INTO messages (from_agent, to_agent, channel, body_json)
              VALUES (?1, ?2, ?3, ?4)",
-            params![from, to, channel, body],
+            params![from, to_agent, channel, body],
         )?;
         Ok(conn.last_insert_rowid())
     }
@@ -356,7 +357,7 @@ impl Db {
     pub fn recent_messages(&self, channel: &str, limit: i64) -> Result<Vec<Message>> {
         let conn = self.pool.get()?;
         let mut stmt = conn.prepare(
-            "SELECT id, from_agent, to_agent, channel, body, created_at, read
+            "SELECT id, from_agent, to_agent, channel, body_json, created_at, read_at
              FROM messages
              WHERE channel = ?1
              ORDER BY id DESC LIMIT ?2",
@@ -368,9 +369,9 @@ impl Db {
                     from_agent: row.get(1)?,
                     to_agent: row.get(2)?,
                     channel: row.get(3)?,
-                    body: row.get(4)?,
+                    body: row.get::<_, Option<String>>(4)?.unwrap_or_default(),
                     created_at: row.get(5)?,
-                    read: row.get::<_, i32>(6)? != 0,
+                    read: row.get::<_, Option<String>>(6)?.is_some(),
                 })
             })?
             .collect::<std::result::Result<Vec<_>, _>>()?;
