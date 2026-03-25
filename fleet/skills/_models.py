@@ -24,7 +24,7 @@ def get_last_provider():
     return getattr(_last_provider, 'name', 'unknown')
 
 from providers import (
-    PRICING, FALLBACK_CHAIN, calculate_cost,
+    PRICING, FALLBACK_CHAIN, _get_fallback_chain, calculate_cost,
     _call_claude, _call_gemini, _call_minimax, _call_local,
     _circuit_is_open, _circuit_record_failure, _circuit_record_success,
     get_optimal_model, get_local_model_for_skill,
@@ -61,7 +61,8 @@ def check_budget(skill_name: str, config: dict) -> dict | None:
 
 
 def call_complex(system: str, user: str, config: dict, max_tokens: int = 2048, cache_system: bool = False,
-                 skill_name: str = "unknown", task_id=None, agent_name=None) -> str:
+                 skill_name: str = "unknown", task_id=None, agent_name=None,
+                 purpose: str = "task") -> str:
     """Route a complex inference call with HA fallback cascade."""
     models = config.get("models", {})
     provider = models.get("complex_provider", "claude")
@@ -69,6 +70,16 @@ def call_complex(system: str, user: str, config: dict, max_tokens: int = 2048, c
     # Offline mode: force local provider (no external API calls)
     if config.get("fleet", {}).get("offline_mode", False):
         provider = "local"
+
+    # API gate check: reject non-local providers if gate disallows
+    if provider != "local":
+        import api_gate
+        allowed, reason = api_gate.check(provider, purpose, config)
+        if not allowed:
+            import logging
+            logging.getLogger("_models").info(
+                "api_gate rejected %s for %s: %s — using local", provider, skill_name, reason)
+            provider = "local"
 
     # CT-4: Budget check with configurable enforcement
     try:
@@ -123,7 +134,7 @@ def call_complex(system: str, user: str, config: dict, max_tokens: int = 2048, c
         chain = ["local"]
     else:
         chain = [provider]
-        for p in FALLBACK_CHAIN:
+        for p in _get_fallback_chain(provider, config):
             if p not in chain:
                 chain.append(p)
 
@@ -143,18 +154,21 @@ def call_complex(system: str, user: str, config: dict, max_tokens: int = 2048, c
         try:
             if prov == "gemini":
                 result = _call_gemini(system, user, models, max_tokens,
-                                      skill_name=skill_name, task_id=task_id, agent_name=agent_name)
+                                      skill_name=skill_name, task_id=task_id, agent_name=agent_name,
+                                      purpose=purpose, config=config)
             elif prov == "minimax":
                 # _call_minimax expects full config (not models sub-dict) for model name resolution
                 result = _call_minimax(system, user, config, max_tokens,
-                                       skill_name=skill_name, task_id=task_id, agent_name=agent_name)
+                                       skill_name=skill_name, task_id=task_id, agent_name=agent_name,
+                                       purpose=purpose)
             elif prov == "local":
                 result = _call_local(system, user, models, max_tokens,
                                      skill_name=skill_name, config=config,
                                      task_id=task_id, agent_name=agent_name)
             else:  # claude
                 result = _call_claude(system, user, models, max_tokens, cache_system,
-                                      skill_name=skill_name, task_id=task_id, agent_name=agent_name)
+                                      skill_name=skill_name, task_id=task_id, agent_name=agent_name,
+                                      purpose=purpose, config=config)
 
             _circuit_record_success(prov)
 
