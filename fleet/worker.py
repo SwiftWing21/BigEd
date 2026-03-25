@@ -21,6 +21,24 @@ sys.path.insert(0, str(FLEET_DIR))
 import db
 from config import load_config, is_offline, is_air_gap, AIR_GAP_SKILLS
 
+
+def _coerce_result(result):
+    """Coerce skill result to dict. Safety net for str-returning skills."""
+    if isinstance(result, dict):
+        return result
+    if isinstance(result, str):
+        try:
+            parsed = json.loads(result)
+            if isinstance(parsed, dict):
+                return parsed
+            return {"status": "ok", "result": parsed}
+        except (json.JSONDecodeError, ValueError):
+            return {"status": "ok", "result": result}
+    if result is None:
+        return {"status": "ok"}
+    return {"status": "ok", "result": result}
+
+
 HW_STATE_FILE = FLEET_DIR / "hw_state.json"
 
 IDLE_THRESHOLD = 3  # polls with no task before entering idle mode (~3s at 1s poll)
@@ -732,6 +750,7 @@ def main():
                         rounds = db.reject_task(task['id'], verdict.get("critique", ""))
                         log.info(f"Task {task['id']} REVIEW FAIL (round {rounds}): {verdict.get('critique', '')[:100]}")
                     else:
+                        result = _coerce_result(result)
                         db.complete_task(task['id'], json.dumps(result))
                         log.info(f"Task {task['id']} REVIEW PASS → done")
                         # Intelligence scoring (non-blocking)
@@ -770,6 +789,7 @@ def main():
                         except Exception:
                             pass  # HITL notification must never block task processing
                 else:
+                    result = _coerce_result(result)
                     db.complete_task(task['id'], json.dumps(result))
                     log.info(f"Task {task['id']} done")
                     # Intelligence scoring (non-blocking)
