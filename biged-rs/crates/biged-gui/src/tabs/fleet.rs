@@ -18,8 +18,8 @@ pub fn show(ui: &mut egui::Ui, state: &mut AppState) {
         .iter()
         .filter(|a| matches!(a.status.to_lowercase().as_str(), "busy" | "running"))
         .count() as u32;
-    let pending = status.task_pending.unwrap_or(0);
-    let done = status.task_done.unwrap_or(0);
+    let pending = status.task_count("PENDING");
+    let done = status.task_count("DONE");
 
     egui::ScrollArea::vertical().show(ui, |ui| {
         ui.add_space(12.0);

@@ -1,7 +1,7 @@
 use biged_gui::api::{AgentInfo, ApiClient, FleetStatus};
 use biged_gui::state::{AppState, SettingsSection, Tab};
 use biged_gui::theme;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 // ── Theme color tests ────────────────────────────────────────────────────────
 
@@ -107,14 +107,13 @@ fn smoke_api_client_creates() {
 fn test_api_client_initial_status_empty() {
     let client = ApiClient::new("http://localhost:9999");
     let status = client.status.lock().unwrap().clone();
-    assert!(status.version.is_none(), "Initial version should be None");
     assert!(
-        status.agent_count.is_none(),
-        "Initial agent_count should be None"
+        status.agents.is_empty(),
+        "Initial agents should be empty"
     );
     assert!(
-        status.task_pending.is_none(),
-        "Initial task_pending should be None"
+        status.tasks.is_empty(),
+        "Initial tasks should be empty"
     );
 }
 
@@ -252,28 +251,40 @@ fn test_state_chat_input() {
 fn test_fleet_status_data_flow() {
     let client = ApiClient::new("http://localhost:9999");
 
-    // Simulate server data arriving
+    // Simulate server data arriving (matches /api/status shape)
     {
         let mut status = client.status.lock().unwrap();
         *status = FleetStatus {
-            version: Some("0.400.00b".to_string()),
-            uptime_secs: Some(3600.0),
-            agent_count: Some(5),
-            task_pending: Some(3),
-            task_running: Some(2),
-            task_done: Some(100),
-            task_failed: Some(1),
+            agents: vec![
+                AgentInfo {
+                    name: "coder_1".to_string(),
+                    role: "coder".to_string(),
+                    status: "idle".to_string(),
+                    last_heartbeat: None,
+                },
+                AgentInfo {
+                    name: "coder_2".to_string(),
+                    role: "coder".to_string(),
+                    status: "busy".to_string(),
+                    last_heartbeat: None,
+                },
+            ],
+            tasks: HashMap::from([
+                ("PENDING".to_string(), 3),
+                ("RUNNING".to_string(), 2),
+                ("DONE".to_string(), 100),
+                ("FAILED".to_string(), 1),
+            ]),
         };
     }
 
     let state = AppState::new(client);
     let status = state.status();
-    assert_eq!(status.version.as_deref(), Some("0.400.00b"));
-    assert_eq!(status.agent_count, Some(5));
-    assert_eq!(status.task_pending, Some(3));
-    assert_eq!(status.task_running, Some(2));
-    assert_eq!(status.task_done, Some(100));
-    assert_eq!(status.task_failed, Some(1));
+    assert_eq!(status.agent_count(), 2);
+    assert_eq!(status.task_count("PENDING"), 3);
+    assert_eq!(status.task_count("RUNNING"), 2);
+    assert_eq!(status.task_count("DONE"), 100);
+    assert_eq!(status.task_count("FAILED"), 1);
 }
 
 #[test]

@@ -42,7 +42,7 @@ pub fn show(ui: &mut egui::Ui, state: &mut AppState) {
                 stat_row(
                     ui,
                     "Agents",
-                    status.agent_count.unwrap_or(0).to_string(),
+                    status.agent_count().to_string(),
                     theme::BLUE,
                 );
                 ui.end_row();
@@ -50,7 +50,7 @@ pub fn show(ui: &mut egui::Ui, state: &mut AppState) {
                 stat_row(
                     ui,
                     "Pending",
-                    status.task_pending.unwrap_or(0).to_string(),
+                    status.task_count("PENDING").to_string(),
                     theme::YELLOW,
                 );
                 ui.end_row();
@@ -58,7 +58,7 @@ pub fn show(ui: &mut egui::Ui, state: &mut AppState) {
                 stat_row(
                     ui,
                     "Running",
-                    status.task_running.unwrap_or(0).to_string(),
+                    status.task_count("RUNNING").to_string(),
                     theme::ORANGE,
                 );
                 ui.end_row();
@@ -66,7 +66,7 @@ pub fn show(ui: &mut egui::Ui, state: &mut AppState) {
                 stat_row(
                     ui,
                     "Done",
-                    status.task_done.unwrap_or(0).to_string(),
+                    status.task_count("DONE").to_string(),
                     theme::GREEN,
                 );
                 ui.end_row();
@@ -74,15 +74,10 @@ pub fn show(ui: &mut egui::Ui, state: &mut AppState) {
                 stat_row(
                     ui,
                     "Failed",
-                    status.task_failed.unwrap_or(0).to_string(),
+                    status.task_count("FAILED").to_string(),
                     theme::RED,
                 );
                 ui.end_row();
-
-                if let Some(v) = &status.version {
-                    stat_row(ui, "Version", v.clone(), theme::DIM);
-                    ui.end_row();
-                }
             });
 
         ui.add_space(12.0);

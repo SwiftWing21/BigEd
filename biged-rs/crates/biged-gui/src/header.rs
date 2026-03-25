@@ -34,9 +34,9 @@ pub fn show(ui: &mut egui::Ui, state: &AppState) {
     let dot_label = if connected { "LIVE" } else { "OFFLINE" };
     let stats_text = format!(
         "agents: {}  pending: {}  done: {}",
-        status.agent_count.unwrap_or(0),
-        status.task_pending.unwrap_or(0),
-        status.task_done.unwrap_or(0),
+        status.agent_count(),
+        status.task_count("PENDING"),
+        status.task_count("DONE"),
     );
 
     // Stats text (monospace, dim) — right edge.
