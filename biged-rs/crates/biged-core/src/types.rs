@@ -38,14 +38,6 @@ impl TaskStatus {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-pub enum AgentStatus {
-    Idle,
-    Busy,
-    Quarantined,
-    Offline,
-}
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Task {
     pub id: i64,
@@ -95,14 +87,4 @@ pub struct Message {
     pub body: String,
     pub created_at: String,
     pub read: bool,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct UsageRecord {
-    pub skill: String,
-    pub model: String,
-    pub input_tokens: i64,
-    pub output_tokens: i64,
-    pub cost_usd: f64,
-    pub task_id: Option<i64>,
 }

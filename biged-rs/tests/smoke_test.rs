@@ -9,9 +9,11 @@ fn smoke_config_parses() {
         .parent()
         .unwrap()
         .join("fleet/fleet.toml");
-    if fleet_toml.exists() {
-        FleetConfig::from_file(&fleet_toml).expect("fleet.toml should parse");
+    if !fleet_toml.exists() {
+        eprintln!("SKIPPED: fleet.toml not found at {}", fleet_toml.display());
+        return;
     }
+    FleetConfig::from_file(&fleet_toml).expect("fleet.toml should parse");
 }
 
 #[test]
