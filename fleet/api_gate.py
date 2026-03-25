@@ -150,9 +150,9 @@ def check(
         return True, "allowed"
 
     except Exception:
-        # Gate bugs must never block local operation
-        log.warning("api_gate.check() error — allowing call", exc_info=True)
-        return True, "allowed (gate error — fail-open)"
+        # Gate bugs must never block local operation — fall back to local
+        log.warning("api_gate.check() error — falling back to local", exc_info=True)
+        return False, "gate error (safe fallback to local)"
 
 
 def record_call(
