@@ -48,6 +48,30 @@ def test_skill_imports():
     return True, f"{count} skills imported"
 
 
+def test_skill_contracts():
+    """1b. All skills comply with plugin contract."""
+    from skills._contract import validate_skill
+    skills_dir = FLEET_DIR / "skills"
+    violations = {}
+    count = 0
+    for f in sorted(skills_dir.glob("*.py")):
+        if f.name.startswith("_"):
+            continue
+        mod_name = f.stem
+        count += 1
+        try:
+            mod = importlib.import_module(f"skills.{mod_name}")
+            warns = validate_skill(mod)
+            if warns:
+                violations[mod_name] = warns
+        except Exception:
+            pass  # import failures caught by test_skill_imports
+    if violations:
+        summary = "; ".join(f"{k}: {len(v)} issues" for k, v in list(violations.items())[:5])
+        return False, f"{len(violations)}/{count} non-compliant: {summary}"
+    return True, f"{count} skills contract-compliant"
+
+
 def test_db_health():
     """2. DB init + task round-trip."""
     import db
@@ -745,6 +769,7 @@ def main():
 
     tests = [
         ("Skill imports", test_skill_imports),
+        ("Skill contracts", test_skill_contracts),
         ("DB health", test_db_health),
         ("Config health", test_config),
     ]
