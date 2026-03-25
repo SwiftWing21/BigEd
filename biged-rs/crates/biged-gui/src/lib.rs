@@ -1,7 +1,11 @@
 pub mod api;
+pub mod state;
 pub mod theme;
 
-pub fn run_gui() -> eframe::Result<()> {
+use api::ApiClient;
+use state::AppState;
+
+pub fn run_gui(server_url: &str) -> eframe::Result<()> {
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
             .with_title("BigEd CC")
@@ -10,27 +14,65 @@ pub fn run_gui() -> eframe::Result<()> {
         ..Default::default()
     };
 
+    let server_url = server_url.to_string();
+
     eframe::run_native(
         "BigEd CC",
         options,
-        Box::new(|cc| Ok(Box::new(BigEdApp::new(cc)))),
+        Box::new(move |cc| Ok(Box::new(BigEdApp::new(cc, &server_url)))),
     )
 }
 
-struct BigEdApp;
+struct BigEdApp {
+    state: AppState,
+    /// Kept alive to drive the background polling task.
+    #[allow(dead_code)]
+    runtime: tokio::runtime::Runtime,
+}
 
 impl BigEdApp {
-    fn new(cc: &eframe::CreationContext<'_>) -> Self {
+    fn new(cc: &eframe::CreationContext<'_>, server_url: &str) -> Self {
         theme::apply_theme(&cc.egui_ctx);
-        Self
+
+        let runtime = tokio::runtime::Builder::new_multi_thread()
+            .enable_all()
+            .build()
+            .expect("tokio runtime");
+
+        let api = ApiClient::new(server_url);
+
+        // Spawn background polling task — refreshes every 4s and requests repaint.
+        let poll_api = api.clone();
+        let poll_ctx = cc.egui_ctx.clone();
+        runtime.spawn(async move {
+            loop {
+                poll_api.refresh().await;
+                poll_ctx.request_repaint();
+                tokio::time::sleep(std::time::Duration::from_secs(4)).await;
+            }
+        });
+
+        Self {
+            state: AppState::new(api),
+            runtime,
+        }
     }
 }
 
 impl eframe::App for BigEdApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        let status = self.state.status();
+        let connected = self.state.connected();
+
         egui::CentralPanel::default().show(ctx, |ui| {
             ui.heading("BigEd CC");
-            ui.label("Phase 4 — egui GUI scaffold");
+            ui.label(format!(
+                "Connected: {} | Agents: {} | Pending: {} | Done: {}",
+                connected,
+                status.agent_count.unwrap_or(0),
+                status.task_pending.unwrap_or(0),
+                status.task_done.unwrap_or(0),
+            ));
         });
     }
 }
