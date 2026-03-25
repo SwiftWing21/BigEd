@@ -46,7 +46,7 @@ impl BigEdApp {
     fn new(cc: &eframe::CreationContext<'_>, server_url: &str) -> Self {
         theme::apply_theme(&cc.egui_ctx);
 
-        let api = ApiClient::new(server_url);
+        let mut api = ApiClient::new(server_url);
 
         #[cfg(feature = "desktop")]
         {
@@ -54,6 +54,9 @@ impl BigEdApp {
                 .enable_all()
                 .build()
                 .expect("tokio runtime");
+
+            // Give the API client a handle so it can spawn fire-and-forget requests.
+            api.set_runtime(runtime.handle().clone());
 
             // Spawn background polling task — refreshes every 4s and requests repaint.
             let poll_api = api.clone();

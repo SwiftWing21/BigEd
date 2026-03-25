@@ -51,7 +51,7 @@ pub fn show(ui: &mut egui::Ui, state: &mut AppState) {
         let enter_pressed = response.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
 
         if (send_pressed || enter_pressed) && !state.chat_input.trim().is_empty() {
-            // TODO: POST to API
+            state.api.post_message_bg(state.chat_input.clone());
             state.chat_input.clear();
         }
     });
