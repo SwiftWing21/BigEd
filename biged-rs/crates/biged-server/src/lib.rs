@@ -64,8 +64,15 @@ pub fn router(state: AppState) -> Router {
         .route("/api/stream", axum::routing::get(sse::stream))
         // Settings
         .route(
+            "/api/settings",
+            axum::routing::get(handlers::settings::get_settings)
+                .put(handlers::settings::put_settings),
+        )
+        .route(
             "/api/settings/theme",
-            axum::routing::get(handlers::settings::get_theme).post(handlers::settings::set_theme),
+            axum::routing::get(handlers::settings::get_theme)
+                .put(handlers::settings::set_theme)
+                .post(handlers::settings::set_theme),
         )
         .route(
             "/api/fleet/worker/{name}/disable",
@@ -74,6 +81,24 @@ pub fn router(state: AppState) -> Router {
         .route(
             "/api/fleet/worker/{name}/enable",
             axum::routing::post(handlers::settings::enable_worker),
+        )
+        // Config (read-only)
+        .route(
+            "/api/config",
+            axum::routing::get(handlers::config::get_config),
+        )
+        .route(
+            "/api/config/models",
+            axum::routing::get(handlers::config::get_models),
+        )
+        .route(
+            "/api/config/thermal",
+            axum::routing::get(handlers::config::get_thermal),
+        )
+        // Metrics
+        .route(
+            "/api/metrics",
+            axum::routing::get(handlers::metrics::metrics),
         )
         .with_state(state)
 }
