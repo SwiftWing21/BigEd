@@ -9,6 +9,8 @@ pub mod widgets;
 use api::ApiClient;
 use state::AppState;
 
+/// Launch the native desktop GUI (desktop feature only).
+#[cfg(feature = "desktop")]
 pub fn run_gui(server_url: &str) -> eframe::Result<()> {
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
@@ -27,9 +29,15 @@ pub fn run_gui(server_url: &str) -> eframe::Result<()> {
     )
 }
 
-struct BigEdApp {
+/// Create the app instance — usable from both native and WASM entry points.
+pub fn create_app(cc: &eframe::CreationContext<'_>, server_url: &str) -> BigEdApp {
+    BigEdApp::new(cc, server_url)
+}
+
+pub struct BigEdApp {
     state: AppState,
-    /// Kept alive to drive the background polling task.
+    /// Kept alive to drive the background polling task (desktop only).
+    #[cfg(feature = "desktop")]
     #[allow(dead_code)]
     runtime: tokio::runtime::Runtime,
 }
@@ -38,27 +46,37 @@ impl BigEdApp {
     fn new(cc: &eframe::CreationContext<'_>, server_url: &str) -> Self {
         theme::apply_theme(&cc.egui_ctx);
 
-        let runtime = tokio::runtime::Builder::new_multi_thread()
-            .enable_all()
-            .build()
-            .expect("tokio runtime");
-
         let api = ApiClient::new(server_url);
 
-        // Spawn background polling task — refreshes every 4s and requests repaint.
-        let poll_api = api.clone();
-        let poll_ctx = cc.egui_ctx.clone();
-        runtime.spawn(async move {
-            loop {
-                poll_api.refresh().await;
-                poll_ctx.request_repaint();
-                tokio::time::sleep(std::time::Duration::from_secs(4)).await;
-            }
-        });
+        #[cfg(feature = "desktop")]
+        {
+            let runtime = tokio::runtime::Builder::new_multi_thread()
+                .enable_all()
+                .build()
+                .expect("tokio runtime");
 
-        Self {
-            state: AppState::new(api),
-            runtime,
+            // Spawn background polling task — refreshes every 4s and requests repaint.
+            let poll_api = api.clone();
+            let poll_ctx = cc.egui_ctx.clone();
+            runtime.spawn(async move {
+                loop {
+                    poll_api.refresh().await;
+                    poll_ctx.request_repaint();
+                    tokio::time::sleep(std::time::Duration::from_secs(4)).await;
+                }
+            });
+
+            Self {
+                state: AppState::new(api),
+                runtime,
+            }
+        }
+
+        #[cfg(not(feature = "desktop"))]
+        {
+            Self {
+                state: AppState::new(api),
+            }
         }
     }
 }

@@ -1,0 +1,86 @@
+name: Rust CI
+
+on:
+  push:
+    branches: [main]
+    paths: ['biged-rs/**']
+  pull_request:
+    branches: [main]
+    paths: ['biged-rs/**']
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  check:
+    name: Check (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    defaults:
+      run:
+        working-directory: biged-rs
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            biged-rs/target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('biged-rs/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-cargo-
+
+      - name: Set up Python (for PyO3)
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Set PYO3_PYTHON
+        shell: bash
+        run: echo "PYO3_PYTHON=$(which python3 || which python)" >> $GITHUB_ENV
+
+      - name: cargo check
+        run: cargo check --workspace
+
+      - name: cargo test
+        run: cargo test --workspace
+
+      - name: cargo clippy
+        run: cargo clippy --workspace -- -D warnings
+
+      - name: cargo fmt
+        run: cargo fmt --check
+
+  wasm-check:
+    name: WASM Check
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: biged-rs
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            biged-rs/target
+          key: ubuntu-wasm-cargo-${{ hashFiles('biged-rs/Cargo.lock') }}
+
+      - name: Check WASM target
+        run: cargo check --target wasm32-unknown-unknown -p biged-wasm
+        continue-on-error: true  # May fail until all deps are WASM-compatible

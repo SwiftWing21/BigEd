@@ -1,5 +1,7 @@
+use crate::backup::BackupManager;
 use crate::events::{create_event_bus, EventSender, FleetEvent};
 use crate::health::HealthChecker;
+use crate::scaler::AutoScaler;
 use crate::thermal::ThermalMonitor;
 use biged_core::config::FleetConfig;
 use biged_core::db::Db;
@@ -43,6 +45,21 @@ impl Supervisor {
             self.fleet_dir.clone(),
         );
 
+        // Snapshot config for backup + scaler initialization
+        let cfg_snapshot = self.config.read().await.clone();
+
+        let backup = BackupManager::new(
+            cfg_snapshot.backup.clone(),
+            self.fleet_dir.clone(),
+            self.events.clone(),
+        );
+
+        let mut scaler = AutoScaler::new(
+            cfg_snapshot.workers.clone(),
+            self.db.clone(),
+            self.events.clone(),
+        );
+
         // Launch all subsystem tasks
         tokio::select! {
             r = self.stale_recovery_loop(&health) => {
@@ -59,6 +76,12 @@ impl Supervisor {
             }
             r = self.config_reload_loop() => {
                 error!("Config reload loop exited: {:?}", r);
+            }
+            _ = backup.run_loop() => {
+                error!("Backup manager exited");
+            }
+            _ = scaler.run_loop() => {
+                error!("AutoScaler exited");
             }
         }
 

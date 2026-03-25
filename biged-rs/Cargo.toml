@@ -1,6 +1,14 @@
 [workspace]
 resolver = "2"
 members = ["crates/*", "."]
+default-members = [
+    ".",
+    "crates/biged-core",
+    "crates/biged-supervisor",
+    "crates/biged-server",
+    "crates/biged-bridge",
+    "crates/biged-gui",
+]
 
 [workspace.package]
 edition = "2021"
@@ -30,8 +38,10 @@ tower = "0.5"
 futures = "0.3"
 async-stream = "0.3"
 tokio-stream = { version = "0.1", features = ["sync"] }
-eframe = "0.31"
+eframe = { version = "0.31", default-features = false }
 egui = "0.31"
+wasm-bindgen = "0.2"
+web-sys = { version = "0.3", features = ["Window", "Document"] }
 
 [package]
 name = "biged"
@@ -56,3 +66,9 @@ serde_json.workspace = true
 tower.workspace = true
 serde_json.workspace = true
 axum.workspace = true
+tempfile = "3"
+toml.workspace = true
+
+[[bench]]
+name = "task_throughput"
+harness = false

@@ -1,0 +1,15 @@
+[package]
+name = "biged-wasm"
+version = "0.1.0"
+edition.workspace = true
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+biged-gui = { path = "../biged-gui", default-features = false, features = ["web"] }
+wasm-bindgen = { workspace = true }
+wasm-bindgen-futures = "0.4"
+web-sys = { workspace = true }
+eframe = { workspace = true, features = ["glow"] }
+console_error_panic_hook = "0.1"
