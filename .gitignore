@@ -17,6 +17,18 @@ venv/
 env/
 ENV/
 
+# ── Documentation — private by default, whitelist product files ──────────────
+*.md
+!README.md
+!CONTRIBUTING.md
+!SETUP.md
+!autoresearch/README.md
+!.github/PULL_REQUEST_TEMPLATE.md
+!docs/flowcharts/README.md
+!docs/screenshots/README.md
+!.claude/skills/**/*.md
+!fleet/templates/**/*.md
+
 # ── Fleet — runtime databases ─────────────────────────────────────────────────
 fleet/fleet.db
 fleet/fleet.db-shm
@@ -25,11 +37,8 @@ fleet/rag.db
 fleet/rag.db-shm
 fleet/rag.db-wal
 
-# ── Fleet — live status (regenerated on start) ────────────────────────────────
-fleet/STATUS.md
-
 # ── Fleet — ephemeral HITL response files ─────────────────────────────────────
-fleet/hitl-responses/*.md
+fleet/hitl-responses/
 
 # ── Launcher — single-instance lock ───────────────────────────────────────────
 BigEd/launcher/data/biged.lock
@@ -39,9 +48,6 @@ fleet/launch.json
 fleet/tasks.json
 fleet/skills/launch.json
 fleet/skills/tasks.json
-
-# ── Scratch / temp docs ──────────────────────────────────────────────────────
-how_we_roll.md
 
 # ── Fleet — TLS certs (auto-generated, never commit) ─────────────────────────
 fleet/certs/
@@ -74,9 +80,6 @@ fleet/knowledge/code_index.jsonl
 fleet/knowledge/search_waterfall.jsonl
 fleet/knowledge/discard_tracker.json
 
-# ── Launcher — architecture research (local reference, not source) ────────────
-BigEd/launcher/ARCHITECTURE_RESEARCH.md
-
 # ── Launcher — build artifacts ────────────────────────────────────────────────
 BigEd/launcher/dist/
 BigEd/launcher/build/
@@ -92,7 +95,6 @@ BigEd/launcher/data/
 !.claude/skills/**
 
 # ── Local machine config (personal hardware/env/MCP — never committed) ────────
-CLAUDE.USER.md
 .mcp.json
 push.sh
 
@@ -100,8 +102,6 @@ push.sh
 fleet/.drders_heartbeat
 fleet/.supervisor_heartbeat
 fleet/.cost_anomaly_throttle
-fleet/audit-results.md
-fleet/task-briefing.md
 fleet/knowledge/screenshots/
 
 # ── Launcher — runtime data (boot timing, caches) ────────────────────────────
@@ -112,24 +112,6 @@ docker-compose.yml
 
 # ── MCP context mirror (copies of root .md files for container access) ───────
 education-context/
-
-# ── Dev reference docs (moved to MCP server, not tracked in git) ──────────
-CLAUDE.C_REVIEW.md
-CLAUDE.CHATS.md
-GEMINI.md
-MACHINE_PROFILE.md
-CROSS_PLATFORM.md
-ROADMAP_v014_v020.md
-ROADMAP_v020_v030.md
-BigEd/architecture_comparison.md
-BigEd/build_reference.md
-BigEd/dev_environment.md
-BigEd/fleet_blueprints.md
-BigEd/fleet_commands.md
-BigEd/qa_token_blueprint.md
-BigEd/CONSOLE_UPGRADE_PLAN.md
-BigEd/SECURITY_COMPLIANCE_BLUEPRINT.md
-BigEd/research/
 
 # ── Fleet runtime state ──────────────────────────────────────────────────
 fleet/hw_state.json

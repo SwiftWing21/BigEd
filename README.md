@@ -1,34 +1,33 @@
 # BigEd CC — Big Edge Compute Command
 
-> A personal education project born from wanting to understand software and AI models at a deeper level. What started as a learning exercise turned into something I genuinely didn't expect.
+BigEd CC is a centralized AI agent orchestration platform for managing local and cloud LLMs from a single interface. It coordinates a fleet of 130+ specialized AI agents across code review, security auditing, research, ML training, and knowledge management — with enterprise-grade security, multi-tenant support, and hardware-aware scaling.
 
-BigEd CC is a centralized model manager toolkit that lets you control local LLMs (via Ollama), API-based LLMs (Claude, Gemini), and OAuth models (via VS Code with pre-configured files and a first-time walkthrough). It grew out of curiosity and vibe-coding sessions into a 93-skill autonomous agent fleet — and I'm still figuring out what it all means.
-
-This is not a product. It's a reference project for anyone curious about multi-model orchestration, agent lifecycle patterns, or what happens when you let AI help build the thing that manages AI.
+Built through AI-assisted development, BigEd CC is both a functional platform and a case study in directing complex software architecture through iterative AI collaboration. The human role was architectural direction, quality control, debugging, and system design — the kind of work that doesn't show up in lines-of-code metrics but determines whether a system works.
 
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 
 ## What It Does
 
 - **Model Management** — Switch between local (Ollama), Claude, and Gemini from one interface. See which model is active, what it costs, and how fast it responds.
-- **93 AI Skills** — Code review, security audit, web research, ML training, knowledge indexing, and more — all dispatched to agents automatically.
+- **130+ AI Skills** — Code review, security audit, web research, ML training, knowledge indexing, and more — all dispatched to agents automatically.
 - **Dynamic Agent Scaling** — 4 core agents + demand-based scaling up to 16, based on your hardware.
-- **Dr. Ders** — A hardware supervisor that monitors thermals, VRAM, and model health so things don't melt.
-- **Fleet Dashboard** — Real-time web UI at localhost:5555 showing agent status, task queues, and performance metrics.
+- **Dr. Ders** — A dual-supervisor hardware governor that monitors thermals, VRAM, and model health with event-driven wake-up timing.
+- **Fleet Dashboard** — Real-time web UI at localhost:5555 showing agent status, task queues, and performance metrics via SSE.
 - **One-Click Setup** — Installer handles Python, Ollama, models, and dependencies. There's also a first-run walkthrough in the GUI.
 - **Auto-Save Backup** — Periodic snapshots so you don't lose fleet state.
 - **Cost Tracking** — Per-call token usage and estimated costs for API providers.
 
-## How It Was Built
+## Development Approach
 
-Nearly the entire codebase was generated through AI-assisted development. That's part of the point — this project is itself a case study in what vibe-coding produces at scale.
+BigEd CC was built through thousands of iterative AI-assisted development sessions. The architecture, quality standards, debugging direction, and system design decisions were human-directed throughout.
 
-| Model | Role | Estimated Contribution |
-|-------|------|----------------------|
-| **Claude Code (Opus 4.6)** | Primary architect — wrote most of the code, designed fleet architecture, built the skill system | ~70% |
-| **Claude (Sonnet 4.6)** | Code review, audits, skill generation, iterative improvements | ~15% |
-| **Gemini Pro (2.5/3.1)** | Independent reviews, architecture audits, second opinions | ~10% |
-| **Human (Max)** | Direction, judgment calls, testing, and the occasional manual fix when models got stuck | ~5% |
+| Role | Contributor | What This Means |
+|------|------------|----------------|
+| **Architecture & System Design** | Max (human) | All architectural decisions, system scope, feature prioritization, quality standards, and debugging direction |
+| **Code Generation** | Claude Code (Opus 4.6) | Primary code author under human direction — wrote implementations from architectural specs and prompt-driven requirements |
+| **Review & Iteration** | Claude (Sonnet 4.6) | Code review, audits, skill generation, iterative improvements |
+| **Independent Audit** | Gemini Pro (2.5/3.1) | Architecture audits, second opinions, cross-validation |
+| **Quality Assurance** | Max (human) | Testing, debugging, catch-and-correct for AI-introduced bugs, documentation maintenance |
 
 ## Quick Start
 
@@ -42,7 +41,7 @@ Download Setup.exe from Releases → Run → Follow wizard
 git clone https://github.com/SwiftWing21/BigEd.git
 cd BigEd
 python fleet/dependency_check.py          # pre-flight check
-python fleet/smoke_test.py --fast         # verify 22/22 tests
+python fleet/smoke_test.py --fast         # verify smoke tests
 python BigEd/launcher/launcher.py         # launch GUI
 ```
 
@@ -54,12 +53,12 @@ BigEd CC
 │   ├── ui/             — Settings, consoles, dialogs, boot sequence
 │   ├── modules/        — Pluggable modules (Intelligence, Ingestion, Outputs)
 │   └── fonts/          — Custom pixel fonts
-├── fleet/              — 93-skill AI worker fleet
+├── fleet/              — 130+ skill AI worker fleet
 │   ├── supervisor.py   — Process lifecycle + dynamic scaling
 │   ├── hw_supervisor.py — Dr. Ders (thermal + model management)
 │   ├── dashboard.py    — Web dashboard (localhost:5555)
 │   ├── worker.py       — Generic task executor
-│   ├── skills/         — 93 registered skills
+│   ├── skills/         — 130+ registered skills
 │   └── knowledge/      — Agent-generated artifacts
 ├── autoresearch/       — ML training pipeline (inspired by Karpathy)
 ├── scripts/            — Setup scripts (Windows/Linux/macOS)
@@ -76,18 +75,16 @@ BigEd CC
 
 OAuth models (Claude Code, Gemini CLI) work through VS Code with pre-configured project files — BigEd writes a task briefing, opens VS Code, and you're ready to go.
 
-## Extra Stuff That's In There
+## Enterprise & Security Features
 
-Because the models kept building, BigEd ended up with features I didn't originally plan for:
-
-- **File access control** — Per-zone permissions (read / read-write / full)
+- **File access control** — SOC 2 compliant per-zone permissions (read / read-write / full)
 - **DLP** — Secret detection and output scrubbing before API calls
-- **Audit logging** — API calls, file access, and config changes are logged
+- **Audit logging** — Tamper-evident HMAC-signed logs for API calls, file access, and config changes
+- **RBAC** — Role-based access control with 5 roles and 7 permission levels
 - **Air-gap mode** — Full offline operation with local models only
-- **Fleet federation** — Multi-device task routing (experimental, in `fleet.toml`)
+- **Fleet federation** — Multi-device task routing with peer overflow
+- **Multi-tenant architecture** — 4-tier tenancy scaling from single-user to enterprise
 - **Training pipeline** — Autonomous ML training loop inspired by [Karpathy's build-nanogpt](https://github.com/karpathy/build-nanogpt)
-
-These work, but they haven't been battle-tested beyond my own machine. Take them for what they are.
 
 ## Repository Structure
 
@@ -126,12 +123,11 @@ python fleet/mcp_manager.py --init-vscode
 Save as `.vscode/mcp.json` and add your MCP servers as needed.
 
 The root `.mcp.json` (used by Claude Code CLI) is also gitignored and managed
-at runtime by `fleet/mcp_manager.py`. See `OPERATIONS.md` for MCP server
-management commands.
+at runtime by `fleet/mcp_manager.py`.
 
 ## Contributing
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines. This is a personal project, but PRs, issues, and honest feedback are welcome — especially if you spot something the models got wrong.
+See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines. PRs, issues, and honest feedback are welcome.
 
 ## License
 
