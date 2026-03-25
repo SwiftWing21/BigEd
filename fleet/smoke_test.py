@@ -435,9 +435,7 @@ def test_regression_detector_skill():
     from skills.regression_detector import SKILL_NAME, DESCRIPTION, REQUIRES_NETWORK, COMPLEXITY, run
     if SKILL_NAME != "regression_detector":
         return False, f"SKILL_NAME mismatch: {SKILL_NAME}"
-    import logging
-    log = logging.getLogger("smoke_rd")
-    result = run({"data": [1.0, 2.0, 3.0, 4.0, 5.0], "target": [1.1, 2.1, 2.9, 4.2, 5.0]}, {}, log)
+    result = run({"data": [1.0, 2.0, 3.0, 4.0, 5.0], "target": [1.1, 2.1, 2.9, 4.2, 5.0]}, {})
     ok = isinstance(result, dict)
     return ok, f"SKILL_NAME={SKILL_NAME}, COMPLEXITY={COMPLEXITY}, keys={list(result.keys())[:3]}"
 
@@ -447,9 +445,7 @@ def test_packet_optimizer_skill():
     from skills.packet_optimizer import SKILL_NAME, DESCRIPTION, REQUIRES_NETWORK, COMPLEXITY, run
     if SKILL_NAME != "packet_optimizer":
         return False, f"SKILL_NAME mismatch: {SKILL_NAME}"
-    import logging
-    log = logging.getLogger("smoke_po")
-    result = run({"packets": [{"size": 100, "priority": 1}, {"size": 200, "priority": 2}]}, {}, log)
+    result = run({"packets": [{"size": 100, "priority": 1}, {"size": 200, "priority": 2}]}, {})
     ok = isinstance(result, dict)
     return ok, f"SKILL_NAME={SKILL_NAME}, COMPLEXITY={COMPLEXITY}, keys={list(result.keys())[:3]}"
 
@@ -459,13 +455,11 @@ def test_screenshot_diff_skill():
     from skills.screenshot_diff import SKILL_NAME, DESCRIPTION, REQUIRES_NETWORK, COMPLEXITY, run
     if SKILL_NAME != "screenshot_diff":
         return False, f"SKILL_NAME mismatch: {SKILL_NAME}"
-    import logging
-    log = logging.getLogger("smoke_sd")
     result = run({
         "before_path": "knowledge/screenshots/test_a.png",
         "after_path": "knowledge/screenshots/test_b.png",
         "skip_if_missing": True,
-    }, {}, log)
+    }, {})
     ok = isinstance(result, dict) and result.get("verdict") in ("pass", "warn", "fail", "skip")
     return ok, f"SKILL_NAME={SKILL_NAME}, COMPLEXITY={COMPLEXITY}, verdict={result.get('verdict')}"
 
