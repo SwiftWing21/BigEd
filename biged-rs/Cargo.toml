@@ -45,7 +45,7 @@ web-sys = { version = "0.3", features = ["Window", "Document"] }
 
 [package]
 name = "biged"
-version = "0.1.0"
+version = "0.9.0"
 edition.workspace = true
 rust-version.workspace = true
 
@@ -72,3 +72,27 @@ toml.workspace = true
 [[bench]]
 name = "task_throughput"
 harness = false
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+strip = true
+codegen-units = 1
+panic = "abort"
+
+[profile.release-small]
+inherits = "release"
+opt-level = "s"
+lto = "fat"
+
+[package.metadata.deb]
+name = "biged-cc"
+maintainer = "SwiftWing21"
+copyright = "2026 SwiftWing21"
+depends = "$auto"
+section = "devel"
+priority = "optional"
+assets = [
+    ["target/release/biged", "usr/bin/", "755"],
+    ["install/biged.desktop", "usr/share/applications/", "644"],
+]

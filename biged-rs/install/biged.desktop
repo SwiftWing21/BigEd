@@ -1,0 +1,8 @@
+[Desktop Entry]
+Name=BigEd CC
+Comment=AI Fleet Management System
+Exec=biged gui
+Icon=biged
+Terminal=false
+Type=Application
+Categories=Development;

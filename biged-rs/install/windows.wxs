@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+    <Package Name="BigEd CC" Version="1.0.0.0" Manufacturer="SwiftWing21" UpgradeCode="BIGED-CC-UPGRADE-GUID">
+        <MajorUpgrade DowngradeErrorMessage="A newer version is already installed." />
+        <Feature Id="Main">
+            <ComponentGroupRef Id="ProductComponents" />
+        </Feature>
+    </Package>
+    <Fragment>
+        <StandardDirectory Id="ProgramFiles64Folder">
+            <Directory Id="INSTALLFOLDER" Name="BigEd CC" />
+        </StandardDirectory>
+    </Fragment>
+    <Fragment>
+        <ComponentGroup Id="ProductComponents" Directory="INSTALLFOLDER">
+            <Component>
+                <File Source="$(var.CargoTargetDir)\release\biged.exe" />
+            </Component>
+        </ComponentGroup>
+    </Fragment>
+</Wix>

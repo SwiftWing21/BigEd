@@ -1,0 +1,88 @@
+name: Rust Release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    name: Build (${{ matrix.target }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            artifact: biged
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            artifact: biged.exe
+          - os: macos-latest
+            target: x86_64-apple-darwin
+            artifact: biged
+          - os: macos-latest
+            target: aarch64-apple-darwin
+            artifact: biged
+
+    defaults:
+      run:
+        working-directory: biged-rs
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Set up Python (for PyO3)
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Set PYO3_PYTHON
+        shell: bash
+        run: echo "PYO3_PYTHON=$(which python3 || which python)" >> $GITHUB_ENV
+
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            biged-rs/target
+          key: ${{ matrix.target }}-cargo-${{ hashFiles('biged-rs/Cargo.lock') }}
+
+      - name: Build release
+        run: cargo build --release --locked --target ${{ matrix.target }}
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: biged-${{ matrix.target }}
+          path: biged-rs/target/${{ matrix.target }}/release/${{ matrix.artifact }}
+
+  release:
+    name: Create Release
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: artifacts/**/*
+          generate_release_notes: true
