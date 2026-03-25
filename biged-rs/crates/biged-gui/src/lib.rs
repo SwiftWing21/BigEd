@@ -1,3 +1,6 @@
+pub mod api;
+pub mod theme;
+
 pub fn run_gui() -> eframe::Result<()> {
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
@@ -17,7 +20,8 @@ pub fn run_gui() -> eframe::Result<()> {
 struct BigEdApp;
 
 impl BigEdApp {
-    fn new(_cc: &eframe::CreationContext<'_>) -> Self {
+    fn new(cc: &eframe::CreationContext<'_>) -> Self {
+        theme::apply_theme(&cc.egui_ctx);
         Self
     }
 }
