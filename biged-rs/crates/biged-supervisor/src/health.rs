@@ -49,11 +49,17 @@ impl HealthChecker {
                 "Agent {} marked offline (no heartbeat for {}s)",
                 agent, stale_secs
             );
-            let _ = self.events.send(FleetEvent::AgentStateChange {
-                agent: agent.clone(),
-                from: "IDLE".into(),
-                to: "OFFLINE".into(),
-            });
+            if self
+                .events
+                .send(FleetEvent::AgentStateChange {
+                    agent: agent.clone(),
+                    from: "IDLE".into(),
+                    to: "OFFLINE".into(),
+                })
+                .is_err()
+            {
+                tracing::debug!("Event bus: no subscribers for AgentStateChange");
+            }
         }
         Ok(())
     }

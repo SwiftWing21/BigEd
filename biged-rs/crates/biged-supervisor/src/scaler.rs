@@ -70,13 +70,19 @@ impl AutoScaler {
             );
             self.current_workers = desired;
             self.consecutive_empty = 0;
-            let _ = self.sender.send(FleetEvent::ScaleUp {
-                count: added,
-                reason: format!(
-                    "queue_depth {} exceeds threshold (workers * {})",
-                    queue_depth, SCALE_UP_RATIO
-                ),
-            });
+            if self
+                .sender
+                .send(FleetEvent::ScaleUp {
+                    count: added,
+                    reason: format!(
+                        "queue_depth {} exceeds threshold (workers * {})",
+                        queue_depth, SCALE_UP_RATIO
+                    ),
+                })
+                .is_err()
+            {
+                tracing::debug!("Event bus: no subscribers for ScaleUp");
+            }
         } else if desired < self.current_workers {
             let removed = self.current_workers - desired;
             info!(
@@ -84,7 +90,13 @@ impl AutoScaler {
                 self.current_workers, desired, self.consecutive_empty
             );
             self.current_workers = desired;
-            let _ = self.sender.send(FleetEvent::ScaleDown { count: removed });
+            if self
+                .sender
+                .send(FleetEvent::ScaleDown { count: removed })
+                .is_err()
+            {
+                tracing::debug!("Event bus: no subscribers for ScaleDown");
+            }
         }
 
         Ok(())
