@@ -1,0 +1,221 @@
+use axum::body::Body;
+use axum::http::{Request, StatusCode};
+use biged_core::config::FleetConfig;
+use biged_core::db::Db;
+use biged_server::AppState;
+use std::sync::Arc;
+use tokio::sync::RwLock;
+use tower::ServiceExt;
+
+fn test_state() -> AppState {
+    let db = Db::in_memory().unwrap();
+    let (tx, _rx) = biged_supervisor::events::create_event_bus(100);
+    AppState {
+        db,
+        events: tx,
+        config: Arc::new(RwLock::new(FleetConfig::default())),
+        fleet_dir: std::path::PathBuf::from("."),
+    }
+}
+
+#[tokio::test]
+async fn test_status_endpoint() {
+    let state = test_state();
+    state.db.register_agent("w1", "coder").unwrap();
+    state.db.post_task("test", "{}", 5, None).unwrap();
+
+    let app = biged_server::router(state);
+    let resp = app
+        .oneshot(Request::get("/api/status").body(Body::empty()).unwrap())
+        .await
+        .unwrap();
+
+    assert_eq!(resp.status(), StatusCode::OK);
+    let body = axum::body::to_bytes(resp.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+    assert!(json.get("agents").is_some());
+    assert!(json.get("tasks").is_some());
+}
+
+#[tokio::test]
+async fn test_health_endpoint() {
+    let state = test_state();
+    let app = biged_server::router(state);
+    let resp = app
+        .oneshot(Request::get("/api/health").body(Body::empty()).unwrap())
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let body = axum::body::to_bytes(resp.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+    assert!(json.get("status").is_some());
+}
+
+#[tokio::test]
+async fn test_thermal_endpoint() {
+    let state = test_state();
+    let app = biged_server::router(state);
+    let resp = app
+        .oneshot(Request::get("/api/thermal").body(Body::empty()).unwrap())
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+}
+
+#[tokio::test]
+async fn test_tasks_endpoint() {
+    let state = test_state();
+    state.db.post_task("test", "{}", 5, None).unwrap();
+    let app = biged_server::router(state);
+    let resp = app
+        .oneshot(Request::get("/api/tasks").body(Body::empty()).unwrap())
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let body = axum::body::to_bytes(resp.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+    assert!(!json.as_array().unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn test_agents_endpoint() {
+    let state = test_state();
+    state.db.register_agent("w1", "coder").unwrap();
+    let app = biged_server::router(state);
+    let resp = app
+        .oneshot(Request::get("/api/agents").body(Body::empty()).unwrap())
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let body = axum::body::to_bytes(resp.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+    assert!(!json.as_array().unwrap().is_empty());
+}
+
+// ── Task 4: Activity handlers ──────────────────────────────────────────────
+
+#[tokio::test]
+async fn test_activity_endpoint() {
+    let state = test_state();
+    state.db.post_task("test", "{}", 5, None).unwrap();
+    let app = biged_server::router(state);
+    let resp = app
+        .oneshot(Request::get("/api/activity").body(Body::empty()).unwrap())
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+}
+
+#[tokio::test]
+async fn test_agent_cards_endpoint() {
+    let state = test_state();
+    state.db.register_agent("w1", "coder").unwrap();
+    state.db.register_agent("w2", "researcher").unwrap();
+    let app = biged_server::router(state);
+    let resp = app
+        .oneshot(
+            Request::get("/api/agent-cards")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let body = axum::body::to_bytes(resp.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+    assert!(json.get("cards").is_some());
+}
+
+// ── Task 5: Skills + knowledge handlers ───────────────────────────────────
+
+#[tokio::test]
+async fn test_skills_endpoint() {
+    let state = test_state();
+    state.db.post_task("code_review", "{}", 5, None).unwrap();
+    state.db.post_task("test_skill", "{}", 5, None).unwrap();
+    let app = biged_server::router(state);
+    let resp = app
+        .oneshot(Request::get("/api/skills").body(Body::empty()).unwrap())
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+}
+
+#[tokio::test]
+async fn test_timeline_endpoint() {
+    let state = test_state();
+    let app = biged_server::router(state);
+    let resp = app
+        .oneshot(Request::get("/api/timeline").body(Body::empty()).unwrap())
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+}
+
+// ── Task 6: Settings handlers ──────────────────────────────────────────────
+
+#[tokio::test]
+async fn test_get_theme() {
+    let state = test_state();
+    let app = biged_server::router(state);
+    let resp = app
+        .oneshot(
+            Request::get("/api/settings/theme")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let body = axum::body::to_bytes(resp.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+    assert!(json.get("theme").is_some());
+}
+
+#[tokio::test]
+async fn test_set_theme() {
+    let state = test_state();
+    let app = biged_server::router(state);
+    let resp = app
+        .oneshot(
+            Request::post("/api/settings/theme")
+                .header("content-type", "application/json")
+                .body(Body::from(r#"{"theme":"figma"}"#))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+}
+
+// ── Task 7: SSE streaming ──────────────────────────────────────────────────
+
+#[tokio::test]
+async fn test_sse_stream_connects() {
+    let state = test_state();
+    let app = biged_server::router(state);
+    let resp = app
+        .oneshot(Request::get("/api/stream").body(Body::empty()).unwrap())
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let ct = resp
+        .headers()
+        .get("content-type")
+        .unwrap()
+        .to_str()
+        .unwrap();
+    assert!(ct.contains("text/event-stream"));
+}

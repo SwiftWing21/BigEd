@@ -59,7 +59,7 @@ BigEd CC
 │   ├── hw_supervisor.py — Dr. Ders (thermal + model management)
 │   ├── dashboard.py    — Web dashboard (localhost:5555)
 │   ├── worker.py       — Generic task executor
-│   ├── skills/         — 93 registered skills
+│   ├── skills/         — 130+ registered skills
 │   └── knowledge/      — Agent-generated artifacts
 ├── autoresearch/       — ML training pipeline (inspired by Karpathy)
 ├── scripts/            — Setup scripts (Windows/Linux/macOS)

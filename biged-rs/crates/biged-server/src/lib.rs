@@ -1,0 +1,92 @@
+pub mod error;
+pub mod handlers;
+pub mod sse;
+
+use axum::Router;
+use biged_core::config::FleetConfig;
+use biged_core::db::Db;
+use biged_supervisor::events::EventSender;
+use std::sync::Arc;
+use tokio::sync::RwLock;
+
+#[derive(Clone)]
+pub struct AppState {
+    pub db: Db,
+    pub events: EventSender,
+    pub config: Arc<RwLock<FleetConfig>>,
+    pub fleet_dir: std::path::PathBuf,
+}
+
+pub fn router(state: AppState) -> Router {
+    Router::new()
+        // Fleet status
+        .route("/api/status", axum::routing::get(handlers::fleet::status))
+        .route("/api/health", axum::routing::get(handlers::fleet::health))
+        .route("/api/thermal", axum::routing::get(handlers::fleet::thermal))
+        .route(
+            "/api/dashboard/batch",
+            axum::routing::get(handlers::fleet::dashboard_batch),
+        )
+        .route("/api/alerts", axum::routing::get(handlers::fleet::alerts))
+        .route(
+            "/api/tasks",
+            axum::routing::get(handlers::fleet::tasks).post(handlers::fleet::post_task),
+        )
+        .route("/api/agents", axum::routing::get(handlers::fleet::agents))
+        // Activity
+        .route(
+            "/api/activity",
+            axum::routing::get(handlers::activity::activity),
+        )
+        .route(
+            "/api/agent-cards",
+            axum::routing::get(handlers::activity::agent_cards),
+        )
+        .route(
+            "/api/agents/performance",
+            axum::routing::get(handlers::activity::agents_performance),
+        )
+        // Skills + knowledge
+        .route("/api/skills", axum::routing::get(handlers::skills::skills))
+        .route(
+            "/api/knowledge",
+            axum::routing::get(handlers::skills::knowledge),
+        )
+        .route(
+            "/api/timeline",
+            axum::routing::get(handlers::skills::timeline),
+        )
+        .route(
+            "/api/discussions",
+            axum::routing::get(handlers::skills::discussions),
+        )
+        // SSE stream
+        .route("/api/stream", axum::routing::get(sse::stream))
+        // Settings
+        .route(
+            "/api/settings/theme",
+            axum::routing::get(handlers::settings::get_theme).post(handlers::settings::set_theme),
+        )
+        .route(
+            "/api/fleet/worker/{name}/disable",
+            axum::routing::post(handlers::settings::disable_worker),
+        )
+        .route(
+            "/api/fleet/worker/{name}/enable",
+            axum::routing::post(handlers::settings::enable_worker),
+        )
+        .with_state(state)
+}
+
+/// Start the HTTP server on the configured port.
+pub async fn run(state: AppState) -> anyhow::Result<()> {
+    let port = {
+        let cfg = state.config.read().await;
+        cfg.dashboard.port
+    };
+    let app = router(state);
+    let listener = tokio::net::TcpListener::bind(format!("0.0.0.0:{}", port)).await?;
+    tracing::info!("Server listening on port {}", port);
+    axum::serve(listener, app).await?;
+    Ok(())
+}

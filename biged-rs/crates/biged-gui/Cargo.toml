@@ -1,0 +1,15 @@
+[package]
+name = "biged-gui"
+version = "0.1.0"
+edition.workspace = true
+
+[dependencies]
+biged-core = { path = "../biged-core" }
+eframe = { workspace = true }
+egui = { workspace = true }
+reqwest = { workspace = true }
+tokio = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tracing = { workspace = true }
+anyhow = { workspace = true }

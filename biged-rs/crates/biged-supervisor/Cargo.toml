@@ -1,0 +1,20 @@
+[package]
+name = "biged-supervisor"
+version = "0.1.0"
+edition.workspace = true
+
+[features]
+default = ["nvidia"]
+nvidia = ["nvml-wrapper"]
+
+[dependencies]
+biged-core = { path = "../biged-core" }
+rusqlite.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+anyhow.workspace = true
+nvml-wrapper = { workspace = true, optional = true }
+reqwest.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+chrono.workspace = true
