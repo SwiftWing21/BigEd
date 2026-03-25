@@ -128,6 +128,27 @@ def _ensure_tables():
     db._retry_write(_do)
 
 
+# ── Manifest helpers ──────────────────────────────────────────────────────────
+
+
+def build_manifest_from_skill(skill_name: str) -> dict:
+    """Auto-generate a marketplace manifest from a skill module's contract metadata."""
+    import importlib
+    from skills._contract import get_metadata
+    mod = importlib.import_module(f"skills.{skill_name}")
+    meta = get_metadata(mod)
+    return {
+        "name": meta["skill_name"],
+        "description": meta["description"],
+        "version": meta.get("version", "0.0.0"),
+        "category": meta.get("suite", "general"),
+        "tags": meta.get("tags", []),
+        "requires_network": meta.get("requires_network", False),
+        "complexity": meta.get("complexity", "medium"),
+        "skill_names": [meta["skill_name"]],
+    }
+
+
 # ── Catalog management ────────────────────────────────────────────────────────
 
 
