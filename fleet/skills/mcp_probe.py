@@ -13,11 +13,11 @@ from pathlib import Path
 
 SKILL_NAME = "mcp_probe"
 DESCRIPTION = (
-VERSION = "1.0.0"
-COMPLEXITY = "medium"
     "Probe and validate MCP server configurations from .mcp.json — "
     "checks required fields and command availability without starting servers."
 )
+VERSION = "1.0.0"
+COMPLEXITY = "medium"
 REQUIRES_NETWORK = False
 
 log = logging.getLogger(__name__)

@@ -25,11 +25,11 @@ Returns: {files_scanned, total_issues, errors, warnings, infos, saved_to}
 
 SKILL_NAME = "html_accessibility"
 DESCRIPTION = (
-VERSION = "1.0.0"
-COMPLEXITY = "medium"
     "Check HTML templates for accessibility issues "
     "— missing alt text, ARIA labels, color contrast, keyboard navigation."
 )
+VERSION = "1.0.0"
+COMPLEXITY = "medium"
 REQUIRES_NETWORK = False
 
 
