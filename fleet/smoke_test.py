@@ -727,6 +727,32 @@ def test_thermal_readings():
         return False, f"no GPU thermal data: {e}"
 
 
+def test_skill_health_checks():
+    """All skills with health_check() report healthy."""
+    from config import load_config
+    skills_dir = FLEET_DIR / "skills"
+    checked = 0
+    failures = []
+    cfg = load_config()
+    for f in sorted(skills_dir.glob("*.py")):
+        if f.name.startswith("_"):
+            continue
+        try:
+            mod = importlib.import_module(f"skills.{f.stem}")
+            if hasattr(mod, "health_check"):
+                checked += 1
+                result = mod.health_check(cfg)
+                if not result.get("healthy"):
+                    failures.append(f"{f.stem}: {result.get('detail', 'unhealthy')}")
+        except Exception:
+            pass  # import failures caught elsewhere
+    if not checked:
+        return True, "no skills define health_check() yet"
+    if failures:
+        return False, f"{len(failures)}/{checked} unhealthy: {'; '.join(failures[:3])}"
+    return True, f"{checked} health checks passed"
+
+
 def cleanup():
     """Remove smoke test artifacts from DB."""
     import db
@@ -810,6 +836,7 @@ def main():
         ("Experiment framework", test_experiment_framework),
         ("Token bridge", test_token_bridge),
         ("Docs API", test_docs_api),
+        ("Skill health checks", test_skill_health_checks),
     ])
 
     if not args.fast:
