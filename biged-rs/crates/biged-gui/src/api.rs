@@ -68,6 +68,9 @@ pub struct ApiClient {
     pub lanes: Arc<Mutex<Vec<ActivityLane>>>,
     pub thermal: Arc<Mutex<ThermalInfo>>,
     pub connected: Arc<Mutex<bool>>,
+    /// Handle to the tokio runtime for spawning fire-and-forget requests
+    /// from non-async contexts (e.g. the GUI thread).
+    rt_handle: Option<tokio::runtime::Handle>,
 }
 
 impl ApiClient {
@@ -83,13 +86,39 @@ impl ApiClient {
             lanes: Arc::new(Mutex::new(Vec::new())),
             thermal: Arc::new(Mutex::new(ThermalInfo::default())),
             connected: Arc::new(Mutex::new(false)),
+            rt_handle: None,
         }
+    }
+
+    /// Attach a tokio runtime handle so fire-and-forget methods can spawn tasks.
+    pub fn set_runtime(&mut self, handle: tokio::runtime::Handle) {
+        self.rt_handle = Some(handle);
+    }
+
+    /// Fire-and-forget message post via POST /api/tasks.
+    /// Errors are logged, not propagated.
+    pub fn post_message_bg(&self, message: String) {
+        let Some(handle) = &self.rt_handle else {
+            tracing::warn!("Cannot post message: no tokio runtime handle");
+            return;
+        };
+        let http = self.http.clone();
+        let url = format!("{}/api/tasks", self.base_url);
+        handle.spawn(async move {
+            let body = serde_json::json!({
+                "skill": "fleet_comm",
+                "payload": serde_json::json!({ "message": message }).to_string(),
+            });
+            if let Err(e) = http.post(&url).json(&body).send().await {
+                tracing::warn!("Failed to post message: {e}");
+            }
+        });
     }
 
     /// Fetch all endpoints and update cached state.
     pub async fn refresh(&self) {
         let connected = self.fetch_status().await.is_ok();
-        *self.connected.lock().unwrap() = connected;
+        *self.connected.lock().unwrap_or_else(|e| e.into_inner()) = connected;
         if connected {
             if let Err(e) = self.fetch_agents().await {
                 tracing::warn!("fetch_agents failed: {e}");
@@ -106,28 +135,28 @@ impl ApiClient {
     async fn fetch_status(&self) -> Result<()> {
         let url = format!("{}/api/status", self.base_url);
         let resp: FleetStatus = self.http.get(&url).send().await?.json().await?;
-        *self.status.lock().unwrap() = resp;
+        *self.status.lock().unwrap_or_else(|e| e.into_inner()) = resp;
         Ok(())
     }
 
     async fn fetch_agents(&self) -> Result<()> {
         let url = format!("{}/api/agents", self.base_url);
         let resp: Vec<AgentInfo> = self.http.get(&url).send().await?.json().await?;
-        *self.agents.lock().unwrap() = resp;
+        *self.agents.lock().unwrap_or_else(|e| e.into_inner()) = resp;
         Ok(())
     }
 
     async fn fetch_lanes(&self) -> Result<()> {
         let url = format!("{}/api/activity", self.base_url);
         let resp: Vec<ActivityLane> = self.http.get(&url).send().await?.json().await?;
-        *self.lanes.lock().unwrap() = resp;
+        *self.lanes.lock().unwrap_or_else(|e| e.into_inner()) = resp;
         Ok(())
     }
 
     async fn fetch_thermal(&self) -> Result<()> {
         let url = format!("{}/api/thermal", self.base_url);
         let resp: ThermalInfo = self.http.get(&url).send().await?.json().await?;
-        *self.thermal.lock().unwrap() = resp;
+        *self.thermal.lock().unwrap_or_else(|e| e.into_inner()) = resp;
         Ok(())
     }
 }

@@ -39,22 +39,22 @@ impl AppState {
     }
 
     pub fn status(&self) -> FleetStatus {
-        self.api.status.lock().unwrap().clone()
+        self.api.status.lock().unwrap_or_else(|e| e.into_inner()).clone()
     }
 
     pub fn agents(&self) -> Vec<AgentInfo> {
-        self.api.agents.lock().unwrap().clone()
+        self.api.agents.lock().unwrap_or_else(|e| e.into_inner()).clone()
     }
 
     pub fn lanes(&self) -> Vec<ActivityLane> {
-        self.api.lanes.lock().unwrap().clone()
+        self.api.lanes.lock().unwrap_or_else(|e| e.into_inner()).clone()
     }
 
     pub fn thermal(&self) -> ThermalInfo {
-        self.api.thermal.lock().unwrap().clone()
+        self.api.thermal.lock().unwrap_or_else(|e| e.into_inner()).clone()
     }
 
     pub fn connected(&self) -> bool {
-        *self.api.connected.lock().unwrap()
+        *self.api.connected.lock().unwrap_or_else(|e| e.into_inner())
     }
 }
