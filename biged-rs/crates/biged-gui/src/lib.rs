@@ -4,6 +4,7 @@ pub mod sidebar;
 pub mod state;
 pub mod tabs;
 pub mod theme;
+pub mod widgets;
 
 use api::ApiClient;
 use state::AppState;
