@@ -1,5 +1,8 @@
 pub mod api;
+pub mod header;
+pub mod sidebar;
 pub mod state;
+pub mod tabs;
 pub mod theme;
 
 use api::ApiClient;
@@ -61,18 +64,26 @@ impl BigEdApp {
 
 impl eframe::App for BigEdApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
-        let status = self.state.status();
-        let connected = self.state.connected();
+        // ── Header bar
+        egui::TopBottomPanel::top("header")
+            .exact_height(theme::HEADER_HEIGHT)
+            .show(ctx, |ui| {
+                header::show(ui, &self.state);
+            });
 
+        // ── Sidebar (only when open)
+        if self.state.sidebar_open {
+            egui::SidePanel::left("sidebar")
+                .exact_width(theme::SIDEBAR_WIDTH)
+                .resizable(false)
+                .show(ctx, |ui| {
+                    sidebar::show(ui, &mut self.state);
+                });
+        }
+
+        // ── Main tab content area
         egui::CentralPanel::default().show(ctx, |ui| {
-            ui.heading("BigEd CC");
-            ui.label(format!(
-                "Connected: {} | Agents: {} | Pending: {} | Done: {}",
-                connected,
-                status.agent_count.unwrap_or(0),
-                status.task_pending.unwrap_or(0),
-                status.task_done.unwrap_or(0),
-            ));
+            tabs::show_active_tab(ui, &mut self.state);
         });
     }
 }
