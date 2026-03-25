@@ -11,6 +11,9 @@ AIR_GAP_SKILLS = {
     "summarize", "discuss", "flashcard", "analyze_results",
     "rag_index", "rag_query", "benchmark", "ingest",
     "security_review", "security_audit",
+    # Suites (non-network subactions are safe in air-gap)
+    "code_suite", "security_suite", "ml_train_suite",
+    "model_suite", "skill_lifecycle_suite",
 }
 
 

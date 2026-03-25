@@ -42,7 +42,7 @@ def _coerce_result(result):
 HW_STATE_FILE = FLEET_DIR / "hw_state.json"
 
 IDLE_THRESHOLD = 3  # polls with no task before entering idle mode (~3s at 1s poll)
-IDLE_SKILLS = ["skill_evolve", "skill_test", "code_quality", "benchmark"]
+IDLE_SKILLS = ["skill_lifecycle_suite", "code_suite", "benchmark"]
 MAX_CALLS_PER_SESSION = 500  # per-agent capability budget (OWASP LLM08)
 
 
@@ -107,6 +107,39 @@ SKILL_TIMEOUTS = {
     "security_audit": 600,
 }
 DEFAULT_SKILL_TIMEOUT = 600
+
+# Maps legacy single-skill task types to their suite module + default action.
+# The routing shim in run_skill() translates these at dispatch time so that
+# callers using the old task type names continue to work after consolidation.
+SUITE_ROUTING = {
+    "code_review":      ("code_suite",              "review"),
+    "code_quality":     ("code_suite",              "quality"),
+    "code_refactor":    ("code_suite",              "refactor"),
+    "code_discuss":     ("code_suite",              "discuss"),
+    "evaluate":         ("code_suite",              "evaluate"),
+    "pair_program":     ("code_suite",              "pair"),
+    "embedding_train":  ("ml_train_suite",          "embedding"),
+    "reranker_train":   ("ml_train_suite",          "reranker"),
+    "router_retrain":   ("ml_train_suite",          "router"),
+    "scaler_train":     ("ml_train_suite",          "scaler"),
+    "security_audit":   ("security_suite",          "audit"),
+    "security_review":  ("security_suite",          "code_scan"),
+    "security_apply":   ("security_suite",          "apply"),
+    "pen_test":         ("security_suite",          "pentest"),
+    "cve_watch":        ("security_suite",          "cve"),
+    "sql_review":       ("security_suite",          "sql"),
+    "git_manager":      ("git_suite",               "status"),
+    "github_sync":      ("git_suite",               "sync"),
+    "github_interact":  ("git_suite",               "list_issues"),
+    "model_manager":    ("model_suite",             "check"),
+    "hardware_profiler":("model_suite",             "detect"),
+    "auto_profile":     ("model_suite",             "auto_generate"),
+    "skill_draft":      ("skill_lifecycle_suite",   "draft"),
+    "skill_test":       ("skill_lifecycle_suite",   "test"),
+    "skill_evolve":     ("skill_lifecycle_suite",   "evolve"),
+    "skill_promote":    ("skill_lifecycle_suite",   "promote"),
+    "deploy_skill":     ("skill_lifecycle_suite",   "deploy"),
+}
 
 # Validate skill name against actual skill files
 _valid_skills = None
@@ -205,6 +238,13 @@ print(json.dumps({{"status": "sandboxed", "skill": "{skill_name}", "payload_rece
 
 
 def run_skill(skill_name, payload, config, log):
+    # Suite routing shim — backward compatibility for old task types
+    if config.get("fleet", {}).get("suite_routing_enabled", True):
+        if skill_name in SUITE_ROUTING:
+            suite_module, default_action = SUITE_ROUTING[skill_name]
+            payload.setdefault("action", default_action)
+            skill_name = suite_module
+
     # Air-gap mode: deny-by-default whitelist
     if is_air_gap(config) and skill_name not in AIR_GAP_SKILLS:
         log.warning(f"Skill '{skill_name}' blocked by air-gap mode")

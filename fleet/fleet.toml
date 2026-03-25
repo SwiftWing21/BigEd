@@ -12,6 +12,7 @@ air_gap_mode = false         # true = max isolation (implies offline_mode); no s
 api_keys_required = false    # false = fleet works local-only (no Claude/Gemini keys needed); true = require at least one provider
 disabled_agents = ["sales", "onboarding", "implementation", "legal", "account_manager", "ds_rag", "ds_fleet", "ds_research"]  # agents excluded from fleet boot
 hitl_evolution = false           # true = evolution proposals go to WAITING_HUMAN for operator approval
+suite_routing_enabled = true   # set false to bypass suite routing (rollback)
 
 # Agent naming — themes and multi-device identity
 [naming]
