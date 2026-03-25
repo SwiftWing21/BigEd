@@ -19,6 +19,8 @@ from pathlib import Path
 
 SKILL_NAME = "skill_test"
 DESCRIPTION = "Skill test — runs a drafted skill in a sandbox with a test payload,"
+VERSION = "1.0.0"
+COMPLEXITY = "medium"
 REQUIRES_NETWORK = False
 
 FLEET_DIR = Path(__file__).parent.parent

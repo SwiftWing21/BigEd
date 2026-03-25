@@ -18,6 +18,8 @@ from pathlib import Path
 
 SKILL_NAME = "benchmark"
 DESCRIPTION = "Benchmark skill — runs a skill N times with varied payloads, measures latency,"
+VERSION = "1.0.0"
+COMPLEXITY = "simple"
 REQUIRES_NETWORK = False
 
 FLEET_DIR = Path(__file__).parent.parent

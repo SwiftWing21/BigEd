@@ -29,6 +29,8 @@ KNOWLEDGE_DIR = FLEET_DIR / "knowledge"
 MARKETING_DIR = KNOWLEDGE_DIR / "marketing"
 SKILL_NAME = "marketing"
 DESCRIPTION = "Marketing campaign skill — orchestrates copy + image + optional video."
+VERSION = "1.0.0"
+COMPLEXITY = "medium"
 
 REQUIRES_NETWORK = True
 

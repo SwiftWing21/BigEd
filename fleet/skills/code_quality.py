@@ -35,6 +35,8 @@ from pathlib import Path
 
 SKILL_NAME = "code_quality"
 DESCRIPTION = "Code quality skill — static analysis for Python best practices and style."
+VERSION = "1.0.0"
+COMPLEXITY = "medium"
 REQUIRES_NETWORK = False
 
 FLEET_DIR = Path(__file__).parent.parent

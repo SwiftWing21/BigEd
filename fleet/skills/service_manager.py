@@ -7,6 +7,8 @@ from pathlib import Path
 
 SKILL_NAME = "service_manager"
 DESCRIPTION = "Verify and manage system services (auto-boot, Ollama, fleet processes)"
+VERSION = "1.0.0"
+COMPLEXITY = "medium"
 REQUIRES_NETWORK = False
 
 FLEET_DIR = Path(__file__).parent.parent

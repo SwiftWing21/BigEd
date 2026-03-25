@@ -15,6 +15,8 @@ from pathlib import Path
 
 SKILL_NAME = "intelligence_eval_tier2"
 DESCRIPTION = "LLM-based semantic evaluation of task output quality (Tier 2 scoring)."
+VERSION = "1.0.0"
+COMPLEXITY = "medium"
 REQUIRES_NETWORK = False  # Uses local Ollama model
 
 log = logging.getLogger(__name__)

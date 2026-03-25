@@ -1,6 +1,8 @@
 """Summarize text from a URL, file path, or raw description."""
 SKILL_NAME = "summarize"
 DESCRIPTION = "Summarize text from a URL, file path, or raw description."
+VERSION = "1.0.0"
+COMPLEXITY = "simple"
 REQUIRES_NETWORK = True  # fetches URLs via httpx
 
 import re

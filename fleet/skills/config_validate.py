@@ -19,6 +19,8 @@ from pathlib import Path
 
 SKILL_NAME = "config_validate"
 DESCRIPTION = "Validate fleet.toml against expected schema — missing keys, type mismatches, invalid values."
+VERSION = "1.0.0"
+COMPLEXITY = "medium"
 REQUIRES_NETWORK = False
 
 log = logging.getLogger(__name__)

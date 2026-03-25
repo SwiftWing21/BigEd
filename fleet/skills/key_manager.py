@@ -21,6 +21,8 @@ REGISTRY_FILE = FLEET_DIR / "keys_registry.toml"
 SECRETS_FILE  = Path.home() / ".secrets"
 SKILL_NAME = "key_manager"
 DESCRIPTION = "Key manager skill — scans skill files for API key usage, cross-references"
+VERSION = "1.0.0"
+COMPLEXITY = "medium"
 
 REQUIRES_NETWORK = True
 

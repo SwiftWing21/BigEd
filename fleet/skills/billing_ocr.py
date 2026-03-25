@@ -17,6 +17,8 @@ from pathlib import Path
 FLEET_DIR = Path(__file__).parent.parent
 SKILL_NAME = "billing_ocr"
 DESCRIPTION = "OCR billing screenshots from Claude/Gemini dashboards to reconcile local cost tracking."
+VERSION = "1.0.0"
+COMPLEXITY = "simple"
 REQUIRES_NETWORK = False  # Uses local Ollama vision model
 
 log = logging.getLogger(SKILL_NAME)

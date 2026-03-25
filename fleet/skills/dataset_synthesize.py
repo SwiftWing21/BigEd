@@ -7,6 +7,8 @@ from skills._models import call_complex, get_last_provider
 
 SKILL_NAME = "dataset_synthesize"
 DESCRIPTION = "Generate synthetic JSONL training datasets for the autoresearch ML pipeline"
+VERSION = "1.0.0"
+COMPLEXITY = "medium"
 REQUIRES_NETWORK = False  # can use local Ollama
 
 FLEET_DIR = Path(__file__).parent.parent

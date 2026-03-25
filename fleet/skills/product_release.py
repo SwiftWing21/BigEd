@@ -23,6 +23,8 @@ KNOWLEDGE_DIR = FLEET_DIR / "knowledge"
 RELEASES_DIR = KNOWLEDGE_DIR / "releases"
 SKILL_NAME = "product_release"
 DESCRIPTION = "Product release — tags a product branch, generates a changelog from commits"
+VERSION = "1.0.0"
+COMPLEXITY = "medium"
 
 REQUIRES_NETWORK = True
 

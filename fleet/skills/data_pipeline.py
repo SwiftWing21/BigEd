@@ -19,6 +19,8 @@ from pathlib import Path
 
 SKILL_NAME = "data_pipeline"
 DESCRIPTION = "Orchestrate data pipeline stages — run skills sequentially, track pass/fail, log results."
+VERSION = "1.0.0"
+COMPLEXITY = "medium"
 REQUIRES_NETWORK = False
 
 FLEET_DIR = Path(__file__).parent.parent

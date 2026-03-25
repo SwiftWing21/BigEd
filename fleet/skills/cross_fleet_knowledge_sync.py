@@ -14,6 +14,8 @@ from pathlib import Path
 
 SKILL_NAME = "cross_fleet_knowledge_sync"
 DESCRIPTION = "Synchronize knowledge artifacts across fleet instances by building manifests and detecting drift."
+VERSION = "1.0.0"
+COMPLEXITY = "medium"
 REQUIRES_NETWORK = False
 
 FLEET_DIR = Path(__file__).parent.parent

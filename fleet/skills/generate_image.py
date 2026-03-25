@@ -22,6 +22,8 @@ IMAGES_DIR    = KNOWLEDGE_DIR / "marketing" / "images"
 API_BASE      = "https://api.stability.ai/v2beta/stable-image/generate"
 SKILL_NAME = "generate_image"
 DESCRIPTION = "AI image generation — Stability AI v2beta REST API."
+VERSION = "1.0.0"
+COMPLEXITY = "medium"
 
 REQUIRES_NETWORK = True
 

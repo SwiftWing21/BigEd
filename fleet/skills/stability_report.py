@@ -9,6 +9,8 @@ from collections import Counter
 
 SKILL_NAME = "stability_report"
 DESCRIPTION = "Analyze resolution data for failure patterns, severity breakdown, and MTTR"
+VERSION = "1.0.0"
+COMPLEXITY = "simple"
 REQUIRES_NETWORK = False
 
 FLEET_DIR = Path(__file__).parent.parent

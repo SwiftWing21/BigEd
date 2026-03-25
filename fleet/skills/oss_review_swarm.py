@@ -9,6 +9,8 @@ log = logging.getLogger(__name__)
 
 SKILL_NAME = "oss_review_swarm"
 DESCRIPTION = "Multi-agent swarm audit of open-source projects with regression tracking"
+VERSION = "1.0.0"
+COMPLEXITY = "medium"
 COMPLEXITY = "complex"
 REQUIRES_NETWORK = True
 

@@ -17,6 +17,8 @@ from pathlib import Path
 
 SKILL_NAME = "plan_workload"
 DESCRIPTION = "Workload planner — surveys fleet state and queues a batch of tasks."
+VERSION = "1.0.0"
+COMPLEXITY = "complex"
 REQUIRES_NETWORK = False
 
 FLEET_DIR = Path(__file__).parent.parent

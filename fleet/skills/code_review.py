@@ -20,6 +20,8 @@ from pathlib import Path
 
 SKILL_NAME = "code_review"
 DESCRIPTION = "Code review skill — reads an actual fleet Python file and produces a structured "
+VERSION = "1.0.0"
+COMPLEXITY = "medium"
 REQUIRES_NETWORK = False
 
 FLEET_DIR      = Path(__file__).parent.parent

@@ -23,6 +23,8 @@ from pathlib import Path
 
 SKILL_NAME = "skill_draft"
 DESCRIPTION = "Skill draft generator — writes a new fleet skill file based on a description."
+VERSION = "1.0.0"
+COMPLEXITY = "simple"
 REQUIRES_NETWORK = False
 
 FLEET_DIR   = Path(__file__).parent.parent

@@ -37,6 +37,8 @@ log = logging.getLogger(__name__)
 FLEET_DIR = Path(__file__).parent.parent
 SKILL_NAME = "regression_detector"
 DESCRIPTION = "Track quality grades, detect regressions and hallucinations in fleet outputs."
+VERSION = "1.0.0"
+COMPLEXITY = "medium"
 COMPLEXITY = "medium"
 REQUIRES_NETWORK = False
 

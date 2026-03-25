@@ -5,6 +5,8 @@ from skills._models import call_complex
 
 SKILL_NAME = "rag_compress"
 DESCRIPTION = "Deduplicate and consolidate overlapping RAG knowledge chunks"
+VERSION = "1.0.0"
+COMPLEXITY = "simple"
 REQUIRES_NETWORK = False
 
 FLEET_DIR = Path(__file__).parent.parent

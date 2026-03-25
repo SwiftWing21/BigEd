@@ -4,6 +4,8 @@ from pathlib import Path
 
 SKILL_NAME = "model_recommend"
 DESCRIPTION = "Analyze model performance and recommend upgrades via HITL approval"
+VERSION = "1.0.0"
+COMPLEXITY = "medium"
 REQUIRES_NETWORK = False
 FLEET_DIR = Path(__file__).parent.parent
 

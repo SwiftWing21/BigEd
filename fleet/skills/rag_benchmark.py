@@ -15,6 +15,8 @@ from pathlib import Path
 
 SKILL_NAME = "rag_benchmark"
 DESCRIPTION = "Benchmark all RAG retrieval strategies (BM25, vector, hybrid) with MRR and recall@10"
+VERSION = "1.0.0"
+COMPLEXITY = "medium"
 REQUIRES_NETWORK = False
 
 FLEET_DIR = Path(__file__).parent.parent

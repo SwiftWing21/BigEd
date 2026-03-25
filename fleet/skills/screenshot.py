@@ -23,6 +23,8 @@ from pathlib import Path
 FLEET_DIR = Path(__file__).parent.parent
 SKILL_NAME = "screenshot"
 DESCRIPTION = "Capture screenshots for UX testing, documentation, and GitHub reference images."
+VERSION = "1.0.0"
+COMPLEXITY = "simple"
 REQUIRES_NETWORK = False
 
 log = logging.getLogger(SKILL_NAME)

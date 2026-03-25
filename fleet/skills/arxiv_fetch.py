@@ -9,6 +9,8 @@ import httpx
 NS = {"atom": "http://www.w3.org/2005/Atom"}
 SKILL_NAME = "arxiv_fetch"
 DESCRIPTION = "Fetch and summarize arxiv papers by ID or keyword query."
+VERSION = "1.0.0"
+COMPLEXITY = "medium"
 
 REQUIRES_NETWORK = True
 

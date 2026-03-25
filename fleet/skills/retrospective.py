@@ -1,5 +1,7 @@
 SKILL_NAME = "retrospective"
 DESCRIPTION = "Generate structured retrospective: achievements, failures, action items, metrics."
+VERSION = "1.0.0"
+COMPLEXITY = "medium"
 REQUIRES_NETWORK = False
 
 

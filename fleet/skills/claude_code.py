@@ -11,6 +11,8 @@ from pathlib import Path
 
 SKILL_NAME = "claude_code"
 DESCRIPTION = "Deep code analysis via Claude Code CLI — review, refactor, document, test generation"
+VERSION = "1.0.0"
+COMPLEXITY = "complex"
 REQUIRES_NETWORK = True
 
 FLEET_DIR = Path(__file__).parent.parent

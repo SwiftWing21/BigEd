@@ -7,6 +7,8 @@ from pathlib import Path
 
 SKILL_NAME = "autoresearch_trial"
 DESCRIPTION = "Propose and run an autoresearch training trial via the ExperimentFramework"
+VERSION = "1.0.0"
+COMPLEXITY = "medium"
 REQUIRES_NETWORK = False
 
 log = logging.getLogger(__name__)

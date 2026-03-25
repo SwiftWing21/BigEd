@@ -15,6 +15,8 @@ from pathlib import Path
 
 SKILL_NAME = "router_retrain"
 DESCRIPTION = "Retrain the ML task-routing model via ExperimentFramework"
+VERSION = "1.0.0"
+COMPLEXITY = "medium"
 REQUIRES_NETWORK = False
 
 FLEET_DIR = Path(__file__).parent.parent

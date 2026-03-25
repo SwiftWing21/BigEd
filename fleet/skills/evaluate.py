@@ -22,6 +22,8 @@ from skills._models import call_complex
 
 SKILL_NAME = "evaluate"
 DESCRIPTION = "Adversarial quality evaluation of any skill output — wraps output with critique and verdict"
+VERSION = "1.0.0"
+COMPLEXITY = "medium"
 REQUIRES_NETWORK = False
 
 FLEET_DIR = Path(__file__).parent.parent

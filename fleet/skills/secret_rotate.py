@@ -7,6 +7,8 @@ from pathlib import Path
 
 SKILL_NAME = "secret_rotate"
 DESCRIPTION = "Rotate API keys — automated for Slack/AWS, semi-automated for others"
+VERSION = "1.0.0"
+COMPLEXITY = "medium"
 REQUIRES_NETWORK = True
 
 FLEET_DIR = Path(__file__).parent.parent

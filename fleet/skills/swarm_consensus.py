@@ -6,6 +6,8 @@ from pathlib import Path
 
 SKILL_NAME = "swarm_consensus"
 DESCRIPTION = "Force multiple agents to debate and reach consensus before executing complex tasks"
+VERSION = "1.0.0"
+COMPLEXITY = "complex"
 REQUIRES_NETWORK = False
 
 FLEET_DIR = Path(__file__).parent.parent

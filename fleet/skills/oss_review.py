@@ -9,6 +9,8 @@ log = logging.getLogger(__name__)
 
 SKILL_NAME = "oss_review"
 DESCRIPTION = "Discover, pre-rate, and review open-source projects (single agent)"
+VERSION = "1.0.0"
+COMPLEXITY = "medium"
 COMPLEXITY = "medium"
 REQUIRES_NETWORK = True
 

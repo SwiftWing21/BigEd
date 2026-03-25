@@ -25,6 +25,8 @@ from pathlib import Path
 FLEET_DIR = Path(__file__).parent.parent
 SKILL_NAME = "speech_to_text"
 DESCRIPTION = "Local-first speech-to-text for voice input. Privacy-first: audio never stored."
+VERSION = "1.0.0"
+COMPLEXITY = "medium"
 REQUIRES_NETWORK = False
 
 log = logging.getLogger(SKILL_NAME)

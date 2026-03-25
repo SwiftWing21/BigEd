@@ -5,6 +5,8 @@ from pathlib import Path
 
 SKILL_NAME = "autoresearch_analyze"
 DESCRIPTION = "Parse autoresearch results.tsv, rank by val_bpb, detect plateau, suggest hyperparams"
+VERSION = "1.0.0"
+COMPLEXITY = "medium"
 REQUIRES_NETWORK = False
 
 log = logging.getLogger(__name__)

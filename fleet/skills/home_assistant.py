@@ -27,6 +27,8 @@ KNOWLEDGE_DIR = FLEET_DIR / "knowledge"
 HA_DIR = KNOWLEDGE_DIR / "home_assistant"
 SKILL_NAME = "home_assistant"
 DESCRIPTION = "Home Assistant management — query HA REST API for entities, automations, backups"
+VERSION = "1.0.0"
+COMPLEXITY = "medium"
 
 REQUIRES_NETWORK = True
 

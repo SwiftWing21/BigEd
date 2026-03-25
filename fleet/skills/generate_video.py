@@ -23,6 +23,8 @@ VIDEOS_DIR    = KNOWLEDGE_DIR / "marketing" / "videos"
 REPLICATE_API = "https://api.replicate.com/v1"
 SKILL_NAME = "generate_video"
 DESCRIPTION = "Short video generation — Replicate REST API (no replicate package needed, just h"
+VERSION = "1.0.0"
+COMPLEXITY = "medium"
 
 REQUIRES_NETWORK = True
 

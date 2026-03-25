@@ -9,6 +9,8 @@ from pathlib import Path
 
 SKILL_NAME = "api_health_probe"
 DESCRIPTION = "Probe configured API endpoints for health, record status and latency."
+VERSION = "1.0.0"
+COMPLEXITY = "medium"
 REQUIRES_NETWORK = True
 
 FLEET_DIR = Path(__file__).parent.parent

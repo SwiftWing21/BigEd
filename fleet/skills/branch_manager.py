@@ -34,6 +34,8 @@ WORKSPACE = KNOWLEDGE_DIR / "code_writes" / "workspace"
 AGENTS_REPO = f"git@github.com:{GITHUB_OWNER}/{GITHUB_REPO}.git"
 SKILL_NAME = "branch_manager"
 DESCRIPTION = "Branch manager — creates and manages product branches on BigEds_Agents repo."
+VERSION = "1.0.0"
+COMPLEXITY = "medium"
 
 REQUIRES_NETWORK = True
 

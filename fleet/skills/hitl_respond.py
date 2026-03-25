@@ -5,6 +5,8 @@ Reads pending hitl-response-{id}.md files, shows context, helps draft response.
 """
 SKILL_NAME = "hitl_respond"
 DESCRIPTION = "Help operator draft HITL responses for fleet agents via VS Code"
+VERSION = "1.0.0"
+COMPLEXITY = "medium"
 REQUIRES_NETWORK = False
 
 

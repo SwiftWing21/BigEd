@@ -28,6 +28,8 @@ KNOWLEDGE_DIR = FLEET_DIR / "knowledge"
 MQTT_DIR = KNOWLEDGE_DIR / "mqtt"
 SKILL_NAME = "mqtt_inspect"
 DESCRIPTION = "MQTT topic inspector — connect to broker, subscribe, capture messages."
+VERSION = "1.0.0"
+COMPLEXITY = "medium"
 
 REQUIRES_NETWORK = True
 

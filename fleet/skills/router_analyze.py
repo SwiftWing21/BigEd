@@ -15,6 +15,8 @@ import logging
 
 SKILL_NAME = "router_analyze"
 DESCRIPTION = "Analyze ML router performance — success rates by skill and agent"
+VERSION = "1.0.0"
+COMPLEXITY = "medium"
 REQUIRES_NETWORK = False
 
 log = logging.getLogger(__name__)

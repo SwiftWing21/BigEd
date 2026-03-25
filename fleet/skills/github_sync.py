@@ -12,6 +12,8 @@ from pathlib import Path
 
 SKILL_NAME = "github_sync"
 DESCRIPTION = "GitHub OAuth device flow authentication and repository sync"
+VERSION = "1.0.0"
+COMPLEXITY = "medium"
 REQUIRES_NETWORK = True
 
 FLEET_DIR = Path(__file__).parent.parent

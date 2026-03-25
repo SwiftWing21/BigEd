@@ -2,6 +2,8 @@
 
 SKILL_NAME = "changelog_generate"
 DESCRIPTION = "Generate categorized changelog from git commit history."
+VERSION = "1.0.0"
+COMPLEXITY = "medium"
 REQUIRES_NETWORK = False
 
 

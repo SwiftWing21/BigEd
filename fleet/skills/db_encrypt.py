@@ -6,6 +6,8 @@ from pathlib import Path
 
 SKILL_NAME = "db_encrypt"
 DESCRIPTION = "Encrypt fleet.db using SQLCipher (AES-256) for data-at-rest protection"
+VERSION = "1.0.0"
+COMPLEXITY = "medium"
 REQUIRES_NETWORK = False
 
 FLEET_DIR = Path(__file__).parent.parent

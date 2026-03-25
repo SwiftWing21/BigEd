@@ -7,6 +7,8 @@ and saves a report to knowledge/prompt_optimization/.
 
 SKILL_NAME = "prompt_optimize"
 DESCRIPTION = "Analyze task prompt patterns and recommend improvements for higher success rates."
+VERSION = "1.0.0"
+COMPLEXITY = "medium"
 REQUIRES_NETWORK = False
 
 

@@ -2,6 +2,8 @@
 
 SKILL_NAME = "test_generate"
 DESCRIPTION = "Generate pytest-compatible unit tests for a Python module."
+VERSION = "1.0.0"
+COMPLEXITY = "medium"
 REQUIRES_NETWORK = False
 
 

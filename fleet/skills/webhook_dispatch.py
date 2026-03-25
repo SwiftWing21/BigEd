@@ -19,6 +19,8 @@ from pathlib import Path
 
 SKILL_NAME = "webhook_dispatch"
 DESCRIPTION = "Dispatch webhook notifications for fleet events via HTTP POST."
+VERSION = "1.0.0"
+COMPLEXITY = "medium"
 REQUIRES_NETWORK = True
 
 FLEET_DIR = Path(__file__).parent.parent

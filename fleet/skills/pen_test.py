@@ -20,6 +20,8 @@ PENTEST_DIR = KNOWLEDGE_DIR / "security" / "pen_tests"
 PENDING_DIR = KNOWLEDGE_DIR / "security" / "pending"
 SKILL_NAME = "pen_test"
 DESCRIPTION = "Local network penetration testing — authorized scan with service discovery and security assessment"
+VERSION = "1.0.0"
+COMPLEXITY = "medium"
 REQUIRES_NETWORK = True
 
 

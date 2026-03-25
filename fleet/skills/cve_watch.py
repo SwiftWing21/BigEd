@@ -11,6 +11,8 @@ from pathlib import Path
 
 SKILL_NAME = "cve_watch"
 DESCRIPTION = "Check dependencies against OSV vulnerability database for new CVEs."
+VERSION = "1.0.0"
+COMPLEXITY = "medium"
 REQUIRES_NETWORK = True
 
 FLEET_DIR = Path(__file__).parent.parent

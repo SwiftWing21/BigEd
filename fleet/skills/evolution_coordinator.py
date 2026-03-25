@@ -6,6 +6,8 @@ from pathlib import Path
 
 SKILL_NAME = "evolution_coordinator"
 DESCRIPTION = "Coordinate multi-agent skill evolution with leaderboard tracking"
+VERSION = "1.0.0"
+COMPLEXITY = "complex"
 REQUIRES_NETWORK = False
 
 FLEET_DIR = Path(__file__).parent.parent

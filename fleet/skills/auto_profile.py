@@ -25,6 +25,8 @@ FLEET_DIR = Path(__file__).parent.parent
 AUTORESEARCH_DIR = FLEET_DIR.parent / "autoresearch"
 SKILL_NAME = "auto_profile"
 DESCRIPTION = "Generate optimal fleet + training profiles for any hardware."
+VERSION = "1.0.0"
+COMPLEXITY = "medium"
 REQUIRES_NETWORK = False
 
 log = logging.getLogger(SKILL_NAME)

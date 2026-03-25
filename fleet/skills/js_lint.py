@@ -29,6 +29,8 @@ from pathlib import Path
 
 SKILL_NAME = "js_lint"
 DESCRIPTION = (
+VERSION = "1.0.0"
+COMPLEXITY = "medium"
     "Lint JavaScript code for common issues: unused vars, missing semicolons, "
     "console.log, innerHTML, eval usage."
 )

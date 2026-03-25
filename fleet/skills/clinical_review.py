@@ -24,6 +24,8 @@ from pathlib import Path
 
 SKILL_NAME = "clinical_review"
 DESCRIPTION = "5-agent clinical review pipeline with HITL sign-off"
+VERSION = "1.0.0"
+COMPLEXITY = "medium"
 COMPLEXITY = "complex"
 REQUIRES_NETWORK = False
 

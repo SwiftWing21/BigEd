@@ -1,6 +1,8 @@
 """Analyze autoresearch results.tsv and write a report."""
 SKILL_NAME = "analyze_results"
 DESCRIPTION = "Analyze autoresearch results.tsv and write a report."
+VERSION = "1.0.0"
+COMPLEXITY = "medium"
 REQUIRES_NETWORK = False
 
 import csv

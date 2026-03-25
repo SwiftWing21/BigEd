@@ -11,6 +11,8 @@ from pathlib import Path
 
 SKILL_NAME = "refactor_verify"
 DESCRIPTION = "Verify codebase integrity after refactors — imports, signatures, launch patterns"
+VERSION = "1.0.0"
+COMPLEXITY = "medium"
 REQUIRES_NETWORK = False
 
 FLEET_DIR = Path(__file__).parent.parent

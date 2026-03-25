@@ -5,6 +5,8 @@ from pathlib import Path
 
 SKILL_NAME = "checkpoint_eval"
 DESCRIPTION = "List and rank autoresearch checkpoints by val_bpb, recommend best for deployment"
+VERSION = "1.0.0"
+COMPLEXITY = "medium"
 REQUIRES_NETWORK = False
 
 log = logging.getLogger(__name__)

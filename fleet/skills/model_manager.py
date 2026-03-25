@@ -7,6 +7,8 @@ from pathlib import Path
 
 SKILL_NAME = "model_manager"
 DESCRIPTION = "Check installed vs needed models, pull missing, switch hardware profiles"
+VERSION = "1.0.0"
+COMPLEXITY = "complex"
 REQUIRES_NETWORK = True
 
 FLEET_DIR = Path(__file__).parent.parent

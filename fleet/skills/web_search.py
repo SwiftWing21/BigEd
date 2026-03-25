@@ -17,6 +17,8 @@ HEADERS = {"User-Agent": "fleet-agent/1.0"}
 WATERFALL_LOG = Path(__file__).parent.parent / "knowledge" / "search_waterfall.jsonl"
 SKILL_NAME = "web_search"
 DESCRIPTION = "Web search with waterfall fallback:"
+VERSION = "1.0.0"
+COMPLEXITY = "medium"
 
 REQUIRES_NETWORK = True
 

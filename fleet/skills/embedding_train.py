@@ -22,6 +22,8 @@ from pathlib import Path
 
 SKILL_NAME = "embedding_train"
 DESCRIPTION = "Fine-tune SentenceTransformer embeddings on fleet task data via ExperimentFramework"
+VERSION = "1.0.0"
+COMPLEXITY = "medium"
 REQUIRES_NETWORK = True
 
 FLEET_DIR = Path(__file__).parent.parent

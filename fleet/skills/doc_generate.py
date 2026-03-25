@@ -5,6 +5,8 @@ reference.
 """
 SKILL_NAME = "doc_generate"
 DESCRIPTION = "Auto-generate markdown API documentation for Python modules using AST."
+VERSION = "1.0.0"
+COMPLEXITY = "medium"
 REQUIRES_NETWORK = False
 
 

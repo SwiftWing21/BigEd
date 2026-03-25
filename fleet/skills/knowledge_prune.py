@@ -6,6 +6,8 @@ from pathlib import Path
 
 SKILL_NAME = "knowledge_prune"
 DESCRIPTION = "Detect and archive stale or bloated knowledge files"
+VERSION = "1.0.0"
+COMPLEXITY = "simple"
 REQUIRES_NETWORK = False
 
 FLEET_DIR = Path(__file__).parent.parent

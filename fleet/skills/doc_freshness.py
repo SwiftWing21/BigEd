@@ -12,6 +12,8 @@ from pathlib import Path
 
 SKILL_NAME = "doc_freshness"
 DESCRIPTION = "Audit docs for stale skill counts, versions, endpoint counts, and smoke test numbers."
+VERSION = "1.0.0"
+COMPLEXITY = "medium"
 REQUIRES_NETWORK = False
 
 log = logging.getLogger(__name__)

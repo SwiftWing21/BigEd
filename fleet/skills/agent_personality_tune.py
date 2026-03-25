@@ -10,6 +10,8 @@ from pathlib import Path
 
 SKILL_NAME = "agent_personality_tune"
 DESCRIPTION = "Analyze agent task history, compute behavioral metrics, and suggest system prompt tuning per agent."
+VERSION = "1.0.0"
+COMPLEXITY = "medium"
 REQUIRES_NETWORK = False
 
 FLEET_DIR = Path(__file__).parent.parent

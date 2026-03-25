@@ -16,6 +16,8 @@ from skills._models import call_complex
 
 SKILL_NAME = "security_audit"
 DESCRIPTION = "Security audit skill — scans targets for issues and generates advisories."
+VERSION = "1.0.0"
+COMPLEXITY = "medium"
 REQUIRES_NETWORK = False
 
 FLEET_DIR = Path(__file__).parent.parent

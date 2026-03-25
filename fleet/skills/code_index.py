@@ -1,6 +1,8 @@
 """Index Python functions/classes in a directory using AST parsing."""
 SKILL_NAME = "code_index"
 DESCRIPTION = "Index Python functions/classes in a directory using AST parsing."
+VERSION = "1.0.0"
+COMPLEXITY = "simple"
 REQUIRES_NETWORK = False
 
 import ast

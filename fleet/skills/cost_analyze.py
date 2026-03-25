@@ -14,6 +14,8 @@ import logging
 
 SKILL_NAME = "cost_analyze"
 DESCRIPTION = "Analyze fleet API costs per skill/model with tier-downgrade recommendations"
+VERSION = "1.0.0"
+COMPLEXITY = "medium"
 REQUIRES_NETWORK = False
 
 log = logging.getLogger(__name__)

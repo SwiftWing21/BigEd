@@ -9,6 +9,8 @@ from pathlib import Path
 
 SKILL_NAME = "generate_asset"
 DESCRIPTION = "Designer skill — generates visual assets with PIL."
+VERSION = "1.0.0"
+COMPLEXITY = "medium"
 REQUIRES_NETWORK = False
 
 FLEET_DIR   = Path(__file__).parent.parent

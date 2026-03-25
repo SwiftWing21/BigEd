@@ -21,6 +21,8 @@ HEADERS = {
 }
 SKILL_NAME = "web_crawl"
 DESCRIPTION = "Web crawler skill — visits a URL and extracts business contact info."
+VERSION = "1.0.0"
+COMPLEXITY = "medium"
 
 REQUIRES_NETWORK = True
 

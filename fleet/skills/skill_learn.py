@@ -24,6 +24,8 @@ from pathlib import Path
 
 SKILL_NAME = "skill_learn"
 DESCRIPTION = "Skill learn — analyzes task failure patterns, discussion gaps, and fleet"
+VERSION = "1.0.0"
+COMPLEXITY = "complex"
 REQUIRES_NETWORK = False
 
 FLEET_DIR = Path(__file__).parent.parent

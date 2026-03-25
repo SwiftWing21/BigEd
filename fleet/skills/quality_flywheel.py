@@ -8,6 +8,8 @@ log = logging.getLogger(__name__)
 
 SKILL_NAME = "quality_flywheel"
 DESCRIPTION = "Audit project context files, grade quality, propose improvements, learn from feedback"
+VERSION = "1.0.0"
+COMPLEXITY = "medium"
 COMPLEXITY = "complex"
 REQUIRES_NETWORK = False
 

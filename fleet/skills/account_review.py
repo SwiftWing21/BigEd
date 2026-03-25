@@ -16,6 +16,8 @@ from skills._models import call_complex
 
 SKILL_NAME = "account_review"
 DESCRIPTION = "Account review skill — analyzes all tracked service accounts, usage vs free tier"
+VERSION = "1.0.0"
+COMPLEXITY = "simple"
 REQUIRES_NETWORK = False
 
 FLEET_DIR     = Path(__file__).parent.parent

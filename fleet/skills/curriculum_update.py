@@ -22,6 +22,8 @@ from pathlib import Path
 
 SKILL_NAME = "curriculum_update"
 DESCRIPTION = "Curriculum update — analyzes completed work, skill gaps, and review findings"
+VERSION = "1.0.0"
+COMPLEXITY = "medium"
 REQUIRES_NETWORK = False
 
 FLEET_DIR = Path(__file__).parent.parent

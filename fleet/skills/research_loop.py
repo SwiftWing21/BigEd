@@ -6,6 +6,8 @@ from collections import Counter
 
 SKILL_NAME = "research_loop"
 DESCRIPTION = "Autonomous research cycle — detect gaps, research, synthesize, generate training data"
+VERSION = "1.0.0"
+COMPLEXITY = "medium"
 REQUIRES_NETWORK = False
 
 FLEET_DIR = Path(__file__).parent.parent

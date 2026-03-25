@@ -4,6 +4,8 @@ comments (issues, suggestions, questions), saves a session transcript.
 """
 SKILL_NAME = "pair_program"
 DESCRIPTION = "Facilitate AI pair programming sessions with structured code review."
+VERSION = "1.0.0"
+COMPLEXITY = "medium"
 REQUIRES_NETWORK = False
 
 

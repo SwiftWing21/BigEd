@@ -6,6 +6,8 @@ from pathlib import Path
 
 SKILL_NAME = "github_interact"
 DESCRIPTION = "Interact with GitHub Issues and Pull Requests via API"
+VERSION = "1.0.0"
+COMPLEXITY = "medium"
 REQUIRES_NETWORK = True
 
 GITHUB_API = "https://api.github.com"

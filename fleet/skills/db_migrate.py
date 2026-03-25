@@ -4,6 +4,8 @@ from pathlib import Path
 
 SKILL_NAME = "db_migrate"
 DESCRIPTION = "Execute versioned database schema migrations with safety checks"
+VERSION = "1.0.0"
+COMPLEXITY = "medium"
 REQUIRES_NETWORK = False
 
 FLEET_DIR = Path(__file__).parent.parent

@@ -23,6 +23,8 @@ from pathlib import Path
 
 SKILL_NAME = "sql_review"
 DESCRIPTION = "Validate SQL queries against fleet DB schema — catches column mismatches, missing tables, injection patterns."
+VERSION = "1.0.0"
+COMPLEXITY = "medium"
 REQUIRES_NETWORK = False
 
 FLEET_DIR = Path(__file__).parent.parent

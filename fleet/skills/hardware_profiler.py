@@ -32,6 +32,8 @@ from pathlib import Path
 FLEET_DIR = Path(__file__).parent.parent
 SKILL_NAME = "hardware_profiler"
 DESCRIPTION = "Identify deployment class and optimize fleet configuration for any hardware."
+VERSION = "1.0.0"
+COMPLEXITY = "medium"
 REQUIRES_NETWORK = False
 
 log = logging.getLogger(SKILL_NAME)

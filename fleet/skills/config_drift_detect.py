@@ -12,6 +12,8 @@ from pathlib import Path
 
 SKILL_NAME = "config_drift_detect"
 DESCRIPTION = "Detect configuration drift by comparing fleet.toml against a saved baseline snapshot."
+VERSION = "1.0.0"
+COMPLEXITY = "medium"
 REQUIRES_NETWORK = False
 
 FLEET_DIR = Path(__file__).parent.parent

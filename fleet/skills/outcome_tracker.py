@@ -7,6 +7,8 @@ insights saved to knowledge/outcomes/.
 
 SKILL_NAME = "outcome_tracker"
 DESCRIPTION = "Track task outcome trends: success rates, regressions, per-skill/agent breakdowns."
+VERSION = "1.0.0"
+COMPLEXITY = "medium"
 REQUIRES_NETWORK = False
 
 

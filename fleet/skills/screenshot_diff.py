@@ -26,6 +26,8 @@ from pathlib import Path
 FLEET_DIR = Path(__file__).parent.parent
 SKILL_NAME = "screenshot_diff"
 DESCRIPTION = "Compare two screenshots for visual regression. Returns pass/warn/fail verdict with % pixels changed."
+VERSION = "1.0.0"
+COMPLEXITY = "medium"
 COMPLEXITY = "simple"
 REQUIRES_NETWORK = False
 

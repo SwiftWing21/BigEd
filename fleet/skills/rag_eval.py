@@ -17,6 +17,8 @@ from pathlib import Path
 
 SKILL_NAME = "rag_eval"
 DESCRIPTION = "RAG evaluation — builds eval datasets from task history and benchmarks retrieval quality"
+VERSION = "1.0.0"
+COMPLEXITY = "medium"
 REQUIRES_NETWORK = False
 
 FLEET_DIR = Path(__file__).parent.parent

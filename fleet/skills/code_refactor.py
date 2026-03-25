@@ -22,6 +22,8 @@ from skills._models import call_complex
 
 SKILL_NAME = "code_refactor"
 DESCRIPTION = "Apply refactoring principles to existing code without changing behavior — DRY, SOLID, performance"
+VERSION = "1.0.0"
+COMPLEXITY = "medium"
 REQUIRES_NETWORK = False
 
 FLEET_DIR = Path(__file__).parent.parent

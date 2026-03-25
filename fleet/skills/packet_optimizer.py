@@ -27,6 +27,8 @@ log = logging.getLogger(__name__)
 FLEET_DIR = Path(__file__).parent.parent
 SKILL_NAME = "packet_optimizer"
 DESCRIPTION = "Audit and optimize sent/received packet sizes across fleet API calls."
+VERSION = "1.0.0"
+COMPLEXITY = "simple"
 COMPLEXITY = "simple"
 REQUIRES_NETWORK = False
 

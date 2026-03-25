@@ -15,6 +15,8 @@ from pathlib import Path
 
 SKILL_NAME = "scaler_train"
 DESCRIPTION = "Train the predictive agent-scaler model via ExperimentFramework"
+VERSION = "1.0.0"
+COMPLEXITY = "medium"
 REQUIRES_NETWORK = False
 
 FLEET_DIR = Path(__file__).parent.parent

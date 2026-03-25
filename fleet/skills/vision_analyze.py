@@ -36,6 +36,8 @@ HW_STATE_FILE = FLEET_DIR / "hw_state.json"
 # Not strictly network — Ollama is localhost. But needs Ollama running.
 SKILL_NAME = "vision_analyze"
 DESCRIPTION = "Local vision analysis — send images to multimodal models via Ollama."
+VERSION = "1.0.0"
+COMPLEXITY = "medium"
 
 REQUIRES_NETWORK = False
 

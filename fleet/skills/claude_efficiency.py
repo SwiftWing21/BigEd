@@ -30,6 +30,8 @@ from pathlib import Path
 FLEET_DIR = Path(__file__).parent.parent
 SKILL_NAME = "claude_efficiency"
 DESCRIPTION = "Optimize Claude API usage — caching, batching, MCP routing, capacity windows"
+VERSION = "1.0.0"
+COMPLEXITY = "simple"
 COMPLEXITY = "simple"
 REQUIRES_NETWORK = False  # analyzes local data, doesn't call APIs
 

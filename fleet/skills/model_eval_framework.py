@@ -16,6 +16,8 @@ from pathlib import Path
 
 SKILL_NAME = "model_eval_framework"
 DESCRIPTION = (
+VERSION = "1.0.0"
+COMPLEXITY = "medium"
     "Run evaluation prompts against a local Ollama model and measure "
     "response quality metrics (latency, tokens, coherence)."
 )

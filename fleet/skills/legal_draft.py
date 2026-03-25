@@ -29,6 +29,8 @@ from skills._models import call_complex
 
 SKILL_NAME = "legal_draft"
 DESCRIPTION = "Legal document drafting skill — generates business legal document drafts using t"
+VERSION = "1.0.0"
+COMPLEXITY = "complex"
 REQUIRES_NETWORK = False
 
 FLEET_DIR   = Path(__file__).parent.parent

@@ -13,6 +13,8 @@ from pathlib import Path
 
 SKILL_NAME = "skill_dependency_map"
 DESCRIPTION = "Analyze skill dependencies — imports, DB tables, circular deps, missing modules."
+VERSION = "1.0.0"
+COMPLEXITY = "medium"
 REQUIRES_NETWORK = False
 
 FLEET_DIR = Path(__file__).parent.parent

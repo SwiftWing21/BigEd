@@ -22,6 +22,8 @@ from pathlib import Path
 
 SKILL_NAME = "deploy_skill"
 DESCRIPTION = "Deploy a promoted skill into production fleet — copies to skills/, updates affinity, runs verification"
+VERSION = "1.0.0"
+COMPLEXITY = "medium"
 REQUIRES_NETWORK = False
 
 FLEET_DIR = Path(__file__).parent.parent

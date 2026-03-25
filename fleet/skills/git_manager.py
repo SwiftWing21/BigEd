@@ -5,6 +5,8 @@ from pathlib import Path
 
 SKILL_NAME = "git_manager"
 DESCRIPTION = "Manage git repositories — stage, commit, branch, diff, log"
+VERSION = "1.0.0"
+COMPLEXITY = "medium"
 REQUIRES_NETWORK = False
 
 FLEET_DIR = Path(__file__).parent.parent

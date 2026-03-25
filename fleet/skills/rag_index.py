@@ -15,6 +15,8 @@ from pathlib import Path
 
 SKILL_NAME = "rag_index"
 DESCRIPTION = "RAG index skill — rebuilds or incrementally updates the RAG search index."
+VERSION = "1.0.0"
+COMPLEXITY = "simple"
 REQUIRES_NETWORK = False
 
 FLEET_DIR = Path(__file__).parent.parent

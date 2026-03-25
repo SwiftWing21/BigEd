@@ -25,6 +25,8 @@ KNOWLEDGE_DIR = FLEET_DIR / "knowledge"
 NETWORK_DIR = KNOWLEDGE_DIR / "network"
 SKILL_NAME = "unifi_manage"
 DESCRIPTION = "UniFi network management — query UniFi Controller API for clients, devices, aler"
+VERSION = "1.0.0"
+COMPLEXITY = "medium"
 
 REQUIRES_NETWORK = True
 

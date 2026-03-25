@@ -22,6 +22,8 @@ from skills._models import call_complex
 
 SKILL_NAME = "skill_evolve"
 DESCRIPTION = "Skill evolve — takes an existing skill + its review findings and generates"
+VERSION = "1.0.0"
+COMPLEXITY = "complex"
 REQUIRES_NETWORK = False
 
 FLEET_DIR = Path(__file__).parent.parent

@@ -31,6 +31,8 @@ KNOWLEDGE_DIR = FLEET_DIR / "knowledge"
 BROWSER_DIR = KNOWLEDGE_DIR / "browser"
 SKILL_NAME = "browser_crawl"
 DESCRIPTION = "Browser crawl — full DOM rendering via Playwright (headless Chromium)."
+VERSION = "1.0.0"
+COMPLEXITY = "medium"
 
 REQUIRES_NETWORK = True
 
