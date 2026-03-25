@@ -9,6 +9,7 @@ import os
 import time
 import threading
 import queue
+import importlib
 from abc import ABC, abstractmethod
 
 # ── Async usage logging (non-blocking, batched) ──────────────────────────────
@@ -330,11 +331,14 @@ SKILL_COMPLEXITY = {
 
 
 def _get_skill_complexity(skill_name: str) -> str:
-    """Resolve a skill name to its complexity tier from SKILL_COMPLEXITY.
-
-    SKILL_COMPLEXITY is grouped as {tier: [skills]}. This does a reverse
-    lookup and defaults to 'medium' for unknown skills.
-    """
+    """Get complexity tier. Reads from skill module, falls back to dict."""
+    try:
+        mod = importlib.import_module(f"skills.{skill_name}")
+        if hasattr(mod, "COMPLEXITY"):
+            return mod.COMPLEXITY
+    except Exception:
+        pass
+    # Fallback to hardcoded dict during migration
     for tier, skills in SKILL_COMPLEXITY.items():
         if skill_name in skills:
             return tier
