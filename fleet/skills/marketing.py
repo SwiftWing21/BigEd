@@ -42,8 +42,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 
 
 def _write_copy(company: str, service: str, audience: str, tone: str, config: dict) -> dict:
-    import anthropic
-    client = anthropic.Anthropic(api_key=os.environ.get("ANTHROPIC_API_KEY", ""))
+    from skills._models import call_complex
 
     system = (
         "You are a concise B2B marketing copywriter specializing in local AI services. "
@@ -65,14 +64,13 @@ def _write_copy(company: str, service: str, audience: str, tone: str, config: di
         "- video_script: under 40 words, include visual cues in [brackets]"
     )
 
-    model = config.get("models", {}).get("complex", "claude-haiku-4-5-20251001")
-    resp = client.messages.create(
-        model=model,
-        max_tokens=700,
+    text = call_complex(
         system=system,
-        messages=[{"role": "user", "content": user}],
-    )
-    text = resp.content[0].text.strip()
+        user=user,
+        config=config,
+        max_tokens=700,
+        skill_name="marketing",
+    ).strip()
     start = text.find("{")
     end   = text.rfind("}") + 1
     if start != -1 and end > start:
