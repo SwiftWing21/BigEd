@@ -1,3 +1,7 @@
+//! Bridge integration tests — require fleet/skills/ directory.
+//! Tests are skipped (with a message) when fleet dir is not available.
+//! Run locally from the repo root to execute these tests.
+
 use biged_bridge::loader::SkillLoader;
 use biged_bridge::runner::SkillRunner;
 use biged_bridge::worker::Worker;
@@ -17,7 +21,8 @@ fn fleet_dir() -> PathBuf {
 fn test_loader_initializes() {
     let fd = fleet_dir();
     if !fd.join("skills").exists() {
-        return; // Skip if fleet dir not available
+        eprintln!("SKIPPED: fleet/skills/ not found at {}", fd.display());
+        return;
     }
     let loader = SkillLoader::new(&fd).expect("loader should initialize");
     assert_eq!(loader.cached_count(), 0);
@@ -27,6 +32,7 @@ fn test_loader_initializes() {
 fn test_loader_imports_skill() {
     let fd = fleet_dir();
     if !fd.join("skills").exists() {
+        eprintln!("SKIPPED: fleet/skills/ not found at {}", fd.display());
         return;
     }
     let loader = SkillLoader::new(&fd).expect("loader should initialize");
@@ -50,6 +56,7 @@ fn test_loader_imports_skill() {
 fn test_loader_missing_skill() {
     let fd = fleet_dir();
     if !fd.join("skills").exists() {
+        eprintln!("SKIPPED: fleet/skills/ not found at {}", fd.display());
         return;
     }
     let loader = SkillLoader::new(&fd).expect("loader should initialize");
@@ -61,6 +68,7 @@ fn test_loader_missing_skill() {
 fn test_runner_executes_skill() {
     let fd = fleet_dir();
     if !fd.join("skills").exists() {
+        eprintln!("SKIPPED: fleet/skills/ not found at {}", fd.display());
         return;
     }
 
@@ -83,6 +91,7 @@ fn test_runner_executes_skill() {
 fn test_runner_handles_missing_skill() {
     let fd = fleet_dir();
     if !fd.join("skills").exists() {
+        eprintln!("SKIPPED: fleet/skills/ not found at {}", fd.display());
         return;
     }
 
@@ -99,6 +108,7 @@ fn test_runner_handles_missing_skill() {
 async fn test_worker_processes_task() {
     let fd = fleet_dir();
     if !fd.join("skills").exists() {
+        eprintln!("SKIPPED: fleet/skills/ not found at {}", fd.display());
         return;
     }
 
@@ -130,6 +140,7 @@ async fn test_worker_processes_task() {
 async fn test_worker_empty_queue() {
     let fd = fleet_dir();
     if !fd.join("skills").exists() {
+        eprintln!("SKIPPED: fleet/skills/ not found at {}", fd.display());
         return;
     }
 
@@ -150,6 +161,7 @@ async fn test_worker_empty_queue() {
 fn test_runner_multiple_skills() {
     let fd = fleet_dir();
     if !fd.join("skills").exists() {
+        eprintln!("SKIPPED: fleet/skills/ not found at {}", fd.display());
         return;
     }
 
@@ -174,6 +186,7 @@ fn test_runner_multiple_skills() {
 async fn test_worker_full_lifecycle() {
     let fd = fleet_dir();
     if !fd.join("skills").exists() {
+        eprintln!("SKIPPED: fleet/skills/ not found at {}", fd.display());
         return;
     }
 
