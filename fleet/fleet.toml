@@ -693,4 +693,88 @@ skill = "ingest"
 agent_role = "archivist"
 content_column = "markdown"
 destination = "rag"
+
+# ── CAMEL-AI Science Suite (expert Q&A — tasks + RAG) ────────────────────
+[[ingest.sources]]
+id = "camel-physics"
+type = "huggingface"
+dataset = "camel-ai/physics"
+skill = "summarize"
+agent_role = "researcher"
+content_column = "message_2"
+destination = "tasks"
+enabled = true
+
+[[ingest.sources]]
+id = "camel-chemistry"
+type = "huggingface"
+dataset = "camel-ai/chemistry"
+skill = "summarize"
+agent_role = "researcher"
+content_column = "message_2"
+destination = "tasks"
+enabled = true
+
+[[ingest.sources]]
+id = "camel-biology"
+type = "huggingface"
+dataset = "camel-ai/biology"
+skill = "summarize"
+agent_role = "researcher"
+content_column = "message_2"
+destination = "tasks"
+enabled = true
+
+[[ingest.sources]]
+id = "camel-math"
+type = "huggingface"
+dataset = "camel-ai/math"
+skill = "summarize"
+agent_role = "researcher"
+content_column = "message_2"
+destination = "tasks"
+enabled = true
+
+# ── ArXiv Physics (graduate-level Q&A) ───────────────────────────────────
+[[ingest.sources]]
+id = "arxiv-physics-qa"
+type = "huggingface"
+dataset = "ayoubkirouane/arxiv-physics"
+skill = "summarize"
+agent_role = "researcher"
+content_column = "answer"
+destination = "tasks"
+enabled = true
+
+# ── ScienceQA (exam questions with reasoning) ────────────────────────────
+[[ingest.sources]]
+id = "science-qa"
+type = "huggingface"
+dataset = "derek-thomas/ScienceQA"
+skill = "summarize"
+agent_role = "researcher"
+content_column = "question"
+destination = "tasks"
+enabled = true
+
+# ── Mega Science Corpus (390K high-quality STEM + reasoning) ─────────────
+[[ingest.sources]]
+id = "stem-fortified"
+type = "huggingface"
+dataset = "Josephgflowers/Par-Four-Fineweb-Edu-Fortified-Chemistry-Physics-Astronomy-Math-Reason"
+skill = "ingest"
+agent_role = "archivist"
+content_column = "text"
+destination = "rag"
+enabled = true
+
+# ── Biology Textbook (structured chapters) ───────────────────────────────
+[[ingest.sources]]
+id = "biology-textbook"
+type = "huggingface"
+dataset = "burgerbee/biology_textbook"
+skill = "ingest"
+agent_role = "archivist"
+content_column = "text"
+destination = "rag"
 enabled = true
