@@ -1,0 +1,17 @@
+# Team Orchestrator — Default Configuration
+# Override per-invocation via /team flags or explicit skill config.
+
+max_agents: 25          # Hard cap across all layers (1 head + pods + subs)
+max_pods: 5             # Maximum pod leads
+max_sub_per_pod: 5      # Maximum sub-agents per pod lead
+
+# Model defaults (Claude Code model parameter values)
+default_head_model: opus     # Department head — always Opus
+default_lead_model: opus     # Pod lead default (can downshift to sonnet)
+default_sub_model: sonnet    # Sub-agent default (can downshift to haiku)
+allow_haiku: true            # Whether pod leads can assign haiku to sub-agents
+
+# Behavior
+auto_detect: true            # Suggest /team on complex tasks
+worktree_cleanup: true       # Auto-delete worktrees after successful merge
+confirm_before_dispatch: true # Show plan + agent count, require user confirmation

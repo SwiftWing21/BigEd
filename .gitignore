@@ -160,3 +160,6 @@ repo-descriptions.txt
 Thumbs.db
 desktop.ini
 ehthumbs.db
+
+# ── Team orchestrator runtime state ───────────────────────────────────────────
+.claude/skills/team-orchestrator/team-state/.team-log*
