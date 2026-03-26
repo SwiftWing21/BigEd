@@ -1413,6 +1413,17 @@ textarea.input {
     </div>
   </div>
 
+  <!-- Live Activity Feed -->
+  <div class="card-container" style="margin-bottom:16px;">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+      <h3 style="margin:0;font-size:14px;font-weight:600;">LIVE ACTIVITY</h3>
+      <button class="btn btn-sm btn-outline" onclick="loadLiveActivity()">Refresh</button>
+    </div>
+    <div id="live-activity-feed" style="max-height:280px;overflow-y:auto;font-size:12px;">
+      <div class="spinner"></div>
+    </div>
+  </div>
+
   <!-- Quick Actions -->
   <div class="card-title mb-16" style="padding-left:4px">Quick Actions</div>
   <div class="grid-3 mb-24">
@@ -2090,7 +2101,86 @@ function loadDashboard() {
   loadDashStatus();
   loadThermal();
   loadActivityChart();
+  loadLiveActivity();
   loadDashSettings();
+  // Auto-refresh live activity every 5s
+  if (!window._liveActivityInterval) {
+    window._liveActivityInterval = setInterval(loadLiveActivity, 5000);
+  }
+}
+
+var _agentColors = {
+  researcher: '#3b82f6', coder_1: '#f59e0b', coder_2: '#f59e0b', coder_3: '#f59e0b',
+  archivist: '#8b5cf6', planner: '#06b6d4', security: '#ef4444', analyst: '#10b981',
+  dr_ders: '#059669', supervisor: '#059669',
+};
+var _statusIcons = { RUNNING: '\u25B6', DONE: '\u2713', FAILED: '\u2717', PENDING: '\u25CB' };
+var _statusColors = { RUNNING: '#3b82f6', DONE: '#10b981', FAILED: '#ef4444', PENDING: '#64748b' };
+
+function loadLiveActivity() {
+  apiFetch('/api/activity/live').then(function(d) {
+    var feed = document.getElementById('live-activity-feed');
+    feed.textContent = '';
+    if (!d.items || !d.items.length) {
+      var empty = document.createElement('div');
+      empty.style.cssText = 'text-align:center;color:var(--muted-foreground);padding:20px;';
+      empty.textContent = 'No recent activity';
+      feed.appendChild(empty);
+      return;
+    }
+    d.items.forEach(function(item) {
+      var row = document.createElement('div');
+      row.style.cssText = 'display:flex;align-items:center;gap:8px;padding:5px 4px;border-bottom:1px solid var(--border);';
+      if (item.status === 'RUNNING') row.style.background = 'rgba(59,130,246,0.05)';
+
+      // Status icon
+      var icon = document.createElement('span');
+      icon.textContent = _statusIcons[item.status] || '\u25CB';
+      icon.style.cssText = 'width:16px;text-align:center;font-size:11px;color:' + (_statusColors[item.status] || '#64748b') + ';';
+      row.appendChild(icon);
+
+      // Agent badge
+      var agent = document.createElement('span');
+      agent.textContent = item.agent;
+      var ac = _agentColors[item.agent] || '#64748b';
+      agent.style.cssText = 'font-size:11px;font-weight:600;padding:1px 6px;border-radius:3px;background:' + ac + '22;color:' + ac + ';min-width:70px;';
+      row.appendChild(agent);
+
+      // Skill/type
+      var skill = document.createElement('span');
+      skill.textContent = item.type;
+      skill.style.cssText = 'font-size:11px;color:var(--foreground);min-width:100px;';
+      row.appendChild(skill);
+
+      // Classification badge
+      if (item.classification === 'ingest') {
+        var cls = document.createElement('span');
+        cls.textContent = 'ingest';
+        cls.style.cssText = 'font-size:9px;padding:1px 4px;border-radius:2px;background:#f59e0b22;color:#f59e0b;';
+        row.appendChild(cls);
+      }
+
+      // Task ID
+      var tid = document.createElement('span');
+      tid.textContent = '#' + item.id;
+      tid.style.cssText = 'font-size:10px;color:var(--muted-foreground);font-family:monospace;';
+      row.appendChild(tid);
+
+      // Error or time
+      var detail = document.createElement('span');
+      detail.style.cssText = 'margin-left:auto;font-size:10px;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;';
+      if (item.status === 'FAILED' && item.error) {
+        detail.textContent = item.error;
+        detail.style.color = 'var(--danger)';
+      } else {
+        detail.textContent = timeAgo(item.created_at);
+        detail.style.color = 'var(--muted-foreground)';
+      }
+      row.appendChild(detail);
+
+      feed.appendChild(row);
+    });
+  }).catch(function() {});
 }
 
 function loadDashStatus() {

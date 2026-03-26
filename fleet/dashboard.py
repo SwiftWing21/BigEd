@@ -402,6 +402,42 @@ def api_status():
     return jsonify({"agents": agents, "tasks": counts})
 
 
+# ── Live Activity Feed ────────────────────────────────────────────────────────
+
+@app.route("/api/activity/live")
+def api_activity_live():
+    """Return recent task activity: running + recently completed, with agent info."""
+    try:
+        rows = query("""
+            SELECT t.id, t.type, t.status, t.assigned_to, t.classification,
+                   t.created_at, t.result_json, t.error,
+                   substr(t.payload_json, 1, 100) as payload_preview
+            FROM tasks t
+            WHERE t.classification != 'synthetic_prefix'
+              AND (t.status = 'RUNNING'
+                   OR (t.status IN ('DONE', 'FAILED') AND t.created_at >= datetime('now', '-10 minutes')))
+            ORDER BY
+                CASE t.status WHEN 'RUNNING' THEN 0 WHEN 'DONE' THEN 1 ELSE 2 END,
+                t.id DESC
+            LIMIT 30
+        """)
+        items = []
+        for r in rows:
+            items.append({
+                "id": r["id"],
+                "type": r["type"],
+                "status": r["status"],
+                "agent": r["assigned_to"] or "unassigned",
+                "classification": r["classification"],
+                "created_at": r["created_at"],
+                "error": (r["error"] or "")[:80],
+                "payload_preview": r["payload_preview"] or "",
+            })
+        return jsonify({"items": items, "count": len(items)})
+    except Exception as e:
+        return jsonify({"items": [], "error": str(e)}), 500
+
+
 # ── v0.22.00: Unified Health Endpoint ─────────────────────────────────────────
 
 @app.route("/api/health")
