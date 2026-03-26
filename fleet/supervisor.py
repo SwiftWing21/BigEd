@@ -633,17 +633,27 @@ def start_worker(role, config):
     )
 
     # CPU affinity — distribute workers across cores for multi-core utilization
-    if sys.platform == "win32":
+    # Supported: Windows (all), Linux (x86/x64/ARM via psutil), macOS (not supported — no API)
+    # ARM note: works on Linux ARM (RPi, Graviton) via psutil. ARM Windows is untested but should work.
+    if sys.platform != "darwin":  # macOS has no cpu_affinity support
         try:
             import psutil
             proc = psutil.Process(worker_procs[role].pid)
-            num_cores = psutil.cpu_count(logical=True) or 16
-            worker_idx = list(worker_procs.keys()).index(role) if role in worker_procs else 0
-            # Assign 2 threads per worker, spread across cores
-            core_a = (worker_idx * 2) % num_cores
-            core_b = (worker_idx * 2 + 1) % num_cores
-            proc.cpu_affinity([core_a, core_b])
-            log.info(f"Worker {role}: pinned to cores {core_a},{core_b}")
+            available = proc.cpu_affinity()  # get current allowed cores
+            num_cores = len(available) if available else (psutil.cpu_count(logical=True) or 4)
+            worker_idx = len(worker_procs) - 1  # index of this worker (just added)
+
+            if num_cores >= 4:
+                # 2 threads per worker, spread evenly across available cores
+                stride = max(2, num_cores // max(len(worker_procs), 1))
+                core_a = available[(worker_idx * stride) % num_cores]
+                core_b = available[(worker_idx * stride + 1) % num_cores]
+                proc.cpu_affinity([core_a, core_b])
+                log.info(f"Worker {role}: pinned to cores {core_a},{core_b} (of {num_cores})")
+            else:
+                log.debug(f"Worker {role}: only {num_cores} cores, skipping affinity")
+        except AttributeError:
+            log.debug(f"CPU affinity for {role}: not supported on this platform")
         except Exception as e:
             log.debug(f"CPU affinity for {role} skipped: {e}")
 
