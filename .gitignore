@@ -68,6 +68,7 @@ fleet/knowledge/chains/
 fleet/knowledge/biged_agents/
 fleet/knowledge/diffusion/
 fleet/knowledge/ingests/
+fleet/knowledge/ingest_cache/
 fleet/knowledge/plans/
 fleet/knowledge/flashcards.jsonl
 fleet/knowledge/code_index.jsonl

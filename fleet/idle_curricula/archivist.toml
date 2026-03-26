@@ -1,23 +1,60 @@
-# ── RAG index maintenance ────────────────────────────────────────────────────
+# ── Marathon Library — RAG knowledge base building ───────────────────────────
+# Idle archivists pull batches from reference datasets and ingest into RAG.
+# This builds the "Alexandria Library" — searchable knowledge across all sciences.
+
+# Cosmopedia (100K synthetic textbook lessons — all subjects)
+[[tasks]]
+type = "research_loop"
+[tasks.payload]
+action = "ingest_batch"
+source_id = "cosmopedia"
+batch_size = 20
+destination = "rag"
+
+# STEM Fortified (390K chemistry/physics/astronomy/math)
+[[tasks]]
+type = "research_loop"
+[tasks.payload]
+action = "ingest_batch"
+source_id = "stem-fortified"
+batch_size = 20
+destination = "rag"
+
+# Science Theory Textbooks (73K physics/chem/bio)
+[[tasks]]
+type = "research_loop"
+[tasks.payload]
+action = "ingest_batch"
+source_id = "science-textbooks"
+batch_size = 15
+destination = "rag"
+
+# Programming Textbooks (12K CS chapters)
+[[tasks]]
+type = "research_loop"
+[tasks.payload]
+action = "ingest_batch"
+source_id = "programming-textbooks"
+batch_size = 15
+destination = "rag"
+
+# Biology Textbook (1K structured chapters)
+[[tasks]]
+type = "research_loop"
+[tasks.payload]
+action = "ingest_batch"
+source_id = "biology-textbook"
+batch_size = 10
+destination = "rag"
+
+# ── Legacy tasks (still useful) ──────────────────────────────────────────────
 
 [[tasks]]
 type = "rag_index"
 [tasks.payload]
 mode = "update"
 
-# ── Flashcards ───────────────────────────────────────────────────────────────
-
 [[tasks]]
 type = "flashcard"
 [tasks.payload]
-count = 3
-
-[[tasks]]
-type = "flashcard"
-[tasks.payload]
-count = 3
-
-[[tasks]]
-type = "flashcard"
-[tasks.payload]
-count = 3
+count = 5

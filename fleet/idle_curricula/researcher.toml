@@ -1,29 +1,77 @@
+# ── Marathon Research — Alexandria Library ingestion ──────────────────────────
+# Idle researchers pull batches from HuggingFace science datasets and process them.
+# Each task fetches a small batch, summarizes/processes, and builds the knowledge base.
+
+# CAMEL-AI Physics (20K expert Q&A)
+[[tasks]]
+type = "research_loop"
+[tasks.payload]
+action = "ingest_batch"
+source_id = "camel-physics"
+batch_size = 10
+destination = "tasks"
+
+# CAMEL-AI Chemistry (20K expert Q&A)
+[[tasks]]
+type = "research_loop"
+[tasks.payload]
+action = "ingest_batch"
+source_id = "camel-chemistry"
+batch_size = 10
+destination = "tasks"
+
+# CAMEL-AI Biology (20K expert Q&A)
+[[tasks]]
+type = "research_loop"
+[tasks.payload]
+action = "ingest_batch"
+source_id = "camel-biology"
+batch_size = 10
+destination = "tasks"
+
+# CAMEL-AI Math (50K expert Q&A)
+[[tasks]]
+type = "research_loop"
+[tasks.payload]
+action = "ingest_batch"
+source_id = "camel-math"
+batch_size = 10
+destination = "tasks"
+
+# ArXiv Physics (30K graduate Q&A)
+[[tasks]]
+type = "research_loop"
+[tasks.payload]
+action = "ingest_batch"
+source_id = "arxiv-physics-qa"
+batch_size = 5
+destination = "tasks"
+
+# ArXiv paper summarization (215K full papers)
+[[tasks]]
+type = "research_loop"
+[tasks.payload]
+action = "ingest_batch"
+source_id = "arxiv-summarization"
+batch_size = 3
+destination = "tasks"
+
+# ScienceQA exam questions (21K)
+[[tasks]]
+type = "research_loop"
+[tasks.payload]
+action = "ingest_batch"
+source_id = "science-qa"
+batch_size = 10
+destination = "tasks"
+
+# Legacy — still useful for fresh content
 [[tasks]]
 type = "arxiv_fetch"
 [tasks.payload]
 query = "language model training efficiency 2025"
 
 [[tasks]]
-type = "arxiv_fetch"
-[tasks.payload]
-query = "Muon optimizer neural network"
-
-[[tasks]]
-type = "arxiv_fetch"
-[tasks.payload]
-query = "transformer architecture scaling laws"
-
-[[tasks]]
 type = "web_search"
 [tasks.payload]
 query = "LLM pretraining tricks 2025"
-
-[[tasks]]
-type = "arxiv_fetch"
-[tasks.payload]
-query = "bits per byte language model evaluation"
-
-[[tasks]]
-type = "arxiv_fetch"
-[tasks.payload]
-query = "weight decay regularization deep learning"
