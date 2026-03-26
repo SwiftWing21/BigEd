@@ -807,6 +807,16 @@ class BootManagerMixin:
         # Kill any existing Dr. Ders process
         _kill_fleet_processes(["hw_supervisor.py"])
         time.sleep(1)
+        # Check if Dr. Ders already running via PID file
+        try:
+            sys.path.insert(0, str(L.FLEET_DIR))
+            from pid_manager import is_running as _pid_running
+            if _pid_running("hw_supervisor"):
+                self._safe_after(0, lambda: self._boot_update(2, "done", "already running"))
+                return "ONLINE"
+        except Exception:
+            pass
+
         # Start fresh — native Windows Python, no WSL
         # DETACHED_PROCESS (0x8) ensures Dr. Ders survives launcher close
         _NW = getattr(subprocess, 'CREATE_NO_WINDOW', 0)
@@ -953,6 +963,17 @@ class BootManagerMixin:
             (L.FLEET_DIR / d).mkdir(parents=True, exist_ok=True)
 
         # Dashboard is launched by the supervisor (not boot.py) to avoid port conflicts
+
+        # Check if supervisor already running via PID file
+        try:
+            sys.path.insert(0, str(L.FLEET_DIR))
+            from pid_manager import is_running as _pid_running, cleanup_stale
+            cleanup_stale()  # clean up any stale PIDs from previous crashes
+            if _pid_running("supervisor"):
+                self._safe_after(0, lambda: self._boot_update(3, "done", "already running"))
+                return "ONLINE"
+        except Exception:
+            pass
 
         # Launch supervisor natively (like Dr. Ders)
         # DETACHED_PROCESS ensures supervisor survives launcher close/restart

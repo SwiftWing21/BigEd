@@ -680,6 +680,17 @@ def main():
         log.info("No NVIDIA GPU detected. Exiting.")
         return
 
+    # PID file — prevent duplicate Dr. Ders
+    try:
+        from pid_manager import acquire_pid, release_pid
+        if not acquire_pid("hw_supervisor"):
+            log.warning("Another Dr. Ders instance is already running — exiting")
+            return
+        import atexit
+        atexit.register(lambda: release_pid("hw_supervisor"))
+    except Exception as e:
+        log.warning("PID manager unavailable: %s", e)
+
     cfg = load_thermal_config()
     ambient = AmbientEstimator()
 

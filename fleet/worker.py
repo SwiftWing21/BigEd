@@ -491,6 +491,17 @@ def main():
     log = setup_logging(role)
     config = load_config()
 
+    # PID file — prevent duplicate workers for same role
+    try:
+        from pid_manager import acquire_worker_pid, release_worker_pid
+        if not acquire_worker_pid(role):
+            log.warning(f"Worker '{role}' already running — exiting")
+            return
+        import atexit
+        atexit.register(lambda: release_worker_pid(role))
+    except Exception as e:
+        log.warning("PID manager unavailable: %s", e)
+
     # Check if this agent is disabled in config — exit before DB registration
     disabled = set(config.get("fleet", {}).get("disabled_agents", []))
     if role in disabled:

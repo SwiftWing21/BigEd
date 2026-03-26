@@ -936,6 +936,17 @@ def main():
     (FLEET_DIR / "knowledge" / "summaries").mkdir(parents=True, exist_ok=True)
     (FLEET_DIR / "knowledge" / "reports").mkdir(parents=True, exist_ok=True)
 
+    # PID file — prevent duplicate supervisors
+    try:
+        from pid_manager import acquire_pid, release_pid
+        if not acquire_pid("supervisor"):
+            log.warning("Another supervisor is already running — exiting")
+            return
+        import atexit
+        atexit.register(lambda: release_pid("supervisor"))
+    except Exception as e:
+        log.warning("PID manager unavailable: %s", e)
+
     db.init_db()
     db.register_agent("supervisor", "supervisor", os.getpid())
 
