@@ -1259,6 +1259,9 @@ textarea.input {
     <button class="nav-item" data-section="pipeline" onclick="showSection('pipeline')">
       <span class="nav-icon">&#8644;</span> Pipeline
     </button>
+    <button class="nav-item" data-section="ingest" onclick="showSection('ingest')">
+      <span class="nav-icon">&#128229;</span> Ingest
+    </button>
     <button class="nav-item" data-section="tasks" onclick="showSection('tasks')">
       <span class="nav-icon">&#9889;</span> Tasks
     </button>
@@ -1780,6 +1783,30 @@ textarea.input {
   </div>
 </div>
 
+<div id="section-ingest" class="section">
+  <h1>Ingestion Hub</h1>
+  <p class="section-subtitle">Feed real datasets to fleet agents</p>
+  <div id="ingest-source-pills" style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px;"></div>
+  <div id="ingest-expanded-panel" style="display:none;"></div>
+  <div class="card-container" style="margin-top:16px;">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+      <h3 style="margin:0;">Staging</h3>
+      <div style="display:flex;gap:8px;">
+        <button class="btn btn-sm" onclick="ingestDispatchAll()">Ingest Selected</button>
+        <button class="btn btn-sm btn-outline" onclick="ingestClearStaging()">Clear</button>
+      </div>
+    </div>
+    <div id="ingest-staging-list" style="min-height:60px;"></div>
+  </div>
+  <div style="display:flex;align-items:center;gap:8px;margin-top:12px;padding:8px 0;">
+    <span style="font-size:12px;color:var(--muted-foreground);">Cache:</span>
+    <div style="flex:1;height:6px;background:var(--card);border-radius:3px;overflow:hidden;">
+      <div id="ingest-cache-bar" style="height:100%;background:var(--success);border-radius:3px;width:0%;transition:width 0.3s;"></div>
+    </div>
+    <span id="ingest-cache-label" style="font-size:12px;color:var(--muted-foreground);">0 / 0 MB</span>
+  </div>
+</div>
+
   </div><!-- /.main-content -->
 </div><!-- /.main-wrapper -->
 </div><!-- /.app-layout -->
@@ -1874,6 +1901,7 @@ function loadSectionData(name) {
     case 'docs': if (!_currentDocSlug) loadDoc('roadmap'); break;
     case 'settings': loadSettings(); break;
     case 'views': loadViews(); break;
+    case 'ingest': loadIngest(); break;
   }
 }
 
@@ -1939,7 +1967,7 @@ function apiFetch(url, opts) {
 /* ── Format Helpers ───────────────────────────────────────────────────────── */
 function timeAgo(ts) {
   if (!ts) return '--';
-  var d = new Date(ts);
+  var d = new Date(ts.replace(' ', 'T') + (ts.includes('Z') ? '' : 'Z'));
   var now = new Date();
   var diff = Math.floor((now - d) / 1000);
   if (diff < 60) return diff + 's ago';
@@ -1952,8 +1980,9 @@ function statusBadgeClass(status) {
   var s = (status || 'unknown').toLowerCase();
   if (s === 'active' || s === 'done' || s === 'online' || s === 'ok' || s === 'healthy') return 'badge-success';
   if (s === 'busy' || s === 'running' || s === 'warning' || s === 'degraded') return 'badge-warning';
-  if (s === 'failed' || s === 'error' || s === 'offline' || s === 'critical' || s === 'unhealthy') return 'badge-danger';
-  if (s === 'pending' || s === 'idle' || s === 'sleeping' || s === 'waiting') return 'badge-info';
+  if (s === 'failed' || s === 'error' || s === 'critical' || s === 'unhealthy') return 'badge-danger';
+  if (s === 'pending' || s === 'idle' || s === 'sleeping' || s === 'waiting' || s === 'offline') return 'badge-info';
+  if (s === 'disabled') return 'badge-muted';
   return 'badge-muted';
 }
 
@@ -2032,13 +2061,19 @@ function loadDashStatus() {
 
 function loadThermal() {
   apiFetch('/api/thermal').then(function(d) {
-    var cpuV = d.cpu_temp_c || 0;
+    var cpuV = d.cpu_temp_c;
     var cpuEl = document.getElementById('thermal-cpu');
-    cpuEl.textContent = cpuV + '\u00B0C';
-    cpuEl.className = 'thermal-value ' + thermalColor(cpuV, d.thresholds ? d.thresholds.cpu_sustained : 80);
+    if (cpuV != null && cpuV > 0) {
+      cpuEl.textContent = cpuV + '\u00B0C';
+      cpuEl.className = 'thermal-value ' + thermalColor(cpuV, d.thresholds ? d.thresholds.cpu_sustained : 80);
+    } else {
+      cpuEl.textContent = 'N/A';
+      cpuEl.className = 'thermal-value cool';
+    }
     var cpuBar = document.getElementById('thermal-cpu-bar');
-    cpuBar.style.width = Math.min(100, Math.round(cpuV)) + '%';
-    cpuBar.style.background = barColor(cpuV, d.thresholds ? d.thresholds.cpu_sustained : 80);
+    var cpuBarVal = (cpuV != null && cpuV > 0) ? cpuV : 0;
+    cpuBar.style.width = Math.min(100, Math.round(cpuBarVal)) + '%';
+    cpuBar.style.background = cpuBarVal > 0 ? barColor(cpuBarVal, d.thresholds ? d.thresholds.cpu_sustained : 80) : 'var(--muted)';
 
     var gpuV = d.gpu_temp_c || 0;
     var gpuEl = document.getElementById('thermal-gpu');
@@ -2453,7 +2488,10 @@ function loadFleet() {
       return;
     }
     d.agents.forEach(function(a, i) {
+      var ds = a.display_status || a.status;
+      var isDimmed = ds === 'DISABLED' || ds === 'OFFLINE';
       var tr = document.createElement('tr');
+      if (isDimmed) tr.style.opacity = '0.45';
 
       var tdId = document.createElement('td');
       tdId.style.cssText = 'font-family:monospace;font-size:12px;color:var(--muted-foreground)';
@@ -2467,7 +2505,7 @@ function loadFleet() {
       tdRole.textContent = a.role || '--';
 
       var tdStatus = document.createElement('td');
-      tdStatus.appendChild(buildStatusBadge(a.status));
+      tdStatus.appendChild(buildStatusBadge(ds));
 
       var tdTask = document.createElement('td');
       tdTask.style.fontSize = '12px';
@@ -2483,7 +2521,7 @@ function loadFleet() {
       label.title = 'Enable/Disable agent';
       var checkbox = document.createElement('input');
       checkbox.type = 'checkbox';
-      checkbox.checked = a.status !== 'OFFLINE';
+      checkbox.checked = ds !== 'DISABLED';
       (function(agentName) {
         checkbox.addEventListener('change', function() { toggleAgent(agentName, this.checked); });
       })(a.name);
@@ -4268,12 +4306,18 @@ function handleSSE(msg) {
         }
         /* ── Thermal (pushed from server every 5s) ── */
         if (data.thermal) {
-          var cpuV = data.thermal.cpu_temp_c || 0;
+          var cpuV = data.thermal.cpu_temp_c;
           var cpuEl = document.getElementById('thermal-cpu');
           if (cpuEl) {
-            cpuEl.textContent = cpuV + '\u00B0C';
+            if (cpuV != null && cpuV > 0) {
+              cpuEl.textContent = cpuV + '\u00B0C';
+              cpuEl.className = 'thermal-value ' + thermalColor(cpuV, 80);
+            } else {
+              cpuEl.textContent = 'N/A';
+              cpuEl.className = 'thermal-value cool';
+            }
             var cpuBar = document.getElementById('thermal-cpu-bar');
-            if (cpuBar) { cpuBar.style.width = Math.min(100, Math.round(cpuV)) + '%'; }
+            if (cpuBar) { cpuBar.style.width = (cpuV > 0 ? Math.min(100, Math.round(cpuV)) : 0) + '%'; }
           }
           var gpuV = data.thermal.gpu_temp_c || 0;
           var gpuEl = document.getElementById('thermal-gpu');
@@ -4850,6 +4894,414 @@ function loadViews() {
     }
   }, 10000);
 })();
+
+/* ── Ingest Hub ──────────────────────────────────────────────────────────── */
+var _ingestSources = [];
+var _ingestExpanded = null;
+var _sourceColors = { coder: '#f59e0b', researcher: '#3b82f6', security: '#ef4444', archivist: '#8b5cf6', analyst: '#06b6d4' };
+
+function loadIngest() {
+  apiFetch('/api/ingest/sources').then(function(d) {
+    _ingestSources = d.sources || d || [];
+    renderSourcePills();
+    loadIngestStaging();
+    loadIngestCache();
+  }).catch(function(e) {
+    console.warn('loadIngest failed', e);
+  });
+}
+
+function renderSourcePills() {
+  var wrap = document.getElementById('ingest-source-pills');
+  if (!wrap) return;
+  wrap.textContent = '';
+  _ingestSources.forEach(function(s) {
+    var btn = document.createElement('button');
+    btn.className = 'btn btn-sm';
+    var color = _sourceColors[s.agent_role] || '#6b7280';
+    btn.style.cssText = 'border:1px solid ' + color + ';color:' + color + ';background:transparent;cursor:pointer;';
+    if (_ingestExpanded === s.id) {
+      btn.style.boxShadow = '0 0 0 2px ' + color;
+    }
+    btn.textContent = s.dataset_id || s.name || 'Source ' + s.id;
+    btn.setAttribute('onclick', 'toggleSourcePanel(' + JSON.stringify(s.id) + ')');
+    wrap.appendChild(btn);
+  });
+  // Local Files button
+  var fileBtn = document.createElement('button');
+  fileBtn.className = 'btn btn-sm';
+  fileBtn.style.cssText = 'border:1px solid #6b7280;color:#6b7280;background:transparent;cursor:pointer;';
+  fileBtn.textContent = '\uD83D\uDCC1 Local Files';
+  fileBtn.setAttribute('onclick', 'document.getElementById("ingest-file-input").click()');
+  wrap.appendChild(fileBtn);
+  // + Add Source button
+  var addBtn = document.createElement('button');
+  addBtn.className = 'btn btn-sm';
+  addBtn.style.cssText = 'border:1px dashed #6b7280;color:#6b7280;background:transparent;cursor:pointer;';
+  addBtn.textContent = '+ Add Source';
+  addBtn.setAttribute('onclick', 'showAddSourceModal()');
+  wrap.appendChild(addBtn);
+  // Hidden file input
+  if (!document.getElementById('ingest-file-input')) {
+    var inp = document.createElement('input');
+    inp.type = 'file';
+    inp.multiple = true;
+    inp.id = 'ingest-file-input';
+    inp.style.display = 'none';
+    inp.setAttribute('onchange', 'handleLocalFileUpload()');
+    wrap.appendChild(inp);
+  }
+}
+
+function toggleSourcePanel(sourceId) {
+  var panel = document.getElementById('ingest-expanded-panel');
+  if (!panel) return;
+  if (_ingestExpanded === sourceId) {
+    _ingestExpanded = null;
+    panel.style.display = 'none';
+    panel.textContent = '';
+    renderSourcePills();
+    return;
+  }
+  _ingestExpanded = sourceId;
+  renderSourcePills();
+  panel.style.display = 'block';
+  panel.textContent = '';
+  var src = null;
+  for (var i = 0; i < _ingestSources.length; i++) {
+    if (_ingestSources[i].id === sourceId) { src = _ingestSources[i]; break; }
+  }
+  if (!src) return;
+  // Header
+  var header = document.createElement('div');
+  header.style.cssText = 'display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;';
+  var titleDiv = document.createElement('div');
+  var h3 = document.createElement('h3');
+  h3.style.margin = '0';
+  h3.textContent = src.dataset_id || src.name || 'Source';
+  titleDiv.appendChild(h3);
+  var meta = document.createElement('span');
+  meta.style.cssText = 'font-size:12px;color:var(--muted-foreground);';
+  meta.textContent = (src.skill || '') + ' \u00B7 ' + (src.agent_role || '');
+  titleDiv.appendChild(meta);
+  header.appendChild(titleDiv);
+  // Destination select
+  var selectWrap = document.createElement('div');
+  selectWrap.style.cssText = 'display:flex;align-items:center;gap:8px;';
+  var lbl = document.createElement('label');
+  lbl.textContent = 'Destination:';
+  lbl.style.cssText = 'font-size:12px;color:var(--muted-foreground);';
+  var sel = document.createElement('select');
+  sel.id = 'ingest-dest-select';
+  sel.className = 'form-control';
+  sel.style.cssText = 'width:auto;padding:4px 8px;font-size:12px;';
+  var optTasks = document.createElement('option');
+  optTasks.value = 'tasks';
+  optTasks.textContent = 'Tasks';
+  sel.appendChild(optTasks);
+  var optRag = document.createElement('option');
+  optRag.value = 'rag';
+  optRag.textContent = 'RAG';
+  sel.appendChild(optRag);
+  selectWrap.appendChild(lbl);
+  selectWrap.appendChild(sel);
+  // Fetch button
+  var fetchBtn = document.createElement('button');
+  fetchBtn.className = 'btn btn-sm btn-primary';
+  fetchBtn.textContent = 'Fetch Rows';
+  fetchBtn.setAttribute('onclick', 'fetchSourceRows(' + JSON.stringify(sourceId) + ', 0)');
+  selectWrap.appendChild(fetchBtn);
+  header.appendChild(selectWrap);
+  panel.appendChild(header);
+  // Row preview area
+  var preview = document.createElement('div');
+  preview.id = 'ingest-row-preview';
+  preview.style.cssText = 'min-height:40px;';
+  panel.appendChild(preview);
+}
+
+function fetchSourceRows(sourceId, offset) {
+  var container = document.getElementById('ingest-row-preview');
+  if (!container) return;
+  container.textContent = 'Loading\u2026';
+  apiFetch('/api/ingest/sources/' + encodeURIComponent(sourceId) + '/rows?offset=' + (offset || 0) + '&limit=10').then(function(d) {
+    container.textContent = '';
+    var rows = d.rows || d || [];
+    if (rows.length === 0) {
+      var empty = document.createElement('p');
+      empty.style.cssText = 'color:var(--muted-foreground);font-size:13px;';
+      empty.textContent = 'No rows found.';
+      container.appendChild(empty);
+      return;
+    }
+    rows.forEach(function(row, idx) {
+      var item = document.createElement('div');
+      item.style.cssText = 'display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--border);';
+      var cb = document.createElement('input');
+      cb.type = 'checkbox';
+      cb.className = 'ingest-row-cb';
+      cb.dataset.rowId = row.id || idx;
+      cb.dataset.sourceId = sourceId;
+      item.appendChild(cb);
+      var text = document.createElement('span');
+      text.style.cssText = 'flex:1;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;';
+      var content = row.content || row.text || JSON.stringify(row);
+      text.textContent = content.length > 80 ? content.substring(0, 80) + '\u2026' : content;
+      item.appendChild(text);
+      var tokens = document.createElement('span');
+      tokens.style.cssText = 'font-size:11px;color:var(--muted-foreground);white-space:nowrap;';
+      tokens.textContent = (row.tokens || 0) + ' tok';
+      item.appendChild(tokens);
+      container.appendChild(item);
+    });
+    // Navigation buttons
+    var nav = document.createElement('div');
+    nav.style.cssText = 'display:flex;gap:8px;margin-top:8px;';
+    if ((offset || 0) > 0) {
+      var prevBtn = document.createElement('button');
+      prevBtn.className = 'btn btn-sm btn-outline';
+      prevBtn.textContent = '\u2190 Prev';
+      prevBtn.setAttribute('onclick', 'fetchSourceRows(' + JSON.stringify(sourceId) + ',' + Math.max(0, (offset || 0) - 10) + ')');
+      nav.appendChild(prevBtn);
+    }
+    if (rows.length >= 10) {
+      var nextBtn = document.createElement('button');
+      nextBtn.className = 'btn btn-sm btn-outline';
+      nextBtn.textContent = 'Next \u2192';
+      nextBtn.setAttribute('onclick', 'fetchSourceRows(' + JSON.stringify(sourceId) + ',' + ((offset || 0) + 10) + ')');
+      nav.appendChild(nextBtn);
+    }
+    var stageBtn = document.createElement('button');
+    stageBtn.className = 'btn btn-sm btn-primary';
+    stageBtn.textContent = 'Stage Selected';
+    stageBtn.setAttribute('onclick', 'stageSelectedRows()');
+    nav.appendChild(stageBtn);
+    container.appendChild(nav);
+  }).catch(function(e) {
+    container.textContent = '';
+    var err = document.createElement('p');
+    err.style.color = 'var(--destructive)';
+    err.textContent = 'Failed to fetch rows: ' + (e.message || e);
+    container.appendChild(err);
+  });
+}
+
+function stageSelectedRows() {
+  var cbs = document.querySelectorAll('.ingest-row-cb:checked');
+  if (cbs.length === 0) return;
+  var dest = 'tasks';
+  var destSel = document.getElementById('ingest-dest-select');
+  if (destSel) dest = destSel.value;
+  var items = [];
+  cbs.forEach(function(cb) {
+    items.push({ row_id: cb.dataset.rowId, source_id: cb.dataset.sourceId, destination: dest });
+  });
+  apiFetch('/api/ingest/stage', { method: 'POST', body: { items: items } }).then(function() {
+    loadIngestStaging();
+  }).catch(function(e) {
+    console.warn('stageSelectedRows failed', e);
+  });
+}
+
+function loadIngestStaging() {
+  var list = document.getElementById('ingest-staging-list');
+  if (!list) return;
+  apiFetch('/api/ingest/staging').then(function(d) {
+    list.textContent = '';
+    var items = d.items || d || [];
+    if (items.length === 0) {
+      var empty = document.createElement('p');
+      empty.style.cssText = 'color:var(--muted-foreground);font-size:13px;text-align:center;padding:16px 0;';
+      empty.textContent = 'No staged items';
+      list.appendChild(empty);
+      return;
+    }
+    items.forEach(function(item) {
+      var row = document.createElement('div');
+      row.style.cssText = 'display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--border);';
+      var cb = document.createElement('input');
+      cb.type = 'checkbox';
+      cb.className = 'ingest-staged-cb';
+      cb.dataset.id = item.id;
+      cb.checked = true;
+      row.appendChild(cb);
+      var dot = document.createElement('span');
+      dot.textContent = '\u25CF';
+      dot.style.color = _sourceColors[item.agent_role] || '#6b7280';
+      row.appendChild(dot);
+      var title = document.createElement('span');
+      title.style.cssText = 'flex:1;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;';
+      title.textContent = item.title || item.content || 'Item ' + item.id;
+      row.appendChild(title);
+      var tokens = document.createElement('span');
+      tokens.style.cssText = 'font-size:11px;color:var(--muted-foreground);white-space:nowrap;';
+      tokens.textContent = (item.tokens || 0) + ' tok';
+      row.appendChild(tokens);
+      var badge = document.createElement('span');
+      badge.style.cssText = 'font-size:10px;padding:2px 6px;border-radius:4px;background:var(--card);color:var(--muted-foreground);';
+      badge.textContent = item.destination || 'tasks';
+      row.appendChild(badge);
+      var rmBtn = document.createElement('button');
+      rmBtn.style.cssText = 'background:none;border:none;color:var(--muted-foreground);cursor:pointer;font-size:14px;padding:2px 4px;';
+      rmBtn.textContent = '\u2715';
+      rmBtn.setAttribute('onclick', 'unstageItem(' + JSON.stringify(item.id) + ')');
+      row.appendChild(rmBtn);
+      list.appendChild(row);
+    });
+  }).catch(function(e) {
+    console.warn('loadIngestStaging failed', e);
+  });
+}
+
+function ingestDispatchAll() {
+  var cbs = document.querySelectorAll('.ingest-staged-cb:checked');
+  if (cbs.length === 0) return;
+  var ids = [];
+  cbs.forEach(function(cb) { ids.push(cb.dataset.id); });
+  apiFetch('/api/ingest/dispatch', { method: 'POST', body: { ids: ids } }).then(function() {
+    loadIngestStaging();
+  }).catch(function(e) {
+    console.warn('ingestDispatchAll failed', e);
+  });
+}
+
+function ingestClearStaging() {
+  apiFetch('/api/ingest/staging').then(function(d) {
+    var items = d.items || d || [];
+    var promises = items.map(function(item) {
+      return apiFetch('/api/ingest/staging/' + encodeURIComponent(item.id), { method: 'DELETE' });
+    });
+    return Promise.all(promises);
+  }).then(function() {
+    loadIngestStaging();
+  }).catch(function(e) {
+    console.warn('ingestClearStaging failed', e);
+  });
+}
+
+function unstageItem(id) {
+  apiFetch('/api/ingest/staging/' + encodeURIComponent(id), { method: 'DELETE' }).then(function() {
+    loadIngestStaging();
+  }).catch(function(e) {
+    console.warn('unstageItem failed', e);
+  });
+}
+
+function loadIngestCache() {
+  apiFetch('/api/ingest/cache/stats').then(function(d) {
+    var bar = document.getElementById('ingest-cache-bar');
+    var label = document.getElementById('ingest-cache-label');
+    if (!bar || !label) return;
+    var pct = d.percent || 0;
+    bar.style.width = pct + '%';
+    if (pct < 60) bar.style.background = 'var(--success)';
+    else if (pct < 85) bar.style.background = '#f59e0b';
+    else bar.style.background = 'var(--destructive)';
+    var used = d.used_mb || 0;
+    var total = d.total_mb || 0;
+    label.textContent = used + ' / ' + total + ' MB';
+  }).catch(function(e) {
+    console.warn('loadIngestCache failed', e);
+  });
+}
+
+function handleLocalFileUpload() {
+  var inp = document.getElementById('ingest-file-input');
+  if (!inp || !inp.files) return;
+  var files = inp.files;
+  var uploads = [];
+  for (var i = 0; i < files.length; i++) {
+    (function(file) {
+      var fd = new FormData();
+      fd.append('file', file);
+      uploads.push(
+        fetch('/api/ingest/upload', { method: 'POST', body: fd }).then(function(r) { return r.json(); }).then(function(d) {
+          var item = d.item || d;
+          if (item && item.row_id) {
+            return apiFetch('/api/ingest/stage', { method: 'POST', body: { items: [{ row_id: item.row_id, source_id: item.source_id || 'local', destination: 'tasks' }] } });
+          }
+        })
+      );
+    })(files[i]);
+  }
+  Promise.all(uploads).then(function() {
+    loadIngestStaging();
+    inp.value = '';
+  }).catch(function(e) {
+    console.warn('handleLocalFileUpload failed', e);
+  });
+}
+
+function showAddSourceModal() {
+  // Remove existing modal if any
+  var existing = document.getElementById('ingest-add-source-modal');
+  if (existing) existing.remove();
+  var overlay = document.createElement('div');
+  overlay.id = 'ingest-add-source-modal';
+  overlay.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);display:flex;align-items:center;justify-content:center;z-index:9999;';
+  var modal = document.createElement('div');
+  modal.style.cssText = 'background:var(--card);border:1px solid var(--border);border-radius:8px;padding:24px;width:400px;max-width:90vw;';
+  var title = document.createElement('h3');
+  title.style.cssText = 'margin:0 0 16px 0;';
+  title.textContent = 'Add Ingest Source';
+  modal.appendChild(title);
+  var fields = [
+    { id: 'ingest-new-dataset', label: 'Dataset ID', placeholder: 'e.g. arxiv-cs-2026' },
+    { id: 'ingest-new-skill', label: 'Skill', placeholder: 'e.g. research_ingest' },
+    { id: 'ingest-new-role', label: 'Agent Role', placeholder: 'e.g. researcher' },
+    { id: 'ingest-new-column', label: 'Content Column', placeholder: 'e.g. abstract' }
+  ];
+  fields.forEach(function(f) {
+    var lbl = document.createElement('label');
+    lbl.style.cssText = 'display:block;font-size:12px;color:var(--muted-foreground);margin-bottom:4px;margin-top:12px;';
+    lbl.textContent = f.label;
+    modal.appendChild(lbl);
+    var inp = document.createElement('input');
+    inp.type = 'text';
+    inp.id = f.id;
+    inp.className = 'form-control';
+    inp.placeholder = f.placeholder;
+    inp.style.cssText = 'width:100%;padding:6px 8px;font-size:13px;';
+    modal.appendChild(inp);
+  });
+  var btnWrap = document.createElement('div');
+  btnWrap.style.cssText = 'display:flex;gap:8px;justify-content:flex-end;margin-top:20px;';
+  var cancelBtn = document.createElement('button');
+  cancelBtn.className = 'btn btn-sm btn-outline';
+  cancelBtn.textContent = 'Cancel';
+  cancelBtn.setAttribute('onclick', 'document.getElementById("ingest-add-source-modal").remove()');
+  btnWrap.appendChild(cancelBtn);
+  var addBtn = document.createElement('button');
+  addBtn.className = 'btn btn-sm btn-primary';
+  addBtn.textContent = 'Add';
+  addBtn.setAttribute('onclick', 'submitAddSource()');
+  btnWrap.appendChild(addBtn);
+  modal.appendChild(btnWrap);
+  overlay.appendChild(modal);
+  // Close on overlay click
+  overlay.addEventListener('click', function(e) {
+    if (e.target === overlay) overlay.remove();
+  });
+  document.body.appendChild(overlay);
+}
+
+function submitAddSource() {
+  var datasetId = (document.getElementById('ingest-new-dataset') || {}).value || '';
+  var skill = (document.getElementById('ingest-new-skill') || {}).value || '';
+  var role = (document.getElementById('ingest-new-role') || {}).value || '';
+  var column = (document.getElementById('ingest-new-column') || {}).value || '';
+  if (!datasetId) return;
+  apiFetch('/api/ingest/sources', {
+    method: 'POST',
+    body: { dataset_id: datasetId, skill: skill, agent_role: role, content_column: column }
+  }).then(function() {
+    var modal = document.getElementById('ingest-add-source-modal');
+    if (modal) modal.remove();
+    loadIngest();
+  }).catch(function(e) {
+    console.warn('submitAddSource failed', e);
+  });
+}
 </script>
 </body>
 </html>
