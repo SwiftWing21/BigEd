@@ -247,9 +247,13 @@ Complete Rust rewrite (Phases 0-6), 6-agent audit, 18 fixes, v0.9.0 benchmarks
 - [x] **Dashboard API Keys panel** — 12 keys, inline entry, tier badges, signup hints
 - [x] **Firecrawl key added** — fixed UTF-16 encoding issue in ~/.secrets
 - [x] **Alexandria Library** — 17 HF sources configured (2M+ rows), marathon curricula updated
+- [ ] **FIX: Worker death loop** — workers die with exit=15 every ~30s, get respawned, die again. Root cause: possibly DETACHED_PROCESS + _kill_fleet_processes interaction, or boot sequence killing workers. Needs focused debugging.
+- [ ] **FIX: Dr. Ders duplicates on boot** — boot spawns new instance without checking if one exists. Need PID file or process check before spawn.
+- [ ] **FIX: coder_1 quarantine persists** — failure streak from model eviction carries across reboots. Need quarantine reset on clean boot.
+- [ ] **Supervisor split** — supervisor.py is 1800+ lines doing too much. Split into: supervisor (process lifecycle), scheduler (task dispatch/idle), dashboard (HTTP/API already separate)
+- [x] **Implement `ingest_batch` action** — wired in research_loop.py, tested with camel-chemistry (tasks) + cosmopedia (RAG)
+- [x] **Test end-to-end ingest** — verified: 7 tasks dispatched, 5 RAG entries created, offsets tracked
 - [ ] **Micro Lab** — brainstorm GPU simulation sharing (OpenMM/CFD alongside qwen3:8b, ~6GB free VRAM)
-- [ ] **Implement `ingest_batch` action** in research_loop skill — marathon curricula reference it but it's not wired yet
-- [ ] **Test end-to-end ingest** from dashboard — click source pill, fetch rows, stage, dispatch
 - [ ] **Push to upstream/public** — haven't pushed in ~1 week, need testing pass first
 - [ ] **Qwen 3.5 upgrade** — watch for Ollama GGUF availability, then config swap in fleet.toml
 - [ ] **Web Ingestion Phase 2** — implement spec (3-stage quality gate + Firecrawl crawl)
