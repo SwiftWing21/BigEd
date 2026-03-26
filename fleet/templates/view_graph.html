@@ -606,13 +606,19 @@ button { font-family: inherit; cursor: pointer; border: none; background: none; 
         return {
           name: 'breadthfirst',
           directed: true,
-          spacingFactor: large ? 0.8 : 1.1,
-          animate: !massive,
+          spacingFactor: large ? 0.6 : 0.9,
+          animate: !massive ? 'end' : false,
           animationDuration: 400,
-          padding: 40,
+          padding: 30,
           circle: false,
           avoidOverlap: true,
-          maximal: false
+          maximal: true,
+          grid: true,
+          roots: cy ? cy.nodes().filter(function(n) {
+            // Hub and agent nodes are tree roots (top of hierarchy)
+            var t = n.data('type') || '';
+            return t === 'hub' || t === 'agent';
+          }).map(function(n) { return '#' + n.id(); }).join(', ') || undefined : undefined
         };
       case 'swimlane':
         return {
@@ -820,35 +826,42 @@ button { font-family: inherit; cursor: pointer; border: none; background: none; 
       elements: [],
     });
 
-    // Zoom change handler — 4-tier progressive detail
-    var _lastZoomTier = '';
-    cy.on('zoom', function() {
-      var z = cy.zoom();
-      updateZoomUI(z);
-      // 4 tiers: overview (<0.3), far (0.3-0.6), mid (0.6-1.2), close (>1.2)
-      var tier;
-      if (z < 0.3) tier = 'overview';
-      else if (z < 0.6) tier = 'far';
-      else if (z < 1.2) tier = 'mid';
-      else tier = 'close';
+    _attachZoomHandler(cy);
+  }
 
-      if (tier === _lastZoomTier) return;
-      _lastZoomTier = tier;
+  // ── Zoom: 4-tier progressive detail (extracted so it works with ViewEngine cy too)
+  var _lastZoomTier = '';
+  function _attachZoomHandler(cyInst) {
+    if (!cyInst) return;
+    _lastZoomTier = '';
+    cyInst.on('zoom', function() { _applyZoomTier(cyInst); });
+    // Apply immediately for initial state
+    _applyZoomTier(cyInst);
+    updateZoomUI(cyInst.zoom());
+  }
 
-      cy.startBatch();
-      cy.nodes().forEach(function(n) {
-        n.removeClass('zoom-overview zoom-far zoom-mid zoom-close important');
-        n.addClass('zoom-' + tier);
-        // Mark high-degree nodes as important (show labels earlier)
-        if (n.degree() >= 5 || n.data('type') === 'agent' || n.data('type') === 'hub') {
-          n.addClass('important');
-        }
-      });
-      cy.endBatch();
+  function _applyZoomTier(cyInst) {
+    if (!cyInst) return;
+    var z = cyInst.zoom();
+    updateZoomUI(z);
+    var tier;
+    if (z < 0.3) tier = 'overview';
+    else if (z < 0.6) tier = 'far';
+    else if (z < 1.2) tier = 'mid';
+    else tier = 'close';
+
+    if (tier === _lastZoomTier) return;
+    _lastZoomTier = tier;
+
+    cyInst.startBatch();
+    cyInst.nodes().forEach(function(n) {
+      n.removeClass('zoom-overview zoom-far zoom-mid zoom-close important');
+      n.addClass('zoom-' + tier);
+      if (n.degree() >= 5 || n.data('type') === 'agent' || n.data('type') === 'hub') {
+        n.addClass('important');
+      }
     });
-
-    // Initial zoom UI
-    updateZoomUI(cy.zoom());
+    cyInst.endBatch();
 
     // Node tooltip on hover (via title attribute on container)
     cy.on('mouseover', 'node', function(evt) {
@@ -1173,8 +1186,9 @@ button { font-family: inherit; cursor: pointer; border: none; background: none; 
           var initResult = window._viewEngine.init();
           if (initResult && typeof initResult.then === 'function') {
             initResult.then(function() {
-              // Expose ViewEngine's cy instance for layout switching
+              // Expose ViewEngine's cy instance for layout switching + zoom tiers
               cy = window._viewEngine._cy;
+              _attachZoomHandler(cy);
               hideAllOverlays();
               updateCountsUI();
             }).catch(function(err) {
@@ -1185,6 +1199,7 @@ button { font-family: inherit; cursor: pointer; border: none; background: none; 
             });
           } else {
             cy = window._viewEngine._cy;
+            _attachZoomHandler(cy);
             hideAllOverlays();
             updateCountsUI();
           }
