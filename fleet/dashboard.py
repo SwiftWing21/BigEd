@@ -397,7 +397,7 @@ def api_status():
 
     counts = {}
     for s in ("PENDING", "RUNNING", "DONE", "FAILED"):
-        row = query("SELECT COUNT(*) as n FROM tasks WHERE status=?", (s,))
+        row = query("SELECT COUNT(*) as n FROM tasks WHERE status=? AND classification != 'synthetic_prefix'", (s,))
         counts[s] = row[0]["n"] if row else 0
     return jsonify({"agents": agents, "tasks": counts})
 
@@ -2250,7 +2250,7 @@ def _sse_broadcaster():
                 agents = query("SELECT name, role, status, last_heartbeat FROM agents ORDER BY name")
                 counts = {}
                 for s in ("PENDING", "RUNNING", "DONE", "FAILED"):
-                    row = query("SELECT COUNT(*) as n FROM tasks WHERE status=?", (s,))
+                    row = query("SELECT COUNT(*) as n FROM tasks WHERE status=? AND classification != 'synthetic_prefix'", (s,))
                     counts[s] = row[0]["n"] if row else 0
 
                 # Thermal + system load (read hw_state.json + psutil — cheap)
