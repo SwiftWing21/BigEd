@@ -1011,30 +1011,31 @@ def main():
     if not air_gap:
         _ping_ollama_keepalive(config, model_override=resolved_model)
 
-    # Start core workers with stagger (dynamic agents start on demand)
-    for role in ROLES:
-        start_worker(role, config)
-        _last_busy[role] = time.time()
-        time.sleep(1)
-
-    # Start services — skip network services when offline/air-gapped
-    if not offline:
-        start_discord_bot(config)
-        start_openclaw(config)
+    # Start dashboard early (in background thread — Flask import is slow)
+    import threading
     if not air_gap:
-        start_dashboard(config)
+        threading.Thread(target=start_dashboard, args=(config,), daemon=True).start()
 
     # Start Dr. Ders (hw_supervisor) — respawned if it crashes
     start_hw_supervisor(config)
 
-    # Federation: start auto-discovery + announce rejoin to peers on startup
+    # Start core workers without stagger (was 1s sleep each = 4s wasted)
+    for role in ROLES:
+        start_worker(role, config)
+        _last_busy[role] = time.time()
 
-    # Federation: auto-setup mTLS certs if enabled
-    try:
-        from fleet_tls import auto_setup as _tls_auto_setup, is_tls_enabled as _is_tls_enabled
-        _tls_auto_setup()
-    except Exception as _tls_exc:
-        log.debug("Fleet TLS auto-setup skipped: %s", _tls_exc)
+    # Start network services — skip when offline/air-gapped
+    if not offline:
+        start_discord_bot(config)
+        start_openclaw(config)
+
+    # Federation: deferred to background (mTLS + peer announce can be slow)
+    def _deferred_federation():
+        try:
+            from fleet_tls import auto_setup as _tls_auto_setup
+            _tls_auto_setup()
+        except Exception:
+            pass
 
     # Federation: announce rejoin to peers on startup (crash recovery)
     try:
@@ -1082,6 +1083,7 @@ def main():
                     log.debug(f"Federation: peer {peer_url} unreachable (will retry in heartbeat loop)")
     except Exception:
         pass
+    threading.Thread(target=_deferred_federation, daemon=True).start()
 
     # NOTE: Conductor model warmup + ongoing keepalive handled by Dr. Ders.
     # Dr. Ders checks conductor every ~60s and keepalive every ~240s.
