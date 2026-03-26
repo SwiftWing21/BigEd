@@ -1,16 +1,15 @@
 {
   "schema_version": 1,
   "name": "data-flow",
-  "description": "All registered data sources and their connections",
-  "layout": "cluster",
-  "sources": ["supervisor", "rag", "autoresearch", "reinforcement", "federation"],
+  "description": "How data moves through the fleet: agents -> skills -> models -> knowledge",
+  "layout": "tree",
+  "sources": ["supervisor", "rag", "knowledge", "universe"],
   "edges": [
     {"from": "supervisor:agent", "to": "rag:query", "type": "queries"},
     {"from": "rag:chunk", "to": "autoresearch:dataset", "type": "feeds"},
-    {"from": "autoresearch:trainer", "to": "reinforcement:scorer", "type": "produces"},
     {"from": "supervisor:supervisor", "to": "federation:fleet", "type": "federates"}
   ],
-  "metrics_overlay": [],
-  "animation": {},
-  "zoom_breakpoints": {"labels": 0.5, "metrics": 0.8, "animation": 1.2}
+  "metrics_overlay": ["tok_s"],
+  "animation": {"queries": "flow", "feeds": "flow", "assigned": "flow", "runs": "flow", "writes": "flow", "reads": "flow"},
+  "zoom_breakpoints": {"labels": 0.4, "metrics": 0.6, "animation": 0.8}
 }

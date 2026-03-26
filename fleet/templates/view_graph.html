@@ -350,6 +350,7 @@ button { font-family: inherit; cursor: pointer; border: none; background: none; 
     </span>
     <select class="vg-select" id="layoutSelect" title="Layout engine">
       <option value="radial">Radial</option>
+      <option value="radial-cluster">Radial Cluster</option>
       <option value="cluster">Cluster</option>
       <option value="swimlane">Swimlane</option>
       <option value="tree">Tree</option>
@@ -547,6 +548,23 @@ button { font-family: inherit; cursor: pointer; border: none; background: none; 
           animationDuration: 400,
           padding: 40,
           minNodeSpacing: large ? 5 : 10
+        };
+      case 'radial-cluster':
+        // Concentric rings sorted by node type — same types cluster on the same ring
+        var typeOrder = { hub: 7, agent: 6, model: 5, skill: 4, task: 3, folder: 2, message: 1, config: 0 };
+        return {
+          name: 'concentric',
+          concentric: function(node) {
+            var t = node.data('type') || '';
+            return (typeOrder[t] !== undefined ? typeOrder[t] : 0) * 10 + Math.min(node.degree(), 9);
+          },
+          levelWidth: function() { return large ? 15 : 10; },
+          animate: !massive ? 'end' : false,
+          animationDuration: 500,
+          padding: 40,
+          minNodeSpacing: large ? 3 : 8,
+          equidistant: false,
+          clockwise: true
         };
       case 'cluster':
         // fcose handles 10K+ nodes; fall back to cose for <500

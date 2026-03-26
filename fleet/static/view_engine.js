@@ -35,6 +35,22 @@
       animationDuration: 400,
       padding: 40,
     },
+    "radial-cluster": {
+      name: "concentric",
+      concentric: function (node) {
+        var typeOrder = { hub: 7, agent: 6, model: 5, skill: 4, task: 3, folder: 2, message: 1, config: 0 };
+        var t = node.data("type") || "";
+        return (typeOrder[t] !== undefined ? typeOrder[t] : 0) * 10 + Math.min(node.degree(), 9);
+      },
+      levelWidth: function () {
+        return 10;
+      },
+      animate: "end",
+      animationDuration: 500,
+      padding: 40,
+      equidistant: false,
+      clockwise: true,
+    },
     cluster: {
       // Overridden at runtime by _buildLayoutOptions if fcose is available
       name: "cose",
