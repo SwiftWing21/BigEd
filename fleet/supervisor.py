@@ -457,6 +457,12 @@ def start_ollama(gpu=False):
         env["CUDA_VISIBLE_DEVICES"] = "-1"
     elif "CUDA_VISIBLE_DEVICES" in env:
         del env["CUDA_VISIBLE_DEVICES"]
+
+    # Multi-core optimization: enable parallel request processing in Ollama
+    # NUM_PARALLEL: concurrent requests per model (default 1 = sequential)
+    # MAX_LOADED_MODELS: keep both 8b GPU + 4b CPU loaded simultaneously
+    env.setdefault("OLLAMA_NUM_PARALLEL", "4")
+    env.setdefault("OLLAMA_MAX_LOADED_MODELS", "3")
     mode = "GPU" if gpu else "CPU"
     log.info(f"Starting Ollama ({mode} mode) — {ollama_exe}")
     _json_log("INFO", "ollama_start", mode=mode, exe=ollama_exe)
@@ -625,6 +631,21 @@ def start_worker(role, config):
         cmd, cwd=str(FLEET_DIR),
         creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0),
     )
+
+    # CPU affinity — distribute workers across cores for multi-core utilization
+    if sys.platform == "win32":
+        try:
+            import psutil
+            proc = psutil.Process(worker_procs[role].pid)
+            num_cores = psutil.cpu_count(logical=True) or 16
+            worker_idx = list(worker_procs.keys()).index(role) if role in worker_procs else 0
+            # Assign 2 threads per worker, spread across cores
+            core_a = (worker_idx * 2) % num_cores
+            core_b = (worker_idx * 2 + 1) % num_cores
+            proc.cpu_affinity([core_a, core_b])
+            log.info(f"Worker {role}: pinned to cores {core_a},{core_b}")
+        except Exception as e:
+            log.debug(f"CPU affinity for {role} skipped: {e}")
 
     # 0.07.00: Apply resource limits
     memory_limit = config.get("workers", {}).get("memory_limit_mb", 0)
