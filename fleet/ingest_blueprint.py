@@ -259,3 +259,124 @@ def api_ingest_upload():
     except Exception as e:
         log.warning("POST /api/ingest/upload failed", exc_info=True)
         return jsonify({"error": str(e)}), 500
+
+
+# ── API Key Management ────────────────────────────────────────────────────────
+
+@ingest_bp.route("/api/keys/status")
+def api_keys_status():
+    """Return status of all registered API keys (set/missing, masked values)."""
+    try:
+        import os
+        import tomllib
+        from pathlib import Path
+
+        # Load registry
+        registry_path = Path(__file__).resolve().parent / "keys_registry.toml"
+        if not registry_path.exists():
+            return jsonify({"keys": [], "error": "keys_registry.toml not found"})
+
+        with open(registry_path, "rb") as f:
+            data = tomllib.load(f)
+
+        # Read ~/.secrets for current values
+        secrets = {}
+        secrets_path = Path.home() / ".secrets"
+        if secrets_path.exists():
+            try:
+                for line in secrets_path.read_text(encoding="utf-8").splitlines():
+                    line = line.strip()
+                    if line.startswith("export "):
+                        line = line[7:]
+                    if line.startswith("#") or "=" not in line:
+                        continue
+                    k, _, v = line.partition("=")
+                    k = k.strip()
+                    v = v.strip().strip('"').strip("'")
+                    secrets[k] = v
+            except Exception:
+                pass
+
+        keys = []
+        for entry in data.get("key", []):
+            env_var = entry.get("env_var", "")
+            # Check env first, then ~/.secrets
+            value = os.environ.get(env_var, "") or secrets.get(env_var, "")
+            is_set = bool(value) and value != "REPLACE_ME"
+
+            masked = ""
+            if is_set and len(value) > 12:
+                masked = value[:6] + "..." + value[-4:]
+            elif is_set:
+                masked = "***set***"
+
+            keys.append({
+                "name": entry.get("name", env_var),
+                "label": entry.get("label", ""),
+                "env_var": env_var,
+                "purpose": entry.get("purpose", ""),
+                "skills": entry.get("skills", []),
+                "tier": entry.get("tier", "unknown"),
+                "required": entry.get("required", False),
+                "signup_hint": entry.get("signup_hint", ""),
+                "is_set": is_set,
+                "masked": masked,
+            })
+
+        return jsonify({"keys": keys, "count": len(keys)})
+    except Exception as e:
+        log.warning("GET /api/keys/status failed", exc_info=True)
+        return jsonify({"error": str(e)}), 500
+
+
+@ingest_bp.route("/api/keys/set", methods=["POST"])
+def api_keys_set():
+    """Set an API key value. Writes to ~/.secrets and loads into os.environ."""
+    try:
+        import os
+        from pathlib import Path
+
+        data = request.get_json(force=True)
+        key_name = data.get("key_name", "").strip()
+        value = data.get("value", "").strip()
+
+        if not key_name or not value:
+            return jsonify({"error": "key_name and value required"}), 400
+
+        # Validate key_name is in registry (prevent arbitrary env writes)
+        import tomllib
+        registry_path = Path(__file__).resolve().parent / "keys_registry.toml"
+        with open(registry_path, "rb") as f:
+            registry = tomllib.load(f)
+        valid_vars = {e.get("env_var") for e in registry.get("key", [])}
+        if key_name not in valid_vars:
+            return jsonify({"error": f"'{key_name}' not in keys registry"}), 400
+
+        # Write to ~/.secrets
+        secrets_path = Path.home() / ".secrets"
+        if not secrets_path.exists():
+            secrets_path.write_text("", encoding="utf-8")
+
+        lines = secrets_path.read_text(encoding="utf-8").splitlines()
+        updated = False
+        new_lines = []
+        for line in lines:
+            stripped = line.strip()
+            if stripped.startswith("export "):
+                stripped = stripped[7:].strip()
+            if stripped.startswith(f"{key_name}="):
+                new_lines.append(f"export {key_name}={value}")
+                updated = True
+            else:
+                new_lines.append(line)
+        if not updated:
+            new_lines.append(f"export {key_name}={value}")
+        secrets_path.write_text("\n".join(new_lines) + "\n", encoding="utf-8")
+
+        # Also set in current process env
+        os.environ[key_name] = value
+
+        return jsonify({"status": "ok", "key": key_name, "note": "Saved to ~/.secrets and loaded into current process"})
+    except Exception as e:
+        log.warning("POST /api/keys/set failed", exc_info=True)
+        return jsonify({"error": str(e)}), 500

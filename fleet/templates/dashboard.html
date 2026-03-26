@@ -1754,6 +1754,14 @@ textarea.input {
     <div class="section-title">Settings</div>
     <div class="section-desc">Fleet configuration from fleet.toml</div>
   </div>
+  <!-- API Keys Panel -->
+  <div class="glass-panel" style="margin-bottom:16px;">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+      <h3 style="margin:0;font-size:14px;font-weight:600;">API KEYS</h3>
+      <button class="btn btn-sm btn-outline" onclick="loadApiKeys()">Refresh</button>
+    </div>
+    <div id="api-keys-list"><div class="spinner"></div></div>
+  </div>
   <div id="gate-card-mount" style="margin-bottom:16px"></div>
   <div class="glass-panel">
     <div id="settings-sections">
@@ -4117,9 +4125,132 @@ function updateGateUI(data) {
 }
 
 /* ══════════════════════════════════════════════════════════════════════════
+   8a. API KEYS
+   ══════════════════════════════════════════════════════════════════════ */
+var _tierColors = { paid: '#ef4444', freemium: '#f59e0b', free: '#10b981', unknown: '#64748b' };
+
+function loadApiKeys() {
+  apiFetch('/api/keys/status').then(function(d) {
+    var container = document.getElementById('api-keys-list');
+    container.textContent = '';
+    if (!d.keys || !d.keys.length) {
+      var empty = document.createElement('div');
+      empty.style.cssText = 'color:var(--muted-foreground);font-size:12px;padding:8px;';
+      empty.textContent = 'No keys registered in keys_registry.toml';
+      container.appendChild(empty);
+      return;
+    }
+    d.keys.forEach(function(key) {
+      var row = document.createElement('div');
+      row.style.cssText = 'display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--border);';
+
+      // Status dot
+      var dot = document.createElement('span');
+      dot.style.cssText = 'width:8px;height:8px;border-radius:50%;flex-shrink:0;background:' + (key.is_set ? 'var(--success)' : 'var(--danger)') + ';';
+      row.appendChild(dot);
+
+      // Label + purpose
+      var info = document.createElement('div');
+      info.style.cssText = 'flex:1;min-width:0;';
+      var label = document.createElement('div');
+      label.style.cssText = 'font-size:13px;font-weight:600;';
+      label.textContent = key.label;
+      var purpose = document.createElement('div');
+      purpose.style.cssText = 'font-size:11px;color:var(--muted-foreground);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;';
+      purpose.textContent = key.purpose;
+      info.appendChild(label);
+      info.appendChild(purpose);
+      row.appendChild(info);
+
+      // Tier badge
+      var tier = document.createElement('span');
+      var tc = _tierColors[key.tier] || _tierColors.unknown;
+      tier.style.cssText = 'font-size:10px;padding:2px 6px;border-radius:3px;background:' + tc + '22;color:' + tc + ';flex-shrink:0;';
+      tier.textContent = key.tier;
+      row.appendChild(tier);
+
+      // Skills
+      var skills = document.createElement('span');
+      skills.style.cssText = 'font-size:10px;color:var(--muted-foreground);width:100px;flex-shrink:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;';
+      skills.textContent = (key.skills || []).join(', ') || '—';
+      skills.title = (key.skills || []).join(', ');
+      row.appendChild(skills);
+
+      // Value / entry area
+      var action = document.createElement('div');
+      action.style.cssText = 'width:200px;flex-shrink:0;display:flex;gap:4px;align-items:center;';
+
+      if (key.is_set) {
+        var masked = document.createElement('span');
+        masked.style.cssText = 'font-size:11px;color:var(--muted-foreground);font-family:monospace;';
+        masked.textContent = key.masked;
+        action.appendChild(masked);
+
+        var changeBtn = document.createElement('button');
+        changeBtn.className = 'btn btn-sm btn-outline';
+        changeBtn.style.cssText = 'font-size:10px;padding:1px 6px;margin-left:auto;';
+        changeBtn.textContent = 'Change';
+        (function(k) {
+          changeBtn.onclick = function() { showKeyInput(k.env_var, action); };
+        })(key);
+        action.appendChild(changeBtn);
+      } else {
+        showKeyInput(key.env_var, action, key.signup_hint);
+      }
+
+      row.appendChild(action);
+      container.appendChild(row);
+    });
+  }).catch(function() {
+    var container = document.getElementById('api-keys-list');
+    container.textContent = '';
+    var err = document.createElement('div');
+    err.style.cssText = 'color:var(--danger);font-size:12px;';
+    err.textContent = 'Failed to load API keys';
+    container.appendChild(err);
+  });
+}
+
+function showKeyInput(envVar, container, signupHint) {
+  container.textContent = '';
+  var input = document.createElement('input');
+  input.type = 'password';
+  input.placeholder = 'Paste key...';
+  input.style.cssText = 'flex:1;font-size:11px;padding:3px 6px;border-radius:4px;border:1px solid var(--border);background:var(--card);color:var(--foreground);font-family:monospace;';
+
+  var saveBtn = document.createElement('button');
+  saveBtn.className = 'btn btn-sm';
+  saveBtn.style.cssText = 'font-size:10px;padding:2px 8px;';
+  saveBtn.textContent = 'Save';
+  saveBtn.onclick = function() {
+    var val = input.value.trim();
+    if (!val) return;
+    saveBtn.textContent = '...';
+    saveBtn.disabled = true;
+    apiFetch('/api/keys/set', { method: 'POST', body: { key_name: envVar, value: val } })
+      .then(function() { loadApiKeys(); })
+      .catch(function() { saveBtn.textContent = 'Error'; });
+  };
+
+  container.appendChild(input);
+  container.appendChild(saveBtn);
+
+  if (signupHint) {
+    var hint = document.createElement('a');
+    hint.href = 'https://' + signupHint.split(' ')[0];
+    hint.target = '_blank';
+    hint.style.cssText = 'font-size:10px;color:var(--primary);text-decoration:none;flex-shrink:0;';
+    hint.textContent = '?';
+    hint.title = signupHint;
+    container.appendChild(hint);
+  }
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
    8. SETTINGS
    ══════════════════════════════════════════════════════════════════════ */
 function loadSettings() {
+  loadApiKeys();
   Promise.all([
     apiFetch('/api/settings'),
     apiFetch('/api/settings/schema')
