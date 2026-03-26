@@ -36,7 +36,10 @@ Self_healing.py and diagnostics.py become thin re-export shims pointing to healt
 - `shutdown()` teardown logic (lines 847-875)
 - CPU affinity logic (lines 635-658)
 
-**Does NOT include:** OpenClaw start/stop (removed from boot — already disabled in fleet.toml).
+**OpenClaw:** `start_openclaw()`/`stop_openclaw()` are retained in ProcessManager for manual API invocation but NOT called during boot (disabled in fleet.toml). `shutdown_all()` still calls `stop_openclaw()` to clean up if it was started manually mid-session.
+
+**Also extracts:**
+- `read_hw_state()` + `HW_STATE_FILE` constant (lines 737-751) — reads Dr. Ders state file
 
 **Class interface:**
 
@@ -49,6 +52,7 @@ class ProcessManager:
         self.worker_procs: dict[str, subprocess.Popen | None] = {}
         self.ollama_proc: subprocess.Popen | None = None
         self.discord_proc: subprocess.Popen | None = None
+        self.openclaw_proc: subprocess.Popen | None = None  # retained for manual use
         self.dashboard_proc: subprocess.Popen | None = None
         self.hw_supervisor_proc: subprocess.Popen | None = None
         self.training_active: bool = False
@@ -73,16 +77,21 @@ class ProcessManager:
     def start_hw_supervisor(self) -> None: ...
     def start_dashboard(self) -> None: ...
     def start_discord_bot(self) -> None: ...
+    def start_openclaw(self) -> None: ...   # not called in boot, available for manual API
+    def stop_openclaw(self) -> None: ...
+
+    # State
+    def read_hw_state(self) -> dict | None: ...  # reads hw_state.json from Dr. Ders
 
     # Lifecycle
     def check_alive(self) -> None: ...       # respawn dead workers, Dr.Ders, dashboard, Discord
-    def shutdown_all(self) -> None: ...      # clean teardown (signal handler)
+    def shutdown_all(self) -> None: ...      # clean teardown — includes OpenClaw if running
 
     # Config
     def update_config(self, config: dict) -> None: ...
 ```
 
-**State owned:** All `*_proc` variables, `worker_procs`, `last_busy`, `training_active`, `ollama_evicted_for_training`.
+**State owned:** All `*_proc` variables (including `openclaw_proc`), `worker_procs`, `last_busy`, `training_active`, `ollama_evicted_for_training`.
 
 **`check_alive()` logic** (extracted from main loop lines 1353-1399):
 - Dead workers: mark None, schedule respawn after 15s cooldown
@@ -105,7 +114,7 @@ class ProcessManager:
 - Event triggers dispatch (lines 1708-1717)
 - Config reload (lines 1719-1726)
 - Cost anomaly throttle (lines 1728-1763)
-- Claude capacity bonus (lines 1783-1798)
+- Claude capacity bonus (lines 1783-1798) + `_capacity_state` class (lines 160-162)
 - Training detection (lines 1412-1479) — calls PM.start/stop_ollama on mode switch
 
 **Class interface:**
@@ -196,29 +205,34 @@ class HealthMonitor:
         self._cleanup_caches(now)
         self._cleanup_rag(now)
 
-    # Re-exported from absorbed self_healing.py (dashboard compatibility)
-    def check_agent_health(agent_name: str) -> dict: ...
-    def recover_agent(agent_name: str) -> dict: ...
-    def retry_failed_task(task_id: int, max_retries: int = 3) -> dict: ...
-    def circuit_breaker_record_failure(skill_name: str, error: str = "") -> None: ...
-    def circuit_breaker_is_open(skill_name: str) -> bool: ...
-    def get_circuit_breaker_status() -> list: ...
-    def run_health_sweep() -> dict: ...
-    def detect_skill_regression(skill_name: str, window_hours: int = 6) -> bool: ...
-    def get_rollback_candidates() -> list: ...
-    def rollback_skill(skill_name: str) -> dict: ...
-    def get_agent_health_summary() -> list: ...
-    def get_skill_health_summary() -> list: ...
-    def get_recovery_log() -> list: ...
-
-    # Re-exported from absorbed diagnostics.py
-    def quarantine_agent(name: str, reason: str) -> None: ...
-    def clear_quarantine(name: str) -> None: ...
-    def get_failure_streaks(threshold: int = 3) -> list: ...
-    def get_stuck_reviews(timeout_minutes: int = 30) -> list: ...
 ```
 
-**Module-level re-exports:** The health_monitor module also exposes all public functions at module level (not just on the class) so that `from health_monitor import check_agent_health` works directly. The `tick()` method is class-only for the orchestrator.
+**Module-level functions (NOT class methods):** The following are standalone functions at module level, not methods on HealthMonitor. They keep their existing signatures from self_healing.py and diagnostics.py so all import paths work unchanged:
+
+```python
+# From self_healing.py — used by health_api.py, dashboard.py
+def check_agent_health(agent_name: str) -> dict: ...
+def recover_agent(agent_name: str) -> dict: ...
+def retry_failed_task(task_id: int, max_retries: int = 3) -> dict: ...
+def circuit_breaker_record_failure(skill_name: str, error: str = "") -> None: ...
+def circuit_breaker_is_open(skill_name: str) -> bool: ...
+def get_circuit_breaker_status() -> list: ...
+def run_health_sweep() -> dict: ...
+def detect_skill_regression(skill_name: str, window_hours: int = 6) -> bool: ...
+def get_rollback_candidates() -> list: ...
+def rollback_skill(skill_name: str) -> dict: ...
+def get_agent_health_summary() -> list: ...
+def get_skill_health_summary() -> list: ...
+def get_recovery_log() -> list: ...
+
+# From diagnostics.py — used by db.py, skills/_watchdog.py
+def quarantine_agent(name: str, reason: str) -> None: ...
+def clear_quarantine(name: str) -> None: ...
+def get_failure_streaks(threshold: int = 3) -> list: ...
+def get_stuck_reviews(timeout_minutes: int = 30) -> list: ...
+```
+
+These are module-level standalone functions, not class methods. `from health_monitor import check_agent_health` works directly. The `HealthMonitor` class only exposes `tick()` for the orchestrator.
 
 ### 4. `fleet/boot_sequence.py` (~200 lines)
 
@@ -250,7 +264,8 @@ def boot(config: dict = None) -> tuple[ProcessManager, Scheduler, HealthMonitor,
     12. Start Discord (if online)
     13. Deferred federation (background thread)
     14. Start backup manager
-    15. Write STATUS.md
+    15. Register ViewPort data sources
+    16. Write STATUS.md
 
     Returns initialized module instances for the main loop.
     """
@@ -337,6 +352,11 @@ from health_monitor import (
 ### supervisor.py (~150 lines)
 
 Keeps: `main()`, `write_status_md()`, `_json_log()`, signal handlers, logging setup.
+Also keeps the following small blocks that run on the 30s status interval:
+- Sup-channel inbox reading (`db.get_messages`, `db.get_notes` — lines 1486-1506) + `last_sup_notes_ts` state
+- `.supervisor_heartbeat` file write (lines 1857-1866) — Dr. Ders handshake
+- `write_status_md()` call
+
 Delegates everything else to the 5 modules.
 
 ## Consumers That Import From These Files
@@ -345,12 +365,13 @@ Files that import from supervisor.py, self_healing.py, or diagnostics.py and nee
 
 | Consumer | Current Import | After Restructure |
 |----------|---------------|-------------------|
-| `dashboard.py` | `from self_healing import ...` | Works via shim |
-| `dashboard.py` | `from diagnostics import ...` | Works via shim |
+| `health_api.py` | `from self_healing import ...` (lazy, inside functions) | Works via shim |
+| `db.py` | `from diagnostics import quarantine_agent, clear_quarantine, get_failure_streaks, get_stuck_reviews` | Works via shim |
+| `skills/_watchdog.py` | `from diagnostics import ...` | Works via shim |
 | `worker.py` | (none from supervisor) | No change |
 | `boot.py` (launcher) | References `supervisor.py` as script | No change — still runs `python supervisor.py` |
-| `skills/_watchdog.py` | `from diagnostics import ...` | Works via shim |
 | `lead_client.py` | Calls `/api/fleet/*` | No change (REST) |
+| `dashboard.py` | (imports via health_api.py blueprint, not direct) | No change |
 
 ## What This Does NOT Change
 
