@@ -4291,7 +4291,24 @@ def _release_instance_lock():
 
 
 # ─── Entry point ──────────────────────────────────────────────────────────────
+
+def _detach_console():
+    """On Windows, detach from the parent console so the terminal can close.
+    Only runs when launched via python.exe (not pythonw.exe or frozen .exe)."""
+    if sys.platform != "win32":
+        return
+    if getattr(sys, 'frozen', False):
+        return  # PyInstaller .exe already has no console
+    try:
+        import ctypes
+        kernel32 = ctypes.windll.kernel32
+        # FreeConsole detaches from the parent terminal
+        kernel32.FreeConsole()
+    except Exception:
+        pass
+
 if __name__ == "__main__":
+    _detach_console()
     if not _acquire_instance_lock():
         # Show a warning dialog and exit
         import tkinter as tk
