@@ -997,10 +997,10 @@ button { font-family: inherit; cursor: pointer; border: none; background: none; 
 
   // ── Sidebar: Views ─────────────────────────────────────────────────────
   function loadViews() {
-    fetch('/api/views/config')
+    fetch('/api/views/configs')
       .then(function(r) { return r.json(); })
       .then(function(data) {
-        var views = data.views || [];
+        var views = data.configs || data.views || [];
         clearChildren($viewList);
         if (views.length === 0) {
           $viewList.appendChild(makePlaceholder('No views configured'));
@@ -1060,8 +1060,10 @@ button { font-family: inherit; cursor: pointer; border: none; background: none; 
           $layoutSel.value = config.layout;
         }
 
-        // If BigEdViewEngine is available (from view_engine.js), use it
+        // If BigEdViewEngine is available (from view_engine.js), use it for animations
         if (typeof BigEdViewEngine === 'function') {
+          // Destroy page-level cy — ViewEngine creates its own
+          if (cy) { cy.destroy(); cy = null; }
           if (window._viewEngine && typeof window._viewEngine.destroy === 'function') {
             window._viewEngine.destroy();
           }
@@ -1072,22 +1074,20 @@ button { font-family: inherit; cursor: pointer; border: none; background: none; 
             sseEndpoint: '/api/stream',
           });
           var initResult = window._viewEngine.init();
-          // Handle both promise and non-promise returns
           if (initResult && typeof initResult.then === 'function') {
             initResult.then(function() {
+              // Expose ViewEngine's cy instance for layout switching
+              cy = window._viewEngine._cy;
               hideAllOverlays();
               updateCountsUI();
             }).catch(function(err) {
               console.warn('ViewEngine init failed, falling back to built-in:', err);
-              // Only fall back if ViewEngine didn't render anything
-              if (!cy || cy.nodes().length === 0) {
-                loadGraphData(function() {});
-              } else {
-                hideAllOverlays();
-                updateCountsUI();
-              }
+              // Re-create page-level cy if ViewEngine failed
+              if (!cy) initCytoscape();
+              loadGraphData(function() {});
             });
           } else {
+            cy = window._viewEngine._cy;
             hideAllOverlays();
             updateCountsUI();
           }
