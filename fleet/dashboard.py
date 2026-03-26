@@ -4325,6 +4325,15 @@ if __name__ == "__main__":
     threading.Thread(target=_alert_monitor, daemon=True).start()
     threading.Thread(target=_sse_broadcaster, daemon=True).start()
 
+    # Wire api_gate events into SSE stream
+    try:
+        import api_gate
+        def _gate_to_sse(event_type, detail):
+            _sse_broadcast({"type": event_type, "data": detail})
+        api_gate._event_subscribers.append(_gate_to_sse)
+    except Exception:
+        pass
+
     # Fleet mTLS: auto-setup certs if federation TLS enabled
     try:
         from fleet_tls import auto_setup as _fleet_tls_auto_setup

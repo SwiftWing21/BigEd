@@ -4274,6 +4274,24 @@ function handleSSE(msg) {
     case 'queue_removed':
       if (document.getElementById('section-queue').classList.contains('active')) loadQueueList();
       break;
+    case 'gate_enabled':
+      showToast('API Gate enabled: ' + (msg.data || ''), 'success');
+      apiFetch('/api/gate/status').then(function(d) { if (typeof updateGateUI === 'function') updateGateUI(d); }).catch(function(){});
+      break;
+    case 'gate_disabled':
+      showToast('API Gate disabled', 'info');
+      apiFetch('/api/gate/status').then(function(d) { if (typeof updateGateUI === 'function') updateGateUI(d); }).catch(function(){});
+      break;
+    case 'budget_warning':
+      showToast('Budget warning: ' + (msg.data || ''), 'warning');
+      break;
+    case 'budget_hit':
+      showToast('Budget limit reached — draining API calls', 'error');
+      apiFetch('/api/gate/status').then(function(d) { if (typeof updateGateUI === 'function') updateGateUI(d); }).catch(function(){});
+      break;
+    case 'fallback':
+      showToast('Provider fallback: ' + (msg.data || ''), 'warning');
+      break;
   }
 }
 
