@@ -343,7 +343,7 @@ class CustomTabBar(ctk.CTkFrame):
         "Accounts":       "📋",
         "CRM":            "🤝",
         "Customers":      "👥",
-        "Ingestion":      "📥",
+        "Files":          "📥",
         "Onboarding":     "🎓",
         "Outputs":        "📤",
         "Owner":          "👤",
@@ -1842,7 +1842,7 @@ class BigEdCC(TrayManagerMixin, BootManagerMixin, CommTabMixin, OllamaManagerMix
                                   command=self._copy_output)
         copy_btn.place(relx=1.0, x=-4, y=4, anchor="ne")
 
-    # ── Neural Activity rendering ────────────────────────────────────────────
+    # ── Fleet Activity panel ─────────────────────────────────────────────────
 
     def _poll_fleet_activity(self):
         """Update fleet activity panel from DB — no dashboard dependency."""
@@ -3676,7 +3676,10 @@ class BigEdCC(TrayManagerMixin, BootManagerMixin, CommTabMixin, OllamaManagerMix
                 status = parse_status()
                 self._update_pills(status)
                 self._update_agents_table(status)
-                self._refresh_model_perf()
+                try:
+                    self._refresh_model_perf()
+                except Exception:
+                    pass
                 # Refresh Agents tab every 8s (every other cycle) — uses cache, no flicker
                 self._refresh_counter = getattr(self, '_refresh_counter', 0) + 1
                 if self._refresh_counter % 2 == 0:

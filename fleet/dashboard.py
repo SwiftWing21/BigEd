@@ -1306,18 +1306,23 @@ def api_usage_budgets():
         summary = db.get_usage_summary(period="day", group_by="skill")
         spent_map = {r["skill"]: r.get("total_cost", 0) or 0 for r in summary}
 
+        # Filter out non-budget config keys (period, enforcement, etc.)
+        enforcement = budgets.get("enforcement", "block")
+        period = budgets.get("period", "day")
         result = []
         for skill, limit_usd in sorted(budgets.items()):
+            if not isinstance(limit_usd, (int, float)):
+                continue  # skip config keys like "period", "enforcement"
             spent = spent_map.get(skill, 0)
             result.append({
                 "skill": skill,
                 "budget_usd": limit_usd,
                 "spent_usd": round(spent, 6),
-                "remaining_usd": round(limit_usd - spent, 6),
+                "remaining_usd": round(max(0, limit_usd - spent), 6),
                 "exceeded": spent >= limit_usd,
                 "pct_used": round(spent / limit_usd * 100, 1) if limit_usd > 0 else 0,
             })
-        return jsonify(result)
+        return jsonify({"budgets": result, "enforcement": enforcement, "period": period})
     except Exception as e:
         return jsonify({"error": _safe_error(e)}), 500
 
@@ -3319,6 +3324,21 @@ def api_task_question(task_id):
 
 
 # ── Queue Management Endpoints ───────────────────────────────────────────────
+
+
+@app.route("/api/tasks/recent")
+def api_tasks_recent():
+    """Recent tasks — all statuses, newest first. Used by Pipeline → Swimlane."""
+    try:
+        limit = min(200, max(1, int(request.args.get("limit", 50))))
+        tasks = query(
+            "SELECT id, type, status, priority, assigned_to, created_at "
+            "FROM tasks ORDER BY id DESC LIMIT ?",
+            (limit,),
+        )
+        return jsonify({"tasks": tasks})
+    except Exception as e:
+        return jsonify({"error": _safe_error(e)}), 500
 
 
 @app.route("/api/tasks/queue")
