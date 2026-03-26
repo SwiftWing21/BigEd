@@ -2315,21 +2315,34 @@ def _sse_broadcaster():
                 except Exception:
                     pass
 
-                # Recent task completions (last 10s) for real-time neural pulses
-                recent_tasks = []
+                # Live activity: running + recently completed tasks (for real-time feed)
+                live_items = []
                 try:
-                    recent_rows = query(
-                        "SELECT assigned_to, type, status FROM tasks "
-                        "WHERE status IN ('DONE','FAILED','RUNNING') "
-                        "AND created_at > datetime('now', '-10 seconds') "
-                        "ORDER BY id DESC LIMIT 20"
-                    )
-                    recent_tasks = [
-                        {"agent": r["assigned_to"], "skill": r["type"], "status": r["status"]}
-                        for r in recent_rows if r["assigned_to"]
-                    ]
+                    live_rows = query("""
+                        SELECT id, type, status, assigned_to, classification, created_at,
+                               substr(error, 1, 80) as error
+                        FROM tasks
+                        WHERE classification != 'synthetic_prefix'
+                          AND (status = 'RUNNING'
+                               OR (status IN ('DONE', 'FAILED') AND created_at >= datetime('now', '-2 minutes')))
+                        ORDER BY CASE status WHEN 'RUNNING' THEN 0 WHEN 'DONE' THEN 1 ELSE 2 END, id DESC
+                        LIMIT 20
+                    """)
+                    live_items = [{
+                        "id": r["id"], "type": r["type"], "status": r["status"],
+                        "agent": r["assigned_to"] or "unassigned",
+                        "classification": r["classification"],
+                        "created_at": r["created_at"],
+                        "error": r["error"] or "",
+                    } for r in live_rows]
                 except Exception:
                     pass
+
+                # Legacy: recent tasks for neural pulse animation
+                recent_tasks = [
+                    {"agent": r["agent"], "skill": r["type"], "status": r["status"]}
+                    for r in live_items if r["agent"] != "unassigned"
+                ]
 
                 payload = {
                     "agents": agents,
@@ -2337,6 +2350,7 @@ def _sse_broadcaster():
                     "thermal": thermal,
                     "system": system,
                     "recent": recent_tasks,
+                    "live": live_items,
                 }
 
                 # Adaptive rate: compare to previous snapshot
