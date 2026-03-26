@@ -247,13 +247,22 @@ Complete Rust rewrite (Phases 0-6), 6-agent audit, 18 fixes, v0.9.0 benchmarks
 - [x] **Dashboard API Keys panel** — 12 keys, inline entry, tier badges, signup hints
 - [x] **Firecrawl key added** — fixed UTF-16 encoding issue in ~/.secrets
 - [x] **Alexandria Library** — 17 HF sources configured (2M+ rows), marathon curricula updated
-- [ ] **FIX: Worker death loop** — workers die with exit=15 every ~30s, get respawned, die again. Root cause: possibly DETACHED_PROCESS + _kill_fleet_processes interaction, or boot sequence killing workers. Needs focused debugging.
-- [ ] **FIX: Dr. Ders duplicates on boot** — boot spawns new instance without checking if one exists. Need PID file or process check before spawn.
-- [ ] **FIX: coder_1 quarantine persists** — failure streak from model eviction carries across reboots. Need quarantine reset on clean boot.
-- [ ] **Supervisor split** — supervisor.py is 1800+ lines doing too much. Split into: supervisor (process lifecycle), scheduler (task dispatch/idle), dashboard (HTTP/API already separate)
+- [x] **FIX: Worker death loop** — ROOT CAUSE: 1024MB Job Object limit + health sweep counting synthetic failures. Fixed: 2048MB limit, synthetic_prefix excluded from error rate + quarantine queries.
+- [x] **FIX: Dr. Ders duplicates** — PID file system (fleet/pid_manager.py). Boot checks is_running() before spawning.
+- [x] **FIX: coder_1 quarantine** — diagnostics.py failure streak query now excludes synthetic_prefix
 - [x] **Implement `ingest_batch` action** — wired in research_loop.py, tested with camel-chemistry (tasks) + cosmopedia (RAG)
 - [x] **Test end-to-end ingest** — verified: 7 tasks dispatched, 5 RAG entries created, offsets tracked
-- [ ] **Micro Lab** — brainstorm GPU simulation sharing (OpenMM/CFD alongside qwen3:8b, ~6GB free VRAM)
+- [x] **Live Activity feed** — SSE real-time, radial graph toggle, omnibox dropdown
+- [x] **Performance** — Ollama NUM_PARALLEL=4, CPU affinity, worker CPU uncapped, startup parallelized
+- [x] **Log rotation** — fresh logs each boot, keep last 10 sessions
+- [ ] **Supervisor restructure (5 teams x 5 agents):**
+  - Team 1: process_manager.py — worker spawn/kill/respawn, Ollama, Dr. Ders, PID
+  - Team 2: scheduler.py — task dispatch, idle evolution, DAG queue, dynamic scaling
+  - Team 3: boot.py refactor — staged boot, timeouts, PID checks, model preload
+  - Team 4: health_monitor.py — self-healing + watchdog + diagnostics unified
+  - Team 5: dashboard.py consolidation — extract inline endpoints to blueprints (<1000 lines)
+  - NOTE: needs brainstorm + spec first, then 25-agent execution. Each team works on different files.
+- [ ] **Micro Lab** — brainstorm GPU simulation sharing (OpenMM/CFD alongside qwen3:8b)
 - [ ] **Push to upstream/public** — haven't pushed in ~1 week, need testing pass first
 - [ ] **Qwen 3.5 upgrade** — watch for Ollama GGUF availability, then config swap in fleet.toml
 - [ ] **Web Ingestion Phase 2** — implement spec (3-stage quality gate + Firecrawl crawl)
