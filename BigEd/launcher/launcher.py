@@ -3856,11 +3856,13 @@ class BigEdCC(TrayManagerMixin, BootManagerMixin, CommTabMixin, OllamaManagerMix
             else:
                 cmd = [_get_fleet_python(), "supervisor.py"]
             log_path = FLEET_DIR / "logs" / "supervisor.log"
+            _NW = getattr(subprocess, 'CREATE_NO_WINDOW', 0)
+            _DETACH = getattr(subprocess, 'DETACHED_PROCESS', 0x8) if sys.platform == 'win32' else 0
             with open(log_path, "a") as log_f:
                 proc = subprocess.Popen(
                     cmd, cwd=str(FLEET_DIR),
                     stdout=log_f, stderr=subprocess.STDOUT,
-                    creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0),
+                    creationflags=_NW | _DETACH,
                 )
             self._safe_after(0, lambda: self._log_output(f"Fleet started. PID: {proc.pid}"))
         def _after_ollama(out, err):

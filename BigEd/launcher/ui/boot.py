@@ -713,12 +713,14 @@ class BootManagerMixin:
         except Exception:
             pass
 
+        _NW = getattr(subprocess, 'CREATE_NO_WINDOW', 0)
+        _DETACH = getattr(subprocess, 'DETACHED_PROCESS', 0x8) if sys.platform == 'win32' else 0
         self._ollama_proc = subprocess.Popen(
             [ollama_exe, "serve"],
             stdin=subprocess.DEVNULL,
             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
             env=env,
-            creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0),
+            creationflags=_NW | _DETACH,
         )
 
         # Poll with generous timeout (30s)
@@ -806,13 +808,16 @@ class BootManagerMixin:
         _kill_fleet_processes(["hw_supervisor.py"])
         time.sleep(1)
         # Start fresh — native Windows Python, no WSL
+        # DETACHED_PROCESS (0x8) ensures Dr. Ders survives launcher close
+        _NW = getattr(subprocess, 'CREATE_NO_WINDOW', 0)
+        _DETACH = getattr(subprocess, 'DETACHED_PROCESS', 0x8) if sys.platform == 'win32' else 0
         subprocess.Popen(
             [_get_python(), str(hw_sup_path)],
             cwd=str(L.FLEET_DIR),
             stdin=subprocess.DEVNULL,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
-            creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0),
+            creationflags=_NW | _DETACH,
         )
 
         # Adaptive timeout — uses historical boot times
@@ -950,12 +955,15 @@ class BootManagerMixin:
         # Dashboard is launched by the supervisor (not boot.py) to avoid port conflicts
 
         # Launch supervisor natively (like Dr. Ders)
+        # DETACHED_PROCESS ensures supervisor survives launcher close/restart
+        _NW = getattr(subprocess, 'CREATE_NO_WINDOW', 0)
+        _DETACH = getattr(subprocess, 'DETACHED_PROCESS', 0x8) if sys.platform == 'win32' else 0
         subprocess.Popen(
             [_get_python(), str(L.FLEET_DIR / "supervisor.py")],
             cwd=str(L.FLEET_DIR),
             stdin=subprocess.DEVNULL,
             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-            creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0),
+            creationflags=_NW | _DETACH,
         )
 
         # Poll for fresh STATUS.md (45s total: 22 iterations × 2s)
