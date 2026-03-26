@@ -36,6 +36,7 @@
       padding: 40,
     },
     cluster: {
+      // Overridden at runtime by _buildLayoutOptions if fcose is available
       name: "cose",
       animate: "end",
       animationDuration: 500,
@@ -64,7 +65,6 @@
       avoidOverlap: true,
     },
     tree: {
-      // breadthfirst handles cyclic graphs (dagre crashes on cycles)
       name: "breadthfirst",
       directed: true,
       spacingFactor: 1.1,
@@ -889,6 +889,31 @@
    * Build layout options from hint, with swimlane special handling.
    */
   BigEdViewEngine.prototype._buildLayoutOptions = function (hint, elements) {
+    var nodeCount = elements ? elements.filter(function(e) { return e.group === "nodes"; }).length : 0;
+    var large = nodeCount > 500;
+    var massive = nodeCount > 1500;
+
+    // Use fcose for cluster layout if available (handles 10K+ nodes)
+    var hasFcose = typeof cytoscapeFcose === "function";
+    if (hint === "cluster" && hasFcose) {
+      return {
+        name: "fcose",
+        animate: massive ? false : "end",
+        animationDuration: 500,
+        fit: true,
+        randomize: true,
+        quality: massive ? "draft" : "default",
+        nodeRepulsion: function () { return massive ? 8000 : 50000; },
+        idealEdgeLength: function () { return massive ? 60 : 100; },
+        edgeElasticity: function () { return 0.45; },
+        gravity: massive ? 0.8 : 0.4,
+        numIter: massive ? 1000 : 2500,
+        padding: 30,
+        packComponents: true,
+        nodeDimensionsIncludeLabels: !massive,
+      };
+    }
+
     var base = LAYOUT_MAP[hint];
     if (!base) {
       base = LAYOUT_MAP.cluster;
@@ -900,6 +925,11 @@
       if (base.hasOwnProperty(k)) {
         opts[k] = base[k];
       }
+    }
+
+    // Scale parameters for large graphs
+    if (large && opts.animate === true) {
+      opts.animate = massive ? false : "end";
     }
 
     // Swimlane: use position-based layout from view config lanes

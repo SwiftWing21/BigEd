@@ -12,6 +12,8 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/cytoscape/3.28.1/cytoscape.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/dagre/0.8.5/dagre.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/cytoscape-dagre/2.5.0/cytoscape-dagre.min.js"></script>
+<!-- fcose: fast compound spring embedder — handles 10K+ nodes -->
+<script src="https://unpkg.com/cytoscape-fcose@2.2.0/cytoscape-fcose.js"></script>
 
 <style>
 /* ── Fallbacks if tokens.css vars are missing ──────────────────────────── */
@@ -523,20 +525,99 @@ button { font-family: inherit; cursor: pointer; border: none; background: none; 
   }
 
   // ── Layout mapping ─────────────────────────────────────────────────────
+  // fcose available? (loaded from CDN above)
+  var _hasFcose = typeof cytoscape !== 'undefined' && typeof cytoscapeFcose === 'function';
+  if (_hasFcose) {
+    try { cytoscape.use(cytoscapeFcose); } catch(e) { _hasFcose = false; }
+  }
+
   function layoutOpts(hint) {
+    var n = cy ? cy.nodes().length : 0;
+    // Performance tier: >500 nodes = large, >1500 = massive
+    var large = n > 500;
+    var massive = n > 1500;
+
     switch (hint) {
       case 'radial':
-        return { name: 'concentric', concentric: function(n) { return n.degree(); }, levelWidth: function() { return 2; }, animate: true, animationDuration: 400, padding: 40 };
+        return {
+          name: 'concentric',
+          concentric: function(node) { return node.degree(); },
+          levelWidth: function() { return large ? 3 : 2; },
+          animate: !massive,
+          animationDuration: 400,
+          padding: 40,
+          minNodeSpacing: large ? 5 : 10
+        };
       case 'cluster':
-        return { name: 'cose', animate: 'end', animationDuration: 500, fit: true, nodeRepulsion: function() { return 50000; }, idealEdgeLength: function() { return 100; }, edgeElasticity: function() { return 150; }, gravity: 0.4, numIter: 500, randomize: true, padding: 40 };
+        // fcose handles 10K+ nodes; fall back to cose for <500
+        if (_hasFcose) {
+          return {
+            name: 'fcose',
+            animate: massive ? false : 'end',
+            animationDuration: 500,
+            fit: true,
+            randomize: true,
+            quality: massive ? 'draft' : 'default',
+            nodeRepulsion: function() { return massive ? 8000 : 50000; },
+            idealEdgeLength: function() { return massive ? 60 : 100; },
+            edgeElasticity: function() { return 0.45; },
+            gravity: massive ? 0.8 : 0.4,
+            gravityRange: massive ? 2.0 : 3.8,
+            numIter: massive ? 1000 : 2500,
+            padding: 30,
+            nodeSeparation: large ? 30 : 75,
+            sampleSize: massive ? 100 : 25,
+            nodeDimensionsIncludeLabels: !massive,
+            packComponents: true
+          };
+        }
+        return {
+          name: 'cose',
+          animate: 'end',
+          animationDuration: 500,
+          fit: true,
+          randomize: true,
+          nodeRepulsion: function() { return 50000; },
+          idealEdgeLength: function() { return 100; },
+          edgeElasticity: function() { return 150; },
+          gravity: 0.4,
+          numIter: 500,
+          padding: 40
+        };
       case 'tree':
-        // dagre crashes on cyclic graphs — fall back to breadthfirst which handles cycles
-        return { name: 'breadthfirst', directed: true, spacingFactor: 1.1, animate: true, animationDuration: 400, padding: 40, circle: false, avoidOverlap: true };
+        return {
+          name: 'breadthfirst',
+          directed: true,
+          spacingFactor: large ? 0.8 : 1.1,
+          animate: !massive,
+          animationDuration: 400,
+          padding: 40,
+          circle: false,
+          avoidOverlap: true,
+          maximal: false
+        };
       case 'swimlane':
-        // Group by node type into columns
-        return { name: 'grid', rows: undefined, cols: 6, animate: true, animationDuration: 400, padding: 30, avoidOverlap: true, sort: function(a, b) { return (a.data('type') || '').localeCompare(b.data('type') || ''); } };
+        return {
+          name: 'grid',
+          rows: undefined,
+          cols: large ? 8 : 6,
+          animate: !massive,
+          animationDuration: 400,
+          padding: 20,
+          avoidOverlap: true,
+          condense: massive,
+          sort: function(a, b) {
+            var ta = a.data('type') || '';
+            var tb = b.data('type') || '';
+            if (ta !== tb) return ta.localeCompare(tb);
+            return (a.data('label') || '').localeCompare(b.data('label') || '');
+          }
+        };
       default:
-        return { name: 'cose', animate: true, animationDuration: 400 };
+        if (_hasFcose) {
+          return { name: 'fcose', animate: 'end', fit: true, randomize: true, quality: 'draft', numIter: 500, padding: 30 };
+        }
+        return { name: 'cose', animate: 'end', animationDuration: 400, fit: true };
     }
   }
 
@@ -544,9 +625,12 @@ button { font-family: inherit; cursor: pointer; border: none; background: none; 
   function initCytoscape() {
     cy = cytoscape({
       container: $cy,
-      minZoom: 0.1,
+      minZoom: 0.05,
       maxZoom: 4,
       wheelSensitivity: 0.3,
+      textureOnViewport: true,     // GPU texture for panning (big perf win)
+      hideEdgesOnViewport: false,   // keep edges visible during pan
+      hideLabelsOnViewport: true,   // hide labels during pan for perf
       style: [
         // ── Nodes ──
         {
@@ -783,7 +867,22 @@ button { font-family: inherit; cursor: pointer; border: none; background: none; 
       return;
     }
 
+    var nodeCount = elements.filter(function(e) { return e.group === 'nodes'; }).length;
+
+    // Performance: batch add + reduce detail for large graphs
+    cy.startBatch();
     cy.add(elements);
+    if (nodeCount > 1500) {
+      // Massive graph: hide labels, shrink nodes, reduce edge opacity
+      cy.nodes().style({ 'label': '', 'width': 10, 'height': 10, 'border-width': 0 });
+      cy.edges().style({ 'opacity': 0.15, 'width': 0.5 });
+    } else if (nodeCount > 500) {
+      // Large graph: smaller labels/nodes
+      cy.nodes().style({ 'font-size': '8px', 'width': 20, 'height': 20 });
+      cy.edges().style({ 'opacity': 0.3, 'width': 1 });
+    }
+    cy.endBatch();
+
     applyLayout();
     applySourceFilter();
     hideAllOverlays();
