@@ -661,7 +661,7 @@ button { font-family: inherit; cursor: pointer; border: none; background: none; 
           style: {
             'label':              'data(label)',
             'background-color':   'data(color)',
-            'color':              '#e0e0e0',
+            'color':              _cssText,
             'text-valign':        'bottom',
             'text-halign':        'center',
             'font-size':          '11px',
@@ -751,15 +751,15 @@ button { font-family: inherit; cursor: pointer; border: none; background: none; 
         // Status node styles
         {
           selector: 'node[status="active"], node[status="WORKING"]',
-          style: { 'border-color': '#4caf50' },
+          style: { 'border-color': _cssGreen },
         },
         {
           selector: 'node[status="idle"], node[status="IDLE"]',
-          style: { 'border-color': '#ff9800' },
+          style: { 'border-color': _cssOrange },
         },
         {
           selector: 'node[status="error"], node[status="OFFLINE"]',
-          style: { 'border-color': '#f44336' },
+          style: { 'border-color': _cssRed },
         },
         {
           selector: 'node[status="disabled"]',
@@ -998,14 +998,22 @@ button { font-family: inherit; cursor: pointer; border: none; background: none; 
     updateCountsUI();
   }
 
+  // Resolve CSS vars once for Cytoscape (which can't read them directly)
+  var _cssText   = getComputedStyle(document.documentElement).getPropertyValue('--text').trim() || '#e0e0e0';
+  var _cssGreen  = getComputedStyle(document.documentElement).getPropertyValue('--status-green').trim() || '#4caf50';
+  var _cssOrange = getComputedStyle(document.documentElement).getPropertyValue('--status-orange').trim() || '#ff9800';
+  var _cssRed    = getComputedStyle(document.documentElement).getPropertyValue('--status-red').trim() || '#f44336';
+  var _cssDim    = getComputedStyle(document.documentElement).getPropertyValue('--dim').trim() || '#a0a0a0';
+  var _cssBorder = getComputedStyle(document.documentElement).getPropertyValue('--glass-border').trim() || '#555';
+
   function statusBorderColor(status) {
-    if (!status) return '#555';
+    if (!status) return _cssBorder;
     switch (status.toLowerCase()) {
-      case 'active': case 'working': return '#4caf50';
-      case 'idle':                   return '#ff9800';
-      case 'error':  case 'offline': return '#f44336';
-      case 'disabled':               return '#666';
-      default:                       return '#555';
+      case 'active': case 'working': return _cssGreen;
+      case 'idle':                   return _cssOrange;
+      case 'error':  case 'offline': return _cssRed;
+      case 'disabled':               return _cssDim;
+      default:                       return _cssBorder;
     }
   }
 

@@ -779,7 +779,8 @@
       }
     });
 
-    // Apply initial zoom level styling
+    // Apply initial zoom level styling + start animations
+    this._currentZoomLevel = null; // force first _onZoomChange to apply
     this._onZoomChange();
   };
 
