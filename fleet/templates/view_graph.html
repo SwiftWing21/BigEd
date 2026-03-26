@@ -671,14 +671,76 @@ button { font-family: inherit; cursor: pointer; border: none; background: none; 
             'overlay-padding':    '4px',
           },
         },
-        // Labels hidden at overview zoom
+        // Zoom tier: overview — no labels, tiny dots
         {
           selector: 'node.zoom-overview',
           style: {
             'label':        '',
+            'width':        10,
+            'height':       10,
+            'border-width': 0,
+          },
+        },
+        // Zoom tier: far — only high-degree nodes get labels
+        {
+          selector: 'node.zoom-far',
+          style: {
+            'label':        '',
+            'width':        16,
+            'height':       16,
+            'border-width': 1,
+          },
+        },
+        {
+          selector: 'node.zoom-far.important',
+          style: {
+            'label':        'data(label)',
+            'font-size':    '8px',
+            'text-max-width': '70px',
+            'width':        22,
+            'height':       22,
+          },
+        },
+        // Zoom tier: mid — typed labels, scaled text
+        {
+          selector: 'node.zoom-mid',
+          style: {
+            'font-size':    '9px',
+            'text-max-width': '80px',
+            'width':        24,
+            'height':       24,
+          },
+        },
+        // Zoom tier: close — full labels, bigger nodes
+        {
+          selector: 'node.zoom-close',
+          style: {
+            'font-size':    '12px',
+            'text-max-width': '120px',
+            'width':        36,
+            'height':       36,
+            'border-width': 2,
+          },
+        },
+        // Task nodes: hide labels until very close (there are hundreds)
+        {
+          selector: 'node[type="task"]',
+          style: {
+            'label':        '',
+            'width':        8,
+            'height':       8,
+            'border-width': 0,
+            'opacity':      0.7,
+          },
+        },
+        {
+          selector: 'node[type="task"].zoom-close',
+          style: {
+            'label':        'data(label)',
+            'font-size':    '8px',
             'width':        14,
             'height':       14,
-            'border-width': 0,
+            'opacity':      1,
           },
         },
         // Status node styles
@@ -758,14 +820,31 @@ button { font-family: inherit; cursor: pointer; border: none; background: none; 
       elements: [],
     });
 
-    // Zoom change handler — progressive detail
+    // Zoom change handler — 4-tier progressive detail
+    var _lastZoomTier = '';
     cy.on('zoom', function() {
       var z = cy.zoom();
       updateZoomUI(z);
-      var lvl = zoomLevel(z);
+      // 4 tiers: overview (<0.3), far (0.3-0.6), mid (0.6-1.2), close (>1.2)
+      var tier;
+      if (z < 0.3) tier = 'overview';
+      else if (z < 0.6) tier = 'far';
+      else if (z < 1.2) tier = 'mid';
+      else tier = 'close';
+
+      if (tier === _lastZoomTier) return;
+      _lastZoomTier = tier;
+
+      cy.startBatch();
       cy.nodes().forEach(function(n) {
-        n.toggleClass('zoom-overview', lvl === 'overview');
+        n.removeClass('zoom-overview zoom-far zoom-mid zoom-close important');
+        n.addClass('zoom-' + tier);
+        // Mark high-degree nodes as important (show labels earlier)
+        if (n.degree() >= 5 || n.data('type') === 'agent' || n.data('type') === 'hub') {
+          n.addClass('important');
+        }
       });
+      cy.endBatch();
     });
 
     // Initial zoom UI
