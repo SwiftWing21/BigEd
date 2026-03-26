@@ -1486,60 +1486,48 @@ textarea.input {
 <div id="section-pipeline" class="section">
   <div class="section-header">
     <div class="section-title">Pipeline</div>
-    <div class="section-desc">Task flow visualization and neural graph</div>
+    <div class="section-desc">Task flow, agent activity, and knowledge graph</div>
   </div>
 
-  <div class="tab-group">
-    <button class="tab-group-btn active" onclick="showSubPanel('pipeline', 'lane', this)">Lane Graph</button>
-    <button class="tab-group-btn" onclick="showSubPanel('pipeline', 'kanban', this)">Kanban</button>
-    <button class="tab-group-btn" onclick="showSubPanel('pipeline', 'swimlane', this)">Swimlane</button>
-    <button class="tab-group-btn" onclick="showSubPanel('pipeline', 'neural', this)">Neural Graph</button>
-  </div>
-
-  <!-- Lane Graph -->
-  <div id="pipeline-lane" class="sub-panel active">
+  <!-- Task Flow + Kanban (side by side) -->
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px;">
     <div class="card">
       <div class="card-header"><span class="card-title">Task Flow</span></div>
       <div class="lane-graph" id="lane-graph-container">
         <div class="spinner"></div>
       </div>
     </div>
-  </div>
-
-  <!-- Kanban -->
-  <div id="pipeline-kanban" class="sub-panel">
-    <div class="kanban" id="kanban-container">
-      <div class="spinner"></div>
-    </div>
-  </div>
-
-  <!-- Swimlane / Gantt -->
-  <div id="pipeline-swimlane" class="sub-panel">
     <div class="card">
-      <div class="card-header"><span class="card-title">Agent Timeline</span></div>
-      <div class="swimlane" id="swimlane-container">
+      <div class="card-header"><span class="card-title">Kanban</span></div>
+      <div class="kanban" id="kanban-container" style="flex-wrap:nowrap;overflow-x:auto;">
         <div class="spinner"></div>
       </div>
     </div>
   </div>
 
-  <!-- Neural / Dual Graph (Cytoscape.js) -->
-  <div id="pipeline-neural" class="sub-panel">
-    <div class="card">
-      <div class="card-header">
-        <span class="card-title">Neural Graph</span>
-        <button class="btn btn-ghost btn-sm" onclick="loadNeuralGraph()">&#8635; Refresh</button>
-      </div>
-      <div id="cytoscape-container"></div>
-      <div id="neural-graph-legend" class="chart-legend" style="padding:8px 0 0">
-        <span class="chart-legend-item"><span class="chart-legend-dot" style="background:#10b981"></span> Agent</span>
-        <span class="chart-legend-item"><span class="chart-legend-dot" style="background:#f59e0b"></span> Skill</span>
-        <span class="chart-legend-item"><span class="chart-legend-dot" style="background:#3b82f6"></span> Task</span>
-        <span class="chart-legend-item"><span class="chart-legend-dot" style="background:#a78bfa"></span> Model</span>
-        <span class="chart-legend-item"><span class="chart-legend-dot" style="background:#4fc3f7"></span> Folder</span>
-        <span class="chart-legend-item"><span class="chart-legend-dot" style="background:#ec4899"></span> Channel</span>
-        <span class="chart-legend-item"><span class="chart-legend-dot" style="background:#64748b"></span> Config</span>
-      </div>
+  <!-- Swimlane / Agent Timeline -->
+  <div class="card" style="margin-bottom:16px;">
+    <div class="card-header"><span class="card-title">Agent Timeline</span></div>
+    <div class="swimlane" id="swimlane-container">
+      <div class="spinner"></div>
+    </div>
+  </div>
+
+  <!-- Knowledge / Neural Graph -->
+  <div class="card">
+    <div class="card-header">
+      <span class="card-title">Knowledge Graph</span>
+      <button class="btn btn-ghost btn-sm" onclick="loadNeuralGraph()">&#8635; Refresh</button>
+    </div>
+    <div id="cytoscape-container"></div>
+    <div id="neural-graph-legend" class="chart-legend" style="padding:8px 0 0">
+      <span class="chart-legend-item"><span class="chart-legend-dot" style="background:#10b981"></span> Agent</span>
+      <span class="chart-legend-item"><span class="chart-legend-dot" style="background:#f59e0b"></span> Skill</span>
+      <span class="chart-legend-item"><span class="chart-legend-dot" style="background:#3b82f6"></span> Task</span>
+      <span class="chart-legend-item"><span class="chart-legend-dot" style="background:#a78bfa"></span> Model</span>
+      <span class="chart-legend-item"><span class="chart-legend-dot" style="background:#4fc3f7"></span> Folder</span>
+      <span class="chart-legend-item"><span class="chart-legend-dot" style="background:#ec4899"></span> Channel</span>
+      <span class="chart-legend-item"><span class="chart-legend-dot" style="background:#64748b"></span> Config</span>
     </div>
   </div>
 </div>
@@ -2654,6 +2642,7 @@ function loadPipeline() {
   loadLaneGraph();
   loadKanban();
   loadSwimlane();
+  loadNeuralGraph();
 }
 
 function loadLaneGraph() {
