@@ -1320,9 +1320,11 @@ textarea.input {
   </div>
 
   <!-- Omnibox -->
-  <div class="omnibox">
+  <div class="omnibox" style="position:relative;">
     <span class="search-icon">&#128269;</span>
-    <input type="text" id="omnibox-input" placeholder="Search agents, tasks, skills, settings..." onkeyup="omniboxSearch(this.value)">
+    <input type="text" id="omnibox-input" placeholder="Search agents, tasks, skills, settings..."
+           oninput="omniboxSuggest(this.value)" onkeydown="omniboxKeydown(event)">
+    <div id="omnibox-dropdown" style="display:none;position:absolute;top:100%;left:0;right:0;background:var(--card);border:1px solid var(--border);border-radius:0 0 8px 8px;z-index:100;max-height:240px;overflow-y:auto;"></div>
   </div>
 
   <!-- Status Badges -->
@@ -1944,19 +1946,95 @@ function showToast(message, type) {
   setTimeout(function() { t.style.opacity = '0'; setTimeout(function() { t.remove(); }, 300); }, 3500);
 }
 
-/* ── Omnibox ──────────────────────────────────────────────────────────────── */
-function omniboxSearch(query) {
-  var sections = ['dashboard','fleet','pipeline','tasks','hitl','queue','analytics','settings'];
+/* ── Omnibox with dropdown ─────────────────────────────────────────────────── */
+var _omniboxItems = [
+  {label: 'Dashboard', section: 'dashboard', icon: '■'},
+  {label: 'Fleet', section: 'fleet', icon: '⚙'},
+  {label: 'Pipeline', section: 'pipeline', icon: '⇄'},
+  {label: 'Ingest', section: 'ingest', icon: '📥'},
+  {label: 'Tasks', section: 'tasks', icon: '⚡'},
+  {label: 'HITL', section: 'hitl', icon: '✍'},
+  {label: 'Queue', section: 'queue', icon: '☰'},
+  {label: 'Analytics', section: 'analytics', icon: '★'},
+  {label: 'Docs', section: 'docs', icon: '📖'},
+  {label: 'Views', section: 'views', icon: '◉'},
+  {label: 'Settings', section: 'settings', icon: '⚙'},
+  {label: 'API Keys', section: 'settings', icon: '🔑', keywords: 'key api credential secret'},
+  {label: 'Thermal', section: 'dashboard', icon: '🔥', keywords: 'temperature cpu gpu'},
+  {label: 'Neural Activity', section: 'dashboard', icon: '🧠', keywords: 'neural activity graph'},
+];
+var _omniboxIdx = -1;
+
+function omniboxSuggest(query) {
+  var dd = document.getElementById('omnibox-dropdown');
   var q = query.toLowerCase().trim();
-  if (q.length >= 3) {
-    for (var i = 0; i < sections.length; i++) {
-      if (sections[i].indexOf(q) === 0) {
-        showSection(sections[i]);
-        return;
-      }
+  _omniboxIdx = -1;
+  if (q.length < 1) { dd.style.display = 'none'; return; }
+
+  var matches = _omniboxItems.filter(function(item) {
+    return item.label.toLowerCase().indexOf(q) !== -1 ||
+           item.section.indexOf(q) !== -1 ||
+           (item.keywords && item.keywords.indexOf(q) !== -1);
+  });
+
+  dd.textContent = '';
+  if (!matches.length) { dd.style.display = 'none'; return; }
+
+  matches.forEach(function(m, i) {
+    var row = document.createElement('div');
+    row.style.cssText = 'padding:8px 12px;cursor:pointer;display:flex;align-items:center;gap:8px;font-size:13px;';
+    row.setAttribute('data-idx', i);
+    row.onmouseenter = function() {
+      dd.querySelectorAll('div').forEach(function(d) { d.style.background = ''; });
+      row.style.background = 'var(--border)';
+      _omniboxIdx = i;
+    };
+    row.onclick = function() {
+      showSection(m.section);
+      document.getElementById('omnibox-input').value = '';
+      dd.style.display = 'none';
+    };
+    var icon = document.createElement('span');
+    icon.textContent = m.icon;
+    icon.style.cssText = 'width:20px;text-align:center;';
+    var text = document.createElement('span');
+    text.textContent = m.label;
+    var hint = document.createElement('span');
+    hint.textContent = m.section;
+    hint.style.cssText = 'margin-left:auto;font-size:10px;color:var(--muted-foreground);';
+    row.appendChild(icon);
+    row.appendChild(text);
+    row.appendChild(hint);
+    dd.appendChild(row);
+  });
+  dd.style.display = 'block';
+}
+
+function omniboxKeydown(e) {
+  var dd = document.getElementById('omnibox-dropdown');
+  var items = dd.querySelectorAll('div');
+  if (e.key === 'Escape') { dd.style.display = 'none'; return; }
+  if (e.key === 'ArrowDown') {
+    e.preventDefault();
+    _omniboxIdx = Math.min(_omniboxIdx + 1, items.length - 1);
+    items.forEach(function(d, i) { d.style.background = i === _omniboxIdx ? 'var(--border)' : ''; });
+  } else if (e.key === 'ArrowUp') {
+    e.preventDefault();
+    _omniboxIdx = Math.max(_omniboxIdx - 1, 0);
+    items.forEach(function(d, i) { d.style.background = i === _omniboxIdx ? 'var(--border)' : ''; });
+  } else if (e.key === 'Enter') {
+    if (_omniboxIdx >= 0 && items[_omniboxIdx]) {
+      items[_omniboxIdx].click();
     }
   }
 }
+
+// Close dropdown on outside click
+document.addEventListener('click', function(e) {
+  if (!e.target.closest('.omnibox')) {
+    document.getElementById('omnibox-dropdown').style.display = 'none';
+  }
+});
 
 /* ── API Fetch Helper ─────────────────────────────────────────────────────── */
 function apiFetch(url, opts) {
