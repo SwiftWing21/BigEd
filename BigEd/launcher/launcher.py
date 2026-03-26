@@ -4292,23 +4292,44 @@ def _release_instance_lock():
 
 # ─── Entry point ──────────────────────────────────────────────────────────────
 
-def _detach_console():
-    """On Windows, detach from the parent console so the terminal can close.
-    Only runs when launched via python.exe (not pythonw.exe or frozen .exe)."""
+def _relaunch_windowless():
+    """If running via python.exe on Windows, relaunch with pythonw.exe to avoid console window.
+    Returns True if relaunched (caller should exit), False if already windowless."""
     if sys.platform != "win32":
-        return
+        return False
     if getattr(sys, 'frozen', False):
-        return  # PyInstaller .exe already has no console
-    try:
-        import ctypes
-        kernel32 = ctypes.windll.kernel32
-        # FreeConsole detaches from the parent terminal
-        kernel32.FreeConsole()
-    except Exception:
-        pass
+        return False  # PyInstaller .exe — already no console
+    if os.environ.get("BIGED_NO_RELAUNCH"):
+        return False  # prevent infinite relaunch loop
+
+    exe = sys.executable.lower()
+    if "pythonw" in exe:
+        return False  # already windowless
+
+    # Find pythonw.exe next to python.exe
+    pythonw = Path(sys.executable).parent / "pythonw.exe"
+    if not pythonw.exists():
+        # Try shutil.which as fallback
+        import shutil
+        pw = shutil.which("pythonw")
+        if pw:
+            pythonw = Path(pw)
+        else:
+            return False  # no pythonw available
+
+    # Relaunch with pythonw — pass all args, set guard env var
+    env = os.environ.copy()
+    env["BIGED_NO_RELAUNCH"] = "1"
+    subprocess.Popen(
+        [str(pythonw)] + sys.argv,
+        env=env,
+        creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+    )
+    return True
 
 if __name__ == "__main__":
-    _detach_console()
+    if _relaunch_windowless():
+        sys.exit(0)
     if not _acquire_instance_lock():
         # Show a warning dialog and exit
         import tkinter as tk
