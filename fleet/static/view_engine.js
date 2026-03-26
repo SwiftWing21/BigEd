@@ -37,20 +37,22 @@
     },
     cluster: {
       name: "cose",
-      animate: true,
-      animationDuration: 600,
+      animate: "end",
+      animationDuration: 500,
+      fit: true,
+      randomize: true,
       nodeRepulsion: function () {
-        return 40000;
+        return 50000;
       },
       idealEdgeLength: function () {
-        return 120;
+        return 100;
       },
       edgeElasticity: function () {
-        return 200;
+        return 150;
       },
-      gravity: 0.25,
-      numIter: 300,
-      padding: 50,
+      gravity: 0.4,
+      numIter: 500,
+      padding: 40,
     },
     swimlane: {
       name: "grid",
