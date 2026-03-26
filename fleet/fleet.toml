@@ -169,6 +169,10 @@ temperature = 0.7
 max_iterations = 5
 temperature = 0.9
 
+[logging]
+session_retention = 10           # keep last N session log archives in logs/sessions/
+max_log_size_mb = 50             # max single log file size (future: mid-session rotation)
+
 [dashboard]
 enabled = true                 # localhost web dashboard for fleet metrics
 port = 5555

@@ -936,6 +936,15 @@ def main():
     (FLEET_DIR / "knowledge" / "summaries").mkdir(parents=True, exist_ok=True)
     (FLEET_DIR / "knowledge" / "reports").mkdir(parents=True, exist_ok=True)
 
+    # Rotate logs — archive previous session, start fresh
+    try:
+        from log_manager import rotate_logs
+        rotation = rotate_logs()
+        if rotation.get("files_archived"):
+            print(f"[SUPERVISOR] Logs rotated: {rotation['files_archived']} files archived to sessions/{rotation['session_id']}")
+    except Exception as e:
+        print(f"[SUPERVISOR] Log rotation skipped: {e}")
+
     # PID file — prevent duplicate supervisors
     try:
         from pid_manager import acquire_pid, release_pid
