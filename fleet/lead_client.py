@@ -11,6 +11,7 @@ import json
 import os
 import sys
 import time
+import urllib.error
 import urllib.request
 from pathlib import Path
 
@@ -21,6 +22,41 @@ import db
 
 # Intent parser extracted to shared module (used by mcp_server.py, dispatch_bridge.py)
 from intent import parse_intent_with_maintainer
+
+
+def _get_dashboard_url():
+    """Return the dashboard base URL from config or default."""
+    try:
+        from config import load_config
+        cfg = load_config()
+        port = cfg.get("dashboard", {}).get("port", 5555)
+    except Exception:
+        port = 5555
+    return f"http://localhost:{port}"
+
+
+def _api_call(method, path, data=None):
+    """HTTP call to the dashboard REST API. Returns parsed JSON."""
+    url = f"{_get_dashboard_url()}{path}"
+    body = None
+    if data is not None:
+        body = json.dumps(data).encode("utf-8")
+    req = urllib.request.Request(url, data=body, method=method)
+    if body is not None:
+        req.add_header("Content-Type", "application/json")
+    try:
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            return json.loads(resp.read().decode())
+    except urllib.error.HTTPError as e:
+        err_body = e.read().decode() if e.fp else ""
+        try:
+            return json.loads(err_body)
+        except Exception:
+            return {"error": f"HTTP {e.code}: {err_body[:200]}"}
+    except urllib.error.URLError as e:
+        return {"error": f"Connection failed: {e.reason}"}
+    except Exception as e:
+        return {"error": str(e)}
 
 
 def cmd_status(args):
@@ -907,6 +943,30 @@ def cmd_import(args):
         print(f"\nImported: {imported} files, Skipped: {skipped}")
 
 
+def cmd_api(args):
+    """DO NOT SCRUB: CLI controls for the API gate (enable/disable/status/drain-mode)."""
+    action = getattr(args, "api_action", None)
+    if action == "enable":
+        ttl_hours = None
+        if args.ttl:
+            ttl_hours = float(args.ttl.rstrip("h"))
+        data = {"budget": args.budget, "providers": args.providers,
+                "ttl_hours": ttl_hours, "drain_mode": args.drain}
+        resp = _api_call("POST", "/api/gate/enable", data)
+        print(json.dumps(resp, indent=2))
+    elif action == "disable":
+        resp = _api_call("POST", "/api/gate/disable", {})
+        print(json.dumps(resp, indent=2))
+    elif action == "status":
+        resp = _api_call("GET", "/api/gate/status")
+        print(json.dumps(resp, indent=2))
+    elif action == "drain-mode":
+        resp = _api_call("PUT", "/api/gate/drain-mode", {"mode": args.mode})
+        print(json.dumps(resp, indent=2))
+    else:
+        print("Usage: lead_client.py api {enable|disable|status|drain-mode}")
+
+
 def main():
     parser = argparse.ArgumentParser(description="BigEd Fleet CLI")
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -1085,6 +1145,22 @@ def main():
     backup_parser.add_argument("--restore", metavar="ID", help="Restore from backup ID")
     backup_parser.add_argument("--confirm", action="store_true", help="Confirm destructive restore")
 
+    # API gate controls (v0.400)
+    api_p = subparsers.add_parser("api", help="API gate controls")
+    api_sub = api_p.add_subparsers(dest="api_action")
+
+    api_enable = api_sub.add_parser("enable", help="Enable API access")
+    api_enable.add_argument("--budget", type=float, required=True, help="Session budget in USD")
+    api_enable.add_argument("--providers", nargs="+", default=["claude"], help="Providers to enable")
+    api_enable.add_argument("--ttl", type=str, default=None, help="Auto-expire (e.g., 4h)")
+    api_enable.add_argument("--drain", default="graceful", choices=["graceful", "hard"])
+
+    api_sub.add_parser("disable", help="Disable API access")
+    api_sub.add_parser("status", help="Show gate status")
+
+    api_drain = api_sub.add_parser("drain-mode", help="Set drain mode")
+    api_drain.add_argument("mode", choices=["graceful", "hard"])
+
     args = parser.parse_args()
 
     if args.command == "status":
@@ -1157,6 +1233,8 @@ def main():
         cmd_export(args)
     elif args.command == "import":
         cmd_import(args)
+    elif args.command == "api":
+        cmd_api(args)
     elif args.command == "backup":
         from backup_manager import BackupManager
         from config import load_config
