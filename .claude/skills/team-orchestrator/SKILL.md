@@ -25,7 +25,7 @@ Read defaults from `.claude/skills/team-orchestrator/config.yaml`. User can over
 Defaults:
 - max_agents: 25, max_pods: 5, max_sub_per_pod: 5
 - Models: head=opus, lead=opus, sub=sonnet, haiku=allowed
-- confirm_before_dispatch: true, worktree_cleanup: true
+- worktree_cleanup: true
 
 ## Orchestration Flow
 
@@ -49,18 +49,16 @@ Parse the user's task. Identify:
 
 Default to the **minimum viable team size**. Most tasks need 1-2 pods.
 
-### Phase 2: PLAN + CONFIRM
+### Phase 2: AUTO-SELECT + PROCEED
 
-Present the plan to the user:
+Based on your analysis, select the team configuration and proceed immediately. Briefly announce the plan as you go:
 ```
-Team plan for: "[task summary]"
+Deploying team for: "[task summary]"
   Pods: N ([pod-name-1] (model), [pod-name-2] (model), ...)
   Estimated agents: ~X total
-  Dependencies: [pod-A] must finish before [pod-B]
-  Proceed? (y/n)
 ```
 
-Skip confirmation if user passed `--yes`.
+Do not wait for confirmation — the department head is trusted to make good team shape decisions. The user can always `/team-cancel` if needed.
 
 ### Phase 3: SETUP
 

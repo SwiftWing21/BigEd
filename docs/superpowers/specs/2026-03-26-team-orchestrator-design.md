@@ -202,10 +202,10 @@ This is natural — the `Agent` tool blocks until the sub-agent finishes. No spe
 1. INVOKE
    User → /team "build a REST API with auth, rate limiting, and tests"
 
-2. PLAN + CONFIRM (Department Head, Opus)
+2. AUTO-SELECT + PROCEED (Department Head, Opus)
    - Analyze task → 3 domains: auth, rate-limiting, testing
-   - Present plan to user: "3 pods (auth, rate-limiting, testing), ~9 agents total. Proceed?"
-   - User confirms (or passes --yes to skip)
+   - Announce: "Deploying team: 3 pods (auth, rate-limiting, testing), ~9 agents"
+   - Proceed immediately — department head is trusted to make team shape decisions
 
 3. SETUP (Department Head, Opus)
    - TeamCreate(team_name: "team-api-build", description: "REST API with auth, rate limiting, tests")
@@ -345,7 +345,7 @@ Running 25 agents with Opus/Sonnet is expensive. The department head should:
 3. Only scale to 5 pods / 25 agents when the task genuinely demands it
 4. Use model downshifting aggressively — most sub-agent work is Sonnet or Haiku
 
-The user confirmation step (PLAN + CONFIRM in the task flow) is mandatory unless the user passes `--yes` to skip it.
+The department head auto-selects and proceeds immediately — no confirmation gate. The user can `/team-cancel` if the plan looks wrong.
 
 ## Security Considerations
 

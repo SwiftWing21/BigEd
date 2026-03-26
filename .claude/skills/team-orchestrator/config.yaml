@@ -14,4 +14,3 @@ allow_haiku: true            # Whether pod leads can assign haiku to sub-agents
 # Behavior
 auto_detect: true            # Suggest /team on complex tasks
 worktree_cleanup: true       # Auto-delete worktrees after successful merge
-confirm_before_dispatch: true # Show plan + agent count, require user confirmation
