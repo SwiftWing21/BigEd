@@ -53,6 +53,7 @@ def get_failure_streaks(threshold=3):
                        ROW_NUMBER() OVER (PARTITION BY assigned_to ORDER BY id DESC) as rn
                 FROM tasks
                 WHERE assigned_to IS NOT NULL AND status IN ('FAILED', 'DONE')
+                  AND classification != 'synthetic_prefix'
             )
             WHERE rn <= ? AND status = 'FAILED'
             GROUP BY assigned_to
@@ -66,6 +67,7 @@ def get_failure_streaks(threshold=3):
                 FROM (
                     SELECT * FROM tasks
                     WHERE assigned_to IS NOT NULL AND status = 'FAILED'
+                      AND classification != 'synthetic_prefix'
                     ORDER BY id DESC LIMIT ?
                 )
                 GROUP BY assigned_to

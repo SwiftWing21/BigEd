@@ -110,9 +110,10 @@ def check_agent_health(agent_name: str) -> dict:
                 except Exception:
                     pass
 
-            # Check recent error rate (last 30 tasks)
+            # Check recent error rate (last 30 non-synthetic tasks)
             recent = conn.execute(
                 "SELECT status FROM tasks WHERE assigned_to = ? "
+                "AND classification != 'synthetic_prefix' "
                 "ORDER BY id DESC LIMIT 30", (agent_name,)
             ).fetchall()
             if recent:
