@@ -213,5 +213,110 @@ def test_federation_manager_tick_disabled():
     fm.tick(0.0)  # should not raise
 
 
+# ── BootSequence ────────────────────────────────────────────────────
+
+def test_boot_sequence_imports():
+    """boot function can be imported."""
+    from boot_sequence import boot
+    assert callable(boot)
+
+
+def test_boot_load_secrets():
+    """_load_secrets function can be imported and called safely."""
+    from boot_sequence import _load_secrets
+    _load_secrets()  # should not raise even if ~/.secrets doesn't exist
+
+
+def test_boot_register_views():
+    """_register_views does not raise even if view_registry is missing."""
+    from boot_sequence import _register_views
+    _register_views()  # should not raise (view_registry may not be importable)
+
+
+def test_boot_json_log(capsys):
+    """_json_log prints valid JSON."""
+    from boot_sequence import _json_log
+    _json_log("INFO", "test_event", key="value")
+    captured = capsys.readouterr()
+    data = json.loads(captured.out.strip())
+    assert data["level"] == "INFO"
+    assert data["event"] == "test_event"
+    assert data["key"] == "value"
+
+
+def test_boot_returns_none_on_duplicate():
+    """boot returns None when PID acquisition fails (duplicate supervisor)."""
+    mock_pid = MagicMock()
+    mock_pid.acquire_pid.return_value = False
+
+    mock_db = MagicMock()
+    mock_log_mgr = MagicMock()
+    mock_log_mgr.rotate_logs.return_value = {}
+
+    mock_pm_mod = MagicMock()
+    mock_sched_mod = MagicMock()
+    mock_sched_mod.CORE_AGENTS = set()
+    mock_hm_mod = MagicMock()
+    mock_fm_mod = MagicMock()
+
+    mock_config_mod = MagicMock()
+    mock_config_mod.load_config.return_value = {"fleet": {}, "models": {}, "workers": {}}
+    mock_config_mod.is_offline.return_value = False
+    mock_config_mod.is_air_gap.return_value = False
+
+    with patch.dict("sys.modules", {
+        "db": mock_db,
+        "config": mock_config_mod,
+        "log_manager": mock_log_mgr,
+        "pid_manager": mock_pid,
+        "process_manager": mock_pm_mod,
+        "scheduler": mock_sched_mod,
+        "health_monitor": mock_hm_mod,
+        "federation_manager": mock_fm_mod,
+    }):
+        import importlib
+        import boot_sequence
+        importlib.reload(boot_sequence)
+        result = boot_sequence.boot()
+        assert result is None
+
+
+# ── Supervisor Orchestrator ─────────────────────────────────────────
+
+def test_supervisor_imports():
+    """supervisor.py can be imported without crashing."""
+    import importlib
+    mod = importlib.import_module("supervisor")
+    assert hasattr(mod, "main")
+    assert hasattr(mod, "write_status_md")
+    assert hasattr(mod, "_json_log")
+    assert hasattr(mod, "shutdown")
+
+
+def test_supervisor_json_log(capsys):
+    """supervisor._json_log prints valid JSON."""
+    import supervisor
+    supervisor._json_log("WARNING", "test_warn", detail="abc")
+    captured = capsys.readouterr()
+    data = json.loads(captured.out.strip())
+    assert data["level"] == "WARNING"
+    assert data["event"] == "test_warn"
+    assert data["detail"] == "abc"
+
+
+def test_supervisor_shutdown_handler():
+    """shutdown handler calls _pm.shutdown_all() if _pm is set."""
+    import supervisor
+    mock_pm = MagicMock()
+    original_pm = supervisor._pm
+    try:
+        supervisor._pm = mock_pm
+        with pytest.raises(SystemExit):
+            supervisor.shutdown(signal.SIGINT, None)
+        mock_pm.shutdown_all.assert_called_once()
+    finally:
+        supervisor._pm = original_pm
+
+
 if __name__ == "__main__":
     sys.exit(pytest.main([__file__, "-v"]))
