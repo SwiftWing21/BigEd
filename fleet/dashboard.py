@@ -3551,10 +3551,12 @@ def api_skills_available():
                     skill_name = None
                     description = None
                     requires_network = False
-                    for line in content.splitlines()[:30]:
+                    suite = None
+                    tags = None
+                    complexity = None
+                    for line in content.splitlines()[:40]:
                         line_s = line.strip()
                         if line_s.startswith("SKILL_NAME"):
-                            # Extract value from: SKILL_NAME = "foo"
                             m = re.match(r'^SKILL_NAME\s*=\s*["\'](.+?)["\']', line_s)
                             if m:
                                 skill_name = m.group(1)
@@ -3564,13 +3566,32 @@ def api_skills_available():
                                 description = m.group(1)
                         elif line_s.startswith("REQUIRES_NETWORK"):
                             requires_network = "True" in line_s
+                        elif line_s.startswith("SUITE"):
+                            m = re.match(r'^SUITE\s*=\s*["\'](.+?)["\']', line_s)
+                            if m:
+                                suite = m.group(1)
+                        elif line_s.startswith("TAGS"):
+                            m = re.match(r'^TAGS\s*=\s*\[(.+?)\]', line_s)
+                            if m:
+                                tags = [t.strip().strip('"\'') for t in m.group(1).split(",")]
+                        elif line_s.startswith("COMPLEXITY"):
+                            m = re.match(r'^COMPLEXITY\s*=\s*["\'](.+?)["\']', line_s)
+                            if m:
+                                complexity = m.group(1)
                     if skill_name:
-                        skills.append({
+                        entry = {
                             "name": skill_name,
                             "description": description or "",
                             "requires_network": requires_network,
                             "file": f.name,
-                        })
+                        }
+                        if suite:
+                            entry["suite"] = suite
+                        if tags:
+                            entry["tags"] = tags
+                        if complexity:
+                            entry["complexity"] = complexity
+                        skills.append(entry)
                 except Exception:
                     pass
 

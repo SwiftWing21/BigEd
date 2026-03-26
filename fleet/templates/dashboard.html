@@ -2573,16 +2573,29 @@ function loadLaneGraph() {
 }
 
 function loadKanban() {
-  apiFetch('/api/queue').then(function(d) {
-    var cols = { RUNNING: [], PENDING: [], WAITING: [] };
+  Promise.all([
+    apiFetch('/api/queue'),
+    apiFetch('/api/tasks/recent?limit=20')
+  ]).then(function(results) {
+    var d = results[0];
+    var recent = results[1];
+    var cols = { RUNNING: [], PENDING: [], WAITING_HUMAN: [], DONE: [], FAILED: [] };
+    // Queue gives us pending/running
     (d.tasks || []).forEach(function(t) {
       var s = t.status || 'PENDING';
       if (!cols[s]) cols[s] = [];
       cols[s].push(t);
     });
+    // Recent gives us done/failed
+    ((recent && recent.tasks) || []).forEach(function(t) {
+      var s = t.status || '';
+      if ((s === 'DONE' || s === 'FAILED') && cols[s]) {
+        cols[s].push(t);
+      }
+    });
     var el = document.getElementById('kanban-container');
     el.textContent = '';
-    ['RUNNING', 'PENDING', 'WAITING'].forEach(function(st) {
+    ['RUNNING', 'PENDING', 'WAITING_HUMAN', 'DONE', 'FAILED'].forEach(function(st) {
       var tasks = cols[st] || [];
       var col = document.createElement('div');
       col.className = 'kanban-column';
@@ -2916,13 +2929,13 @@ function loadSkillPicker() {
     // Sort alphabetically by name
     skills.sort(function(a, b) { return (a.name || '').localeCompare(b.name || ''); });
 
-    // Group by category: use first tag, or category field, or first letter
+    // Group by: suite > first tag > first letter
     var groups = {};
     var groupOrder = [];
     skills.forEach(function(s) {
       var cat = '';
-      if (s.category) {
-        cat = s.category;
+      if (s.suite) {
+        cat = s.suite;
       } else if (s.tags && Array.isArray(s.tags) && s.tags.length > 0) {
         cat = s.tags[0];
       } else if (s.name) {
