@@ -457,35 +457,68 @@ class FleetDB:
 
     @staticmethod
     def model_performance(db_path: str | Path) -> list[dict]:
-        """Get per-model tok/s metrics from the usage table (last hour).
+        """Get per-model tok/s metrics from usage table + Ollama loaded models.
 
         Returns list of dicts with keys: model, avg_tps, calls, avg_ms, avg_iq.
+        Models loaded in Ollama but without recent usage appear with zeroed metrics.
         """
+        results_by_model: dict[str, dict] = {}
+
+        # 1. Query usage table for models with recent activity
         try:
-            if not Path(db_path).exists():
-                return []
-            conn = FleetDB._connect(db_path)
-            try:
-                rows = conn.execute("""
-                    SELECT u.model,
-                           ROUND(AVG(u.tokens_per_sec), 1) as avg_tps,
-                           COUNT(*) as calls,
-                           ROUND(AVG(u.eval_duration_ms), 0) as avg_ms,
-                           ROUND(AVG(t.intelligence_score), 3) as avg_iq
-                    FROM usage u
-                    LEFT JOIN tasks t ON u.task_id = t.id
-                    WHERE u.created_at > datetime('now', '-1 hour')
-                      AND u.tokens_per_sec > 0
-                    GROUP BY u.model
-                    ORDER BY avg_tps DESC
-                """).fetchall()
-                return [dict(r) for r in rows]
-            except sqlite3.OperationalError:
-                return []  # columns don't exist yet
-            finally:
-                conn.close()
+            if Path(db_path).exists():
+                conn = FleetDB._connect(db_path)
+                try:
+                    rows = conn.execute("""
+                        SELECT u.model,
+                               ROUND(AVG(u.tokens_per_sec), 1) as avg_tps,
+                               COUNT(*) as calls,
+                               ROUND(AVG(u.eval_duration_ms), 0) as avg_ms,
+                               ROUND(AVG(t.intelligence_score), 3) as avg_iq
+                        FROM usage u
+                        LEFT JOIN tasks t ON u.task_id = t.id
+                        WHERE u.created_at > datetime('now', '-1 hour')
+                          AND u.tokens_per_sec > 0
+                        GROUP BY u.model
+                        ORDER BY avg_tps DESC
+                    """).fetchall()
+                    for r in rows:
+                        results_by_model[r["model"]] = dict(r)
+                except sqlite3.OperationalError:
+                    pass  # columns don't exist yet
+                finally:
+                    conn.close()
         except Exception:
-            return []
+            pass
+
+        # 2. Merge in currently-loaded Ollama models (even without usage data)
+        try:
+            import urllib.request
+            req = urllib.request.Request(
+                "http://localhost:11434/api/ps",
+                headers={"Content-Type": "application/json"},
+            )
+            with urllib.request.urlopen(req, timeout=3) as r:
+                import json
+                ps_data = json.loads(r.read())
+            for m in ps_data.get("models", []):
+                name = m.get("name", "")
+                if name and name not in results_by_model:
+                    vram = m.get("size_vram", 0)
+                    label = f"{name} (GPU)" if vram > 0 else f"{name} (CPU)"
+                    results_by_model[name] = {
+                        "model": label,
+                        "avg_tps": 0, "calls": 0, "avg_ms": 0, "avg_iq": None,
+                    }
+        except Exception:
+            pass  # Ollama may not be reachable
+
+        # Sort: models with usage first (by tps desc), then loaded-only models
+        return sorted(
+            results_by_model.values(),
+            key=lambda r: (r["calls"] > 0, r["avg_tps"] or 0),
+            reverse=True,
+        )
 
     @staticmethod
     def agent_recent_tasks(db_path: str | Path, agent_name: str,

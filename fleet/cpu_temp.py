@@ -3,18 +3,20 @@ CPU temperature reader — cross-platform (Windows/Linux/macOS).
 
 Strategies per platform:
   Linux:   psutil.sensors_temperatures() via lm-sensors (coretemp, k10temp, acpitz)
-  Windows: LibreHardwareMonitor WMI (best) → MSAcpi_ThermalZoneTemperature (fallback)
+  Windows: LibreHardwareMonitor REST API (best) → MSAcpi (fallback) → wmic (last resort)
   macOS:   powermetrics CLI (requires sudo) → osx-cpu-temp if installed
 
 Enable notes:
   Linux:   sudo apt install lm-sensors && sudo sensors-detect
-  Windows: Install LibreHardwareMonitor, run as admin (or enable "Run as service")
-           https://github.com/LibreHardwareMonitor/LibreHardwareMonitor
+  Windows: Install LibreHardwareMonitor + enable web server (Options > Remote Web Server > Run)
+           Auto-install: winget install LibreHardwareMonitor.LibreHardwareMonitor
+           Fleet auto-launch: ensure_lhm() finds, starts, and configures LHM on a dynamic port
   macOS:   brew install osx-cpu-temp  (or use sudo powermetrics)
 
 fleet.toml config:
   [thermal]
   cpu_temp_enabled = true   # enable CPU temp reading (may require admin on Windows)
+  lhm_port = 8085           # LibreHardwareMonitor REST API port (auto-detected if omitted)
 """
 import os
 import subprocess
@@ -97,26 +99,184 @@ def _read_cpu_temp_impl() -> int:
     return 0
 
 
+_LHM_KNOWN_PATHS = [
+    # winget install location
+    os.path.join(os.environ.get("LOCALAPPDATA", ""), "Microsoft", "WinGet", "Packages"),
+    # Common manual install locations
+    os.path.join(os.environ.get("PROGRAMFILES", ""), "LibreHardwareMonitor"),
+    os.path.join(os.environ.get("LOCALAPPDATA", ""), "Programs", "LibreHardwareMonitor"),
+]
+
+
+def find_lhm_exe() -> str | None:
+    """Locate LibreHardwareMonitor.exe on disk."""
+    import shutil
+    # Check PATH first
+    path = shutil.which("LibreHardwareMonitor")
+    if path:
+        return path
+
+    # Search known locations
+    for base in _LHM_KNOWN_PATHS:
+        if not os.path.isdir(base):
+            continue
+        for root, _dirs, files in os.walk(base):
+            if "LibreHardwareMonitor.exe" in files:
+                return os.path.join(root, "LibreHardwareMonitor.exe")
+            # Don't recurse too deep
+            if root.count(os.sep) - base.count(os.sep) > 3:
+                _dirs.clear()
+    return None
+
+
+def _find_available_port(start: int = 8085, end: int = 8095) -> int:
+    """Find first available port in range."""
+    import socket
+    for port in range(start, end + 1):
+        try:
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                s.bind(("127.0.0.1", port))
+                return port
+        except OSError:
+            continue
+    return start  # fallback
+
+
+def _probe_lhm_port(port: int) -> bool:
+    """Check if LHM web server responds on the given port."""
+    import urllib.request
+    try:
+        with urllib.request.urlopen(f"http://localhost:{port}/data.json", timeout=2):
+            return True
+    except Exception:
+        return False
+
+
+def detect_lhm_port() -> int | None:
+    """Find which port LHM web server is running on (probes 8085-8095)."""
+    for port in range(8085, 8096):
+        if _probe_lhm_port(port):
+            return port
+    return None
+
+
+def is_lhm_running() -> bool:
+    """Check if LibreHardwareMonitor process is running."""
+    try:
+        import psutil
+        for proc in psutil.process_iter(["name"]):
+            if proc.info["name"] and "LibreHardwareMonitor" in proc.info["name"]:
+                return True
+    except Exception:
+        pass
+    return False
+
+
+def ensure_lhm() -> dict:
+    """Ensure LHM is installed, running, and web server is reachable.
+
+    Returns dict with keys: installed, running, port, exe_path, detail.
+    """
+    result = {"installed": False, "running": False, "port": None, "exe_path": None, "detail": ""}
+
+    if sys.platform != "win32":
+        result["detail"] = "LHM is Windows-only"
+        return result
+
+    # 1. Find executable
+    exe = find_lhm_exe()
+    if not exe:
+        result["detail"] = "LHM not installed — winget install LibreHardwareMonitor.LibreHardwareMonitor"
+        return result
+    result["installed"] = True
+    result["exe_path"] = exe
+
+    # 2. Check if already running with web server
+    port = detect_lhm_port()
+    if port:
+        result["running"] = True
+        result["port"] = port
+        result["detail"] = f"LHM web server on port {port}"
+        return result
+
+    # 3. Process is running but web server not enabled
+    if is_lhm_running():
+        result["running"] = True
+        result["detail"] = "LHM running but web server not enabled — enable in Options > Remote Web Server > Run"
+        return result
+
+    # 4. Not running — start it (elevated)
+    result["detail"] = "LHM installed but not running — start with admin rights and enable web server"
+    return result
+
+
+def _extract_lhm_cpu_temp(data: dict) -> float:
+    """Walk LHM JSON tree to find CPU package/die temperature.
+
+    Looks for "Core (Tctl/Tdie)" (AMD) or "CPU Package" (Intel) under a CPU node.
+    Falls back to any temperature sensor under a CPU/processor hardware node.
+    """
+    best = 0.0
+
+    def _walk(node, is_cpu_hw=False):
+        nonlocal best
+        text = node.get("Text", "")
+        value = node.get("Value", "")
+
+        # Detect CPU hardware node
+        hw_id = node.get("HardwareId", "")
+        if "/cpu" in hw_id.lower() or "Ryzen" in text or "Core i" in text:
+            is_cpu_hw = True
+
+        # Extract temperature value from CPU hardware subtree
+        if is_cpu_hw and "°C" in value:
+            try:
+                val = float(value.replace("°C", "").replace(",", ".").strip())
+                # Prefer Tctl/Tdie (AMD) or CPU Package (Intel)
+                if "Tctl" in text or "Package" in text:
+                    best = val
+                    return  # found the best, stop
+                elif val > best:
+                    best = val
+            except (ValueError, TypeError):
+                pass
+
+        for child in node.get("Children", []):
+            _walk(child, is_cpu_hw)
+
+    _walk(data)
+    return best
+
+
 # ── Windows ──────────────────────────────────────────────────────────────────
 
 def _read_windows() -> int:
     global _detected_method
     _NW = getattr(subprocess, 'CREATE_NO_WINDOW', 0)
 
-    # Strategy 2: LibreHardwareMonitor WMI (best — requires LHM running as admin/service)
+    # Strategy 2: LibreHardwareMonitor REST API (best — LHM running with web server enabled)
+    # Probes ports 8085-8095 or uses fleet.toml [thermal] lhm_port
     try:
-        r = subprocess.run(
-            ["powershell", "-NoProfile", "-Command",
-             "Get-CimInstance -Namespace root/LibreHardwareMonitor -ClassName Sensor "
-             "| Where-Object { $_.SensorType -eq 'Temperature' -and $_.Name -match 'CPU' } "
-             "| Select -First 1 -ExpandProperty Value"],
-            capture_output=True, text=True, timeout=5, creationflags=_NW,
-        )
-        if r.returncode == 0 and r.stdout.strip():
-            val = float(r.stdout.strip())
-            if 0 < val < 120:
-                _detected_method = "LibreHardwareMonitor"
-                return round(val)
+        lhm_port = None
+        try:
+            from config import load_config
+            lhm_port = load_config().get("thermal", {}).get("lhm_port")
+        except Exception:
+            pass
+        if lhm_port and _probe_lhm_port(lhm_port):
+            pass  # use configured port
+        else:
+            lhm_port = detect_lhm_port()
+        if lhm_port:
+            import json
+            import urllib.request
+            req = urllib.request.Request(f"http://localhost:{lhm_port}/data.json")
+            with urllib.request.urlopen(req, timeout=2) as resp:
+                data = json.loads(resp.read())
+            temp = _extract_lhm_cpu_temp(data)
+            if temp and 0 < temp < 120:
+                _detected_method = "LHM/REST"
+                return round(temp)
     except Exception:
         pass
 

@@ -353,7 +353,7 @@ def check_system_ram() -> dict:
 def check_cpu_temp() -> dict:
     """CPU temperature sensor availability."""
     try:
-        from cpu_temp import read_cpu_temp, get_cpu_temp_method
+        from cpu_temp import read_cpu_temp, get_cpu_temp_method, ensure_lhm
         temp = read_cpu_temp()
         method = get_cpu_temp_method()
         available = temp > 0
@@ -361,13 +361,24 @@ def check_cpu_temp() -> dict:
         if available:
             detail = f"{temp}°C via {method}"
         else:
-            hints = {
-                "linux": "Install lm-sensors: sudo apt install lm-sensors && sudo sensors-detect",
-                "win32": "Install LibreHardwareMonitor (run as admin): https://github.com/LibreHardwareMonitor/LibreHardwareMonitor",
-                "darwin": "Install osx-cpu-temp: brew install osx-cpu-temp",
-            }
-            platform = "linux" if sys.platform.startswith("linux") else sys.platform
-            detail = f"No sensor found — {hints.get(platform, 'check platform docs')}"
+            # On Windows, provide LHM-specific guidance
+            if sys.platform == "win32":
+                lhm = ensure_lhm()
+                if not lhm["installed"]:
+                    detail = "Install LHM: winget install LibreHardwareMonitor.LibreHardwareMonitor"
+                elif not lhm["running"]:
+                    detail = "Start LibreHardwareMonitor as admin"
+                elif not lhm["port"]:
+                    detail = "Enable LHM web server: Options > Remote Web Server > Run"
+                else:
+                    detail = f"LHM on port {lhm['port']} but no CPU temp sensor found"
+            else:
+                hints = {
+                    "linux": "Install lm-sensors: sudo apt install lm-sensors && sudo sensors-detect",
+                    "darwin": "Install osx-cpu-temp: brew install osx-cpu-temp",
+                }
+                platform = "linux" if sys.platform.startswith("linux") else sys.platform
+                detail = f"No sensor found — {hints.get(platform, 'check platform docs')}"
 
         return {
             "name": "cpu-temp",

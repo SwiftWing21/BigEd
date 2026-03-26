@@ -59,7 +59,29 @@ Output ONLY valid JSON in this exact format:
             data=body, headers={"Content-Type": "application/json"}
         )
         with urllib.request.urlopen(req, timeout=5) as r:
-            resp = json.loads(r.read())["response"]
+            data = json.loads(r.read())
+        resp = data.get("response", "")
+
+        # Log conductor usage so it appears in Model Performance
+        try:
+            eval_count = data.get("eval_count", 0)
+            eval_duration = data.get("eval_duration", 0)
+            prompt_eval_count = data.get("prompt_eval_count", 0)
+            prompt_eval_duration = data.get("prompt_eval_duration", 0)
+            tok_per_sec = (eval_count / (eval_duration / 1e9)) if eval_duration > 0 else 0.0
+            from providers import async_log_usage
+            async_log_usage(
+                skill="intent_parse", model=model,
+                input_tokens=prompt_eval_count, output_tokens=eval_count,
+                cache_read_tokens=0, cache_create_tokens=0,
+                cost_usd=0.0, task_id=None, agent="conductor",
+                provider="local",
+                eval_duration_ms=eval_duration / 1e6 if eval_duration else None,
+                prompt_duration_ms=prompt_eval_duration / 1e6 if prompt_eval_duration else None,
+                tokens_per_sec=tok_per_sec if tok_per_sec > 0 else None,
+            )
+        except Exception:
+            pass  # Usage logging must never break intent parsing
 
         # Extract JSON block
         m = re.search(r'\{.*\}', resp, re.DOTALL)
