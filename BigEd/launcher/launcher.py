@@ -1790,22 +1790,21 @@ class BigEdCC(TrayManagerMixin, BootManagerMixin, CommTabMixin, OllamaManagerMix
         right.grid_rowconfigure(1, weight=3)   # log
         right.grid_rowconfigure(2, weight=2)   # output
 
-        # Neural Activity canvas
-        neural_frame = ctk.CTkFrame(right, fg_color=BG2, corner_radius=6, height=130)
-        neural_frame.grid(row=0, column=0, sticky="ew", pady=(0, 4))
-        neural_frame.grid_propagate(False)
-        neural_frame.grid_columnconfigure(0, weight=1)
-        neural_frame.grid_rowconfigure(1, weight=1)
-        ctk.CTkLabel(neural_frame, text="NEURAL ACTIVITY",
+        # Fleet Activity panel — live agent status + recent tasks
+        activity_frame = ctk.CTkFrame(right, fg_color=BG2, corner_radius=6, height=140)
+        activity_frame.grid(row=0, column=0, sticky="ew", pady=(0, 4))
+        activity_frame.grid_propagate(False)
+        activity_frame.grid_columnconfigure(0, weight=1)
+        activity_frame.grid_rowconfigure(1, weight=1)
+        ctk.CTkLabel(activity_frame, text="FLEET ACTIVITY",
                      font=("RuneScape Bold 12", 9, "bold"), text_color=GOLD,
                      anchor="w").grid(row=0, column=0, padx=8, pady=(4, 0), sticky="w")
-        import tkinter as tk
-        self._neural_canvas = tk.Canvas(
-            neural_frame, bg=BG2, highlightthickness=0, height=100)
-        self._neural_canvas.grid(row=1, column=0, sticky="nsew", padx=4, pady=(0, 4))
-        self._neural_data = None
-        self._neural_poll_id = None
-        self._safe_after(3000, self._poll_neural_lanes)
+        self._activity_text = ctk.CTkTextbox(
+            activity_frame, font=("Consolas", 9), fg_color=BG2,
+            text_color="#c8c8c8", wrap="none", corner_radius=0, height=110)
+        self._activity_text.grid(row=1, column=0, sticky="nsew", padx=4, pady=(0, 4))
+        self._activity_text.configure(state="disabled")
+        self._safe_after(2000, self._poll_fleet_activity)
 
         # Log panel
         log_frame = ctk.CTkFrame(right, fg_color=BG2, corner_radius=6)
@@ -1845,87 +1844,66 @@ class BigEdCC(TrayManagerMixin, BootManagerMixin, CommTabMixin, OllamaManagerMix
 
     # ── Neural Activity rendering ────────────────────────────────────────────
 
-    def _poll_neural_lanes(self):
-        """Fetch lane data from dashboard API and redraw canvas."""
+    def _poll_fleet_activity(self):
+        """Update fleet activity panel from DB — no dashboard dependency."""
+        if not self._alive:
+            return
         def _fetch():
+            lines = []
             try:
-                import json
-                import urllib.request
-                url = f"http://localhost:{self._dashboard_port}/api/activity/lanes?hours=24"
-                with urllib.request.urlopen(url, timeout=5) as resp:
-                    self._neural_data = json.loads(resp.read())
-                self.after(0, self._render_neural_canvas)
+                db_path = FLEET_DIR / "fleet.db"
+                if not db_path.exists():
+                    return
+                import sqlite3
+                conn = sqlite3.connect(str(db_path), timeout=2)
+                conn.row_factory = sqlite3.Row
+
+                # Recent task completions (last 10)
+                tasks = conn.execute(
+                    "SELECT type, status, assigned_to, "
+                    "strftime('%H:%M:%S', created_at) as ts "
+                    "FROM tasks WHERE status IN ('DONE','FAILED') "
+                    "ORDER BY id DESC LIMIT 10"
+                ).fetchall()
+
+                # Agent summary
+                agents = conn.execute(
+                    "SELECT name, status FROM agents "
+                    "WHERE last_heartbeat IS NOT NULL ORDER BY name"
+                ).fetchall()
+                conn.close()
+
+                if agents:
+                    idle = sum(1 for a in agents if a["status"] == "IDLE")
+                    busy = sum(1 for a in agents if a["status"] == "BUSY")
+                    total = len(agents)
+                    lines.append(f"Agents: {total} total  {busy} busy  {idle} idle")
+                    lines.append("")
+
+                if tasks:
+                    lines.append("Recent tasks:")
+                    for t in tasks:
+                        icon = "\u2713" if t["status"] == "DONE" else "\u2717"
+                        agent = t["assigned_to"] or "?"
+                        skill = t["type"] or "?"
+                        lines.append(f"  {icon} {t['ts']}  {agent:<12} {skill}")
+                else:
+                    lines.append("No recent tasks")
+
             except Exception:
-                pass  # dashboard not up yet
-        import threading
+                lines = ["Waiting for fleet..."]
+
+            text = "\n".join(lines)
+            try:
+                self._activity_text.configure(state="normal")
+                self._activity_text.delete("1.0", "end")
+                self._activity_text.insert("1.0", text)
+                self._activity_text.configure(state="disabled")
+            except Exception:
+                pass
+
         threading.Thread(target=_fetch, daemon=True).start()
-        self._neural_poll_id = self._safe_after(15000, self._poll_neural_lanes)
-
-    def _render_neural_canvas(self):
-        """Draw agent/model lanes with status bars on the tkinter Canvas."""
-        c = self._neural_canvas
-        c.delete("all")
-        if not self._neural_data:
-            return
-        lanes = self._neural_data.get("lanes", [])
-        if not lanes:
-            c.create_text(c.winfo_width() // 2, 40, text="No activity",
-                          fill="#64748b", font=("Consolas", 10))
-            return
-
-        w = c.winfo_width() or 400
-        h = c.winfo_height() or 100
-        label_w = 100
-        bar_start = label_w + 10
-        bar_w = w - bar_start - 60
-        max_lanes = min(len(lanes), 8)
-        lane_h = min(22, (h - 8) / max(max_lanes, 1))
-        gap = 4
-        max_total = max(l["total"] for l in lanes) or 1
-
-        kind_color = {"agent": "#10b981", "model": "#a78bfa"}
-        status_color = {"done": "#10b981", "failed": "#ef4444", "running": "#3b82f6"}
-
-        for i in range(max_lanes):
-            lane = lanes[i]
-            y = 4 + i * (lane_h + gap)
-            kc = kind_color.get(lane.get("kind"), "#64748b")
-
-            # Kind dot
-            c.create_oval(label_w, y + 3, label_w + 6, y + 9, fill=kc, outline="")
-
-            # Track background
-            c.create_rectangle(bar_start, y, bar_start + bar_w, y + lane_h,
-                               fill="#1a1f2e", outline="")
-
-            # Stacked segments
-            scale = bar_w / max_total
-            cx = bar_start
-            for status in ("done", "failed", "running"):
-                val = lane.get(status, 0)
-                if val <= 0:
-                    continue
-                seg_w = max(val * scale, 2)
-                c.create_rectangle(cx, y + 1, cx + seg_w, y + lane_h - 1,
-                                   fill=status_color.get(status, "#64748b"), outline="")
-                cx += seg_w
-
-            # Label
-            name = lane.get("agent", "?")
-            if len(name) > 11:
-                name = name[:10] + "\u2026"
-            is_active = lane.get("running", 0) > 0
-            c.create_text(label_w - 6, y + lane_h / 2,
-                          text=name, anchor="e",
-                          fill="#f1f5f9" if is_active else "#cbd5e1",
-                          font=("Consolas", 10, "bold" if is_active else ""))
-
-            # Count
-            badge = str(lane["total"])
-            if lane.get("cost"):
-                badge += f" ${lane['cost']}"
-            c.create_text(cx + 6, y + lane_h / 2, text=badge, anchor="w",
-                          fill="#94a3b8", font=("Consolas", 9))
+        self._safe_after(5000, self._poll_fleet_activity)
 
     # ── Tab 1: Agents ─────────────────────────────────────────────────────────
     def _build_tab_agents(self, parent):
