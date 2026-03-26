@@ -12,6 +12,8 @@
 | Version | 0.900.00b (Python) / 0.9.0 (Rust) | 2026-03-25 |
 | Skills | 96 standalone + 6 suites (was 132 files) | 2026-03-26 |
 | Smoke Tests | 45/45 (Python) | 2026-03-26 |
+| Ingest Sources | 17 (12 task + 5 RAG, ~2M+ rows) | 2026-03-26 |
+| API Keys | 12 registered, 3 set | 2026-03-26 |
 | Rust Tests | 116+ | 2026-03-25 |
 | Dashboard Endpoints | 26 (Rust) + 254 (Python, +12 ingest) | 2026-03-26 |
 | DB Tables | 9 (Rust schema) | 2026-03-25 |
@@ -241,12 +243,17 @@ Complete Rust rewrite (Phases 0-6), 6-agent audit, 18 fixes, v0.9.0 benchmarks
 
 ## Next Priorities
 
-- [ ] **Restart dashboard** and verify Ingest page renders source pills (Flask has old Python modules cached)
-- [ ] **Dashboard API Keys panel** — Settings page section showing all 12 keys from registry, inline entry for missing keys, contextual "missing key" toast prompts
-- [ ] **Test Firecrawl** — add key to ~/.secrets, restart Claude Code, verify MCP tools available
-- [ ] **Start supervisor** — 15+ tasks queued (6 from this session), agents need to start processing
+- [x] **Restart dashboard** — verified, Ingest page + API Keys panel both working
+- [x] **Dashboard API Keys panel** — 12 keys, inline entry, tier badges, signup hints
+- [x] **Firecrawl key added** — fixed UTF-16 encoding issue in ~/.secrets
+- [x] **Alexandria Library** — 17 HF sources configured (2M+ rows), marathon curricula updated
+- [ ] **Micro Lab** — brainstorm GPU simulation sharing (OpenMM/CFD alongside qwen3:8b, ~6GB free VRAM)
+- [ ] **Implement `ingest_batch` action** in research_loop skill — marathon curricula reference it but it's not wired yet
+- [ ] **Test end-to-end ingest** from dashboard — click source pill, fetch rows, stage, dispatch
+- [ ] **Push to upstream/public** — haven't pushed in ~1 week, need testing pass first
 - [ ] **Qwen 3.5 upgrade** — watch for Ollama GGUF availability, then config swap in fleet.toml
 - [ ] **Web Ingestion Phase 2** — implement spec (3-stage quality gate + Firecrawl crawl)
+- [ ] **Contextual "missing key" toasts** — when API returns `missing_key` error, show toast with entry link
 - [ ] Root-cause Ollama 404 during skill_draft — may be model unload timing
 - [ ] Resizable dashboard panels (Split.js) — ref: `memory/reference_panel_layout.md`
 - [ ] Migrate skills to use new helpers (_knowledge, _report, _llm_parse)
