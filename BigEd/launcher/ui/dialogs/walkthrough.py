@@ -163,7 +163,7 @@ class WalkthroughDialog(ctk.CTkToplevel):
             "title": "Welcome to BigEd CC",
             "desc": (
                 "BigEd CC is an autonomous AI agent fleet that runs entirely on your machine.\n\n"
-                "Your fleet has 74 skills across 10+ specialized worker roles — researchers, "
+                "Your fleet has 130+ skills across 10+ specialized worker roles — researchers, "
                 "coders, analysts, security auditors, and more — coordinated by a dual-supervisor "
                 "system. Workers share a task queue, communicate via messages, and build "
                 "a local knowledge base over time.\n\n"

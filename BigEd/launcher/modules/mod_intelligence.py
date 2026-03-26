@@ -103,14 +103,25 @@ class Module:
     def _build_overview(self, parent):
         card = self._card(parent, "System Capabilities")
 
+        # Count skills dynamically from skills directory
+        skill_count = 0
+        try:
+            import launcher as _L
+            skills_dir = _L.FLEET_DIR / "skills"
+            if skills_dir.exists():
+                skill_count = sum(1 for f in skills_dir.glob("*.py")
+                                 if not f.name.startswith("_") and not f.name.startswith("."))
+        except Exception:
+            skill_count = 130  # fallback estimate
+
         capabilities = [
-            ("74 Skills", "Code review, security audit, web search, RAG indexing, ML training, and more"),
+            (f"{skill_count}+ Skills", "Code review, security audit, web search, RAG indexing, ML training, and more"),
             ("Dynamic Scaling", "4 core agents + on-demand scaling based on task queue depth"),
             ("Model Tiers", "qwen3:8b (default) → 4b (mid) → 1.7b (low) → 0.6b (critical/failsafe)"),
-            ("HA Fallback", "Claude → Gemini → Local Ollama with circuit breaker (3 failures → 60s cooldown)"),
+            ("API Gate", "Local-only by default — session budgets, per-provider controls, configurable fallback chain"),
             ("Intelligence Scoring", "Tier 1 heuristic + Tier 2 LLM quality eval → blended IQ score per task"),
             ("Idle Evolution", "Agents self-improve when idle: code_quality, benchmark, skill_evolve"),
-            ("Cost Tracking", "Per-call token/cost tracking, budget enforcement, provider comparison"),
+            ("Cost Tracking", "API Gate session budgets + per-call token/cost tracking + budget enforcement (block mode)"),
         ]
 
         for title, desc in capabilities:
@@ -171,7 +182,7 @@ class Module:
         # Weight adjustment
         ctk.CTkLabel(card, text="Skill Complexity Routing", font=FONT_BOLD,
                      text_color=GOLD, anchor="w").pack(fill="x", padx=12, pady=(8, 2))
-        ctk.CTkLabel(card, text="Simple tasks → Haiku ($0.80/M)  |  Standard → Sonnet ($3/M)  |  Complex → Opus ($15/M)",
+        ctk.CTkLabel(card, text="Default: Local Ollama (qwen3:8b)  |  API Gate enabled: Haiku → Sonnet → Opus",
                      font=FONT_XS, text_color=DIM, anchor="w").pack(fill="x", padx=16, pady=(0, 8))
 
     def _edit_model_settings(self):
