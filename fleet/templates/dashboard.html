@@ -2173,14 +2173,14 @@ function renderNeuralFrame() {
     var label = lane.agent.length > 12 ? lane.agent.slice(0, 11) + '\u2026' : lane.agent;
     ctx.fillText(label, labelW - 4, y + laneH / 2);
 
-    // Count + cost badge
-    ctx.fillStyle = '#64748b';
-    ctx.font = '9px system-ui, sans-serif';
-    ctx.textAlign = 'left';
+    // Count + tokens badge — always right-aligned inside the track
     var badge = lane.total + '';
-    if (lane.cost) badge += ' $' + lane.cost;
-    if (lane.tokens) badge += ' ' + Math.round(lane.tokens / 1000) + 'k tok';
-    ctx.fillText(badge, cx + 5, y + laneH / 2);
+    if (lane.tokens) badge += '  ' + Math.round(lane.tokens / 1000) + 'k tok';
+    if (lane.cost) badge += '  $' + lane.cost;
+    ctx.font = '9px system-ui, sans-serif';
+    ctx.textAlign = 'right';
+    ctx.fillStyle = 'rgba(255,255,255,0.75)';
+    ctx.fillText(badge, barStart + barW - 5, y + laneH / 2);
 
     lane._y = y;
     lane._laneH = laneH;
@@ -2351,19 +2351,14 @@ function renderNeuralFrame() {
 
     // Advance
     p.x += p.speed;
-    p.alpha -= 0.003;
+    p.alpha -= 0.002;
     if (p.x > 1.1 || p.alpha <= 0) {
-      p.x = -0.05;
-      p.alpha = 0.3 + Math.random() * 0.5;
-      p.speed = 0.002 + Math.random() * 0.003;
-      var active = lanes.filter(function(l) { return l.total > 0; });
-      if (active.length > 0) {
-        var rl = active[Math.floor(Math.random() * active.length)];
-        p.agent = rl.agent;
-        p.status = rl.running > 0 ? 'RUNNING' : (rl.failed > 0 && Math.random() < 0.2 ? 'FAILED' : 'DONE');
-      }
+      p.alpha = 0;  // mark for removal — real pulses come from SSE now
     }
   });
+
+  // Remove dead pulses
+  _neuralPulses = _neuralPulses.filter(function(p) { return p.alpha > 0; });
 
   _neuralAnim = requestAnimationFrame(renderNeuralFrame);
 }
@@ -4287,6 +4282,20 @@ function handleSSE(msg) {
             var gpuBar = document.getElementById('thermal-gpu-bar');
             if (gpuBar) { gpuBar.style.width = Math.min(100, Math.round(gpuV)) + '%'; }
           }
+        }
+        /* ── Real-time neural pulses from task completions ── */
+        if (data.recent && data.recent.length > 0 && window._neuralPulses) {
+          data.recent.forEach(function(t) {
+            _neuralPulses.push({
+              agent: t.agent, skill: t.skill, status: t.status,
+              x: -0.05, alpha: 0.7 + Math.random() * 0.3,
+              speed: 0.003 + Math.random() * 0.003, size: 4 + Math.random() * 3
+            });
+          });
+          // Cap pulse count to prevent memory bloat
+          if (_neuralPulses.length > 80) _neuralPulses.splice(0, _neuralPulses.length - 60);
+          // Refresh lane bars with latest data
+          loadActivityChart();
         }
         /* ── System load ── */
         if (data.system) {

@@ -4,7 +4,7 @@ idle_enabled = true
 idle_timeout_secs = 10
 training_check_interval_secs = 15   # reduced: catch training start faster
 max_workers = 14              # cap active workers at boot (Dr. Ders scales dynamically)
-ram_ceiling_pct = 95          # scale up agents until system RAM hits this % (0 = no limit)
+ram_ceiling_pct = 97          # scale up agents until system RAM hits this % (~31GB on 32GB)
 worker_scale_interval_secs = 120  # Dr. Ders checks RAM every 2min, adjusts worker count
 openclaw_enabled = false     # multi-channel gateway (Discord/WhatsApp/Telegram/etc) — enable via FMA GUI
 discord_bot_enabled = true   # lightweight Discord-only bridge to biged-fleetchat
@@ -217,7 +217,7 @@ nice_level = 15
 cpu_limit_percent = 10  # per worker via cpulimit; 4 workers = 40% total CPU
 coder_count = 3          # number of coder_N instances (coder_1 … coder_N)
 # Resource limits per worker (0.07.00)
-memory_limit_mb = 512    # max RSS per worker process (0 = unlimited)
+memory_limit_mb = 1024   # max RSS per worker process (1GB — dynamic scaling stays under 31GB total)
 
 # Role-based skill affinity — agents prefer tasks matching their affinity.
 # Unassigned tasks with affinity skills are claimed preferentially by matching agents.

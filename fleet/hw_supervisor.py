@@ -1117,18 +1117,20 @@ def main():
 
             elif not loaded:
                 # RECOVERY: no worker model loaded — find the best available
-                # that fits in current VRAM. Start from smallest, step up.
+                # that fits in current VRAM. Start from largest, step down.
                 available = get_available_models(host)
-                for tier in reversed(tier_order):  # smallest first
-                    if tier in available:
-                        # Check if we have VRAM headroom for this tier
-                        if vram_pct < cfg["vram_high"]:
+                if vram_pct < cfg["vram_high"]:
+                    # VRAM OK — pick largest available tier (default → mid → low → crit)
+                    for tier in tier_order:
+                        if tier in available:
                             target_model = tier
                             log.warning(f"RECOVERY: no model loaded, "
                                   f"recovering to {tier}")
                             break
-                        else:
-                            # Under pressure — use smallest available
+                else:
+                    # Under VRAM pressure — pick smallest available
+                    for tier in reversed(tier_order):
+                        if tier in available:
                             target_model = tier
                             log.warning(f"RECOVERY (pressure): loading {tier}")
                             break

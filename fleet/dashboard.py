@@ -2227,11 +2227,28 @@ def _sse_broadcaster():
                 except Exception:
                     pass
 
+                # Recent task completions (last 10s) for real-time neural pulses
+                recent_tasks = []
+                try:
+                    recent_rows = query(
+                        "SELECT assigned_to, type, status FROM tasks "
+                        "WHERE status IN ('DONE','FAILED','RUNNING') "
+                        "AND created_at > datetime('now', '-10 seconds') "
+                        "ORDER BY id DESC LIMIT 20"
+                    )
+                    recent_tasks = [
+                        {"agent": r["assigned_to"], "skill": r["type"], "status": r["status"]}
+                        for r in recent_rows if r["assigned_to"]
+                    ]
+                except Exception:
+                    pass
+
                 payload = {
                     "agents": agents,
                     "tasks": counts,
                     "thermal": thermal,
                     "system": system,
+                    "recent": recent_tasks,
                 }
 
                 # Adaptive rate: compare to previous snapshot
