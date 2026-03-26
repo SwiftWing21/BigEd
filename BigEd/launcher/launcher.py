@@ -320,6 +320,11 @@ from ui.utils import (
     _load_custom_names, _save_custom_names, AGENT_THEMES,
 )
 
+# ─── Module-level defaults (set properly in App.__init__, but must exist early
+#     so that themed_name() and agent card renders don't crash on first access)
+_active_theme = "default"
+_custom_names = {}
+
 # ─── Custom Tab Bar ───────────────────────────────────────────────────────────
 class CustomTabBar(ctk.CTkFrame):
     """Icon + label tab switcher — drop-in API replacement for CTkTabview.
@@ -696,6 +701,11 @@ class BigEdCC(TrayManagerMixin, BootManagerMixin, CommTabMixin, OllamaManagerMix
         _custom_names = _load_custom_names()
 
         self._alive = True  # cleared on close; guards _safe_after() timer callbacks
+
+        # Pre-init agent card dicts so _render() doesn't crash if called before tab build
+        self._agent_cards = {}
+        self._disabled_cards = {}
+        self._agents_tab_cache = {}
 
         self._net_prev    = None
         self._net_time    = None
@@ -1865,12 +1875,12 @@ class BigEdCC(TrayManagerMixin, BootManagerMixin, CommTabMixin, OllamaManagerMix
 
         w = c.winfo_width() or 400
         h = c.winfo_height() or 100
-        label_w = 80
-        bar_start = label_w + 8
-        bar_w = w - bar_start - 10
+        label_w = 100
+        bar_start = label_w + 10
+        bar_w = w - bar_start - 60
         max_lanes = min(len(lanes), 8)
-        lane_h = min(14, (h - 8) / max(max_lanes, 1))
-        gap = 2
+        lane_h = min(22, (h - 8) / max(max_lanes, 1))
+        gap = 4
         max_total = max(l["total"] for l in lanes) or 1
 
         kind_color = {"agent": "#10b981", "model": "#a78bfa"}
@@ -1905,17 +1915,17 @@ class BigEdCC(TrayManagerMixin, BootManagerMixin, CommTabMixin, OllamaManagerMix
             if len(name) > 11:
                 name = name[:10] + "\u2026"
             is_active = lane.get("running", 0) > 0
-            c.create_text(label_w - 4, y + lane_h / 2,
+            c.create_text(label_w - 6, y + lane_h / 2,
                           text=name, anchor="e",
-                          fill="#e2e8f0" if is_active else "#94a3b8",
-                          font=("Consolas", 8, "bold" if is_active else ""))
+                          fill="#f1f5f9" if is_active else "#cbd5e1",
+                          font=("Consolas", 10, "bold" if is_active else ""))
 
             # Count
             badge = str(lane["total"])
             if lane.get("cost"):
                 badge += f" ${lane['cost']}"
-            c.create_text(cx + 4, y + lane_h / 2, text=badge, anchor="w",
-                          fill="#64748b", font=("Consolas", 7))
+            c.create_text(cx + 6, y + lane_h / 2, text=badge, anchor="w",
+                          fill="#94a3b8", font=("Consolas", 9))
 
     # ── Tab 1: Agents ─────────────────────────────────────────────────────────
     def _build_tab_agents(self, parent):
@@ -2297,6 +2307,8 @@ class BigEdCC(TrayManagerMixin, BootManagerMixin, CommTabMixin, OllamaManagerMix
                                                        ag.get("name", "?"), _card_err)
 
             # Hide stale cards
+            if not hasattr(self, '_agent_cards'):
+                return
             for key, c in self._agent_cards.items():
                 if key not in active_names:
                     c["card"].grid_remove()
@@ -3155,6 +3167,26 @@ class BigEdCC(TrayManagerMixin, BootManagerMixin, CommTabMixin, OllamaManagerMix
             return  # boot progress occupies the agents panel
         agents     = status.get("agents", [])
         pending    = status.get("tasks", {}).get("Pending", 0)
+
+        # If STATUS.md has no agents yet but system is running, try DB fallback
+        if not agents and self._system_running:
+            try:
+                db_path = FLEET_DIR / "fleet.db"
+                if db_path.exists():
+                    import sqlite3
+                    conn = sqlite3.connect(str(db_path), timeout=2)
+                    conn.row_factory = sqlite3.Row
+                    rows = conn.execute(
+                        "SELECT name, role, status FROM agents "
+                        "WHERE last_heartbeat IS NOT NULL "
+                        "ORDER BY name"
+                    ).fetchall()
+                    conn.close()
+                    if rows:
+                        agents = [{"name": r["name"], "role": r["role"] or r["name"],
+                                   "status": r["status"] or "IDLE", "task": "—"} for r in rows]
+            except Exception:
+                pass
 
         # Update supervisor status labels
         self._update_supervisor_labels(status)
