@@ -796,36 +796,85 @@ textarea.input {
   position: relative;
   overflow-x: auto;
 }
-.swimlane-row {
+.swimlane-time-header {
   display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 6px 0;
+  margin-left: 100px;
   border-bottom: 1px solid var(--border);
+  padding-bottom: 4px;
+  margin-bottom: 0;
+  position: relative;
+  height: 20px;
+  min-width: 600px;
+}
+.swimlane-time-header span {
+  position: absolute;
+  font-size: 10px;
+  color: var(--muted-foreground);
+  transform: translateX(-50%);
+  white-space: nowrap;
+}
+.swimlane-lane {
+  display: flex;
+  align-items: stretch;
+  min-height: 38px;
+  position: relative;
+  min-width: 700px;
+}
+.swimlane-lane.lane-odd {
+  background: rgba(255,255,255,0.02);
+}
+.swimlane-lane.lane-even {
+  background: rgba(0,0,0,0.02);
 }
 .swimlane-label {
   min-width: 100px;
+  max-width: 100px;
   font-size: 12px;
   font-weight: 500;
   color: var(--muted-foreground);
   flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  padding: 4px 8px 4px 0;
+  border-right: 1px solid var(--border);
 }
-.swimlane-bar {
-  height: 24px;
+.swimlane-track {
+  flex: 1;
+  position: relative;
+  min-height: 34px;
+  border-bottom: 1px solid var(--border);
+}
+.swimlane-task {
+  position: absolute;
+  top: 4px;
+  height: 26px;
   border-radius: 4px;
   display: flex;
   align-items: center;
-  padding: 0 8px;
+  padding: 0 6px;
   font-size: 10px;
   color: #fff;
   font-weight: 600;
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 24px;
+  cursor: default;
+  box-shadow: var(--shadow-sm);
+  transition: filter 0.15s ease;
+}
+.swimlane-task:hover {
+  filter: brightness(1.15);
+}
+.swimlane-divider {
+  border-bottom: 1px solid var(--border);
+  margin: 0;
 }
 
 /* ── Neural Graph Container ───────────────────────────────────────────────── */
 #cytoscape-container {
   width: 100%;
-  height: 400px;
+  height: calc(100vh - 280px); min-height: 400px;
   border: 1px solid var(--border);
   border-radius: var(--radius);
   background: var(--card);
@@ -1477,6 +1526,15 @@ textarea.input {
         <button class="btn btn-ghost btn-sm" onclick="loadNeuralGraph()">&#8635; Refresh</button>
       </div>
       <div id="cytoscape-container"></div>
+      <div id="neural-graph-legend" class="chart-legend" style="padding:8px 0 0">
+        <span class="chart-legend-item"><span class="chart-legend-dot" style="background:#10b981"></span> Agent</span>
+        <span class="chart-legend-item"><span class="chart-legend-dot" style="background:#f59e0b"></span> Skill</span>
+        <span class="chart-legend-item"><span class="chart-legend-dot" style="background:#3b82f6"></span> Task</span>
+        <span class="chart-legend-item"><span class="chart-legend-dot" style="background:#a78bfa"></span> Model</span>
+        <span class="chart-legend-item"><span class="chart-legend-dot" style="background:#4fc3f7"></span> Folder</span>
+        <span class="chart-legend-item"><span class="chart-legend-dot" style="background:#ec4899"></span> Channel</span>
+        <span class="chart-legend-item"><span class="chart-legend-dot" style="background:#64748b"></span> Config</span>
+      </div>
     </div>
   </div>
 </div>
@@ -1693,6 +1751,7 @@ textarea.input {
     <div class="section-title">Settings</div>
     <div class="section-desc">Fleet configuration from fleet.toml</div>
   </div>
+  <div id="gate-card-mount" style="margin-bottom:16px"></div>
   <div class="glass-panel">
     <div id="settings-sections">
       <div class="spinner"></div>
@@ -2562,10 +2621,12 @@ function loadKanban() {
 }
 
 function loadSwimlane() {
-  apiFetch('/api/agents/performance').then(function(d) {
+  apiFetch('/api/tasks/recent?limit=50').then(function(data) {
+    var tasks = data.tasks || data;
+    if (!Array.isArray(tasks)) tasks = [];
     var el = document.getElementById('swimlane-container');
     el.textContent = '';
-    if (!d.agents || d.agents.length === 0) {
+    if (tasks.length === 0) {
       var empty = document.createElement('div');
       empty.className = 'empty-state';
       var icon = document.createElement('div');
@@ -2573,35 +2634,115 @@ function loadSwimlane() {
       icon.textContent = '\u21C4';
       var title = document.createElement('div');
       title.className = 'empty-title';
-      title.textContent = 'No recent agent activity';
+      title.textContent = 'No recent tasks for swimlane';
       empty.appendChild(icon);
       empty.appendChild(title);
       el.appendChild(empty);
       return;
     }
-    var maxTasks = Math.max.apply(null, d.agents.map(function(a) { return a.tasks_completed_1h || 0; })) || 1;
-    d.agents.forEach(function(a) {
-      var w = Math.max(5, Math.round((a.tasks_completed_1h / maxTasks) * 100));
-      var rate = Math.round(a.success_rate * 100);
-      var color = rate >= 80 ? 'var(--success)' : rate >= 50 ? 'var(--warning)' : 'var(--danger)';
-      var row = document.createElement('div');
-      row.className = 'swimlane-row';
-      var label = document.createElement('span');
-      label.className = 'swimlane-label';
-      label.textContent = a.name;
-      var barWrap = document.createElement('div');
-      barWrap.style.flex = '1';
-      var bar = document.createElement('div');
-      bar.className = 'swimlane-bar';
-      bar.style.width = w + '%';
-      bar.style.background = color;
-      bar.textContent = a.tasks_completed_1h + ' tasks (' + rate + '%)';
-      barWrap.appendChild(bar);
-      row.appendChild(label);
-      row.appendChild(barWrap);
-      el.appendChild(row);
+
+    // Parse timestamps and determine time range
+    var now = Date.now();
+    tasks.forEach(function(t) {
+      t._ts = t.created_at ? new Date(t.created_at).getTime() : now;
     });
-  }).catch(function() {});
+    var minTs = Math.min.apply(null, tasks.map(function(t) { return t._ts; }));
+    var maxTs = Math.max.apply(null, tasks.map(function(t) { return t._ts; }));
+    var range = Math.max(maxTs - minTs, 60000); // at least 1 minute range
+    var trackWidth = 600; // pixels
+
+    // Group tasks by agent
+    var laneMap = {};
+    var laneOrder = [];
+    tasks.forEach(function(t) {
+      var agent = t.assigned_to || t.agent || 'unassigned';
+      if (!laneMap[agent]) { laneMap[agent] = []; laneOrder.push(agent); }
+      laneMap[agent].push(t);
+    });
+
+    // Build time header
+    var timeHeader = document.createElement('div');
+    timeHeader.className = 'swimlane-time-header';
+    timeHeader.style.minWidth = (100 + trackWidth) + 'px';
+    var tickCount = 6;
+    for (var ti = 0; ti <= tickCount; ti++) {
+      var tickTs = minTs + (range * ti / tickCount);
+      var tickAgo = Math.floor((now - tickTs) / 1000);
+      var tickLabel = '';
+      if (tickAgo < 60) tickLabel = tickAgo + 's ago';
+      else if (tickAgo < 3600) tickLabel = Math.floor(tickAgo / 60) + 'm ago';
+      else if (tickAgo < 86400) tickLabel = Math.floor(tickAgo / 3600) + 'h ago';
+      else tickLabel = Math.floor(tickAgo / 86400) + 'd ago';
+      var tickSpan = document.createElement('span');
+      tickSpan.textContent = tickLabel;
+      tickSpan.style.left = Math.round((ti / tickCount) * trackWidth) + 'px';
+      timeHeader.appendChild(tickSpan);
+    }
+    el.appendChild(timeHeader);
+
+    // Status colors
+    var statusColors = { DONE: '#10b981', RUNNING: '#3b82f6', PENDING: '#f59e0b', FAILED: '#ef4444' };
+
+    // Build lanes
+    laneOrder.forEach(function(agent, laneIdx) {
+      var lane = document.createElement('div');
+      lane.className = 'swimlane-lane ' + (laneIdx % 2 === 0 ? 'lane-even' : 'lane-odd');
+      lane.style.minWidth = (100 + trackWidth) + 'px';
+
+      var label = document.createElement('div');
+      label.className = 'swimlane-label';
+      label.textContent = agent.length > 12 ? agent.slice(0, 11) + '\u2026' : agent;
+      label.title = agent;
+
+      var track = document.createElement('div');
+      track.className = 'swimlane-track';
+      track.style.width = trackWidth + 'px';
+
+      var agentTasks = laneMap[agent];
+      agentTasks.forEach(function(t) {
+        var xPos = Math.round(((t._ts - minTs) / range) * (trackWidth - 60));
+        var status = (t.status || 'PENDING').toUpperCase();
+        var color = statusColors[status] || '#64748b';
+        var taskType = t.type || t.skill || 'task';
+        var taskBox = document.createElement('div');
+        taskBox.className = 'swimlane-task';
+        taskBox.style.left = xPos + 'px';
+        taskBox.style.width = '56px';
+        taskBox.style.background = color;
+        taskBox.textContent = taskType.length > 8 ? taskType.slice(0, 7) + '\u2026' : taskType;
+        taskBox.title = taskType + ' (#' + (t.id || '?') + ') - ' + status;
+        track.appendChild(taskBox);
+      });
+
+      lane.appendChild(label);
+      lane.appendChild(track);
+      el.appendChild(lane);
+    });
+  }).catch(function() {
+    // Fallback to agent performance data
+    apiFetch('/api/agents/performance').then(function(d) {
+      var el = document.getElementById('swimlane-container');
+      el.textContent = '';
+      if (!d.agents || d.agents.length === 0) {
+        var empty = document.createElement('div');
+        empty.className = 'empty-state';
+        var icon = document.createElement('div');
+        icon.className = 'empty-icon';
+        icon.textContent = '\u21C4';
+        var title = document.createElement('div');
+        title.className = 'empty-title';
+        title.textContent = 'No recent agent activity';
+        empty.appendChild(icon);
+        empty.appendChild(title);
+        el.appendChild(empty);
+        return;
+      }
+      var msg = document.createElement('div');
+      msg.style.cssText = 'color:var(--muted-foreground);text-align:center;padding:16px;font-size:13px';
+      msg.textContent = d.agents.length + ' agents active — detailed swimlane requires /api/tasks/recent';
+      el.appendChild(msg);
+    }).catch(function() {});
+  });
 }
 
 function loadNeuralGraph() {
@@ -2618,44 +2759,25 @@ function loadNeuralGraph() {
     return;
   }
 
-  apiFetch('/api/status').then(function(d) {
-    var nodes = [];
-    var edges = [];
-    var agents = d.agents || [];
+  // Universe graph node type colors and sizes
+  var nodeTypeStyle = {
+    agent:    { color: '#10b981', size: 36, fontSize: 12, shape: 'ellipse' },
+    skill:    { color: '#3b82f6', size: 24, fontSize: 10, shape: 'ellipse' },
+    task:     { color: '#f59e0b', size: 20, fontSize: 10, shape: 'ellipse' },
+    model:    { color: '#a78bfa', size: 32, fontSize: 12, shape: 'ellipse' },
+    folder:   { color: '#4fc3f7', size: 22, fontSize: 10, shape: 'ellipse' },
+    api_call: { color: '#ef4444', size: 18, fontSize: 10, shape: 'diamond' },
+    hub:      { color: '#3b82f6', size: 44, fontSize: 14, shape: 'ellipse' },
+    message:  { color: '#6b7280', size: 18, fontSize: 10, shape: 'ellipse' },
+    config:   { color: '#64748b', size: 16, fontSize: 10, shape: 'ellipse' }
+  };
+  var defaultStyle = { color: '#64748b', size: 20, fontSize: 10, shape: 'ellipse' };
 
-    agents.forEach(function(a) {
-      var color = '#3b82f6';
-      if (a.status === 'BUSY') color = '#f59e0b';
-      else if (a.status === 'ACTIVE') color = '#10b981';
-      else if (a.status === 'SLEEPING') color = '#6b7280';
-      else if (a.status === 'OFFLINE') color = '#ef4444';
-      nodes.push({
-        data: { id: a.name, label: a.name, role: a.role || '', status: a.status, color: color }
-      });
-    });
-
-    var roleMap = {};
-    agents.forEach(function(a) {
-      var role = a.role || 'none';
-      if (!roleMap[role]) roleMap[role] = [];
-      roleMap[role].push(a.name);
-    });
-    Object.keys(roleMap).forEach(function(role) {
-      var list = roleMap[role];
-      for (var i = 0; i < list.length - 1; i++) {
-        edges.push({ data: { source: list[i], target: list[i + 1] } });
-      }
-    });
-
-    nodes.push({ data: { id: 'hub', label: 'FLEET', color: '#3b82f6' } });
-    agents.forEach(function(a) {
-      edges.push({ data: { source: 'hub', target: a.name } });
-    });
-
+  function buildCyGraph(cyNodes, cyEdges) {
     if (_cyInstance) _cyInstance.destroy();
     _cyInstance = cytoscape({
       container: document.getElementById('cytoscape-container'),
-      elements: { nodes: nodes, edges: edges },
+      elements: { nodes: cyNodes, edges: cyEdges },
       style: [
         {
           selector: 'node',
@@ -2663,24 +2785,16 @@ function loadNeuralGraph() {
             'background-color': 'data(color)',
             'label': 'data(label)',
             'color': chartMuted(),
-            'font-size': '10px',
+            'font-size': 'data(fontSize)',
             'text-valign': 'bottom',
             'text-margin-y': 6,
-            'width': 28,
-            'height': 28,
+            'width': 'data(size)',
+            'height': 'data(size)',
+            'shape': 'data(shape)',
             'border-width': 2,
             'border-color': 'data(color)',
-          }
-        },
-        {
-          selector: 'node[id="hub"]',
-          style: {
-            'width': 44,
-            'height': 44,
-            'font-size': '12px',
-            'font-weight': 'bold',
-            'text-valign': 'center',
-            'color': '#ffffff',
+            'text-wrap': 'ellipsis',
+            'text-max-width': '80px',
           }
         },
         {
@@ -2689,20 +2803,60 @@ function loadNeuralGraph() {
             'width': 1.5,
             'line-color': chartBorder(),
             'curve-style': 'bezier',
-            'opacity': 0.5,
+            'opacity': 0.4,
+            'target-arrow-shape': 'triangle',
+            'target-arrow-color': chartBorder(),
+            'arrow-scale': 0.8,
           }
         }
       ],
       layout: {
         name: 'cose',
         animate: true,
-        animationDuration: 500,
-        nodeOverlap: 20,
-        idealEdgeLength: 80,
-        nodeRepulsion: 6000,
-        gravity: 0.3,
+        animationDuration: 600,
+        nodeOverlap: 30,
+        idealEdgeLength: 100,
+        nodeRepulsion: function() { return 8000; },
+        gravity: 0.25,
+        numIter: 300,
       }
     });
+  }
+
+  // Fetch full universe graph from fleet-overview endpoint
+  apiFetch('/api/views/graph/fleet-overview').then(function(d) {
+    var cyNodes = [];
+    var cyEdges = [];
+    var nodeIds = {};
+    (d.nodes || []).forEach(function(n) {
+      var ntype = (n.type || n.node_type || 'unknown').toLowerCase();
+      var style = nodeTypeStyle[ntype] || defaultStyle;
+      var id = n.id || n.name || ('node-' + Math.random());
+      if (nodeIds[id]) return;
+      nodeIds[id] = true;
+      cyNodes.push({
+        data: {
+          id: id,
+          label: n.label || n.name || id,
+          color: style.color,
+          size: style.size,
+          fontSize: style.fontSize,
+          shape: style.shape
+        }
+      });
+    });
+    (d.edges || []).forEach(function(e) {
+      var src = e.source || e.from;
+      var tgt = e.target || e.to;
+      if (src && tgt && nodeIds[src] && nodeIds[tgt]) {
+        cyEdges.push({ data: { source: src, target: tgt } });
+      }
+    });
+    if (cyNodes.length > 0) {
+      buildCyGraph(cyNodes, cyEdges);
+    } else {
+      throw new Error('No nodes from fleet-overview');
+    }
   }).catch(function() {
     var el = document.getElementById('cytoscape-container');
     el.textContent = '';
@@ -2710,8 +2864,12 @@ function loadNeuralGraph() {
     msg.className = 'empty-state';
     var t = document.createElement('div');
     t.className = 'empty-title';
-    t.textContent = 'Failed to load graph data';
+    t.textContent = 'Universe graph unavailable';
     msg.appendChild(t);
+    var sub = document.createElement('div');
+    sub.style.cssText = 'color:var(--muted-foreground);font-size:12px;margin-top:4px';
+    sub.textContent = 'Check /api/views/graph/fleet-overview endpoint';
+    msg.appendChild(sub);
     el.appendChild(msg);
   });
 }
@@ -2732,12 +2890,62 @@ function loadSkillPicker() {
     defaultOpt.value = '';
     defaultOpt.textContent = '-- Choose a skill --';
     sel.appendChild(defaultOpt);
-    (d.skills || []).forEach(function(s) {
-      var opt = document.createElement('option');
-      opt.value = s.name;
-      opt.textContent = s.name + (s.description ? ' - ' + s.description : '');
-      sel.appendChild(opt);
+
+    var skills = (d.skills || []).slice();
+    // Sort alphabetically by name
+    skills.sort(function(a, b) { return (a.name || '').localeCompare(b.name || ''); });
+
+    // Group by category: use first tag, or category field, or first letter
+    var groups = {};
+    var groupOrder = [];
+    skills.forEach(function(s) {
+      var cat = '';
+      if (s.category) {
+        cat = s.category;
+      } else if (s.tags && Array.isArray(s.tags) && s.tags.length > 0) {
+        cat = s.tags[0];
+      } else if (s.name) {
+        cat = s.name.charAt(0).toUpperCase();
+      } else {
+        cat = 'Other';
+      }
+      // Capitalize category
+      cat = cat.charAt(0).toUpperCase() + cat.slice(1);
+      if (!groups[cat]) { groups[cat] = []; groupOrder.push(cat); }
+      groups[cat].push(s);
     });
+
+    // Sort group names
+    groupOrder.sort();
+
+    // If only single-letter groups (no real categories), just list flat
+    var hasRealCategories = groupOrder.some(function(g) { return g.length > 1; });
+
+    if (hasRealCategories) {
+      groupOrder.forEach(function(cat) {
+        var optgroup = document.createElement('optgroup');
+        optgroup.label = cat;
+        groups[cat].forEach(function(s) {
+          var opt = document.createElement('option');
+          opt.value = s.name;
+          var desc = s.description || '';
+          if (desc.length > 60) desc = desc.slice(0, 57) + '...';
+          opt.textContent = s.name + (desc ? ' \u2014 ' + desc : '');
+          optgroup.appendChild(opt);
+        });
+        sel.appendChild(optgroup);
+      });
+    } else {
+      // Flat alphabetical list
+      skills.forEach(function(s) {
+        var opt = document.createElement('option');
+        opt.value = s.name;
+        var desc = s.description || '';
+        if (desc.length > 60) desc = desc.slice(0, 57) + '...';
+        opt.textContent = s.name + (desc ? ' \u2014 ' + desc : '');
+        sel.appendChild(opt);
+      });
+    }
   }).catch(function() {});
 }
 
@@ -2745,7 +2953,8 @@ function loadRecentTasks() {
   apiFetch('/api/timeline').then(function(data) {
     var el = document.getElementById('recent-tasks-list');
     el.textContent = '';
-    if (!data || data.length === 0) {
+    var tasks = Array.isArray(data) ? data : (data.tasks || []);
+    if (!tasks || tasks.length === 0) {
       var empty = document.createElement('div');
       empty.className = 'empty-state';
       var icon = document.createElement('div');
@@ -2759,6 +2968,21 @@ function loadRecentTasks() {
       el.appendChild(empty);
       return;
     }
+
+    // Sort by most recent first: prefer id DESC, fallback to created_at DESC
+    tasks.sort(function(a, b) {
+      // Try by id first (higher id = more recent)
+      if (a.id && b.id) {
+        var idA = typeof a.id === 'number' ? a.id : parseInt(a.id);
+        var idB = typeof b.id === 'number' ? b.id : parseInt(b.id);
+        if (!isNaN(idA) && !isNaN(idB) && idA !== idB) return idB - idA;
+      }
+      // Fallback to created_at
+      var tsA = a.created_at ? new Date(a.created_at).getTime() : 0;
+      var tsB = b.created_at ? new Date(b.created_at).getTime() : 0;
+      return tsB - tsA;
+    });
+
     var table = document.createElement('table');
     table.className = 'data-table';
     var thead = document.createElement('thead');
@@ -2771,11 +2995,16 @@ function loadRecentTasks() {
     thead.appendChild(headRow);
     table.appendChild(thead);
     var tbod = document.createElement('tbody');
-    data.slice(0, 50).forEach(function(t) {
+    tasks.slice(0, 50).forEach(function(t) {
       var tr = document.createElement('tr');
       var tdId = document.createElement('td');
       tdId.style.cssText = 'font-family:monospace;font-size:12px';
-      tdId.textContent = '#' + (t.id || '--');
+      var taskId = t.id;
+      if (taskId !== undefined && taskId !== null) {
+        tdId.textContent = '#' + taskId;
+      } else {
+        tdId.textContent = '--';
+      }
       var tdType = document.createElement('td');
       tdType.textContent = t.type || t.skill || '--';
       var tdStatus = document.createElement('td');
@@ -2785,7 +3014,12 @@ function loadRecentTasks() {
       tdAgent.textContent = t.assigned_to || t.agent || '--';
       var tdTime = document.createElement('td');
       tdTime.style.cssText = 'font-size:12px;color:var(--muted-foreground)';
-      tdTime.textContent = timeAgo(t.created_at);
+      // Show actual relative time, try multiple timestamp fields
+      var timestamp = t.created_at || t.updated_at || t.completed_at || t.timestamp;
+      tdTime.textContent = timeAgo(timestamp);
+      if (timestamp) {
+        tdTime.title = new Date(timestamp).toLocaleString();
+      }
       tr.appendChild(tdId);
       tr.appendChild(tdType);
       tr.appendChild(tdStatus);
@@ -3482,6 +3716,337 @@ function loadModelUtilChart() {
 }
 
 /* ══════════════════════════════════════════════════════════════════════════
+   API GATE CONTROLS
+   ══════════════════════════════════════════════════════════════════════ */
+function buildGateCard() {
+  var mount = document.getElementById('gate-card-mount');
+  if (!mount) return;
+
+  var card = document.createElement('div');
+  card.className = 'card';
+  card.id = 'gate-card';
+
+  // Card header
+  var header = document.createElement('div');
+  header.className = 'card-header';
+  var title = document.createElement('div');
+  title.className = 'card-title';
+  title.textContent = 'API Gate';
+  var statusBadge = document.createElement('span');
+  statusBadge.className = 'badge badge-muted';
+  statusBadge.id = 'gate-status-badge';
+  statusBadge.textContent = 'Unknown';
+  statusBadge.style.marginLeft = '8px';
+  title.appendChild(statusBadge);
+  header.appendChild(title);
+  card.appendChild(header);
+
+  // Card body
+  var body = document.createElement('div');
+  body.className = 'card-body';
+
+  // Budget slider row
+  var budgetRow = document.createElement('div');
+  budgetRow.style.cssText = 'margin-bottom:12px';
+  var budgetLabel = document.createElement('label');
+  budgetLabel.style.cssText = 'display:block;font-size:12px;font-weight:600;margin-bottom:4px;color:var(--foreground)';
+  budgetLabel.textContent = 'Budget cap ($)';
+  budgetRow.appendChild(budgetLabel);
+
+  var budgetWrap = document.createElement('div');
+  budgetWrap.style.cssText = 'display:flex;align-items:center;gap:8px';
+
+  var budgetSlider = document.createElement('input');
+  budgetSlider.type = 'range';
+  budgetSlider.id = 'gate-budget-slider';
+  budgetSlider.min = '0';
+  budgetSlider.max = '20';
+  budgetSlider.step = '0.50';
+  budgetSlider.value = '5';
+  budgetSlider.style.cssText = 'flex:1';
+
+  var budgetVal = document.createElement('span');
+  budgetVal.id = 'gate-budget-value';
+  budgetVal.style.cssText = 'font-size:13px;font-weight:600;min-width:48px;text-align:right;color:var(--foreground)';
+  budgetVal.textContent = '$5.00';
+
+  budgetSlider.addEventListener('input', function() {
+    budgetVal.textContent = '$' + parseFloat(this.value).toFixed(2);
+  });
+
+  var customBtn = document.createElement('button');
+  customBtn.className = 'btn btn-sm';
+  customBtn.textContent = '+';
+  customBtn.title = 'Custom amount';
+  customBtn.addEventListener('click', function() {
+    var val = prompt('Enter custom budget cap ($):');
+    if (val !== null && !isNaN(parseFloat(val))) {
+      var num = parseFloat(val);
+      if (num > 20) budgetSlider.max = String(num);
+      budgetSlider.value = String(num);
+      budgetVal.textContent = '$' + num.toFixed(2);
+    }
+  });
+
+  budgetWrap.appendChild(budgetSlider);
+  budgetWrap.appendChild(budgetVal);
+  budgetWrap.appendChild(customBtn);
+  budgetRow.appendChild(budgetWrap);
+  body.appendChild(budgetRow);
+
+  // Provider checkboxes row
+  var providerRow = document.createElement('div');
+  providerRow.style.cssText = 'margin-bottom:12px';
+  var providerLabel = document.createElement('label');
+  providerLabel.style.cssText = 'display:block;font-size:12px;font-weight:600;margin-bottom:4px;color:var(--foreground)';
+  providerLabel.textContent = 'Allowed providers';
+  providerRow.appendChild(providerLabel);
+
+  var providerWrap = document.createElement('div');
+  providerWrap.style.cssText = 'display:flex;gap:16px;flex-wrap:wrap';
+
+  var providers = ['Claude', 'Gemini', 'MiniMax'];
+  providers.forEach(function(prov) {
+    var lbl = document.createElement('label');
+    lbl.style.cssText = 'display:flex;align-items:center;gap:4px;font-size:13px;color:var(--foreground);cursor:pointer';
+    var cb = document.createElement('input');
+    cb.type = 'checkbox';
+    cb.checked = true;
+    cb.className = 'gate-provider-cb';
+    cb.value = prov.toLowerCase();
+    lbl.appendChild(cb);
+    lbl.appendChild(document.createTextNode(prov));
+    providerWrap.appendChild(lbl);
+  });
+  providerRow.appendChild(providerWrap);
+  body.appendChild(providerRow);
+
+  // TTL dropdown row
+  var ttlRow = document.createElement('div');
+  ttlRow.style.cssText = 'margin-bottom:12px';
+  var ttlLabel = document.createElement('label');
+  ttlLabel.style.cssText = 'display:block;font-size:12px;font-weight:600;margin-bottom:4px;color:var(--foreground)';
+  ttlLabel.textContent = 'Token TTL';
+  ttlRow.appendChild(ttlLabel);
+
+  var ttlSelect = document.createElement('select');
+  ttlSelect.id = 'gate-ttl';
+  ttlSelect.style.cssText = 'padding:4px 8px;border:1px solid var(--input-border);border-radius:var(--radius);background:var(--input-bg);color:var(--foreground);font-size:13px';
+
+  var ttlOptions = [
+    { value: '3600', text: '1 hour' },
+    { value: '7200', text: '2 hours' },
+    { value: '14400', text: '4 hours' },
+    { value: '28800', text: '8 hours' },
+    { value: '0', text: 'No expiry' }
+  ];
+  ttlOptions.forEach(function(opt) {
+    var o = document.createElement('option');
+    o.value = opt.value;
+    o.textContent = opt.text;
+    ttlSelect.appendChild(o);
+  });
+  ttlRow.appendChild(ttlSelect);
+  body.appendChild(ttlRow);
+
+  // Drain mode row
+  var drainRow = document.createElement('div');
+  drainRow.style.cssText = 'margin-bottom:12px';
+  var drainLabel = document.createElement('label');
+  drainLabel.style.cssText = 'display:block;font-size:12px;font-weight:600;margin-bottom:4px;color:var(--foreground)';
+  drainLabel.textContent = 'Drain mode';
+  drainRow.appendChild(drainLabel);
+
+  var drainWrap = document.createElement('div');
+  drainWrap.style.cssText = 'display:flex;gap:12px';
+
+  var drainModes = [
+    { value: 'none', text: 'Off' },
+    { value: 'soft', text: 'Soft (finish in-flight)' },
+    { value: 'hard', text: 'Hard (reject all)' }
+  ];
+  drainModes.forEach(function(mode) {
+    var lbl = document.createElement('label');
+    lbl.style.cssText = 'display:flex;align-items:center;gap:4px;font-size:13px;color:var(--foreground);cursor:pointer';
+    var radio = document.createElement('input');
+    radio.type = 'radio';
+    radio.name = 'gate-drain';
+    radio.value = mode.value;
+    if (mode.value === 'none') radio.checked = true;
+    lbl.appendChild(radio);
+    lbl.appendChild(document.createTextNode(mode.text));
+    drainWrap.appendChild(lbl);
+  });
+  drainRow.appendChild(drainWrap);
+  body.appendChild(drainRow);
+
+  // Live spend progress bar
+  var spendRow = document.createElement('div');
+  spendRow.style.cssText = 'margin-bottom:12px';
+  var spendLabel = document.createElement('div');
+  spendLabel.style.cssText = 'display:flex;justify-content:space-between;font-size:12px;font-weight:600;margin-bottom:4px;color:var(--foreground)';
+  var spendTitle = document.createElement('span');
+  spendTitle.textContent = 'Spend';
+  var spendAmount = document.createElement('span');
+  spendAmount.id = 'gate-spend-amount';
+  spendAmount.style.cssText = 'font-weight:400;color:var(--muted-foreground)';
+  spendAmount.textContent = '$0.00 / $5.00';
+  spendLabel.appendChild(spendTitle);
+  spendLabel.appendChild(spendAmount);
+  spendRow.appendChild(spendLabel);
+
+  var progressOuter = document.createElement('div');
+  progressOuter.style.cssText = 'height:8px;background:var(--muted);border-radius:4px;overflow:hidden';
+  var progressInner = document.createElement('div');
+  progressInner.id = 'gate-spend-bar';
+  progressInner.style.cssText = 'height:100%;width:0%;background:var(--success);border-radius:4px;transition:width 0.3s ease';
+  progressOuter.appendChild(progressInner);
+  spendRow.appendChild(progressOuter);
+  body.appendChild(spendRow);
+
+  // Action buttons
+  var btnRow = document.createElement('div');
+  btnRow.style.cssText = 'display:flex;gap:8px;margin-top:16px';
+
+  var enableBtn = document.createElement('button');
+  enableBtn.className = 'btn btn-sm';
+  enableBtn.id = 'gate-enable-btn';
+  enableBtn.style.cssText = 'background:var(--success);color:#fff;border:none;padding:6px 16px;border-radius:var(--radius);font-weight:600';
+  enableBtn.textContent = 'Enable Gate';
+  enableBtn.addEventListener('click', function() { enableGate(); });
+
+  var killBtn = document.createElement('button');
+  killBtn.className = 'btn btn-sm';
+  killBtn.id = 'gate-kill-btn';
+  killBtn.style.cssText = 'background:var(--danger);color:#fff;border:none;padding:6px 16px;border-radius:var(--radius);font-weight:600';
+  killBtn.textContent = 'Kill Gate';
+  killBtn.addEventListener('click', function() { disableGate(); });
+
+  btnRow.appendChild(enableBtn);
+  btnRow.appendChild(killBtn);
+  body.appendChild(btnRow);
+
+  card.appendChild(body);
+  mount.appendChild(card);
+
+  // Initial status fetch
+  apiFetch('/api/gate/status').then(updateGateUI).catch(function(){});
+}
+
+function enableGate() {
+  var budget = parseFloat(document.getElementById('gate-budget-slider').value) || 5;
+  var ttl = parseInt(document.getElementById('gate-ttl').value, 10) || 0;
+  var providers = [];
+  var cbs = document.querySelectorAll('.gate-provider-cb');
+  for (var i = 0; i < cbs.length; i++) {
+    if (cbs[i].checked) providers.push(cbs[i].value);
+  }
+  var drain = 'none';
+  var radios = document.querySelectorAll('input[name="gate-drain"]');
+  for (var j = 0; j < radios.length; j++) {
+    if (radios[j].checked) { drain = radios[j].value; break; }
+  }
+
+  apiFetch('/api/gate/enable', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      budget_cap: budget,
+      ttl_seconds: ttl,
+      providers: providers,
+      drain_mode: drain
+    })
+  }).then(function(d) {
+    updateGateUI(d);
+  }).catch(function() {
+    var badge = document.getElementById('gate-status-badge');
+    if (badge) {
+      badge.className = 'badge badge-danger';
+      badge.textContent = 'Error';
+    }
+  });
+}
+
+function disableGate() {
+  apiFetch('/api/gate/disable', {
+    method: 'POST'
+  }).then(function(d) {
+    updateGateUI(d);
+  }).catch(function() {
+    var badge = document.getElementById('gate-status-badge');
+    if (badge) {
+      badge.className = 'badge badge-danger';
+      badge.textContent = 'Error';
+    }
+  });
+}
+
+function updateGateUI(data) {
+  if (!data) return;
+  var badge = document.getElementById('gate-status-badge');
+  if (badge) {
+    if (data.enabled) {
+      badge.className = 'badge badge-success';
+      badge.textContent = 'Active';
+    } else {
+      badge.className = 'badge badge-muted';
+      badge.textContent = 'Disabled';
+    }
+  }
+
+  // Update spend bar
+  var budgetCap = data.budget_cap || parseFloat(document.getElementById('gate-budget-slider').value) || 5;
+  var spent = data.spent || 0;
+  var pct = budgetCap > 0 ? Math.min(100, (spent / budgetCap) * 100) : 0;
+
+  var bar = document.getElementById('gate-spend-bar');
+  if (bar) {
+    bar.style.width = pct + '%';
+    if (pct > 80) bar.style.background = 'var(--danger)';
+    else if (pct > 50) bar.style.background = 'var(--warning)';
+    else bar.style.background = 'var(--success)';
+  }
+
+  var amountEl = document.getElementById('gate-spend-amount');
+  if (amountEl) {
+    amountEl.textContent = '$' + spent.toFixed(2) + ' / $' + budgetCap.toFixed(2);
+  }
+
+  // Sync slider if server sends budget
+  if (data.budget_cap !== undefined) {
+    var slider = document.getElementById('gate-budget-slider');
+    if (slider) {
+      if (data.budget_cap > parseFloat(slider.max)) slider.max = String(data.budget_cap);
+      slider.value = String(data.budget_cap);
+      var valEl = document.getElementById('gate-budget-value');
+      if (valEl) valEl.textContent = '$' + data.budget_cap.toFixed(2);
+    }
+  }
+
+  // Sync drain mode
+  if (data.drain_mode) {
+    var radios = document.querySelectorAll('input[name="gate-drain"]');
+    for (var i = 0; i < radios.length; i++) {
+      radios[i].checked = (radios[i].value === data.drain_mode);
+    }
+  }
+
+  // Sync providers
+  if (data.providers && Array.isArray(data.providers)) {
+    var cbs = document.querySelectorAll('.gate-provider-cb');
+    for (var j = 0; j < cbs.length; j++) {
+      cbs[j].checked = data.providers.indexOf(cbs[j].value) >= 0;
+    }
+  }
+
+  // Sync TTL
+  if (data.ttl_seconds !== undefined) {
+    var ttlSel = document.getElementById('gate-ttl');
+    if (ttlSel) ttlSel.value = String(data.ttl_seconds);
+  }
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
    8. SETTINGS
    ══════════════════════════════════════════════════════════════════════ */
 function loadSettings() {
@@ -4161,6 +4726,16 @@ function loadViews() {
   setInterval(function() {
     if (document.getElementById('section-dashboard').classList.contains('active')) {
       loadThermal();
+    }
+  }, 10000);
+
+  /* ── API Gate Controls ─────────────────────────────────────────────────── */
+  buildGateCard();
+
+  setInterval(function() {
+    var section = document.getElementById('section-settings');
+    if (section && section.style.display !== 'none') {
+      apiFetch('/api/gate/status').then(updateGateUI).catch(function(){});
     }
   }, 10000);
 })();
