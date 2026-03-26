@@ -26,7 +26,7 @@ def api_ingest_sources():
     try:
         import ingest_manager
         sources = ingest_manager.list_sources()
-        return jsonify(sources)
+        return jsonify({"sources": sources, "count": len(sources)})
     except Exception as e:
         log.warning("GET /api/ingest/sources failed", exc_info=True)
         return jsonify({"error": str(e)}), 500
