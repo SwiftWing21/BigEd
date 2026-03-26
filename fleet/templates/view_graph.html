@@ -936,6 +936,17 @@ button { font-family: inherit; cursor: pointer; border: none; background: none; 
       var isError = !!src.error;
 
       (src.nodes || []).forEach(function(n) {
+        // Color by node type for visual differentiation (not by source)
+        var typeColors = {
+          hub: '#3b82f6', agent: '#10b981', supervisor: '#059669',
+          skill: '#8b5cf6', task: '#f59e0b', model: '#ec4899',
+          folder: '#06b6d4', message: '#6366f1', config: '#64748b',
+          api_call: '#ef4444', index: '#14b8a6', chunk: '#0ea5e9',
+          scorer: '#f97316', trainer: '#d946ef', evaluator: '#a855f7'
+        };
+        var nType = (n.type || '').toLowerCase();
+        var nColor = typeColors[nType] || n.color || srcColor;
+
         elements.push({
           group: 'nodes',
           data: {
@@ -945,7 +956,7 @@ button { font-family: inherit; cursor: pointer; border: none; background: none; 
             source:      srcName,
             status:      n.status || '',
             metrics:     n.metrics || null,
-            color:       n.color || srcColor,
+            color:       nColor,
             borderColor: statusBorderColor(n.status),
           },
           classes: isError ? 'source-unavailable' : '',

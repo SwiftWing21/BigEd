@@ -109,6 +109,25 @@
     security: "#f44336",
   };
 
+  /** Node type -> color mapping for visual differentiation within sources */
+  var NODE_TYPE_COLORS = {
+    hub:        "#3b82f6",  // blue — central hub
+    agent:      "#10b981",  // green — workers
+    supervisor: "#059669",  // dark green — supervisor
+    skill:      "#8b5cf6",  // purple — capabilities
+    task:       "#f59e0b",  // amber — work items
+    model:      "#ec4899",  // pink — AI models
+    folder:     "#06b6d4",  // cyan — knowledge folders
+    message:    "#6366f1",  // indigo — communications
+    config:     "#64748b",  // slate — configuration
+    api_call:   "#ef4444",  // red — external API calls
+    index:      "#14b8a6",  // teal — RAG indexes
+    chunk:      "#0ea5e9",  // sky — RAG chunks
+    scorer:     "#f97316",  // orange — reinforcement
+    trainer:    "#d946ef",  // fuchsia — training
+    evaluator:  "#a855f7",  // violet — evaluation
+  };
+
   // ---------------------------------------------------------------------------
   // Helpers
   // ---------------------------------------------------------------------------
@@ -134,13 +153,21 @@
   }
 
   /**
-   * Get color for a node based on its status, source color, or category.
+   * Get color for a node based on its type, then status, then source/category.
+   * Type color takes priority so nodes are visually distinct within a source.
    */
   function nodeColor(nodeData, sourceColor, category) {
-    var status = (nodeData.status || "").toUpperCase();
-    if (STATUS_COLORS[status]) {
-      return STATUS_COLORS[status];
+    // 1. Node type color (most distinctive)
+    var nodeType = (nodeData.type || "").toLowerCase();
+    if (NODE_TYPE_COLORS[nodeType]) {
+      return NODE_TYPE_COLORS[nodeType];
     }
+    // 2. Status-based color for active states
+    var status = (nodeData.status || "").toUpperCase();
+    if (status === "ERROR" || status === "OFFLINE") {
+      return STATUS_COLORS[status] || "#ef4444";
+    }
+    // 3. Source/category fallback
     if (sourceColor) {
       return sourceColor;
     }

@@ -195,6 +195,16 @@ def api_views_graph(name):
         live = _fetch_live_source_data(src_name, source)
         sources_data.append(live)
 
+    # Deduplicate nodes across sources (same ID from multiple sources = one node)
+    seen_node_ids = set()
+    for src in sources_data:
+        unique_nodes = []
+        for n in src.get("nodes", []):
+            if n["id"] not in seen_node_ids:
+                seen_node_ids.add(n["id"])
+                unique_nodes.append(n)
+        src["nodes"] = unique_nodes
+
     return jsonify({"sources": sources_data, "view": config})
 
 
