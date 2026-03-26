@@ -753,6 +753,39 @@ def test_skill_health_checks():
     return True, f"{checked} health checks passed"
 
 
+def test_api_gate():
+    """API gate module loads and defaults to disabled."""
+    try:
+        import api_gate
+        s = api_gate.status()
+        if s["enabled"]:
+            return False, "Gate should default to disabled"
+        return True, f"Gate disabled, budget ${s['session_budget_usd']}"
+    except Exception as e:
+        return False, str(e)
+
+
+def test_no_direct_api_imports():
+    """Skills must route through call_complex(), not direct API clients."""
+    BANNED = ["import anthropic", "import google.generativeai", "from anthropic import"]
+    EXEMPT = {"_models.py", "providers.py", "_contract.py"}
+    violations = []
+    skills_dir = FLEET_DIR / "skills"
+    for py in skills_dir.glob("*.py"):
+        if py.name in EXEMPT:
+            continue
+        try:
+            content = py.read_text(encoding="utf-8", errors="ignore")
+        except Exception:
+            continue
+        for pattern in BANNED:
+            if pattern in content:
+                violations.append(f"{py.name}: {pattern}")
+    if violations:
+        return False, f"Direct API imports: {'; '.join(violations)}"
+    return True, "All skills route through call_complex()"
+
+
 def cleanup():
     """Remove smoke test artifacts from DB."""
     import db
@@ -837,6 +870,8 @@ def main():
         ("Token bridge", test_token_bridge),
         ("Docs API", test_docs_api),
         ("Skill health checks", test_skill_health_checks),
+        ("API gate", test_api_gate),
+        ("No direct API imports", test_no_direct_api_imports),
     ])
 
     if not args.fast:
