@@ -2,7 +2,7 @@
   "schema_version": 1,
   "name": "data-flow",
   "description": "How data moves through the fleet: agents -> skills -> models -> knowledge",
-  "layout": "tree",
+  "layout": "radial-cluster",
   "sources": ["supervisor", "rag", "knowledge", "universe"],
   "edges": [
     {"from": "supervisor:agent", "to": "rag:query", "type": "queries"},

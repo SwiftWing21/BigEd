@@ -2,7 +2,7 @@
   "schema_version": 1,
   "name": "training-pipeline",
   "description": "Training pipeline: ingestion -> RAG indexing -> autoresearch training -> reinforcement scoring",
-  "layout": "tree",
+  "layout": "cluster",
   "sources": ["supervisor", "rag", "autoresearch", "reinforcement", "knowledge", "universe"],
   "metrics_overlay": ["chunk_count", "epoch", "loss", "iq_score", "tok_s"],
   "animation": {
