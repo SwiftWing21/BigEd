@@ -132,6 +132,86 @@ def test_diagnostics_shim_same_objects():
     assert diag_fn is hm_fn
 
 
+# ── Scheduler ───────────────────────────────────────────────────────
+
+def test_scheduler_imports():
+    """Scheduler class can be imported."""
+    from scheduler import Scheduler
+    assert Scheduler is not None
+
+
+def test_scheduler_init():
+    """Scheduler initializes with config and PM."""
+    from process_manager import ProcessManager
+    from scheduler import Scheduler
+    pm = ProcessManager({"fleet": {}, "models": {}, "workers": {}})
+    sched = Scheduler({"fleet": {"training_check_interval_secs": 30}, "scaling": {}}, pm)
+    assert sched is not None
+
+
+def test_scheduler_build_roles():
+    """build_roles returns a list of role strings."""
+    from process_manager import ProcessManager
+    from scheduler import Scheduler
+    pm = ProcessManager({"fleet": {}, "models": {}, "workers": {}})
+    cfg = {"fleet": {"disabled_agents": [], "training_check_interval_secs": 30},
+           "workers": {"coder_count": 2}, "scaling": {}}
+    sched = Scheduler(cfg, pm)
+    roles = sched.build_roles()
+    assert isinstance(roles, list)
+    assert "researcher" in roles
+    assert "coder_1" in roles
+    assert "coder_2" in roles
+
+
+def test_scheduler_count_pending_tasks():
+    """count_pending_tasks returns an integer >= 0."""
+    from process_manager import ProcessManager
+    from scheduler import Scheduler
+    pm = ProcessManager({"fleet": {}, "models": {}, "workers": {}})
+    sched = Scheduler({"fleet": {"training_check_interval_secs": 30}, "scaling": {}}, pm)
+    result = sched.count_pending_tasks()
+    assert isinstance(result, int)
+    assert result >= 0
+
+
+def test_scheduler_tick_no_crash():
+    """Scheduler.tick() completes without error."""
+    from process_manager import ProcessManager
+    from scheduler import Scheduler
+    pm = ProcessManager({"fleet": {"eco_mode": False, "disabled_agents": [],
+                                    "training_check_interval_secs": 30,
+                                    "ram_ceiling_pct": 95, "max_workers": 10},
+                          "models": {}, "workers": {}, "scaling": {}})
+    sched = Scheduler(pm.config, pm)
+    sched.tick(0.0)  # should not raise
+
+
+# ── FederationManager ───────────────────────────────────────────────
+
+def test_federation_manager_imports():
+    """FederationManager class can be imported."""
+    from federation_manager import FederationManager
+    assert FederationManager is not None
+
+
+def test_federation_manager_init():
+    """FederationManager initializes with config and PM."""
+    from process_manager import ProcessManager
+    from federation_manager import FederationManager
+    pm = ProcessManager({"fleet": {}, "models": {}, "workers": {}})
+    fm = FederationManager({"federation": {"enabled": False}}, pm)
+    assert fm is not None
+
+
+def test_federation_manager_tick_disabled():
+    """tick() completes without error when federation is disabled."""
+    from process_manager import ProcessManager
+    from federation_manager import FederationManager
+    pm = ProcessManager({"fleet": {}, "models": {}, "workers": {}})
+    fm = FederationManager({"federation": {"enabled": False}}, pm)
+    fm.tick(0.0)  # should not raise
+
+
 if __name__ == "__main__":
-    import pytest
     sys.exit(pytest.main([__file__, "-v"]))
