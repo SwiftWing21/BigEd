@@ -2759,17 +2759,23 @@ function loadNeuralGraph() {
     return;
   }
 
-  // Universe graph node type colors and sizes
+  // Universe graph node type colors and sizes (matches view_engine.js NODE_TYPE_COLORS)
   var nodeTypeStyle = {
-    agent:    { color: '#10b981', size: 36, fontSize: 12, shape: 'ellipse' },
-    skill:    { color: '#3b82f6', size: 24, fontSize: 10, shape: 'ellipse' },
-    task:     { color: '#f59e0b', size: 20, fontSize: 10, shape: 'ellipse' },
-    model:    { color: '#a78bfa', size: 32, fontSize: 12, shape: 'ellipse' },
-    folder:   { color: '#4fc3f7', size: 22, fontSize: 10, shape: 'ellipse' },
-    api_call: { color: '#ef4444', size: 18, fontSize: 10, shape: 'diamond' },
-    hub:      { color: '#3b82f6', size: 44, fontSize: 14, shape: 'ellipse' },
-    message:  { color: '#6b7280', size: 18, fontSize: 10, shape: 'ellipse' },
-    config:   { color: '#64748b', size: 16, fontSize: 10, shape: 'ellipse' }
+    hub:        { color: '#3b82f6', size: 44, fontSize: 14, shape: 'ellipse' },
+    agent:      { color: '#10b981', size: 36, fontSize: 12, shape: 'ellipse' },
+    supervisor: { color: '#059669', size: 32, fontSize: 12, shape: 'ellipse' },
+    skill:      { color: '#8b5cf6', size: 24, fontSize: 10, shape: 'ellipse' },
+    task:       { color: '#f59e0b', size: 14, fontSize: 8, shape: 'ellipse' },
+    model:      { color: '#ec4899', size: 32, fontSize: 12, shape: 'ellipse' },
+    folder:     { color: '#06b6d4', size: 22, fontSize: 10, shape: 'ellipse' },
+    message:    { color: '#6366f1', size: 18, fontSize: 10, shape: 'ellipse' },
+    config:     { color: '#64748b', size: 16, fontSize: 9, shape: 'ellipse' },
+    api_call:   { color: '#ef4444', size: 18, fontSize: 10, shape: 'diamond' },
+    index:      { color: '#14b8a6', size: 24, fontSize: 10, shape: 'ellipse' },
+    chunk:      { color: '#0ea5e9', size: 16, fontSize: 9, shape: 'ellipse' },
+    scorer:     { color: '#f97316', size: 22, fontSize: 10, shape: 'ellipse' },
+    trainer:    { color: '#d946ef', size: 22, fontSize: 10, shape: 'ellipse' },
+    evaluator:  { color: '#a855f7', size: 22, fontSize: 10, shape: 'ellipse' },
   };
   var defaultStyle = { color: '#64748b', size: 20, fontSize: 10, shape: 'ellipse' };
 
@@ -2811,14 +2817,15 @@ function loadNeuralGraph() {
         }
       ],
       layout: {
-        name: 'cose',
-        animate: true,
-        animationDuration: 600,
-        nodeOverlap: 30,
-        idealEdgeLength: 100,
-        nodeRepulsion: function() { return 8000; },
-        gravity: 0.25,
-        numIter: 300,
+        name: 'concentric',
+        concentric: function(node) {
+          var typeOrder = { hub: 7, agent: 6, model: 5, skill: 4, task: 3, folder: 2, message: 1, config: 0 };
+          var t = node.data('type') || '';
+          return (typeOrder[t] !== undefined ? typeOrder[t] : 0) * 10 + Math.min(node.degree(), 9);
+        },
+        levelWidth: function() { return 10; },
+        animate: false,
+        padding: 30,
       }
     });
   }
@@ -2828,11 +2835,24 @@ function loadNeuralGraph() {
     var cyNodes = [];
     var cyEdges = [];
     var nodeIds = {};
-    (d.nodes || []).forEach(function(n) {
-      var ntype = (n.type || n.node_type || 'unknown').toLowerCase();
+
+    // API returns {sources: [{nodes:[], edges:[]}, ...]} — flatten all sources
+    var allNodes = [];
+    var allEdges = [];
+    var sources = d.sources || [d];
+    (Array.isArray(sources) ? sources : [sources]).forEach(function(src) {
+      (src.nodes || []).forEach(function(n) { allNodes.push(n); });
+      (src.edges || []).forEach(function(e) { allEdges.push(e); });
+    });
+    // Also check top-level (in case API format changes)
+    if (d.nodes) allNodes = allNodes.concat(d.nodes);
+    if (d.edges) allEdges = allEdges.concat(d.edges);
+
+    allNodes.forEach(function(n) {
+      var ntype = (n.type || 'unknown').toLowerCase();
       var style = nodeTypeStyle[ntype] || defaultStyle;
       var id = n.id || n.name || ('node-' + Math.random());
-      if (nodeIds[id]) return;
+      if (nodeIds[id]) return; // deduplicate
       nodeIds[id] = true;
       cyNodes.push({
         data: {
@@ -2841,11 +2861,12 @@ function loadNeuralGraph() {
           color: style.color,
           size: style.size,
           fontSize: style.fontSize,
-          shape: style.shape
+          shape: style.shape,
+          type: ntype,
         }
       });
     });
-    (d.edges || []).forEach(function(e) {
+    allEdges.forEach(function(e) {
       var src = e.source || e.from;
       var tgt = e.target || e.to;
       if (src && tgt && nodeIds[src] && nodeIds[tgt]) {
@@ -3236,7 +3257,10 @@ function loadQueueStatus() {
       btn.textContent = '\u23F8 Pause';
       btn.className = 'btn btn-warning btn-sm';
     }
-  }).catch(function() {});
+  }).catch(function() {
+    var badge = document.getElementById('queue-status-badge');
+    if (badge) { badge.textContent = 'offline'; badge.className = 'badge badge-muted'; }
+  });
 }
 
 function loadQueueList() {
