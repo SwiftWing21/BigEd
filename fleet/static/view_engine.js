@@ -283,13 +283,13 @@
       var animType = rules[edgeType];
       if (!animType) continue;
 
-      var count = animType === "flow" ? 3 : 1;
+      var count = animType === "flow" ? 2 : 1;
       for (var j = 0; j < count; j++) {
         this._particles.push({
           edge: edge,
           type: animType,
-          progress: animType === "flow" ? j / count : 0,
-          speed: 0.003 + Math.random() * 0.002,
+          progress: animType === "flow" ? j / count : Math.random(),
+          speed: 0.002 + Math.random() * 0.003,
           opacity: 1.0,
           color: edge.data("color") || cssVar("--accent", "#7c3aed"),
         });
@@ -1088,11 +1088,11 @@
         });
         this._applyHeatmap();
         if (this._badgeMgr) this._badgeMgr.disable();
-        if (this._animationMgr) this._animationMgr.stop();
+        if (this._animationMgr) this._animationMgr.start();
         break;
 
       case ZOOM_LEVELS.MID:
-        // Moderate: show labels, weighted edges, badges on hover
+        // Moderate: show labels, weighted edges, badges on hover, animations on
         this._cy.batch(function () {
           self._cy.nodes().style({
             label: "data(label)",
@@ -1108,7 +1108,7 @@
         });
         this._clearHeatmap();
         if (this._badgeMgr) this._badgeMgr.enable();
-        if (this._animationMgr) this._animationMgr.stop();
+        if (this._animationMgr) this._animationMgr.start();
         break;
 
       case ZOOM_LEVELS.DETAIL:

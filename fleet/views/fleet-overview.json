@@ -6,6 +6,14 @@
   "layout": "radial",
   "metrics_overlay": ["uptime_s", "worker_count", "task_queue_depth"],
   "animation": {
+    "assigned": "flow",
+    "runs": "flow",
+    "api_call": "pulse",
+    "routes_to": "flow",
+    "communicates": "pulse",
+    "uses_model": "flow",
+    "writes": "flow",
+    "reads": "flow",
     "dispatches": "pulse",
     "heartbeat": "fade"
   }
