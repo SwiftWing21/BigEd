@@ -9,63 +9,115 @@
 
 | Metric | Value | Last Updated |
 |--------|-------|--------------|
-| Version | 0.400.00b | 2026-03-24 |
-| Skills | 130+ | 2026-03-24 |
-| Smoke Tests | 38/38 | 2026-03-24 |
-| Dashboard Endpoints | 236 | 2026-03-24 |
-| DB Tables | 20 | 2026-03-24 |
-| Branch | main (+ rust-phase0-phase1) | 2026-03-24 |
-| Rust Phase | Tasks 1-4 of 11 done | 2026-03-24 |
+| Version | 0.900.00b (Python) / 0.9.0 (Rust) | 2026-03-25 |
+| Skills | 96 standalone + 6 suites (was 132 files) | 2026-03-26 |
+| Smoke Tests | 40/40 (Python) | 2026-03-26 |
+| Rust Tests | 116+ | 2026-03-25 |
+| Dashboard Endpoints | 26 (Rust) + 236 (Python) | 2026-03-25 |
+| DB Tables | 9 (Rust schema) | 2026-03-25 |
+| Branch | main | 2026-03-26 |
+| Rust Crates | 6 (core, supervisor, server, bridge, gui, wasm) | 2026-03-25 |
+| Rust Phase | All 6 phases complete + 18 audit fixes | 2026-03-25 |
+| Helpers | 11 (_contract, _knowledge, _llm_parse, _dispatch, _report, _http, _models, _flywheel_rubric/grading/audit, _oss_core) | 2026-03-26 |
 
 ## Last Session
 
-**Date:** 2026-03-23 ~11:45pm
-**Sessions:** VS Code Claude Code (parallel) + Cowork
+**Date:** 2026-03-25 → 2026-03-26
+**Session:** VS Code Claude Code
 
-**VS Code session:**
-- P1 skills (2): outcome_tracker, prompt_optimize
-- P2 skills (8): knowledge_digest, api_health_probe, pair_program, doc_generate, config_drift_detect, data_pipeline, webhook_dispatch, skill_dependency_map
-- P3 skills (4): model_eval_framework, mcp_probe, agent_personality_tune, cross_fleet_knowledge_sync
-- Dashboard: flowchart rendering (Cytoscape dagre), Views sidebar panel
-- 17 orphaned docs archived to docs/archive/ with index
-- FRAMEWORK_BLUEPRINT.md, OPERATIONS.md, ROADMAP.md, README.md, CLAUDE.md refreshed
+### Skill Plugin Restructure — Complete (Phases A-D)
 
-**Cowork session:**
-- Generated BigEd_Architecture_Report.docx (full architecture + 10 refactor stories with lessons learned)
-- Reviewed all 5 updated docs, found and fixed 3 stale values:
-  - README.md: "93 registered skills" → "130+"
-  - CLAUDE.md: HA fallback chain now includes MiniMax (was "Claude → Gemini → Local")
-  - CLAUDE.md: Version Scheme updated from "Alpha" to "Beta" with correct 0.XXX.YYb format
-- Added SESSION_HANDOFF.md to .gitignore (was missing)
+Full audit and restructure of 132 fleet skills into a formal plugin architecture.
 
-**Commit (VS Code):** `c04734f` feat: 10 skills, flowchart rendering, Views sidebar, doc archival
+**Phase A — Contract Foundation:**
+- Created `_contract.py` validator (SKILL_NAME, DESCRIPTION, VERSION, run signature checks)
+- Added worker.py result coercion safety net (str→dict)
+- Fixed 27 str-returning skills (274 `json.dumps` occurrences → direct dict returns)
+- Fixed 18 non-standard run() signatures (8 broken `log` param, 3 `task/context` naming, 7 `log=None`)
+- Fixed 2 raw sqlite3 violations (doc_freshness, _flywheel_core)
+- Added VERSION + COMPLEXITY constants to all 125 skills
+- Refactored providers.py to read COMPLEXITY from skill modules (fallback to dict)
+
+**Phase B — Shared Helpers (5 new + 1 decomposition):**
+- `_knowledge.py` — dir management + date-stamped file save (used by 57 skills)
+- `_llm_parse.py` — JSON extraction from LLM responses (replaces 6 implementations)
+- `_dispatch.py` — action routing boilerplate for suites
+- `_report.py` — ReportBuilder class for markdown reports
+- `_http.py` — URL probing with timeout/latency
+- Decomposed `_flywheel_core.py` (891 lines) → `_flywheel_rubric.py` + `_flywheel_grading.py` + `_flywheel_audit.py`
+
+**Phase C — Suite Consolidation (6 suites + 2 merges):**
+- `ml_train_suite.py` — 4 ML training skills (22% reduction)
+- `model_suite.py` — 3 model management skills, unified hardware detection (17% reduction)
+- `code_suite.py` — 6 code review/quality skills (14% reduction)
+- `git_suite.py` — 3 git/GitHub skills (52% reduction)
+- `security_suite.py` — 6 security skills, advisory pipeline preserved (34% reduction)
+- `skill_lifecycle_suite.py` — 5 lifecycle skills, gate semantics preserved (35% reduction)
+- Merged oss_review_swarm → oss_review (swarm as mode flag)
+- Merged config_drift_detect → config_validate (drift as action)
+- SUITE_ROUTING shim in worker.py (27 legacy→6 suites, with kill-switch)
+- 29 old files deprecated (prefixed `_deprecated_`)
+
+**Phase D — Polish:**
+- SUITE + TAGS metadata on 96 standalone skills
+- health_check() integrated into smoke tests
+- Air-gap whitelist unified with REQUIRES_NETWORK
+- Marketplace manifest auto-generation from contract metadata
+- Logging added to 68 skills that lacked it
+
+**Swimlane Diagrams — 16 workflows documented:**
+- 4 grouped Mermaid charts in `docs/swimlanes/` (1,383 lines)
+- Core Runtime, Intelligence Loop, Operations, Enterprise
+- README with rendering instructions
+
+### Key Metrics
+- Skills: 132 files → 96 standalone + 6 suites + 29 deprecated + 11 helpers
+- ~3,200 lines saved (11% reduction)
+- 27 double-serialization bugs fixed
+- 8 broken-at-runtime skills fixed
+- Smoke tests: 38/38 → 40/40
+- Spec: `docs/superpowers/specs/2026-03-25-skill-plugin-restructure-design.md`
+
+### Previous Session (2026-03-24 → 2026-03-25)
+Complete Rust rewrite (Phases 0-6), 6-agent audit, 18 fixes, v0.9.0 benchmarks
 
 ## Next Priorities
 
-- [ ] Test graph views with fleet running (verify live data rendering)
-- [ ] FRAMEWORK_BLUEPRINT.md deeper rewrite (architecture tree updated, but body still v0.41-era)
-- [ ] Verify SSE client integration in launcher (sse_client.py wired up?)
-- [ ] P3 skill testing with live fleet
-- [ ] CONTRIBUTING.md smoke test count update (says 22/22, now 33/33)
+- [ ] Remove 29 `_deprecated_` files after one release cycle of suite routing validation
+- [ ] Migrate skills to use new helpers (_knowledge, _report, _llm_parse) — currently created but not yet adopted
+- [ ] Render swimlane PNGs from Mermaid source (needs `mmdc` / Mermaid CLI)
+- [ ] API key re-enable + live fleet testing with Rust server
+- [ ] Run skills through PyO3 bridge with new suite routing (SUITE_ROUTING shim needs bridge awareness)
+- [ ] Fix WASM compilation (cfg-gate tokio/rusqlite/reqwest behind desktop feature)
+- [ ] Settings tab: wire interactive form controls (currently placeholder)
+- [ ] Files tab + Graph View tab (missing from GUI)
+- [ ] NeuralLanes animation (pulses, Bezier edges — currently static bars)
+- [ ] WebSocket + MessagePack transport (spec requirement, currently HTTP polling)
+- [ ] Auth middleware for server endpoints
+- [ ] 24h stability test (supervisor + server running continuously)
+- [ ] v1.0.0 graduation after bug testing
 
 ## Open Questions / Decisions Needed
 
-- MiniMax provider: re-enable when API key available?
-- FRAMEWORK_BLUEPRINT.md: full rewrite vs incremental updates?
-- Graph views: need visual QA with fleet running
+- Suite routing: monitor for regressions before removing deprecated files — kill-switch is `suite_routing_enabled = false` in fleet.toml
+- API key: re-enable after overnight $4 spend incident — need cost guard improvement?
+- WASM: worth pursuing now or defer until native GUI is proven?
+- Theme colors: spec says different values than implementation — which is canonical?
+- db module interception (Rust-backed Python db): implement or defer?
 
 ## Known Issues
 
+- mingw toolchain needs dlltool on PATH for bench/release builds (WinLibs mingw64/bin)
+- shlwapi.lib generated manually for mingw (eframe dep) — fragile, breaks on toolchain update
+- WASM target fails (tokio/rusqlite not WASM-compatible without feature gates)
+- ~20 skills return str not dict — double-serialization in result_json
+- Timeout doesn't cancel Python execution (GIL held, resource leak on hung skills)
+- TOML write-back loses comments
 - 3 temp files in fleet/ (tmp*.json) — safe to delete
-- FRAMEWORK_BLUEPRINT.md body (sections 2+) still describes v0.41 module system — header/tree updated but deeper sections need rewrite
-- Some skills reference `prompt` and `result` columns on tasks table but schema has `payload_json` and `result_json`
-- CLAUDE.md line 248: MiniMax still says "(planned)" — it's integrated since 0.051.06b
-- CLAUDE.md line 256: "DEV_MODE = True during alpha" — should say "during beta"
-- AUDIT_TRACKER.md SoC deep-dive (line 183): launcher.py listed at 4,561 LOC — actual is 4,147
 
 ## Doc Freshness
 
-Run `python fleet/skills/doc_freshness.py` standalone or dispatch via fleet to audit all docs for stale values (skill counts, version numbers, endpoint counts, smoke test counts).
+Run `python fleet/skills/doc_freshness.py` standalone or dispatch via fleet to audit all docs for stale values.
 
 ---
 
