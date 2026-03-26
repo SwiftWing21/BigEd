@@ -26,8 +26,160 @@ def run(payload: dict, config: dict) -> dict:
         return _run_research_cycle(payload, config)
     elif action == "quality_scores":
         return _get_quality_scores()
+    elif action == "ingest_batch":
+        return _ingest_batch(payload, config)
     else:
         return {"status": "error", "error": f"Unknown action: {action}"}
+
+
+def _ingest_batch(payload, config):
+    """Pull a batch from a HuggingFace source and dispatch as tasks or ingest to RAG.
+
+    Called by marathon/idle mode to systematically build the knowledge base.
+    Tracks offset per source so each call picks up where the last left off.
+    """
+    import sys
+    sys.path.insert(0, str(FLEET_DIR))
+
+    source_id = payload.get("source_id")
+    if not source_id:
+        return {"status": "error", "error": "source_id required"}
+
+    batch_size = payload.get("batch_size", 10)
+    destination = payload.get("destination", "tasks")
+
+    try:
+        import ingest_manager
+
+        # Find source config
+        sources = ingest_manager.list_sources()
+        source = next((s for s in sources if s["id"] == source_id), None)
+        if not source:
+            return {"status": "error", "error": f"Source '{source_id}' not found"}
+
+        dataset_id = source.get("dataset", "")
+        content_col = source.get("content_column", "text")
+        skill = source.get("skill", "summarize")
+        dest = source.get("destination", destination)
+
+        # Read offset from source_meta.json (resume where we left off)
+        cache_dir = ingest_manager._get_cache_dir() / source_id
+        cache_dir.mkdir(parents=True, exist_ok=True)
+        meta_path = cache_dir / "source_meta.json"
+
+        offset = 0
+        if meta_path.exists():
+            try:
+                meta = json.loads(meta_path.read_text())
+                offset = meta.get("last_offset", 0)
+            except Exception:
+                pass
+
+        # Fetch batch from HuggingFace
+        result = ingest_manager.fetch_hf_rows(
+            dataset_id, offset=offset, length=batch_size,
+            split="train", config="default",
+        )
+
+        if result.get("error"):
+            return {"status": "error", "error": result["error"], "source_id": source_id}
+
+        rows = result.get("rows", [])
+        if not rows:
+            return {"status": "ok", "source_id": source_id, "message": "No more rows (dataset exhausted)",
+                    "offset": offset, "dispatched": 0}
+
+        # Dispatch each row
+        import db
+        dispatched = 0
+
+        for i, row in enumerate(rows):
+            content = row.get(content_col, "")
+            if not content:
+                # Try first string column as fallback
+                for v in row.values():
+                    if isinstance(v, str) and len(v) > 20:
+                        content = v
+                        break
+            if not content:
+                continue
+
+            title = content[:80].replace("\n", " ")
+            token_est = len(content) // 4
+
+            if dest == "rag":
+                # Ingest to RAG: chunks_meta (source, heading, text) + chunks FTS5 (text, heading, source)
+                try:
+                    import rag
+                    idx = rag.RAGIndex(str(FLEET_DIR / "rag.db"))
+                    conn = idx._get_conn()
+                    try:
+                        conn.execute(
+                            "INSERT INTO chunks_meta (source, heading, text) VALUES (?, ?, ?)",
+                            (f"ingest:{source_id}", title, content[:500]),
+                        )
+                        chunk_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+                        conn.execute(
+                            "INSERT INTO chunks (rowid, text, heading, source) VALUES (?, ?, ?, ?)",
+                            (chunk_id, content[:8000], title, f"ingest:{source_id}"),
+                        )
+                        conn.commit()
+                        dispatched += 1
+                    finally:
+                        conn.close()
+                except Exception as e:
+                    log.warning("RAG ingest failed for %s row %d: %s", source_id, offset + i, e)
+            else:
+                # Dispatch as fleet task
+                try:
+                    task_payload = {
+                        "source": f"hf:{source_id}",
+                        "row_id": offset + i,
+                        "content": content[:4000],
+                        "title": title,
+                    }
+                    db.post_task(
+                        type_=skill,
+                        payload_json=json.dumps(task_payload),
+                        priority=3,
+                        classification="ingest",
+                    )
+                    dispatched += 1
+                except Exception as e:
+                    log.warning("Task dispatch failed for %s row %d: %s", source_id, offset + i, e)
+
+        # Update offset for next call
+        new_offset = offset + len(rows)
+        meta = {"source_id": source_id, "last_offset": new_offset,
+                "total_fetched": (meta.get("total_fetched", 0) if meta_path.exists() else 0) + len(rows)}
+        try:
+            existing = json.loads(meta_path.read_text()) if meta_path.exists() else {}
+            existing.update(meta)
+            meta_path.write_text(json.dumps(existing, indent=2))
+        except Exception:
+            meta_path.write_text(json.dumps(meta, indent=2))
+
+        # Cache the batch
+        try:
+            ingest_manager.cache_batch(source_id, rows)
+        except Exception:
+            pass  # Cache is nice-to-have, not critical
+
+        return {
+            "status": "ok",
+            "source_id": source_id,
+            "dataset": dataset_id,
+            "destination": dest,
+            "offset": offset,
+            "new_offset": new_offset,
+            "rows_fetched": len(rows),
+            "dispatched": dispatched,
+            "skill": skill,
+        }
+
+    except Exception as e:
+        log.warning("ingest_batch failed for %s: %s", source_id, e, exc_info=True)
+        return {"status": "error", "error": str(e), "source_id": source_id}
 
 
 def _detect_knowledge_gaps():
