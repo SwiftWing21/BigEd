@@ -113,3 +113,13 @@ tier        = "freemium"
 required    = false
 env_var     = "GEMINI_API_KEY"
 signup_hint = "aistudio.google.com/apikey → Free tier: generous quota"
+
+[[key]]
+name        = "FIRECRAWL_API_KEY"
+label       = "Firecrawl Web Scraping API"
+purpose     = "Web page scraping, crawling, and content extraction for ingest hub Phase 2"
+skills      = ["ingest", "web_search"]
+tier        = "freemium"
+required    = false
+env_var     = "FIRECRAWL_API_KEY"
+signup_hint = "firecrawl.dev/app → Free tier: 500 credits/month"
