@@ -976,7 +976,7 @@ class BootManagerMixin:
         ]
         current_sub = "launching..."
 
-        for _ in range(22):
+        for _ in range(45):  # 45 x 2s = 90s timeout (was 22 x 2s = 44s)
             if self._boot_abort.is_set():
                 raise Exception("aborted")
             time.sleep(2)
@@ -998,6 +998,7 @@ class BootManagerMixin:
             except Exception:
                 pass
 
+            # Primary: check STATUS.md freshness
             try:
                 if L.STATUS_MD.exists():
                     age = time.time() - L.STATUS_MD.stat().st_mtime
@@ -1005,7 +1006,16 @@ class BootManagerMixin:
                         return "ONLINE"
             except Exception:
                 pass
-        raise Exception("STATUS.md stale (45s)")
+
+            # Fallback: dashboard health endpoint (supervisor is up even if STATUS.md is slow)
+            try:
+                import urllib.request
+                with urllib.request.urlopen("http://localhost:5555/api/health", timeout=2) as r:
+                    if r.status == 200:
+                        return "ONLINE"
+            except Exception:
+                pass
+        raise Exception("STATUS.md stale (90s)")
 
     def _boot_workers(self):
         """Stage 4: Poll until agents appear in STATUS.md.
