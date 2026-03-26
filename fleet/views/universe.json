@@ -1,11 +1,21 @@
 {
   "schema_version": 1,
   "name": "universe",
-  "description": "Full-program graph: agents, skills, tasks, folders, models, messages, config",
+  "description": "Everything: agents, skills, tasks, folders, models, messages, config, API calls",
   "layout": "cluster",
-  "sources": ["universe"],
-  "edges": [],
-  "metrics_overlay": ["file_count", "role", "network"],
-  "animation": {"writes": "flow", "runs": "pulse", "assigned": "pulse", "uses_model": "flow", "communicates": "fade"},
-  "zoom_breakpoints": {"labels": 0.3, "metrics": 0.5, "animation": 0.8}
+  "sources": ["supervisor", "rag", "reinforcement", "knowledge", "autoresearch", "federation", "universe"],
+  "metrics_overlay": ["file_count", "role", "network", "tok_s", "cost"],
+  "animation": {
+    "assigned": "flow",
+    "runs": "flow",
+    "writes": "flow",
+    "reads": "flow",
+    "uses_model": "flow",
+    "api_call": "pulse",
+    "routes_to": "flow",
+    "communicates": "pulse",
+    "dispatches": "pulse",
+    "heartbeat": "fade"
+  },
+  "zoom_breakpoints": {"labels": 0.3, "metrics": 0.5, "animation": 0.3}
 }
