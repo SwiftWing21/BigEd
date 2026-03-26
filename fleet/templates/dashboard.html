@@ -1417,11 +1417,16 @@ textarea.input {
   <div class="card-container" style="margin-bottom:16px;">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
       <h3 style="margin:0;font-size:14px;font-weight:600;">LIVE ACTIVITY</h3>
-      <button class="btn btn-sm btn-outline" onclick="loadLiveActivity()">Refresh</button>
+      <div style="display:flex;gap:4px;align-items:center;">
+        <button id="activity-view-list" class="btn btn-sm btn-primary" onclick="toggleActivityView('list')" title="List view">List</button>
+        <button id="activity-view-graph" class="btn btn-sm btn-outline" onclick="toggleActivityView('graph')" title="Graph view">Graph</button>
+        <button class="btn btn-sm btn-outline" onclick="refreshActivityView()" style="margin-left:4px;">Refresh</button>
+      </div>
     </div>
     <div id="live-activity-feed" style="max-height:280px;overflow-y:auto;font-size:12px;">
       <div class="spinner"></div>
     </div>
+    <div id="live-activity-graph" style="height:300px;display:none;border:1px solid var(--border);border-radius:var(--radius);overflow:hidden;"></div>
   </div>
 
   <!-- Quick Actions -->
@@ -2181,6 +2186,208 @@ function loadLiveActivity() {
       feed.appendChild(row);
     });
   }).catch(function() {});
+}
+
+/* ── Activity Graph View ─────────────────────────────────────────────────── */
+var _activityCy = null;
+var _activityViewMode = 'list';
+
+function toggleActivityView(mode) {
+  _activityViewMode = mode;
+  var feedEl = document.getElementById('live-activity-feed');
+  var graphEl = document.getElementById('live-activity-graph');
+  var btnList = document.getElementById('activity-view-list');
+  var btnGraph = document.getElementById('activity-view-graph');
+  if (mode === 'graph') {
+    feedEl.style.display = 'none';
+    graphEl.style.display = 'block';
+    btnList.className = 'btn btn-sm btn-outline';
+    btnGraph.className = 'btn btn-sm btn-primary';
+    loadActivityGraph();
+  } else {
+    feedEl.style.display = '';
+    graphEl.style.display = 'none';
+    btnList.className = 'btn btn-sm btn-primary';
+    btnGraph.className = 'btn btn-sm btn-outline';
+    loadLiveActivity();
+  }
+}
+
+function refreshActivityView() {
+  if (_activityViewMode === 'graph') { loadActivityGraph(); }
+  else { loadLiveActivity(); }
+}
+
+function loadActivityGraph() {
+  var container = document.getElementById('live-activity-graph');
+  // Destroy previous instance
+  if (_activityCy) { try { _activityCy.destroy(); } catch(e){} _activityCy = null; }
+  container.textContent = '';
+
+  apiFetch('/api/activity/live').then(function(d) {
+    var items = d.items || [];
+    var nodes = [];
+    var edges = [];
+    var nodeIds = {};
+    var agentTaskCounts = {};
+    var skillTaskCounts = {};
+    var agentSkillPairs = {};
+    var runningPairs = {};
+
+    // Collect agent and skill nodes from activity items
+    items.forEach(function(item) {
+      var agentName = item.agent || 'unassigned';
+      var skillName = item.type || 'unknown';
+      agentTaskCounts[agentName] = (agentTaskCounts[agentName] || 0) + 1;
+      skillTaskCounts[skillName] = (skillTaskCounts[skillName] || 0) + 1;
+      var pairKey = agentName + '|' + skillName;
+      agentSkillPairs[pairKey] = true;
+      if (item.status === 'RUNNING') { runningPairs[pairKey] = true; }
+    });
+
+    var agentColorMap = {
+      researcher: '#3b82f6', coder_1: '#f59e0b', coder_2: '#f59e0b', coder_3: '#f59e0b',
+      archivist: '#8b5cf6', planner: '#06b6d4', security: '#ef4444', analyst: '#10b981',
+      dr_ders: '#059669', supervisor: '#059669'
+    };
+
+    // Center node: model
+    nodes.push({ data: { id: 'model-center', label: 'qwen3:8b', nodeType: 'model', taskCount: items.length }, classes: 'model-node' });
+    nodeIds['model-center'] = true;
+
+    // Agent nodes (inner ring)
+    Object.keys(agentTaskCounts).forEach(function(agent) {
+      if (agent === 'unassigned') return;
+      var aid = 'agent-' + agent;
+      if (nodeIds[aid]) return;
+      nodeIds[aid] = true;
+      nodes.push({ data: { id: aid, label: agent, nodeType: 'agent', taskCount: agentTaskCounts[agent], color: agentColorMap[agent] || '#64748b' }, classes: 'agent-node' });
+      // Edge from model to agent
+      edges.push({ data: { source: 'model-center', target: aid, edgeType: 'model-agent' } });
+    });
+
+    // Skill nodes (outer ring)
+    Object.keys(skillTaskCounts).forEach(function(skill) {
+      var sid = 'skill-' + skill;
+      if (nodeIds[sid]) return;
+      nodeIds[sid] = true;
+      nodes.push({ data: { id: sid, label: skill, nodeType: 'skill', taskCount: skillTaskCounts[skill] }, classes: 'skill-node' });
+    });
+
+    // Edges from agent to skill
+    Object.keys(agentSkillPairs).forEach(function(pairKey) {
+      var parts = pairKey.split('|');
+      var agentId = 'agent-' + parts[0];
+      var skillId = 'skill-' + parts[1];
+      if (!nodeIds[agentId] || !nodeIds[skillId]) return;
+      var isRunning = runningPairs[pairKey] || false;
+      edges.push({ data: { source: agentId, target: skillId, edgeType: isRunning ? 'running' : 'idle' }, classes: isRunning ? 'edge-running' : '' });
+    });
+
+    if (nodes.length <= 1) {
+      var emptyMsg = document.createElement('div');
+      emptyMsg.style.cssText = 'display:flex;align-items:center;justify-content:center;height:100%;color:var(--muted-foreground);font-size:12px;';
+      emptyMsg.textContent = 'No recent activity to graph';
+      container.appendChild(emptyMsg);
+      return;
+    }
+
+    _activityCy = cytoscape({
+      container: container,
+      elements: { nodes: nodes, edges: edges },
+      style: [
+        { selector: 'node.model-node', style: {
+          'label': 'data(label)',
+          'background-color': '#8b5cf6',
+          'color': isDark() ? '#e2e8f0' : '#1e293b',
+          'text-valign': 'bottom', 'text-margin-y': 6,
+          'font-size': 11, 'font-weight': 'bold',
+          'width': 40, 'height': 40,
+          'shape': 'diamond',
+          'border-width': 3, 'border-color': '#a78bfa',
+        }},
+        { selector: 'node.agent-node', style: {
+          'label': 'data(label)',
+          'background-color': 'data(color)',
+          'color': isDark() ? '#e2e8f0' : '#1e293b',
+          'text-valign': 'bottom', 'text-margin-y': 4,
+          'font-size': 9, 'font-weight': '600',
+          'width': function(ele) { return 18 + Math.min(ele.data('taskCount') || 0, 10) * 2.5; },
+          'height': function(ele) { return 18 + Math.min(ele.data('taskCount') || 0, 10) * 2.5; },
+          'shape': 'ellipse',
+          'border-width': 2, 'border-color': 'data(color)',
+        }},
+        { selector: 'node.skill-node', style: {
+          'label': 'data(label)',
+          'background-color': isDark() ? '#334155' : '#e2e8f0',
+          'color': isDark() ? '#94a3b8' : '#475569',
+          'text-valign': 'bottom', 'text-margin-y': 4,
+          'font-size': 8,
+          'width': function(ele) { return 14 + Math.min(ele.data('taskCount') || 0, 10) * 2; },
+          'height': function(ele) { return 14 + Math.min(ele.data('taskCount') || 0, 10) * 2; },
+          'shape': 'round-rectangle',
+          'border-width': 1, 'border-color': isDark() ? '#475569' : '#cbd5e1',
+        }},
+        { selector: 'edge', style: {
+          'width': 1.5,
+          'line-color': isDark() ? '#334155' : '#d1d5db',
+          'curve-style': 'bezier',
+          'opacity': 0.5,
+          'target-arrow-shape': 'triangle',
+          'target-arrow-color': isDark() ? '#334155' : '#d1d5db',
+          'arrow-scale': 0.6,
+        }},
+        { selector: 'edge[edgeType="model-agent"]', style: {
+          'line-style': 'dotted',
+          'opacity': 0.3,
+          'width': 1,
+        }},
+        { selector: 'edge.edge-running', style: {
+          'width': 2.5,
+          'line-color': '#3b82f6',
+          'target-arrow-color': '#3b82f6',
+          'opacity': 1,
+        }},
+      ],
+      layout: {
+        name: 'concentric',
+        concentric: function(node) {
+          var t = node.data('nodeType');
+          if (t === 'model') return 30;
+          if (t === 'agent') return 20;
+          return 10;
+        },
+        levelWidth: function() { return 10; },
+        animate: false,
+        padding: 20,
+        minNodeSpacing: 30,
+      },
+      userZoomingEnabled: true,
+      userPanningEnabled: true,
+      boxSelectionEnabled: false,
+    });
+
+    // Animate running edges with a pulse effect
+    function pulseRunningEdges() {
+      if (!_activityCy) return;
+      var runEdges = _activityCy.edges('.edge-running');
+      if (runEdges.length === 0) return;
+      runEdges.animate({ style: { opacity: 0.3 } }, { duration: 600, complete: function() {
+        if (!_activityCy) return;
+        runEdges.animate({ style: { opacity: 1 } }, { duration: 600, complete: function() {
+          if (_activityCy && _activityViewMode === 'graph') pulseRunningEdges();
+        }});
+      }});
+    }
+    pulseRunningEdges();
+
+  }).catch(function(err) {
+    container.textContent = '';
+    var errMsg = document.createElement('div');
+    errMsg.style.cssText = 'display:flex;align-items:center;justify-content:center;height:100%;color:var(--danger);font-size:12px;';
+    errMsg.textContent = 'Failed to load activity graph';
+    container.appendChild(errMsg);
+  });
 }
 
 function loadDashStatus() {
