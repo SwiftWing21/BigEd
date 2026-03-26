@@ -542,10 +542,15 @@
         self._connectSSE();
       })
       .catch(function (err) {
-        showError(
-          self._container,
-          "Failed to load graph data: " + (err.message || String(err))
-        );
+        // Only show error if nothing was rendered yet
+        if (!self._cy || self._cy.nodes().length === 0) {
+          showError(
+            self._container,
+            "Failed to load graph data: " + (err.message || String(err))
+          );
+        } else {
+          console.warn("BigEdViewEngine init error (graph still visible):", err);
+        }
       });
   };
 
@@ -581,10 +586,14 @@
         self._render(data);
       })
       .catch(function (err) {
-        showError(
-          self._container,
-          "Failed to refresh graph: " + (err.message || String(err))
-        );
+        if (!self._cy || self._cy.nodes().length === 0) {
+          showError(
+            self._container,
+            "Failed to refresh graph: " + (err.message || String(err))
+          );
+        } else {
+          console.warn("BigEdViewEngine refresh error (graph still visible):", err);
+        }
       });
   };
 

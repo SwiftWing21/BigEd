@@ -715,6 +715,12 @@ button { font-family: inherit; cursor: pointer; border: none; background: none; 
         if (callback) callback(data);
       })
       .catch(function(err) {
+        // Don't show error overlay if graph already has data (ViewEngine loaded it)
+        if (cy && cy.nodes().length > 0) {
+          hideAllOverlays();
+          if (callback) callback(null);
+          return;
+        }
         if (err.message === 'not_found') {
           showError('View not found', 'No graph view named "' + viewName + '" exists.');
         } else {
@@ -972,9 +978,15 @@ button { font-family: inherit; cursor: pointer; border: none; background: none; 
             initResult.then(function() {
               hideAllOverlays();
               updateCountsUI();
-            }).catch(function() {
-              // Fallback to built-in loading
-              loadGraphData(function() {});
+            }).catch(function(err) {
+              console.warn('ViewEngine init failed, falling back to built-in:', err);
+              // Only fall back if ViewEngine didn't render anything
+              if (!cy || cy.nodes().length === 0) {
+                loadGraphData(function() {});
+              } else {
+                hideAllOverlays();
+                updateCountsUI();
+              }
             });
           } else {
             hideAllOverlays();
