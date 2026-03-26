@@ -786,6 +786,38 @@ def test_no_direct_api_imports():
     return True, "All skills route through call_complex()"
 
 
+def test_ingest_module():
+    """Ingest manager loads and lists pre-configured sources."""
+    import ingest_manager
+    sources = ingest_manager.list_sources()
+    if len(sources) < 5:
+        return False, f"Expected 5+ sources, got {len(sources)}"
+    hf = [s for s in sources if s["type"] == "huggingface"]
+    if not hf:
+        return False, "No HuggingFace sources found"
+    return True, f"{len(sources)} sources ({len(hf)} HF)"
+
+
+def test_ingest_cache_stats():
+    """Ingest cache stats returns valid structure."""
+    import ingest_manager
+    stats = ingest_manager.cache_stats()
+    if "used_mb" not in stats or "max_mb" not in stats:
+        return False, f"Missing keys: {list(stats.keys())}"
+    if stats["max_mb"] <= 0:
+        return False, f"max_mb should be > 0, got {stats['max_mb']}"
+    return True, f"Cache: {stats['used_mb']}/{stats['max_mb']}MB ({stats['usage_pct']}%)"
+
+
+def test_ingest_staging():
+    """Ingest staging table is accessible."""
+    import ingest_manager
+    staged = ingest_manager.get_staging()
+    if not isinstance(staged, list):
+        return False, f"Expected list, got {type(staged)}"
+    return True, f"{len(staged)} items in staging"
+
+
 def cleanup():
     """Remove smoke test artifacts from DB."""
     import db
@@ -872,6 +904,9 @@ def main():
         ("Skill health checks", test_skill_health_checks),
         ("API gate", test_api_gate),
         ("No direct API imports", test_no_direct_api_imports),
+        ("Ingest module", test_ingest_module),
+        ("Ingest cache stats", test_ingest_cache_stats),
+        ("Ingest staging", test_ingest_staging),
     ])
 
     if not args.fast:
