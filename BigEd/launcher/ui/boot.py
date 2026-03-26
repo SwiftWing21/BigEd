@@ -502,10 +502,11 @@ class BootManagerMixin:
             w["timer"].configure(text="", text_color=DIM)
             w["status"].configure(text="", text_color=DIM)
         elif state == "active":
-            w["_start_time"] = time.time()
+            if w["_start_time"] == 0:
+                w["_start_time"] = time.time()
             w["dot"].configure(text_color=ACCENT)
             w["label"].configure(text_color=TEXT)
-            w["status"].configure(text="starting...", text_color=ACCENT)
+            w["status"].configure(text=detail or "starting...", text_color=ACCENT)
         elif state == "done":
             elapsed = time.time() - w["_start_time"] if w["_start_time"] else 0
             w["dot"].configure(text="●", text_color=GREEN)
@@ -958,10 +959,45 @@ class BootManagerMixin:
         )
 
         # Poll for fresh STATUS.md (45s total: 22 iterations × 2s)
+        # Show sub-step progress by tailing the supervisor log
+        sup_log = L.FLEET_DIR / "logs" / "supervisor.log"
+        last_size = 0
+        sub_steps = [
+            ("init_db", "initializing database"),
+            ("secrets", "loading secrets"),
+            ("start_ollama", "adopting Ollama"),
+            ("Dynamic scaling", "planning agent scaling"),
+            ("model", "resolving models"),
+            ("keepalive", "loading model into VRAM"),
+            ("start_worker", "starting workers"),
+            ("start_dashboard", "starting dashboard"),
+            ("start_hw_supervisor", "starting Dr. Ders"),
+            ("STATUS.md", "writing status"),
+        ]
+        current_sub = "launching..."
+
         for _ in range(22):
             if self._boot_abort.is_set():
                 raise Exception("aborted")
             time.sleep(2)
+
+            # Read new log lines to detect sub-steps
+            try:
+                if sup_log.exists():
+                    size = sup_log.stat().st_size
+                    if size > last_size:
+                        with open(sup_log, "r", encoding="utf-8", errors="ignore") as f:
+                            f.seek(last_size)
+                            new_text = f.read()
+                        last_size = size
+                        for keyword, label in sub_steps:
+                            if keyword.lower() in new_text.lower():
+                                current_sub = label
+                        self._safe_after(0, lambda s=current_sub:
+                            self._boot_update(4, "active", s))
+            except Exception:
+                pass
+
             try:
                 if L.STATUS_MD.exists():
                     age = time.time() - L.STATUS_MD.stat().st_mtime
