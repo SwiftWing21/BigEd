@@ -110,8 +110,9 @@ def api_ingest_rows(id):
         offset = request.args.get("offset", 0, type=int)
         limit = request.args.get("limit", source.get("batch_size", 50), type=int)
         split = request.args.get("split", "train")
+        config = request.args.get("config", "default")
 
-        result = ingest_manager.fetch_hf_rows(dataset_id, offset=offset, length=limit, split=split)
+        result = ingest_manager.fetch_hf_rows(dataset_id, offset=offset, length=limit, split=split, config=config)
 
         # Auto-cache the fetched batch
         if result.get("rows"):

@@ -136,7 +136,7 @@ def remove_source(source_id):
 
 _HF_INFO_URL = "https://datasets-server.huggingface.co/info?dataset={dataset}"
 _HF_ROWS_URL = ("https://datasets-server.huggingface.co/rows"
-                "?dataset={dataset}&split={split}&offset={offset}&length={length}")
+                "?dataset={dataset}&config={config}&split={split}&offset={offset}&length={length}")
 
 
 def fetch_hf_schema(dataset_id):
@@ -174,6 +174,7 @@ def fetch_hf_schema(dataset_id):
     # Parse the info response — structure: {dataset_info: {<config>: {splits, features, ...}}}
     dataset_info = data.get("dataset_info", {})
     # Take the first config available
+    default_config = next(iter(dataset_info.keys()), "default") if dataset_info else "default"
     first_config = next(iter(dataset_info.values()), {}) if dataset_info else {}
 
     # Extract columns from features
@@ -205,11 +206,12 @@ def fetch_hf_schema(dataset_id):
         "row_count": row_count,
         "splits": splits,
         "default_split": default_split,
+        "default_config": default_config,
         "error": None,
     }
 
 
-def fetch_hf_rows(dataset_id, offset=0, length=50, split="train"):
+def fetch_hf_rows(dataset_id, offset=0, length=50, split="train", config="default"):
     """Fetch rows from HuggingFace datasets-server with retry on 429.
 
     Returns dict: {rows, total, offset, length, error}.
@@ -222,7 +224,7 @@ def fetch_hf_rows(dataset_id, offset=0, length=50, split="train"):
     import urllib.error
 
     url = _HF_ROWS_URL.format(
-        dataset=dataset_id, split=split, offset=offset, length=length
+        dataset=dataset_id, config=config, split=split, offset=offset, length=length
     )
 
     delays = [2, 4, 8]  # exponential backoff for 429
