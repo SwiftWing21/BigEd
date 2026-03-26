@@ -663,3 +663,34 @@ skill = "code_quality"
 agent_role = "coder"
 content_column = "code"
 enabled = true
+
+# ── Alexandria Library (RAG reference material) ──────────────────────────
+[[ingest.sources]]
+id = "cosmopedia"
+type = "huggingface"
+dataset = "HuggingFaceTB/cosmopedia-100k"
+skill = "ingest"
+agent_role = "archivist"
+content_column = "text"
+destination = "rag"
+enabled = true
+
+[[ingest.sources]]
+id = "science-textbooks"
+type = "huggingface"
+dataset = "Nbardy/science-theory-textbooks"
+skill = "ingest"
+agent_role = "archivist"
+content_column = "text"
+destination = "rag"
+enabled = true
+
+[[ingest.sources]]
+id = "programming-textbooks"
+type = "huggingface"
+dataset = "vikp/textbook_quality_programming"
+skill = "ingest"
+agent_role = "archivist"
+content_column = "markdown"
+destination = "rag"
+enabled = true

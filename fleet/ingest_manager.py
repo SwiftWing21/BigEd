@@ -67,6 +67,7 @@ def list_sources():
             "agent_role": s.get("agent_role", ""),
             "content_column": s.get("content_column", ""),
             "batch_size": s.get("batch_size", batch_default),
+            "destination": s.get("destination", "tasks"),
             "enabled": bool(s.get("enabled", True)),
             "origin": "config",
         })
