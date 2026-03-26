@@ -2185,7 +2185,13 @@ def api_stream():
 # ── SSE broadcast thread ────────────────────────────────────────────────────
 
 def _sse_broadcaster():
-    """Periodically push status updates to all SSE clients."""
+    """Adaptive-rate SSE push: fast (2s) when data changes, slows to 30s when stable."""
+    _SSE_MIN_INTERVAL = 2    # floor: busy fleet
+    _SSE_MAX_INTERVAL = 30   # ceiling: idle fleet
+    _SSE_STEP_UP = 1.5       # multiplier each stable cycle
+    interval = _SSE_MIN_INTERVAL
+    prev_snapshot = None
+
     while True:
         if _sse_clients:
             try:
@@ -2194,13 +2200,64 @@ def _sse_broadcaster():
                 for s in ("PENDING", "RUNNING", "DONE", "FAILED"):
                     row = query("SELECT COUNT(*) as n FROM tasks WHERE status=?", (s,))
                     counts[s] = row[0]["n"] if row else 0
-                _broadcast_sse({
-                    "type": "status",
-                    "data": {"agents": agents, "tasks": counts},
-                })
+
+                # Thermal + system load (read hw_state.json + psutil — cheap)
+                thermal = {}
+                if HW_STATE_JSON.exists():
+                    try:
+                        hw = json.loads(HW_STATE_JSON.read_text())
+                        th = hw.get("thermal", {})
+                        thermal = {
+                            "gpu_temp_c": th.get("gpu_temp_c", 0),
+                            "cpu_temp_c": th.get("cpu_temp_c", 0),
+                            "gpu_vram_used_gb": round(th.get("vram_used_gb", 0), 2),
+                            "gpu_vram_total_gb": round(th.get("vram_total_gb", 0), 2),
+                        }
+                    except Exception:
+                        pass
+                system = {}
+                try:
+                    import psutil
+                    ram = psutil.virtual_memory()
+                    system = {
+                        "ram_pct": round(ram.percent, 1),
+                        "cpu_pct": round(psutil.cpu_percent(interval=0), 1),
+                        "cpu_cores": psutil.cpu_count(logical=False) or psutil.cpu_count() or 0,
+                    }
+                except Exception:
+                    pass
+
+                payload = {
+                    "agents": agents,
+                    "tasks": counts,
+                    "thermal": thermal,
+                    "system": system,
+                }
+
+                # Adaptive rate: compare to previous snapshot
+                snapshot = (
+                    tuple((a["name"], a["status"]) for a in agents),
+                    tuple(sorted(counts.items())),
+                    thermal.get("gpu_temp_c", 0),
+                    thermal.get("cpu_temp_c", 0),
+                    system.get("ram_pct", 0),
+                )
+                if snapshot == prev_snapshot:
+                    # Stable — slow down (up to max)
+                    interval = min(interval * _SSE_STEP_UP, _SSE_MAX_INTERVAL)
+                else:
+                    # Changed — snap back to fast
+                    interval = _SSE_MIN_INTERVAL
+                prev_snapshot = snapshot
+
+                payload["_interval"] = round(interval, 1)
+                _broadcast_sse({"type": "status", "data": payload})
             except Exception:
                 pass
-        time.sleep(5)
+        else:
+            # No clients — idle at max rate
+            interval = _SSE_MAX_INTERVAL
+        time.sleep(interval)
 
 
 # ── Main page ────────────────────────────────────────────────────────────────

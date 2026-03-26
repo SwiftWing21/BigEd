@@ -154,7 +154,7 @@ def _create_advisory(findings: list, scope_desc: str, config: dict,
     # Persist JSON
     PENDING_DIR.mkdir(parents=True, exist_ok=True)
     advisory_file = PENDING_DIR / f"advisory_{advisory_id}.json"
-    advisory_file.write_text(json.dumps(advisory, indent=2))
+    advisory_file.write_text(json.dumps(advisory, indent=2), encoding="utf-8")
 
     # Persist human-readable Markdown
     md_lines = [
@@ -189,7 +189,7 @@ def _create_advisory(findings: list, scope_desc: str, config: dict,
         md_lines.extend(extra_md_lines)
 
     md_file = PENDING_DIR / f"advisory_{advisory_id}.md"
-    md_file.write_text("\n".join(md_lines))
+    md_file.write_text("\n".join(md_lines), encoding="utf-8")
 
     advisory["_md_file"] = str(md_file)
     return advisory
@@ -295,7 +295,7 @@ def _audit_check_gitignore(scan_dirs: list) -> list:
         gitignore = base / ".gitignore"
         if not gitignore.exists():
             continue
-        content = gitignore.read_text()
+        content = gitignore.read_text(encoding="utf-8")
         for name in sensitive_names:
             stem = name.replace("*.", "").replace("*", "")
             if stem not in content:
@@ -555,7 +555,7 @@ def _run_code_scan(payload: dict, config: dict) -> dict:
             f"- **[{f['severity']}]** `{f['file']}` ({line_ref}) -- {f['category']}: {f['detail']}"
         )
     report_lines.append("")
-    report_path.write_text("\n".join(report_lines))
+    report_path.write_text("\n".join(report_lines), encoding="utf-8")
 
     return {
         "files_scanned": len(files),
@@ -595,10 +595,10 @@ def _apply_gitignore(fix_str: str, gitignore_path: str):
     gpath = Path(gitignore_path)
     if not gpath.exists():
         return False, f".gitignore not found: {gpath}"
-    content = gpath.read_text()
+    content = gpath.read_text(encoding="utf-8")
     if entry.replace("*.", "").replace("*", "") in content:
         return True, f"'{entry}' already in .gitignore (skipped)"
-    gpath.write_text(content.rstrip() + f"\n{entry}\n")
+    gpath.write_text(content.rstrip() + f"\n{entry}\n", encoding="utf-8")
     return True, f"Added '{entry}' to {gpath}"
 
 
@@ -615,7 +615,7 @@ def _run_apply(payload: dict, config: dict) -> dict:
     if not advisory_file.exists():
         return {"error": f"Advisory {advisory_id} not found in pending/"}
 
-    advisory = json.loads(advisory_file.read_text())
+    advisory = json.loads(advisory_file.read_text(encoding="utf-8"))
 
     applied = []
     skipped = []
@@ -662,7 +662,7 @@ def _run_apply(payload: dict, config: dict) -> dict:
     }
 
     dest = APPLIED_DIR / advisory_file.name
-    dest.write_text(json.dumps(advisory, indent=2))
+    dest.write_text(json.dumps(advisory, indent=2), encoding="utf-8")
     advisory_file.unlink()
 
     # Move markdown pending file
@@ -694,7 +694,7 @@ def _run_apply(payload: dict, config: dict) -> dict:
                 report_lines.append(f"  - Note: {item['note']}")
 
     report_file = APPLIED_DIR / f"apply_report_{advisory_id}.md"
-    report_file.write_text("\n".join(report_lines))
+    report_file.write_text("\n".join(report_lines), encoding="utf-8")
 
     _notify_lead(db, {
         "type": "security_applied",
@@ -1014,7 +1014,7 @@ def _run_pentest(payload: dict, config: dict) -> dict:
         return {"error": nmap_error, "target": target}
 
     raw_file = PENTEST_DIR / f"scan_{scan_id}_{label}.xml"
-    raw_file.write_text(xml_output)
+    raw_file.write_text(xml_output, encoding="utf-8")
 
     hosts = _pentest_parse_nmap_xml(xml_output)
     findings = _pentest_assess_findings(hosts)
@@ -1074,7 +1074,7 @@ def _run_pentest(payload: dict, config: dict) -> dict:
         "raw_xml": str(raw_file),
     }
     report_json_file = PENTEST_DIR / f"pentest_{scan_id}_{label}.json"
-    report_json_file.write_text(json.dumps(report_json, indent=2))
+    report_json_file.write_text(json.dumps(report_json, indent=2), encoding="utf-8")
 
     high = [f for f in findings if f["severity"] == "HIGH"]
     medium = [f for f in findings if f["severity"] == "MEDIUM"]
@@ -1105,7 +1105,7 @@ def _run_pentest(payload: dict, config: dict) -> dict:
 
     md_lines += ["", f"*Raw nmap XML: {raw_file}*"]
     md_file = PENTEST_DIR / f"pentest_{scan_id}_{label}.md"
-    md_file.write_text("\n".join(md_lines))
+    md_file.write_text("\n".join(md_lines), encoding="utf-8")
 
     # If HIGH findings, create a pending security advisory
     if high:

@@ -24,8 +24,44 @@
 
 ## Last Session
 
-**Date:** 2026-03-26
+**Date:** 2026-03-26 (evening)
 **Session:** VS Code Claude Code
+
+### Fleet Training Audit & Health Fixes
+
+**Agent performance review** — full DB audit of 30K+ tasks, 17 agents:
+- Top performers: security (93.3%), analyst (93.2%), coder_3 (90.9%), archivist (88.1%)
+- coder_1 death spiral: 20,509 failures (4.2% success) — skill_draft retry loop
+
+**Death spiral fix** (3 root causes):
+1. `self_healing.py` — auto-retried `skill_draft` failures every 60s creating flood. Added `_NO_RETRY_TYPES` skip set for lifecycle skills
+2. `skill_learn.py` — proposed `skill_draft_fix` which created more skill_draft tasks. Added `LIFECYCLE_SKIP` set blocking proposals for lifecycle skills
+3. `supervisor.py:1530` — evolution_coordinator dispatched with `evolve_bottom_10` (action removed in suite restructure). Fixed to `evolve`
+
+**Task queue cleanup:**
+- Cancelled 2,030 stale tasks (2,004 WAITING + 26 PENDING from March 22)
+- Cleared quarantine for 5 agents (coder_1, coder_2, archivist, planner, researcher)
+- Dispatched 16 fresh training tasks across all agent types
+
+**Coder_1 rehab:**
+- Cleared quarantine, assigned simple tasks (code_review, code_quality, summarize)
+- Completed 4 tasks successfully — code_quality found real findings in `_flywheel_core.py`
+
+### RAM Scaling Upgrade
+
+- `fleet.toml`: new `ram_ceiling_pct = 95` — scale-up blocked when system RAM exceeds this
+- `system_info.py`: raised all tier caps (32GB: 10→14, 64GB+: 16→28 workers)
+- `supervisor.py`: `_should_scale_up()` now checks RAM via psutil before scaling, reads `max_workers` from config instead of hardcoded 16
+- This machine (32GB): now allows 14 workers (was 10), with 55% RAM used
+
+### Launcher Close-to-Tray Bug Fix
+
+- **Root cause:** `_get_close_behavior()` defaulted to `"tray"`, so clicking X always silently minimized to tray — close dialog never shown
+- **Fix:** default changed to `"ask"` — dialog shows with 4 options: Stop & Exit, Keep Running, Minimize to Tray, Cancel
+- User can check "Remember my choice" to auto-minimize in future
+- Countdown close handler now supports all 3 remembered actions (stop/keep/tray)
+
+### Previous Session (2026-03-26 daytime)
 
 ### API Governance System — Complete
 
@@ -149,8 +185,10 @@ Complete Rust rewrite (Phases 0-6), 6-agent audit, 18 fixes, v0.9.0 benchmarks
 
 ## Next Priorities
 
+- [ ] Root-cause the persistent 404 from Ollama `/api/generate` during skill_draft — Ollama responds 200 on direct curl but workers get 404 intermittently. May be model unload timing or request format edge case
+- [ ] 6 pending tasks still waiting for non-core agents (coder_2, security, analyst, coder_3) — need to verify scale-up triggers them
 - [ ] Resizable dashboard panels (Split.js for web, PanedWindow for tkinter) — ref: `memory/reference_panel_layout.md`
-- [ ] Remove 29 `_deprecated_` files after one release cycle of suite routing validation
+- [x] Remove 29 `_deprecated_` files after one release cycle of suite routing validation — DONE (2026-03-26)
 - [ ] Migrate skills to use new helpers (_knowledge, _report, _llm_parse) — created but not yet adopted
 - [ ] Render swimlane PNGs from Mermaid source (needs `mmdc` / Mermaid CLI)
 - [ ] Hardcoded fonts in launcher.py: 46 instances of "Consolas"/"RuneScape" → theme constants
@@ -168,7 +206,7 @@ Complete Rust rewrite (Phases 0-6), 6-agent audit, 18 fixes, v0.9.0 benchmarks
 - WASM: worth pursuing now or defer until native GUI is proven?
 - Theme colors: spec says different values than implementation — which is canonical?
 - Graph animation: particles render on canvas overlay — may need WebGL for >2000 animated edges
-- Dashboard restart required: several fixes (budgets 500, tasks/recent, skills metadata) won't take effect until fleet restart
+- Ollama 404 mystery: model is loaded, direct curl works, but workers get 404 intermittently — possibly model unload/swap timing
 
 ## Known Issues
 
@@ -180,6 +218,8 @@ Complete Rust rewrite (Phases 0-6), 6-agent audit, 18 fixes, v0.9.0 benchmarks
 - 3 temp files in fleet/ (tmp*.json) — safe to delete
 - Gemini API still hitting 404s (free tier endpoint mismatch) — gate blocks this now but root cause unresolved
 - ~20 skills return str not dict — fixed in restructure but verify with live testing
+- Ollama intermittent 404: direct curl returns 200 but workers get 404 on `/api/generate` — may be model swap timing
+- 47 code drafts in `knowledge/code_drafts/` — most are 0-byte (empty LLM output from failed generations), only 2 have content
 
 ## Doc Freshness
 

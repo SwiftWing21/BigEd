@@ -716,10 +716,10 @@ class Module:
             conn = FleetDB._connect(db_path)
             try:
                 rows = conn.execute("""
-                    SELECT id, type, assigned_to, intelligence_score, updated_at
+                    SELECT id, type, assigned_to, intelligence_score, created_at
                     FROM tasks WHERE intelligence_score IS NOT NULL
                     AND intelligence_score > 0
-                    ORDER BY updated_at DESC LIMIT 5
+                    ORDER BY created_at DESC LIMIT 5
                 """).fetchall()
             finally:
                 conn.close()
@@ -743,7 +743,7 @@ class Module:
                     task_id = row["id"]
                     skill = row["type"] or "?"
                     agent = row["assigned_to"] or "?"
-                    ts = row["updated_at"] or ""
+                    ts = row["created_at"] or ""
                     # Shorten timestamp
                     ts_short = ts[11:19] if len(ts) > 19 else ts
                     self._eval_feed_labels[i].configure(

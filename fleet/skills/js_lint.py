@@ -249,7 +249,7 @@ def _save_report(findings: list[dict], files_scanned: int) -> Path:
                 lines.append(f"  `{item['text']}`")
 
     lines.append("")
-    report_path.write_text("\n".join(lines))
+    report_path.write_text("\n".join(lines), encoding="utf-8")
     return report_path
 
 

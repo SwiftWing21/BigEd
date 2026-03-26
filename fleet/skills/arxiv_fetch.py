@@ -56,6 +56,6 @@ def run(payload, config):
     out_dir = Path(__file__).parent.parent / "knowledge" / "summaries"
     out_dir.mkdir(parents=True, exist_ok=True)
     out_file = out_dir / f"{date.today()}_{slug}.md"
-    out_file.write_text(f"# {p['title']}\n\n{p['id']}\n\n{papers[0]['summary']}\n")
+    out_file.write_text(f"# {p['title']}\n\n{p['id']}\n\n{papers[0]['summary']}\n", encoding="utf-8")
 
     return {"papers": papers, "saved_to": str(out_file)}

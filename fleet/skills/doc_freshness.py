@@ -9,6 +9,8 @@ Can run standalone: python fleet/skills/doc_freshness.py
 import logging
 import re
 from pathlib import Path
+from skills._knowledge import get_output_dir, FLEET_DIR, PROJECT_DIR
+from skills._report import ReportBuilder
 
 SKILL_NAME = "doc_freshness"
 DESCRIPTION = "Audit docs for stale skill counts, versions, endpoint counts, and smoke test numbers."
@@ -18,10 +20,6 @@ REQUIRES_NETWORK = False
 SUITE = "ops"
 
 log = logging.getLogger(__name__)
-
-FLEET_DIR = Path(__file__).parent.parent
-PROJECT_DIR = FLEET_DIR.parent
-KNOWLEDGE_DIR = FLEET_DIR / "knowledge"
 
 
 def _count_skills():
@@ -156,8 +154,7 @@ def _scan_doc(filepath, live_values):
 def run(payload, config):
     from datetime import date
 
-    OUT_DIR = KNOWLEDGE_DIR / "freshness"
-    OUT_DIR.mkdir(parents=True, exist_ok=True)
+    OUT_DIR = get_output_dir("freshness")
 
     # Gather live values
     live_values = {
@@ -188,38 +185,35 @@ def run(payload, config):
         except Exception:
             log.warning("Failed to scan %s", doc, exc_info=True)
 
-    # Build report
-    md = [
-        f"# Doc Freshness Audit — {date.today().isoformat()}",
-        "",
-        "## Live Values",
-        "",
-        f"| Metric | Value |",
-        f"|--------|-------|",
-        f"| Skills | {live_values['skills']} |",
-        f"| Endpoints | {live_values['endpoints']} |",
-        f"| DB Tables | {live_values['db_tables']} |",
-        f"| Smoke Tests | {live_values['smoke_tests']} |",
-        f"| Version | {live_values['version']} |",
-        "",
-    ]
+    # Build report using ReportBuilder
+    rb = (
+        ReportBuilder("Doc Freshness Audit")
+        .section("Live Values")
+        .table(
+            ["Metric", "Value"],
+            [
+                ["Skills", live_values["skills"]],
+                ["Endpoints", live_values["endpoints"]],
+                ["DB Tables", live_values["db_tables"]],
+                ["Smoke Tests", live_values["smoke_tests"]],
+                ["Version", live_values["version"]],
+            ],
+        )
+    )
 
     if all_findings:
-        md.append(f"## Stale References ({len(all_findings)} found)")
-        md.append("")
-        md.append("| File | Line | Type | Stated | Actual | Context |")
-        md.append("|------|------|------|--------|--------|---------|")
-        for f in sorted(all_findings, key=lambda x: (x["file"], x["line"])):
-            md.append(
-                f"| {f['file']} | {f['line']} | {f['type']} | "
-                f"{f['stated']} | {f['actual']} | {f['text'][:60]} |"
-            )
-        md.append("")
+        rb.section(f"Stale References ({len(all_findings)} found)")
+        rb.table(
+            ["File", "Line", "Type", "Stated", "Actual", "Context"],
+            [
+                [f["file"], f["line"], f["type"], f["stated"], f["actual"], f["text"][:60]]
+                for f in sorted(all_findings, key=lambda x: (x["file"], x["line"]))
+            ],
+        )
     else:
-        md.append("## Result: All docs are fresh!")
-        md.append("")
+        rb.section("Result: All docs are fresh!")
 
-    report_text = "\n".join(md)
+    report_text = rb.build()
     out_file = OUT_DIR / f"freshness_{date.today().isoformat()}.md"
     out_file.write_text(report_text, encoding="utf-8")
 

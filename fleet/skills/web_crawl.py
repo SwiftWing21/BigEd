@@ -104,7 +104,7 @@ def run(payload, config):
         out_dir.mkdir(parents=True, exist_ok=True)
         safe = re.sub(r'[^a-zA-Z0-9_.\-]', '_', result["domain"])[:60]
         out = out_dir / f"{datetime.now().strftime('%Y%m%d')}_{safe}.json"
-        out.write_text(json.dumps(result, indent=2))
+        out.write_text(json.dumps(result, indent=2), encoding="utf-8")
         result["saved_to"] = str(out)
 
     return result

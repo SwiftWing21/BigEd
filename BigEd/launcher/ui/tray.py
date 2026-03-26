@@ -360,16 +360,21 @@ class TrayManagerMixin:
             pass
 
     def _get_close_behavior(self) -> str:
-        """Get the configured close behavior: 'tray' or 'quit'."""
+        """Get the configured close behavior: 'tray', 'quit', or 'ask'.
+
+        Default is 'ask' — show the close dialog so the user can choose.
+        Only skip the dialog if the user has explicitly set 'tray' or 'quit'
+        in settings.
+        """
         try:
             import launcher as _mod
             settings = _mod._load_settings()
-            behavior = settings.get("close_behavior", "tray")
-            if behavior in ("tray", "quit"):
+            behavior = settings.get("close_behavior", "ask")
+            if behavior in ("tray", "quit", "ask"):
                 return behavior
         except Exception:
             pass
-        return "tray"
+        return "ask"
 
     def _get_start_minimized(self) -> bool:
         """Check if app should start minimized to tray."""

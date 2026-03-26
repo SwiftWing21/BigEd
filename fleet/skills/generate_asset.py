@@ -160,7 +160,7 @@ def run(payload, config):
         scheme, swatch = _make_color_scheme(spec)
         out_json   = DESIGN_DIR / f"{output_name}.json"
         out_swatch = DESIGN_DIR / f"{output_name}_swatch.png"
-        out_json.write_text(json.dumps(scheme, indent=2))
+        out_json.write_text(json.dumps(scheme, indent=2), encoding="utf-8")
         swatch.save(out_swatch)
         return {"scheme": scheme, "swatch": str(out_swatch), "json": str(out_json)}
 

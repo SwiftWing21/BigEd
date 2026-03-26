@@ -93,27 +93,30 @@ def detect_system() -> dict:
 def get_worker_limits(ram_total_gb: float = 0) -> dict:
     """Recommend max_workers and memory_limit_mb based on available RAM.
 
+    Allows up to 95% system RAM usage (configurable via fleet.toml ram_ceiling_pct).
+    Higher agent counts permitted when throughput supports it.
+
     Heuristic:
-      <8GB  → 3 workers, 256MB limit
-      8-16  → 6 workers, 384MB limit
-      16-32 → 10 workers, 512MB limit
-      32-64 → 13 workers, 512MB limit
-      64+   → 16 workers, 768MB limit
+      <8GB  → 4 workers, 256MB limit   (minimal)
+      8-16  → 8 workers, 384MB limit   (basic)
+      16-32 → 14 workers, 512MB limit  (standard)
+      32-64 → 20 workers, 512MB limit  (high)
+      64+   → 28 workers, 768MB limit  (server)
     """
     if ram_total_gb <= 0:
         mem = get_memory()
         ram_total_gb = mem["ram_total_gb"]
 
     if ram_total_gb < 8:
-        return {"max_workers": 3, "memory_limit_mb": 256, "tier": "minimal"}
+        return {"max_workers": 4, "memory_limit_mb": 256, "tier": "minimal"}
     elif ram_total_gb < 16:
-        return {"max_workers": 6, "memory_limit_mb": 384, "tier": "basic"}
+        return {"max_workers": 8, "memory_limit_mb": 384, "tier": "basic"}
     elif ram_total_gb < 32:
-        return {"max_workers": 10, "memory_limit_mb": 512, "tier": "standard"}
+        return {"max_workers": 14, "memory_limit_mb": 512, "tier": "standard"}
     elif ram_total_gb < 64:
-        return {"max_workers": 13, "memory_limit_mb": 512, "tier": "high"}
+        return {"max_workers": 20, "memory_limit_mb": 512, "tier": "high"}
     else:
-        return {"max_workers": 16, "memory_limit_mb": 768, "tier": "server"}
+        return {"max_workers": 28, "memory_limit_mb": 768, "tier": "server"}
 
 
 def generate_user_md() -> str:

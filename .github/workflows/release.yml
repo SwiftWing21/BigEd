@@ -23,13 +23,19 @@ jobs:
         with:
           python-version: '3.12'
 
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Verify biged-bridge compiles
+        working-directory: biged-rs
+        shell: bash
+        run: |
+          export PYO3_PYTHON=$(which python)
+          cargo check -p biged-bridge
+
       - name: Install dependencies
         working-directory: BigEd/launcher
         run: pip install -r requirements.txt
-
-      - name: Generate icons
-        working-directory: BigEd/launcher
-        run: python generate_icon.py
 
       - name: Build all executables
         working-directory: BigEd/launcher

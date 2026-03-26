@@ -19,11 +19,10 @@ def run(payload, config):
     import db
     import json
     from datetime import date
-    from pathlib import Path
+    from skills._knowledge import get_output_dir
+    from skills._report import ReportBuilder
 
-    FLEET_DIR = Path(__file__).parent.parent
-    OUT_DIR = FLEET_DIR / "knowledge" / "outcomes"
-    OUT_DIR.mkdir(parents=True, exist_ok=True)
+    OUT_DIR = get_output_dir("outcomes")
 
     hours = payload.get("hours", 24)
     min_tasks = payload.get("min_tasks", 3)  # minimum tasks to include in trend
@@ -134,61 +133,57 @@ def run(payload, config):
     prev_rate = round(done_prev / max(total_prev, 1) * 100, 1)
 
     # --- Build markdown report ---
-    md = [
-        f"# Outcome Tracker — {date.today().isoformat()}",
-        "",
-        f"**Period:** Last {hours}h | **Tasks:** {total_cur} | "
-        f"**Success Rate:** {overall_rate}% (prev: {prev_rate}%)",
-        "",
-        "---",
-        "",
-    ]
+    rb = (
+        ReportBuilder("Outcome Tracker")
+        .metadata(
+            Period=f"Last {hours}h",
+            Tasks=total_cur,
+            Success_Rate=f"{overall_rate}% (prev: {prev_rate}%)",
+        )
+        .line("---")
+        .blank()
+    )
 
     if degrading:
-        md.append("## Degrading Skills")
-        md.append("")
         degrading.sort(key=lambda x: x["delta"])
+        rb.section("Degrading Skills")
         for d in degrading:
             iq = f" | IQ: {d['avg_iq']}" if d.get("avg_iq") is not None else ""
-            md.append(
+            rb.line(
                 f"- **{d['skill']}**: {d['current_rate']}% "
                 f"(was {d['previous_rate']}%, {d['delta']:+.1f}pp){iq}"
             )
-        md.append("")
+        rb.blank()
 
     if improving:
-        md.append("## Improving Skills")
-        md.append("")
         improving.sort(key=lambda x: -x["delta"])
+        rb.section("Improving Skills")
         for i in improving:
             iq = f" | IQ: {i['avg_iq']}" if i.get("avg_iq") is not None else ""
-            md.append(
+            rb.line(
                 f"- **{i['skill']}**: {i['current_rate']}% "
                 f"(was {i['previous_rate']}%, {i['delta']:+.1f}pp){iq}"
             )
-        md.append("")
+        rb.blank()
 
     if stable_good:
-        md.append("## Stable (80%+ Success)")
-        md.append("")
+        rb.section("Stable (80%+ Success)")
         for s in sorted(stable_good, key=lambda x: -x["current_rate"])[:15]:
             iq = f" | IQ: {s['avg_iq']}" if s.get("avg_iq") is not None else ""
-            md.append(f"- {s['skill']}: {s['current_rate']}% ({s['current_tasks']} tasks){iq}")
-        md.append("")
+            rb.line(f"- {s['skill']}: {s['current_rate']}% ({s['current_tasks']} tasks){iq}")
+        rb.blank()
 
-    md.append("## Agent Performance")
-    md.append("")
-    md.append("| Agent | Done | Failed | Total | Rate | Avg IQ |")
-    md.append("|-------|------|--------|-------|------|--------|")
-    for a in agent_summary[:10]:
-        iq_str = f"{a['avg_iq']:.3f}" if a["avg_iq"] is not None else "—"
-        md.append(
-            f"| {a['agent']} | {a['done']} | {a['failed']} | "
-            f"{a['total']} | {a['rate']}% | {iq_str} |"
-        )
-    md.append("")
+    rb.section("Agent Performance")
+    rb.table(
+        ["Agent", "Done", "Failed", "Total", "Rate", "Avg IQ"],
+        [
+            [a["agent"], a["done"], a["failed"], a["total"], f"{a['rate']}%",
+             f"{a['avg_iq']:.3f}" if a["avg_iq"] is not None else "—"]
+            for a in agent_summary[:10]
+        ],
+    )
 
-    report_text = "\n".join(md)
+    report_text = rb.build()
     out_file = OUT_DIR / f"outcomes_{date.today().isoformat()}.md"
     out_file.write_text(report_text, encoding="utf-8")
 

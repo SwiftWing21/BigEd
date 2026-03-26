@@ -21,11 +21,10 @@ def run(payload, config):
     import re
     from collections import Counter
     from datetime import date
-    from pathlib import Path
+    from skills._knowledge import get_output_dir
+    from skills._report import ReportBuilder
 
-    FLEET_DIR = Path(__file__).parent.parent
-    OUT_DIR = FLEET_DIR / "knowledge" / "prompt_optimization"
-    OUT_DIR.mkdir(parents=True, exist_ok=True)
+    OUT_DIR = get_output_dir("prompt_optimization")
 
     hours = payload.get("hours", 48)
     min_samples = payload.get("min_samples", 5)
@@ -158,45 +157,44 @@ def run(payload, config):
         )
 
     # --- Build markdown report ---
-    md = [
-        f"# Prompt Optimization Report — {date.today().isoformat()}",
-        "",
-        f"**Period:** Last {hours}h | **Tasks Analyzed:** {len(rows)} | "
-        f"**Skills:** {len(insights)}",
-        "",
-        "---",
-        "",
-    ]
+    rb = (
+        ReportBuilder("Prompt Optimization Report")
+        .metadata(
+            Period=f"Last {hours}h",
+            Tasks_Analyzed=len(rows),
+            Skills=len(insights),
+        )
+        .line("---")
+        .blank()
+    )
 
     if recommendations:
-        md.append("## Recommendations")
-        md.append("")
+        rb.section("Recommendations")
         for rec in recommendations:
-            md.append(f"- {rec}")
-        md.append("")
+            rb.line(f"- {rec}")
+        rb.blank()
 
     if insights:
-        md.append("## Per-Skill Analysis")
-        md.append("")
-        md.append("| Skill | Done | Failed | Avg Len (OK) | Avg Len (Fail) | Avg IQ |")
-        md.append("|-------|------|--------|--------------|----------------|--------|")
-        for ins in sorted(insights, key=lambda x: x["failed"], reverse=True):
-            avg_len_ok = ins.get("avg_length_done", "—")
-            avg_len_fail = ins.get("avg_length_failed", "—")
-            avg_iq = f"{ins['avg_iq']:.3f}" if "avg_iq" in ins else "—"
-            md.append(
-                f"| {ins['skill']} | {ins['done']} | {ins['failed']} | "
-                f"{avg_len_ok} | {avg_len_fail} | {avg_iq} |"
-            )
-        md.append("")
+        rb.section("Per-Skill Analysis")
+        rb.table(
+            ["Skill", "Done", "Failed", "Avg Len (OK)", "Avg Len (Fail)", "Avg IQ"],
+            [
+                [
+                    ins["skill"], ins["done"], ins["failed"],
+                    ins.get("avg_length_done", "—"),
+                    ins.get("avg_length_failed", "—"),
+                    f"{ins['avg_iq']:.3f}" if "avg_iq" in ins else "—",
+                ]
+                for ins in sorted(insights, key=lambda x: x["failed"], reverse=True)
+            ],
+        )
 
-    md.append("## Global Statistics")
-    md.append("")
+    rb.section("Global Statistics")
     for key, val in global_stats.items():
-        md.append(f"- **{key.replace('_', ' ').title()}:** {val}")
-    md.append("")
+        rb.line(f"- **{key.replace('_', ' ').title()}:** {val}")
+    rb.blank()
 
-    report_text = "\n".join(md)
+    report_text = rb.build()
     out_file = OUT_DIR / f"prompt_opt_{date.today().isoformat()}.md"
     out_file.write_text(report_text, encoding="utf-8")
 

@@ -66,7 +66,7 @@ def run(payload, config):
     out_dir = Path(__file__).parent.parent / "knowledge" / "reports"
     out_dir.mkdir(parents=True, exist_ok=True)
     out_file = out_dir / f"{date.today()}_autoresearch.md"
-    out_file.write_text(report)
+    out_file.write_text(report, encoding="utf-8")
 
     return {
         "report": report,

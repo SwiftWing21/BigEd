@@ -122,7 +122,7 @@ def run(payload, config):
     # Save changelog
     RELEASES_DIR.mkdir(parents=True, exist_ok=True)
     release_file = RELEASES_DIR / f"{product_name}_v{version}.md"
-    release_file.write_text(changelog)
+    release_file.write_text(changelog, encoding="utf-8")
 
     # Tag
     _git(["tag", "-a", tag, "-m", f"Release {tag}"], agents_dir)

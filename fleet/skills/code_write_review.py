@@ -112,7 +112,7 @@ Output the review in markdown format."""
     for r in reviews:
         content += f"## {r['file']}\n\n{r['review']}\n\n---\n\n"
 
-    out_file.write_text(content)
+    out_file.write_text(content, encoding="utf-8")
 
     # Extract verdict from first review
     verdict = "UNKNOWN"

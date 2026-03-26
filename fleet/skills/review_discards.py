@@ -33,7 +33,7 @@ SONNET_MILESTONE = 100   # cumulative discards (100, 200, 300 ...)
 
 def _load_tracker():
     if TRACKER_PATH.exists():
-        return json.loads(TRACKER_PATH.read_text())
+        return json.loads(TRACKER_PATH.read_text(encoding="utf-8"))
     return {
         "last_ollama_review_at": 0,       # total discards at last ollama review
         "last_sonnet_milestone": 0,        # last 100-multiple reviewed by sonnet
@@ -43,7 +43,7 @@ def _load_tracker():
 
 
 def _save_tracker(tracker):
-    TRACKER_PATH.write_text(json.dumps(tracker, indent=2))
+    TRACKER_PATH.write_text(json.dumps(tracker, indent=2), encoding="utf-8")
 
 
 def _build_context(rows, recent_discards, best):
@@ -109,7 +109,7 @@ def _save_report(label, trigger, context, analysis, review_num):
         f"# {label.title()} Review #{review_num} — {date.today()}\n\n"
         f"**Trigger**: {trigger}\n\n"
         f"## Experiment Context\n```\n{context}\n```\n\n"
-        f"## Analysis\n{analysis}\n"
+        f"## Analysis\n{analysis}\n", encoding="utf-8"
     )
     return out_file
 

@@ -414,7 +414,7 @@ def _run_training(skill_name, skill_path, iterations, dry_run, config,
         "iterations": log_entries,
         "discoveries": [{"type": d["type"], "delta": d.get("delta", 0)}
                         for d in discoveries],
-    }, indent=2))
+    }, indent=2), encoding="utf-8")
 
     return {
         "skill": skill_name,

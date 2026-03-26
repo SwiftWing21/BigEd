@@ -189,7 +189,7 @@ Rules:
         "queued": queued,
         "tasks": tasks,
         "errors": errors,
-    }, indent=2))
+    }, indent=2), encoding="utf-8")
 
     return {
         "queued": queued,

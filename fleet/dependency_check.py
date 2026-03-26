@@ -350,6 +350,46 @@ def check_system_ram() -> dict:
         }
 
 
+def check_cpu_temp() -> dict:
+    """CPU temperature sensor availability."""
+    try:
+        from cpu_temp import read_cpu_temp, get_cpu_temp_method
+        temp = read_cpu_temp()
+        method = get_cpu_temp_method()
+        available = temp > 0
+
+        if available:
+            detail = f"{temp}°C via {method}"
+        else:
+            hints = {
+                "linux": "Install lm-sensors: sudo apt install lm-sensors && sudo sensors-detect",
+                "win32": "Install LibreHardwareMonitor (run as admin): https://github.com/LibreHardwareMonitor/LibreHardwareMonitor",
+                "darwin": "Install osx-cpu-temp: brew install osx-cpu-temp",
+            }
+            platform = "linux" if sys.platform.startswith("linux") else sys.platform
+            detail = f"No sensor found — {hints.get(platform, 'check platform docs')}"
+
+        return {
+            "name": "cpu-temp",
+            "category": "hardware",
+            "required": False,
+            "found": available,
+            "ok": available,
+            "temp_c": temp if available else None,
+            "method": method,
+            "detail": detail,
+        }
+    except Exception as e:
+        return {
+            "name": "cpu-temp",
+            "category": "hardware",
+            "required": False,
+            "found": False,
+            "ok": False,
+            "detail": f"cpu_temp module error: {e}",
+        }
+
+
 def check_fastmcp() -> dict:
     """FastMCP — MCP server framework for Dispatch bridge."""
     try:
@@ -385,6 +425,7 @@ ALL_CHECKS = [
     check_ollama,
     check_python_packages,
     check_system_ram,
+    check_cpu_temp,
     check_local_models,
     check_fleet_db,
     check_rag_db,

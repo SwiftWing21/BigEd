@@ -1,6 +1,20 @@
 # BigEd CC Helm Chart — Default Values
 # See fleet.toml for full configuration reference.
 
+# -- Rust rewrite (biged-rs)
+# Set rust.enabled to true to use the Rust supervisor/server binaries
+# instead of the Python supervisor.py / dashboard.py.
+# The Rust image should contain the `biged-supervisor` and `biged-server`
+# binaries in /app/bin/. When enabled, the supervisor deployment runs
+# `biged-supervisor` and the dashboard deployment runs `biged-server`.
+# NOTE: This is opt-in. The Python stack remains the default until the
+# Rust binaries reach production readiness.
+rust:
+  enabled: false
+  # Container image for the Rust binaries (only used when rust.enabled=true)
+  image: biged-cc/biged-rs:latest
+  imagePullPolicy: IfNotPresent
+
 # -- Fleet supervisor
 supervisor:
   replicas: 1

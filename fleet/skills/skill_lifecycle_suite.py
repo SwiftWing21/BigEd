@@ -281,7 +281,7 @@ Respond with ONLY the Python code in a ```python ... ``` block."""
 
     DRAFTS_DIR.mkdir(parents=True, exist_ok=True)
     out_file = _draft_filename(skill_name, "draft", agent_name)
-    out_file.write_text(code)
+    out_file.write_text(code, encoding="utf-8")
 
     return {
         "skill_name": skill_name,
@@ -340,7 +340,7 @@ def _save_test_report(draft_name: str, draft_path: Path, passed: bool,
         preview = json.dumps(output, indent=2, default=str)[:1000]
         lines.append(f"```json\n{preview}\n```")
 
-    report_file.write_text("\n".join(lines))
+    report_file.write_text("\n".join(lines), encoding="utf-8")
 
     return {
         "passed": passed,
@@ -505,7 +505,7 @@ Respond with ONLY the Python code in a ```python ... ``` block."""
 
     DRAFTS_DIR.mkdir(parents=True, exist_ok=True)
     out_file = _draft_filename(skill_name, "evolved", agent_name)
-    out_file.write_text(evolved)
+    out_file.write_text(evolved, encoding="utf-8")
 
     return {
         "evolved": True,
@@ -637,7 +637,7 @@ def _action_promote(payload: dict, config: dict) -> dict:
         f"**Date:** {datetime.now().strftime('%Y-%m-%d %H:%M')}\n"
         f"**Force:** {force}\n"
         f"**Gates:** {gates}\n"
-        f"**Warnings:** {warnings}\n"
+        f"**Warnings:** {warnings}\n", encoding="utf-8"
     )
 
     return {
@@ -739,7 +739,7 @@ def _action_deploy(payload: dict, config: dict) -> dict:
             f"**Deployed to:** {target}\n"
             f"**Validation:** {validation_msg}\n"
             f"**Verification:** {verification}\n"
-            f"**Affinity:** {affinity_note or 'None'}\n"
+            f"**Affinity:** {affinity_note or 'None'}\n", encoding="utf-8"
         )
     except Exception:
         pass  # Log failure must not block deployment

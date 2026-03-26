@@ -106,7 +106,7 @@ def run(payload, config):
         MQTT_DIR.mkdir(parents=True, exist_ok=True)
         ts = datetime.now().strftime("%Y%m%d_%H%M%S")
         out_file = MQTT_DIR / f"mqtt_capture_{ts}.json"
-        out_file.write_text(json.dumps(messages, indent=2))
+        out_file.write_text(json.dumps(messages, indent=2), encoding="utf-8")
 
         # Summarize by topic
         topic_counts = {}

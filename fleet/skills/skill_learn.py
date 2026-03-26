@@ -89,9 +89,14 @@ def _analyze_failures(failures: list[dict]) -> list[dict]:
         if skill not in error_samples:
             error_samples[skill] = f.get("error", "unknown")[:200]
 
+    # Lifecycle skills (skill_draft, skill_test, skill_evolve) fail when Ollama is
+    # down — proposing "skill_draft_fix" just creates *more* skill_draft tasks that
+    # also fail, causing a self-perpetuating death spiral.  Skip them.
+    LIFECYCLE_SKIP = {"skill_draft", "skill_test", "skill_evolve", "skill_promote",
+                      "deploy_skill", "skill_lifecycle_suite", "evolution_coordinator"}
     proposals = []
     for skill, count in by_type.most_common(10):
-        if count >= 3:
+        if count >= 3 and skill not in LIFECYCLE_SKIP:
             proposals.append({
                 "name": f"{skill}_fix",
                 "description": f"Fix or replace frequently failing skill '{skill}' — {count} failures. Sample error: {error_samples[skill]}",
@@ -196,7 +201,7 @@ def run(payload, config):
         lines.append(f"**Reason:** {p['reason']}")
         lines.append(f"**Description:** {p['description']}")
         lines.append("")
-    report.write_text("\n".join(lines))
+    report.write_text("\n".join(lines), encoding="utf-8")
 
     return {
         "proposals": proposals,

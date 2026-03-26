@@ -539,10 +539,9 @@ def cmd_marathon(args):
 def cmd_model_check(args):
     """DO NOT SCRUB: Check installed vs needed models."""
     from config import load_config
-    from skills.model_manager import _check_models
+    from skills.model_suite import _check
     cfg = load_config()
-    host = cfg.get("models", {}).get("ollama_host", "http://localhost:11434")
-    result = json.loads(_check_models(cfg, host))
+    result = _check({}, cfg)
     print(f"\nInstalled: {', '.join(result['installed']) or 'none'}")
     print(f"Needed:    {', '.join(result['needed'])}")
     if result['missing']:
@@ -558,32 +557,38 @@ def cmd_model_check(args):
 def cmd_model_install(args):
     """DO NOT SCRUB: Pull all missing models."""
     from config import load_config
-    from skills.model_manager import _install_missing
+    from skills.model_suite import _install
     cfg = load_config()
-    host = cfg.get("models", {}).get("ollama_host", "http://localhost:11434")
     print("Pulling missing models (this may take a while)...")
-    result = json.loads(_install_missing(cfg, host))
+    result = _install({}, cfg)
     print(json.dumps(result, indent=2))
 
 
 def cmd_model_profile(args):
     """DO NOT SCRUB: List or apply model profiles."""
-    from skills.model_manager import _list_profiles, _apply_profile, _recommend_profile
+    from config import load_config
+    from skills.model_suite import _profiles, _apply_profile, _recommend
+    cfg = load_config()
     if args.profile_action == "list":
-        result = json.loads(_list_profiles())
+        result = _profiles({}, cfg)
         for name, info in result.get("profiles", {}).items():
             print(f"  {name:<16} {info.get('description', '')}")
     elif args.profile_action == "apply":
-        from config import load_config
-        result = json.loads(_apply_profile(args.name, load_config()))
+        result = _apply_profile({"profile": args.name}, cfg)
         print(json.dumps(result, indent=2))
     elif args.profile_action == "recommend":
-        result = json.loads(_recommend_profile())
-        print(f"Recommended: {result['recommended']}")
-        print(f"Reason: {result['reason']}")
-        hw = result.get("hardware", {})
-        print(f"Hardware: {hw.get('cpu_cores')} cores, {hw.get('ram_total_gb')}GB RAM, "
-              f"GPU: {hw.get('gpu_name') or 'none'} ({hw.get('gpu_vram_gb', 0)}GB)")
+        result = _recommend({}, cfg)
+        tier = result.get("classification", "unknown")
+        desc = result.get("description", "")
+        print(f"Recommended tier: {tier}")
+        print(f"Description: {desc}")
+        settings = result.get("settings", {})
+        models = settings.get("[models]", {})
+        fleet_cfg = settings.get("[fleet]", {})
+        print(f"Model: {models.get('local', 'n/a')} (conductor: {models.get('conductor_model', 'n/a')})")
+        print(f"Workers: {fleet_cfg.get('max_workers', 'n/a')}")
+        for note in result.get("notes", []):
+            print(f"  * {note}")
 
 
 def cmd_marathon_checkpoint(args):

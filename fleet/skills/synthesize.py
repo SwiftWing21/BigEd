@@ -59,7 +59,7 @@ def _load_research_summaries():
         return ""
     texts = []
     for f in sorted(summaries_dir.glob("*.md")):
-        texts.append(f.read_text()[:600])
+        texts.append(f.read_text(encoding="utf-8")[:600])
     return "\n\n---\n\n".join(texts)
 
 
@@ -122,6 +122,6 @@ RESEARCH & DISCUSSION:
     out_dir = KNOWLEDGE_DIR / "reports"
     out_dir.mkdir(parents=True, exist_ok=True)
     out_file = out_dir / f"{output_name}.md"
-    out_file.write_text(f"# {output_name.replace('_', ' ').title()}\n\n{result}\n")
+    out_file.write_text(f"# {output_name.replace('_', ' ').title()}\n\n{result}\n", encoding="utf-8")
 
     return {"doc_type": doc_type, "saved_to": str(out_file), "length": len(result)}

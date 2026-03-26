@@ -52,6 +52,8 @@ SUMMARY_TKINTER=""
 SUMMARY_OLLAMA=""
 SUMMARY_MODEL=""
 SUMMARY_DEPS=""
+SUMMARY_RUST=""
+SUMMARY_WASM_PACK=""
 
 # ── 1. Detect OS and package manager ─────────────────────────────────────────
 detect_os() {
@@ -360,7 +362,43 @@ install_deps() {
     SUMMARY_DEPS="installed"
 }
 
-# ── 6. Check/install Ollama ───────────────────────────────────────────────────
+# ── 6. Check Rust toolchain ──────────────────────────────────────────────────
+check_rust() {
+    info "Checking Rust toolchain..."
+
+    if command -v rustc &>/dev/null; then
+        local rustc_ver
+        rustc_ver="$(rustc --version 2>&1 | grep -oP '\d+\.\d+\.\d+' | head -1 || echo 'unknown')"
+        SUMMARY_RUST="$rustc_ver"
+        ok "rustc $rustc_ver"
+    else
+        SUMMARY_RUST="not installed"
+        warn "rustc not found. The Rust toolchain is needed to build biged-rs."
+        warn "Install via: curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh"
+    fi
+
+    if command -v cargo &>/dev/null; then
+        local cargo_ver
+        cargo_ver="$(cargo --version 2>&1 | grep -oP '\d+\.\d+\.\d+' | head -1 || echo 'unknown')"
+        ok "cargo $cargo_ver"
+    elif [[ "$SUMMARY_RUST" != "not installed" ]]; then
+        warn "cargo not found (but rustc is present). Your Rust installation may be incomplete."
+    fi
+
+    # Optional: check for wasm-pack (needed for WASM builds)
+    if command -v wasm-pack &>/dev/null; then
+        local wp_ver
+        wp_ver="$(wasm-pack --version 2>&1 | grep -oP '\d+\.\d+\.\d+' | head -1 || echo 'unknown')"
+        SUMMARY_WASM_PACK="$wp_ver"
+        ok "wasm-pack $wp_ver"
+    else
+        SUMMARY_WASM_PACK="not installed"
+        info "wasm-pack not found (optional — needed only for WASM builds)."
+        info "Install via: cargo install wasm-pack"
+    fi
+}
+
+# ── 7. Check/install Ollama ──────────────────────────────────────────────────
 check_ollama() {
     if [[ "$SKIP_OLLAMA" == true ]]; then
         SUMMARY_OLLAMA="skipped (API-only mode)"
@@ -420,7 +458,7 @@ install_ollama() {
     esac
 }
 
-# ── 7. Pull default model ────────────────────────────────────────────────────
+# ── 8. Pull default model ────────────────────────────────────────────────────
 pull_model() {
     if [[ "$SKIP_OLLAMA" == true ]]; then
         return 0
@@ -446,7 +484,7 @@ pull_model() {
     fi
 }
 
-# ── 8. SteamOS-specific checks ───────────────────────────────────────────────
+# ── 9. SteamOS-specific checks ───────────────────────────────────────────────
 steamos_checks() {
     if [[ "$DISTRO" != "steamos" ]]; then
         return 0
@@ -478,7 +516,7 @@ steamos_checks() {
     warn "  sudo steamos-readonly enable"
 }
 
-# ── 9. Final summary ─────────────────────────────────────────────────────────
+# ── 10. Final summary ────────────────────────────────────────────────────────
 print_summary() {
     echo ""
     echo "================================"
@@ -488,6 +526,8 @@ print_summary() {
     echo " Git:     ${SUMMARY_GIT:-unknown}  [${SUMMARY_GIT:+OK}${SUMMARY_GIT:-WARN}]"
     echo " Python:  ${SUMMARY_PYTHON:-unknown}  [${SUMMARY_PYTHON:+OK}${SUMMARY_PYTHON:-FAIL}]"
     echo " tkinter: ${SUMMARY_TKINTER:-unknown} [${SUMMARY_TKINTER:+OK}${SUMMARY_TKINTER:-FAIL}]"
+    echo " Rust:    ${SUMMARY_RUST:-unknown}  [${SUMMARY_RUST:+OK}${SUMMARY_RUST:-FAIL}]"
+    echo " wasm-pack: ${SUMMARY_WASM_PACK:-unknown} [${SUMMARY_WASM_PACK:+OK}${SUMMARY_WASM_PACK:-n/a}]"
     echo " Ollama:  ${SUMMARY_OLLAMA:-unknown}  [${SUMMARY_OLLAMA:+OK}${SUMMARY_OLLAMA:-FAIL}]"
     echo " Model:   ${SUMMARY_MODEL:-none}      [${SUMMARY_MODEL:+OK}${SUMMARY_MODEL:-FAIL}]"
     echo " Deps:    ${SUMMARY_DEPS:-unknown}    [${SUMMARY_DEPS:+OK}${SUMMARY_DEPS:-FAIL}]"
@@ -515,6 +555,7 @@ main() {
     check_python
     check_tkinter
     install_deps
+    check_rust
     check_ollama
     pull_model
     print_summary

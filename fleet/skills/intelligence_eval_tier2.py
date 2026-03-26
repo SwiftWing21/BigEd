@@ -9,9 +9,10 @@ Updates intelligence_score in the DB and saves per-skill trend data.
 """
 import json
 import logging
-import re
 from datetime import date
 from pathlib import Path
+from skills._knowledge import get_output_dir
+from skills._llm_parse import extract_json_object
 
 SKILL_NAME = "intelligence_eval_tier2"
 DESCRIPTION = "LLM-based semantic evaluation of task output quality (Tier 2 scoring)."
@@ -22,16 +23,12 @@ SUITE = "ml"
 
 log = logging.getLogger(__name__)
 
-FLEET_DIR = Path(__file__).parent.parent
-KNOWLEDGE_DIR = FLEET_DIR / "knowledge"
-EVAL_DIR = KNOWLEDGE_DIR / "evaluations"
+EVAL_DIR = get_output_dir("evaluations")
 
 
 def run(payload, config):
     import db
     import hashlib
-
-    EVAL_DIR.mkdir(parents=True, exist_ok=True)
 
     # Get tasks to evaluate
     task_ids = payload.get("task_ids", [])
@@ -201,9 +198,8 @@ def _call_local_grading(prompt, config):
 
         response_text = result.get("response", "")
         # Extract JSON from response (may have markdown wrapping)
-        json_match = re.search(r'\{[^}]+\}', response_text)
-        if json_match:
-            scores = json.loads(json_match.group())
+        scores = extract_json_object(response_text, required_key="coherence")
+        if scores:
             # Validate all keys present and in range
             for key in ("coherence", "correctness", "depth", "actionability"):
                 if key not in scores:

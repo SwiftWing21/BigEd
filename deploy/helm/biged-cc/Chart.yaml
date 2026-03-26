@@ -2,8 +2,8 @@ apiVersion: v2
 name: biged-cc
 description: BigEd CC — AI fleet supervisor with Ollama workers, dashboard, and knowledge management
 type: application
-version: 0.1.0
-appVersion: "0.165.07b"
+version: 0.2.0
+appVersion: "0.9.0"
 keywords:
   - ai
   - fleet

@@ -293,7 +293,42 @@ try {
 }
 
 # ---------------------------------------------------------------------------
-# 9. Final summary
+# 9. Check Rust toolchain
+# ---------------------------------------------------------------------------
+Write-Step "Checking Rust toolchain ..."
+
+$rustVersion = $null
+$cargoVersion = $null
+$wasmPackVersion = $null
+
+try {
+    $rustVersion = (& rustc --version 2>&1).ToString().Trim()
+    Write-OK "$rustVersion"
+} catch {
+    Write-Warn "rustc not found. The Rust toolchain is needed to build biged-rs."
+    Write-Warn "Install from: https://rustup.rs"
+}
+
+if ($rustVersion) {
+    try {
+        $cargoVersion = (& cargo --version 2>&1).ToString().Trim()
+        Write-OK "$cargoVersion"
+    } catch {
+        Write-Warn "cargo not found (but rustc is present). Your Rust installation may be incomplete."
+    }
+}
+
+# Optional: check for wasm-pack (needed for WASM builds)
+try {
+    $wasmPackVersion = (& wasm-pack --version 2>&1).ToString().Trim()
+    Write-OK "$wasmPackVersion"
+} catch {
+    Write-Info "wasm-pack not found (optional — needed only for WASM builds)."
+    Write-Info "Install via: cargo install wasm-pack"
+}
+
+# ---------------------------------------------------------------------------
+# 10. Final summary
 # ---------------------------------------------------------------------------
 Write-Host ""
 Write-Host "================================" -ForegroundColor Green
@@ -327,8 +362,16 @@ $tkDisplay = try {
 $gitDisplay = if ($gitVersion) { ($gitVersion -replace "^git version\s*", "") + "  [OK]" }
               else { "not installed  [WARN — updates will use Release downloads]" }
 
+$rustDisplay = if ($rustVersion) { ($rustVersion -replace "^rustc\s+", "") + "  [OK]" }
+               else { "not installed  [WARN]" }
+
+$wasmDisplay = if ($wasmPackVersion) { ($wasmPackVersion -replace "^wasm-pack\s+", "") + "  [OK]" }
+               else { "not installed  [optional]" }
+
 Write-Host "   Python:   $pyDisplay  [OK]"       -ForegroundColor Green
 Write-Host "   Git:      $gitDisplay"             -ForegroundColor $(if ($gitDisplay -match "OK") { "Green" } else { "Yellow" })
+Write-Host "   Rust:     $rustDisplay"            -ForegroundColor $(if ($rustDisplay -match "OK") { "Green" } else { "Yellow" })
+Write-Host "   wasm-pack: $wasmDisplay"           -ForegroundColor $(if ($wasmDisplay -match "OK") { "Green" } else { "Yellow" })
 Write-Host "   Ollama:   $ollamaDisplay"          -ForegroundColor $(if ($ollamaDisplay -match "OK|skipped") { "Green" } else { "Yellow" })
 Write-Host "   Model:    $modelDisplay"           -ForegroundColor $(if ($modelDisplay -match "OK|skipped") { "Green" } else { "Yellow" })
 Write-Host "   Deps:     installed  [OK]"         -ForegroundColor Green

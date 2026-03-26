@@ -49,6 +49,6 @@ def run(payload, config):
     out_dir = Path(__file__).parent.parent / "knowledge" / "summaries"
     out_dir.mkdir(parents=True, exist_ok=True)
     out_file = out_dir / f"{date.today()}_{slug}.md"
-    out_file.write_text(f"# {source_label}\n\n{summary}\n")
+    out_file.write_text(f"# {source_label}\n\n{summary}\n", encoding="utf-8")
 
     return {"summary": summary, "saved_to": str(out_file)}

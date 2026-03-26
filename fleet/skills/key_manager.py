@@ -78,7 +78,7 @@ def _read_secrets_status():
     if not SECRETS_FILE.exists():
         return status
     try:
-        for line in SECRETS_FILE.read_text().splitlines():
+        for line in SECRETS_FILE.read_text(encoding="utf-8").splitlines():
             line = line.strip()
             if line.startswith("export "):
                 line = line[7:]
@@ -106,8 +106,8 @@ def _write_secret(key_name, value):
     Updates existing line or appends new one.
     """
     if not SECRETS_FILE.exists():
-        SECRETS_FILE.write_text("")
-    lines = SECRETS_FILE.read_text().splitlines()
+        SECRETS_FILE.write_text("", encoding="utf-8")
+    lines = SECRETS_FILE.read_text(encoding="utf-8").splitlines()
     updated = False
     new_lines = []
     for line in lines:
@@ -121,7 +121,7 @@ def _write_secret(key_name, value):
             new_lines.append(line)
     if not updated:
         new_lines.append(f"export {key_name}={value}")
-    SECRETS_FILE.write_text("\n".join(new_lines) + "\n")
+    SECRETS_FILE.write_text("\n".join(new_lines) + "\n", encoding="utf-8")
     return True
 
 
@@ -229,7 +229,7 @@ def run(payload, config):
         report = "\n".join(report_lines)
         reports_dir = FLEET_DIR / "knowledge" / "reports"
         reports_dir.mkdir(parents=True, exist_ok=True)
-        (reports_dir / "key_scan.md").write_text(report)
+        (reports_dir / "key_scan.md").write_text(report, encoding="utf-8")
         return {
             "wired": len(wired),
             "unknown": list(unknown.keys()),

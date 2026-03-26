@@ -261,17 +261,48 @@ def _predict_queue_growth() -> int:
     return 0
 
 
-def _should_scale_up(pending: int, running: set) -> list:
+def _get_ram_usage_pct() -> float:
+    """Current system RAM usage as a percentage (0-100)."""
+    try:
+        import psutil
+        return psutil.virtual_memory().percent
+    except Exception:
+        return 0.0
+
+
+def _should_scale_up(pending: int, running: set, cfg: dict = None) -> list:
     """Return list of agent names to start based on queue depth and task types.
 
     Type-aware: analyzes pending task types, maps to roles via affinity,
     and spins up the right kind of agent. Falls back to generic SCALE_ORDER.
+
+    Respects ram_ceiling_pct — will not scale if system RAM exceeds the
+    configured ceiling (default 95%).
     """
+    if cfg is None:
+        cfg = {}
     to_start = []
     if pending < SCALE_UP_QUEUE_DEPTH:
         return to_start
 
-    max_total = 16
+    # RAM ceiling check — block scale-up if system memory is too high
+    ram_ceiling = cfg.get("fleet", {}).get("ram_ceiling_pct", 95)
+    if ram_ceiling > 0:
+        ram_pct = _get_ram_usage_pct()
+        if ram_pct >= ram_ceiling:
+            log.info(f"Scale-up blocked: RAM {ram_pct:.1f}% >= ceiling {ram_ceiling}%")
+            return to_start
+
+    # Config-driven max (from fleet.toml or system_info tier)
+    max_total = cfg.get("fleet", {}).get("max_workers", 16)
+    if max_total <= 0:
+        # Auto-detect from system RAM
+        try:
+            from system_info import get_worker_limits
+            max_total = get_worker_limits()["max_workers"]
+        except Exception:
+            max_total = 16
+
     if len(running) >= max_total:
         return to_start
 
@@ -1137,7 +1168,7 @@ def main():
                         pending += predicted  # Inflate pending count for scaling decision
 
                 # Scale UP: spin up dynamic agents when queue builds up
-                to_start = _should_scale_up(pending, running)
+                to_start = _should_scale_up(pending, running, cfg=config)
                 # Respect disabled_agents
                 to_start = [r for r in to_start if r not in disabled and r in dynamic_pool]
                 for role in to_start:
@@ -1527,7 +1558,7 @@ def main():
                         conn.execute(
                             "INSERT INTO tasks (type, status, priority, payload_json, created_at) "
                             "VALUES ('evolution_coordinator', 'PENDING', 2, ?, datetime('now'))",
-                            (json.dumps({"action": "evolve_bottom_10"}),)
+                            (json.dumps({"action": "evolve"}),)
                         )
                         conn.commit()
                         log.info("Auto-triggered weekly evolution sweep")

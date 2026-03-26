@@ -6,10 +6,10 @@ and any I/O dependencies so each skill's run() logic is tested in isolation.
 
 Categories covered:
   - Simple/knowledge: flashcard, summarize
-  - Code: code_review
+  - Code: code_suite (review action)
   - Data/RAG: rag_query
-  - Security: security_audit, pen_test
-  - Evolution/meta: skill_test
+  - Security: security_suite (audit + pentest actions)
+  - Evolution/meta: skill_lifecycle_suite (test action)
   - Discussion: discuss
 
 Run:  cd fleet && python -m pytest tests/test_skills.py -v
@@ -238,9 +238,9 @@ class TestSummarizeSkill(unittest.TestCase):
 # 3. Code review skill
 # ---------------------------------------------------------------------------
 class TestCodeReviewSkill(unittest.TestCase):
-    """code_review.py -- reads a Python file and produces a structured review."""
+    """code_suite.py (review action) -- reads a Python file and produces a structured review."""
 
-    @patch("skills.code_review.call_complex")
+    @patch("skills.code_suite.call_complex")
     def test_review_existing_file(self, mock_call):
         """Reviewing a real file should return structured result with expected keys."""
         mock_call.return_value = (
@@ -258,12 +258,12 @@ class TestCodeReviewSkill(unittest.TestCase):
             reviews_dir = Path(tmpdir) / "knowledge" / "code_reviews"
             reviews_dir.mkdir(parents=True)
 
-            from skills.code_review import _pick_file, run
+            from skills.code_suite import _pick_review_file, run
 
-            # Patch _pick_file to return our test file, REVIEWS_DIR, and FLEET_DIR
-            with patch("skills.code_review._pick_file", return_value=target), \
-                 patch("skills.code_review.REVIEWS_DIR", reviews_dir), \
-                 patch("skills.code_review.FLEET_DIR", Path(tmpdir)):
+            # Patch _pick_review_file to return our test file, _REVIEWS_DIR, and FLEET_DIR
+            with patch("skills.code_suite._pick_review_file", return_value=target), \
+                 patch("skills.code_suite._REVIEWS_DIR", reviews_dir), \
+                 patch("skills.code_suite.FLEET_DIR", Path(tmpdir)):
                 result = run({"file": "test_module.py"}, MOCK_CONFIG)
 
         self.assertIsInstance(result, dict)
@@ -277,9 +277,9 @@ class TestCodeReviewSkill(unittest.TestCase):
     @patch("skills._models.call_complex")
     def test_missing_file_returns_error(self, mock_call):
         """When no file is found, should return error dict."""
-        from skills.code_review import run
+        from skills.code_suite import run
 
-        with patch("skills.code_review._pick_file", return_value=None):
+        with patch("skills.code_suite._pick_review_file", return_value=None):
             result = run({"file": "nonexistent.py"}, MOCK_CONFIG)
 
         self.assertIsInstance(result, dict)
@@ -287,13 +287,12 @@ class TestCodeReviewSkill(unittest.TestCase):
         mock_call.assert_not_called()
 
     def test_pick_file_blocks_path_traversal(self):
-        """_pick_file should reject paths that traverse outside fleet root."""
-        from skills.code_review import _pick_file
+        """_pick_review_file should reject paths that traverse outside fleet root."""
+        from skills.code_suite import _pick_review_file
 
-        with tempfile.TemporaryDirectory() as tmpdir:
-            base = Path(tmpdir)
-            result = _pick_file("../../etc/passwd", base_dir=base)
-            self.assertIsNone(result)
+        # Path traversal using an absolute path outside FLEET_DIR must return None.
+        result = _pick_review_file("/etc/passwd")
+        self.assertIsNone(result)
 
 
 # ---------------------------------------------------------------------------
@@ -358,25 +357,25 @@ class TestRagQuerySkill(unittest.TestCase):
 # 5. Security audit skill
 # ---------------------------------------------------------------------------
 class TestSecurityAuditSkill(unittest.TestCase):
-    """security_audit.py -- scans for secrets, permissions, gitignore gaps."""
+    """security_suite.py (audit action) -- scans for secrets, permissions, gitignore gaps."""
 
     def test_check_permissions_no_sensitive_files(self):
         """When sensitive files do not exist, no findings should be returned."""
-        from skills.security_audit import _check_permissions
-        # _check_permissions checks ~/.secrets, ~/.ssh/id_rsa etc.
+        from skills.security_suite import _audit_check_permissions
+        # _audit_check_permissions checks ~/.secrets, ~/.ssh/id_rsa etc.
         # On most test environments these may not exist; result should be a list
-        result = _check_permissions()
+        result = _audit_check_permissions()
         self.assertIsInstance(result, list)
 
     def test_scan_secrets_finds_exposed_key(self):
         """Should detect a hardcoded API key in a scanned file."""
-        from skills.security_audit import _scan_secrets
+        from skills.security_suite import _audit_scan_secrets
 
         with tempfile.TemporaryDirectory() as tmpdir:
             secret_file = Path(tmpdir) / "config.py"
             secret_file.write_text('API_KEY = "sk-ant-XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"\n')
 
-            findings = _scan_secrets([tmpdir])
+            findings = _audit_scan_secrets([tmpdir])
 
         self.assertIsInstance(findings, list)
         self.assertGreaterEqual(len(findings), 1)
@@ -385,25 +384,25 @@ class TestSecurityAuditSkill(unittest.TestCase):
 
     def test_scan_secrets_clean_dir(self):
         """A directory with no secrets should produce no findings."""
-        from skills.security_audit import _scan_secrets
+        from skills.security_suite import _audit_scan_secrets
 
         with tempfile.TemporaryDirectory() as tmpdir:
             clean_file = Path(tmpdir) / "clean.py"
             clean_file.write_text("x = 42\n")
 
-            findings = _scan_secrets([tmpdir])
+            findings = _audit_scan_secrets([tmpdir])
 
         self.assertEqual(len(findings), 0)
 
     def test_check_gitignore_flags_missing_entries(self):
         """Should flag when .secrets is not in .gitignore."""
-        from skills.security_audit import _check_gitignore
+        from skills.security_suite import _audit_check_gitignore
 
         with tempfile.TemporaryDirectory() as tmpdir:
             gitignore = Path(tmpdir) / ".gitignore"
             gitignore.write_text("*.pyc\n__pycache__/\n")
 
-            findings = _check_gitignore([tmpdir])
+            findings = _audit_check_gitignore([tmpdir])
 
         self.assertIsInstance(findings, list)
         # Should flag missing .secrets, *.env, *.pem, etc.
@@ -416,7 +415,7 @@ class TestSecurityAuditSkill(unittest.TestCase):
         """Scanning a clean directory should return status=clean."""
         mock_db = MagicMock()
         with patch.dict("sys.modules", {"db": mock_db}):
-            from skills.security_audit import run
+            from skills.security_suite import run
 
             with tempfile.TemporaryDirectory() as tmpdir:
                 # Create a clean dir with a proper .gitignore
@@ -439,25 +438,25 @@ class TestSecurityAuditSkill(unittest.TestCase):
 # 6. Pen test skill (helper functions only -- no nmap in test env)
 # ---------------------------------------------------------------------------
 class TestPenTestSkill(unittest.TestCase):
-    """pen_test.py -- test helper functions without requiring nmap."""
+    """security_suite.py (pentest action) -- test helper functions without requiring nmap."""
 
     def test_validate_target_allows_cidr(self):
         """Valid CIDR notation should be accepted."""
-        from skills.pen_test import _validate_target
-        self.assertTrue(_validate_target("192.168.1.0/24"))
-        self.assertTrue(_validate_target("10.0.0.1"))
-        self.assertTrue(_validate_target("auto"))
+        from skills.security_suite import _pentest_validate_target
+        self.assertTrue(_pentest_validate_target("192.168.1.0/24"))
+        self.assertTrue(_pentest_validate_target("10.0.0.1"))
+        self.assertTrue(_pentest_validate_target("auto"))
 
     def test_validate_target_blocks_injection(self):
         """Shell metacharacters should be rejected."""
-        from skills.pen_test import _validate_target
-        self.assertFalse(_validate_target("192.168.1.1; rm -rf /"))
-        self.assertFalse(_validate_target("$(whoami)"))
-        self.assertFalse(_validate_target("10.0.0.1 && cat /etc/passwd"))
+        from skills.security_suite import _pentest_validate_target
+        self.assertFalse(_pentest_validate_target("192.168.1.1; rm -rf /"))
+        self.assertFalse(_pentest_validate_target("$(whoami)"))
+        self.assertFalse(_pentest_validate_target("10.0.0.1 && cat /etc/passwd"))
 
     def test_parse_nmap_xml_valid(self):
         """Should parse valid nmap XML into host dicts."""
-        from skills.pen_test import _parse_nmap_xml
+        from skills.security_suite import _pentest_parse_nmap_xml
 
         xml = """<?xml version="1.0"?>
 <nmaprun>
@@ -477,7 +476,7 @@ class TestPenTestSkill(unittest.TestCase):
     </ports>
   </host>
 </nmaprun>"""
-        hosts = _parse_nmap_xml(xml)
+        hosts = _pentest_parse_nmap_xml(xml)
         self.assertEqual(len(hosts), 1)
         self.assertEqual(hosts[0]["ip"], "192.168.1.1")
         self.assertEqual(hosts[0]["hostname"], "router.local")
@@ -486,13 +485,13 @@ class TestPenTestSkill(unittest.TestCase):
 
     def test_parse_nmap_xml_invalid(self):
         """Invalid XML should return empty list, not crash."""
-        from skills.pen_test import _parse_nmap_xml
-        hosts = _parse_nmap_xml("this is not xml")
+        from skills.security_suite import _pentest_parse_nmap_xml
+        hosts = _pentest_parse_nmap_xml("this is not xml")
         self.assertEqual(hosts, [])
 
     def test_assess_findings_high_risk_ports(self):
         """Hosts with known risky ports should generate HIGH findings."""
-        from skills.pen_test import _assess_findings
+        from skills.security_suite import _pentest_assess_findings
 
         hosts = [{
             "ip": "192.168.1.50",
@@ -503,7 +502,7 @@ class TestPenTestSkill(unittest.TestCase):
                 {"port": "23", "service": "telnet", "product": "", "version": ""},
             ],
         }]
-        findings = _assess_findings(hosts)
+        findings = _pentest_assess_findings(hosts)
         severities = [f["severity"] for f in findings]
         self.assertIn("HIGH", severities)
         # All three ports are HIGH risk
@@ -512,7 +511,7 @@ class TestPenTestSkill(unittest.TestCase):
 
     def test_assess_findings_clean_host(self):
         """A host with only safe ports should produce no HIGH findings."""
-        from skills.pen_test import _assess_findings
+        from skills.security_suite import _pentest_assess_findings
 
         hosts = [{
             "ip": "192.168.1.1",
@@ -521,7 +520,7 @@ class TestPenTestSkill(unittest.TestCase):
                 {"port": "443", "service": "https", "product": "nginx", "version": "1.24"},
             ],
         }]
-        findings = _assess_findings(hosts)
+        findings = _pentest_assess_findings(hosts)
         high_findings = [f for f in findings if f["severity"] == "HIGH"]
         self.assertEqual(len(high_findings), 0)
 
@@ -530,43 +529,43 @@ class TestPenTestSkill(unittest.TestCase):
 # 7. Skill test (meta skill)
 # ---------------------------------------------------------------------------
 class TestSkillTestSkill(unittest.TestCase):
-    """skill_test.py -- validates draft skills via sandbox execution."""
+    """skill_lifecycle_suite.py (test action) -- validates draft skills via sandbox execution."""
 
     def test_validate_result_valid_dict(self):
         """A normal dict result should pass validation."""
-        from skills.skill_test import _validate_result
+        from skills.skill_lifecycle_suite import _validate_result
         errors = _validate_result({"status": "ok", "data": [1, 2, 3]})
         self.assertEqual(errors, [])
 
     def test_validate_result_none(self):
         """None result should produce an error."""
-        from skills.skill_test import _validate_result
+        from skills.skill_lifecycle_suite import _validate_result
         errors = _validate_result(None)
         self.assertGreater(len(errors), 0)
         self.assertIn("None", errors[0])
 
     def test_validate_result_non_dict(self):
         """Non-dict result should produce an error."""
-        from skills.skill_test import _validate_result
+        from skills.skill_lifecycle_suite import _validate_result
         errors = _validate_result("just a string")
         self.assertGreater(len(errors), 0)
         self.assertIn("str", errors[0])
 
     def test_validate_result_error_only(self):
         """A dict with only 'error' key should flag it."""
-        from skills.skill_test import _validate_result
+        from skills.skill_lifecycle_suite import _validate_result
         errors = _validate_result({"error": "something broke"})
         self.assertGreater(len(errors), 0)
 
     def test_find_draft_nonexistent(self):
         """Requesting a nonexistent draft should return None."""
-        from skills.skill_test import _find_draft
+        from skills.skill_lifecycle_suite import _find_draft
         result = _find_draft("/nonexistent/path/draft.py")
         self.assertIsNone(result)
 
     def test_load_and_run_valid_draft(self):
         """Should successfully load and validate a well-formed draft skill."""
-        from skills.skill_test import _load_module, _validate_result
+        from skills.skill_lifecycle_suite import _load_module, _validate_result
 
         with tempfile.TemporaryDirectory() as tmpdir:
             draft = Path(tmpdir) / "good_skill.py"

@@ -16,14 +16,12 @@ def run(payload, config):
     import db
     import logging
     from datetime import date, datetime, timedelta, timezone
-    from pathlib import Path
+    from skills._knowledge import get_output_dir, FLEET_DIR, KNOWLEDGE_DIR
+    from skills._report import ReportBuilder
 
     log = logging.getLogger(SKILL_NAME)
 
-    FLEET_DIR = Path(__file__).parent.parent
-    KNOWLEDGE_DIR = FLEET_DIR / "knowledge"
-    DIGEST_DIR = KNOWLEDGE_DIR / "digests"
-    DIGEST_DIR.mkdir(parents=True, exist_ok=True)
+    DIGEST_DIR = get_output_dir("digests")
 
     hours = payload.get("hours", 24)
     cutoff = datetime.now(timezone.utc) - timedelta(hours=hours)
@@ -88,56 +86,46 @@ def run(payload, config):
 
     # Build markdown digest
     today = date.today().isoformat()
-    md = [
-        f"# Knowledge Digest — {today}",
-        "",
-        f"**Period:** Last {hours} hours | "
-        f"**New artifacts:** {total_new} | **Total artifacts:** {total_all}",
-    ]
-    if task_summary:
-        md.append(task_summary)
-    md.append("")
-    md.append("---")
-    md.append("")
-
-    # Active categories (those with new files)
     active = {k: v for k, v in categories.items() if v["new"] > 0}
     inactive = {k: v for k, v in categories.items() if v["new"] == 0}
 
-    md.append("## Active Categories")
-    md.append("")
+    rb = ReportBuilder("Knowledge Digest").metadata(
+        Period=f"Last {hours} hours",
+        New_artifacts=total_new,
+        Total_artifacts=total_all,
+    )
+    if task_summary:
+        rb.line(task_summary)
+    rb.blank().line("---").blank()
+
+    rb.section("Active Categories")
     if active:
-        md.append("| Category | New | Total | Recent Files |")
-        md.append("|----------|-----|-------|--------------|")
-        for cat, info in sorted(active.items(), key=lambda x: x[1]["new"],
-                                reverse=True):
+        active_rows = []
+        for cat, info in sorted(active.items(), key=lambda x: x[1]["new"], reverse=True):
             recent = ", ".join(info["recent_files"][:5])
             if len(info["recent_files"]) > 5:
                 recent += f" (+{len(info['recent_files']) - 5} more)"
-            md.append(f"| {cat} | {info['new']} | {info['total']} | {recent} |")
+            active_rows.append([cat, info["new"], info["total"], recent])
+        rb.table(["Category", "New", "Total", "Recent Files"], active_rows)
     else:
-        md.append("No new artifacts in the last {hours} hours.")
-    md.append("")
+        rb.line(f"No new artifacts in the last {hours} hours.").blank()
 
-    md.append("## Inactive Categories")
-    md.append("")
+    rb.section("Inactive Categories")
     if inactive:
         for cat, info in sorted(inactive.items()):
-            md.append(f"- **{cat}**: {info['total']} files (no new activity)")
+            rb.line(f"- **{cat}**: {info['total']} files (no new activity)")
+        rb.blank()
     else:
-        md.append("All categories had activity.")
-    md.append("")
+        rb.line("All categories had activity.").blank()
 
-    # Summary stats
-    md.append("## Summary")
-    md.append("")
-    md.append(f"- Categories scanned: {len(categories)}")
-    md.append(f"- Active categories: {len(active)}")
-    md.append(f"- New artifacts: {total_new}")
-    md.append(f"- Total artifacts: {total_all}")
-    md.append("")
+    rb.section("Summary")
+    rb.line(f"- Categories scanned: {len(categories)}")
+    rb.line(f"- Active categories: {len(active)}")
+    rb.line(f"- New artifacts: {total_new}")
+    rb.line(f"- Total artifacts: {total_all}")
+    rb.blank()
 
-    report = "\n".join(md)
+    report = rb.build()
     out_file = DIGEST_DIR / f"digest_{today}.md"
     out_file.write_text(report, encoding="utf-8")
 

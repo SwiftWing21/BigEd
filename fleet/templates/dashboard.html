@@ -4244,15 +4244,60 @@ function handleSSE(msg) {
     case 'status':
       if (document.getElementById('section-dashboard').classList.contains('active')) {
         var data = msg.data || {};
+        /* Show adaptive push rate in connection indicator */
+        if (data._interval) {
+          var label = data._interval < 3 ? 'Live' : data._interval < 10 ? 'Connected' : 'Idle';
+          document.getElementById('sse-status').textContent = label + ' (' + data._interval + 's)';
+        }
+        /* ── Agents ── */
         if (data.agents) {
           var count = data.agents.length;
           document.getElementById('badge-agents').textContent = count + ' Agent' + (count !== 1 ? 's' : '');
           document.getElementById('metric-active-units').textContent = String(count);
+          var busy = data.agents.filter(function(a) { return a.status === 'BUSY'; }).length;
+          var trendEl = document.getElementById('metric-active-trend');
+          trendEl.textContent = busy + ' busy';
+          trendEl.className = 'card-trend ' + (busy > 0 ? 'up' : 'neutral');
         }
+        /* ── Tasks ── */
         if (data.tasks) {
           var total = 0;
           for (var k in data.tasks) total += data.tasks[k];
           document.getElementById('metric-total-requests').textContent = total.toLocaleString();
+          var done = data.tasks.DONE || 0;
+          var failed = data.tasks.FAILED || 0;
+          var rate = (done + failed) > 0 ? Math.round(done / (done + failed) * 100) : 0;
+          var reqTrend = document.getElementById('metric-requests-trend');
+          reqTrend.textContent = rate + '% success';
+          reqTrend.className = 'card-trend ' + (rate >= 80 ? 'up' : rate >= 50 ? 'neutral' : 'down');
+        }
+        /* ── Thermal (pushed from server every 5s) ── */
+        if (data.thermal) {
+          var cpuV = data.thermal.cpu_temp_c || 0;
+          var cpuEl = document.getElementById('thermal-cpu');
+          if (cpuEl) {
+            cpuEl.textContent = cpuV + '\u00B0C';
+            var cpuBar = document.getElementById('thermal-cpu-bar');
+            if (cpuBar) { cpuBar.style.width = Math.min(100, Math.round(cpuV)) + '%'; }
+          }
+          var gpuV = data.thermal.gpu_temp_c || 0;
+          var gpuEl = document.getElementById('thermal-gpu');
+          if (gpuEl) {
+            gpuEl.textContent = gpuV + '\u00B0C';
+            var gpuBar = document.getElementById('thermal-gpu-bar');
+            if (gpuBar) { gpuBar.style.width = Math.min(100, Math.round(gpuV)) + '%'; }
+          }
+        }
+        /* ── System load ── */
+        if (data.system) {
+          var loadEl = document.getElementById('metric-system-load');
+          if (loadEl) loadEl.textContent = data.system.cpu_pct + '%';
+          var loadTrend = document.getElementById('metric-load-trend');
+          if (loadTrend) loadTrend.textContent = (data.system.cpu_cores || 0) + ' cores';
+          var memEl = document.getElementById('thermal-memory');
+          if (memEl) memEl.textContent = data.system.ram_pct + '%';
+          var memBar = document.getElementById('thermal-memory-bar');
+          if (memBar) { memBar.style.width = Math.min(100, Math.round(data.system.ram_pct)) + '%'; }
         }
       }
       break;
@@ -4778,11 +4823,13 @@ function loadViews() {
     }).catch(function() {});
   }, 30000);
 
+  /* ── SSE handles status + thermal every 5s from server push.
+     Activity chart polls every 30s (too heavy for SSE). ── */
   setInterval(function() {
     if (document.getElementById('section-dashboard').classList.contains('active')) {
-      loadThermal();
+      loadActivityChart();
     }
-  }, 10000);
+  }, 30000);
 
   /* ── API Gate Controls ─────────────────────────────────────────────────── */
   buildGateCard();

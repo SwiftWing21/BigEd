@@ -882,7 +882,7 @@ def _call_local(system: str, user: str, models: dict, max_tokens: int,
                 task_id: int | None = None, agent_name: str | None = None) -> str:
     import urllib.request
     import json
-    host = models.get("ollama_host", "http://localhost:11434")
+    host = models.get("ollama_host", "http://localhost:11434").rstrip("/")
     # Per-skill model routing: simple skills → smaller model, medium/complex → default
     if config and skill_name != "unknown":
         model = get_local_model_for_skill(skill_name, config)

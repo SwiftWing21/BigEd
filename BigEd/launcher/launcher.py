@@ -149,7 +149,7 @@ ctk.set_default_color_theme("dark-blue")
 from ui.theme import (
     BG, BG2, BG3, ACCENT, ACCENT_H, GOLD, BRAND, TEXT, DIM,
     GREEN, ORANGE, RED, MONO, FONT, FONT_SM, FONT_H,
-    BLUE, CYAN, FONT_STAT, FONT_BOLD, FONT_TITLE, FONT_XS,
+    BLUE, CYAN, FONT_STAT, FONT_BOLD, FONT_TITLE, FONT_XS, FONT_MONO,
     HEADER_HEIGHT, BTN_HEIGHT, CARD_RADIUS, BTN_RADIUS,
     SB_HOVER, SB_ACTIVE_BG, SB_BTN_RADIUS, SB_BTN_HEIGHT, FONT_SB_SECTION,
 )
@@ -458,7 +458,7 @@ class CustomTabBar(ctk.CTkFrame):
         # Badge overlay (hidden by default) — shows pending HITL count
         badge_lbl = ctk.CTkLabel(
             cell, text="",
-            font=("Consolas", 7, "bold"),
+            font=FONT_XS,
             text_color="white", fg_color="#d32f2f",
             corner_radius=8, width=16, height=16)
         self._tab_badges[name] = badge_lbl
@@ -936,7 +936,12 @@ class BigEdCC(TrayManagerMixin, BootManagerMixin, CommTabMixin, OllamaManagerMix
         # Fall through to existing close behavior
         self._alive = False
         prefs = self._load_close_prefs()
-        remembered = prefs.get("action")  # "stop" or "keep" or None
+        remembered = prefs.get("action")  # "stop", "keep", "tray", or None
+
+        # Remembered "tray" — minimize immediately (no countdown needed)
+        if remembered == "tray":
+            self._minimize_to_tray()
+            return
 
         # If user previously chose "remember", auto-execute with 5s countdown
         if remembered:
@@ -957,11 +962,16 @@ class BigEdCC(TrayManagerMixin, BootManagerMixin, CommTabMixin, OllamaManagerMix
         dlg.lift()
         dlg.attributes("-topmost", True)
 
-        action_text = "Stopping fleet + closing" if action == "stop" else "Closing (fleet stays running)"
+        if action == "stop":
+            action_text = "Stopping fleet + closing"
+        elif action == "tray":
+            action_text = "Minimizing to tray"
+        else:
+            action_text = "Closing (fleet stays running)"
         countdown_var = ctk.StringVar(value=f"{action_text} in 5s...")
 
         ctk.CTkLabel(dlg, textvariable=countdown_var,
-                     font=("RuneScape Bold 12", 12, "bold"), text_color=GOLD).pack(pady=(20, 8))
+                     font=FONT_BOLD, text_color=GOLD).pack(pady=(20, 8))
 
         btn_row = ctk.CTkFrame(dlg, fg_color="transparent")
         btn_row.pack(side="bottom", fill="x", padx=16, pady=12)
@@ -996,6 +1006,8 @@ class BigEdCC(TrayManagerMixin, BootManagerMixin, CommTabMixin, OllamaManagerMix
                 dlg.destroy()
                 if action == "stop":
                     self._do_stop_and_close()
+                elif action == "tray":
+                    self._minimize_to_tray()
                 else:
                     self._do_just_close()
                 return
@@ -1006,24 +1018,26 @@ class BigEdCC(TrayManagerMixin, BootManagerMixin, CommTabMixin, OllamaManagerMix
 
     def _show_close_dialog(self):
         """Full close dialog with remember checkbox."""
+        from ui.tray import _tray_available
+
         dlg = ctk.CTkToplevel(self)
         dlg.title("Close BigEd CC")
-        dlg.geometry("400x200")
+        dlg.geometry("440x210")
         dlg.resizable(False, False)
         dlg.configure(fg_color=BG2)
         dlg.grab_set()
         dlg.lift()
 
         ctk.CTkLabel(dlg, text="How should BigEd CC close?",
-                     font=("RuneScape Bold 12", 13, "bold"), text_color=GOLD).pack(pady=(16, 4))
+                     font=FONT_BOLD, text_color=GOLD).pack(pady=(16, 4))
         ctk.CTkLabel(dlg, text="Stop & Exit gives agents a moment to wrap up.\n"
                      "Keep Running leaves the fleet working in the background.",
-                     font=("RuneScape Plain 11", 10), text_color=DIM).pack(pady=(0, 8))
+                     font=FONT_SM, text_color=DIM).pack(pady=(0, 8))
 
         # Remember checkbox
         remember_var = ctk.BooleanVar(value=False)
         ctk.CTkCheckBox(dlg, text="Remember my choice (5s countdown next time)",
-                        variable=remember_var, font=("RuneScape Plain 11", 10),
+                        variable=remember_var, font=FONT_SM,
                         text_color=TEXT, fg_color=BG3, hover_color=BG,
                         checkmark_color=GREEN).pack(pady=(0, 8))
 
@@ -1042,8 +1056,11 @@ class BigEdCC(TrayManagerMixin, BootManagerMixin, CommTabMixin, OllamaManagerMix
             dlg.destroy()
             self._do_just_close()
 
-        def _cancel():
+        def _minimize_tray():
+            if remember_var.get():
+                self._save_close_prefs({"action": "tray"})
             dlg.destroy()
+            self._minimize_to_tray()
 
         ctk.CTkButton(btn_row, text="Stop & Exit", width=100, height=32,
                       fg_color=ACCENT, hover_color=ACCENT_H,
@@ -1051,6 +1068,11 @@ class BigEdCC(TrayManagerMixin, BootManagerMixin, CommTabMixin, OllamaManagerMix
         ctk.CTkButton(btn_row, text="Keep Running", width=110, height=32,
                       fg_color=BG3, hover_color=BG,
                       command=_keep_running).pack(side="right", padx=(0, 8))
+        # Minimize to tray — only show if pystray is available
+        if _tray_available() and self._tray_icon is not None:
+            ctk.CTkButton(btn_row, text="Minimize to Tray", width=120, height=32,
+                          fg_color=BG3, hover_color=BG,
+                          command=_minimize_tray).pack(side="right", padx=(0, 8))
         ctk.CTkButton(btn_row, text="Cancel", width=70, height=32,
                       fg_color=BG3, hover_color=BG,
                       command=dlg.destroy).pack(side="right", padx=(0, 8))
@@ -1145,14 +1167,14 @@ class BigEdCC(TrayManagerMixin, BootManagerMixin, CommTabMixin, OllamaManagerMix
         self._status_pills.pack(side="left", padx=(0, 6))
 
         self._action_badge = ctk.CTkLabel(
-            right_frame, text="", font=("RuneScape Bold 12", 9, "bold"),
+            right_frame, text="", font=FONT_XS,
             text_color=BG, fg_color=ORANGE,
             corner_radius=10, width=0, cursor="hand2")
         self._action_badge.pack(side="left", padx=(0, 4))
         self._action_badge.bind("<Button-1>", lambda e: self._navigate_to_comm())
 
         self._update_badge = ctk.CTkButton(
-            right_frame, text="", font=("RuneScape Bold 12", 9, "bold"),
+            right_frame, text="", font=FONT_XS,
             text_color=TEXT, fg_color="transparent",
             hover_color=BG3, corner_radius=10, width=0,
             command=self._launch_auto_update)
@@ -1169,7 +1191,7 @@ class BigEdCC(TrayManagerMixin, BootManagerMixin, CommTabMixin, OllamaManagerMix
             badge_text = " OFFLINE "
             badge_fg = ORANGE
         self._mode_badge = ctk.CTkLabel(
-            right_frame, text=badge_text, font=("RuneScape Bold 12", 9, "bold"),
+            right_frame, text=badge_text, font=FONT_XS,
             text_color=BG if badge_text else TEXT,
             fg_color=badge_fg, corner_radius=10, width=0)
         self._mode_badge.pack(side="left")
@@ -1649,7 +1671,7 @@ class BigEdCC(TrayManagerMixin, BootManagerMixin, CommTabMixin, OllamaManagerMix
         self._strategy_menu = ctk.CTkOptionMenu(
             ollama_frame, variable=self._strategy_var,
             values=["performance", "balanced", "training", "eco"],
-            font=("Consolas", 8), width=80, height=18,
+            font=FONT_XS, width=80, height=18,
             fg_color=BG3, button_color=BG2, dropdown_fg_color=BG2,
             command=self._apply_strategy,
         )
@@ -1663,7 +1685,7 @@ class BigEdCC(TrayManagerMixin, BootManagerMixin, CommTabMixin, OllamaManagerMix
 
         ctk.CTkButton(
             ollama_frame, text="↺", width=20, height=18,
-            font=("RuneScape Plain 11", 9), fg_color=BG3, hover_color=BG,
+            font=FONT_XS, fg_color=BG3, hover_color=BG,
             command=self._start_ollama,
         ).grid(row=0, column=5, padx=(2, 6))
 
@@ -1676,12 +1698,12 @@ class BigEdCC(TrayManagerMixin, BootManagerMixin, CommTabMixin, OllamaManagerMix
         ag_hdr = ctk.CTkFrame(agents_frame, fg_color="transparent")
         ag_hdr.grid(row=0, column=0, sticky="ew")
         ag_hdr.grid_columnconfigure(1, weight=1)
-        ctk.CTkLabel(ag_hdr, text="AGENTS", font=("RuneScape Bold 12", 9, "bold"), text_color=GOLD).grid(row=0, column=0, padx=8, pady=(4, 2), sticky="w")
+        ctk.CTkLabel(ag_hdr, text="AGENTS", font=FONT_XS, text_color=GOLD).grid(row=0, column=0, padx=8, pady=(4, 2), sticky="w")
         
-        self._sup_status_lbl = ctk.CTkLabel(ag_hdr, text="Task Sup: —", font=("Consolas", 9, "bold"), text_color=DIM)
+        self._sup_status_lbl = ctk.CTkLabel(ag_hdr, text="Task Sup: —", font=FONT_STAT, text_color=DIM)
         self._sup_status_lbl.grid(row=0, column=1, padx=8, pady=(4, 2), sticky="e")
 
-        self._hw_sup_status_lbl = ctk.CTkLabel(ag_hdr, text="Dr. Ders: —", font=("Consolas", 9, "bold"), text_color=DIM)
+        self._hw_sup_status_lbl = ctk.CTkLabel(ag_hdr, text="Dr. Ders: —", font=FONT_STAT, text_color=DIM)
         self._hw_sup_status_lbl.grid(row=0, column=2, padx=8, pady=(4, 2), sticky="e")
 
         self._agents_frame_inner = ctk.CTkFrame(agents_frame, fg_color=BG2)
@@ -1705,7 +1727,7 @@ class BigEdCC(TrayManagerMixin, BootManagerMixin, CommTabMixin, OllamaManagerMix
         pq_hdr.grid(row=0, column=0, sticky="ew")
         pq_hdr.grid_columnconfigure(1, weight=1)
         ctk.CTkLabel(pq_hdr, text="PROMPT QUEUE",
-                     font=("RuneScape Bold 12", 9, "bold"), text_color=GOLD
+                     font=FONT_XS, text_color=GOLD
                      ).grid(row=0, column=0, padx=(8, 2), pady=(4, 2), sticky="w")
         self._pq_status_lbl = ctk.CTkLabel(
             pq_hdr, text="", font=FONT_XS, text_color=DIM)
@@ -1797,10 +1819,10 @@ class BigEdCC(TrayManagerMixin, BootManagerMixin, CommTabMixin, OllamaManagerMix
         activity_frame.grid_columnconfigure(0, weight=1)
         activity_frame.grid_rowconfigure(1, weight=1)
         ctk.CTkLabel(activity_frame, text="FLEET ACTIVITY",
-                     font=("RuneScape Bold 12", 9, "bold"), text_color=GOLD,
+                     font=FONT_XS, text_color=GOLD,
                      anchor="w").grid(row=0, column=0, padx=8, pady=(4, 0), sticky="w")
         self._activity_text = ctk.CTkTextbox(
-            activity_frame, font=("Consolas", 9), fg_color=BG2,
+            activity_frame, font=FONT_STAT, fg_color=BG2,
             text_color="#c8c8c8", wrap="none", corner_radius=0, height=110)
         self._activity_text.grid(row=1, column=0, sticky="nsew", padx=4, pady=(0, 4))
         self._activity_text.configure(state="disabled")
@@ -1813,12 +1835,12 @@ class BigEdCC(TrayManagerMixin, BootManagerMixin, CommTabMixin, OllamaManagerMix
         log_frame.grid_columnconfigure(0, weight=1)
 
         self._log_label = ctk.CTkLabel(
-            log_frame, text="LOG — all", font=("RuneScape Bold 12", 9, "bold"),
+            log_frame, text="LOG — all", font=FONT_XS,
             text_color=GOLD, anchor="w")
         self._log_label.grid(row=0, column=0, padx=8, pady=(4, 2), sticky="w")
 
         self._log_text = ctk.CTkTextbox(
-            log_frame, font=("Consolas", 10), fg_color=BG2,
+            log_frame, font=FONT_STAT, fg_color=BG2,
             text_color="#c8c8c8", wrap="word", corner_radius=0)
         self._log_text.grid(row=1, column=0, sticky="nsew", padx=4, pady=(0, 4))
 
@@ -1829,16 +1851,16 @@ class BigEdCC(TrayManagerMixin, BootManagerMixin, CommTabMixin, OllamaManagerMix
         out_frame.grid_columnconfigure(0, weight=1)
 
         ctk.CTkLabel(out_frame, text="OUTPUT",
-                     font=("RuneScape Bold 12", 9, "bold"), text_color=GOLD,
+                     font=FONT_XS, text_color=GOLD,
                      anchor="w").grid(row=0, column=0, padx=8, pady=(4, 2), sticky="w")
 
         self._output_text = ctk.CTkTextbox(
-            out_frame, font=("Consolas", 10), fg_color=BG2,
+            out_frame, font=FONT_STAT, fg_color=BG2,
             text_color="#c8c8c8", wrap="word", corner_radius=0)
         self._output_text.grid(row=1, column=0, sticky="nsew", padx=4, pady=(0, 4))
 
         copy_btn = ctk.CTkButton(out_frame, text="\u2398", width=28, height=24,
-                                  font=("RuneScape Plain 11", 10), fg_color=BG3, hover_color=BG2,
+                                  font=FONT_SM, fg_color=BG3, hover_color=BG2,
                                   command=self._copy_output)
         copy_btn.place(relx=1.0, x=-4, y=4, anchor="ne")
 
@@ -1940,9 +1962,9 @@ class BigEdCC(TrayManagerMixin, BootManagerMixin, CommTabMixin, OllamaManagerMix
             card = ctk.CTkFrame(counter_frame, fg_color=BG2, corner_radius=6, height=60)
             card.grid(row=0, column=i, padx=3, pady=2, sticky="nsew")
             card.grid_propagate(False)
-            ctk.CTkLabel(card, text=label, font=("RuneScape Plain 11", 9),
+            ctk.CTkLabel(card, text=label, font=FONT_XS,
                          text_color=DIM).place(x=10, y=6)
-            val_lbl = ctk.CTkLabel(card, text="0", font=("RuneScape Bold 12", 20, "bold"),
+            val_lbl = ctk.CTkLabel(card, text="0", font=FONT_TITLE,
                                    text_color=color)
             val_lbl.place(x=10, y=24)
             self._task_counters[key] = val_lbl
@@ -1964,12 +1986,12 @@ class BigEdCC(TrayManagerMixin, BootManagerMixin, CommTabMixin, OllamaManagerMix
         # Summary bar
         self._agent_summary = ctk.CTkLabel(
             self._disabled_frame, text="",
-            font=("Consolas", 10), text_color=DIM, anchor="w")
+            font=FONT_STAT, text_color=DIM, anchor="w")
         self._agent_summary.grid(row=0, column=0, sticky="w", padx=4, pady=(4, 0))
 
         # Toggle button
         self._disabled_toggle = ctk.CTkButton(
-            self._disabled_frame, text="\u25b6 Disabled (0)", font=("Consolas", 10),
+            self._disabled_frame, text="\u25b6 Disabled (0)", font=FONT_STAT,
             height=24, width=140, fg_color=BG2, hover_color=BG3,
             text_color=DIM, command=self._toggle_disabled_section)
         self._disabled_toggle.grid(row=1, column=0, sticky="w", padx=4, pady=2)
@@ -2322,15 +2344,15 @@ class BigEdCC(TrayManagerMixin, BootManagerMixin, CommTabMixin, OllamaManagerMix
                                 height=60, border_width=1, border_color="#333")
                             dcard.grid(row=r, column=c, padx=4, pady=2, sticky="nsew")
                             dcard.grid_propagate(False)
-                            ctk.CTkLabel(dcard, text="\u25cf", font=("Consolas", 14),
+                            ctk.CTkLabel(dcard, text="\u25cf", font=FONT_MONO,
                                          text_color="#555").place(x=8, y=8)
-                            ctk.CTkLabel(dcard, text=d_name, font=("RuneScape Plain 12", 11),
+                            ctk.CTkLabel(dcard, text=d_name, font=FONT_SM,
                                          text_color="#666").place(x=26, y=6)
-                            ctk.CTkLabel(dcard, text="DISABLED", font=("Consolas", 9),
+                            ctk.CTkLabel(dcard, text="DISABLED", font=FONT_STAT,
                                          text_color="#555").place(
                                              relx=1.0, x=-8, y=8, anchor="ne")
                             enable_btn = ctk.CTkButton(
-                                dcard, text="Enable", font=("Consolas", 9),
+                                dcard, text="Enable", font=FONT_STAT,
                                 height=20, width=60,
                                 fg_color="#2e7d32", hover_color="#388e3c",
                                 command=lambda n=d_name: self._toggle_agent_disabled(
@@ -2911,7 +2933,7 @@ class BigEdCC(TrayManagerMixin, BootManagerMixin, CommTabMixin, OllamaManagerMix
 
         # Header
         ctk.CTkLabel(frame, text="\u26a1 MODEL PERFORMANCE",
-                     font=("RuneScape Bold 12", 9, "bold"), text_color=GOLD,
+                     font=FONT_XS, text_color=GOLD,
                      anchor="w").grid(row=0, column=0, padx=8, pady=(4, 2),
                                       sticky="w", columnspan=5)
 
@@ -2922,7 +2944,7 @@ class BigEdCC(TrayManagerMixin, BootManagerMixin, CommTabMixin, OllamaManagerMix
             ("Model", 100, "w"), ("tok/s", 55, "e"), ("IQ", 40, "e"),
             ("Calls", 45, "e"), ("Avg ms", 55, "e"),
         ]):
-            ctk.CTkLabel(hdr_frame, text=hdr_text, font=("Consolas", 8),
+            ctk.CTkLabel(hdr_frame, text=hdr_text, font=FONT_XS,
                          text_color=DIM, anchor=anchor, width=width
                          ).grid(row=0, column=col_idx, padx=2, pady=(0, 1))
 
@@ -2934,7 +2956,7 @@ class BigEdCC(TrayManagerMixin, BootManagerMixin, CommTabMixin, OllamaManagerMix
         # Initial "No data yet" label
         self._model_perf_empty = ctk.CTkLabel(
             self._model_perf_data_frame, text="No data yet",
-            font=("Consolas", 9), text_color=DIM)
+            font=FONT_STAT, text_color=DIM)
         self._model_perf_empty.grid(row=0, column=0, padx=8, pady=2)
 
     def _refresh_model_perf(self):
@@ -2989,23 +3011,23 @@ class BigEdCC(TrayManagerMixin, BootManagerMixin, CommTabMixin, OllamaManagerMix
             else:
                 # Create new row labels
                 parent = self._model_perf_data_frame
-                name_lbl = ctk.CTkLabel(parent, text=model, font=("Consolas", 9),
+                name_lbl = ctk.CTkLabel(parent, text=model, font=FONT_STAT,
                                          text_color=TEXT, anchor="w", width=100)
                 name_lbl.grid(row=i, column=0, padx=2, pady=1)
                 tps_lbl = ctk.CTkLabel(parent, text=f"{tps_val:.1f}",
-                                        font=("Consolas", 9, "bold"),
+                                        font=FONT_STAT,
                                         text_color=tps_color, anchor="e", width=55)
                 tps_lbl.grid(row=i, column=1, padx=2, pady=1)
                 iq_lbl = ctk.CTkLabel(parent, text=iq_text,
-                                       font=("Consolas", 9),
+                                       font=FONT_STAT,
                                        text_color=iq_color, anchor="e", width=40)
                 iq_lbl.grid(row=i, column=2, padx=2, pady=1)
                 calls_lbl = ctk.CTkLabel(parent, text=str(calls_val),
-                                          font=("Consolas", 9),
+                                          font=FONT_STAT,
                                           text_color=TEXT, anchor="e", width=45)
                 calls_lbl.grid(row=i, column=3, padx=2, pady=1)
                 ms_lbl = ctk.CTkLabel(parent, text=str(avg_ms_val),
-                                       font=("Consolas", 9),
+                                       font=FONT_STAT,
                                        text_color=TEXT, anchor="e", width=55)
                 ms_lbl.grid(row=i, column=4, padx=2, pady=1)
                 self._model_perf_labels[model] = {
@@ -3250,31 +3272,31 @@ class BigEdCC(TrayManagerMixin, BootManagerMixin, CommTabMixin, OllamaManagerMix
                 row_frame.grid(row=i, column=0, sticky="ew", padx=4, pady=1)
                 row_frame.grid_columnconfigure(1, weight=1)
 
-                dot_lbl = ctk.CTkLabel(row_frame, text="●", font=("Consolas", 11),
+                dot_lbl = ctk.CTkLabel(row_frame, text="●", font=FONT_MONO,
                              text_color=color, width=14)
                 dot_lbl.grid(row=0, column=0, padx=(2, 3))
 
                 name_lbl = ctk.CTkLabel(row_frame, text=display_name,
-                             font=("Consolas", 10), text_color=name_color,
+                             font=FONT_STAT, text_color=name_color,
                              anchor="w", width=110)
                 name_lbl.grid(row=0, column=1, sticky="w")
 
                 task_lbl = ctk.CTkLabel(row_frame, text=task_display,
-                             font=("Consolas", 8), text_color=DIM,
+                             font=FONT_XS, text_color=DIM,
                              anchor="w", width=80)
                 task_lbl.grid(row=0, column=2, padx=(2, 2))
 
-                spark_lbl = ctk.CTkLabel(row_frame, text=spark, font=("Consolas", 9),
+                spark_lbl = ctk.CTkLabel(row_frame, text=spark, font=FONT_STAT,
                              text_color=spark_color, width=70)
                 spark_lbl.grid(row=0, column=3, padx=(2, 4))
 
-                status_lbl = ctk.CTkLabel(row_frame, text=label, font=("Consolas", 9),
+                status_lbl = ctk.CTkLabel(row_frame, text=label, font=FONT_STAT,
                              text_color=color, anchor="e", width=85)
                 status_lbl.grid(row=0, column=4, sticky="e", padx=(0, 2))
 
                 recover_btn = ctk.CTkButton(
                     row_frame, text="↺", width=22, height=18,
-                    font=("RuneScape Plain 11", 9), fg_color=ACCENT, hover_color=ACCENT_H,
+                    font=FONT_XS, fg_color=ACCENT, hover_color=ACCENT_H,
                     command=lambda r=role_key: self._recover_agent(r),
                 )
                 if label == "SLEEPING":
@@ -3452,9 +3474,9 @@ class BigEdCC(TrayManagerMixin, BootManagerMixin, CommTabMixin, OllamaManagerMix
         win.configure(fg_color=BG)
         win.grab_set()
         ctk.CTkLabel(win, text=adv_path.name,
-                     font=("RuneScape Bold 12", 11, "bold"), text_color=ORANGE,
+                     font=FONT_BOLD, text_color=ORANGE,
                      anchor="w").pack(fill="x", padx=14, pady=(12, 4))
-        text_box = ctk.CTkTextbox(win, font=("Consolas", 10), fg_color=BG2,
+        text_box = ctk.CTkTextbox(win, font=FONT_STAT, fg_color=BG2,
                                   text_color=TEXT, wrap="word", corner_radius=4)
         text_box.pack(fill="both", expand=True, padx=14, pady=(0, 8))
         text_box.insert("1.0", content)
@@ -3891,7 +3913,7 @@ class BigEdCC(TrayManagerMixin, BootManagerMixin, CommTabMixin, OllamaManagerMix
             color = GREEN
         toast = ctk.CTkFrame(self, fg_color=color, corner_radius=CARD_RADIUS, height=36)
         toast.place(relx=1.0, x=-20, y=60, anchor="ne")
-        ctk.CTkLabel(toast, text=message, font=("RuneScape Plain 11", 10), text_color="#ffffff",
+        ctk.CTkLabel(toast, text=message, font=FONT_SM, text_color="#ffffff",
                      padx=12, pady=6).pack()
         # Auto-dismiss after duration
         self._safe_after(duration, lambda: toast.place_forget() if toast.winfo_exists() else None)

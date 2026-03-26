@@ -166,7 +166,7 @@ The single most impactful change you'd make first, with a brief implementation s
         f"**Date:** {datetime.now().strftime('%Y-%m-%d %H:%M')}\n"
         f"**Focus:** {focus_area}\n\n---\n\n"
     )
-    out_file.write_text(header + review_text)
+    out_file.write_text(header + review_text, encoding="utf-8")
 
     return {
         "file_reviewed": fname,

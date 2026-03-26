@@ -73,8 +73,13 @@ class SettingsDialog(
         self.title("BigEd CC — Settings")
         self.geometry("820x580")
         self.minsize(700, 480)
+        self.resizable(False, False)
         self.configure(fg_color=GLASS_BG)
         self.grab_set()
+        # Remove minimize/maximize buttons — close only (Windows)
+        import sys
+        if sys.platform == "win32":
+            self.after(10, lambda: self.attributes("-toolwindow", True))
         self._parent = parent
         self._nav_buttons = {}
         self._panels = {}

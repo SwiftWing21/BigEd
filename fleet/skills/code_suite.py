@@ -255,7 +255,7 @@ The single most impactful change you would make first."""
         f"**Date:** {datetime.now().strftime('%Y-%m-%d %H:%M')}\n"
         f"**Focus:** {focus_area}\n\n---\n\n"
     )
-    out_file.write_text(header + review_text)
+    out_file.write_text(header + review_text, encoding="utf-8")
 
     return {
         "file_reviewed":    rel_path,
@@ -510,7 +510,7 @@ def _quality(payload: dict, config: dict) -> dict:
             line_ref = f"line {f['line']}" if f["line"] else "file-level"
             report_lines.append(f"- **[{f['severity']}]** `{f['file']}` ({line_ref}) — {f['detail']}")
     report_lines.append("")
-    report.write_text("\n".join(report_lines))
+    report.write_text("\n".join(report_lines), encoding="utf-8")
 
     return {
         "files_scanned":    len(files),
@@ -684,12 +684,12 @@ def _load_code_context(topic: str, code_context_hint: str) -> str:
     for skill_file in sorted((_FLEET_DIR := FLEET_DIR / "skills").glob("*.py"))[:5]:
         name = skill_file.stem
         if name in topic.lower() or topic.lower() in name:
-            texts.append(f"# {skill_file.name}\n{skill_file.read_text()[:1200]}")
+            texts.append(f"# {skill_file.name}\n{skill_file.read_text(encoding="utf-8")[:1200]}")
             break
     summaries_dir = KNOWLEDGE_DIR / "summaries"
     if summaries_dir.exists():
         for f in sorted(summaries_dir.glob("*.md"), reverse=True)[:20]:
-            content = f.read_text()
+            content = f.read_text(encoding="utf-8")
             if any(kw in content.lower() for kw in _CODE_KEYWORDS):
                 texts.append(content[:600])
                 if len(texts) >= 4:
@@ -859,7 +859,7 @@ def _evaluate(payload: dict, config: dict) -> dict:
             + ("\n".join(f"- {s}" for s in suggestions) if suggestions else "None")
             + "\n\n## Raw Output (truncated)\n```\n"
             + output_str[:2000]
-            + "\n```\n"
+            + "\n```\n", encoding="utf-8"
         )
     except Exception:
         log.warning("evaluate: failed to save report", exc_info=True)

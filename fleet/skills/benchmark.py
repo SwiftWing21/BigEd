@@ -105,7 +105,7 @@ def run(payload, config):
     ]
     for r in results:
         lines.append(f"| {r['payload_idx']}.{r['run']} | {r['payload_idx']} | {r['run']} | {r['status']} | {r['ms']} | {r.get('error', '-') or '-'} |")
-    report.write_text("\n".join(lines))
+    report.write_text("\n".join(lines), encoding="utf-8")
 
     return {
         "skill": skill_name,

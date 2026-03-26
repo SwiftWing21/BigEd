@@ -8,7 +8,13 @@
 # For GPU-less deployments, use the 'cpu' profile:
 #   docker compose --profile cpu up -d
 #
-# v0.160.00b — Platform & SaaS foundation
+# v0.400.00b — Platform & SaaS foundation + Rust rewrite
+#
+# The fleet image now includes Rust binaries (biged, biged_bridge.so) built in
+# a multi-stage Dockerfile.  The Python supervisor remains the default entrypoint;
+# override with: command: ["biged", "supervisor"] to use the Rust supervisor.
+#
+# Tip: add "biged-rs/target" to .dockerignore to speed up builds.
 
 services:
   playwright-mcp:

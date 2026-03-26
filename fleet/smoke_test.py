@@ -538,19 +538,19 @@ def test_doc_freshness_skill():
 
 
 def test_path_traversal_blocked():
-    """Security: path traversal in code_review is blocked."""
+    """Security: path traversal in code_suite is blocked."""
     try:
-        from skills.code_review import _pick_file
+        from skills.code_suite import _pick_review_file
         # Try to read /etc/shadow or C:\Windows\System32\config\SAM
         import sys
         if sys.platform == "win32":
-            result = _pick_file("C:\\Windows\\System32\\config\\SAM")
+            result = _pick_review_file("C:\\Windows\\System32\\config\\SAM")
         else:
-            result = _pick_file("/etc/shadow")
+            result = _pick_review_file("/etc/shadow")
         blocked = result is None
         return blocked, f"path traversal {'blocked' if blocked else 'ALLOWED (VULN!)'}"
     except (ImportError, AttributeError):
-        return True, "code_review._pick_file not found (may use different pattern)"
+        return True, "code_suite._pick_review_file not found (may use different pattern)"
 
 
 def test_ssrf_blocked():

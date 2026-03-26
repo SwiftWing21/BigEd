@@ -356,6 +356,10 @@ def run_health_sweep() -> dict:
                     summary["recovered_agents"].append(name)
 
         # 2. Auto-retry recently failed tasks (not already retried to max)
+        # Skip lifecycle skill types — they fail for infrastructure reasons (Ollama
+        # down, model not loaded) not transient errors, and retrying creates a flood.
+        _NO_RETRY_TYPES = {"skill_draft", "skill_test", "skill_evolve", "skill_promote",
+                           "deploy_skill", "skill_lifecycle_suite", "evolution_coordinator"}
         with db.get_conn() as conn:
             failed = conn.execute(
                 "SELECT id, type, payload_json FROM tasks "
@@ -365,6 +369,8 @@ def run_health_sweep() -> dict:
             ).fetchall()
 
         for task in failed:
+            if task["type"] in _NO_RETRY_TYPES:
+                continue
             try:
                 payload = json.loads(task["payload_json"] or "{}")
             except (json.JSONDecodeError, TypeError):

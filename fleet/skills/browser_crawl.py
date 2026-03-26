@@ -289,7 +289,7 @@ def run(payload, config):
         # Save to knowledge
         ts = datetime.now().strftime("%Y%m%d_%H%M%S")
         out_file = BROWSER_DIR / f"browser_{action}_{ts}.json"
-        out_file.write_text(json.dumps(result, indent=2, default=str))
+        out_file.write_text(json.dumps(result, indent=2, default=str), encoding="utf-8")
 
         return result
 

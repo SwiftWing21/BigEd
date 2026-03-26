@@ -36,7 +36,7 @@ def _load_research_context():
         return ""
     texts = []
     for f in sorted(summaries_dir.glob("*.md")):
-        content = f.read_text()
+        content = f.read_text(encoding="utf-8")
         lower = content.lower()
         # Only include if it contains business-relevant keywords
         if any(kw in lower for kw in BUSINESS_KEYWORDS):
@@ -45,7 +45,7 @@ def _load_research_context():
     reports_dir = KNOWLEDGE_DIR / "reports"
     if reports_dir.exists():
         for f in sorted(reports_dir.glob("*.md"))[-5:]:
-            texts.append(f.read_text()[:600])
+            texts.append(f.read_text(encoding="utf-8")[:600])
     return "\n\n---\n\n".join(texts[-15:])
 
 

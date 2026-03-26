@@ -9,6 +9,7 @@ import logging
 import os
 import time
 from pathlib import Path
+from skills._llm_parse import extract_json_object
 
 log = logging.getLogger(__name__)
 
@@ -193,14 +194,11 @@ def _review(payload, config):
     # Parse LLM response
     grades = {"Security": 70, "Performance": 70, "Architecture": 70, "Compliance": 70}
     findings = []
-    try:
-        import re
-        json_match = re.search(r'\{.*\}', response, re.DOTALL)
-        if json_match:
-            parsed = json.loads(json_match.group())
-            grades = parsed.get("grades", grades)
-            findings = parsed.get("findings", [])
-    except Exception:
+    parsed = extract_json_object(response, required_key="grades")
+    if parsed:
+        grades = parsed.get("grades", grades)
+        findings = parsed.get("findings", [])
+    else:
         findings = [{"severity": "NOTE", "description": response[:500]}]
 
     # Generate report
@@ -273,14 +271,13 @@ def _swarm_review(payload, config):
             f"Format as JSON: {{\"score\": N, \"findings\": [{{\"severity\": \"...\", \"description\": \"...\"}}]}}"
         )
         try:
-            import re
             resp = call_complex(
                 system=system_prompt, user=prompt, config=config,
                 max_tokens=1024, skill_name="oss_review",
                 agent_name=payload.get("agent_name"))
-            m = re.search(r'\{.*\}', resp, re.DOTALL)
-            if m:
-                lens_results[lens_name] = json.loads(m.group())
+            parsed_lens = extract_json_object(resp, required_key="score")
+            if parsed_lens:
+                lens_results[lens_name] = parsed_lens
             else:
                 lens_results[lens_name] = {"score": 60, "findings": [{"severity": "NOTE", "description": resp[:300]}]}
         except Exception as e:

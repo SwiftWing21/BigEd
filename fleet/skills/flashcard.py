@@ -22,7 +22,7 @@ def run(payload, config):
         return {"error": "No summaries found — run arxiv_fetch or summarize first"}
 
     source = random.choice(candidates)
-    text = source.read_text()[:3000]
+    text = source.read_text(encoding="utf-8")[:3000]
 
     from skills._models import call_complex
     prompt = f"""From this content, generate 3 Q&A flashcard pairs as a JSON array:

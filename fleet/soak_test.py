@@ -347,10 +347,10 @@ def test_offline_skill_rejection():
     mod = importlib.import_module("skills.web_search")
     if not getattr(mod, "REQUIRES_NETWORK", False):
         return False, "web_search.REQUIRES_NETWORK should be True"
-    # Check that code_review does NOT require network
-    mod2 = importlib.import_module("skills.code_review")
+    # Check that code_suite does NOT require network
+    mod2 = importlib.import_module("skills.code_suite")
     if getattr(mod2, "REQUIRES_NETWORK", False):
-        return False, "code_review should NOT require network"
+        return False, "code_suite should NOT require network"
     # Verify the config helper works
     from config import is_offline, AIR_GAP_SKILLS
     fake_cfg = {"fleet": {"offline_mode": True}}
@@ -749,9 +749,9 @@ def test_ha_fallback_local_only():
 
 
 def test_github_sync_status():
-    """v0.46: GitHub sync skill returns status without crashing."""
-    from skills.github_sync import run
-    result = json.loads(run({"action": "status"}, {}))
+    """v0.46: GitHub sync skill (now git_suite) returns auth status without crashing."""
+    from skills.git_suite import run
+    result = run({"action": "auth_status"}, {})
     # Should return auth status (likely False since no token in test)
     assert "authenticated" in result, f"Missing 'authenticated' key: {result}"
     return True, f"auth={result['authenticated']}"

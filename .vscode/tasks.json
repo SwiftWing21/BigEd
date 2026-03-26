@@ -4,21 +4,21 @@
     {
       "label": "Smoke Test (fast)",
       "type": "shell",
-      "command": "uv run python fleet/smoke_test.py --fast",
+      "command": "python fleet/smoke_test.py --fast",
       "group": "test",
       "presentation": { "reveal": "always", "panel": "shared" }
     },
     {
       "label": "Smoke Test (full)",
       "type": "shell",
-      "command": "uv run python fleet/smoke_test.py",
+      "command": "python fleet/smoke_test.py",
       "group": { "kind": "test", "isDefault": true },
       "presentation": { "reveal": "always", "panel": "shared" }
     },
     {
       "label": "Fleet Status",
       "type": "shell",
-      "command": "uv run python fleet/lead_client.py status",
+      "command": "python fleet/lead_client.py status",
       "group": "none",
       "presentation": { "reveal": "always", "panel": "shared" }
     },
@@ -28,6 +28,52 @@
       "command": "python -c \"import py_compile, pathlib; files = list(pathlib.Path('fleet').glob('*.py')) + list(pathlib.Path('fleet/skills').glob('*.py')); [py_compile.compile(str(f), doraise=True) for f in files]; print(f'{len(files)} files OK')\"",
       "group": "build",
       "presentation": { "reveal": "always", "panel": "shared" }
+    },
+    {
+      "label": "Rust: cargo check",
+      "type": "shell",
+      "command": "cargo check --workspace",
+      "group": "build",
+      "options": { "cwd": "${workspaceFolder}/biged-rs" },
+      "presentation": { "reveal": "always", "panel": "shared" },
+      "problemMatcher": ["$rustc"]
+    },
+    {
+      "label": "Rust: cargo test",
+      "type": "shell",
+      "command": "cargo test --workspace",
+      "group": "test",
+      "options": { "cwd": "${workspaceFolder}/biged-rs" },
+      "presentation": { "reveal": "always", "panel": "shared" },
+      "problemMatcher": ["$rustc"]
+    },
+    {
+      "label": "Rust: cargo clippy",
+      "type": "shell",
+      "command": "cargo clippy --workspace -- -D warnings",
+      "group": "build",
+      "options": { "cwd": "${workspaceFolder}/biged-rs" },
+      "presentation": { "reveal": "always", "panel": "shared" },
+      "problemMatcher": ["$rustc"]
+    },
+    {
+      "label": "Rust: cargo build (release)",
+      "type": "shell",
+      "command": "cargo build --release --workspace",
+      "group": "build",
+      "options": { "cwd": "${workspaceFolder}/biged-rs" },
+      "presentation": { "reveal": "always", "panel": "shared" },
+      "problemMatcher": ["$rustc"]
+    },
+    {
+      "label": "Rust: run server",
+      "type": "shell",
+      "command": "cargo run -p biged-server",
+      "group": "none",
+      "isBackground": true,
+      "options": { "cwd": "${workspaceFolder}/biged-rs" },
+      "presentation": { "reveal": "always", "panel": "shared" },
+      "problemMatcher": []
     }
   ]
 }

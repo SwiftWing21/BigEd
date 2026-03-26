@@ -95,7 +95,7 @@ def run(payload, config):
         lines.append(f"- {status_icon} **{r['skill']}** → {r['status']}")
         if r.get("error"):
             lines.append(f"  Error: {r['error']}")
-    log_file.write_text("\n".join(lines))
+    log_file.write_text("\n".join(lines), encoding="utf-8")
 
     return {
         "steps_completed": completed,

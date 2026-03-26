@@ -101,7 +101,7 @@ def run(payload, config):
     # ── 1. Copy ───────────────────────────────────────────────────────────────
     copy = _write_copy(company, service, audience, tone, config)
     result["copy"] = copy
-    (out_dir / "copy.json").write_text(json.dumps(copy, indent=2))
+    (out_dir / "copy.json").write_text(json.dumps(copy, indent=2), encoding="utf-8")
 
     # ── 2. Image ──────────────────────────────────────────────────────────────
     if do_image:
@@ -166,5 +166,5 @@ def run(payload, config):
         if saved:
             md_lines.append(f"- Video clip: `{saved}`")
 
-    (out_dir / "campaign.md").write_text("\n".join(md_lines))
+    (out_dir / "campaign.md").write_text("\n".join(md_lines), encoding="utf-8")
     return result

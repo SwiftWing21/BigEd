@@ -134,7 +134,7 @@ def run(payload, config):
             "timestamp": ts,
         }
         out_file = VISION_DIR / f"vision_{action}_{ts}.json"
-        out_file.write_text(json.dumps(result, indent=2))
+        out_file.write_text(json.dumps(result, indent=2), encoding="utf-8")
 
         return result
 

@@ -136,7 +136,7 @@ Focus on: client delivery quality, sales pipeline, compliance, reliability."""
         f"**Free Accounts:** {len(free_accts)} | "
         f"**Near Limit:** {len(near_limit)}\n\n---\n\n"
     )
-    out_file.write_text(header + report_text)
+    out_file.write_text(header + report_text, encoding="utf-8")
 
     return {
         "accounts_reviewed": len(accounts),

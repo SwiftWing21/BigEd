@@ -95,7 +95,7 @@ def _create_files(project_dir: Path, create_files: list):
         p = project_dir / f
         p.parent.mkdir(parents=True, exist_ok=True)
         if not p.exists():
-            p.write_text(f"# {f}\n# Auto-created for aider code generation\n")
+            p.write_text(f"# {f}\n# Auto-created for aider code generation\n", encoding="utf-8")
 
 
 def _get_diff(project_dir: Path) -> str:
@@ -230,7 +230,7 @@ def run(payload, config):
         f"## Instructions\n{instructions}\n\n"
         f"## Files Changed\n" + "\n".join(f"- {f}" for f in changed) + "\n\n"
         f"## Diff\n```\n{diff}\n```\n\n"
-        f"## Aider Output\n```\n{aider_output[:3000]}\n```\n"
+        f"## Aider Output\n```\n{aider_output[:3000]}\n```\n", encoding="utf-8"
     )
 
     return {

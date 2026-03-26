@@ -4,6 +4,8 @@ import time
 from datetime import datetime
 from pathlib import Path
 import logging
+from skills._knowledge import get_output_dir
+from skills._llm_parse import extract_json_object
 
 SKILL_NAME = "swarm_consensus"
 DESCRIPTION = "Force multiple agents to debate and reach consensus before executing complex tasks"
@@ -94,8 +96,8 @@ def run(payload: dict, config: dict) -> dict:
     task_id = None
     if execution_skill:
         try:
-            parsed = json.loads(synthesis) if isinstance(synthesis, str) else synthesis
-            if parsed.get("recommendation") == "proceed":
+            parsed = extract_json_object(synthesis) if isinstance(synthesis, str) else synthesis
+            if parsed and parsed.get("recommendation") == "proceed":
                 task_id = db.post_task(
                     execution_skill,
                     json.dumps({**execution_payload, "_consensus": synthesis}),
@@ -105,8 +107,7 @@ def run(payload: dict, config: dict) -> dict:
             pass
 
     # Save debate record
-    knowledge_dir = FLEET_DIR / "knowledge" / "consensus"
-    knowledge_dir.mkdir(parents=True, exist_ok=True)
+    knowledge_dir = get_output_dir("consensus")
     record = knowledge_dir / f"{discussion_id}.md"
     record.write_text(
         f"# Consensus: {topic}\n\n"

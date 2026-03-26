@@ -12,12 +12,10 @@ def run(payload, config):
     import db
     import json
     from datetime import date
-    from pathlib import Path
+    from skills._knowledge import get_output_dir
+    from skills._report import ReportBuilder
 
-    FLEET_DIR = Path(__file__).parent.parent
-    KNOWLEDGE_DIR = FLEET_DIR / "knowledge"
-    RETRO_DIR = KNOWLEDGE_DIR / "retrospectives"
-    RETRO_DIR.mkdir(parents=True, exist_ok=True)
+    RETRO_DIR = get_output_dir("retrospectives")
 
     hours = payload.get("hours", 24)
     focus = payload.get("focus", "")  # optional focus area
@@ -128,65 +126,64 @@ def run(payload, config):
     top_agents = sorted(agents.items(), key=lambda x: x[1]["done"], reverse=True)[:5]
 
     # Build markdown report
-    md = [
-        f"# Fleet Retrospective — {date.today().isoformat()}",
-        f"",
-        f"**Period:** Last {hours} hours | **Total Tasks:** {total_tasks} | **Success Rate:** {success_rate}%",
-        f"**API Calls:** {api_calls} | **Total Cost:** ${total_cost:.4f}",
-        f"",
-        f"---",
-        f"",
-        f"## Achievements",
-        f"",
-    ]
+    rb = (
+        ReportBuilder("Fleet Retrospective")
+        .metadata(
+            Period=f"Last {hours} hours",
+            Total_Tasks=total_tasks,
+            Success_Rate=f"{success_rate}%",
+            API_Calls=api_calls,
+            Total_Cost=f"${total_cost:.4f}",
+        )
+        .line("---")
+        .blank()
+        .section("Achievements")
+    )
     if achievements:
         for a in achievements[:10]:
-            md.append(f"- {a}")
+            rb.line(f"- {a}")
     else:
-        md.append("- No notable achievements in this period")
-    md.append("")
+        rb.line("- No notable achievements in this period")
+    rb.blank()
 
-    md.append("## Failures")
-    md.append("")
+    rb.section("Failures")
     if failures:
         for f_item in failures[:10]:
-            md.append(f"- {f_item}")
+            rb.line(f"- {f_item}")
     else:
-        md.append("- No failures recorded")
-    md.append("")
+        rb.line("- No failures recorded")
+    rb.blank()
 
-    md.append("## Action Items")
-    md.append("")
+    rb.section("Action Items")
     if action_items:
         for ai in action_items:
-            md.append(f"- [ ] {ai}")
+            rb.line(f"- [ ] {ai}")
     else:
-        md.append("- No action items needed")
-    md.append("")
+        rb.line("- No action items needed")
+    rb.blank()
 
-    md.append("## Agent Performance")
-    md.append("")
-    md.append("| Agent | Done | Failed | Total | Rate |")
-    md.append("|-------|------|--------|-------|------|")
-    for agent, stats in top_agents:
-        rate = round(stats["done"] / max(stats["total"], 1) * 100)
-        md.append(f"| {agent} | {stats['done']} | {stats['failed']} | {stats['total']} | {rate}% |")
-    md.append("")
+    rb.section("Agent Performance")
+    rb.table(
+        ["Agent", "Done", "Failed", "Total", "Rate"],
+        [
+            [agent, stats["done"], stats["failed"], stats["total"],
+             f"{round(stats['done'] / max(stats['total'], 1) * 100)}%"]
+            for agent, stats in top_agents
+        ],
+    )
 
-    md.append("## Task Breakdown")
-    md.append("")
+    rb.section("Task Breakdown")
     for status, count in sorted(tasks.items()):
-        md.append(f"- **{status}**: {count}")
-    md.append("")
+        rb.line(f"- **{status}**: {count}")
+    rb.blank()
 
     if feedback_stats:
-        md.append("## Feedback")
-        md.append("")
+        rb.section("Feedback")
         for verdict, count in sorted(feedback_stats.items()):
-            md.append(f"- {verdict}: {count}")
-        md.append("")
+            rb.line(f"- {verdict}: {count}")
+        rb.blank()
 
-    report = "\n".join(md)
+    report = rb.build()
     out_file = RETRO_DIR / f"retro_{date.today().isoformat()}.md"
     out_file.write_text(report, encoding="utf-8")
 

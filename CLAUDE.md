@@ -201,11 +201,13 @@ python -c "import sys; sys.path.insert(0,'fleet'); from system_info import gener
 ### RAM-based worker scaling
 | RAM | max_workers | memory_limit_mb | Tier |
 |-----|-------------|-----------------|------|
-| <8GB | 3 | 256 | minimal |
-| 8-16GB | 6 | 384 | basic |
-| 16-32GB | 10 | 512 | standard |
-| 32-64GB | 13 | 512 | high |
-| 64GB+ | 16 | 768 | server |
+| <8GB | 4 | 256 | minimal |
+| 8-16GB | 8 | 384 | basic |
+| 16-32GB | 14 | 512 | standard |
+| 32-64GB | 20 | 512 | high |
+| 64GB+ | 28 | 768 | server |
+
+RAM ceiling: 95% by default (`ram_ceiling_pct` in fleet.toml). Scale-up blocked when system RAM exceeds this.
 
 ### First-run setup
 1. Auto-generate `CLAUDE.USER.md` (command above)

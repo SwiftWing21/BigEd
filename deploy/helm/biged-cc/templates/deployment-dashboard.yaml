@@ -31,10 +31,19 @@ spec:
       {{- end }}
       containers:
         - name: dashboard
+          {{- if .Values.rust.enabled }}
+          # Rust server binary (biged-rs rewrite — serves dashboard + API)
+          image: {{ .Values.rust.image }}
+          imagePullPolicy: {{ .Values.rust.imagePullPolicy }}
+          command: ["/app/bin/biged-server", "--port", "{{ .Values.config.dashboardPort }}"]
+          workingDir: /app
+          {{- else }}
+          # Python dashboard (default)
           image: {{ .Values.dashboard.image }}
           imagePullPolicy: {{ .Values.dashboard.imagePullPolicy }}
           command: ["python", "dashboard.py", "--port", "{{ .Values.config.dashboardPort }}"]
           workingDir: /app/fleet
+          {{- end }}
           ports:
             - name: http
               containerPort: {{ .Values.config.dashboardPort }}

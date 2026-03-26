@@ -178,7 +178,7 @@ Write the complete document now:"""
         f"**Jurisdiction:** {jurisdiction}\n\n"
         f"> ⚠️  DRAFT — FOR ATTORNEY REVIEW ONLY — NOT LEGAL ADVICE\n\n---\n\n"
     )
-    out_file.write_text(header + draft)
+    out_file.write_text(header + draft, encoding="utf-8")
 
     return {
         "doc_type":   doc_type,

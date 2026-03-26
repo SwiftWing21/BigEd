@@ -32,6 +32,7 @@ import logging
 import os
 import sys
 import tempfile
+import threading
 import time
 import urllib.request
 from collections import deque
@@ -108,7 +109,7 @@ def load_thermal_config():
             "tier_low": mt.get("low", defaults["tier_low"]),
             "tier_crit": mt.get("critical", defaults["tier_crit"]),
             "training_exclusive_lock": tr.get("exclusive_lock", True),
-            "ollama_host": m.get("ollama_host", defaults["ollama_host"]),
+            "ollama_host": m.get("ollama_host", defaults["ollama_host"]).rstrip("/"),
             "conductor_model": m.get("conductor_model", ""),
             "air_gap_mode": fl.get("air_gap_mode", False),
         }
@@ -253,14 +254,15 @@ def set_local_model(target_model):
 
 def unload_all_models():
     try:
-        req = urllib.request.Request("http://localhost:11434/api/ps", method="GET")
+        _um_host = load_thermal_config().get("ollama_host", "http://localhost:11434").rstrip("/")
+        req = urllib.request.Request(f"{_um_host}/api/ps", method="GET")
         with urllib.request.urlopen(req, timeout=5) as r:
             data = json.loads(r.read())
             for m in data.get("models", []):
                 log.info(f"Evicting {m['name']}")
                 body = json.dumps({"model": m["name"], "keep_alive": 0}).encode()
                 ureq = urllib.request.Request(
-                    "http://localhost:11434/api/generate", data=body, method="POST",
+                    f"{_um_host}/api/generate", data=body, method="POST",
                     headers={"Content-Type": "application/json"})
                 urllib.request.urlopen(ureq, timeout=5)
     except Exception:
@@ -283,7 +285,7 @@ def validate_configured_models(cfg):
     Never blocks on missing models — the main loop uses the returned set to skip
     unavailable tiers. Returns empty set if Ollama is unreachable.
     """
-    available = get_available_models(cfg.get("ollama_host", "http://localhost:11434"))
+    available = get_available_models(cfg.get("ollama_host", "http://localhost:11434").rstrip("/"))
     if not available:
         log.warning(" No models found in Ollama (is it running?)")
         return set()
@@ -343,12 +345,13 @@ def warmup_model(model_name, on_gpu=True):
         _model_gpu_assignment[model_name] = num_gpu
         keep_alive = _get_keep_alive()
 
+        _wm_host = load_thermal_config().get("ollama_host", "http://localhost:11434").rstrip("/")
         body = json.dumps({
             "model": model_name, "prompt": "", "keep_alive": keep_alive,
             "options": {"num_gpu": num_gpu},
         }).encode()
         req = urllib.request.Request(
-            "http://localhost:11434/api/generate", data=body, method="POST",
+            f"{_wm_host}/api/generate", data=body, method="POST",
             headers={"Content-Type": "application/json"})
         with urllib.request.urlopen(req, timeout=60) as r:
             resp = json.loads(r.read())
@@ -616,8 +619,9 @@ def transition_model(target, current, cfg, emergency=False):
         write_state("transitioning", target)
         time.sleep(cfg["grace_period_secs"])
     else:
-        unload_all_models()
         write_state("transitioning", target)
+        time.sleep(0.5)  # ensure workers see state before unload
+        unload_all_models()
 
     set_local_model(target)
 
@@ -789,9 +793,9 @@ def main():
         _profiler_path = str(Path(__file__).parent)
         if _profiler_path not in sys.path:
             sys.path.insert(0, _profiler_path)
-        from skills.hardware_profiler import _get_hardware, _classify
-        _hw_full = _get_hardware()
-        deployment_tier = _classify(_hw_full)
+        from skills.model_suite import _detect_hardware, _classify_hardware
+        _hw_full = _detect_hardware()
+        deployment_tier = _classify_hardware(_hw_full)
         gpu_config["deployment_tier"] = deployment_tier
         log.info(f"Deployment tier: {deployment_tier}")
     except Exception:
@@ -953,7 +957,7 @@ def main():
                 else:
                     log.info(f"Training detected — {_training_vram_free:.1f}GB VRAM free, evicting GPU models")
                     training_evicted = True
-                    import threading
+                    write_state("transitioning", get_current_local_model())
                     threading.Thread(target=evict_models_for_training, args=(host,), daemon=True).start()
             elif was_training and not is_training:
                 log.info("Training ended — models will reload on next keepalive cycle")
@@ -1300,4 +1304,12 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except Exception as e:
+        log.critical(f"Dr. Ders fatal: {e}", exc_info=True)
+        # Don't exit silently — write crash reason so supervisor log can show it
+        try:
+            write_state("crashed", str(e)[:200])
+        except Exception:
+            pass

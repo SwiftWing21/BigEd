@@ -140,7 +140,7 @@ def _load_gui_settings() -> dict:
     try:
         if settings_file.exists():
             import json
-            return json.loads(settings_file.read_text()).get("diffusion", {})
+            return json.loads(settings_file.read_text(encoding="utf-8")).get("diffusion", {})
     except Exception:
         pass
     return {}

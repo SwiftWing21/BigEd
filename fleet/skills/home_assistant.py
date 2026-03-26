@@ -134,7 +134,7 @@ def run(payload, config):
         HA_DIR.mkdir(parents=True, exist_ok=True)
         ts = datetime.now().strftime("%Y%m%d_%H%M%S")
         out_file = HA_DIR / f"ha_{action}_{ts}.json"
-        out_file.write_text(json.dumps(result, indent=2))
+        out_file.write_text(json.dumps(result, indent=2), encoding="utf-8")
 
         return {"action": action, "count": len(result), "data": result[:100]}
 
