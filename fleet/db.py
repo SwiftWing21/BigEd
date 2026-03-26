@@ -382,6 +382,34 @@ def init_db():
         """)
         conn.execute("CREATE INDEX IF NOT EXISTS idx_ml_exp_agent ON ml_experiments(agent, status)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_ml_exp_type ON ml_experiments(experiment_type, status)")
+        # Ingestion Hub — user-added sources and staging area (v0.900.00b)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS ingest_sources (
+                id TEXT PRIMARY KEY,
+                type TEXT NOT NULL DEFAULT 'huggingface',
+                dataset TEXT,
+                skill TEXT NOT NULL,
+                agent_role TEXT,
+                content_column TEXT,
+                batch_size INTEGER DEFAULT 50,
+                enabled INTEGER DEFAULT 1,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS ingest_staging (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                source_id TEXT NOT NULL,
+                row_id INTEGER,
+                title TEXT,
+                content_preview TEXT,
+                token_estimate INTEGER,
+                destination TEXT DEFAULT 'tasks',
+                skill TEXT,
+                file_path TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
 
 
 def update_intelligence_score(task_id, score):

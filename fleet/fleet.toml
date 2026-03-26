@@ -11,7 +11,7 @@ discord_bot_enabled = true   # lightweight Discord-only bridge to biged-fleetcha
 offline_mode = false         # true = no internet; external API skills gracefully degrade, local Ollama works
 air_gap_mode = false         # true = max isolation (implies offline_mode); no sockets, no secrets, skill whitelist
 api_keys_required = false    # DEPRECATED: superseded by [api_gate]. Kept for backwards compat.
-disabled_agents = ["sales", "onboarding", "implementation", "legal", "account_manager", "ds_rag", "ds_fleet", "ds_research"]  # agents excluded from fleet boot
+disabled_agents = ["sales", "onboarding", "implementation", "legal", "account_manager", "ds_rag", "ds_fleet", "ds_research", "security"]  # agents excluded from fleet boot
 hitl_evolution = false           # true = evolution proposals go to WAITING_HUMAN for operator approval
 suite_routing_enabled = true   # set false to bypass suite routing (rollback)
 
@@ -133,6 +133,7 @@ grace_period_secs = 20        # worker drain time before model swap (longer = sa
 cooldown_after_swap_secs = 60 # prevent rapid model bouncing (1 min)
 ambient_estimation = true     # track cooldown rate to estimate ambient temp
 cpu_temp_enabled = true       # enable CPU temp reading (may require admin/lm-sensors/LHM)
+lhm_port = 8085              # LibreHardwareMonitor REST API port (auto-probed 8085-8095 if unavailable)
 # Linux: sudo apt install lm-sensors && sudo sensors-detect
 # Windows: Install LibreHardwareMonitor (run as service for auto-elevation)
 # macOS: brew install osx-cpu-temp
@@ -291,7 +292,7 @@ enabled = false  # set true after running: lead_client.py install-service
 
 # v0.42: Idle skill evolution — workers self-improve when no tasks pending
 [idle]
-enabled = true   # workers self-improve when no tasks pending
+enabled = false  # disabled overnight — 404s from idle tasks were poisoning error rates
 threshold_polls = 15  # consecutive idle polls before idle mode (~15s at 1s/poll)
 cooldown_secs = 30    # minimum seconds between idle evolution runs per agent
 skills = ["code_quality", "benchmark", "skill_evolve", "code_review", "summarize"]
@@ -601,3 +602,64 @@ enabled = false                                  # master switch for marketplace
 require_review_before_publish = true             # packages require admin review before listing
 allow_unverified_publishers = false              # only verified publishers can submit packages
 max_package_size_mb = 25                         # reject packages larger than this
+
+# ── Ingestion Hub (v0.900.00b) ────────────────────────────────────────────
+[ingest]
+max_storage_mb = 2048                            # global cache cap (default 2GB)
+cache_dir = "knowledge/ingest_cache"             # relative to fleet/
+batch_size_default = 50                          # default rows per HF fetch
+eviction_policy = "lru"                          # lru | fifo | manual
+
+[[ingest.sources]]
+id = "github-codereview"
+type = "huggingface"
+dataset = "ronantakizawa/github-codereview"
+skill = "code_review"
+agent_role = "coder"
+content_column = "diff"
+enabled = true
+
+[[ingest.sources]]
+id = "codereviewer"
+type = "huggingface"
+dataset = "fasterinnerlooper/codereviewer"
+skill = "code_review"
+agent_role = "coder"
+content_column = "review"
+enabled = true
+
+[[ingest.sources]]
+id = "arxiv-summarization"
+type = "huggingface"
+dataset = "ccdv/arxiv-summarization"
+skill = "summarize"
+agent_role = "researcher"
+content_column = "article"
+enabled = true
+
+[[ingest.sources]]
+id = "scientific-papers"
+type = "huggingface"
+dataset = "armanc/scientific_papers"
+skill = "summarize"
+agent_role = "researcher"
+content_column = "article"
+enabled = true
+
+[[ingest.sources]]
+id = "code-vulnerable"
+type = "huggingface"
+dataset = "tranquangtien15092005/code-vulnerable-10000"
+skill = "security_audit"
+agent_role = "security"
+content_column = "code"
+enabled = true
+
+[[ingest.sources]]
+id = "code-quality"
+type = "huggingface"
+dataset = "happylife365/code-quality-large"
+skill = "code_quality"
+agent_role = "coder"
+content_column = "code"
+enabled = true
