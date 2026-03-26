@@ -255,7 +255,7 @@ def _graph_supervisor(db) -> tuple:
                    t.type as task_type, t.status as task_status
             FROM agents a
             LEFT JOIN tasks t ON a.current_task_id = t.id
-            WHERE a.last_heartbeat >= datetime('now', '-120 seconds')
+            WHERE a.last_heartbeat IS NOT NULL
             ORDER BY a.name
         """).fetchall()
 
@@ -1038,7 +1038,7 @@ def _graph_universe(db) -> tuple:
             agents = conn.execute("""
                 SELECT name, role, status, current_task_id
                 FROM agents
-                WHERE last_heartbeat >= datetime('now', '-300 seconds')
+                WHERE last_heartbeat IS NOT NULL
                 ORDER BY name
             """).fetchall()
 
@@ -1207,6 +1207,26 @@ def _graph_universe(db) -> tuple:
                               metrics={"keys": len(cfg[section])})
         except Exception:
             pass
+
+        # -- 9. API CALL NODES (from gate ring buffer) ----------------------------
+        try:
+            import api_gate
+            for call in api_gate.get_ring(50):
+                call_id = f"api_call:{call['provider']}:{int(call['timestamp'] * 1000)}"
+                _add_node(call_id, type="api_call", source="universe",
+                          label=f"{call['provider']} ({call['skill']})",
+                          status="ACTIVE",
+                          metrics={"tokens": call['input_tokens'] + call['output_tokens'],
+                                   "cost": call['cost_usd'],
+                                   "purpose": call['purpose']})
+                skill_id = f"skill:{call['skill']}"
+                _add_edge(skill_id, call_id, "api_call", 1)
+                model_id = f"model:{call['provider']}"
+                _add_node(model_id, type="model", source="universe",
+                          label=call['provider'], status="ACTIVE")
+                _add_edge(call_id, model_id, "routes_to", 1)
+        except Exception:
+            log.warning("universe: api_call ring failed", exc_info=True)
 
     except Exception:
         log.warning("universe graph failed", exc_info=True)
