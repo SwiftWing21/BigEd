@@ -39,9 +39,39 @@ from security import (
 
 FLEET_DIR = Path(__file__).parent
 _start_time = time.time()  # dashboard boot timestamp for /api/health uptime
+
+# Background CPU sampler — psutil.cpu_percent(interval=0) returns 0 on first call.
+# This thread samples every 2s so the /api/thermal endpoint always has a fresh value.
+_cpu_pct_cache = 0.0
+
+def _cpu_sampler():
+    global _cpu_pct_cache
+    import psutil
+    psutil.cpu_percent(interval=0)  # prime
+    while True:
+        time.sleep(2)
+        try:
+            _cpu_pct_cache = psutil.cpu_percent(interval=0)
+        except Exception:
+            pass
+
+try:
+    _cpu_sampler_thread = threading.Thread(target=_cpu_sampler, daemon=True)
+    _cpu_sampler_thread.start()
+except Exception:
+    pass
 DB_PATH = FLEET_DIR / "fleet.db"
 KNOWLEDGE_DIR = FLEET_DIR / "knowledge"
 HW_STATE_JSON = FLEET_DIR / "hw_state.json"
+
+
+def _is_recent(timestamp_str: str, seconds: int = 120) -> bool:
+    """Return True if a DB timestamp string is within the last *seconds*."""
+    try:
+        ts = datetime.fromisoformat(timestamp_str)
+        return (datetime.utcnow() - ts).total_seconds() < seconds
+    except Exception:
+        return False
 
 app = Flask(__name__)
 
@@ -340,18 +370,31 @@ def _alert_monitor():
 
 @app.route("/api/status")
 def api_status():
-    # Only show agents with a heartbeat in the last 60s (currently running)
+    # Show ALL registered agents with computed display_status
+    try:
+        from config import load_config
+        disabled = load_config().get("fleet", {}).get("disabled_agents", [])
+    except Exception:
+        disabled = []
+
     agents = query("""
         SELECT a.name, a.role, a.status, a.last_heartbeat, a.current_task_id,
                t.type as current_task
         FROM agents a
         LEFT JOIN tasks t ON a.current_task_id = t.id
-        WHERE a.last_heartbeat >= datetime('now', '-60 seconds')
         ORDER BY
             CASE WHEN a.name IN ('dr_ders', 'hw_supervisor') THEN 0 ELSE 1 END,
             CASE a.status WHEN 'BUSY' THEN 0 WHEN 'ACTIVE' THEN 1 ELSE 2 END,
             a.name
     """)
+    for a in agents:
+        if a["name"] in disabled:
+            a["display_status"] = "DISABLED"
+        elif a.get("last_heartbeat") and _is_recent(a["last_heartbeat"], 120):
+            a["display_status"] = a["status"]  # BUSY / ACTIVE / IDLE
+        else:
+            a["display_status"] = "OFFLINE"
+
     counts = {}
     for s in ("PENDING", "RUNNING", "DONE", "FAILED"):
         row = query("SELECT COUNT(*) as n FROM tasks WHERE status=?", (s,))
@@ -846,7 +889,7 @@ def api_thermal():
     result = {
         "gpu_temp_c": 0, "gpu_power_w": 0, "gpu_fan_pct": 0,
         "gpu_vram_used_gb": 0, "gpu_vram_total_gb": 0,
-        "cpu_temp_c": 0, "ambient_estimate_c": 0,
+        "cpu_temp_c": None, "ambient_estimate_c": None,
         "thermal_state": "unknown", "model_tier": "unknown",
     }
 
@@ -863,14 +906,16 @@ def api_thermal():
                         "qwen3:1.7b": "low", "qwen3:0.6b": "critical"}
             model_tier = tier_map.get(model, model or "unknown")
 
+            cpu_t = th.get("cpu_temp_c", 0)
+            ambient_t = th.get("ambient_est_c", 0)
             result.update({
                 "gpu_temp_c": th.get("gpu_temp_c", 0),
                 "gpu_power_w": th.get("gpu_power_w", 0),
                 "gpu_fan_pct": th.get("gpu_fan_pct", 0),
                 "gpu_vram_used_gb": round(th.get("vram_used_gb", 0), 2),
                 "gpu_vram_total_gb": round(th.get("vram_total_gb", 0), 2),
-                "cpu_temp_c": th.get("cpu_temp_c", 0),
-                "ambient_estimate_c": th.get("ambient_est_c", 0),
+                "cpu_temp_c": cpu_t if cpu_t and cpu_t > 0 else None,
+                "ambient_estimate_c": ambient_t if ambient_t and ambient_t > 0 else None,
                 "thermal_state": hw.get("status", "unknown"),
                 "model_tier": model_tier,
             })
@@ -894,7 +939,7 @@ def api_thermal():
             pass
 
     # Fallback: read CPU temp directly if hw_state.json has no CPU data
-    if result["cpu_temp_c"] == 0:
+    if not result["cpu_temp_c"]:
         try:
             from cpu_temp import read_cpu_temp
             val = read_cpu_temp()
@@ -915,7 +960,7 @@ def api_thermal():
             "ram_total_gb": round(ram.total / (1024**3), 1),
             "ram_used_gb": round(ram.used / (1024**3), 1),
             "ram_pct": ram.percent,
-            "cpu_pct": psutil.cpu_percent(interval=0),
+            "cpu_pct": _cpu_pct_cache,
             "cpu_cores": psutil.cpu_count(logical=False) or psutil.cpu_count() or 0,
         }
     except Exception:
@@ -1838,6 +1883,13 @@ try:
 except ImportError:
     pass  # views module optional
 
+# ── Ingestion Hub (v0.900.00b) ─────────────────────────────────────────
+try:
+    from ingest_blueprint import ingest_bp
+    app.register_blueprint(ingest_bp)
+except ImportError:
+    pass  # ingest module optional
+
 
 # ── MCP Server Status (v0.31.00) ─────────────────────────────────────────────
 
@@ -2221,7 +2273,7 @@ def _sse_broadcaster():
                     ram = psutil.virtual_memory()
                     system = {
                         "ram_pct": round(ram.percent, 1),
-                        "cpu_pct": round(psutil.cpu_percent(interval=0), 1),
+                        "cpu_pct": round(_cpu_pct_cache, 1),
                         "cpu_cores": psutil.cpu_count(logical=False) or psutil.cpu_count() or 0,
                     }
                 except Exception:
