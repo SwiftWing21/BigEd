@@ -1348,7 +1348,7 @@ textarea.input {
     <div class="card">
       <div class="card-header">
         <div>
-          <div class="card-title">Total Requests</div>
+          <div class="card-title">TASKS</div>
           <div class="card-value" id="metric-total-requests">--</div>
           <div class="card-trend neutral" id="metric-requests-trend">--</div>
         </div>
@@ -2055,15 +2055,14 @@ function loadDashStatus() {
     trendEl.textContent = busy + ' busy';
     trendEl.className = 'card-trend ' + (busy > 0 ? 'up' : 'neutral');
 
-    var totalTasks = 0;
-    if (d.tasks) { for (var k in d.tasks) totalTasks += d.tasks[k]; }
-    document.getElementById('metric-total-requests').textContent = totalTasks.toLocaleString();
+    var pending = d.tasks ? (d.tasks.PENDING || 0) : 0;
+    var running = d.tasks ? (d.tasks.RUNNING || 0) : 0;
     var done = d.tasks ? (d.tasks.DONE || 0) : 0;
     var failed = d.tasks ? (d.tasks.FAILED || 0) : 0;
-    var rate = (done + failed) > 0 ? Math.round(done / (done + failed) * 100) : 0;
+    document.getElementById('metric-total-requests').textContent = done.toLocaleString();
     var reqTrend = document.getElementById('metric-requests-trend');
-    reqTrend.textContent = rate + '% success';
-    reqTrend.className = 'card-trend ' + (rate >= 80 ? 'up' : rate >= 50 ? 'neutral' : 'down');
+    reqTrend.textContent = pending + ' queued \u00B7 ' + running + ' active \u00B7 ' + failed + ' failed';
+    reqTrend.className = 'card-trend ' + (running > 0 ? 'up' : pending > 0 ? 'neutral' : 'neutral');
   }).catch(function() {});
 }
 
