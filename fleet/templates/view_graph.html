@@ -526,13 +526,15 @@ button { font-family: inherit; cursor: pointer; border: none; background: none; 
   function layoutOpts(hint) {
     switch (hint) {
       case 'radial':
-        return { name: 'concentric', concentric: function(n) { return n.degree(); }, levelWidth: function() { return 2; }, animate: true, animationDuration: 400 };
+        return { name: 'concentric', concentric: function(n) { return n.degree(); }, levelWidth: function() { return 2; }, animate: true, animationDuration: 400, padding: 40 };
       case 'cluster':
-        return { name: 'cose', animate: true, animationDuration: 400, nodeRepulsion: function() { return 8192; }, idealEdgeLength: function() { return 80; } };
+        return { name: 'cose', animate: true, animationDuration: 600, nodeRepulsion: function() { return 40000; }, idealEdgeLength: function() { return 120; }, edgeElasticity: function() { return 200; }, gravity: 0.25, numIter: 300, padding: 50 };
       case 'tree':
-        return { name: 'dagre', rankDir: 'TB', spacingFactor: 1.2, animate: true, animationDuration: 400 };
+        // dagre crashes on cyclic graphs — fall back to breadthfirst which handles cycles
+        return { name: 'breadthfirst', directed: true, spacingFactor: 1.1, animate: true, animationDuration: 400, padding: 40, circle: false, avoidOverlap: true };
       case 'swimlane':
-        return { name: 'grid', rows: 3, animate: true, animationDuration: 400 };
+        // Group by node type into columns
+        return { name: 'grid', rows: undefined, cols: 6, animate: true, animationDuration: 400, padding: 30, avoidOverlap: true, sort: function(a, b) { return (a.data('type') || '').localeCompare(b.data('type') || ''); } };
       default:
         return { name: 'cose', animate: true, animationDuration: 400 };
     }
@@ -797,8 +799,17 @@ button { font-family: inherit; cursor: pointer; border: none; background: none; 
   function applyLayout(hint) {
     if (!cy || cy.nodes().length === 0) return;
     hint = hint || $layoutSel.value;
-    var opts = layoutOpts(hint);
-    cy.layout(opts).run();
+    try {
+      var opts = layoutOpts(hint);
+      cy.layout(opts).run();
+    } catch (err) {
+      console.warn('Layout "' + hint + '" failed, falling back to cose:', err);
+      try {
+        cy.layout({ name: 'cose', animate: true, animationDuration: 400 }).run();
+      } catch (err2) {
+        console.warn('Fallback layout also failed:', err2);
+      }
+    }
   }
 
   // ── Source Filter ──────────────────────────────────────────────────────

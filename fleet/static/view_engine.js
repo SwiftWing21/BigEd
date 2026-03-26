@@ -38,34 +38,39 @@
     cluster: {
       name: "cose",
       animate: true,
-      animationDuration: 400,
+      animationDuration: 600,
       nodeRepulsion: function () {
-        return 8000;
+        return 40000;
       },
       idealEdgeLength: function () {
-        return 80;
+        return 120;
       },
       edgeElasticity: function () {
-        return 100;
+        return 200;
       },
-      padding: 40,
+      gravity: 0.25,
+      numIter: 300,
+      padding: 50,
     },
     swimlane: {
       name: "grid",
-      rows: 1,
-      cols: undefined, // auto
+      rows: undefined,
+      cols: 6,
       animate: true,
       animationDuration: 400,
-      padding: 40,
+      padding: 30,
+      avoidOverlap: true,
     },
     tree: {
-      name: "dagre",
-      rankDir: "TB",
-      nodeSep: 50,
-      rankSep: 80,
+      // breadthfirst handles cyclic graphs (dagre crashes on cycles)
+      name: "breadthfirst",
+      directed: true,
+      spacingFactor: 1.1,
       animate: true,
       animationDuration: 400,
       padding: 40,
+      circle: false,
+      avoidOverlap: true,
     },
   };
 
