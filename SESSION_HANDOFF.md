@@ -11,9 +11,9 @@
 |--------|-------|--------------|
 | Version | 0.900.00b (Python) / 0.9.0 (Rust) | 2026-03-25 |
 | Skills | 96 standalone + 6 suites (was 132 files) | 2026-03-26 |
-| Smoke Tests | 42/42 (Python) | 2026-03-26 |
+| Smoke Tests | 45/45 (Python) | 2026-03-26 |
 | Rust Tests | 116+ | 2026-03-25 |
-| Dashboard Endpoints | 26 (Rust) + 242 (Python, +6 gate/tasks) | 2026-03-26 |
+| Dashboard Endpoints | 26 (Rust) + 254 (Python, +12 ingest) | 2026-03-26 |
 | DB Tables | 9 (Rust schema) | 2026-03-25 |
 | Branch | main | 2026-03-26 |
 | Rust Crates | 6 (core, supervisor, server, bridge, gui, wasm) | 2026-03-25 |
@@ -24,8 +24,64 @@
 
 ## Last Session
 
-**Date:** 2026-03-26 (evening)
+**Date:** 2026-03-26 (late evening)
 **Session:** VS Code Claude Code
+
+### Ingestion Hub — Complete Phase 1
+
+Full dataset ingestion system built end-to-end:
+
+**Backend:**
+- `ingest_manager.py` (~420 lines): HF Dataset Viewer API client, JSONL cache with 2GB LRU eviction, staging CRUD (DB-backed), dispatch to fleet tasks or RAG
+- `ingest_blueprint.py` (228 lines): 12 REST endpoints under `/api/ingest/*` (sources CRUD, schema, rows, staging, dispatch, cache stats, file upload)
+- `db.py`: `ingest_sources` + `ingest_staging` tables added to init_db()
+- `fleet.toml`: `[ingest]` config section + 6 pre-configured HuggingFace datasets
+
+**Pre-configured HF datasets:**
+| Dataset | Rows | Agent | Skill |
+|---------|------|-------|-------|
+| ronantakizawa/github-codereview | 355K | coder | code_review |
+| fasterinnerlooper/codereviewer | 317K | coder | code_review |
+| ccdv/arxiv-summarization | 215K | researcher | summarize |
+| armanc/scientific_papers | 300K+ | researcher | summarize |
+| tranquangtien15092005/code-vulnerable-10000 | 10K+ | security | security_audit |
+| happylife365/code-quality-large | 18K | coder | code_quality |
+
+**Dashboard UI:** New "Ingest" nav item + page with source pills (color-coded by agent role), inline expand with config/row preview, staging area with color dots, cache usage bar. All JS uses safe DOM methods (createElement/textContent, no innerHTML).
+
+**Specs:** `docs/superpowers/specs/2026-03-26-ingestion-hub-design.md` + `2026-03-26-web-ingest-phase2-design.md`
+
+**IMPORTANT:** Dashboard needs restart to pick up new Python modules (Flask caches). Source pills won't render until restart.
+
+### Dashboard Debugging (Chrome DevTools MCP)
+
+- Fleet page: was empty ("No Active Agents") — `/api/status` had 60s heartbeat filter. Fixed to show all 17 agents with IDLE/OFFLINE/DISABLED status, dimmed inactive rows
+- CPU temp: installed LibreHardwareMonitor via winget, new LHM/REST API strategy in cpu_temp.py (port 8085, dynamic probe). Reads AMD Ryzen 7 5800X at 45°C
+- System Load: was always 0% — psutil.cpu_percent needs priming. Added 2s background sampler thread
+- CPU temp "N/A" display instead of misleading "0°C" when sensor unavailable
+- timeAgo() UTC timezone fix (DB stores UTC, JS was parsing as local)
+- Status badges: OFFLINE=blue, DISABLED=grey (was both red)
+
+### Model Performance Fixes
+
+- `intent.py`: conductor model (qwen3:4b) now logs usage via async_log_usage — appears in Model Performance panel
+- `data_access.py`: model_performance() merges Ollama /api/ps loaded models even without recent usage data
+
+### Firecrawl Integration
+
+- `.mcp.json`: firecrawl-mcp server config (gitignored, needs FIRECRAWL_API_KEY env var)
+- `keys_registry.toml`: FIRECRAWL_API_KEY entry added (12 keys total)
+- User needs to add key: `echo 'export FIRECRAWL_API_KEY=...' >> ~/.secrets`
+
+### Web Ingestion Phase 2 Spec
+
+Three-stage quality gate before crawling:
+1. Free probe (HEAD + robots.txt, 0 credits, <1s)
+2. Single-page scrape (1 Firecrawl credit, quality signals)
+3. Local model relevance scoring (qwen3:4b, 0 cost)
+Only proceeds to full crawl if score >= 6/10 and user approves.
+
+### Previous Session (2026-03-26 evening)
 
 ### Fleet Training Audit & Health Fixes
 
@@ -185,16 +241,19 @@ Complete Rust rewrite (Phases 0-6), 6-agent audit, 18 fixes, v0.9.0 benchmarks
 
 ## Next Priorities
 
-- [ ] Root-cause the persistent 404 from Ollama `/api/generate` during skill_draft — Ollama responds 200 on direct curl but workers get 404 intermittently. May be model unload timing or request format edge case
-- [ ] 6 pending tasks still waiting for non-core agents (coder_2, security, analyst, coder_3) — need to verify scale-up triggers them
-- [ ] Resizable dashboard panels (Split.js for web, PanedWindow for tkinter) — ref: `memory/reference_panel_layout.md`
-- [x] Remove 29 `_deprecated_` files after one release cycle of suite routing validation — DONE (2026-03-26)
-- [ ] Migrate skills to use new helpers (_knowledge, _report, _llm_parse) — created but not yet adopted
-- [ ] Render swimlane PNGs from Mermaid source (needs `mmdc` / Mermaid CLI)
-- [ ] Hardcoded fonts in launcher.py: 46 instances of "Consolas"/"RuneScape" → theme constants
+- [ ] **Restart dashboard** and verify Ingest page renders source pills (Flask has old Python modules cached)
+- [ ] **Dashboard API Keys panel** — Settings page section showing all 12 keys from registry, inline entry for missing keys, contextual "missing key" toast prompts
+- [ ] **Test Firecrawl** — add key to ~/.secrets, restart Claude Code, verify MCP tools available
+- [ ] **Start supervisor** — 15+ tasks queued (6 from this session), agents need to start processing
+- [ ] **Qwen 3.5 upgrade** — watch for Ollama GGUF availability, then config swap in fleet.toml
+- [ ] **Web Ingestion Phase 2** — implement spec (3-stage quality gate + Firecrawl crawl)
+- [ ] Root-cause Ollama 404 during skill_draft — may be model unload timing
+- [ ] Resizable dashboard panels (Split.js) — ref: `memory/reference_panel_layout.md`
+- [ ] Migrate skills to use new helpers (_knowledge, _report, _llm_parse)
+- [ ] Hardcoded fonts in launcher.py: 46 instances → theme constants
 - [ ] Run skills through PyO3 bridge with new suite routing
 - [ ] Fix WASM compilation (cfg-gate tokio/rusqlite/reqwest behind desktop feature)
-- [ ] WebSocket + MessagePack transport (spec requirement, currently HTTP polling)
+- [ ] WebSocket + MessagePack transport
 - [ ] Auth middleware for server endpoints
 - [ ] 24h stability test (supervisor + server running continuously)
 - [ ] v1.0.0 graduation after bug testing
