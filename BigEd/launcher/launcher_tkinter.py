@@ -1896,10 +1896,12 @@ class BigEdCC(TrayManagerMixin, BootManagerMixin, CommTabMixin, OllamaManagerMix
                 conn = sqlite3.connect(str(db_path), timeout=2)
                 conn.row_factory = sqlite3.Row
 
-                # Recent task completions (last 8)
+                # Recent task completions (last 8) with detail
                 tasks = conn.execute(
                     "SELECT type, status, assigned_to, "
-                    "strftime('%H:%M:%S', created_at) as ts "
+                    "strftime('%H:%M:%S', created_at) as ts, "
+                    "substr(payload_json, 1, 200) as payload, "
+                    "substr(error, 1, 60) as error "
                     "FROM tasks WHERE status IN ('DONE','FAILED') "
                     "ORDER BY id DESC LIMIT 8"
                 ).fetchall()
@@ -1910,7 +1912,21 @@ class BigEdCC(TrayManagerMixin, BootManagerMixin, CommTabMixin, OllamaManagerMix
                         icon = "\u2713" if t["status"] == "DONE" else "\u2717"
                         agent = t["assigned_to"] or "?"
                         skill = t["type"] or "?"
-                        lines.append(f" {icon} {t['ts']}  {agent:<12} {skill}")
+                        # Extract detail from payload or error
+                        detail = ""
+                        if t["status"] == "FAILED" and t["error"]:
+                            detail = t["error"][:40]
+                        elif t["payload"]:
+                            try:
+                                import json
+                                p = json.loads(t["payload"])
+                                detail = p.get("skill_name") or p.get("source") or p.get("url") or p.get("description", "")[:40] or ""
+                                if isinstance(detail, str) and len(detail) > 40:
+                                    detail = detail[:37] + "..."
+                            except Exception:
+                                pass
+                        detail_str = f"  {detail}" if detail else ""
+                        lines.append(f" {icon} {t['ts']}  {agent:<12} {skill}{detail_str}")
                 else:
                     lines.append(" No recent tasks")
 
