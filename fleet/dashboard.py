@@ -421,9 +421,13 @@ def api_activity_live():
     try:
         rows = query("""
             SELECT t.id, t.type, t.status, t.assigned_to, t.classification,
-                   t.created_at, t.result_json, t.error,
-                   substr(t.payload_json, 1, 100) as payload_preview
+                   t.created_at, t.error, t.intelligence_score, t.priority,
+                   t.trace_id,
+                   substr(t.payload_json, 1, 100) as payload_preview,
+                   u.model, u.eval_duration_ms, u.input_tokens, u.output_tokens,
+                   u.tokens_per_sec, u.cost_usd, u.provider
             FROM tasks t
+            LEFT JOIN usage u ON u.task_id = t.id
             WHERE t.classification != 'synthetic_prefix'
               AND (t.status = 'RUNNING'
                    OR (t.status IN ('DONE', 'FAILED') AND t.created_at >= datetime('now', '-10 minutes')))
@@ -434,6 +438,7 @@ def api_activity_live():
         """)
         items = []
         for r in rows:
+            duration_ms = r["eval_duration_ms"]
             items.append({
                 "id": r["id"],
                 "type": r["type"],
@@ -443,6 +448,16 @@ def api_activity_live():
                 "created_at": r["created_at"],
                 "error": (r["error"] or "")[:80],
                 "payload_preview": r["payload_preview"] or "",
+                "model": r["model"] or "",
+                "duration_s": round(duration_ms / 1000, 1) if duration_ms else None,
+                "in_tokens": r["input_tokens"] or 0,
+                "out_tokens": r["output_tokens"] or 0,
+                "tok_per_sec": round(r["tokens_per_sec"], 1) if r["tokens_per_sec"] else None,
+                "cost_usd": round(r["cost_usd"], 4) if r["cost_usd"] else 0,
+                "provider": r["provider"] or "",
+                "iq_score": round(r["intelligence_score"], 2) if r["intelligence_score"] is not None else None,
+                "priority": r["priority"] or 3,
+                "trace_id": r["trace_id"] or "",
             })
         return jsonify({"items": items, "count": len(items)})
     except Exception as e:
@@ -2363,7 +2378,11 @@ def _sse_broadcaster():
     while True:
         if _sse_clients:
             try:
-                agents = query("SELECT name, role, status, last_heartbeat FROM agents ORDER BY name")
+                agents = query(
+                    "SELECT name, role, status, last_heartbeat FROM agents "
+                    "WHERE last_heartbeat > datetime('now', '-5 minutes') "
+                    "AND status != 'DISABLED' ORDER BY name"
+                )
                 counts = {}
                 for s in ("PENDING", "RUNNING", "DONE", "FAILED"):
                     row = query("SELECT COUNT(*) as n FROM tasks WHERE status=? AND classification != 'synthetic_prefix'", (s,))
@@ -2399,13 +2418,17 @@ def _sse_broadcaster():
                 live_items = []
                 try:
                     live_rows = query("""
-                        SELECT id, type, status, assigned_to, classification, created_at,
-                               substr(error, 1, 80) as error
-                        FROM tasks
-                        WHERE classification != 'synthetic_prefix'
-                          AND (status = 'RUNNING'
-                               OR (status IN ('DONE', 'FAILED') AND created_at >= datetime('now', '-2 minutes')))
-                        ORDER BY CASE status WHEN 'RUNNING' THEN 0 WHEN 'DONE' THEN 1 ELSE 2 END, id DESC
+                        SELECT t.id, t.type, t.status, t.assigned_to, t.classification,
+                               t.created_at, substr(t.error, 1, 80) as error,
+                               t.intelligence_score, t.priority, t.trace_id,
+                               u.model, u.eval_duration_ms, u.input_tokens, u.output_tokens,
+                               u.tokens_per_sec, u.cost_usd, u.provider
+                        FROM tasks t
+                        LEFT JOIN usage u ON u.task_id = t.id
+                        WHERE t.classification != 'synthetic_prefix'
+                          AND (t.status = 'RUNNING'
+                               OR (t.status IN ('DONE', 'FAILED') AND t.created_at >= datetime('now', '-2 minutes')))
+                        ORDER BY CASE t.status WHEN 'RUNNING' THEN 0 WHEN 'DONE' THEN 1 ELSE 2 END, t.id DESC
                         LIMIT 20
                     """)
                     live_items = [{
@@ -2414,6 +2437,16 @@ def _sse_broadcaster():
                         "classification": r["classification"],
                         "created_at": r["created_at"],
                         "error": r["error"] or "",
+                        "model": r["model"] or "",
+                        "duration_s": round(r["eval_duration_ms"] / 1000, 1) if r["eval_duration_ms"] else None,
+                        "in_tokens": r["input_tokens"] or 0,
+                        "out_tokens": r["output_tokens"] or 0,
+                        "tok_per_sec": round(r["tokens_per_sec"], 1) if r["tokens_per_sec"] else None,
+                        "cost_usd": round(r["cost_usd"], 4) if r["cost_usd"] else 0,
+                        "provider": r["provider"] or "",
+                        "iq_score": round(r["intelligence_score"], 2) if r["intelligence_score"] is not None else None,
+                        "priority": r["priority"] or 3,
+                        "trace_id": r["trace_id"] or "",
                     } for r in live_rows]
                 except Exception:
                     pass
