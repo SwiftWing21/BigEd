@@ -5364,14 +5364,25 @@ function loadViews() {
   loadDashboard();
   connectSSE();
 
-  /* ── Visibility-aware polling — pause all intervals when tab is hidden ── */
-  var _tabVisible = true;
+  /* ── Adaptive polling — 2s active, 60s hidden, SSE stays connected ───── */
+  var _POLL_ACTIVE = 2000, _POLL_HIDDEN = 60000;
+  var _pollTimers = {};
+
+  function _schedulePoll(name, fn) {
+    clearTimeout(_pollTimers[name]);
+    var delay = document.hidden ? _POLL_HIDDEN : _POLL_ACTIVE;
+    _pollTimers[name] = setTimeout(function _tick() {
+      fn();
+      _pollTimers[name] = setTimeout(_tick, document.hidden ? _POLL_HIDDEN : _POLL_ACTIVE);
+    }, delay);
+  }
+
+  /* On tab focus change, reschedule all polls at new rate */
   document.addEventListener('visibilitychange', function() {
-    _tabVisible = !document.hidden;
+    Object.keys(_pollTimers).forEach(function(name) { /* timers auto-adjust on next tick */ });
   });
 
-  setInterval(function() {
-    if (!_tabVisible) return;
+  _schedulePoll('hitl', function() {
     apiFetch('/api/tasks/waiting-human').then(function(data) {
       var badge = document.getElementById('hitl-badge');
       if (data.length > 0) {
@@ -5381,27 +5392,25 @@ function loadViews() {
         badge.classList.add('hidden');
       }
     }).catch(function() {});
-  }, 30000);
+  });
 
-  /* ── SSE handles status + thermal every 5s from server push.
-     Activity chart polls every 30s (too heavy for SSE). ── */
-  setInterval(function() {
-    if (!_tabVisible) return;
+  /* ── SSE handles status + thermal via server push.
+     Activity chart polls adaptively (2s active / 60s hidden). ── */
+  _schedulePoll('activity', function() {
     if (document.getElementById('section-dashboard').classList.contains('active')) {
       loadActivityChart();
     }
-  }, 30000);
+  });
 
   /* ── API Gate Controls ─────────────────────────────────────────────────── */
   buildGateCard();
 
-  setInterval(function() {
-    if (!_tabVisible) return;
+  _schedulePoll('gate', function() {
     var section = document.getElementById('section-settings');
     if (section && section.style.display !== 'none') {
       apiFetch('/api/gate/status').then(updateGateUI).catch(function(){});
     }
-  }, 10000);
+  });
 })();
 
 /* ── Ingest Hub ──────────────────────────────────────────────────────────── */
