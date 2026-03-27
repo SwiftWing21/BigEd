@@ -1710,13 +1710,13 @@ class BigEdCC(TrayManagerMixin, BootManagerMixin, CommTabMixin, OllamaManagerMix
         self._agents_frame_inner.grid(row=1, column=0, sticky="nsew", padx=4, pady=(0, 2))
 
         # Fleet Activity — recent tasks (shown below agent cards after boot)
-        agents_frame.grid_rowconfigure(2, weight=0)
+        agents_frame.grid_rowconfigure(2, weight=1)
         self._activity_text = ctk.CTkTextbox(
             agents_frame, font=FONT_STAT, fg_color=BG2,
-            text_color="#888888", wrap="none", corner_radius=0, height=90)
-        self._activity_text.grid(row=2, column=0, sticky="sew", padx=4, pady=(0, 4))
+            text_color="#888888", wrap="none", corner_radius=0)
+        self._activity_text.grid(row=2, column=0, sticky="nsew", padx=4, pady=(0, 4))
         self._activity_text.configure(state="disabled")
-        self._safe_after(2000, self._poll_fleet_activity)
+        self._safe_after(4000, self._poll_fleet_activity)
 
         # Model Performance panel (below agents)
         self._build_model_perf_panel(left)
