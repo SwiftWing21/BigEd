@@ -131,6 +131,9 @@ class BridgeAPI:
     def minimize_to_tray(self):
         if _window:
             _window.hide()
+            # Create tray icon on first minimize (not on startup)
+            if not _tray_icon:
+                _setup_tray()
 
     def restore(self):
         if _window:
@@ -250,8 +253,7 @@ def main():
         js_api=BridgeAPI(),
     )
 
-    # Tray disabled by default — enable via fleet.toml [launcher] tray_enabled = true
-    # _setup_tray()
+    # Tray icon created on-demand when user minimizes to tray (not on startup)
 
     log.info("Starting PyWebView window")
     webview.start()

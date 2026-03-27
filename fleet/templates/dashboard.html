@@ -6384,7 +6384,7 @@ function submitAddSource() {
     fetch('/api/boot/status').then(function(r) { return r.json(); }).then(function(data) {
       var overlay = document.getElementById('boot-overlay');
       if (!overlay) { clearInterval(bootTimer); return; }
-      if (data.stage === 'ready' || data.stage === 'unknown') {
+      if (!data.stage || data.stage === 'ready' || data.stage === 'unknown' || data.error) {
         overlay.style.display = 'none';
         bootHidden = true;
         clearInterval(bootTimer);
