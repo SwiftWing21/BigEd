@@ -152,10 +152,11 @@ def check_oom_risk(skill_name: str, config: dict) -> dict:
         return {"safe": True, "risk": "none", "reason": "CPU-only skill"}
 
     vram_free = status.get("vram_free_gb", 0)
-    vram_needed = estimate.get("vram_total_gb", 7.0)
+    vram_needed = estimate.get("vram_total_gb", 3.0)
 
     # If the model is already loaded, it's already consuming VRAM — no additional needed
     # Only extra_vram (vision models, etc.) would need additional space
+    model_loaded = False
     try:
         import urllib.request
         with urllib.request.urlopen("http://localhost:11434/api/ps", timeout=3) as r:
@@ -164,10 +165,23 @@ def check_oom_risk(skill_name: str, config: dict) -> dict:
         loaded_names = [m["name"] for m in ps.get("models", [])]
         current_model = config.get("models", {}).get("local", "qwen3:8b")
         if current_model in loaded_names:
-            # Model already loaded — only need extra VRAM for heavy skills
+            model_loaded = True
             vram_needed = estimate.get("vram_extra_gb", 0)
     except Exception:
-        pass  # can't check — use conservative estimate
+        # Can't reach Ollama — check if model was recently active via hw_state.json
+        try:
+            hw_path = FLEET_DIR / "hw_state.json"
+            if hw_path.exists():
+                import json as _json
+                hw = _json.loads(hw_path.read_text(encoding="utf-8"))
+                if hw.get("model") and hw.get("status") != "offline":
+                    model_loaded = True
+                    vram_needed = estimate.get("vram_extra_gb", 0)
+                    log.debug("OOM check: Ollama unreachable but hw_state shows model active")
+        except Exception:
+            pass
+        if not model_loaded:
+            log.debug("OOM check: Ollama unreachable, using conservative estimate")
 
     # Compare free VRAM against needs
     headroom = vram_free - vram_needed
