@@ -1099,28 +1099,39 @@ def _graph_universe(db) -> tuple:
                     _add_node(sid, type="skill", source="universe",
                               label=mod_name, status="ERROR")
 
-        # ── 3. RECENT TASKS (last 200) ─────────────────────────────────
+        # ── 3. TASK AGGREGATES (grouped by skill+agent+status, last 24h) ──
         with db.get_conn() as conn:
-            tasks = conn.execute("""
-                SELECT id, type, status, assigned_to, created_at
+            task_groups = conn.execute("""
+                SELECT type, status, assigned_to, COUNT(*) as cnt,
+                       MIN(id) as first_id, MAX(id) as last_id
                 FROM tasks
                 WHERE created_at >= datetime('now', '-24 hours')
-                ORDER BY id DESC LIMIT 200
+                  AND type IS NOT NULL
+                GROUP BY type, assigned_to, status
+                ORDER BY cnt DESC
             """).fetchall()
 
-        for t in tasks:
-            tid = f"task:{t['id']}"
-            _add_node(tid, type="task", source="universe",
-                      label=f"#{t['id']} {t['type'] or '?'}",
-                      status=t["status"] or "PENDING")
-            # Task → agent (assigned)
-            if t["assigned_to"]:
-                agent_id = f"agent:{t['assigned_to']}"
-                _add_edge(agent_id, tid, "assigned", 2)
-            # Task → skill
-            if t["type"]:
-                skill_id = f"skill:{t['type']}"
-                _add_edge(tid, skill_id, "runs", 1)
+        for tg in task_groups:
+            skill_type = tg["type"] or "unknown"
+            agent_name = tg["assigned_to"] or "unassigned"
+            status = tg["status"] or "PENDING"
+            count = tg["cnt"]
+            tg_id = f"task_group:{agent_name}:{skill_type}:{status}"
+
+            label = f"{skill_type} ({count})"
+            _add_node(tg_id, type="task_group", source="universe",
+                      label=label, status=status,
+                      metrics={"count": count, "skill": skill_type,
+                               "agent": agent_name,
+                               "range": f"#{tg['first_id']}-#{tg['last_id']}"})
+
+            # Task group → agent (assigned)
+            if agent_name != "unassigned":
+                agent_id = f"agent:{agent_name}"
+                _add_edge(agent_id, tg_id, "assigned", max(1, count // 5))
+            # Task group → skill
+            skill_id = f"skill:{skill_type}"
+            _add_edge(tg_id, skill_id, "runs", max(1, count // 10))
 
         # ── 4. KNOWLEDGE FOLDERS (with file counts) ────────────────────
         if knowledge_dir.exists():
