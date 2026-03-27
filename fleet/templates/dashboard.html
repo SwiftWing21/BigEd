@@ -3633,6 +3633,8 @@ function loadNeuralGraph() {
           fontSize: style.fontSize,
           shape: style.shape,
           type: ntype,
+          status: n.status || '',
+          activity_score: n.activity_score || 0,
         }
       });
     });
@@ -5145,6 +5147,8 @@ function connectSSE() {
 function handleSSE(msg) {
   switch (msg.type) {
     case 'status':
+      /* Header controls update (always visible, not section-gated) */
+      if (msg.data) updateHeaderControls(msg.data);
       if (document.getElementById('section-dashboard').classList.contains('active')) {
         var data = msg.data || {};
         /* Show adaptive push rate in connection indicator */
@@ -6265,6 +6269,290 @@ function submitAddSource() {
   checkBootStatus();
   bootTimer = setInterval(checkBootStatus, 500);
 })();
+
+/* ── Header Controls: Model Switch + Fleet Start/Stop ─────────────────────── */
+
+function switchModel(model) {
+  if (!model) return;
+  var sel = document.getElementById('header-model-select');
+  sel.disabled = true;
+  apiFetch('/api/fleet/model-switch', { method: 'POST', body: { model: model } })
+    .then(function() {
+      showToast('Model switched to ' + model, 'info');
+    })
+    .catch(function(e) {
+      showToast('Model switch failed: ' + e.message, 'error');
+    })
+    .finally(function() { sel.disabled = false; });
+}
+
+function fleetStart() {
+  var btn = document.getElementById('btn-fleet-start');
+  btn.disabled = true;
+  btn.textContent = 'Starting...';
+  apiFetch('/api/fleet/start', { method: 'POST' })
+    .then(function() { showToast('Fleet starting...', 'info'); })
+    .catch(function(e) { showToast('Fleet start failed: ' + e.message, 'error'); })
+    .finally(function() { btn.disabled = false; btn.textContent = 'Start Fleet'; });
+}
+
+function fleetStop() {
+  var btn = document.getElementById('btn-fleet-stop');
+  btn.disabled = true;
+  btn.textContent = 'Stopping...';
+  apiFetch('/api/fleet/stop', { method: 'POST' })
+    .then(function() { showToast('Fleet stopped', 'info'); })
+    .catch(function(e) { showToast('Fleet stop failed: ' + e.message, 'error'); })
+    .finally(function() { btn.disabled = false; btn.textContent = 'Stop Fleet'; });
+}
+
+function updateHeaderControls(data) {
+  var startBtn = document.getElementById('btn-fleet-start');
+  var stopBtn = document.getElementById('btn-fleet-stop');
+  var agents = data.agents || [];
+  var activeCount = agents.filter(function(a) { return a.status === 'BUSY' || a.status === 'IDLE'; }).length;
+  if (activeCount > 0) {
+    startBtn.style.display = 'none';
+    stopBtn.style.display = '';
+  } else {
+    startBtn.style.display = '';
+    stopBtn.style.display = 'none';
+  }
+  if (data.thermal && data.thermal.loaded_model) {
+    var sel = document.getElementById('header-model-select');
+    if (sel && sel.value !== data.thermal.loaded_model) {
+      sel.value = data.thermal.loaded_model;
+    }
+  }
+}
+
+function _populateModelDropdown() {
+  apiFetch('/api/health').then(function(h) {
+    var sel = document.getElementById('header-model-select');
+    if (!sel) return;
+    var models = (h.subsystems && h.subsystems.ollama && h.subsystems.ollama.available_models) || [];
+    var current = (h.subsystems && h.subsystems.ollama && h.subsystems.ollama.current_model) || '';
+    while (sel.firstChild) sel.removeChild(sel.firstChild);
+    if (models.length === 0) {
+      var opt = document.createElement('option');
+      opt.value = '';
+      opt.textContent = 'No models available';
+      sel.appendChild(opt);
+      return;
+    }
+    models.forEach(function(m) {
+      var opt = document.createElement('option');
+      opt.value = m;
+      opt.textContent = m;
+      if (m === current) opt.selected = true;
+      sel.appendChild(opt);
+    });
+  }).catch(function() {
+    var sel = document.getElementById('header-model-select');
+    if (!sel) return;
+    while (sel.firstChild) sel.removeChild(sel.firstChild);
+    var opt = document.createElement('option');
+    opt.value = '';
+    opt.textContent = 'Ollama offline';
+    sel.appendChild(opt);
+  });
+}
+
+/* ── First-Run Walkthrough ────────────────────────────────────────────────── */
+
+function _showWalkthrough() {
+  var overlay = document.createElement('div');
+  overlay.id = 'walkthrough-overlay';
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:10000;display:flex;align-items:center;justify-content:center;';
+
+  var modal = document.createElement('div');
+  modal.style.cssText = 'background:var(--card);border:1px solid var(--border);border-radius:12px;padding:32px;max-width:520px;width:90%;max-height:80vh;overflow-y:auto;box-shadow:0 8px 32px rgba(0,0,0,0.3);';
+
+  var _step = 0;
+  var _sysInfo = null;
+  var _models = [];
+  var _selectedModel = '';
+
+  var title = document.createElement('h2');
+  title.style.cssText = 'margin:0 0 8px;font-size:20px;color:var(--foreground);';
+  title.textContent = 'Welcome to BigEd CC';
+  modal.appendChild(title);
+
+  var subtitle = document.createElement('p');
+  subtitle.style.cssText = 'margin:0 0 20px;font-size:13px;color:var(--muted-foreground);';
+  subtitle.textContent = 'Quick setup wizard — 3 steps';
+  modal.appendChild(subtitle);
+
+  var stepRow = document.createElement('div');
+  stepRow.style.cssText = 'display:flex;gap:8px;margin-bottom:20px;';
+  var stepLabels = ['System Detection', 'Model Selection', 'Launch'];
+  var stepDots = [];
+  stepLabels.forEach(function(label, i) {
+    var dot = document.createElement('div');
+    dot.style.cssText = 'flex:1;text-align:center;padding:6px;border-radius:6px;font-size:11px;font-weight:600;' +
+      (i === 0 ? 'background:var(--primary);color:#fff;' : 'background:var(--muted);color:var(--muted-foreground);');
+    dot.textContent = (i + 1) + '. ' + label;
+    stepDots.push(dot);
+    stepRow.appendChild(dot);
+  });
+  modal.appendChild(stepRow);
+
+  var content = document.createElement('div');
+  content.id = 'walkthrough-content';
+  content.style.cssText = 'min-height:120px;';
+  modal.appendChild(content);
+
+  var btnRow = document.createElement('div');
+  btnRow.style.cssText = 'display:flex;gap:8px;justify-content:flex-end;margin-top:20px;';
+
+  var skipBtn = document.createElement('button');
+  skipBtn.className = 'btn btn-sm btn-outline';
+  skipBtn.textContent = 'Skip';
+  skipBtn.addEventListener('click', function() { _completeWalkthrough(); });
+  btnRow.appendChild(skipBtn);
+
+  var nextBtn = document.createElement('button');
+  nextBtn.className = 'btn btn-sm btn-primary';
+  nextBtn.textContent = 'Next';
+  nextBtn.addEventListener('click', function() { _nextStep(); });
+  btnRow.appendChild(nextBtn);
+  modal.appendChild(btnRow);
+
+  overlay.appendChild(modal);
+  document.body.appendChild(overlay);
+
+  function _updateStepDots() {
+    stepDots.forEach(function(d, i) {
+      d.style.background = i === _step ? 'var(--primary)' : i < _step ? 'var(--success)' : 'var(--muted)';
+      d.style.color = i <= _step ? '#fff' : 'var(--muted-foreground)';
+    });
+  }
+
+  function _renderStep() {
+    while (content.firstChild) content.removeChild(content.firstChild);
+    _updateStepDots();
+
+    if (_step === 0) {
+      var loading = document.createElement('p');
+      loading.textContent = 'Detecting system...';
+      loading.style.color = 'var(--muted-foreground)';
+      content.appendChild(loading);
+      apiFetch('/api/fleet/health').then(function(h) {
+        _sysInfo = h;
+        while (content.firstChild) content.removeChild(content.firstChild);
+        var sys = h.system || {};
+        var info = [
+          ['RAM', (sys.ram_total_gb || '?') + ' GB'],
+          ['CPU Cores', sys.cpu_cores || '?'],
+          ['CPU Usage', (sys.cpu_pct || 0) + '%'],
+          ['Ollama', h.ollama && h.ollama.online ? 'Online' : 'Offline'],
+          ['Workers', (h.workers || {}).total || 0],
+        ];
+        info.forEach(function(row) {
+          var p = document.createElement('div');
+          p.style.cssText = 'display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--border);font-size:13px;';
+          var label = document.createElement('span');
+          label.style.color = 'var(--muted-foreground)';
+          label.textContent = row[0];
+          var val = document.createElement('span');
+          val.style.cssText = 'font-weight:600;color:var(--foreground);';
+          val.textContent = row[1];
+          p.appendChild(label);
+          p.appendChild(val);
+          content.appendChild(p);
+        });
+        _models = (h.ollama && h.ollama.models) || [];
+      }).catch(function() {
+        while (content.firstChild) content.removeChild(content.firstChild);
+        var err = document.createElement('p');
+        err.textContent = 'Could not detect system. Fleet may not be running.';
+        err.style.color = 'var(--destructive)';
+        content.appendChild(err);
+      });
+
+    } else if (_step === 1) {
+      var desc = document.createElement('p');
+      desc.style.cssText = 'font-size:13px;color:var(--muted-foreground);margin:0 0 12px;';
+      desc.textContent = 'Select the default model for fleet workers:';
+      content.appendChild(desc);
+      if (_models.length === 0) {
+        var noModels = document.createElement('p');
+        noModels.textContent = 'No Ollama models found. Pull a model first: ollama pull qwen3:8b';
+        noModels.style.cssText = 'font-size:12px;color:var(--warning);';
+        content.appendChild(noModels);
+      } else {
+        _models.forEach(function(m) {
+          var row = document.createElement('label');
+          row.style.cssText = 'display:flex;align-items:center;gap:8px;padding:8px;border:1px solid var(--border);border-radius:6px;margin-bottom:6px;cursor:pointer;font-size:13px;';
+          var radio = document.createElement('input');
+          radio.type = 'radio';
+          radio.name = 'walkthrough-model';
+          radio.value = m;
+          if (m === _selectedModel || (!_selectedModel && m.indexOf('8b') > -1)) {
+            radio.checked = true;
+            _selectedModel = m;
+          }
+          radio.addEventListener('change', function() { _selectedModel = m; });
+          row.appendChild(radio);
+          var span = document.createElement('span');
+          span.textContent = m;
+          row.appendChild(span);
+          content.appendChild(row);
+        });
+      }
+
+    } else if (_step === 2) {
+      nextBtn.textContent = 'Launch Fleet';
+      skipBtn.style.display = 'none';
+      var summary = document.createElement('div');
+      summary.style.cssText = 'font-size:13px;color:var(--foreground);';
+      var lines = [
+        'Model: ' + (_selectedModel || 'default'),
+        'Workers: ' + ((_sysInfo && _sysInfo.workers) ? _sysInfo.workers.total : 'auto'),
+        'Ollama: ' + ((_sysInfo && _sysInfo.ollama && _sysInfo.ollama.online) ? 'Online' : 'Offline'),
+      ];
+      lines.forEach(function(line) {
+        var p = document.createElement('div');
+        p.style.cssText = 'padding:6px 0;border-bottom:1px solid var(--border);';
+        p.textContent = line;
+        summary.appendChild(p);
+      });
+      var ready = document.createElement('p');
+      ready.style.cssText = 'margin-top:16px;font-weight:600;color:var(--success);';
+      ready.textContent = 'Ready to go!';
+      summary.appendChild(ready);
+      content.appendChild(summary);
+    }
+  }
+
+  function _nextStep() {
+    if (_step < 2) {
+      _step++;
+      _renderStep();
+    } else {
+      _completeWalkthrough();
+      if (_selectedModel) switchModel(_selectedModel);
+    }
+  }
+
+  function _completeWalkthrough() {
+    apiFetch('/api/walkthrough/complete', { method: 'POST' }).catch(function() {});
+    var ov = document.getElementById('walkthrough-overlay');
+    if (ov) ov.remove();
+  }
+
+  _renderStep();
+}
+
+function _checkWalkthrough() {
+  apiFetch('/api/walkthrough/needed').then(function(r) {
+    if (r && r.needed) _showWalkthrough();
+  }).catch(function() {});
+}
+
+/* ── Init: populate header dropdown + check walkthrough on load ───────────── */
+_populateModelDropdown();
+_checkWalkthrough();
 </script>
 </body>
 </html>

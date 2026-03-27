@@ -1052,10 +1052,29 @@ def _graph_universe(db) -> tuple:
                 ORDER BY name
             """).fetchall()
 
+        # ── 1b. ACTIVITY SCORES (tasks per agent, last hour) ───────
+        activity_counts = {}
+        try:
+            with db.get_conn() as conn:
+                act_rows = conn.execute("""
+                    SELECT assigned_to, COUNT(*) as cnt
+                    FROM tasks
+                    WHERE created_at >= datetime('now', '-1 hour')
+                      AND assigned_to IS NOT NULL
+                    GROUP BY assigned_to
+                """).fetchall()
+            for row in act_rows:
+                activity_counts[row["assigned_to"]] = row["cnt"]
+        except Exception:
+            pass
+        max_activity = max(activity_counts.values()) if activity_counts else 1
+
         for a in agents:
             aid = f"agent:{a['name']}"
+            score = activity_counts.get(a["name"], 0) / max_activity if max_activity else 0
             _add_node(aid, type="agent", source="universe",
                       label=a["name"], status=a["status"] or "IDLE",
+                      activity_score=round(score, 3),
                       metrics={"role": a["role"] or ""})
 
         # ── 2. SKILLS (all registered) ──────────────────────────────────
