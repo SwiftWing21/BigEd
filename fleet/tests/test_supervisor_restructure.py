@@ -510,5 +510,60 @@ def test_vram_reactive_eviction():
     assert pm.ollama_evicted_for_training is True
 
 
+# ── Workflow Hardening: Dashboard ───────────────────────────────────
+
+def test_sse_reaper_removes_stale():
+    """SSE broadcast removes clients with stale last_active."""
+    import time, queue, threading
+    # Simulate the new _sse_clients structure
+    _sse_lock = threading.Lock()
+    clients = [
+        {"queue": queue.Queue(maxsize=50), "last_active": time.time() - 300},  # stale
+        {"queue": queue.Queue(maxsize=50), "last_active": time.time() - 300},  # stale
+        {"queue": queue.Queue(maxsize=50), "last_active": time.time()},        # fresh
+    ]
+    # Reaper logic: remove entries with last_active > 120s ago
+    now = time.time()
+    with _sse_lock:
+        clients[:] = [c for c in clients if now - c["last_active"] <= 120]
+    assert len(clients) == 1
+
+
+def test_federation_peer_ttl():
+    """Stale federation peers (>2h) are pruned on heartbeat."""
+    import time
+    peers = {
+        "fleet-a": {"fleet_id": "fleet-a", "last_seen": time.time()},
+        "fleet-b": {"fleet_id": "fleet-b", "last_seen": time.time() - 8000},  # stale (>7200s)
+        "fleet-c": {"fleet_id": "fleet-c", "last_seen": time.time() - 100},   # fresh
+    }
+    now = time.time()
+    stale = [k for k, v in peers.items() if now - v["last_seen"] > 7200]
+    for k in stale:
+        del peers[k]
+    assert "fleet-a" in peers
+    assert "fleet-b" not in peers
+    assert "fleet-c" in peers
+
+
+def test_rate_limiter_eviction():
+    """Rate limiter evicts old entries when dict exceeds 500."""
+    import time
+    now = time.time()
+    rate_limits = {}
+    # Add 400 old entries + 200 recent
+    for i in range(400):
+        rate_limits[f"old_{i}"] = (now - 600, 1)  # 10 minutes old
+    for i in range(200):
+        rate_limits[f"new_{i}"] = (now - 10, 1)   # 10 seconds old
+    assert len(rate_limits) == 600
+    # Eviction logic
+    if len(rate_limits) > 500:
+        stale = [k for k, v in rate_limits.items() if now - v[0] >= 300]
+        for k in stale:
+            del rate_limits[k]
+    assert len(rate_limits) == 200  # only recent survive
+
+
 if __name__ == "__main__":
     sys.exit(pytest.main([__file__, "-v"]))

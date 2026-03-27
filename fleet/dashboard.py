@@ -95,7 +95,8 @@ def _require_role(role):
 # Alert state — tracked in memory, broadcast via SSE
 _alerts = []
 _alert_lock = threading.Lock()
-_sse_clients = []
+_sse_clients = []  # list[{"queue": Queue, "last_active": float}]
+_sse_lock = threading.Lock()
 _monitor_start_time = time.time()
 
 # Federation state — peer heartbeats tracked in memory
@@ -107,6 +108,11 @@ _rate_limits = {}  # endpoint -> (last_call_time, count)
 def _check_rate_limit(endpoint, max_per_min=10):
     """Simple in-memory rate limit. Returns True if allowed."""
     now = time.time()
+    # Evict stale entries when dict grows large
+    if len(_rate_limits) > 500:
+        stale = [k for k, v in _rate_limits.items() if now - v[0] >= 300]
+        for k in stale:
+            del _rate_limits[k]
     if endpoint not in _rate_limits:
         _rate_limits[endpoint] = (now, 1)
         return True
@@ -252,16 +258,21 @@ def _add_alert(level: str, message: str, source: str = "system"):
 
 
 def _broadcast_sse(data: dict):
-    """Send data to all connected SSE clients."""
+    """Send SSE event to all connected clients, reap stale ones."""
     msg = f"data: {json.dumps(data)}\n\n"
+    now = time.time()
     dead = []
-    for client in _sse_clients:
-        try:
-            client.put(msg)
-        except Exception:
-            dead.append(client)
-    for c in dead:
-        _sse_clients.remove(c)
+    with _sse_lock:
+        for client in _sse_clients:
+            try:
+                client["queue"].put_nowait(msg)
+                client["last_active"] = now
+            except Exception:
+                dead.append(client)
+        # Reap stale (>120s) and dead clients
+        for c in dead:
+            _sse_clients.remove(c)
+        _sse_clients[:] = [c for c in _sse_clients if now - c["last_active"] <= 120]
 
 
 # ── Alert monitoring thread ──────────────────────────────────────────────────
@@ -2246,7 +2257,8 @@ def api_stream():
     import queue
 
     q = queue.Queue()
-    _sse_clients.append(q)
+    with _sse_lock:
+        _sse_clients.append({"queue": q, "last_active": time.time()})
 
     def generate():
         try:
@@ -2262,8 +2274,8 @@ def api_stream():
         except GeneratorExit:
             pass
         finally:
-            if q in _sse_clients:
-                _sse_clients.remove(q)
+            with _sse_lock:
+                _sse_clients[:] = [c for c in _sse_clients if c["queue"] is not q]
 
     return Response(generate(), mimetype="text/event-stream",
                     headers={"Cache-Control": "no-cache",
@@ -2590,6 +2602,11 @@ def api_federation_heartbeat():
         "pending": data.get("pending", 0),
         "last_seen": time.time(),
     }
+    # Prune stale peers (>2 hours since last heartbeat)
+    now = time.time()
+    stale_peers = [k for k, v in _federation_peers.items() if now - v["last_seen"] > 7200]
+    for k in stale_peers:
+        del _federation_peers[k]
     return jsonify({"ok": True})
 
 
