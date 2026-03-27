@@ -4987,124 +4987,255 @@ function showKeyInput(envVar, container, signupHint) {
   }
 }
 
-/* ══════════════════════════════════════════════════════════════════════════
-   8. SETTINGS
-   ══════════════════════════════════════════════════════════════════════ */
+/* ==========================================================================
+   8. SETTINGS — 6 Category Tabs
+   ========================================================================== */
+var _settingsTabDefs = [
+  { id: 'general',    label: 'General',     sections: ['fleet','naming','dashboard','logging','ditl'] },
+  { id: 'models',     label: 'Models',      sections: ['models','models.tiers','review','idle'] },
+  { id: 'hardware',   label: 'Hardware',    sections: ['thermal','gpu','thermal.vram','workers','capacity'] },
+  { id: 'apikeys',    label: 'API & Keys',  sections: ['api_gate','_api_keys'] },
+  { id: 'operations', label: 'Operations',  sections: ['backup','schedules','mcp','ingest','dispatch_bridge'] },
+  { id: 'advanced',   label: 'Advanced',    sections: ['federation','security','sso','billing','enterprise','compliance'] }
+];
+var _activeSettingsTab = 'general';
+var _settingsCache = { settings: null, schema: null };
+
 function loadSettings() {
-  loadApiKeys();
+  _buildSettingsTabBar();
+  switchSettingsTab('general');
+}
+
+function _buildSettingsTabBar() {
+  var bar = document.getElementById('settings-tab-bar');
+  bar.textContent = '';
+  _settingsTabDefs.forEach(function(tab) {
+    var btn = document.createElement('button');
+    btn.className = 'settings-tab' + (tab.id === _activeSettingsTab ? ' active' : '');
+    btn.textContent = tab.label;
+    btn.setAttribute('data-tab', tab.id);
+    (function(tabId) {
+      btn.addEventListener('click', function() { switchSettingsTab(tabId); });
+    })(tab.id);
+    bar.appendChild(btn);
+  });
+}
+
+function switchSettingsTab(tabId) {
+  _activeSettingsTab = tabId;
+  var tabs = document.querySelectorAll('#settings-tab-bar .settings-tab');
+  for (var i = 0; i < tabs.length; i++) {
+    var t = tabs[i];
+    if (t.getAttribute('data-tab') === tabId) {
+      t.classList.add('active');
+    } else {
+      t.classList.remove('active');
+    }
+  }
+  loadSettingsTab(tabId);
+}
+
+function loadSettingsTab(tabId) {
+  var content = document.getElementById('settings-tab-content');
+  content.textContent = '';
+  var spinner = document.createElement('div');
+  spinner.className = 'spinner';
+  content.appendChild(spinner);
+
+  var tabDef = null;
+  for (var i = 0; i < _settingsTabDefs.length; i++) {
+    if (_settingsTabDefs[i].id === tabId) { tabDef = _settingsTabDefs[i]; break; }
+  }
+  if (!tabDef) return;
+
+  /* Special case: API & Keys tab has custom sub-sections */
+  if (tabId === 'apikeys') {
+    _loadApiKeysTab(content);
+    return;
+  }
+
   Promise.all([
     apiFetch('/api/settings'),
     apiFetch('/api/settings/schema')
   ]).then(function(results) {
-    var settings = results[0].settings || {};
-    var schema = results[1].schema || {};
-    var el = document.getElementById('settings-sections');
-    el.textContent = '';
+    _settingsCache.settings = results[0].settings || {};
+    _settingsCache.schema = results[1].schema || {};
+    content.textContent = '';
 
-    Object.keys(schema).forEach(function(section) {
-      var sectionSchema = schema[section];
-      var sectionValues = (settings[section] && settings[section].values) || {};
-      var isEditable = settings[section] && settings[section].editable;
-
-      var sectionDiv = document.createElement('div');
-      sectionDiv.style.marginBottom = '24px';
-
-      var sectionTitle = document.createElement('div');
-      sectionTitle.style.cssText = 'font-size:14px;font-weight:700;color:var(--foreground);margin-bottom:12px;text-transform:uppercase;letter-spacing:0.5px';
-      sectionTitle.textContent = section;
-      if (!isEditable) {
-        var roTag = document.createElement('span');
-        roTag.className = 'badge badge-muted';
-        roTag.style.cssText = 'font-size:9px;vertical-align:middle;margin-left:8px';
-        roTag.textContent = 'Read-only';
-        sectionTitle.appendChild(document.createTextNode(' '));
-        sectionTitle.appendChild(roTag);
-      }
-      sectionDiv.appendChild(sectionTitle);
-
-      Object.keys(sectionSchema).forEach(function(key) {
-        var info = sectionSchema[key];
-        var val = sectionValues[key];
-
-        var item = document.createElement('div');
-        item.className = 'settings-item';
-
-        var iconEl = document.createElement('div');
-        iconEl.className = 'settings-icon';
-        var iconChar = '\u2699';
-        if (key.indexOf('temp') >= 0 || key.indexOf('thermal') >= 0) iconChar = '\uD83D\uDD25';
-        else if (key.indexOf('model') >= 0) iconChar = '\uD83E\uDD16';
-        else if (key.indexOf('backup') >= 0) iconChar = '\uD83D\uDCBE';
-        else if (key.indexOf('port') >= 0 || key.indexOf('address') >= 0) iconChar = '\uD83C\uDF10';
-        iconEl.textContent = iconChar;
-
-        var infoDiv = document.createElement('div');
-        infoDiv.className = 'settings-info';
-        var labelEl = document.createElement('div');
-        labelEl.className = 'settings-label';
-        labelEl.textContent = key;
-        var descEl = document.createElement('div');
-        descEl.className = 'settings-desc';
-        descEl.textContent = info.description || '';
-        infoDiv.appendChild(labelEl);
-        infoDiv.appendChild(descEl);
-
-        var ctrlDiv = document.createElement('div');
-        ctrlDiv.className = 'settings-control';
-
-        if (info.type === 'bool' && isEditable) {
-          var toggleLabel = document.createElement('label');
-          toggleLabel.className = 'toggle';
-          var toggleInput = document.createElement('input');
-          toggleInput.type = 'checkbox';
-          toggleInput.checked = !!val;
-          (function(sec, k) {
-            toggleInput.addEventListener('change', function() { updateSetting(sec, k, this.checked); });
-          })(section, key);
-          var toggleSlider = document.createElement('span');
-          toggleSlider.className = 'toggle-slider';
-          toggleLabel.appendChild(toggleInput);
-          toggleLabel.appendChild(toggleSlider);
-          ctrlDiv.appendChild(toggleLabel);
-        } else if (info.type === 'bool') {
-          var boolBadge = document.createElement('span');
-          boolBadge.className = 'badge ' + (val ? 'badge-success' : 'badge-muted');
-          boolBadge.textContent = val ? 'On' : 'Off';
-          ctrlDiv.appendChild(boolBadge);
-        } else if (isEditable) {
-          var inputEl = document.createElement('input');
-          inputEl.className = 'input';
-          inputEl.style.cssText = 'width:120px;text-align:right';
-          inputEl.value = val !== undefined ? String(val) : '';
-          (function(sec, k, typ) {
-            inputEl.addEventListener('change', function() { updateSetting(sec, k, this.value, typ); });
-          })(section, key, info.type);
-          ctrlDiv.appendChild(inputEl);
-        } else {
-          var valSpan = document.createElement('span');
-          valSpan.style.cssText = 'font-size:13px;font-weight:500;color:var(--foreground)';
-          valSpan.textContent = val !== undefined ? String(val) : '--';
-          ctrlDiv.appendChild(valSpan);
-        }
-
-        item.appendChild(iconEl);
-        item.appendChild(infoDiv);
-        item.appendChild(ctrlDiv);
-        sectionDiv.appendChild(item);
-      });
-      el.appendChild(sectionDiv);
+    var rendered = false;
+    tabDef.sections.forEach(function(section) {
+      if (section.charAt(0) === '_') return;
+      var sectionSchema = _settingsCache.schema[section];
+      if (!sectionSchema) return;
+      var sectionValues = (_settingsCache.settings[section] && _settingsCache.settings[section].values) || {};
+      var isEditable = _settingsCache.settings[section] && _settingsCache.settings[section].editable;
+      _renderSettingsSection(content, section, sectionSchema, sectionValues, isEditable);
+      rendered = true;
     });
+
+    if (!rendered) {
+      var empty = document.createElement('div');
+      empty.style.cssText = 'color:var(--muted-foreground);text-align:center;padding:24px;font-size:13px';
+      empty.textContent = 'No configuration sections available for this category.';
+      content.appendChild(empty);
+    }
   }).catch(function() {
-    var el = document.getElementById('settings-sections');
-    el.textContent = '';
+    content.textContent = '';
     var msg = document.createElement('div');
     msg.style.cssText = 'color:var(--danger);text-align:center;padding:16px';
     msg.textContent = 'Failed to load settings';
-    el.appendChild(msg);
+    content.appendChild(msg);
   });
 }
 
-function updateSetting(section, key, value, type) {
+function _renderSettingsSection(parent, section, schema, values, editable) {
+  var sectionDiv = document.createElement('div');
+  sectionDiv.style.marginBottom = '24px';
+
+  var sectionTitle = document.createElement('div');
+  sectionTitle.style.cssText = 'font-size:14px;font-weight:700;color:var(--foreground);margin-bottom:12px;text-transform:uppercase;letter-spacing:0.5px';
+  sectionTitle.textContent = section;
+  if (!editable) {
+    var roTag = document.createElement('span');
+    roTag.className = 'badge badge-muted';
+    roTag.style.cssText = 'font-size:9px;vertical-align:middle;margin-left:8px';
+    roTag.textContent = 'Read-only';
+    sectionTitle.appendChild(document.createTextNode(' '));
+    sectionTitle.appendChild(roTag);
+  }
+  sectionDiv.appendChild(sectionTitle);
+
+  Object.keys(schema).forEach(function(key) {
+    var info = schema[key];
+    var val = values[key];
+
+    var item = document.createElement('div');
+    item.className = 'settings-item';
+
+    var iconEl = document.createElement('div');
+    iconEl.className = 'settings-icon';
+    var iconChar = '\u2699';
+    if (key.indexOf('temp') >= 0 || key.indexOf('thermal') >= 0) iconChar = '\uD83D\uDD25';
+    else if (key.indexOf('model') >= 0) iconChar = '\uD83E\uDD16';
+    else if (key.indexOf('backup') >= 0) iconChar = '\uD83D\uDCBE';
+    else if (key.indexOf('port') >= 0 || key.indexOf('address') >= 0) iconChar = '\uD83C\uDF10';
+    iconEl.textContent = iconChar;
+
+    var infoDiv = document.createElement('div');
+    infoDiv.className = 'settings-info';
+    var labelEl = document.createElement('div');
+    labelEl.className = 'settings-label';
+    labelEl.textContent = key;
+    var descEl = document.createElement('div');
+    descEl.className = 'settings-desc';
+    descEl.textContent = info.description || '';
+    infoDiv.appendChild(labelEl);
+    infoDiv.appendChild(descEl);
+
+    var ctrlDiv = document.createElement('div');
+    ctrlDiv.className = 'settings-control';
+
+    if (info.type === 'bool' && editable) {
+      var toggleLabel = document.createElement('label');
+      toggleLabel.className = 'toggle';
+      var toggleInput = document.createElement('input');
+      toggleInput.type = 'checkbox';
+      toggleInput.checked = !!val;
+      (function(sec, k) {
+        toggleInput.addEventListener('change', function() { _saveSettingField(sec, k, this.checked); });
+      })(section, key);
+      var toggleSlider = document.createElement('span');
+      toggleSlider.className = 'toggle-slider';
+      toggleLabel.appendChild(toggleInput);
+      toggleLabel.appendChild(toggleSlider);
+      ctrlDiv.appendChild(toggleLabel);
+    } else if (info.type === 'bool') {
+      var boolBadge = document.createElement('span');
+      boolBadge.className = 'badge ' + (val ? 'badge-success' : 'badge-muted');
+      boolBadge.textContent = val ? 'On' : 'Off';
+      ctrlDiv.appendChild(boolBadge);
+    } else if (editable) {
+      var inputEl = document.createElement('input');
+      inputEl.className = 'input';
+      inputEl.style.cssText = 'width:120px;text-align:right';
+      inputEl.value = val !== undefined ? String(val) : '';
+      (function(sec, k, typ) {
+        inputEl.addEventListener('blur', function() { _saveSettingField(sec, k, this.value, typ); });
+        inputEl.addEventListener('keydown', function(e) { if (e.key === 'Enter') this.blur(); });
+      })(section, key, info.type);
+      ctrlDiv.appendChild(inputEl);
+    } else {
+      var valSpan = document.createElement('span');
+      valSpan.style.cssText = 'font-size:13px;font-weight:500;color:var(--foreground)';
+      valSpan.textContent = val !== undefined ? String(val) : '--';
+      ctrlDiv.appendChild(valSpan);
+    }
+
+    item.appendChild(iconEl);
+    item.appendChild(infoDiv);
+    item.appendChild(ctrlDiv);
+    sectionDiv.appendChild(item);
+  });
+  parent.appendChild(sectionDiv);
+}
+
+function _loadApiKeysTab(content) {
+  content.textContent = '';
+
+  /* API Keys panel */
+  var keysPanel = document.createElement('div');
+  keysPanel.style.marginBottom = '24px';
+
+  var keysHeader = document.createElement('div');
+  keysHeader.style.cssText = 'display:flex;justify-content:space-between;align-items:center;margin-bottom:12px';
+  var keysTitle = document.createElement('h3');
+  keysTitle.style.cssText = 'margin:0;font-size:14px;font-weight:600';
+  keysTitle.textContent = 'API KEYS';
+  keysHeader.appendChild(keysTitle);
+
+  var refreshBtn = document.createElement('button');
+  refreshBtn.className = 'btn btn-sm btn-outline';
+  refreshBtn.textContent = 'Refresh';
+  refreshBtn.addEventListener('click', function() { loadSettingsTab('apikeys'); });
+  keysHeader.appendChild(refreshBtn);
+  keysPanel.appendChild(keysHeader);
+
+  var keysList = document.createElement('div');
+  keysList.id = 'api-keys-list';
+  var keysSpinner = document.createElement('div');
+  keysSpinner.className = 'spinner';
+  keysList.appendChild(keysSpinner);
+  keysPanel.appendChild(keysList);
+  content.appendChild(keysPanel);
+
+  /* Gate card mount */
+  var gateMount = document.createElement('div');
+  gateMount.id = 'gate-card-mount';
+  gateMount.style.marginBottom = '16px';
+  content.appendChild(gateMount);
+
+  /* Load api_gate config settings below the gate card */
+  Promise.all([
+    apiFetch('/api/settings'),
+    apiFetch('/api/settings/schema')
+  ]).then(function(results) {
+    _settingsCache.settings = results[0].settings || {};
+    _settingsCache.schema = results[1].schema || {};
+
+    var gateSchema = _settingsCache.schema['api_gate'];
+    if (gateSchema) {
+      var gateValues = (_settingsCache.settings['api_gate'] && _settingsCache.settings['api_gate'].values) || {};
+      var gateEditable = _settingsCache.settings['api_gate'] && _settingsCache.settings['api_gate'].editable;
+      _renderSettingsSection(content, 'api_gate', gateSchema, gateValues, gateEditable);
+    }
+  }).catch(function() {});
+
+  /* Trigger existing loaders */
+  loadApiKeys();
+  buildGateCard();
+}
+
+function _saveSettingField(section, key, value, type) {
   if (type === 'int') value = parseInt(value) || 0;
   else if (type === 'float') value = parseFloat(value) || 0;
   var body = {};
@@ -5117,6 +5248,11 @@ function updateSetting(section, key, value, type) {
   }).catch(function(e) {
     showToast('Failed to update: ' + e.message, 'error');
   });
+}
+
+/* Backward-compat alias */
+function updateSetting(section, key, value, type) {
+  _saveSettingField(section, key, value, type);
 }
 
 /* ══════════════════════════════════════════════════════════════════════════
