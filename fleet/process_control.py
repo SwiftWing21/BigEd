@@ -169,6 +169,48 @@ def api_fleet_stop():
         return jsonify({"error": _safe_error(e)}), 500
 
 
+@fleet_bp.route("/api/fleet/model-switch", methods=["POST"])
+@_require_role("operator")
+def api_fleet_model_switch():
+    """Switch the active Ollama model. Body: {model: "qwen3:8b"}."""
+    if not _check_rate_limit("model_switch", max_per_min=5):
+        return jsonify({"error": "Rate limited — model switch can only be called 5 times per minute"}), 429
+    try:
+        data = request.get_json(silent=True) or {}
+        model = data.get("model", "").strip()
+        if not model or not re.match(r'^[a-zA-Z0-9_.:\-/]{1,128}$', model):
+            return jsonify({"error": "Invalid model name"}), 400
+
+        import urllib.request
+        # Send a keepalive ping to Ollama with the new model to load it
+        payload = json.dumps({"model": model, "keep_alive": "10m"}).encode()
+        req = urllib.request.Request(
+            "http://localhost:11434/api/generate",
+            data=payload,
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            resp.read()
+
+        # Update fleet.toml default model
+        toml_path = FLEET_DIR / "fleet.toml"
+        if toml_path.exists():
+            content = toml_path.read_text(encoding="utf-8")
+            new_content = re.sub(
+                r'^(default\s*=\s*)"[^"]*"',
+                f'\\1"{model}"',
+                content, count=1, flags=re.MULTILINE,
+            )
+            if new_content != content:
+                toml_path.write_text(new_content, encoding="utf-8")
+
+        log.info("Model switch requested via API: %s", model)
+        return jsonify({"status": "switched", "model": model})
+    except Exception as e:
+        return jsonify({"error": _safe_error(e)}), 500
+
+
 @fleet_bp.route("/api/fleet/workers")
 def api_fleet_workers():
     """List all workers with PID and alive status."""

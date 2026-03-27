@@ -467,16 +467,35 @@ def api_health():
         subsystems["fleet_db"] = {"status": "unavailable", "detail": _safe_error(e)}
         overall = "unhealthy"
 
-    # 2. Ollama status
+    # 2. Ollama status + available models + current loaded model
     try:
         import urllib.request
         req = urllib.request.Request("http://localhost:11434/api/tags")
         with urllib.request.urlopen(req, timeout=2) as resp:
             data = json.loads(resp.read())
-            models_loaded = len(data.get("models", []))
-        subsystems["ollama"] = {"status": "ok", "models_loaded": models_loaded}
+            available_models = [m.get("name", "") for m in data.get("models", [])]
+            models_loaded = len(available_models)
+        # Determine current loaded model from hw_state or fleet.toml
+        current_model = ""
+        try:
+            if HW_STATE_JSON.exists():
+                hw_data = json.loads(HW_STATE_JSON.read_text())
+                current_model = hw_data.get("model", "")
+        except Exception:
+            pass
+        if not current_model:
+            try:
+                current_model = _load_config().get("models", {}).get("tiers", {}).get("default", "")
+            except Exception:
+                pass
+        subsystems["ollama"] = {
+            "status": "ok",
+            "models_loaded": models_loaded,
+            "available_models": available_models,
+            "current_model": current_model,
+        }
     except Exception:
-        subsystems["ollama"] = {"status": "unavailable", "models_loaded": 0}
+        subsystems["ollama"] = {"status": "unavailable", "models_loaded": 0, "available_models": [], "current_model": ""}
         if overall == "healthy":
             overall = "degraded"
 
@@ -534,6 +553,43 @@ def api_health():
         "subsystems": subsystems,
         "version": "0.22.00",
     })
+
+
+# ── Walkthrough (first-run wizard) ────────────────────────────────────────────
+
+_WALKTHROUGH_FLAG = FLEET_DIR / ".walkthrough_done"
+
+
+@app.route("/api/walkthrough/needed")
+def api_walkthrough_needed():
+    """Check if the first-run walkthrough should be shown."""
+    try:
+        # Show walkthrough if flag file doesn't exist and DB has no completed tasks
+        if _WALKTHROUGH_FLAG.exists():
+            return jsonify({"needed": False})
+        # Also skip if fleet has been used (has completed tasks)
+        try:
+            rows = query("SELECT COUNT(*) as n FROM tasks WHERE status='DONE'")
+            if rows and rows[0]["n"] > 5:
+                return jsonify({"needed": False})
+        except Exception:
+            pass
+        return jsonify({"needed": True})
+    except Exception:
+        return jsonify({"needed": False})
+
+
+@app.route("/api/walkthrough/complete", methods=["POST"])
+def api_walkthrough_complete():
+    """Mark the first-run walkthrough as completed."""
+    try:
+        _WALKTHROUGH_FLAG.write_text(
+            json.dumps({"completed_at": datetime.utcnow().isoformat()}),
+            encoding="utf-8",
+        )
+        return jsonify({"status": "ok"})
+    except Exception as e:
+        return jsonify({"error": _safe_error(e)}), 500
 
 
 # ── Boot Status ──────────────────────────────────────────────────────────────
