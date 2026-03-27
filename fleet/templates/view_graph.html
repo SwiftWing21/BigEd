@@ -14,6 +14,8 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/cytoscape-dagre/2.5.0/cytoscape-dagre.min.js"></script>
 <!-- fcose: fast compound spring embedder — handles 10K+ nodes -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/cytoscape-fcose/2.2.0/cytoscape-fcose.min.js"></script>
+<!-- fractal-brain: custom golden-angle spiral layout -->
+<script src="/static/layout_fractal.js"></script>
 
 <style>
 /* ── Fallbacks if tokens.css vars are missing ──────────────────────────── */
@@ -352,6 +354,7 @@ button { font-family: inherit; cursor: pointer; border: none; background: none; 
       <option value="radial">Radial</option>
       <option value="radial-cluster">Radial Cluster</option>
       <option value="cluster">Cluster (fcose)</option>
+      <option value="fractal-brain">Fractal Brain</option>
       <option value="swimlane">Grid</option>
     </select>
     <button class="vg-btn vg-btn--icon" id="refreshBtn" title="Refresh data">&#8635;</button>
@@ -619,6 +622,32 @@ button { font-family: inherit; cursor: pointer; border: none; background: none; 
             return t === 'hub' || t === 'agent';
           }).map(function(n) { return '#' + n.id(); }).join(', ') || undefined : undefined
         };
+      case 'fractal-brain':
+        return {
+          name: 'fcose',
+          quality: large ? 'default' : 'proof',
+          randomize: true,
+          animate: !massive ? 'end' : false,
+          animationDuration: 500,
+          fit: true,
+          padding: 30,
+          nodeRepulsion: function(node) {
+            return node.isParent() ? 12000 : 6000;
+          },
+          idealEdgeLength: function(edge) {
+            var src = edge.source(), tgt = edge.target();
+            if (src.parent().length && tgt.parent().length && src.parent().id() === tgt.parent().id()) return 40;
+            return 100;
+          },
+          edgeElasticity: 0.45,
+          gravity: 0.25,
+          gravityRange: 3.8,
+          nestingFactor: 0.1,
+          numIter: large ? 2500 : 5000,
+          packComponents: true,
+          componentSpacing: 40,
+          nodeDimensionsIncludeLabels: false,
+        };
       case 'swimlane':
         return {
           name: 'grid',
@@ -648,8 +677,8 @@ button { font-family: inherit; cursor: pointer; border: none; background: none; 
   function initCytoscape() {
     cy = cytoscape({
       container: $cy,
-      minZoom: 0.05,
-      maxZoom: 4,
+      minZoom: 0.25,
+      maxZoom: 3,
       wheelSensitivity: 0.3,
       textureOnViewport: true,     // GPU texture for panning (big perf win)
       hideEdgesOnViewport: false,   // keep edges visible during pan
@@ -727,6 +756,33 @@ button { font-family: inherit; cursor: pointer; border: none; background: none; 
             'border-width': 2,
           },
         },
+        // Compound parent nodes (agent communities)
+        {
+          selector: ':parent',
+          style: {
+            'background-opacity': 0.06,
+            'background-color': 'data(color)',
+            'border-width': 1.5,
+            'border-color': 'data(color)',
+            'border-opacity': 0.25,
+            'border-style': 'dashed',
+            'padding': 20,
+            'text-valign': 'top',
+            'text-halign': 'center',
+            'label': 'data(label)',
+            'font-size': '11px',
+            'color': '#a0a0a0',
+            'shape': 'roundrectangle',
+          },
+        },
+        {
+          selector: 'node[type="task_group"]',
+          style: {
+            'width': function(n) { return 8 + Math.sqrt(n.data('count') || 1) * 3; },
+            'height': function(n) { return 8 + Math.sqrt(n.data('count') || 1) * 3; },
+            'shape': 'round-tag',
+          },
+        },
         // Task nodes: hide labels until very close (there are hundreds)
         {
           selector: 'node[type="task"]',
@@ -775,27 +831,35 @@ button { font-family: inherit; cursor: pointer; border: none; background: none; 
           selector: 'node.filtered-out',
           style: { 'display': 'none' },
         },
-        // ── Edges ──
+        // ── Edges: opacity scales with weight (activity) ──
         {
           selector: 'edge',
           style: {
-            'width':              2,
+            'width':              1.5,
             'line-color':         'data(color)',
             'target-arrow-color': 'data(color)',
             'target-arrow-shape': 'triangle',
             'curve-style':        'bezier',
-            'arrow-scale':        0.8,
-            'opacity':            0.7,
+            'arrow-scale':        0.7,
+            'opacity':            0.12,
           },
         },
-        // Weighted edges
+        {
+          selector: 'edge[weight > 1]',
+          style: { 'opacity': 0.25, 'width': 1.8 },
+        },
         {
           selector: 'edge[weight > 3]',
-          style: { 'width': 3 },
+          style: { 'opacity': 0.45, 'width': 2.5 },
         },
         {
           selector: 'edge[weight > 8]',
-          style: { 'width': 5 },
+          style: { 'opacity': 0.7, 'width': 4 },
+        },
+        // Zoom-culled edges: hidden at overview/far zoom
+        {
+          selector: 'edge.edge-culled',
+          style: { 'display': 'none' },
         },
         // Hidden (filtered) edges
         {
@@ -812,6 +876,61 @@ button { font-family: inherit; cursor: pointer; border: none; background: none; 
             'overlay-opacity': 0.15,
           },
         },
+        // Hovered node — glow effect, no size change (prevents displacement)
+        {
+          selector: 'node.hovered',
+          style: {
+            'overlay-color':   '#7c3aed',
+            'overlay-opacity': 0.25,
+            'overlay-padding': '6px',
+            'z-index':         20,
+          },
+        },
+        // LOD: hidden real nodes when in overview
+        {
+          selector: '.lod-hidden',
+          style: { 'display': 'none' },
+        },
+        // LOD: group summary nodes
+        {
+          selector: 'node.lod-group',
+          style: {
+            'width':              60,
+            'height':             60,
+            'background-color':   'data(color)',
+            'background-opacity': 0.3,
+            'border-color':       'data(color)',
+            'border-width':       3,
+            'label':              'data(label)',
+            'font-size':          '13px',
+            'font-weight':        'bold',
+            'text-valign':        'center',
+            'text-halign':        'center',
+            'text-wrap':          'wrap',
+            'text-max-width':     '100px',
+            'color':              '#e0e0e0',
+            'overlay-padding':    '8px',
+            'z-index':            50,
+          },
+        },
+        // LOD: pipeline edges between groups
+        {
+          selector: 'edge.lod-edge',
+          style: {
+            'width':              3,
+            'line-color':         'data(color)',
+            'target-arrow-color': 'data(color)',
+            'target-arrow-shape': 'triangle',
+            'curve-style':        'bezier',
+            'arrow-scale':        1.2,
+            'opacity':            0.8,
+            'label':              'data(label)',
+            'font-size':          '9px',
+            'color':              '#a0a0a0',
+            'text-rotation':      'autorotate',
+            'text-margin-y':      -10,
+          },
+        },
         // Highlighted nodes (source click)
         {
           selector: 'node.highlighted',
@@ -826,6 +945,7 @@ button { font-family: inherit; cursor: pointer; border: none; background: none; 
     });
 
     _attachZoomHandler(cy);
+    _bindInteractionHandlers(cy);
   }
 
   // ── Zoom: 4-tier progressive detail (extracted so it works with ViewEngine cy too)
@@ -844,27 +964,205 @@ button { font-family: inherit; cursor: pointer; border: none; background: none; 
     var z = cyInst.zoom();
     updateZoomUI(z);
     var tier;
-    if (z < 0.3) tier = 'overview';
-    else if (z < 0.6) tier = 'far';
-    else if (z < 1.2) tier = 'mid';
+    if (z < 0.45) tier = 'overview';
+    else if (z < 0.75) tier = 'far';
+    else if (z < 1.3) tier = 'mid';
     else tier = 'close';
 
     if (tier === _lastZoomTier) return;
     _lastZoomTier = tier;
 
+    // LOD: switch between detail and pipeline-overview
+    if (tier === 'overview') {
+      _enterLod(cyInst);
+      return;  // LOD mode handles its own rendering
+    } else {
+      _exitLod(cyInst);
+    }
+
+    // Edge visibility thresholds: zoomed out = only show heavy edges
+    var edgeWeightThreshold = { far: 2, mid: 1, close: 0 }[tier] || 0;
+
     cyInst.startBatch();
     cyInst.nodes().forEach(function(n) {
+      if (n.id().startsWith('lod:')) return;
       n.removeClass('zoom-overview zoom-far zoom-mid zoom-close important');
       n.addClass('zoom-' + tier);
       if (n.degree() >= 5 || n.data('type') === 'agent' || n.data('type') === 'hub') {
         n.addClass('important');
       }
     });
+    // Cull low-weight edges at wider zoom levels
+    cyInst.edges().forEach(function(e) {
+      if (e.id().startsWith('lod:')) return;
+      var w = e.data('weight') || 1;
+      e.toggleClass('edge-culled', w < edgeWeightThreshold);
+    });
     cyInst.endBatch();
+  }
 
-    // Node tooltip on hover (via title attribute on container)
-    cy.on('mouseover', 'node', function(evt) {
+  // ── LOD: Level-of-Detail group nodes at overview zoom ─────────────────
+  //
+  // At overview zoom, hide individual nodes and show pipeline summary nodes:
+  //   Ingest → RAG → Knowledge → Skills → Agents → Tasks → Models
+  //
+  var _lodActive = false;
+  var _lodGroupIds = [];
+
+  // Pipeline groups: type → display config
+  var LOD_GROUPS = {
+    agent:    { label: 'Agents',    color: '#10b981', order: 0 },
+    skill:    { label: 'Skills',    color: '#8b5cf6', order: 1 },
+    task:     { label: 'Tasks',     color: '#f59e0b', order: 2 },
+    model:    { label: 'Models',    color: '#ec4899', order: 3 },
+    folder:   { label: 'Knowledge', color: '#06b6d4', order: 4 },
+    message:  { label: 'Channels',  color: '#6366f1', order: 5 },
+    config:   { label: 'Config',    color: '#64748b', order: 6 },
+    api_call: { label: 'API Calls', color: '#ef4444', order: 7 },
+  };
+
+  // Pipeline edges between groups (source_type → target_type)
+  var LOD_PIPELINE = [
+    { from: 'folder',  to: 'skill',   label: 'reads',     color: '#06b6d4' },
+    { from: 'skill',   to: 'folder',  label: 'writes',    color: '#8b5cf6' },
+    { from: 'agent',   to: 'skill',   label: 'runs',      color: '#10b981' },
+    { from: 'agent',   to: 'task',    label: 'assigned',   color: '#10b981' },
+    { from: 'task',    to: 'skill',   label: 'executes',  color: '#f59e0b' },
+    { from: 'skill',   to: 'model',   label: 'uses',      color: '#ec4899' },
+    { from: 'agent',   to: 'message', label: 'comms',     color: '#6366f1' },
+    { from: 'config',  to: 'agent',   label: 'configures', color: '#64748b' },
+  ];
+
+  function _buildLodGroups(cyInst) {
+    // Count real nodes per type and tally active
+    var counts = {};
+    var activeCounts = {};
+    cyInst.nodes().forEach(function(n) {
+      if (n.id().startsWith('lod:')) return;
+      var t = (n.data('type') || '').toLowerCase();
+      counts[t] = (counts[t] || 0) + 1;
+      var st = (n.data('status') || '').toUpperCase();
+      if (st === 'ACTIVE' || st === 'WORKING' || st === 'BUSY') {
+        activeCounts[t] = (activeCounts[t] || 0) + 1;
+      }
+    });
+
+    // Count real edges between type pairs
+    var edgeCounts = {};
+    cyInst.edges().forEach(function(e) {
+      if (e.id().startsWith('lod:')) return;
+      var srcType = (cyInst.getElementById(e.data('source')).data('type') || '').toLowerCase();
+      var tgtType = (cyInst.getElementById(e.data('target')).data('type') || '').toLowerCase();
+      var key = srcType + ':' + tgtType;
+      edgeCounts[key] = (edgeCounts[key] || 0) + 1;
+    });
+
+    var elements = [];
+    var groupKeys = Object.keys(LOD_GROUPS).filter(function(t) { return counts[t] > 0; });
+
+    // Sort by pipeline order
+    groupKeys.sort(function(a, b) { return LOD_GROUPS[a].order - LOD_GROUPS[b].order; });
+
+    // Create group summary nodes in a horizontal pipeline
+    var spacing = 120;
+    var startX = -(groupKeys.length - 1) * spacing / 2;
+    groupKeys.forEach(function(t, i) {
+      var g = LOD_GROUPS[t];
+      var active = activeCounts[t] || 0;
+      var total = counts[t] || 0;
+      var lbl = g.label + '\n' + total;
+      if (active > 0) lbl += ' (' + active + ' active)';
+      var gid = 'lod:' + t;
+      _lodGroupIds.push(gid);
+      elements.push({
+        group: 'nodes',
+        data: {
+          id: gid,
+          label: lbl,
+          type: 'lod-group',
+          color: g.color,
+          borderColor: g.color,
+          nodeType: t,
+        },
+        position: { x: startX + i * spacing, y: 0 },
+        classes: 'lod-group',
+      });
+    });
+
+    // Create pipeline edges (only where real edges exist)
+    LOD_PIPELINE.forEach(function(p) {
+      var key = p.from + ':' + p.to;
+      var count = edgeCounts[key] || 0;
+      if (count === 0) return;
+      var fromId = 'lod:' + p.from;
+      var toId = 'lod:' + p.to;
+      if (!counts[p.from] || !counts[p.to]) return;
+      var eid = 'lod:edge:' + p.from + ':' + p.to;
+      _lodGroupIds.push(eid);
+      elements.push({
+        group: 'edges',
+        data: {
+          id: eid,
+          source: fromId,
+          target: toId,
+          label: p.label + ' (' + count + ')',
+          color: p.color,
+          weight: Math.min(10, Math.ceil(count / 5)),
+        },
+        classes: 'lod-edge',
+      });
+    });
+
+    return elements;
+  }
+
+  function _enterLod(cyInst) {
+    if (_lodActive) return;
+    _lodActive = true;
+    _lodGroupIds = [];
+
+    cyInst.startBatch();
+    // Hide all real nodes and edges
+    cyInst.nodes().addClass('lod-hidden');
+    cyInst.edges().addClass('lod-hidden');
+
+    // Add group summary nodes
+    var lodElements = _buildLodGroups(cyInst);
+    cyInst.add(lodElements);
+
+    // Unlock LOD nodes (real nodes are locked from layout)
+    cyInst.nodes('.lod-group').unlock();
+    cyInst.endBatch();
+  }
+
+  function _exitLod(cyInst) {
+    if (!_lodActive) return;
+    _lodActive = false;
+
+    cyInst.startBatch();
+    // Remove LOD elements
+    _lodGroupIds.forEach(function(id) {
+      var el = cyInst.getElementById(id);
+      if (el.length) el.remove();
+    });
+    _lodGroupIds = [];
+
+    // Show real nodes and edges again
+    cyInst.nodes().removeClass('lod-hidden');
+    cyInst.edges().removeClass('lod-hidden');
+    cyInst.endBatch();
+  }
+
+  // ── Node interaction handlers (registered once, not per zoom tier) ────
+  var _interactionBound = false;
+  function _bindInteractionHandlers(cyInst) {
+    if (_interactionBound) return;
+    _interactionBound = true;
+
+    // Tooltip on hover
+    cyInst.on('mouseover', 'node', function(evt) {
       var n = evt.target;
+      n.addClass('hovered');
       var tip = n.data('label') || n.id();
       var metrics = n.data('metrics');
       if (metrics) {
@@ -874,16 +1172,19 @@ button { font-family: inherit; cursor: pointer; border: none; background: none; 
       }
       $cy.title = tip;
     });
-    cy.on('mouseout', 'node', function() { $cy.title = ''; });
+    cyInst.on('mouseout', 'node', function(evt) {
+      evt.target.removeClass('hovered');
+      $cy.title = '';
+    });
 
     // Bridge callback for native integration (pywebview JS-Python bridge)
-    cy.on('tap', 'node', function(evt) {
+    cyInst.on('tap', 'node', function(evt) {
       if (window.bigEdBridge && typeof window.bigEdBridge.onNodeClick === 'function') {
         var d = evt.target.data();
         window.bigEdBridge.onNodeClick(d.id, d.type || '');
       }
     });
-    cy.on('tap', 'edge', function(evt) {
+    cyInst.on('tap', 'edge', function(evt) {
       if (window.bigEdBridge && typeof window.bigEdBridge.onEdgeClick === 'function') {
         var d = evt.target.data();
         window.bigEdBridge.onEdgeClick(d.id, d.type || '');
@@ -958,6 +1259,8 @@ button { font-family: inherit; cursor: pointer; border: none; background: none; 
             metrics:     n.metrics || null,
             color:       nColor,
             borderColor: statusBorderColor(n.status),
+            parent:      n.parent || undefined,
+            count:       (n.metrics || {}).count || 1,
           },
           classes: isError ? 'source-unavailable' : '',
         });
@@ -1032,13 +1335,24 @@ button { font-family: inherit; cursor: pointer; border: none; background: none; 
   function applyLayout(hint) {
     if (!cy || cy.nodes().length === 0) return;
     hint = hint || $layoutSel.value;
+
+    // Unlock all nodes before running new layout
+    cy.nodes().unlock();
+
     try {
       var opts = layoutOpts(hint);
-      cy.layout(opts).run();
+      var layout = cy.layout(opts);
+      layout.on('layoutstop', function() {
+        // Lock all node positions so hover/select can't displace them
+        cy.nodes().lock();
+      });
+      layout.run();
     } catch (err) {
       console.warn('Layout "' + hint + '" failed, falling back to cose:', err);
       try {
-        cy.layout({ name: 'cose', animate: true, animationDuration: 400 }).run();
+        var fb = cy.layout({ name: 'cose', animate: true, animationDuration: 400 });
+        fb.on('layoutstop', function() { cy.nodes().lock(); });
+        fb.run();
       } catch (err2) {
         console.warn('Fallback layout also failed:', err2);
       }

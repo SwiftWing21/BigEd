@@ -90,6 +90,24 @@
       circle: false,
       avoidOverlap: true,
     },
+    "fractal-brain": {
+      name: "fcose",
+      quality: "proof",
+      randomize: true,
+      animate: "end",
+      animationDuration: 500,
+      fit: true,
+      padding: 30,
+      nodeRepulsion: 6000,
+      idealEdgeLength: 60,
+      edgeElasticity: 0.45,
+      gravity: 0.25,
+      gravityRange: 3.8,
+      nestingFactor: 0.1,
+      numIter: 5000,
+      packComponents: true,
+      componentSpacing: 40,
+    },
   };
 
   /** Status -> color mapping */
