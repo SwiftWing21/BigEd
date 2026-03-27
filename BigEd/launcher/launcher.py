@@ -1891,7 +1891,8 @@ class BigEdCC(TrayManagerMixin, BootManagerMixin, CommTabMixin, OllamaManagerMix
                 # Agent summary
                 agents = conn.execute(
                     "SELECT name, status FROM agents "
-                    "WHERE last_heartbeat IS NOT NULL ORDER BY name"
+                    "WHERE last_heartbeat > datetime('now', '-5 minutes') "
+                    "ORDER BY name"
                 ).fetchall()
                 conn.close()
 
