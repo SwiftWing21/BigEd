@@ -293,6 +293,31 @@ try {
 }
 
 # ---------------------------------------------------------------------------
+# 8b. Check LibreHardwareMonitor (Windows only — CPU/GPU thermal monitoring)
+# ---------------------------------------------------------------------------
+Write-Step "Checking LibreHardwareMonitor ..."
+
+$lhmExe = Get-Command "LibreHardwareMonitor" -ErrorAction SilentlyContinue
+if (-not $lhmExe) {
+    # Check common install paths
+    $lhmPaths = @(
+        "$env:ProgramFiles\LibreHardwareMonitor\LibreHardwareMonitor.exe",
+        "${env:ProgramFiles(x86)}\LibreHardwareMonitor\LibreHardwareMonitor.exe",
+        "$env:LOCALAPPDATA\Programs\LibreHardwareMonitor\LibreHardwareMonitor.exe"
+    )
+    $lhmExe = $lhmPaths | Where-Object { Test-Path $_ } | Select-Object -First 1
+}
+
+if ($lhmExe) {
+    Write-OK "LibreHardwareMonitor found."
+} else {
+    Write-Warn "LibreHardwareMonitor not found — needed for CPU/GPU temperature monitoring."
+    Write-Info "Install: winget install LibreHardwareMonitor.LibreHardwareMonitor"
+    Write-Info "Or download from: https://github.com/LibreHardwareMonitor/LibreHardwareMonitor/releases"
+    Write-Info "Fleet will auto-launch it headless at startup (requires admin elevation once)."
+}
+
+# ---------------------------------------------------------------------------
 # 9. Check Rust toolchain
 # ---------------------------------------------------------------------------
 Write-Step "Checking Rust toolchain ..."

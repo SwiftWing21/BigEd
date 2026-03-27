@@ -205,8 +205,43 @@ def ensure_lhm() -> dict:
         result["detail"] = "LHM running but web server not enabled — enable in Options > Remote Web Server > Run"
         return result
 
-    # 4. Not running — start it (elevated)
-    result["detail"] = "LHM installed but not running — start with admin rights and enable web server"
+    # 4. Not running — try to start it with elevation
+    try:
+        import ctypes
+        port = _find_available_port()
+        # Check fleet.toml for headless preference (default: headless)
+        show_lhm = False
+        try:
+            from config import load_config
+            show_lhm = load_config().get("thermal", {}).get("lhm_visible", False)
+        except Exception:
+            pass
+
+        # ShellExecuteW with "runas" triggers UAC elevation prompt
+        show_flag = 1 if show_lhm else 0  # SW_SHOWNORMAL vs SW_HIDE
+        ret = ctypes.windll.shell32.ShellExecuteW(
+            None, "runas", exe,
+            f"--web-server --web-port {port}",
+            None, show_flag
+        )
+        if ret > 32:  # ShellExecute returns >32 on success
+            log.info("Started LHM with elevation (port %d)", port)
+            # Wait for web server to come up
+            import time
+            for _ in range(10):
+                time.sleep(1)
+                if probe_lhm_port(port):
+                    result["running"] = True
+                    result["port"] = port
+                    result["detail"] = f"LHM auto-started on port {port}"
+                    return result
+            result["running"] = True
+            result["detail"] = f"LHM started but web server not responding on {port}"
+        else:
+            result["detail"] = f"LHM elevation failed (code {ret}) — start manually as admin"
+    except Exception as e:
+        log.warning("Failed to auto-start LHM: %s", e)
+        result["detail"] = f"LHM auto-start failed: {e}"
     return result
 
 

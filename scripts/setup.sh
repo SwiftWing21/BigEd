@@ -320,6 +320,23 @@ install_tkinter() {
     esac
 }
 
+# ── 4b. Check thermal sensors (Linux: lm-sensors, macOS: built-in) ───────────
+check_thermal() {
+    info "Checking thermal sensor access..."
+    if [[ "$OSTYPE" == "linux-gnu"* ]]; then
+        if command -v sensors &>/dev/null; then
+            ok "lm-sensors available ($(sensors --version 2>/dev/null | head -1))"
+        else
+            warn "lm-sensors not found — needed for CPU temperature monitoring"
+            info "Install: sudo apt install lm-sensors && sudo sensors-detect"
+            info "Or: sudo pacman -S lm_sensors"
+        fi
+    elif [[ "$OSTYPE" == "darwin"* ]]; then
+        ok "macOS thermal sensors accessible via IOKit (built-in)"
+    fi
+}
+check_thermal
+
 # ── 5. Install Python dependencies (launcher + fleet) ───────────────────────
 install_deps() {
     info "Installing Python dependencies..."
