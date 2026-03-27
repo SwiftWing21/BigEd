@@ -3432,6 +3432,25 @@ function loadNeuralGraph() {
         cyEdges.push({ data: { source: src, target: tgt } });
       }
     });
+
+    /* ── Wire task nodes to their skill bucket ──────────────────────── */
+    /* Task labels are "#72430 summarize" — extract skill, link to skill node.
+       This pulls disconnected task rows into the graph clusters. */
+    cyNodes.forEach(function(n) {
+      if (n.data.type !== 'task') return;
+      var label = n.data.label || '';
+      var match = label.match(/^#\d+\s+(.+)$/);
+      if (!match) return;
+      var skillName = match[1].trim();
+      // Find a skill node with matching ID or name
+      var skillId = null;
+      if (nodeIds[skillName]) { skillId = skillName; }
+      else if (nodeIds['skill:' + skillName]) { skillId = 'skill:' + skillName; }
+      if (skillId) {
+        cyEdges.push({ data: { source: n.data.id, target: skillId } });
+      }
+    });
+
     if (cyNodes.length > 0) {
       buildCyGraph(cyNodes, cyEdges);
     } else {
