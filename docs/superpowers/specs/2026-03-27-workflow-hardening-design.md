@@ -75,6 +75,16 @@ fleet/
 **Fix:**
 - On init, set each `_last_*` to `time.time() - random.uniform(0, interval)` where `interval` is that check's period
 - Example: `self._last_health_sweep = time.time() - random.uniform(0, 60)` (60s is sweep interval)
+- For config-driven intervals where the actual value isn't known at init time, use the **hardcoded default fallback** as the stagger bound:
+  - `_last_health_sweep`: 60s (default sweep interval)
+  - `_last_memory_watchdog`: 300s (`_MEMORY_WATCHDOG_INTERVAL`)
+  - `_last_stale_check`: 300s (`STALE_TASK_RECOVERY_INTERVAL`)
+  - `_last_watchdog`: 60s (`WATCHDOG_INTERVAL`)
+  - `_last_watchdog_full`: 600s (`WATCHDOG_FULL_INTERVAL`)
+  - `_last_context_cleanup`: 600s (default)
+  - `_last_feedback_check`: 600s (default)
+  - `_last_cache_cleanup`: 3600s (default)
+  - `_last_rag_cleanup`: 3600s (default)
 - This spreads checks across the first interval window instead of all firing at T=0
 - Import `random` (already available in stdlib)
 
@@ -103,7 +113,21 @@ fleet/
   ).fetchone()
   ```
 - If existing, skip dispatch and log: `"Skipping skill_test for {skill_name} — already queued (task #{id})"`
-- Also add a module-level `_EVOLVING_SKILLS: set` with a 30-minute TTL per entry, as a fast-path check before hitting DB
+- Also add a module-level `_EVOLVING_SKILLS: dict[str, float]` mapping `{skill_name: expiry_timestamp}` as a fast-path check before hitting DB:
+  ```python
+  _EVOLVING_SKILLS: dict[str, float] = {}  # {skill_name: expiry_ts}
+  _EVOLVE_TTL = 1800  # 30 minutes
+
+  # On dispatch:
+  _EVOLVING_SKILLS[skill_name] = time.time() + _EVOLVE_TTL
+
+  # On lookup (fast-path before DB query):
+  now = time.time()
+  # Evict expired entries
+  _EVOLVING_SKILLS = {k: v for k, v in _EVOLVING_SKILLS.items() if v > now}
+  if skill_name in _EVOLVING_SKILLS:
+      return  # skip, already evolving
+  ```
 
 ### Fix 2.2: Research Loop Overlap Guard
 
@@ -120,7 +144,19 @@ fleet/
   ```python
   "SELECT COUNT(*) FROM tasks WHERE type=? AND status IN ('PENDING','RUNNING')"
   ```
-- Applies to: research_loop trigger, evolution_coordinator trigger, model_recommend trigger
+- Applies to: research_loop trigger, evolution_coordinator trigger
+- **model_recommend has no existing check** — add a new PENDING+RUNNING guard from scratch:
+  ```python
+  # Before dispatching model_recommend:
+  import db
+  with db.get_conn() as conn:
+      existing = conn.execute(
+          "SELECT COUNT(*) as c FROM tasks WHERE type='model_recommend' AND status IN ('PENDING','RUNNING')"
+      ).fetchone()
+      if existing["c"] > 0:
+          return  # skip, already queued
+  ```
+- **Also fix CLAUDE.md violation**: All auto-trigger DB queries in this section currently use raw `sqlite3.connect()` — refactor to use `db.get_conn()` / `db._retry_write()` while editing these lines
 
 ### Fix 2.3: Ingest Offset Atomicity
 
@@ -132,6 +168,27 @@ fleet/
 - Write to `source_meta.json.tmp` first, then `os.replace("source_meta.json.tmp", "source_meta.json")`
 - `os.replace()` is atomic on all platforms (POSIX rename, Windows MoveFileEx)
 - Wrap in try/except to handle edge case where .tmp write itself fails (don't corrupt existing file)
+- **CRITICAL: Also remove the existing `except Exception` fallback** (line ~160 in current code) that writes partial `meta` dict on read failure — this silently drops previously persisted keys. The atomic write should be the only code path:
+  ```python
+  # BEFORE (broken):
+  try:
+      existing = json.loads(meta_path.read_text()) if meta_path.exists() else {}
+      existing.update(meta)
+      meta_path.write_text(json.dumps(existing, indent=2))
+  except Exception:
+      meta_path.write_text(json.dumps(meta, indent=2))  # DROPS existing keys!
+
+  # AFTER (atomic, no fallback):
+  try:
+      existing = json.loads(meta_path.read_text()) if meta_path.exists() else {}
+  except Exception:
+      existing = {}
+      log.warning("Failed to read %s, starting fresh", meta_path)
+  existing.update(meta)
+  tmp_path = meta_path.with_suffix(".json.tmp")
+  tmp_path.write_text(json.dumps(existing, indent=2))
+  os.replace(str(tmp_path), str(meta_path))
+  ```
 
 ### Fix 2.4: Scheduler Tick Stagger
 
@@ -168,6 +225,7 @@ fleet/
   ```
 - Threshold: 90% VRAM used (conservative — leaves 10% headroom)
 - Only triggers once per training session (`ollama_evicted_for_training` flag prevents re-triggering)
+- **Note:** This is polled at the training check interval (~30s), not reactive. A VRAM spike between polls could lag up to 30s before eviction. This is acceptable — OOM typically builds over minutes, not seconds. Do NOT add a separate high-frequency VRAM poll.
 
 ### Bonus Fix 2.6: Idle Evolution Staleness Cache Efficiency
 
@@ -197,11 +255,15 @@ fleet/
 
 **File:** `fleet/dashboard.py` — `_sse_clients`, `_broadcast_sse()`, SSE endpoint
 
-**Fix:**
-- Add `last_active` timestamp per client: change `_sse_clients` from `list[Queue]` to `list[dict]` with `{"queue": q, "last_active": time.time()}`
-- In `_broadcast_sse()`, update `last_active` on successful put
-- Add reaper: every 60s in `_broadcast_sse()` (or a dedicated background thread), remove entries where `time.time() - last_active > 120`
-- Simpler alternative: just use the existing `_broadcast_sse()` error path more aggressively — on `queue.put()` failure OR if queue is full (`queue.full()`), remove immediately
+**Fix (single approach — use `last_active` dict with lock):**
+- Change `_sse_clients` from `list[Queue]` to `list[dict]` with `{"queue": q, "last_active": time.time()}`
+- Add `_sse_lock = threading.Lock()` to protect the list
+- In `_broadcast_sse()`, under lock: update `last_active` on successful put, collect dead clients, remove after iteration
+- Add inline reaper in `_broadcast_sse()` (NOT a separate thread): every call, remove entries where `time.time() - last_active > 120`
+- **Update all existing call sites** that reference `_sse_clients`:
+  - SSE endpoint registration: `_sse_clients.append({"queue": q, "last_active": time.time()})` (under lock)
+  - SSE endpoint teardown (line ~2265): change `if q in _sse_clients` to iterate and match by `entry["queue"] is q` (under lock)
+  - `_broadcast_sse()`: iterate `[c["queue"] for c in _sse_clients]`, update `c["last_active"]` on success
 
 ### Fix 3.2: Federation Peer TTL
 
@@ -227,14 +289,17 @@ fleet/
 **File:** `fleet/dashboard.py` — `_rate_limits`, rate limit check function
 
 **Fix:**
-- On each rate limit check, if `len(_rate_limits) > 500`, evict entries older than 300s:
+- On each rate limit check, if `len(_rate_limits) > 500`, evict entries older than 300s **using in-place mutation** (not dict comprehension reassignment, which would create a local variable and leave the module-level dict untouched):
   ```python
   if len(_rate_limits) > 500:
       now = time.time()
-      _rate_limits = {k: v for k, v in _rate_limits.items() if now - v[0] < 300}
+      stale = [k for k, v in _rate_limits.items() if now - v[0] >= 300]
+      for k in stale:
+          del _rate_limits[k]
   ```
 - Threshold of 500 entries prevents running cleanup on every request (only when dict gets large)
 - 300s eviction matches the existing 60s rate window with generous margin
+- **Do NOT use `_rate_limits = {...}` reassignment** — this creates a local binding and silently fails to evict. Always mutate in-place with `del`.
 
 **Tests:**
 - `test_sse_reaper_removes_stale`: Create mock client entries with old timestamps, trigger cleanup, assert removed
@@ -268,6 +333,15 @@ fleet/
 
 **Fix:**
 - Add `dispatch_failures` integer column to `ingest_staging` table (default 0)
+- **Schema migration:** Add `ALTER TABLE` guard in `db.py` `init_db()`, after the `CREATE TABLE IF NOT EXISTS ingest_staging` block:
+  ```python
+  # Migration: add dispatch_failures column if missing
+  try:
+      conn.execute("SELECT dispatch_failures FROM ingest_staging LIMIT 0")
+  except Exception:
+      conn.execute("ALTER TABLE ingest_staging ADD COLUMN dispatch_failures INTEGER DEFAULT 0")
+  ```
+  This is safe for new and existing installations.
 - On dispatch failure, increment: `UPDATE ingest_staging SET dispatch_failures = dispatch_failures + 1 WHERE id = ?`
 - On each dispatch attempt, skip items where `dispatch_failures >= 3`
 - Add cleanup: items with `dispatch_failures >= 3` AND older than 24h → auto-delete from staging with warning log
@@ -305,7 +379,7 @@ No inter-pod dependencies. All 4 pods touch different files. Merge in any order,
 ## Success Criteria
 
 1. All new tests pass (target: ~13 new tests)
-2. 45/45 existing smoke tests still green
+2. All existing smoke tests still green (currently 45/45 — count may vary)
 3. No new warnings in `python -c "import health_monitor, scheduler, dashboard, ingest_manager"`
 4. Circuit breaker memory stays <50MB after 10,000 simulated failures (test verifies cap)
 5. SSE clients cleaned up within 120s of disconnect (test verifies reaper)
