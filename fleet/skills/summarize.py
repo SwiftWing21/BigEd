@@ -21,7 +21,7 @@ from skills._models import call_complex
 def run(payload, config):
     url = payload.get("url", "")
     file_path = payload.get("file_path", "")
-    text = payload.get("text", "")
+    text = payload.get("text", "") or payload.get("content", "")
     description = payload.get("description", "")
 
     if url:
