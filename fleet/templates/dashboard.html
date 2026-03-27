@@ -9,6 +9,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/dagre/0.8.5/dagre.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/cytoscape-dagre/2.5.0/cytoscape-dagre.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/cytoscape-fcose/2.2.0/cytoscape-fcose.min.js"></script>
+<script src="/static/layout_fractal.js"></script>
 <style>
 /* ── Theme Tokens ─────────────────────────────────────────────────────────── */
 :root {
@@ -948,6 +949,30 @@ textarea.input {
 .settings-desc { font-size: 11px; color: var(--muted-foreground); margin-top: 1px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .settings-control { flex-shrink: 0; margin-left: auto; }
 
+/* ── Settings Tabs ───────────────────────────────────────────────────────── */
+.settings-tabs {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 16px;
+  flex-wrap: wrap;
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 8px;
+}
+.settings-tab {
+  padding: 6px 14px;
+  font-size: 12px;
+  font-weight: 600;
+  border-radius: 6px 6px 0 0;
+  cursor: pointer;
+  color: var(--muted-foreground);
+  background: transparent;
+  border: 1px solid transparent;
+  border-bottom: none;
+  transition: background 0.15s, color 0.15s;
+}
+.settings-tab:hover { background: var(--muted); color: var(--foreground); }
+.settings-tab.active { background: var(--primary); color: #fff; border-color: var(--primary); }
+
 /* ── Docs Section ────────────────────────────────────────────────────────── */
 .docs-tabs {
   display: flex;
@@ -1302,6 +1327,14 @@ textarea.input {
   <div class="header-bar">
     <button class="hamburger" id="hamburger" onclick="toggleSidebar()">&#9776;</button>
     <span class="header-title" id="header-section-title">Dashboard</span>
+    <!-- Header Controls: model dropdown + fleet start/stop -->
+    <div id="header-controls" style="display:flex;align-items:center;gap:8px;margin-left:12px;">
+      <select id="header-model-select" style="background:var(--muted);color:var(--foreground);border:1px solid var(--border);border-radius:6px;padding:4px 8px;font-size:12px;cursor:pointer;max-width:180px;" onchange="switchModel(this.value)">
+        <option value="">Loading models...</option>
+      </select>
+      <button id="btn-fleet-start" class="btn btn-sm" style="background:var(--success);color:#fff;border:none;border-radius:6px;padding:4px 12px;font-size:12px;cursor:pointer;display:none;" onclick="fleetStart()">Start Fleet</button>
+      <button id="btn-fleet-stop" class="btn btn-sm" style="background:var(--destructive);color:#fff;border:none;border-radius:6px;padding:4px 12px;font-size:12px;cursor:pointer;display:none;" onclick="fleetStop()">Stop Fleet</button>
+    </div>
     <div class="header-live">
       <div class="live-dot" id="live-dot"></div>
       <span id="sse-status">Connecting...</span>
@@ -1310,6 +1343,17 @@ textarea.input {
   </div>
 
   <div class="main-content">
+
+<!-- ═══════════════════════════════════════════════════════════════════════
+     0. BOOT PROGRESS OVERLAY
+     ═══════════════════════════════════════════════════════════════════ -->
+<div id="boot-overlay" style="position:fixed;inset:0;z-index:9999;background:var(--bg,#0e1117);display:flex;align-items:center;justify-content:center;">
+  <div style="max-width:420px;width:100%;padding:2rem;">
+    <h2 style="color:var(--text,#e6e8eb);margin:0 0 0.5rem;font-family:inherit;font-size:1.3rem;">Fleet Boot Sequence</h2>
+    <p id="boot-subtitle" style="color:var(--muted,#8b949e);margin:0 0 1.5rem;font-size:0.85rem;">Starting subsystems...</p>
+    <div id="boot-stage-list"></div>
+  </div>
+</div>
 
 <!-- ═══════════════════════════════════════════════════════════════════════
      1. DASHBOARD
@@ -1534,6 +1578,11 @@ textarea.input {
   <div class="card">
     <div class="card-header">
       <span class="card-title">Knowledge Graph</span>
+      <select id="graph-layout-select" class="btn btn-ghost btn-sm" style="appearance:auto;padding:2px 6px;font-size:12px;cursor:pointer" onchange="switchGraphLayout(this.value)">
+        <option value="fractal-brain" selected>Fractal Brain</option>
+        <option value="fcose">fCoSE</option>
+        <option value="concentric">Concentric</option>
+      </select>
       <button class="btn btn-ghost btn-sm" onclick="loadNeuralGraph()">&#8635; Refresh</button>
     </div>
     <div id="cytoscape-container"></div>
@@ -1761,17 +1810,9 @@ textarea.input {
     <div class="section-title">Settings</div>
     <div class="section-desc">Fleet configuration from fleet.toml</div>
   </div>
-  <!-- API Keys Panel -->
-  <div class="glass-panel" style="margin-bottom:16px;">
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
-      <h3 style="margin:0;font-size:14px;font-weight:600;">API KEYS</h3>
-      <button class="btn btn-sm btn-outline" onclick="loadApiKeys()">Refresh</button>
-    </div>
-    <div id="api-keys-list"><div class="spinner"></div></div>
-  </div>
-  <div id="gate-card-mount" style="margin-bottom:16px"></div>
+  <div class="settings-tabs" id="settings-tab-bar"></div>
   <div class="glass-panel">
-    <div id="settings-sections">
+    <div id="settings-tab-content">
       <div class="spinner"></div>
     </div>
   </div>
@@ -3200,6 +3241,41 @@ function loadNeuralGraph() {
   var _hasFcose = typeof cytoscape !== 'undefined' && typeof cytoscapeFcose === 'function';
   if (_hasFcose) { try { cytoscape.use(cytoscapeFcose); } catch(e) { _hasFcose = false; } }
 
+  /* Current layout name — read from dropdown or default */
+  var _graphLayoutName = 'fractal-brain';
+
+  function _getLayoutConfig(nodeCount) {
+    var name = _graphLayoutName;
+    if (name === 'fractal-brain') {
+      return { name: 'fractal-brain', animate: false, padding: 10 };
+    } else if (name === 'concentric') {
+      return {
+        name: 'concentric', animate: false, padding: 10,
+        concentric: function(n) { return n.degree(); },
+        levelWidth: function() { return 2; }
+      };
+    }
+    /* fcose (default fallback) */
+    if (!_hasFcose) return { name: 'cose', animate: false, padding: 10 };
+    return {
+      name: 'fcose', animate: false, padding: 10,
+      nodeRepulsion: nodeCount > 200 ? 50000 : 30000,
+      idealEdgeLength: nodeCount > 200 ? 25 : 18,
+      edgeElasticity: 0.2, gravity: 1.2, gravityRange: 2.0,
+      numIter: nodeCount > 500 ? 2500 : 5000,
+      quality: nodeCount > 500 ? 'default' : 'proof',
+      nodeDimensionsIncludeLabels: false, randomize: true,
+      packComponents: true, componentSpacing: 20
+    };
+  }
+
+  function switchGraphLayout(name) {
+    _graphLayoutName = name;
+    if (_cyInstance) {
+      _cyInstance.layout(_getLayoutConfig(_cyInstance.nodes().length)).run();
+    }
+  }
+
   function buildCyGraph(cyNodes, cyEdges) {
     if (_cyInstance) _cyInstance.destroy();
     var nodeCount = cyNodes.length;
@@ -3314,22 +3390,7 @@ function loadNeuralGraph() {
           style: { 'opacity': 0.03 }
         },
       ],
-      layout: {
-        name: _hasFcose ? 'fcose' : 'cose',
-        animate: false,
-        padding: 10,
-        nodeRepulsion: nodeCount > 200 ? 50000 : 30000,
-        idealEdgeLength: nodeCount > 200 ? 25 : 18,
-        edgeElasticity: 0.2,
-        gravity: 1.2,
-        gravityRange: 2.0,
-        numIter: nodeCount > 500 ? 2500 : 5000,
-        quality: nodeCount > 500 ? 'default' : 'proof',
-        nodeDimensionsIncludeLabels: false,
-        randomize: true,
-        packComponents: true,
-        componentSpacing: 20,
-      }
+      layout: _getLayoutConfig(nodeCount)
     });
 
     /* ── Hover explosion: expand neighborhood on mouseover ──────────── */
@@ -6134,6 +6195,76 @@ function submitAddSource() {
     console.warn('submitAddSource failed', e);
   });
 }
+
+/* ── Boot Progress Overlay ─────────────────────────────────────────────── */
+(function() {
+  var BOOT_STAGES = ['pid', 'db', 'ollama', 'dashboard', 'dr_ders', 'workers', 'ready'];
+  var STAGE_LABELS = {pid:'PID Lock', db:'Database', ollama:'Ollama', dashboard:'Dashboard', dr_ders:'Dr. Ders', workers:'Workers', ready:'Ready'};
+  var STATUS_COLORS = {pending:'#555', starting:'#f0ad4e', done:'#28a745', failed:'#dc3545'};
+  var bootTimer = null;
+  var bootHidden = false;
+
+  function renderBootStages(data) {
+    var list = document.getElementById('boot-stage-list');
+    if (!list) return;
+    list.innerHTML = '';
+    BOOT_STAGES.forEach(function(key) {
+      var info = (data.stages && data.stages[key]) || {status:'pending', elapsed:0};
+      var row = document.createElement('div');
+      row.style.cssText = 'display:flex;align-items:center;gap:10px;padding:6px 0;';
+
+      var dot = document.createElement('span');
+      dot.style.cssText = 'width:10px;height:10px;border-radius:50%;flex-shrink:0;background:' + (STATUS_COLORS[info.status] || '#555') + ';';
+      if (info.status === 'starting') dot.style.animation = 'pulse 1s infinite';
+
+      var label = document.createElement('span');
+      label.style.cssText = 'color:var(--text,#e6e8eb);font-size:0.9rem;flex:1;';
+      label.textContent = STAGE_LABELS[key] || key;
+
+      var elapsed = document.createElement('span');
+      elapsed.style.cssText = 'color:var(--muted,#8b949e);font-size:0.8rem;min-width:50px;text-align:right;';
+      elapsed.textContent = info.elapsed > 0 ? info.elapsed.toFixed(1) + 's' : '';
+
+      row.appendChild(dot);
+      row.appendChild(label);
+      row.appendChild(elapsed);
+      list.appendChild(row);
+    });
+  }
+
+  function checkBootStatus() {
+    if (bootHidden) return;
+    fetch('/api/boot/status').then(function(r) { return r.json(); }).then(function(data) {
+      var overlay = document.getElementById('boot-overlay');
+      if (!overlay) { clearInterval(bootTimer); return; }
+      if (data.stage === 'ready' || data.stage === 'unknown') {
+        overlay.style.display = 'none';
+        bootHidden = true;
+        clearInterval(bootTimer);
+        var sub = document.getElementById('boot-subtitle');
+        if (sub) sub.textContent = 'Fleet ready.';
+        return;
+      }
+      overlay.style.display = 'flex';
+      renderBootStages(data);
+    }).catch(function() {
+      /* Dashboard not up yet or boot_status file gone -- hide overlay */
+      var overlay = document.getElementById('boot-overlay');
+      if (overlay) overlay.style.display = 'none';
+      bootHidden = true;
+      clearInterval(bootTimer);
+    });
+  }
+
+  /* Add pulse animation for "starting" dots */
+  var style = document.createElement('style');
+  style.textContent = '@keyframes pulse{0%,100%{opacity:1}50%{opacity:0.3}}';
+  document.head.appendChild(style);
+
+  /* Start polling on load */
+  checkBootStatus();
+  bootTimer = setInterval(checkBootStatus, 500);
+})();
 </script>
 </body>
 </html>

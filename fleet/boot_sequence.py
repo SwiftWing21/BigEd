@@ -13,6 +13,8 @@ import threading
 import time
 from pathlib import Path
 
+import boot_status
+
 log = logging.getLogger("supervisor")
 
 FLEET_DIR = Path(__file__).parent
@@ -105,19 +107,24 @@ def boot(config=None):
         print(f"[SUPERVISOR] Log rotation skipped: {e}")
 
     # 2. PID acquire
+    boot_status.update_stage("pid", "starting")
     try:
         from pid_manager import acquire_pid, release_pid
         if not acquire_pid("supervisor"):
             log.warning("Another supervisor is already running -- exiting")
+            boot_status.update_stage("pid", "failed")
             return None
         import atexit
         atexit.register(lambda: release_pid("supervisor"))
     except Exception as e:
         log.warning("PID manager unavailable: %s", e)
+    boot_status.update_stage("pid", "done")
 
     # 3. DB init
+    boot_status.update_stage("db", "starting")
     db.init_db()
     db.register_agent("supervisor", "supervisor", os.getpid())
+    boot_status.update_stage("db", "done")
 
     # 4. DAG queue
     try:
@@ -158,7 +165,9 @@ def boot(config=None):
     log.info(f"Core: {', '.join(core_roles)} | Pool: {', '.join(dynamic_pool)}")
 
     # 6. Start Ollama
+    boot_status.update_stage("ollama", "starting")
     pm.start_ollama(gpu=not config.get("fleet", {}).get("eco_mode", False))
+    boot_status.update_stage("ollama", "done")
 
     # 7. Resolve model
     resolved_model = pm.get_best_available_model()
@@ -175,16 +184,22 @@ def boot(config=None):
         pm.ping_ollama_keepalive(model=resolved_model)
 
     # 9. Dashboard (background thread)
+    boot_status.update_stage("dashboard", "starting")
     if not air_gap:
         threading.Thread(target=pm.start_dashboard, daemon=True).start()
+    boot_status.update_stage("dashboard", "done")
 
     # 10. Dr. Ders
+    boot_status.update_stage("dr_ders", "starting")
     pm.start_hw_supervisor()
+    boot_status.update_stage("dr_ders", "done")
 
     # 11. Core workers
+    boot_status.update_stage("workers", "starting")
     for role in core_roles:
         pm.start_worker(role)
         pm.last_busy[role] = time.time()
+    boot_status.update_stage("workers", "done")
 
     # 12. Discord + OpenClaw (if online)
     if not offline:
@@ -214,6 +229,8 @@ def boot(config=None):
     # 15. ViewPort
     _register_views()
 
+    boot_status.update_stage("ready", "done")
+
     mode_label = " [AIR-GAP]" if air_gap else " [OFFLINE]" if offline else ""
     log.info(f"Fleet up -- {len(core_roles)} core workers (dynamic scaling enabled), "
              f"eco={config.get('fleet', {}).get('eco_mode', False)}{mode_label}")
@@ -222,4 +239,5 @@ def boot(config=None):
               mode=mode_label.strip() or "normal",
               scaling="dynamic", core=len(core_roles), pool=len(dynamic_pool))
 
+    boot_status.clear()
     return pm, sched, hm, fm, config, core_roles

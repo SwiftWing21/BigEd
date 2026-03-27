@@ -536,6 +536,18 @@ def api_health():
     })
 
 
+# ── Boot Status ──────────────────────────────────────────────────────────────
+
+@app.route("/api/boot/status")
+def api_boot_status():
+    """Return current boot stage progress for the boot overlay."""
+    try:
+        import boot_status
+        return jsonify(boot_status.read())
+    except Exception as e:
+        return jsonify({"stage": "unknown", "error": str(e), "stages": {}}), 500
+
+
 # ── v0.22.00: Per-Agent Performance ──────────────────────────────────────────
 
 @app.route("/api/agents/performance")

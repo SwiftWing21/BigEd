@@ -27,6 +27,7 @@ fleet/rag.db-wal
 
 # ── Fleet — live status (regenerated on start) ────────────────────────────────
 fleet/STATUS.md
+fleet/.boot_status.json
 
 # ── Fleet — ephemeral HITL response files ─────────────────────────────────────
 fleet/hitl-responses/*.md
