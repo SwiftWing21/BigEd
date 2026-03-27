@@ -1009,105 +1009,62 @@ button { font-family: inherit; cursor: pointer; border: none; background: none; 
   var _lodActive = false;
   var _lodGroupIds = [];
 
-  // Pipeline groups: type → display config
-  var LOD_GROUPS = {
-    agent:    { label: 'Agents',    color: '#10b981', order: 0 },
-    skill:    { label: 'Skills',    color: '#8b5cf6', order: 1 },
-    task:     { label: 'Tasks',     color: '#f59e0b', order: 2 },
-    model:    { label: 'Models',    color: '#ec4899', order: 3 },
-    folder:   { label: 'Knowledge', color: '#06b6d4', order: 4 },
-    message:  { label: 'Channels',  color: '#6366f1', order: 5 },
-    config:   { label: 'Config',    color: '#64748b', order: 6 },
-    api_call: { label: 'API Calls', color: '#ef4444', order: 7 },
-  };
-
-  // Pipeline edges between groups (source_type → target_type)
-  var LOD_PIPELINE = [
-    { from: 'folder',  to: 'skill',   label: 'reads',     color: '#06b6d4' },
-    { from: 'skill',   to: 'folder',  label: 'writes',    color: '#8b5cf6' },
-    { from: 'agent',   to: 'skill',   label: 'runs',      color: '#10b981' },
-    { from: 'agent',   to: 'task',    label: 'assigned',   color: '#10b981' },
-    { from: 'task',    to: 'skill',   label: 'executes',  color: '#f59e0b' },
-    { from: 'skill',   to: 'model',   label: 'uses',      color: '#ec4899' },
-    { from: 'agent',   to: 'message', label: 'comms',     color: '#6366f1' },
-    { from: 'config',  to: 'agent',   label: 'configures', color: '#64748b' },
-  ];
-
   function _buildLodGroups(cyInst) {
-    // Count real nodes per type and tally active
-    var counts = {};
-    var activeCounts = {};
-    cyInst.nodes().forEach(function(n) {
-      if (n.id().startsWith('lod:')) return;
-      var t = (n.data('type') || '').toLowerCase();
-      counts[t] = (counts[t] || 0) + 1;
-      var st = (n.data('status') || '').toUpperCase();
-      if (st === 'ACTIVE' || st === 'WORKING' || st === 'BUSY') {
-        activeCounts[t] = (activeCounts[t] || 0) + 1;
-      }
-    });
-
-    // Count real edges between type pairs
-    var edgeCounts = {};
-    cyInst.edges().forEach(function(e) {
-      if (e.id().startsWith('lod:')) return;
-      var srcType = (cyInst.getElementById(e.data('source')).data('type') || '').toLowerCase();
-      var tgtType = (cyInst.getElementById(e.data('target')).data('type') || '').toLowerCase();
-      var key = srcType + ':' + tgtType;
-      edgeCounts[key] = (edgeCounts[key] || 0) + 1;
-    });
-
     var elements = [];
-    var groupKeys = Object.keys(LOD_GROUPS).filter(function(t) { return counts[t] > 0; });
+    // Group by compound parent (community)
+    var communityNodes = cyInst.nodes(':parent');
+    if (communityNodes.length === 0) return elements;
 
-    // Sort by pipeline order
-    groupKeys.sort(function(a, b) { return LOD_GROUPS[a].order - LOD_GROUPS[b].order; });
-
-    // Create group summary nodes in a horizontal pipeline
-    var spacing = 120;
-    var startX = -(groupKeys.length - 1) * spacing / 2;
-    groupKeys.forEach(function(t, i) {
-      var g = LOD_GROUPS[t];
-      var active = activeCounts[t] || 0;
-      var total = counts[t] || 0;
-      var lbl = g.label + '\n' + total;
-      if (active > 0) lbl += ' (' + active + ' active)';
-      var gid = 'lod:' + t;
+    communityNodes.forEach(function(parent) {
+      var children = parent.children();
+      if (children.length === 0) return;
+      var bb = children.boundingBox();
+      var cx = (bb.x1 + bb.x2) / 2;
+      var cy = (bb.y1 + bb.y2) / 2;
+      var gid = 'lod:' + parent.id();
       _lodGroupIds.push(gid);
+
+      var totalTasks = 0;
+      children.forEach(function(c) { totalTasks += c.data('count') || 1; });
+
       elements.push({
         group: 'nodes',
         data: {
           id: gid,
-          label: lbl,
+          label: parent.data('label') + '\n' + children.length + ' nodes',
           type: 'lod-group',
-          color: g.color,
-          borderColor: g.color,
-          nodeType: t,
+          color: parent.data('color') || '#666',
+          borderColor: parent.data('color') || '#666',
         },
-        position: { x: startX + i * spacing, y: 0 },
+        position: { x: cx, y: cy },
         classes: 'lod-group',
       });
     });
 
-    // Create pipeline edges (only where real edges exist)
-    LOD_PIPELINE.forEach(function(p) {
-      var key = p.from + ':' + p.to;
-      var count = edgeCounts[key] || 0;
-      if (count === 0) return;
-      var fromId = 'lod:' + p.from;
-      var toId = 'lod:' + p.to;
-      if (!counts[p.from] || !counts[p.to]) return;
-      var eid = 'lod:edge:' + p.from + ':' + p.to;
+    // Add edges between LOD groups based on inter-community edges
+    var interEdges = {};
+    cyInst.edges().forEach(function(e) {
+      if (e.hasClass('lod-hidden')) return;
+      var srcParent = e.source().parent();
+      var tgtParent = e.target().parent();
+      if (!srcParent.length || !tgtParent.length) return;
+      if (srcParent.id() === tgtParent.id()) return;
+      var key = srcParent.id() + '>' + tgtParent.id();
+      interEdges[key] = (interEdges[key] || 0) + (e.data('weight') || 1);
+    });
+
+    Object.keys(interEdges).forEach(function(key) {
+      var parts = key.split('>');
+      var fromId = 'lod:' + parts[0];
+      var toId = 'lod:' + parts[1];
+      var eid = 'lod:edge:' + key;
       _lodGroupIds.push(eid);
       elements.push({
         group: 'edges',
         data: {
-          id: eid,
-          source: fromId,
-          target: toId,
-          label: p.label + ' (' + count + ')',
-          color: p.color,
-          weight: Math.min(10, Math.ceil(count / 5)),
+          id: eid, source: fromId, target: toId,
+          color: '#666', weight: interEdges[key],
+          label: interEdges[key] + '',
         },
         classes: 'lod-edge',
       });
