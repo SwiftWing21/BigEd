@@ -13,6 +13,9 @@ import time
 import urllib.request
 from pathlib import Path
 
+# Use Qt backend — pythonnet doesn't support Python 3.14
+if sys.platform == "win32":
+    os.environ.setdefault("PYWEBVIEW_GUI", "qt")
 import webview
 
 log = logging.getLogger("biged.launcher")

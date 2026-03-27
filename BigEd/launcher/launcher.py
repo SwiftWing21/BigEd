@@ -1,12 +1,13 @@
 """BigEd CC launcher -- dispatches to PyWebView (preferred) or tkinter (fallback)."""
+import os, sys
+
+# Use Qt backend for pywebview on Windows (pythonnet doesn't support Python 3.14)
+if sys.platform == "win32":
+    os.environ.setdefault("PYWEBVIEW_GUI", "qt")
 
 def main():
-    # PyWebView needs pythonnet on Windows, which requires Python <=3.13
-    # Fall back to tkinter if webview can't initialize
     try:
-        import webview
-        # Probe that the GUI backend actually works (not just importable)
-        webview.guilib.initialize()
+        import webview  # noqa: F401
         from launcher_webview import main as wv_main
         wv_main()
     except Exception:
