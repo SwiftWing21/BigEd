@@ -5926,6 +5926,13 @@ function loadViews() {
       apiFetch('/api/gate/status').then(updateGateUI).catch(function(){});
     }
   });
+
+  /* ── PyWebView bridge: minimize to tray on close ──────────────────────── */
+  if (window.pywebview && window.pywebview.api) {
+    window.addEventListener('beforeunload', function(e) {
+      window.pywebview.api.minimize_to_tray();
+    });
+  }
 })();
 
 /* ── Ingest Hub ──────────────────────────────────────────────────────────── */

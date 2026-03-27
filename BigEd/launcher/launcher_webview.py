@@ -58,13 +58,21 @@ def _relaunch_windowless():
     """Re-exec under pythonw.exe to hide the console window."""
     if sys.platform != "win32":
         return
+    if os.environ.get("_BIGED_WINDOWLESS"):
+        return  # already relaunched — prevent infinite loop
     if sys.executable.lower().endswith("pythonw.exe"):
+        return
+    # Only relaunch if running a .py script (not -c or interactive)
+    if not sys.argv or not sys.argv[0].endswith(".py"):
         return
     pythonw = sys.executable.replace("python.exe", "pythonw.exe")
     if not os.path.isfile(pythonw):
         return
+    env = os.environ.copy()
+    env["_BIGED_WINDOWLESS"] = "1"
     subprocess.Popen(
         [pythonw] + sys.argv,
+        env=env,
         creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
     )
     sys.exit(0)

@@ -9,3 +9,5 @@ fastmcp>=2.0.0
 cryptography>=42.0.0
 scikit-learn>=1.4.0
 pandas>=2.1.0
+pywebview>=5.0
+pystray>=0.19
