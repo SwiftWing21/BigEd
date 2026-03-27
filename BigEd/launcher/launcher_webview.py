@@ -253,10 +253,24 @@ def main():
         js_api=BridgeAPI(),
     )
 
+    # Set window icon via Qt backend (pywebview doesn't expose icon param)
+    def _set_icon():
+        try:
+            ico_path = Path(__file__).resolve().parent / "brick.ico"
+            if not ico_path.exists():
+                return
+            from qtpy.QtGui import QIcon
+            from qtpy.QtWidgets import QApplication
+            app = QApplication.instance()
+            if app:
+                app.setWindowIcon(QIcon(str(ico_path)))
+        except Exception as e:
+            log.debug("Could not set window icon: %s", e)
+
     # Tray icon created on-demand when user minimizes to tray (not on startup)
 
     log.info("Starting PyWebView window")
-    webview.start()
+    webview.start(func=_set_icon)
 
     # If webview.start() returns (all windows destroyed), shut down
     _shutdown()
