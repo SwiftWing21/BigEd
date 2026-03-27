@@ -1689,33 +1689,39 @@ class BigEdCC(TrayManagerMixin, BootManagerMixin, CommTabMixin, OllamaManagerMix
             command=self._start_ollama,
         ).grid(row=0, column=5, padx=(2, 6))
 
-        # Agents panel
+        # Agents + Activity panel — shared vertical space
         agents_frame = ctk.CTkFrame(left, fg_color=BG2, corner_radius=6)
         agents_frame.grid(row=1, column=0, sticky="nsew")
         agents_frame.grid_columnconfigure(0, weight=1)
+        # Row 0: header (fixed), Row 1: agent cards (weight 1), Row 2: activity (weight 1)
+        agents_frame.grid_rowconfigure(0, weight=0)
         agents_frame.grid_rowconfigure(1, weight=1)
+        agents_frame.grid_rowconfigure(2, weight=1)
 
         ag_hdr = ctk.CTkFrame(agents_frame, fg_color="transparent")
         ag_hdr.grid(row=0, column=0, sticky="ew")
         ag_hdr.grid_columnconfigure(1, weight=1)
         ctk.CTkLabel(ag_hdr, text="AGENTS", font=FONT_XS, text_color=GOLD).grid(row=0, column=0, padx=8, pady=(4, 2), sticky="w")
-        
+
         self._sup_status_lbl = ctk.CTkLabel(ag_hdr, text="Task Sup: —", font=FONT_STAT, text_color=DIM)
         self._sup_status_lbl.grid(row=0, column=1, padx=8, pady=(4, 2), sticky="e")
 
         self._hw_sup_status_lbl = ctk.CTkLabel(ag_hdr, text="Dr. Ders: —", font=FONT_STAT, text_color=DIM)
         self._hw_sup_status_lbl.grid(row=0, column=2, padx=8, pady=(4, 2), sticky="e")
 
-        self._agents_frame_inner = ctk.CTkFrame(agents_frame, fg_color=BG2)
+        # Agent cards — scrollable so they don't push activity off screen
+        self._agents_frame_inner = ctk.CTkScrollableFrame(agents_frame, fg_color=BG2, corner_radius=0)
         self._agents_frame_inner.grid(row=1, column=0, sticky="nsew", padx=4, pady=(0, 2))
+        self._agents_frame_inner.grid_columnconfigure(0, weight=1)
 
-        # Fleet Activity — recent tasks (shown below agent cards after boot)
-        agents_frame.grid_rowconfigure(2, weight=1)
+        # Fleet Activity — recent tasks (fills bottom half after boot)
         self._activity_text = ctk.CTkTextbox(
             agents_frame, font=FONT_STAT, fg_color=BG2,
             text_color="#888888", wrap="none", corner_radius=0)
         self._activity_text.grid(row=2, column=0, sticky="nsew", padx=4, pady=(0, 4))
         self._activity_text.configure(state="disabled")
+        # Hide activity during boot — show after boot completes
+        self._activity_text.grid_remove()
         self._safe_after(4000, self._poll_fleet_activity)
 
         # Model Performance panel (below agents)
@@ -1872,6 +1878,11 @@ class BigEdCC(TrayManagerMixin, BootManagerMixin, CommTabMixin, OllamaManagerMix
         if self._boot_active:
             self._safe_after(5000, self._poll_fleet_activity)
             return
+        # Show activity widget once boot is done
+        try:
+            self._activity_text.grid()
+        except Exception:
+            pass
         if not self._is_user_viewing():
             self._safe_after(15000, self._poll_fleet_activity)
             return
