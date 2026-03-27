@@ -3239,6 +3239,8 @@ function loadNeuralGraph() {
     scorer:     { color: '#f97316', size: 22, fontSize: 10, shape: 'ellipse' },
     trainer:    { color: '#d946ef', size: 22, fontSize: 10, shape: 'ellipse' },
     evaluator:  { color: '#a855f7', size: 22, fontSize: 10, shape: 'ellipse' },
+    task_group: { color: '#f59e0b', size: 20, fontSize: 9,  shape: 'round-tag' },
+    community:  { color: '#444444', size: 60, fontSize: 11, shape: 'roundrectangle' },
   };
   var defaultStyle = { color: '#64748b', size: 20, fontSize: 10, shape: 'ellipse' };
 
@@ -3252,7 +3254,31 @@ function loadNeuralGraph() {
   function _getLayoutConfig(nodeCount) {
     var name = _graphLayoutName;
     if (name === 'fractal-brain') {
-      return { name: 'fractal-brain', animate: false, padding: 10 };
+      return {
+        name: 'fcose',
+        quality: nodeCount > 200 ? 'default' : 'proof',
+        randomize: true,
+        animate: 'end',
+        animationDuration: 500,
+        fit: true,
+        padding: 30,
+        nodeRepulsion: function(node) {
+          return node.isParent() ? 12000 : 6000;
+        },
+        idealEdgeLength: function(edge) {
+          var src = edge.source(), tgt = edge.target();
+          if (src.parent().length && tgt.parent().length && src.parent().id() === tgt.parent().id()) return 40;
+          return 100;
+        },
+        edgeElasticity: 0.45,
+        gravity: 0.25,
+        gravityRange: 3.8,
+        nestingFactor: 0.1,
+        numIter: nodeCount > 200 ? 2500 : 5000,
+        packComponents: true,
+        componentSpacing: 40,
+        nodeDimensionsIncludeLabels: false,
+      };
     } else if (name === 'concentric') {
       return {
         name: 'concentric', animate: false, padding: 10,
@@ -3286,6 +3312,9 @@ function loadNeuralGraph() {
     var nodeCount = cyNodes.length;
     _cyInstance = cytoscape({
       container: document.getElementById('cytoscape-container'),
+      minZoom: 0.3,
+      maxZoom: 3,
+      wheelSensitivity: 0.3,
       elements: { nodes: cyNodes, edges: cyEdges },
       style: [
         {
@@ -3361,6 +3390,32 @@ function loadNeuralGraph() {
           style: { 'opacity': 0.15 }
         },
         {
+          selector: ':parent',
+          style: {
+            'background-opacity': 0.06,
+            'background-color': 'data(color)',
+            'border-width': 1.5,
+            'border-color': 'data(color)',
+            'border-opacity': 0.25,
+            'border-style': 'dashed',
+            'padding': 20,
+            'text-valign': 'top',
+            'text-halign': 'center',
+            'label': 'data(label)',
+            'font-size': '11px',
+            'color': '#a0a0a0',
+            'shape': 'roundrectangle',
+          }
+        },
+        {
+          selector: 'node[type="task_group"]',
+          style: {
+            'width': function(n) { return 8 + Math.sqrt(n.data('count') || 1) * 3; },
+            'height': function(n) { return 8 + Math.sqrt(n.data('count') || 1) * 3; },
+            'shape': 'round-tag',
+          }
+        },
+        {
           selector: 'edge',
           style: {
             'width': 0.8,
@@ -3398,7 +3453,12 @@ function loadNeuralGraph() {
       layout: _getLayoutConfig(nodeCount)
     });
 
-    /* ── Hover explosion: expand neighborhood on mouseover ──────────── */
+    /* ── Lock positions after layout to prevent drift ──────────────── */
+    _cyInstance.on('layoutstop', function() {
+      _cyInstance.nodes().lock();
+    });
+
+    /* ── Hover: highlight neighborhood (no position changes) ────────── */
     var _hoverTimeout;
     _cyInstance.on('mouseover', 'node', function(evt) {
       clearTimeout(_hoverTimeout);
@@ -3406,23 +3466,15 @@ function loadNeuralGraph() {
       node.addClass('hover-center');
       node.neighborhood('node').addClass('hover-neighbor');
       node.connectedEdges().addClass('hover-edge');
-
-      /* Push neighbors outward for "explosion" effect */
-      var pos = node.position();
-      node.neighborhood('node').forEach(function(n) {
-        var nPos = n.position();
-        var dx = nPos.x - pos.x, dy = nPos.y - pos.y;
-        var dist = Math.sqrt(dx * dx + dy * dy) || 1;
-        var push = Math.max(30, 60 - dist * 0.3);
-        n.animate({ position: { x: nPos.x + (dx / dist) * push, y: nPos.y + (dy / dist) * push } },
-          { duration: 200, easing: 'ease-out-cubic' });
-      });
+      /* Dim non-neighbors for focus */
+      _cyInstance.nodes().not(node.neighborhood().add(node)).addClass('dimmed');
+      _cyInstance.edges().not(node.connectedEdges()).addClass('dimmed');
     });
 
     _cyInstance.on('mouseout', 'node', function(evt) {
       _hoverTimeout = setTimeout(function() {
-        _cyInstance.nodes().removeClass('hover-center hover-neighbor');
-        _cyInstance.edges().removeClass('hover-edge');
+        _cyInstance.nodes().removeClass('hover-center hover-neighbor dimmed');
+        _cyInstance.edges().removeClass('hover-edge dimmed');
       }, 100);
     });
 
@@ -3640,6 +3692,8 @@ function loadNeuralGraph() {
           type: ntype,
           status: n.status || '',
           activity_score: n.activity_score || 0,
+          parent: n.parent || undefined,
+          count: (n.metrics || {}).count || 1,
         }
       });
     });
@@ -5932,6 +5986,12 @@ function loadViews() {
     }
   });
 
+  /* ── Dev: right-click to refresh ─────────────────────────────────────── */
+  document.addEventListener('contextmenu', function(e) {
+    e.preventDefault();
+    location.reload();
+  });
+
   /* ── PyWebView bridge: minimize to tray on close ──────────────────────── */
   if (window.pywebview && window.pywebview.api) {
     window.addEventListener('beforeunload', function(e) {
@@ -6116,6 +6176,16 @@ function fetchSourceRows(sourceId, offset) {
       nextBtn.setAttribute('onclick', 'fetchSourceRows(' + JSON.stringify(sourceId) + ',' + ((offset || 0) + 10) + ')');
       nav.appendChild(nextBtn);
     }
+    var selectAllLabel = document.createElement('label');
+    selectAllLabel.style.cssText = 'display:flex;align-items:center;gap:4px;font-size:12px;color:var(--muted-foreground);cursor:pointer;margin-left:auto;';
+    var selectAllCb = document.createElement('input');
+    selectAllCb.type = 'checkbox';
+    selectAllCb.addEventListener('change', function() {
+      document.querySelectorAll('.ingest-row-cb').forEach(function(cb) { cb.checked = selectAllCb.checked; });
+    });
+    selectAllLabel.appendChild(selectAllCb);
+    selectAllLabel.appendChild(document.createTextNode('Select All'));
+    nav.appendChild(selectAllLabel);
     var stageBtn = document.createElement('button');
     stageBtn.className = 'btn btn-sm btn-primary';
     stageBtn.textContent = 'Stage Selected';
