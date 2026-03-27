@@ -1858,12 +1858,22 @@ class BigEdCC(TrayManagerMixin, BootManagerMixin, CommTabMixin, OllamaManagerMix
 
     # ── Fleet Activity panel ─────────────────────────────────────────────────
 
+    def _is_user_viewing(self):
+        """Check if the launcher window is focused and visible."""
+        try:
+            return self.focus_displayof() is not None and self.state() != "iconic"
+        except Exception:
+            return True  # assume visible if check fails
+
     def _poll_fleet_activity(self):
-        """Update fleet activity feed from DB — shown below agent cards."""
+        """Update fleet activity feed from DB — adaptive rate based on focus."""
         if not self._alive:
             return
         if self._boot_active:
             self._safe_after(5000, self._poll_fleet_activity)
+            return
+        if not self._is_user_viewing():
+            self._safe_after(15000, self._poll_fleet_activity)
             return
         def _fetch():
             lines = []
@@ -1906,7 +1916,7 @@ class BigEdCC(TrayManagerMixin, BootManagerMixin, CommTabMixin, OllamaManagerMix
                 pass
 
         threading.Thread(target=_fetch, daemon=True).start()
-        self._safe_after(5000, self._poll_fleet_activity)
+        self._safe_after(2000, self._poll_fleet_activity)
 
     # ── Tab 1: Agents ─────────────────────────────────────────────────────────
     def _build_tab_agents(self, parent):
@@ -3546,6 +3556,9 @@ class BigEdCC(TrayManagerMixin, BootManagerMixin, CommTabMixin, OllamaManagerMix
             pass
 
     def _schedule_hw(self):
+        if not self._is_user_viewing():
+            self._safe_after(15000, self._schedule_hw)
+            return
         try:
             def _sample():
                 try:

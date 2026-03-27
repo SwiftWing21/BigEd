@@ -5364,7 +5364,14 @@ function loadViews() {
   loadDashboard();
   connectSSE();
 
+  /* ── Visibility-aware polling — pause all intervals when tab is hidden ── */
+  var _tabVisible = true;
+  document.addEventListener('visibilitychange', function() {
+    _tabVisible = !document.hidden;
+  });
+
   setInterval(function() {
+    if (!_tabVisible) return;
     apiFetch('/api/tasks/waiting-human').then(function(data) {
       var badge = document.getElementById('hitl-badge');
       if (data.length > 0) {
@@ -5379,6 +5386,7 @@ function loadViews() {
   /* ── SSE handles status + thermal every 5s from server push.
      Activity chart polls every 30s (too heavy for SSE). ── */
   setInterval(function() {
+    if (!_tabVisible) return;
     if (document.getElementById('section-dashboard').classList.contains('active')) {
       loadActivityChart();
     }
@@ -5388,6 +5396,7 @@ function loadViews() {
   buildGateCard();
 
   setInterval(function() {
+    if (!_tabVisible) return;
     var section = document.getElementById('section-settings');
     if (section && section.style.display !== 'none') {
       apiFetch('/api/gate/status').then(updateGateUI).catch(function(){});
