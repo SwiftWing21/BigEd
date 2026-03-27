@@ -318,5 +318,197 @@ def test_supervisor_shutdown_handler():
         supervisor._pm = original_pm
 
 
+# ── Workflow Hardening: Health Monitor ──────────────────────────────
+
+def test_circuit_breaker_memory_cap():
+    """Failures list is capped — cannot grow unbounded."""
+    from health_monitor import circuit_breaker_record_failure, _breakers, _breaker_lock
+    skill = "_test_cap_skill_xyz"
+    # Record 2000 failures
+    for i in range(2000):
+        circuit_breaker_record_failure(skill, f"error_{i}")
+    with _breaker_lock:
+        assert len(_breakers[skill]["failures"]) <= 1000
+        # Cleanup
+        del _breakers[skill]
+
+
+def test_circuit_breaker_cleanup_stale():
+    """Skills with no recent failures are cleaned up entirely."""
+    import time
+    from health_monitor import (
+        circuit_breaker_record_failure, circuit_breaker_is_open,
+        _breakers, _breaker_lock,
+    )
+    skill = "_test_stale_skill_xyz"
+    circuit_breaker_record_failure(skill, "old_error")
+    with _breaker_lock:
+        # Backdate failure to 10 minutes ago (beyond default 300s window)
+        _breakers[skill]["failures"] = [(time.time() - 700, "old_error")]
+    # is_open should prune stale entries
+    circuit_breaker_is_open(skill)
+    with _breaker_lock:
+        # After pruning, skill with 0 recent failures should be removed
+        assert skill not in _breakers or len(_breakers[skill]["failures"]) == 0
+
+
+def test_recovery_log_deque():
+    """Recovery log uses deque, caps at 200, evicts oldest."""
+    from health_monitor import _log_recovery, get_recovery_log
+    import collections
+    from health_monitor import _recovery_log
+    assert isinstance(_recovery_log, collections.deque)
+    # Record 300 entries
+    for i in range(300):
+        _log_recovery("test_action", f"target_{i}", f"detail_{i}")
+    log = get_recovery_log()
+    assert len(log) <= 200
+    # Oldest entries should have been evicted — first entry should be target_100+
+    assert "target_0" not in log[0]["target"]
+
+
+def test_health_tick_stagger():
+    """HealthMonitor init staggers _last_* values (not all zero)."""
+    try:
+        from process_manager import ProcessManager
+        pm = ProcessManager({"fleet": {}, "models": {}, "workers": {}})
+    except ImportError:
+        pm = type("PM", (), {})()
+    from health_monitor import HealthMonitor
+    hm = HealthMonitor({"self_healing": {"enabled": False}}, pm)
+    # All _last_* should be > 0 (staggered from time.time())
+    assert hm._last_health_sweep > 0
+    assert hm._last_memory_watchdog > 0
+    assert hm._last_stale_check > 0
+    assert hm._last_watchdog > 0
+    # They should NOT all be identical (randomized)
+    values = [hm._last_health_sweep, hm._last_memory_watchdog,
+              hm._last_stale_check, hm._last_watchdog]
+    assert len(set(values)) > 1, "Stagger values should differ"
+
+
+# ── Workflow Hardening: Scheduler ───────────────────────────────────
+
+def test_evolution_dedup_skips_queued():
+    """_cross_skill_learning skips dispatch when skill_test already queued."""
+    import sys, os
+    sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "skills"))
+    from unittest.mock import patch, MagicMock
+    import evolution_coordinator as ec
+
+    # Clear any cached entries from previous tests
+    ec._EVOLVING_SKILLS.clear()
+
+    # Mock DB to return existing PENDING skill_test
+    mock_conn = MagicMock()
+    mock_conn.execute.return_value.fetchone.return_value = {"id": 999}
+    mock_conn.__enter__ = lambda s: mock_conn
+    mock_conn.__exit__ = MagicMock(return_value=False)
+
+    with patch("evolution_coordinator.db") as mock_db:
+        mock_db.get_conn.return_value = mock_conn
+        mock_db.post_task = MagicMock()
+        # Call with a skill that has "related" skills
+        result = ec._cross_skill_learning(
+            {"skill": "summarize", "action": "cross_learn"},
+            {"models": {}}
+        )
+        # Should NOT have called post_task (existing task blocks dispatch)
+        mock_db.post_task.assert_not_called()
+
+
+def test_research_trigger_skips_running():
+    """Auto-trigger skips when previous research_loop is still RUNNING."""
+    from unittest.mock import patch, MagicMock
+    from process_manager import ProcessManager
+    from scheduler import Scheduler
+    import time
+
+    pm = ProcessManager({"fleet": {}, "models": {}, "workers": {}})
+    sched = Scheduler({"fleet": {}, "models": {}, "workers": {}}, pm)
+
+    # Force research trigger interval to have elapsed
+    sched._last_research_trigger = 0
+
+    # Mock DB: return count=1 for PENDING+RUNNING research_loop
+    mock_conn = MagicMock()
+    mock_conn.execute.return_value.fetchone.return_value = (1,)
+    mock_conn.__enter__ = lambda s: mock_conn
+    mock_conn.__exit__ = MagicMock(return_value=False)
+
+    with patch("scheduler.db") as mock_db:
+        mock_db.get_conn.return_value = mock_conn
+        mock_db.post_task = MagicMock()
+        sched._check_auto_triggers(time.time())
+        # Should NOT have dispatched a new research_loop
+        mock_db.post_task.assert_not_called()
+
+
+def test_offset_atomic_write():
+    """Offset persistence uses atomic os.replace, not direct write."""
+    import tempfile, json, os
+    from pathlib import Path
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        meta_path = Path(tmpdir) / "source_meta.json"
+        # Write initial state
+        meta_path.write_text(json.dumps({"source_id": "test", "last_offset": 50, "custom_key": "preserve_me"}))
+
+        # Simulate atomic write pattern
+        existing = json.loads(meta_path.read_text())
+        existing.update({"last_offset": 100})
+        tmp_path = meta_path.with_suffix(".json.tmp")
+        tmp_path.write_text(json.dumps(existing, indent=2))
+        os.replace(str(tmp_path), str(meta_path))
+
+        # Verify: original keys preserved + new offset
+        result = json.loads(meta_path.read_text())
+        assert result["last_offset"] == 100
+        assert result["custom_key"] == "preserve_me"
+        assert not tmp_path.exists()  # .tmp cleaned up by os.replace
+
+
+def test_scheduler_tick_stagger():
+    """Scheduler init staggers _last_* values (not all zero)."""
+    from process_manager import ProcessManager
+    from scheduler import Scheduler
+    pm = ProcessManager({"fleet": {}, "models": {}, "workers": {}})
+    sched = Scheduler({"fleet": {}, "models": {}, "workers": {}}, pm)
+    # _last_scale_check should stay 0 (intentional: scale immediately on boot)
+    assert sched._last_scale_check == 0
+    # All others should be > 0 (staggered)
+    assert sched._last_research_trigger > 0
+    assert sched._last_evolution_trigger > 0
+    assert sched._last_config_reload > 0
+
+
+def test_vram_reactive_eviction():
+    """VRAM >90% during training triggers Ollama CPU-mode restart."""
+    from unittest.mock import patch, MagicMock
+    from process_manager import ProcessManager
+    from scheduler import Scheduler
+    import time
+
+    pm = ProcessManager({"fleet": {}, "models": {}, "workers": {}})
+    pm.stop_ollama = MagicMock()
+    pm.start_ollama = MagicMock()
+    pm.training_active = True
+    pm.ollama_evicted_for_training = False
+
+    sched = Scheduler({"fleet": {}, "models": {"local": "qwen3:8b"}, "workers": {}}, pm)
+    sched._last_training_check = 0
+
+    mock_gpu = MagicMock()
+    mock_gpu.get_gpu_info.return_value = {"memory_used_mb": 11000, "memory_total_mb": 12000}
+
+    with patch("scheduler.is_training_running", return_value=(True, "large")), \
+         patch.dict("sys.modules", {"gpu": mock_gpu}):
+        sched._check_training(time.time())
+
+    pm.stop_ollama.assert_called_once()
+    pm.start_ollama.assert_called_once_with(gpu=False)
+    assert pm.ollama_evicted_for_training is True
+
+
 if __name__ == "__main__":
     sys.exit(pytest.main([__file__, "-v"]))

@@ -6,10 +6,12 @@ Absorbs self_healing.py and diagnostics.py. Provides:
 - Module-level standalone functions (backward-compatible with self_healing/diagnostics imports)
 """
 
+import collections
 import gc
 import json
 import logging
 import os
+import random
 import shutil
 import subprocess
 import threading
@@ -35,13 +37,14 @@ WATCHDOG_INTERVAL = 60
 WATCHDOG_FULL_INTERVAL = 600
 
 # ── In-memory circuit breaker state ──────────────────────────────────
+_MAX_BREAKER_FAILURES = 1000
+_BREAKER_TRIM_TARGET = 500
 _breakers = {}
 _breaker_lock = threading.Lock()
 
 # ── Recovery action log ──────────────────────────────────────────────
-_recovery_log = []
+_recovery_log = collections.deque(maxlen=200)
 _recovery_lock = threading.Lock()
-_MAX_RECOVERY_LOG = 200
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -70,9 +73,7 @@ def _log_recovery(action: str, target: str, detail: str = ""):
         "detail": detail,
     }
     with _recovery_lock:
-        _recovery_log.append(entry)
-        if len(_recovery_log) > _MAX_RECOVERY_LOG:
-            _recovery_log[:] = _recovery_log[-_MAX_RECOVERY_LOG:]
+        _recovery_log.append(entry)  # deque handles eviction automatically
     try:
         from audit_log import log_event
         log_event("self_healing", "self_healing", entry, severity="warning")
@@ -243,6 +244,9 @@ def circuit_breaker_record_failure(skill_name: str, error: str = ""):
         if skill_name not in _breakers:
             _breakers[skill_name] = {"failures": [], "tripped_at": None}
         _breakers[skill_name]["failures"].append((now, error[:200]))
+        # Cap: trim to most recent _BREAKER_TRIM_TARGET when exceeding max
+        if len(_breakers[skill_name]["failures"]) > _MAX_BREAKER_FAILURES:
+            _breakers[skill_name]["failures"] = _breakers[skill_name]["failures"][-_BREAKER_TRIM_TARGET:]
 
 
 def circuit_breaker_is_open(skill_name: str) -> bool:
@@ -264,6 +268,10 @@ def circuit_breaker_is_open(skill_name: str) -> bool:
             return True
         recent = [(ts, err) for ts, err in state["failures"] if now - ts <= window]
         state["failures"] = recent
+        if not recent and not state["tripped_at"]:
+            # No recent failures and not tripped — clean up entirely
+            del _breakers[skill_name]
+            return False
         if len(recent) >= threshold:
             state["tripped_at"] = now
             log.warning("Circuit breaker TRIPPED for skill %s (%d failures in %ds)",
@@ -606,15 +614,16 @@ class HealthMonitor:
     def __init__(self, config: dict, pm):
         self.config = config
         self.pm = pm  # ProcessManager instance
-        self._last_health_sweep: float = 0
-        self._last_memory_watchdog: float = 0
-        self._last_stale_check: float = 0
-        self._last_watchdog: float = 0
-        self._last_watchdog_full: float = 0
-        self._last_context_cleanup: float = 0
-        self._last_feedback_check: float = 0
-        self._last_cache_cleanup: float = 0
-        self._last_rag_cleanup: float = 0
+        now = time.time()
+        self._last_health_sweep = now - random.uniform(0, 60)
+        self._last_memory_watchdog = now - random.uniform(0, _MEMORY_WATCHDOG_INTERVAL)
+        self._last_stale_check = now - random.uniform(0, STALE_TASK_RECOVERY_INTERVAL)
+        self._last_watchdog = now - random.uniform(0, WATCHDOG_INTERVAL)
+        self._last_watchdog_full = now - random.uniform(0, WATCHDOG_FULL_INTERVAL)
+        self._last_context_cleanup = now - random.uniform(0, 600)
+        self._last_feedback_check = now - random.uniform(0, 600)
+        self._last_cache_cleanup = now - random.uniform(0, 3600)
+        self._last_rag_cleanup = now - random.uniform(0, 3600)
 
     def update_config(self, config: dict) -> None:
         self.config = config
