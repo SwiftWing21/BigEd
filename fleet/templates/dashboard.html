@@ -3302,6 +3302,91 @@ function loadNeuralGraph() {
       /* Fade edges at far zoom */
       _cyInstance.edges().style('opacity', z < 0.4 ? 0.06 : z < 0.8 ? 0.15 : 0.3);
     });
+
+    /* ── SSE-driven graph animations ────────────────────────────────── */
+    var _pulseCanvas = document.createElement('canvas');
+    _pulseCanvas.style.cssText = 'position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:10';
+    var container = document.getElementById('cytoscape-container');
+    container.style.position = 'relative';
+    container.appendChild(_pulseCanvas);
+    var _pulseCtx = _pulseCanvas.getContext('2d');
+    var _particles = [];
+
+    /* Spawn a pulse particle between two nodes by ID */
+    window._graphPulse = function(sourceId, targetId, color) {
+      if (!_cyInstance || _cyInstance.destroyed()) return;
+      var srcNode = _cyInstance.getElementById(sourceId);
+      var tgtNode = _cyInstance.getElementById(targetId);
+      if (!srcNode.length || !tgtNode.length) return;
+      var src = srcNode.renderedPosition();
+      var tgt = tgtNode.renderedPosition();
+      _particles.push({ sx: src.x, sy: src.y, tx: tgt.x, ty: tgt.y, t: 0,
+        color: color || '#10b981', speed: 0.006 + Math.random() * 0.008 });
+    };
+
+    /* Pulse a node (agent did something) — brief size + glow bump */
+    window._graphNodePulse = function(nodeId, color) {
+      if (!_cyInstance || _cyInstance.destroyed()) return;
+      var node = _cyInstance.getElementById(nodeId);
+      if (!node.length) return;
+      var origSize = node.data('size') || 20;
+      node.style({ 'width': origSize * 1.8, 'height': origSize * 1.8,
+        'border-color': color || '#10b981', 'border-width': 4 });
+      setTimeout(function() {
+        if (!_cyInstance || _cyInstance.destroyed()) return;
+        node.style({ 'width': origSize, 'height': origSize,
+          'border-color': node.data('color'), 'border-width': 2 });
+      }, 800);
+    };
+
+    /* SSE hook — called from handleSSE when live activity arrives */
+    window._graphOnActivity = function(liveItems) {
+      if (!_cyInstance || _cyInstance.destroyed()) return;
+      for (var i = 0; i < liveItems.length; i++) {
+        var item = liveItems[i];
+        var agent = item.assigned_to || item.agent;
+        var skill = item.type || item.skill;
+        var status = item.status;
+        if (!agent) continue;
+        var color = status === 'DONE' ? '#10b981' : status === 'FAILED' ? '#ef4444' : '#3b82f6';
+        // Pulse the agent node
+        _graphNodePulse(agent, color);
+        // Send particle from agent to skill (if skill node exists)
+        if (skill) _graphPulse(agent, skill, color);
+      }
+    };
+
+    /* Particle render loop (only draws when particles exist) */
+    function _pulseLoop() {
+      if (!_cyInstance || _cyInstance.destroyed()) return;
+      var w = container.offsetWidth, h = container.offsetHeight;
+      if (_pulseCanvas.width !== w || _pulseCanvas.height !== h) {
+        _pulseCanvas.width = w; _pulseCanvas.height = h;
+      }
+      _pulseCtx.clearRect(0, 0, w, h);
+
+      for (var i = _particles.length - 1; i >= 0; i--) {
+        var p = _particles[i];
+        p.t += p.speed;
+        if (p.t >= 1) { _particles.splice(i, 1); continue; }
+        var x = p.sx + (p.tx - p.sx) * p.t;
+        var y = p.sy + (p.ty - p.sy) * p.t;
+        var alpha = p.t < 0.2 ? p.t * 5 : p.t > 0.8 ? (1 - p.t) * 5 : 1;
+        _pulseCtx.globalAlpha = alpha * 0.7;
+        _pulseCtx.fillStyle = p.color;
+        _pulseCtx.beginPath();
+        _pulseCtx.arc(x, y, 3, 0, Math.PI * 2);
+        _pulseCtx.fill();
+        // Glow trail
+        _pulseCtx.globalAlpha = alpha * 0.25;
+        _pulseCtx.beginPath();
+        _pulseCtx.arc(x, y, 6, 0, Math.PI * 2);
+        _pulseCtx.fill();
+      }
+      _pulseCtx.globalAlpha = 1;
+      requestAnimationFrame(_pulseLoop);
+    }
+    requestAnimationFrame(_pulseLoop);
   }
 
   // Fetch full universe graph from fleet-overview endpoint
@@ -4861,6 +4946,8 @@ function handleSSE(msg) {
         /* ── Live Activity (real-time from SSE — no polling needed) ── */
         if (data.live && data.live.length > 0) {
           _renderLiveItems(data.live);
+          /* Drive knowledge graph pulses from real task events */
+          if (typeof _graphOnActivity === 'function') _graphOnActivity(data.live);
         }
         /* ── Thermal (pushed from server every 5s) ── */
         if (data.thermal) {
