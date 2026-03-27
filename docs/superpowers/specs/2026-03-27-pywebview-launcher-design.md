@@ -204,7 +204,57 @@ window.addEventListener('beforeunload', function(e) {
 - Close window → minimizes to tray (not quit)
 - Tray Quit → stops fleet + exits
 
-## Pod Assignment (5 pods)
+### 6. BA Fractal + Fibonacci Graph Layout
+
+**Location:** Custom Cytoscape layout in `fleet/templates/dashboard.html` + `fleet/static/layout_fractal.js`
+
+**Algorithm:** Barabási–Albert fractal positioning with Fibonacci (golden angle) spiral distribution.
+
+**Core math:**
+
+1. **Radial distance by degree** (hub-spoke, high-degree = center):
+   ```
+   r(node) = R_max × (1 - degree / max_degree) ^ 0.6
+   ```
+
+2. **Angular placement via golden angle** (Vogel's sunflower spiral):
+   ```
+   θ(i) = i × 137.508°
+   r(i) = c × √i
+   ```
+   Within each degree tier, nodes are placed along the golden spiral. This prevents overlap and creates the organic brain branching pattern.
+
+3. **Type-based tier rings** (like concentric but fractal-spaced):
+   - Tier 0 (center): supervisor, hub nodes
+   - Tier 1: agents (active)
+   - Tier 2: skills (by connection count)
+   - Tier 3: models, folders, configs
+   - Tier 4 (outer): tasks, chunks, messages
+
+4. **Offline agent orbits** — idle/disconnected agents orbit their nearest skill island:
+   ```
+   orbit_r = island_center_r × 1.3
+   orbit_θ = agent_index × (2π / num_offline)
+   ```
+
+5. **Activity-based inward drift** — frequently touched nodes (high task count in last hour) pull toward center:
+   ```
+   r_adjusted = r × (1 - min(activity_score, 1.0) × 0.4)
+   ```
+   Hot skill nodes drift 40% closer to the hub during active periods.
+
+6. **Fibonacci container spacing** — island groups (agent + its skills + its tasks) are positioned using the golden ratio for inter-group spacing:
+   ```
+   group_r(g) = R_base × φ^g    (φ = 1.618)
+   group_θ(g) = g × 137.508°
+   ```
+   This creates the spiral arm structure visible in BA fractal graphs.
+
+**Registration:** Custom layout registered as `cytoscape.use(cytoscapeFractalBrain)`, selectable alongside fcose/concentric.
+
+**Performance:** O(n) — single pass over nodes, no iterative simulation. Handles 10K+ nodes instantly.
+
+## Pod Assignment (6 pods)
 
 | Pod | Files | Scope |
 |-----|-------|-------|
@@ -213,3 +263,4 @@ window.addEventListener('beforeunload', function(e) {
 | **pod-controls** | `fleet/templates/dashboard.html`, `fleet/dashboard.py` | Header: start/stop buttons + Ollama model dropdown + walkthrough modal |
 | **pod-settings** | `fleet/templates/dashboard.html`, `fleet/dashboard.py` | Settings overhaul: 6 category tabs, field rendering, save endpoint |
 | **pod-integration** | All files | Wire close behavior JS, tray badge updates, fallback dispatcher, requirements.txt, smoke test |
+| **pod-graph** | `fleet/static/layout_fractal.js`, `fleet/templates/dashboard.html` | BA fractal + Fibonacci custom layout, offline orbits, activity drift, layout selector |

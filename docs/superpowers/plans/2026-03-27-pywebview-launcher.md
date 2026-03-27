@@ -75,6 +75,28 @@ Create the new launcher. Full code in spec. Key steps:
 
 ---
 
+## Task 6: pod-graph — BA Fractal + Fibonacci Brain Layout
+
+Create a custom Cytoscape layout that produces the organic brain-like fractal shape.
+
+- [ ] Create `fleet/static/layout_fractal.js` (~100 lines): custom Cytoscape layout extension
+  - Register as `fractal-brain` layout
+  - Compute node degree, assign tier (hub=0, agent=1, skill=2, model/folder=3, task=4)
+  - Place nodes radially: `r = R_max × (1 - degree/max_degree)^0.6`
+  - Within each tier, distribute via golden angle: `θ = i × 137.508°`
+  - Group islands: agent + connected skills + tasks positioned together
+  - Island groups placed on Fibonacci spiral: `group_r = R_base × φ^g`, `group_θ = g × 137.508°`
+  - Offline/idle agents orbit their nearest skill island at 1.3× island radius
+  - Activity drift: nodes with recent task activity pull 40% closer to center
+- [ ] Add `<script src="/static/layout_fractal.js">` to dashboard.html (after fcose CDN)
+- [ ] Register layout: `cytoscape.use(cytoscapeFractalBrain)` in the graph init section
+- [ ] Switch `buildCyGraph` default layout from `fcose` to `fractal-brain`
+- [ ] Add layout dropdown to Knowledge Graph section: `fcose | fractal-brain | concentric`
+- [ ] Feed activity data: modify `/api/views/graph/fleet-overview` to include `activity_score` per node (task count in last hour / max)
+- [ ] Commit
+
+---
+
 ## Task 5: pod-integration — Wiring + Tests
 
 - [ ] Add pywebview, pystray to requirements.txt
