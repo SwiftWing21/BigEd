@@ -10,6 +10,7 @@ v0.900.00b
 
 import json
 import logging
+import os
 import time
 from pathlib import Path
 
@@ -399,7 +400,57 @@ def evict_processed():
             except Exception:
                 pass
 
+    # Also run orphan cleanup as a secondary pass
+    cleanup_orphans()
+
     return evicted
+
+
+# Track last orphan cleanup time (module-level)
+_last_orphan_cleanup: float = 0.0
+_ORPHAN_CLEANUP_INTERVAL = 6 * 3600  # 6 hours
+
+
+def cleanup_orphans(max_age_hours: int = 48) -> int:
+    """Remove cache .jsonl files not referenced by staging and older than max_age_hours.
+
+    Scans cache directory for all .jsonl batch files, checks if each is
+    referenced by an active staging entry, and removes unreferenced files
+    older than the threshold.
+    """
+    cache_dir = _get_cache_dir()
+    if not cache_dir.exists():
+        return 0
+
+    max_age_secs = max_age_hours * 3600
+    now = time.time()
+    removed = 0
+
+    # Get all file paths currently referenced in staging
+    referenced_paths = set()
+    try:
+        import db
+        with db.get_conn() as conn:
+            rows = conn.execute("SELECT file_path FROM ingest_staging WHERE file_path IS NOT NULL AND file_path != ''").fetchall()
+        for r in rows:
+            referenced_paths.add(r[0])
+    except Exception:
+        log.warning("Could not query staging for orphan cleanup", exc_info=True)
+        return 0  # fail-safe: don't delete if we can't check references
+
+    for f in cache_dir.rglob("*.jsonl"):
+        if str(f) in referenced_paths:
+            continue
+        try:
+            if now - f.stat().st_mtime > max_age_secs:
+                f.unlink()
+                removed += 1
+        except Exception as e:
+            log.warning("Failed to remove orphan cache file %s: %s", f, e)
+
+    if removed:
+        log.info("Cleaned up %d orphan cache files (>%dh old)", removed, max_age_hours)
+    return removed
 
 
 def cache_stats():
@@ -465,7 +516,8 @@ def get_staging():
     with db.get_conn() as conn:
         rows = conn.execute(
             "SELECT id, source_id, row_id, title, content_preview, "
-            "token_estimate, destination, skill, file_path, created_at "
+            "token_estimate, destination, skill, file_path, created_at, "
+            "COALESCE(dispatch_failures, 0) "
             "FROM ingest_staging ORDER BY created_at DESC"
         ).fetchall()
 
@@ -474,7 +526,7 @@ def get_staging():
             "id": r[0], "source_id": r[1], "row_id": r[2], "title": r[3],
             "content_preview": r[4], "token_estimate": r[5],
             "destination": r[6], "skill": r[7], "file_path": r[8],
-            "created_at": r[9],
+            "created_at": r[9], "dispatch_failures": r[10],
         }
         for r in rows
     ]
@@ -554,17 +606,25 @@ def dispatch_staged(item_ids=None):
     Args:
         item_ids: optional list of staging IDs. If None, dispatches all.
 
-    Returns dict: {tasks, rag, errors}.
+    Returns dict: {tasks, rag, errors, skipped}.
     """
+    import db
+
     staged = get_staging()
 
     if item_ids is not None:
         id_set = set(item_ids)
         staged = [s for s in staged if s["id"] in id_set]
 
-    counts = {"tasks": 0, "rag": 0, "errors": 0}
+    counts = {"tasks": 0, "rag": 0, "errors": 0, "skipped": 0}
 
     for item in staged:
+        # Skip items with too many dispatch failures
+        failures = item.get("dispatch_failures", 0) or 0
+        if failures >= 3:
+            counts["skipped"] += 1
+            continue
+
         try:
             dest = item.get("destination", "tasks")
             if dest == "rag":
@@ -578,6 +638,42 @@ def dispatch_staged(item_ids=None):
         except Exception:
             log.warning("Failed to dispatch staged item %s", item.get("id"), exc_info=True)
             counts["errors"] += 1
+            # Increment dispatch_failures counter
+            item_id = item.get("id")
+            try:
+                def _inc():
+                    with db.get_conn() as conn:
+                        conn.execute(
+                            "UPDATE ingest_staging SET dispatch_failures = dispatch_failures + 1 WHERE id = ?",
+                            (item_id,),
+                        )
+                db._retry_write(_inc)
+            except Exception:
+                log.warning("Failed to increment dispatch_failures for item %s", item_id, exc_info=True)
+
+    # Auto-remove items with >= 3 failures AND older than 24h
+    try:
+        def _cleanup_failed():
+            with db.get_conn() as conn:
+                removed = conn.execute(
+                    "DELETE FROM ingest_staging WHERE dispatch_failures >= 3 "
+                    "AND created_at < datetime('now', '-24 hours')"
+                ).rowcount
+                if removed:
+                    log.warning("Auto-removed %d staging items with 3+ dispatch failures (>24h old)", removed)
+        db._retry_write(_cleanup_failed)
+    except Exception:
+        log.warning("Failed to cleanup failed staging items", exc_info=True)
+
+    # Periodic orphan cleanup (every 6 hours)
+    global _last_orphan_cleanup
+    now = time.time()
+    if now - _last_orphan_cleanup > _ORPHAN_CLEANUP_INTERVAL:
+        _last_orphan_cleanup = now
+        try:
+            cleanup_orphans()
+        except Exception:
+            log.warning("Orphan cleanup failed during dispatch", exc_info=True)
 
     log.info("Dispatch complete: %s", counts)
     return counts

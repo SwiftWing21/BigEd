@@ -410,6 +410,11 @@ def init_db():
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         """)
+        # Migration: add dispatch_failures column if missing
+        try:
+            conn.execute("SELECT dispatch_failures FROM ingest_staging LIMIT 0")
+        except Exception:
+            conn.execute("ALTER TABLE ingest_staging ADD COLUMN dispatch_failures INTEGER DEFAULT 0")
 
 
 def update_intelligence_score(task_id, score):

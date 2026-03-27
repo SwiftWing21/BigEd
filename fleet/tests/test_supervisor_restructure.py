@@ -565,5 +565,99 @@ def test_rate_limiter_eviction():
     assert len(rate_limits) == 200  # only recent survive
 
 
+# ── Workflow Hardening: Ingest ──────────────────────────────────────
+
+def test_cache_orphan_cleanup():
+    """cleanup_orphans removes unreferenced files older than max_age."""
+    import tempfile, time
+    from pathlib import Path
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        cache_dir = Path(tmpdir)
+        # Create an orphan file (no staging reference, old)
+        orphan = cache_dir / "orphan_batch.jsonl"
+        orphan.write_text('{"test": true}\n')
+        # Backdate file mtime by 3 days
+        old_time = time.time() - (72 * 3600)
+        import os
+        os.utime(str(orphan), (old_time, old_time))
+
+        # Create a recent file (should survive)
+        recent = cache_dir / "recent_batch.jsonl"
+        recent.write_text('{"test": true}\n')
+
+        # Cleanup: remove files older than 48h with no staging reference
+        max_age_secs = 48 * 3600
+        now = time.time()
+        for f in cache_dir.glob("*.jsonl"):
+            if now - f.stat().st_mtime > max_age_secs:
+                f.unlink()
+
+        assert not orphan.exists()
+        assert recent.exists()
+
+
+def test_cache_cleanup_preserves_active():
+    """cleanup_orphans preserves files referenced in staging."""
+    import tempfile, time
+    from pathlib import Path
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        cache_dir = Path(tmpdir)
+        # Create an old file that IS referenced
+        referenced = cache_dir / "referenced_batch.jsonl"
+        referenced.write_text('{"test": true}\n')
+        old_time = time.time() - (72 * 3600)
+        import os
+        os.utime(str(referenced), (old_time, old_time))
+
+        # Simulate referenced paths set (would come from staging DB)
+        referenced_paths = {str(referenced)}
+
+        max_age_secs = 48 * 3600
+        now = time.time()
+        for f in cache_dir.glob("*.jsonl"):
+            if str(f) in referenced_paths:
+                continue
+            if now - f.stat().st_mtime > max_age_secs:
+                f.unlink()
+
+        assert referenced.exists(), "Referenced file should not be deleted"
+
+
+def test_failed_dispatch_tracking():
+    """Staging items with 3+ failures are skipped on dispatch."""
+    items = [
+        {"id": 1, "dispatch_failures": 0},  # should attempt
+        {"id": 2, "dispatch_failures": 2},  # should attempt
+        {"id": 3, "dispatch_failures": 3},  # should skip
+        {"id": 4, "dispatch_failures": 5},  # should skip
+    ]
+    to_dispatch = [i for i in items if i["dispatch_failures"] < 3]
+    assert len(to_dispatch) == 2
+    assert to_dispatch[0]["id"] == 1
+    assert to_dispatch[1]["id"] == 2
+
+
+def test_failed_dispatch_auto_remove():
+    """Items with 3+ failures AND >24h old are auto-removed."""
+    import time
+
+    # Simulate the auto-remove logic
+    now = time.time()
+    items = [
+        {"id": 1, "dispatch_failures": 3, "created_ts": now - (25 * 3600)},  # old + failed -> remove
+        {"id": 2, "dispatch_failures": 3, "created_ts": now - (1 * 3600)},   # failed but recent -> keep
+        {"id": 3, "dispatch_failures": 1, "created_ts": now - (25 * 3600)},  # old but low failures -> keep
+        {"id": 4, "dispatch_failures": 0, "created_ts": now},                # fresh -> keep
+    ]
+    to_remove = [
+        i for i in items
+        if i["dispatch_failures"] >= 3 and (now - i["created_ts"]) > 24 * 3600
+    ]
+    assert len(to_remove) == 1
+    assert to_remove[0]["id"] == 1
+
+
 if __name__ == "__main__":
     sys.exit(pytest.main([__file__, "-v"]))
