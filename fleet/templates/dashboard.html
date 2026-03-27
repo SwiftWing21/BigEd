@@ -3196,6 +3196,10 @@ function loadNeuralGraph() {
   };
   var defaultStyle = { color: '#64748b', size: 20, fontSize: 10, shape: 'ellipse' };
 
+  /* Register fcose layout extension if available */
+  var _hasFcose = typeof cytoscape !== 'undefined' && typeof cytoscapeFcose === 'function';
+  if (_hasFcose) { try { cytoscape.use(cytoscapeFcose); } catch(e) { _hasFcose = false; } }
+
   function buildCyGraph(cyNodes, cyEdges) {
     if (_cyInstance) _cyInstance.destroy();
     var nodeCount = cyNodes.length;
@@ -3235,7 +3239,7 @@ function loadNeuralGraph() {
         }
       ],
       layout: {
-        name: 'fcose',
+        name: _hasFcose ? 'fcose' : 'cose',
         animate: false,
         padding: 40,
         nodeRepulsion: nodeCount > 200 ? 800000 : 400000,
