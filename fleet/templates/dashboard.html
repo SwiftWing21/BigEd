@@ -1329,8 +1329,13 @@ textarea.input {
     <span class="header-title" id="header-section-title">Dashboard</span>
     <!-- Header Controls: model dropdown + fleet start/stop -->
     <div id="header-controls" style="display:flex;align-items:center;gap:8px;margin-left:12px;">
-      <select id="header-model-select" style="background:var(--muted);color:var(--foreground);border:1px solid var(--border);border-radius:6px;padding:4px 8px;font-size:12px;cursor:pointer;max-width:180px;" onchange="switchModel(this.value)">
-        <option value="">Loading models...</option>
+      <span style="font-size:10px;color:var(--muted-foreground);text-transform:uppercase;letter-spacing:0.5px;">GPU</span>
+      <select id="header-model-gpu" style="background:var(--card);color:var(--foreground);border:1px solid var(--border);border-radius:6px;padding:3px 6px;font-size:11px;cursor:pointer;min-width:90px;" onchange="switchModel(this.value,'gpu')">
+        <option value="">—</option>
+      </select>
+      <span style="font-size:10px;color:var(--muted-foreground);text-transform:uppercase;letter-spacing:0.5px;">CPU</span>
+      <select id="header-model-cpu" style="background:var(--card);color:var(--foreground);border:1px solid var(--border);border-radius:6px;padding:3px 6px;font-size:11px;cursor:pointer;min-width:90px;" onchange="switchModel(this.value,'cpu')">
+        <option value="">—</option>
       </select>
       <button id="btn-fleet-start" class="btn btn-sm" style="background:var(--success);color:#fff;border:none;border-radius:6px;padding:4px 12px;font-size:12px;cursor:pointer;display:none;" onclick="fleetStart()">Start Fleet</button>
       <button id="btn-fleet-stop" class="btn btn-sm" style="background:var(--destructive);color:#fff;border:none;border-radius:6px;padding:4px 12px;font-size:12px;cursor:pointer;display:none;" onclick="fleetStop()">Stop Fleet</button>
@@ -6415,7 +6420,7 @@ function submitAddSource() {
 
 /* ── Header Controls: Model Switch + Fleet Start/Stop ─────────────────────── */
 
-function switchModel(model) {
+function switchModel(model, mode) {
   if (!model) return;
   var sel = document.getElementById('header-model-select');
   sel.disabled = true;
@@ -6471,33 +6476,54 @@ function updateHeaderControls(data) {
 
 function _populateModelDropdown() {
   apiFetch('/api/health').then(function(h) {
-    var sel = document.getElementById('header-model-select');
-    if (!sel) return;
+    var gpuSel = document.getElementById('header-model-gpu');
+    var cpuSel = document.getElementById('header-model-cpu');
+    if (!gpuSel || !cpuSel) return;
     var models = (h.subsystems && h.subsystems.ollama && h.subsystems.ollama.available_models) || [];
-    var current = (h.subsystems && h.subsystems.ollama && h.subsystems.ollama.current_model) || '';
-    while (sel.firstChild) sel.removeChild(sel.firstChild);
-    if (models.length === 0) {
-      var opt = document.createElement('option');
-      opt.value = '';
-      opt.textContent = 'No models available';
-      sel.appendChild(opt);
-      return;
+    var gpuModel = (h.subsystems && h.subsystems.ollama && h.subsystems.ollama.current_model) || '';
+
+    /* Infer CPU model from fleet config (conductor_model) */
+    var cpuModel = '';
+    try {
+      var cfg = h.subsystems && h.subsystems.config;
+      if (cfg && cfg.conductor_model) cpuModel = cfg.conductor_model;
+    } catch(e) {}
+    /* Fallback: pick smallest model as likely CPU candidate */
+    if (!cpuModel && models.length > 0) {
+      var sorted = models.slice().sort(function(a,b) {
+        var sa = parseFloat((a.match(/:(\d+\.?\d*)b/) || [0,99])[1]);
+        var sb = parseFloat((b.match(/:(\d+\.?\d*)b/) || [0,99])[1]);
+        return sa - sb;
+      });
+      cpuModel = sorted[0] !== gpuModel ? sorted[0] : (sorted[1] || sorted[0]);
     }
-    models.forEach(function(m) {
+
+    function _fill(sel, activeModel) {
+      while (sel.firstChild) sel.removeChild(sel.firstChild);
+      if (models.length === 0) {
+        var opt = document.createElement('option');
+        opt.value = ''; opt.textContent = 'offline';
+        sel.appendChild(opt);
+        return;
+      }
+      models.forEach(function(m) {
+        var opt = document.createElement('option');
+        opt.value = m; opt.textContent = m;
+        if (m === activeModel) opt.selected = true;
+        sel.appendChild(opt);
+      });
+    }
+    _fill(gpuSel, gpuModel);
+    _fill(cpuSel, cpuModel);
+  }).catch(function() {
+    ['header-model-gpu', 'header-model-cpu'].forEach(function(id) {
+      var sel = document.getElementById(id);
+      if (!sel) return;
+      while (sel.firstChild) sel.removeChild(sel.firstChild);
       var opt = document.createElement('option');
-      opt.value = m;
-      opt.textContent = m;
-      if (m === current) opt.selected = true;
+      opt.value = ''; opt.textContent = 'offline';
       sel.appendChild(opt);
     });
-  }).catch(function() {
-    var sel = document.getElementById('header-model-select');
-    if (!sel) return;
-    while (sel.firstChild) sel.removeChild(sel.firstChild);
-    var opt = document.createElement('option');
-    opt.value = '';
-    opt.textContent = 'Ollama offline';
-    sel.appendChild(opt);
   });
 }
 
