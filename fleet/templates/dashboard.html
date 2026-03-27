@@ -2419,7 +2419,7 @@ function loadDashStatus() {
     var failed = d.tasks ? (d.tasks.FAILED || 0) : 0;
     document.getElementById('metric-total-requests').textContent = done.toLocaleString();
     var reqTrend = document.getElementById('metric-requests-trend');
-    reqTrend.textContent = pending + ' queued \u00B7 ' + running + ' active \u00B7 ' + failed + ' failed';
+    reqTrend.textContent = pending + ' queued \u00B7 ' + running + ' running \u00B7 ' + failed + ' failed';
     reqTrend.className = 'card-trend ' + (running > 0 ? 'up' : pending > 0 ? 'neutral' : 'neutral');
   }).catch(function() {});
 }
@@ -5109,7 +5109,7 @@ function handleSSE(msg) {
           var failed = data.tasks.FAILED || 0;
           document.getElementById('metric-total-requests').textContent = done.toLocaleString();
           var reqTrend = document.getElementById('metric-requests-trend');
-          reqTrend.textContent = pending + ' queued \u00B7 ' + running + ' active \u00B7 ' + failed + ' failed';
+          reqTrend.textContent = pending + ' queued \u00B7 ' + running + ' running \u00B7 ' + failed + ' failed';
           reqTrend.className = 'card-trend ' + (running > 0 ? 'up' : pending > 0 ? 'neutral' : 'neutral');
         }
         /* ── Live Activity (real-time from SSE — no polling needed) ── */
