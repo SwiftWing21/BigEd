@@ -2519,7 +2519,11 @@ function renderNeuralFrame() {
   var laneH = Math.min(24, (h - 30) / Math.max(maxLanes, 1));
   var laneGap = 3;
   var topOff = 12;
-  var maxTotal = Math.max.apply(null, lanes.map(function(l) { return l.total; })) || 1;
+  // Scale agents and models independently so model token counts don't crush agent bars
+  var agentLanes = lanes.filter(function(l) { return l.kind !== 'model'; });
+  var modelLanes = lanes.filter(function(l) { return l.kind === 'model'; });
+  var maxAgentTotal = Math.max.apply(null, agentLanes.map(function(l) { return l.total; }).concat([1]));
+  var maxModelTotal = Math.max.apply(null, modelLanes.map(function(l) { return l.total; }).concat([1]));
 
   // Kind colors
   var kindColor = { agent: '#10b981', model: '#a78bfa' };
@@ -2546,8 +2550,9 @@ function renderNeuralFrame() {
     ctx.roundRect(barStart, y, barW, laneH, 3);
     ctx.fill();
 
-    // Stacked bar segments
-    var scale = barW / maxTotal;
+    // Stacked bar segments — scale against own kind's max
+    var laneMax = lane.kind === 'model' ? maxModelTotal : maxAgentTotal;
+    var scale = barW / laneMax;
     var cx = barStart;
     [{ v: lane.done, c: statusColor.done },
      { v: lane.failed, c: statusColor.failed },
@@ -4004,7 +4009,10 @@ function renderAnalyticsNeuralFrame() {
   var maxLanes = Math.min(lanes.length, 14);
   var laneH = Math.min(22, (h - 30) / Math.max(maxLanes, 1));
   var laneGap = 2, topOff = 10;
-  var maxTotal = Math.max.apply(null, lanes.map(function(l) { return l.total; })) || 1;
+  var _agentLanes2 = lanes.filter(function(l) { return l.kind !== 'model'; });
+  var _modelLanes2 = lanes.filter(function(l) { return l.kind === 'model'; });
+  var _maxAgent2 = Math.max.apply(null, _agentLanes2.map(function(l) { return l.total; }).concat([1]));
+  var _maxModel2 = Math.max.apply(null, _modelLanes2.map(function(l) { return l.total; }).concat([1]));
   var kindColor = { agent: '#10b981', model: '#a78bfa' };
   var statusColor = { done: '#10b981', failed: '#ef4444', running: '#3b82f6' };
   var laneMap = {};
@@ -4013,7 +4021,8 @@ function renderAnalyticsNeuralFrame() {
     ctx.fillStyle = kindColor[lane.kind] || '#64748b'; ctx.globalAlpha = 0.8;
     ctx.beginPath(); ctx.arc(labelW + 2, y + laneH / 2, 3, 0, Math.PI * 2); ctx.fill(); ctx.globalAlpha = 1;
     ctx.fillStyle = 'rgba(255,255,255,0.03)'; ctx.beginPath(); ctx.roundRect(barStart, y, barW, laneH, 3); ctx.fill();
-    var scale = barW / maxTotal, cx = barStart;
+    var _laneMax2 = lane.kind === 'model' ? _maxModel2 : _maxAgent2;
+    var scale = barW / _laneMax2, cx = barStart;
     [{v:lane.done,c:statusColor.done},{v:lane.failed,c:statusColor.failed},{v:lane.running,c:statusColor.running}].forEach(function(s){
       if(s.v<=0)return; var sw=Math.max(s.v*scale,2); ctx.globalAlpha=0.65; ctx.fillStyle=s.c;
       ctx.beginPath(); ctx.roundRect(cx,y+2,sw,laneH-4,2); ctx.fill(); ctx.globalAlpha=1; cx+=sw;
