@@ -1707,7 +1707,16 @@ class BigEdCC(TrayManagerMixin, BootManagerMixin, CommTabMixin, OllamaManagerMix
         self._hw_sup_status_lbl.grid(row=0, column=2, padx=8, pady=(4, 2), sticky="e")
 
         self._agents_frame_inner = ctk.CTkFrame(agents_frame, fg_color=BG2)
-        self._agents_frame_inner.grid(row=1, column=0, sticky="nsew", padx=4, pady=(0, 4))
+        self._agents_frame_inner.grid(row=1, column=0, sticky="nsew", padx=4, pady=(0, 2))
+
+        # Fleet Activity — recent tasks (shown below agent cards after boot)
+        agents_frame.grid_rowconfigure(2, weight=0)
+        self._activity_text = ctk.CTkTextbox(
+            agents_frame, font=FONT_STAT, fg_color=BG2,
+            text_color="#888888", wrap="none", corner_radius=0, height=90)
+        self._activity_text.grid(row=2, column=0, sticky="sew", padx=4, pady=(0, 4))
+        self._activity_text.configure(state="disabled")
+        self._safe_after(2000, self._poll_fleet_activity)
 
         # Model Performance panel (below agents)
         self._build_model_perf_panel(left)
@@ -1808,29 +1817,12 @@ class BigEdCC(TrayManagerMixin, BootManagerMixin, CommTabMixin, OllamaManagerMix
         right = ctk.CTkFrame(parent, fg_color=BG, corner_radius=0)
         right.grid(row=0, column=1, sticky="nsew", padx=(4, 0))
         right.grid_columnconfigure(0, weight=1)
-        right.grid_rowconfigure(0, weight=0)   # neural lanes (fixed height)
-        right.grid_rowconfigure(1, weight=3)   # log
-        right.grid_rowconfigure(2, weight=2)   # output
-
-        # Fleet Activity panel — live agent status + recent tasks
-        activity_frame = ctk.CTkFrame(right, fg_color=BG2, corner_radius=6, height=140)
-        activity_frame.grid(row=0, column=0, sticky="ew", pady=(0, 4))
-        activity_frame.grid_propagate(False)
-        activity_frame.grid_columnconfigure(0, weight=1)
-        activity_frame.grid_rowconfigure(1, weight=1)
-        ctk.CTkLabel(activity_frame, text="FLEET ACTIVITY",
-                     font=FONT_XS, text_color=GOLD,
-                     anchor="w").grid(row=0, column=0, padx=8, pady=(4, 0), sticky="w")
-        self._activity_text = ctk.CTkTextbox(
-            activity_frame, font=FONT_STAT, fg_color=BG2,
-            text_color="#c8c8c8", wrap="none", corner_radius=0, height=110)
-        self._activity_text.grid(row=1, column=0, sticky="nsew", padx=4, pady=(0, 4))
-        self._activity_text.configure(state="disabled")
-        self._safe_after(2000, self._poll_fleet_activity)
+        right.grid_rowconfigure(0, weight=3)   # log
+        right.grid_rowconfigure(1, weight=2)   # output
 
         # Log panel
         log_frame = ctk.CTkFrame(right, fg_color=BG2, corner_radius=6)
-        log_frame.grid(row=1, column=0, sticky="nsew", pady=(0, 4))
+        log_frame.grid(row=0, column=0, sticky="nsew", pady=(0, 4))
         log_frame.grid_rowconfigure(1, weight=1)
         log_frame.grid_columnconfigure(0, weight=1)
 
@@ -1846,7 +1838,7 @@ class BigEdCC(TrayManagerMixin, BootManagerMixin, CommTabMixin, OllamaManagerMix
 
         # Task output panel
         out_frame = ctk.CTkFrame(right, fg_color=BG2, corner_radius=6)
-        out_frame.grid(row=2, column=0, sticky="nsew")
+        out_frame.grid(row=1, column=0, sticky="nsew")
         out_frame.grid_rowconfigure(1, weight=1)
         out_frame.grid_columnconfigure(0, weight=1)
 
@@ -1867,8 +1859,11 @@ class BigEdCC(TrayManagerMixin, BootManagerMixin, CommTabMixin, OllamaManagerMix
     # ── Fleet Activity panel ─────────────────────────────────────────────────
 
     def _poll_fleet_activity(self):
-        """Update fleet activity panel from DB — no dashboard dependency."""
+        """Update fleet activity feed from DB — shown below agent cards."""
         if not self._alive:
+            return
+        if self._boot_active:
+            self._safe_after(5000, self._poll_fleet_activity)
             return
         def _fetch():
             lines = []
@@ -1880,41 +1875,26 @@ class BigEdCC(TrayManagerMixin, BootManagerMixin, CommTabMixin, OllamaManagerMix
                 conn = sqlite3.connect(str(db_path), timeout=2)
                 conn.row_factory = sqlite3.Row
 
-                # Recent task completions (last 10)
+                # Recent task completions (last 8)
                 tasks = conn.execute(
                     "SELECT type, status, assigned_to, "
                     "strftime('%H:%M:%S', created_at) as ts "
                     "FROM tasks WHERE status IN ('DONE','FAILED') "
-                    "ORDER BY id DESC LIMIT 10"
-                ).fetchall()
-
-                # Agent summary
-                agents = conn.execute(
-                    "SELECT name, status FROM agents "
-                    "WHERE last_heartbeat > datetime('now', '-5 minutes') "
-                    "ORDER BY name"
+                    "ORDER BY id DESC LIMIT 8"
                 ).fetchall()
                 conn.close()
 
-                if agents:
-                    idle = sum(1 for a in agents if a["status"] == "IDLE")
-                    busy = sum(1 for a in agents if a["status"] == "BUSY")
-                    total = len(agents)
-                    lines.append(f"Agents: {total} total  {busy} busy  {idle} idle")
-                    lines.append("")
-
                 if tasks:
-                    lines.append("Recent tasks:")
                     for t in tasks:
                         icon = "\u2713" if t["status"] == "DONE" else "\u2717"
                         agent = t["assigned_to"] or "?"
                         skill = t["type"] or "?"
-                        lines.append(f"  {icon} {t['ts']}  {agent:<12} {skill}")
+                        lines.append(f" {icon} {t['ts']}  {agent:<12} {skill}")
                 else:
-                    lines.append("No recent tasks")
+                    lines.append(" No recent tasks")
 
             except Exception:
-                lines = ["Waiting for fleet..."]
+                lines = [" Waiting for fleet..."]
 
             text = "\n".join(lines)
             try:
