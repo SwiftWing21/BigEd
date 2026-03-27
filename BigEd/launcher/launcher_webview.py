@@ -248,11 +248,10 @@ def main():
         height=860,
         min_size=(800, 600),
         js_api=BridgeAPI(),
-        confirm_close=True,
     )
-    _window.events.closing += _on_closing
 
-    _setup_tray()
+    # Tray disabled by default — enable via fleet.toml [launcher] tray_enabled = true
+    # _setup_tray()
 
     log.info("Starting PyWebView window")
     webview.start()
