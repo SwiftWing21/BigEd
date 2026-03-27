@@ -3197,6 +3197,7 @@ function loadNeuralGraph() {
 
   function buildCyGraph(cyNodes, cyEdges) {
     if (_cyInstance) _cyInstance.destroy();
+    var nodeCount = cyNodes.length;
     _cyInstance = cytoscape({
       container: document.getElementById('cytoscape-container'),
       elements: { nodes: cyNodes, edges: cyEdges },
@@ -3222,27 +3223,76 @@ function loadNeuralGraph() {
         {
           selector: 'edge',
           style: {
-            'width': 1.5,
+            'width': 1,
             'line-color': chartBorder(),
             'curve-style': 'bezier',
-            'opacity': 0.4,
+            'opacity': 0.15,
             'target-arrow-shape': 'triangle',
             'target-arrow-color': chartBorder(),
-            'arrow-scale': 0.8,
+            'arrow-scale': 0.6,
           }
         }
       ],
       layout: {
-        name: 'concentric',
-        concentric: function(node) {
-          var typeOrder = { hub: 7, agent: 6, model: 5, skill: 4, task: 3, folder: 2, message: 1, config: 0 };
-          var t = node.data('type') || '';
-          return (typeOrder[t] !== undefined ? typeOrder[t] : 0) * 10 + Math.min(node.degree(), 9);
-        },
-        levelWidth: function() { return 10; },
+        name: 'cose',
         animate: false,
-        padding: 30,
+        padding: 40,
+        nodeRepulsion: function() { return nodeCount > 200 ? 800000 : 400000; },
+        idealEdgeLength: function() { return nodeCount > 200 ? 120 : 80; },
+        edgeElasticity: function() { return 50; },
+        gravity: 0.3,
+        numIter: nodeCount > 500 ? 300 : 500,
+        nodeDimensionsIncludeLabels: true,
+        nestingFactor: 1.2,
+        componentSpacing: 80,
       }
+    });
+
+    /* ── Dynamic zoom: adjust labels + padding based on zoom level ──────── */
+    _cyInstance.on('zoom', function() {
+      var z = _cyInstance.zoom();
+      var nodes = _cyInstance.nodes();
+      if (z < 0.3) {
+        /* Fully zoomed out — brain overview: no labels, small dots */
+        nodes.style({ 'label': '', 'width': 8, 'height': 8, 'border-width': 0 });
+      } else if (z < 0.6) {
+        /* Mid-far: hub/agent labels only */
+        nodes.style({ 'border-width': 1 });
+        nodes.forEach(function(n) {
+          var t = n.data('type');
+          var show = (t === 'agent' || t === 'hub' || t === 'model');
+          n.style({
+            'label': show ? n.data('label') : '',
+            'font-size': 8,
+            'width': show ? n.data('size') : 10,
+            'height': show ? n.data('size') : 10,
+          });
+        });
+      } else if (z < 1.2) {
+        /* Mid: all labels, normal sizes */
+        nodes.forEach(function(n) {
+          n.style({
+            'label': n.data('label'),
+            'font-size': n.data('fontSize'),
+            'width': n.data('size'),
+            'height': n.data('size'),
+            'border-width': 2,
+          });
+        });
+      } else {
+        /* Close zoom: large labels */
+        nodes.forEach(function(n) {
+          n.style({
+            'label': n.data('label'),
+            'font-size': 12,
+            'width': Math.max(n.data('size'), 28),
+            'height': Math.max(n.data('size'), 28),
+            'border-width': 2,
+          });
+        });
+      }
+      /* Fade edges at far zoom */
+      _cyInstance.edges().style('opacity', z < 0.4 ? 0.06 : z < 0.8 ? 0.15 : 0.3);
     });
   }
 
