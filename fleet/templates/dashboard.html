@@ -3211,97 +3211,247 @@ function loadNeuralGraph() {
           selector: 'node',
           style: {
             'background-color': 'data(color)',
-            'label': 'data(label)',
-            'color': chartMuted(),
-            'font-size': 'data(fontSize)',
+            'label': '',
+            'color': '#e2e8f0',
+            'font-size': 9,
             'text-valign': 'bottom',
-            'text-margin-y': 6,
-            'width': 'data(size)',
-            'height': 'data(size)',
+            'text-margin-y': 4,
+            'width': 10,
+            'height': 10,
             'shape': 'data(shape)',
-            'border-width': 2,
+            'border-width': 1,
             'border-color': 'data(color)',
             'text-wrap': 'ellipsis',
-            'text-max-width': '80px',
+            'text-max-width': '90px',
+            'transition-property': 'width, height, border-width, opacity',
+            'transition-duration': '0.2s',
           }
+        },
+        {
+          selector: 'node.hover-neighbor',
+          style: {
+            'label': 'data(label)',
+            'width': 'data(size)',
+            'height': 'data(size)',
+            'font-size': 10,
+            'border-width': 2,
+            'z-index': 10,
+          }
+        },
+        {
+          selector: 'node.hover-center',
+          style: {
+            'label': 'data(label)',
+            'width': function(n) { return (n.data('size') || 20) * 1.6; },
+            'height': function(n) { return (n.data('size') || 20) * 1.6; },
+            'font-size': 12,
+            'font-weight': 'bold',
+            'border-width': 3,
+            'border-color': '#ffffff',
+            'z-index': 20,
+          }
+        },
+        {
+          selector: 'node.selected-node',
+          style: {
+            'label': 'data(label)',
+            'width': function(n) { return (n.data('size') || 20) * 1.5; },
+            'height': function(n) { return (n.data('size') || 20) * 1.5; },
+            'font-size': 11,
+            'font-weight': 'bold',
+            'border-width': 3,
+            'border-color': '#fbbf24',
+            'z-index': 20,
+          }
+        },
+        {
+          selector: 'node.selected-neighbor',
+          style: {
+            'label': 'data(label)',
+            'width': 'data(size)',
+            'height': 'data(size)',
+            'font-size': 10,
+            'border-width': 2,
+            'z-index': 10,
+          }
+        },
+        {
+          selector: 'node.dimmed',
+          style: { 'opacity': 0.15 }
         },
         {
           selector: 'edge',
           style: {
-            'width': 1,
+            'width': 0.8,
             'line-color': chartBorder(),
             'curve-style': 'bezier',
-            'opacity': 0.15,
+            'opacity': 0.08,
             'target-arrow-shape': 'triangle',
             'target-arrow-color': chartBorder(),
-            'arrow-scale': 0.6,
+            'arrow-scale': 0.5,
           }
-        }
+        },
+        {
+          selector: 'edge.highlighted',
+          style: {
+            'width': 2.5,
+            'opacity': 0.8,
+            'line-color': '#fbbf24',
+            'target-arrow-color': '#fbbf24',
+            'z-index': 20,
+          }
+        },
+        {
+          selector: 'edge.hover-edge',
+          style: {
+            'width': 1.5,
+            'opacity': 0.5,
+            'line-color': 'data(color)',
+          }
+        },
+        {
+          selector: 'edge.dimmed',
+          style: { 'opacity': 0.03 }
+        },
       ],
       layout: {
         name: _hasFcose ? 'fcose' : 'cose',
         animate: false,
-        padding: 40,
-        nodeRepulsion: nodeCount > 200 ? 800000 : 400000,
-        idealEdgeLength: nodeCount > 200 ? 120 : 80,
-        edgeElasticity: 0.45,
-        gravity: 0.25,
-        gravityRange: 3.8,
+        padding: 10,
+        nodeRepulsion: nodeCount > 200 ? 50000 : 30000,
+        idealEdgeLength: nodeCount > 200 ? 25 : 18,
+        edgeElasticity: 0.2,
+        gravity: 1.2,
+        gravityRange: 2.0,
         numIter: nodeCount > 500 ? 2500 : 5000,
         quality: nodeCount > 500 ? 'default' : 'proof',
-        nodeDimensionsIncludeLabels: true,
+        nodeDimensionsIncludeLabels: false,
         randomize: true,
         packComponents: true,
-        componentSpacing: 80,
+        componentSpacing: 20,
       }
     });
 
-    /* ── Dynamic zoom: adjust labels + padding based on zoom level ──────── */
-    _cyInstance.on('zoom', function() {
-      var z = _cyInstance.zoom();
-      var nodes = _cyInstance.nodes();
-      if (z < 0.3) {
-        /* Fully zoomed out — brain overview: no labels, small dots */
-        nodes.style({ 'label': '', 'width': 8, 'height': 8, 'border-width': 0 });
-      } else if (z < 0.6) {
-        /* Mid-far: hub/agent labels only */
-        nodes.style({ 'border-width': 1 });
-        nodes.forEach(function(n) {
-          var t = n.data('type');
-          var show = (t === 'agent' || t === 'hub' || t === 'model');
-          n.style({
-            'label': show ? n.data('label') : '',
-            'font-size': 8,
-            'width': show ? n.data('size') : 10,
-            'height': show ? n.data('size') : 10,
-          });
-        });
-      } else if (z < 1.2) {
-        /* Mid: all labels, normal sizes */
-        nodes.forEach(function(n) {
-          n.style({
-            'label': n.data('label'),
-            'font-size': n.data('fontSize'),
-            'width': n.data('size'),
-            'height': n.data('size'),
-            'border-width': 2,
-          });
-        });
-      } else {
-        /* Close zoom: large labels */
-        nodes.forEach(function(n) {
-          n.style({
-            'label': n.data('label'),
-            'font-size': 12,
-            'width': Math.max(n.data('size'), 28),
-            'height': Math.max(n.data('size'), 28),
-            'border-width': 2,
-          });
-        });
-      }
-      /* Fade edges at far zoom */
-      _cyInstance.edges().style('opacity', z < 0.4 ? 0.06 : z < 0.8 ? 0.15 : 0.3);
+    /* ── Hover explosion: expand neighborhood on mouseover ──────────── */
+    var _hoverTimeout;
+    _cyInstance.on('mouseover', 'node', function(evt) {
+      clearTimeout(_hoverTimeout);
+      var node = evt.target;
+      node.addClass('hover-center');
+      node.neighborhood('node').addClass('hover-neighbor');
+      node.connectedEdges().addClass('hover-edge');
+
+      /* Push neighbors outward for "explosion" effect */
+      var pos = node.position();
+      node.neighborhood('node').forEach(function(n) {
+        var nPos = n.position();
+        var dx = nPos.x - pos.x, dy = nPos.y - pos.y;
+        var dist = Math.sqrt(dx * dx + dy * dy) || 1;
+        var push = Math.max(30, 60 - dist * 0.3);
+        n.animate({ position: { x: nPos.x + (dx / dist) * push, y: nPos.y + (dy / dist) * push } },
+          { duration: 200, easing: 'ease-out-cubic' });
+      });
     });
+
+    _cyInstance.on('mouseout', 'node', function(evt) {
+      _hoverTimeout = setTimeout(function() {
+        _cyInstance.nodes().removeClass('hover-center hover-neighbor');
+        _cyInstance.edges().removeClass('hover-edge');
+      }, 100);
+    });
+
+    /* ── Click selection: bold connected edges, show detail ──────────── */
+    var _selectedNode = null;
+    _cyInstance.on('tap', 'node', function(evt) {
+      var node = evt.target;
+      _cyInstance.nodes().removeClass('selected-node selected-neighbor dimmed');
+      _cyInstance.edges().removeClass('highlighted dimmed');
+
+      if (_selectedNode === node.id()) {
+        _selectedNode = null;
+        _hideNodeDetail();
+        return;
+      }
+      _selectedNode = node.id();
+
+      var neighborhood = node.neighborhood().add(node);
+      node.addClass('selected-node');
+      node.neighborhood('node').addClass('selected-neighbor');
+      node.connectedEdges().addClass('highlighted');
+      _cyInstance.nodes().not(neighborhood).addClass('dimmed');
+      _cyInstance.edges().not(node.connectedEdges()).addClass('dimmed');
+      _showNodeDetail(node);
+    });
+
+    _cyInstance.on('tap', function(evt) {
+      if (evt.target === _cyInstance) {
+        _cyInstance.nodes().removeClass('selected-node selected-neighbor dimmed');
+        _cyInstance.edges().removeClass('highlighted dimmed');
+        _selectedNode = null;
+        _hideNodeDetail();
+      }
+    });
+
+    /* ── Node detail overlay (safe DOM — no innerHTML) ────────────────── */
+    function _showNodeDetail(node) {
+      var el = document.getElementById('graph-node-detail');
+      if (!el) {
+        el = document.createElement('div');
+        el.id = 'graph-node-detail';
+        el.style.cssText = 'position:absolute;top:8px;right:8px;background:rgba(15,23,42,0.92);'
+          + 'border:1px solid rgba(255,255,255,0.1);border-radius:8px;padding:12px 16px;'
+          + 'color:#e2e8f0;font-size:12px;max-width:240px;z-index:30;pointer-events:auto;'
+          + 'backdrop-filter:blur(8px);';
+        container.appendChild(el);
+      }
+      el.textContent = '';
+      var d = node.data();
+
+      var title = document.createElement('div');
+      title.style.cssText = 'font-size:14px;font-weight:bold;margin-bottom:6px;color:' + d.color;
+      title.textContent = d.label || d.id;
+      el.appendChild(title);
+
+      var typeLbl = document.createElement('div');
+      typeLbl.style.cssText = 'color:#94a3b8;margin-bottom:4px';
+      typeLbl.textContent = (d.type || 'unknown').toUpperCase();
+      el.appendChild(typeLbl);
+
+      var conns = node.neighborhood('node').length;
+      var edgeCount = node.connectedEdges().length;
+      var statsLbl = document.createElement('div');
+      statsLbl.style.marginBottom = '4px';
+      statsLbl.textContent = conns + ' connections \u00B7 ' + edgeCount + ' edges';
+      el.appendChild(statsLbl);
+
+      var neighbors = node.neighborhood('node');
+      if (neighbors.length > 0) {
+        var sep = document.createElement('div');
+        sep.style.cssText = 'margin-top:6px;border-top:1px solid rgba(255,255,255,0.1);padding-top:6px';
+        var shown = Math.min(neighbors.length, 8);
+        for (var i = 0; i < shown; i++) {
+          var nd = neighbors[i].data();
+          var span = document.createElement('span');
+          span.style.color = nd.color || '#94a3b8';
+          span.textContent = (nd.label || nd.id || '').substring(0, 20);
+          sep.appendChild(span);
+          if (i < shown - 1) sep.appendChild(document.createTextNode(', '));
+        }
+        if (neighbors.length > 8) {
+          var more = document.createElement('span');
+          more.style.color = '#64748b';
+          more.textContent = ' +' + (neighbors.length - 8) + ' more';
+          sep.appendChild(more);
+        }
+        el.appendChild(sep);
+      }
+      el.style.display = 'block';
+    }
+
+    function _hideNodeDetail() {
+      var el = document.getElementById('graph-node-detail');
+      if (el) el.style.display = 'none';
+    }
 
     /* ── SSE-driven graph animations ────────────────────────────────── */
     var _pulseCanvas = document.createElement('canvas');
