@@ -8,6 +8,7 @@ do and when: agent scaling, auto-triggers, training detection.
 import json
 import logging
 import os
+import random
 import sys
 import time
 import urllib.request
@@ -57,18 +58,19 @@ class Scheduler:
         self.config = config
         self.pm = pm  # ProcessManager
         self._capacity_state = _CapacityState()
-        # Interval trackers
-        self._last_scale_check: float = 0
-        self._last_research_trigger: float = 0
-        self._last_evolution_trigger: float = 0
+        # Interval trackers — staggered to avoid all-at-once burst on boot
+        now = time.time()
+        self._last_scale_check: float = 0  # intentional: scale immediately on boot
+        self._last_research_trigger = now - random.uniform(0, RESEARCH_INTERVAL)
+        self._last_evolution_trigger = now - random.uniform(0, EVOLUTION_INTERVAL)
         self._last_results_mtime: float = 0
-        self._last_model_recommend: float = 0
-        self._last_sched_check: float = 0
-        self._last_trigger_check: float = 0
-        self._last_config_reload: float = 0
-        self._last_cost_anomaly_check: float = 0
-        self._last_capacity_check: float = 0
-        self._last_training_check: float = 0
+        self._last_model_recommend = now - random.uniform(0, MODEL_RECOMMEND_INTERVAL)
+        self._last_sched_check = now - random.uniform(0, 300)
+        self._last_trigger_check = now - random.uniform(0, 60)
+        self._last_config_reload = now - random.uniform(0, CONFIG_RELOAD_INTERVAL)
+        self._last_cost_anomaly_check = now - random.uniform(0, 300)
+        self._last_capacity_check = now - random.uniform(0, 300)
+        self._last_training_check = now - random.uniform(0, 30)
 
     def update_config(self, config: dict) -> None:
         self.config = config
@@ -496,6 +498,22 @@ class Scheduler:
             except Exception as e:
                 log.warning(f"[training] failed to post marathon_log (start): {e}")
 
+        elif training_now and self.pm.training_active:
+            # VRAM reactive eviction: if GPU memory >90%, force Ollama to CPU
+            try:
+                import gpu
+                gpu_info = gpu.get_gpu_info()
+                used_mb = gpu_info.get("memory_used_mb", 0)
+                total_mb = gpu_info.get("memory_total_mb", 0)
+                if total_mb > 0 and (used_mb / total_mb) > 0.90:
+                    if not self.pm.ollama_evicted_for_training:
+                        log.warning(f"VRAM usage {used_mb}/{total_mb}MB (>90%) — evicting Ollama to CPU")
+                        self.pm.stop_ollama()
+                        self.pm.start_ollama(gpu=False)
+                        self.pm.ollama_evicted_for_training = True
+            except Exception:
+                log.debug("GPU check unavailable for VRAM reactive eviction")
+
         elif not training_now and self.pm.training_active:
             self.pm.training_active = False
             if self.pm.ollama_evicted_for_training:
@@ -528,48 +546,46 @@ class Scheduler:
     # ── Internal: Auto-triggers ─────────────────────────────────────
 
     def _check_auto_triggers(self, now: float) -> None:
-        # Daily research
+        import db
+
+        # Daily research — check PENDING+RUNNING to avoid overlap
         if now - self._last_research_trigger > RESEARCH_INTERVAL:
             try:
-                import sqlite3
-                db_path = FLEET_DIR / "fleet.db"
-                conn = sqlite3.connect(str(db_path), timeout=5)
-                try:
+                with db.get_conn() as conn:
                     pending_research = conn.execute(
-                        "SELECT COUNT(*) FROM tasks WHERE type='research_loop' AND status='PENDING'"
+                        "SELECT COUNT(*) FROM tasks WHERE type='research_loop' "
+                        "AND status IN ('PENDING','RUNNING')"
                     ).fetchone()[0]
-                    if pending_research == 0:
-                        conn.execute(
-                            "INSERT INTO tasks (type, status, priority, payload_json, created_at) "
-                            "VALUES ('research_loop', 'PENDING', 3, ?, datetime('now'))",
-                            (json.dumps({"action": "detect_gaps"}),))
-                        conn.commit()
-                        log.info("Auto-triggered daily research cycle")
-                finally:
-                    conn.close()
+                if pending_research == 0:
+                    def _insert_research():
+                        with db.get_conn() as conn:
+                            conn.execute(
+                                "INSERT INTO tasks (type, status, priority, payload_json, created_at) "
+                                "VALUES ('research_loop', 'PENDING', 3, ?, datetime('now'))",
+                                (json.dumps({"action": "detect_gaps"}),))
+                    db._retry_write(_insert_research)
+                    log.info("Auto-triggered daily research cycle")
                 self._last_research_trigger = now
             except Exception as e:
                 log.debug(f"Research trigger failed: {e}")
 
-        # Weekly evolution
+        # Weekly evolution — check PENDING+RUNNING to avoid overlap
         if now - self._last_evolution_trigger > EVOLUTION_INTERVAL:
             try:
-                import sqlite3
-                db_path = FLEET_DIR / "fleet.db"
-                conn = sqlite3.connect(str(db_path), timeout=5)
-                try:
+                with db.get_conn() as conn:
                     pending_evo = conn.execute(
-                        "SELECT COUNT(*) FROM tasks WHERE type='evolution_coordinator' AND status='PENDING'"
+                        "SELECT COUNT(*) FROM tasks WHERE type='evolution_coordinator' "
+                        "AND status IN ('PENDING','RUNNING')"
                     ).fetchone()[0]
-                    if pending_evo == 0:
-                        conn.execute(
-                            "INSERT INTO tasks (type, status, priority, payload_json, created_at) "
-                            "VALUES ('evolution_coordinator', 'PENDING', 2, ?, datetime('now'))",
-                            (json.dumps({"action": "evolve"}),))
-                        conn.commit()
-                        log.info("Auto-triggered weekly evolution sweep")
-                finally:
-                    conn.close()
+                if pending_evo == 0:
+                    def _insert_evo():
+                        with db.get_conn() as conn:
+                            conn.execute(
+                                "INSERT INTO tasks (type, status, priority, payload_json, created_at) "
+                                "VALUES ('evolution_coordinator', 'PENDING', 2, ?, datetime('now'))",
+                                (json.dumps({"action": "evolve"}),))
+                    db._retry_write(_insert_evo)
+                    log.info("Auto-triggered weekly evolution sweep")
                 self._last_evolution_trigger = now
             except Exception as e:
                 log.debug(f"Evolution trigger failed: {e}")
@@ -580,29 +596,30 @@ class Scheduler:
             mtime = results_tsv.stat().st_mtime
             if mtime > self._last_results_mtime and self._last_results_mtime > 0:
                 try:
-                    import sqlite3
-                    db_path = FLEET_DIR / "fleet.db"
-                    conn = sqlite3.connect(str(db_path), timeout=5)
-                    try:
-                        conn.execute(
-                            "INSERT INTO tasks (type, status, priority, payload_json, created_at) "
-                            "VALUES ('ml_bridge', 'PENDING', 4, ?, datetime('now'))",
-                            (json.dumps({"action": "import_results"}),))
-                        conn.commit()
-                        log.info("Auto-triggered ml_bridge import (new results.tsv entries)")
-                    finally:
-                        conn.close()
+                    def _insert_ml_bridge():
+                        with db.get_conn() as conn:
+                            conn.execute(
+                                "INSERT INTO tasks (type, status, priority, payload_json, created_at) "
+                                "VALUES ('ml_bridge', 'PENDING', 4, ?, datetime('now'))",
+                                (json.dumps({"action": "import_results"}),))
+                    db._retry_write(_insert_ml_bridge)
+                    log.info("Auto-triggered ml_bridge import (new results.tsv entries)")
                 except Exception:
                     pass
             self._last_results_mtime = mtime
 
-        # Model recommendation (every 6h)
+        # Model recommendation (every 6h) — check PENDING+RUNNING to avoid overlap
         if now - self._last_model_recommend >= MODEL_RECOMMEND_INTERVAL:
             self._last_model_recommend = now
             try:
-                import db
-                db.post_task("model_recommend", json.dumps({"action": "analyze"}), priority=3)
-                log.info("Dispatched model_recommend analysis task")
+                with db.get_conn() as conn:
+                    existing = conn.execute(
+                        "SELECT COUNT(*) FROM tasks WHERE type='model_recommend' "
+                        "AND status IN ('PENDING','RUNNING')"
+                    ).fetchone()[0]
+                if existing == 0:
+                    db.post_task("model_recommend", json.dumps({"action": "analyze"}), priority=3)
+                    log.info("Dispatched model_recommend analysis task")
             except Exception as e:
                 log.debug(f"Model recommend dispatch error: {e}")
 

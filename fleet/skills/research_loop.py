@@ -1,5 +1,6 @@
 """Tier 2: Autonomous research → synthesize → train cycle."""
 import json
+import os
 from datetime import datetime
 from pathlib import Path
 from collections import Counter
@@ -154,10 +155,13 @@ def _ingest_batch(payload, config):
                 "total_fetched": (meta.get("total_fetched", 0) if meta_path.exists() else 0) + len(rows)}
         try:
             existing = json.loads(meta_path.read_text()) if meta_path.exists() else {}
-            existing.update(meta)
-            meta_path.write_text(json.dumps(existing, indent=2))
         except Exception:
-            meta_path.write_text(json.dumps(meta, indent=2))
+            existing = {}
+            log.warning("Failed to read %s, starting fresh", meta_path)
+        existing.update(meta)
+        tmp_path = meta_path.with_suffix(".json.tmp")
+        tmp_path.write_text(json.dumps(existing, indent=2))
+        os.replace(str(tmp_path), str(meta_path))
 
         # Cache the batch
         try:

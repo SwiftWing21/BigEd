@@ -394,6 +394,7 @@ def test_evolution_dedup_skips_queued():
     import sys, os
     sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "skills"))
     from unittest.mock import patch, MagicMock
+    import importlib
     import evolution_coordinator as ec
 
     # Clear any cached entries from previous tests
@@ -405,9 +406,11 @@ def test_evolution_dedup_skips_queued():
     mock_conn.__enter__ = lambda s: mock_conn
     mock_conn.__exit__ = MagicMock(return_value=False)
 
-    with patch("evolution_coordinator.db") as mock_db:
-        mock_db.get_conn.return_value = mock_conn
-        mock_db.post_task = MagicMock()
+    mock_db = MagicMock()
+    mock_db.get_conn.return_value = mock_conn
+    mock_db.post_task = MagicMock()
+
+    with patch.dict("sys.modules", {"db": mock_db}):
         # Call with a skill that has "related" skills
         result = ec._cross_skill_learning(
             {"skill": "summarize", "action": "cross_learn"},
@@ -436,12 +439,23 @@ def test_research_trigger_skips_running():
     mock_conn.__enter__ = lambda s: mock_conn
     mock_conn.__exit__ = MagicMock(return_value=False)
 
-    with patch("scheduler.db") as mock_db:
-        mock_db.get_conn.return_value = mock_conn
-        mock_db.post_task = MagicMock()
-        sched._check_auto_triggers(time.time())
-        # Should NOT have dispatched a new research_loop
+    mock_db = MagicMock()
+    mock_db.get_conn.return_value = mock_conn
+    mock_db.post_task = MagicMock()
+    mock_db._retry_write = MagicMock()
+
+    with patch.dict("sys.modules", {"db": mock_db}):
+        # Need to reimport scheduler to pick up mocked db
+        import importlib
+        import scheduler as sched_mod
+        importlib.reload(sched_mod)
+        pm2 = ProcessManager({"fleet": {}, "models": {}, "workers": {}})
+        sched2 = sched_mod.Scheduler({"fleet": {}, "models": {}, "workers": {}}, pm2)
+        sched2._last_research_trigger = 0
+        sched2._check_auto_triggers(time.time())
+        # Should NOT have dispatched (count=1 means existing task found)
         mock_db.post_task.assert_not_called()
+        mock_db._retry_write.assert_not_called()
 
 
 def test_offset_atomic_write():
@@ -501,7 +515,11 @@ def test_vram_reactive_eviction():
     mock_gpu = MagicMock()
     mock_gpu.get_gpu_info.return_value = {"memory_used_mb": 11000, "memory_total_mb": 12000}
 
-    with patch("scheduler.is_training_running", return_value=(True, "large")), \
+    # Mock marathon functions (imported locally inside _check_training)
+    with patch("marathon.is_training_running", return_value=(True, "large")), \
+         patch("marathon._check_training_checkpoints", return_value=None), \
+         patch("marathon._evict_gpu_models"), \
+         patch("marathon.training_needs_eviction", return_value=(False, "test")), \
          patch.dict("sys.modules", {"gpu": mock_gpu}):
         sched._check_training(time.time())
 

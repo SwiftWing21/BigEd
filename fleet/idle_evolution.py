@@ -83,8 +83,10 @@ def get_least_evolved_skill(agent=None):
                 last_run = row["last_run"] if row and row["last_run"] else "2000-01-01"
                 skill_staleness.append((skill, last_run))
 
-            # Evict stale cache entries, store new result
-            _staleness_cache.clear()
+            # Selective eviction: keep current + previous bucket (extends TTL to ~120s)
+            stale_keys = [k for k in _staleness_cache if k < cache_key - 1]
+            for k in stale_keys:
+                del _staleness_cache[k]
             _staleness_cache[cache_key] = skill_staleness
 
         # Sort by staleness (oldest first = most stale)

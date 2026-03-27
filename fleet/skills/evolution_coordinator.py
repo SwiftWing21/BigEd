@@ -5,6 +5,10 @@ from datetime import datetime
 from pathlib import Path
 import logging
 
+# Evolution cascade dedup — fast-path cache to prevent duplicate skill_test dispatches
+_EVOLVING_SKILLS: dict[str, float] = {}  # {skill_name: expiry_ts}
+_EVOLVE_TTL = 1800  # 30 minutes
+
 SKILL_NAME = "evolution_coordinator"
 DESCRIPTION = "Coordinate multi-agent skill evolution with leaderboard tracking"
 VERSION = "1.0.0"
@@ -68,17 +72,51 @@ def _cross_skill_learning(payload, config):
 
     # Find skills that commonly run after the improved skill
     related = _find_related_skills(improved_skill)
+    if not related:
+        return {"status": "ok", "detail": f"no relations for {improved_skill}"}
 
-    # Dispatch skill_test for each related skill
-    triggered = []
+    # Evict expired entries from fast-path cache
+    global _EVOLVING_SKILLS
+    now = time.time()
+    _EVOLVING_SKILLS = {k: v for k, v in _EVOLVING_SKILLS.items() if v > now}
+
+    # Dispatch skill_test for each related skill (with dedup)
+    dispatched = []
+    skipped = []
     for related_skill in related[:3]:  # cap at 3
+        # Fast-path: check in-memory cache
+        if related_skill in _EVOLVING_SKILLS:
+            skipped.append(f"{related_skill} (cached)")
+            continue
+
+        # DB check: is there already a PENDING/RUNNING skill_test for this skill?
+        try:
+            with db.get_conn() as conn:
+                existing = conn.execute(
+                    "SELECT id FROM tasks WHERE type='skill_test' "
+                    "AND status IN ('PENDING','RUNNING') "
+                    "AND payload_json LIKE ?",
+                    (f'%"{related_skill}"%',)
+                ).fetchone()
+            if existing:
+                skipped.append(f"{related_skill} (task #{existing['id']})")
+                _EVOLVING_SKILLS[related_skill] = now + _EVOLVE_TTL
+                continue
+        except Exception:
+            pass  # If DB check fails, proceed with dispatch (fail-open)
+
+        # Dispatch and record in cache
         tid = db.post_task("skill_test", json.dumps({
             "skill": related_skill,
             "trigger": f"cross-learn from {improved_skill}",
         }), priority=2)
-        triggered.append({"skill": related_skill, "task_id": tid})
+        _EVOLVING_SKILLS[related_skill] = now + _EVOLVE_TTL
+        dispatched.append({"skill": related_skill, "task_id": tid})
 
-    return {"status": "triggered", "source": improved_skill, "related": triggered}
+    if skipped:
+        log.info("Cross-skill learning: skipped %s (already queued)", ", ".join(skipped))
+
+    return {"status": "triggered", "source": improved_skill, "dispatched": dispatched, "skipped": skipped}
 
 
 def _find_related_skills(skill_name):
