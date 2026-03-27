@@ -187,10 +187,9 @@ def _setup_tray():
 # -- Window close → minimize ---------------------------------------------------
 
 def _on_closing():
-    """Called when user clicks X -- minimize to tray instead of quitting."""
-    if _window:
-        _window.hide()
-    return False  # prevent actual close
+    """Called when user clicks X -- close the app normally."""
+    _shutdown()
+    return True  # allow close
 
 
 # -- Shutdown ------------------------------------------------------------------
