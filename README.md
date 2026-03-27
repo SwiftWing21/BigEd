@@ -96,12 +96,6 @@ These work, but they haven't been battle-tested beyond my own machine. Take them
 | **[BigEd](https://github.com/SwiftWing21/BigEd)** | Core platform — launcher, fleet, dashboard, skills, ML pipeline |
 | **[BigEd-ModuleHub](https://github.com/SwiftWing21/BigEd-ModuleHub)** | Optional modules — UI extensions loaded at runtime |
 
-## Support
-
-If BigEd CC is interesting or useful to you as a reference, consider supporting development:
-
-[![Ko-fi](https://img.shields.io/badge/Ko--fi-Support%20BigEd%20CC-FF5E5B?logo=ko-fi&logoColor=white)](https://ko-fi.com/swiftwing21)
-
 ## MCP Server Config (VS Code)
 
 BigEd ships with `.vscode/launch.json` and `.vscode/tasks.json` for shared dev
