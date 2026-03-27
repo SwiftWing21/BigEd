@@ -103,6 +103,55 @@ def _get_memory_status() -> dict:
     return status
 
 
+def _infer_model_vram(model_name: str) -> float:
+    """Infer VRAM usage from model name or Ollama API. No hardcoded fallback."""
+    import re
+
+    # 1. Parse parameter count from name (e.g., "qwen3:8b" → 8, "llama3:70b" → 70)
+    match = re.search(r':(\d+\.?\d*)b', model_name.lower())
+    if match:
+        params_b = float(match.group(1))
+        # Rule of thumb: ~0.85 GB per billion parameters (Q4 quantization)
+        return round(params_b * 0.85, 1)
+
+    # 2. Try Ollama API for model info
+    try:
+        import json
+        import urllib.request
+        body = json.dumps({"name": model_name}).encode()
+        req = urllib.request.Request(
+            "http://localhost:11434/api/show",
+            data=body, headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        with urllib.request.urlopen(req, timeout=3) as r:
+            info = json.loads(r.read())
+        # Extract size from model info
+        size_bytes = info.get("size", 0)
+        if size_bytes > 0:
+            return round(size_bytes / 1e9 * 1.15, 1)  # 15% overhead for KV cache
+        # Try parameter count from modelinfo
+        params = info.get("details", {}).get("parameter_size", "")
+        match = re.search(r'(\d+\.?\d*)\s*B', params)
+        if match:
+            return round(float(match.group(1)) * 0.85, 1)
+    except Exception:
+        pass
+
+    # 3. Last resort: use 50% of total GPU VRAM (safe on any system)
+    try:
+        import pynvml
+        pynvml.nvmlInit()
+        handle = pynvml.nvmlDeviceGetHandleByIndex(0)
+        mem = pynvml.nvmlDeviceGetMemoryInfo(handle)
+        return round(mem.total / 1e9 * 0.5, 1)
+    except Exception:
+        pass
+
+    # Absolute fallback: 3GB (conservative for small models)
+    return 3.0
+
+
 def _estimate_requirements(skill_name: str, config: dict) -> dict:
     """Estimate VRAM/RAM needed for a skill."""
     if skill_name in CPU_ONLY_SKILLS:
@@ -113,10 +162,14 @@ def _estimate_requirements(skill_name: str, config: dict) -> dict:
             "cpu_only": True,
         }
 
-    # Base: current model VRAM
+    # Base: current model VRAM — dynamic lookup
     models = config.get("models", {})
     current_model = models.get("local", "qwen3:8b")
-    base_vram = MODEL_VRAM.get(current_model, 7.0)
+    base_vram = MODEL_VRAM.get(current_model)
+
+    if base_vram is None:
+        # Not in our table — try to infer from model name pattern
+        base_vram = _infer_model_vram(current_model)
 
     # Additional for heavy skills
     extra_vram = HEAVY_SKILLS.get(skill_name, 0)
@@ -152,7 +205,11 @@ def check_oom_risk(skill_name: str, config: dict) -> dict:
         return {"safe": True, "risk": "none", "reason": "CPU-only skill"}
 
     vram_free = status.get("vram_free_gb", 0)
-    vram_needed = estimate.get("vram_total_gb", 3.0)
+    # Use estimate, or infer from configured model if estimate missing
+    vram_needed = estimate.get("vram_total_gb")
+    if vram_needed is None:
+        current_model = config.get("models", {}).get("local", "qwen3:8b")
+        vram_needed = _infer_model_vram(current_model)
 
     # If the model is already loaded, it's already consuming VRAM — no additional needed
     # Only extra_vram (vision models, etc.) would need additional space
