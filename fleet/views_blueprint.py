@@ -1026,7 +1026,7 @@ def _graph_knowledge(db) -> tuple:
 def _graph_universe(db) -> tuple:
     """Full-program graph: agents, skills, tasks, folders, models, messages, config."""
     nodes = []
-    edges = []
+    edge_map = {}  # (src, tgt, type) → weight
 
     # Track IDs to avoid duplicates
     seen = set()
@@ -1037,7 +1037,12 @@ def _graph_universe(db) -> tuple:
             nodes.append({"id": node_id, **kwargs})
 
     def _add_edge(src, tgt, etype, weight=1):
-        edges.append({"source": src, "target": tgt, "type": etype, "weight": weight})
+        key = (src, tgt, etype)
+        edge_map[key] = edge_map.get(key, 0) + weight
+
+    def _has_edges(nid):
+        """Check if a node has any edges in the edge_map."""
+        return any(k[0] == nid or k[1] == nid for k in edge_map)
 
     knowledge_dir = FLEET_DIR / "knowledge"
     agents = []
@@ -1261,7 +1266,7 @@ def _graph_universe(db) -> tuple:
         for a in agents:
             aid = f"agent:{a['name']}"
             # Check if agent has any edges
-            has_edge = any(e["source"] == aid or e["target"] == aid for e in edges)
+            has_edge = _has_edges(aid)
             if not has_edge and cfg_model in seen:
                 _add_edge(aid, cfg_model, "uses_model", 1)
 
@@ -1281,8 +1286,7 @@ def _graph_universe(db) -> tuple:
         for nid in list(seen):
             if not nid.startswith("skill:"):
                 continue
-            has_edge = any(e["source"] == nid or e["target"] == nid for e in edges)
-            if has_edge:
+            if _has_edges(nid):
                 continue
             skill_name = nid.split(":", 1)[1]
             role_hint = _SKILL_TO_ROLE.get(skill_name)
@@ -1300,16 +1304,14 @@ def _graph_universe(db) -> tuple:
         for nid in list(seen):
             if not nid.startswith("folder:"):
                 continue
-            has_edge = any(e["source"] == nid or e["target"] == nid for e in edges)
-            if not has_edge and sup_id:
+            if not _has_edges(nid) and sup_id:
                 _add_edge(sup_id, nid, "manages", 1)
 
         # Disconnected models → supervisor
         for nid in list(seen):
             if not nid.startswith("model:"):
                 continue
-            has_edge = any(e["source"] == nid or e["target"] == nid for e in edges)
-            if not has_edge and sup_id:
+            if not _has_edges(nid) and sup_id:
                 _add_edge(sup_id, nid, "configures", 1)
 
         # -- 9c. API CALL NODES (from gate ring buffer) ---------------------------
@@ -1332,7 +1334,67 @@ def _graph_universe(db) -> tuple:
         except Exception:
             log.warning("universe: api_call ring failed", exc_info=True)
 
+        # Convert deduped edge map to list
+        edges = [{"source": k[0], "target": k[1], "type": k[2], "weight": v}
+                 for k, v in edge_map.items()]
+
+        # ── 10. COMPOUND PARENT NODES (agent communities) ──────────────
+        communities = {}  # agent_name → set of child node IDs
+
+        # Assign nodes to communities based on edges
+        for e in edges:
+            src, tgt = e["source"], e["target"]
+            if src.startswith("agent:"):
+                agent_name = src.split(":", 1)[1]
+                communities.setdefault(agent_name, set()).add(src)
+                communities[agent_name].add(tgt)
+            elif tgt.startswith("agent:"):
+                agent_name = tgt.split(":", 1)[1]
+                communities.setdefault(agent_name, set()).add(tgt)
+                communities[agent_name].add(src)
+
+        # Nodes claimed by multiple communities → assign to largest community
+        node_to_community = {}
+        for agent_name, members in sorted(communities.items(),
+                                           key=lambda x: len(x[1]), reverse=True):
+            for nid in members:
+                if nid not in node_to_community:
+                    node_to_community[nid] = agent_name
+
+        # Create compound parent nodes
+        for agent_name in set(node_to_community.values()):
+            community_id = f"community:{agent_name}"
+            agent_node = next((n for n in nodes if n["id"] == f"agent:{agent_name}"), None)
+            role = ""
+            if agent_node and agent_node.get("metrics"):
+                role = agent_node["metrics"].get("role", "")
+            _add_node(community_id, type="community", source="universe",
+                      label=f"{agent_name}" + (f" ({role})" if role else ""),
+                      status="ACTIVE",
+                      metrics={"members": sum(1 for v in node_to_community.values()
+                                              if v == agent_name)})
+
+        # Orphan nodes (no community) → "system" community
+        all_node_ids = {n["id"] for n in nodes}
+        orphans = all_node_ids - set(node_to_community.keys()) - {
+            n["id"] for n in nodes if n.get("type") == "community"}
+        if orphans:
+            sys_id = "community:system"
+            _add_node(sys_id, type="community", source="universe",
+                      label="System", status="IDLE",
+                      metrics={"members": len(orphans)})
+            for oid in orphans:
+                node_to_community[oid] = "system"
+
+        # Stamp parent onto each node's data
+        for n in nodes:
+            if n["id"] in node_to_community:
+                n["parent"] = f"community:{node_to_community[n['id']]}"
+
     except Exception:
         log.warning("universe graph failed", exc_info=True)
+        # Ensure edges list exists even on failure
+        edges = [{"source": k[0], "target": k[1], "type": k[2], "weight": v}
+                 for k, v in edge_map.items()]
 
     return nodes, edges
