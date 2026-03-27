@@ -110,8 +110,10 @@ def build_launcher() -> float:
     return _run(
         _pyinstaller_cmd(
             "BigEdCC", "launcher.py",
-            add_data=["brick.ico", "icon_1024.png", "modules", "ui"],
-            hidden_imports=["psutil", "pynvml"],
+            add_data=["brick.ico", "icon_1024.png", "modules", "ui",
+                      "launcher_webview.py", "launcher_tkinter.py"],
+            hidden_imports=["psutil", "pynvml", "webview", "qtpy",
+                            "PyQt6", "PyQt6.QtWebEngineWidgets"],
         ),
         "Building BigEdCC",
     )
