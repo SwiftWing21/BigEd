@@ -1218,7 +1218,71 @@ def _graph_universe(db) -> tuple:
         except Exception:
             pass
 
-        # -- 9. API CALL NODES (from gate ring buffer) ----------------------------
+        # ── 9b. WIRE DISCONNECTED NODES ──────────────────────────────
+        # Config sections → supervisor hub
+        sup_id = "agent:supervisor" if "agent:supervisor" in seen else None
+        if sup_id:
+            for nid in list(seen):
+                if nid.startswith("config:"):
+                    _add_edge(sup_id, nid, "configures", 1)
+
+        # Disconnected agents → their configured model
+        cfg_model = "model:" + (cfg.get("models", {}).get("local", "qwen3:8b") if 'cfg' in dir() else "qwen3:8b")
+        for a in agents:
+            aid = f"agent:{a['name']}"
+            # Check if agent has any edges
+            has_edge = any(e["source"] == aid or e["target"] == aid for e in edges)
+            if not has_edge and cfg_model in seen:
+                _add_edge(aid, cfg_model, "uses_model", 1)
+
+        # Disconnected skills → nearest agent by role heuristic
+        _ROLE_SKILL_HINTS = {
+            "coder": ["code_review", "code_quality", "skill_draft", "code_refactor", "code_index"],
+            "researcher": ["web_search", "summarize", "research_loop", "arxiv_search"],
+            "archivist": ["flashcard", "rag_index", "evaluate", "discuss"],
+            "planner": ["plan_workload", "curriculum_update", "stability_report"],
+            "analyst": ["data_analysis", "autoresearch_trial"],
+            "security": ["security_audit", "security_review"],
+        }
+        _SKILL_TO_ROLE = {}
+        for role, skills in _ROLE_SKILL_HINTS.items():
+            for sk in skills:
+                _SKILL_TO_ROLE[sk] = role
+        for nid in list(seen):
+            if not nid.startswith("skill:"):
+                continue
+            has_edge = any(e["source"] == nid or e["target"] == nid for e in edges)
+            if has_edge:
+                continue
+            skill_name = nid.split(":", 1)[1]
+            role_hint = _SKILL_TO_ROLE.get(skill_name)
+            if role_hint:
+                for a in agents:
+                    if a["role"] == role_hint or a["name"].startswith(role_hint):
+                        _add_edge(f"agent:{a['name']}", nid, "can_run", 1)
+                        break
+            else:
+                # Fallback: connect to supervisor as "registered" relationship
+                if sup_id:
+                    _add_edge(sup_id, nid, "registers", 1)
+
+        # Disconnected folders → supervisor
+        for nid in list(seen):
+            if not nid.startswith("folder:"):
+                continue
+            has_edge = any(e["source"] == nid or e["target"] == nid for e in edges)
+            if not has_edge and sup_id:
+                _add_edge(sup_id, nid, "manages", 1)
+
+        # Disconnected models → supervisor
+        for nid in list(seen):
+            if not nid.startswith("model:"):
+                continue
+            has_edge = any(e["source"] == nid or e["target"] == nid for e in edges)
+            if not has_edge and sup_id:
+                _add_edge(sup_id, nid, "configures", 1)
+
+        # -- 9c. API CALL NODES (from gate ring buffer) ---------------------------
         try:
             import api_gate
             for call in api_gate.get_ring(50):
