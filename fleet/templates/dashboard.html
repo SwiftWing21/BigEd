@@ -8,6 +8,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/cytoscape/3.28.1/cytoscape.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/dagre/0.8.5/dagre.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/cytoscape-dagre/2.5.0/cytoscape-dagre.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/cytoscape-fcose/2.2.0/cytoscape-fcose.min.js"></script>
 <style>
 /* ── Theme Tokens ─────────────────────────────────────────────────────────── */
 :root {
@@ -3234,16 +3235,19 @@ function loadNeuralGraph() {
         }
       ],
       layout: {
-        name: 'cose',
+        name: 'fcose',
         animate: false,
         padding: 40,
-        nodeRepulsion: function() { return nodeCount > 200 ? 800000 : 400000; },
-        idealEdgeLength: function() { return nodeCount > 200 ? 120 : 80; },
-        edgeElasticity: function() { return 50; },
-        gravity: 0.3,
-        numIter: nodeCount > 500 ? 300 : 500,
+        nodeRepulsion: nodeCount > 200 ? 800000 : 400000,
+        idealEdgeLength: nodeCount > 200 ? 120 : 80,
+        edgeElasticity: 0.45,
+        gravity: 0.25,
+        gravityRange: 3.8,
+        numIter: nodeCount > 500 ? 2500 : 5000,
+        quality: nodeCount > 500 ? 'default' : 'proof',
         nodeDimensionsIncludeLabels: true,
-        nestingFactor: 1.2,
+        randomize: true,
+        packComponents: true,
         componentSpacing: 80,
       }
     });
