@@ -2,6 +2,7 @@
 
 SKILL_NAME = "factorio_analyze"
 DESCRIPTION = "Analyze Factorio game state and submit plans or directives to the brain"
+VERSION = "0.1.0"
 REQUIRES_NETWORK = True
 COMPLEXITY = "complex"
 TAGS = ["factorio", "sandbox", "analysis"]
