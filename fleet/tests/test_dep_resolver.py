@@ -331,3 +331,63 @@ def test_resolve_profile_aware():
     graph = build_dependency_graph([crm, accounts, customers])
     cs = resolve(graph, "enable", "crm", "consulting", set())
     assert "customers" in cs.enable
+
+
+# ---------------------------------------------------------------------------
+# Task 8: Module Snapshotter
+# ---------------------------------------------------------------------------
+
+
+def test_take_snapshot_returns_id():
+    from module_snapshotter import take_snapshot
+    import db
+    db.init_db()
+    sid = take_snapshot("test-snapshot-1", created_by="test")
+    assert isinstance(sid, int)
+    assert sid > 0
+
+
+def test_list_snapshots():
+    from module_snapshotter import take_snapshot, list_snapshots
+    import db
+    db.init_db()
+    take_snapshot("snap-a", created_by="test")
+    take_snapshot("snap-b", created_by="test")
+    snaps = list_snapshots(limit=10)
+    assert len(snaps) >= 2
+    assert snaps[0]["label"] == "snap-b"
+
+
+def test_get_snapshot():
+    from module_snapshotter import take_snapshot, get_snapshot
+    import db
+    db.init_db()
+    sid = take_snapshot("snap-get-test", created_by="test")
+    snap = get_snapshot(sid)
+    assert snap is not None
+    assert snap["label"] == "snap-get-test"
+    assert "state" in snap
+
+
+def test_diff_snapshot():
+    from module_snapshotter import take_snapshot, diff_snapshot
+    import db
+    db.init_db()
+    sid = take_snapshot("snap-diff-test", created_by="test")
+    diff = diff_snapshot(sid)
+    assert "added" in diff
+    assert "removed" in diff
+    assert "changed" in diff
+
+
+def test_prune_snapshots():
+    from module_snapshotter import take_snapshot, prune_snapshots, list_snapshots
+    import db
+    db.init_db()
+    for i in range(5):
+        take_snapshot(f"prune-test-{i}", created_by="test")
+    removed = prune_snapshots(keep=2)
+    assert removed >= 3
+    remaining = list_snapshots(limit=100)
+    ours = [s for s in remaining if s["label"].startswith("prune-test-")]
+    assert len(ours) <= 2
