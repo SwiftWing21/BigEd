@@ -474,7 +474,6 @@ def api_health():
     try:
         conn = get_conn()
         conn.execute("SELECT 1")
-        conn.close()
         subsystems["fleet_db"] = {"status": "ok", "detail": "connected"}
     except Exception as e:
         subsystems["fleet_db"] = {"status": "unavailable", "detail": _safe_error(e)}
@@ -566,6 +565,21 @@ def api_health():
         "subsystems": subsystems,
         "version": "0.22.00",
     })
+
+
+# ── Ollama process status ─────────────────────────────────────────────────────
+
+@app.route("/api/ollama/ps")
+def api_ollama_ps():
+    """Proxy to Ollama /api/ps — returns currently loaded models."""
+    try:
+        import urllib.request
+        req = urllib.request.Request("http://localhost:11434/api/ps")
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            data = json.loads(resp.read().decode())
+            return jsonify(data)
+    except Exception:
+        return jsonify({"models": []})
 
 
 # ── Walkthrough (first-run wizard) ────────────────────────────────────────────
@@ -1204,6 +1218,32 @@ def api_dashboard_aggregate():
     })
 
 
+@app.route("/api/factorio/spectator", methods=["POST"])
+def api_factorio_spectator():
+    """Launch Factorio client as spectator."""
+    import subprocess as sp
+    try:
+        from factorio.lua_installer import detect_factorio_path
+        from factorio.bridge_config import load_factorio_config
+        cfg = load_factorio_config()
+        fpath = detect_factorio_path()
+        if not fpath:
+            return jsonify({"success": False, "error": "Factorio install not found"})
+        exe = fpath / "bin" / "x64" / "factorio.exe"
+        if not exe.exists():
+            exe = fpath / "factorio"
+        if not exe.exists():
+            return jsonify({"success": False, "error": f"Executable not found at {exe}"})
+        sp.Popen(
+            [str(exe), "--mp-connect", f"localhost:{cfg.rcon_port}"],
+            creationflags=getattr(sp, "CREATE_NO_WINDOW", 0),
+        )
+        return jsonify({"success": True})
+    except Exception as e:
+        log.warning("Factorio spectator launch failed: %s", e)
+        return jsonify({"success": False, "error": str(e)})
+
+
 @app.route("/api/modules/legacy")
 def api_modules_legacy():
     """Enabled modules, versions, deprecation status (legacy manifest reader)."""
@@ -1302,7 +1342,6 @@ def api_data_stats():
                 stats[f"fleet.{table}"] = {"count": count}
             except Exception:
                 pass
-        conn.close()
     except Exception:
         pass
 
@@ -1371,7 +1410,6 @@ def api_comms():
                 "notes": note_count,
                 "recent": recent,
             }
-        conn.close()
     except Exception as e:
         result["error"] = _safe_error(e)
     return jsonify(result)
@@ -1578,7 +1616,6 @@ def api_usage_dashboard():
                 "daily_avg_usd": round(weekly_cost / 7, 4),
             }
 
-        conn.close()
         return jsonify(result)
     except Exception as e:
         return jsonify({"error": _safe_error(e)}), 500
@@ -1779,7 +1816,6 @@ def api_evolution():
             GROUP BY DATE(created_at) ORDER BY day
         """).fetchall()
 
-        conn.close()
         return jsonify({
             "skills": [dict(r) for r in skills],
             "agents": [dict(r) for r in agents],
@@ -2617,6 +2653,99 @@ def worker_enable(name):
         return jsonify({"error": str(e)}), 500
 
 
+# ── Process Control: Cosmo Bot + Dr. Ders ─────────────────────────────────────
+
+def _find_fleet_process(script_name):
+    """Find a running fleet process by script name using psutil."""
+    import psutil
+    for proc in psutil.process_iter(["pid", "name", "cmdline", "create_time"]):
+        try:
+            cmdline = proc.info.get("cmdline") or []
+            if any(script_name in (c or "") for c in cmdline):
+                return proc
+        except (psutil.NoSuchProcess, psutil.AccessDenied):
+            continue
+    return None
+
+
+@app.route("/api/fleet/services")
+def api_fleet_services():
+    """Status of Cosmo Bot (supervisor) and Dr. Ders (hw_supervisor)."""
+    services = {}
+    # Supervisor (Cosmo Bot)
+    sup = _find_fleet_process("supervisor.py")
+    if sup:
+        try:
+            import time
+            uptime_s = int(time.time() - sup.create_time())
+            services["cosmo_bot"] = {"status": "running", "pid": sup.pid, "uptime_s": uptime_s}
+        except Exception:
+            services["cosmo_bot"] = {"status": "running", "pid": sup.pid, "uptime_s": 0}
+    else:
+        services["cosmo_bot"] = {"status": "offline", "pid": None, "uptime_s": 0}
+
+    # Dr. Ders (hw_supervisor)
+    ders = _find_fleet_process("hw_supervisor.py")
+    if ders:
+        try:
+            import time
+            uptime_s = int(time.time() - ders.create_time())
+            services["dr_ders"] = {"status": "running", "pid": ders.pid, "uptime_s": uptime_s}
+        except Exception:
+            services["dr_ders"] = {"status": "running", "pid": ders.pid, "uptime_s": 0}
+    else:
+        services["dr_ders"] = {"status": "offline", "pid": None, "uptime_s": 0}
+
+    return jsonify(services)
+
+
+@app.route("/api/fleet/services/<name>/restart", methods=["POST"])
+def api_fleet_service_restart(name):
+    """Restart Cosmo Bot or Dr. Ders by terminating — supervisor auto-respawns."""
+    import psutil
+    script_map = {"cosmo_bot": "supervisor.py", "dr_ders": "hw_supervisor.py"}
+    if name not in script_map:
+        return jsonify({"error": f"Unknown service: {name}"}), 400
+
+    proc = _find_fleet_process(script_map[name])
+    if not proc:
+        return jsonify({"error": f"{name} is not running"}), 404
+
+    try:
+        # For Dr. Ders: terminate and supervisor.check_alive() respawns it
+        # For Cosmo Bot: terminate children first, then supervisor re-execs
+        if name == "dr_ders":
+            proc.terminate()
+            try:
+                proc.wait(timeout=5)
+            except psutil.TimeoutExpired:
+                proc.kill()
+            _add_alert("info", "Dr. Ders restarted by operator", "fleet")
+        else:
+            # Supervisor restart: signal graceful restart via flag file
+            restart_flag = FLEET_DIR / ".restart_requested"
+            restart_flag.write_text("1")
+            _add_alert("info", "Cosmo Bot restart requested", "fleet")
+
+        # Audit log
+        try:
+            from audit import log_audit
+            log_audit(
+                actor=_get_request_role() or "operator",
+                action=f"fleet.service.restart",
+                resource=f"service:{name}",
+                detail=f"Restarted {name}",
+                role=_get_request_role(),
+                ip_address=request.remote_addr,
+            )
+        except Exception:
+            pass
+
+        return jsonify({"status": "restarting", "service": name})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
 # ── System Recommendations (0.052.00b) ────────────────────────────────────────
 
 @app.route("/api/recommendations")
@@ -2673,8 +2802,6 @@ def api_system_recommendations():
                 })
         except Exception:
             pass
-
-        conn.close()
     except Exception:
         pass
     return jsonify({"recommendations": recs, "auto_apply": False})
@@ -3148,7 +3275,6 @@ def api_sla():
             FROM tasks WHERE created_at >= datetime('now', '-24 hours')
         """).fetchone()
 
-        conn.close()
         return jsonify({
             "skills": [dict(r) for r in metrics],
             "overall_24h": {
@@ -3900,8 +4026,12 @@ def api_skills_available():
 
 # ── Queue Management (extended) ──────────────────────────────────────────────
 
-# Queue pause state — in-memory flag checked by workers
-_queue_paused = False
+# Queue pause state — flag file checked by workers across processes
+_QUEUE_PAUSE_FILE = Path(__file__).resolve().parent / ".queue_paused"
+
+
+def _is_queue_paused():
+    return _QUEUE_PAUSE_FILE.exists()
 
 @app.route("/api/queue")
 def api_queue():
@@ -3930,7 +4060,7 @@ def api_queue():
             "page": page,
             "per_page": per_page,
             "total": total,
-            "paused": _queue_paused,
+            "paused": _is_queue_paused(),
         })
     except Exception as e:
         return jsonify({"error": _safe_error(e)}), 500
@@ -4020,21 +4150,20 @@ def api_queue_remove(task_id):
 
 
 @app.route("/api/queue/pause", methods=["POST"])
-@_require_role("operator")
 def api_queue_pause():
     """Pause queue processing — workers stop claiming new tasks."""
-    global _queue_paused
-    _queue_paused = True
+    _QUEUE_PAUSE_FILE.write_text("paused", encoding="utf-8")
     _broadcast_sse({"type": "queue_paused", "data": {"paused": True}})
     return jsonify({"status": "ok", "paused": True})
 
 
 @app.route("/api/queue/resume", methods=["POST"])
-@_require_role("operator")
 def api_queue_resume():
     """Resume queue processing after a pause."""
-    global _queue_paused
-    _queue_paused = False
+    try:
+        _QUEUE_PAUSE_FILE.unlink(missing_ok=True)
+    except Exception:
+        pass
     _broadcast_sse({"type": "queue_resumed", "data": {"paused": False}})
     return jsonify({"status": "ok", "paused": False})
 
@@ -4042,7 +4171,7 @@ def api_queue_resume():
 @app.route("/api/queue/status")
 def api_queue_status():
     """Return queue processing state (paused/active)."""
-    return jsonify({"paused": _queue_paused})
+    return jsonify({"paused": _is_queue_paused()})
 
 
 # ── Settings Editor ──────────────────────────────────────────────────────────

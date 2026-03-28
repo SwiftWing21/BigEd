@@ -1309,6 +1309,9 @@ textarea.input {
     <button class="nav-item" data-section="modules" onclick="showSection('modules')">
       <span class="nav-icon">&#128230;</span> Modules
     </button>
+    <button class="nav-item" data-section="factorio" onclick="showSection('factorio')" id="nav-factorio" style="display:none">
+      <span class="nav-icon">&#127981;</span> Factorio
+    </button>
     <button class="nav-item" data-section="settings" onclick="showSection('settings')">
       <span class="nav-icon">&#9881;</span> Settings
     </button>
@@ -1871,6 +1874,81 @@ textarea.input {
 </div>
 
 <!-- ═══════════════════════════════════════════════════════════════════════
+     FACTORIO SANDBOX
+     ═══════════════════════════════════════════════════════════════════ -->
+<div id="section-factorio" class="section">
+  <div class="section-header">
+    <div class="section-title">Factorio Sandbox</div>
+    <div class="section-desc">Train AI agents in Factorio through curriculum-based progression</div>
+    <div style="margin-left:auto;display:flex;gap:8px;">
+      <button class="btn btn-sm btn-outline" onclick="loadFactorio()">&#8635; Refresh</button>
+    </div>
+  </div>
+
+  <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px;margin-bottom:16px;">
+    <div class="card">
+      <div class="card-title">Bridge Status</div>
+      <div id="factorio-bridge-status" style="font-size:24px;font-weight:700;color:var(--muted);">--</div>
+      <div id="factorio-bridge-detail" style="font-size:12px;color:var(--muted);margin-top:4px;">Not connected</div>
+    </div>
+    <div class="card">
+      <div class="card-title">Game Tick</div>
+      <div id="factorio-tick" style="font-size:24px;font-weight:700;color:var(--muted);">--</div>
+      <div id="factorio-tick-detail" style="font-size:12px;color:var(--muted);margin-top:4px;">Waiting for bridge</div>
+    </div>
+    <div class="card">
+      <div class="card-title">Cadence</div>
+      <div style="margin-top:8px;">
+        <select id="factorio-cadence" class="input" style="width:100%" onchange="setFactorioCadence(this.value)">
+          <option value="adaptive">Adaptive (default)</option>
+          <option value="fast">Fast (1s)</option>
+          <option value="medium">Medium (5s)</option>
+          <option value="slow">Slow (30s)</option>
+        </select>
+      </div>
+    </div>
+  </div>
+
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px;">
+    <div class="card">
+      <div class="card-title">Viewer</div>
+      <p style="font-size:12px;color:var(--muted);margin:4px 0 12px;">Connect your Factorio client to watch the agent play</p>
+      <button class="btn btn-primary" onclick="launchFactorioSpectator()">Launch Spectator</button>
+      <div id="factorio-spectator-status" style="font-size:11px;color:var(--muted);margin-top:6px;"></div>
+    </div>
+    <div class="card">
+      <div class="card-title">Training Progress</div>
+      <div style="margin-top:8px;">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
+          <span style="font-size:12px;color:var(--muted);">Phase:</span>
+          <select id="factorio-phase" class="input" style="width:auto" onchange="setFactorioPhase(this.value)">
+            <option value="1">1 &#8212; Curriculum (Basics)</option>
+            <option value="2">2 &#8212; Goals (Objectives)</option>
+            <option value="3">3 &#8212; KPIs (Optimize)</option>
+            <option value="4">4 &#8212; Survival (Pressure)</option>
+          </select>
+        </div>
+        <div id="factorio-lesson-progress" style="font-size:12px;color:var(--muted);">No lessons started</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card" style="margin-bottom:16px;">
+    <div class="card-title">Game State</div>
+    <div id="factorio-state" style="font-family:var(--font-mono);font-size:12px;white-space:pre-wrap;max-height:400px;overflow-y:auto;color:var(--muted);padding:8px;">
+      Waiting for bridge connection...
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-title">Nearby Resources</div>
+    <div id="factorio-resources" style="padding:8px;">
+      <span style="color:var(--muted);font-size:12px;">No data yet</span>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════════════
      9. SETTINGS
      ═══════════════════════════════════════════════════════════════════ -->
 <div id="section-settings" class="section">
@@ -2035,6 +2113,7 @@ function loadSectionData(name) {
     case 'views': loadViews(); break;
     case 'ingest': loadIngest(); break;
     case 'modules': loadModules(); break;
+    case 'factorio': loadFactorio(); break;
   }
 }
 
@@ -7348,7 +7427,7 @@ function _renderModuleList() {
   var installedNames = {};
   _moduleData.installed.forEach(function(m) { installedNames[m.name] = true; });
   _moduleData.installed.forEach(function(m) {
-    var enabled = m.default_enabled !== false && m.enabled !== false;
+    var enabled = m.enabled !== false;
     _addModuleRow(list, m.name, m.version || '?', enabled ? 'enabled' : 'disabled', m);
   });
   _moduleData.available.forEach(function(m) {
@@ -7467,9 +7546,9 @@ function _installModule(name) {
 
 function _toggleModule(name, action) {
   apiFetch('/api/modules/' + name + '/' + action, { method: 'POST' }).then(function(r) {
-    if (r.error) { alert(action + ' failed: ' + r.error); return; }
+    if (r.error) { console.warn('_toggleModule: ' + action + ' failed for ' + name + ':', r.error); alert(action + ' failed: ' + r.error); return; }
     loadModules();
-  }).catch(function(e) { alert(action + ' error: ' + e.message); });
+  }).catch(function(e) { console.warn('_toggleModule: ' + action + ' error for ' + name + ':', e); alert(action + ' error: ' + e.message); });
 }
 
 function _uninstallModule(name) {
@@ -7485,7 +7564,7 @@ function _renderModuleCards() {
   container.textContent = '';
   var installedNames = {};
   _moduleData.installed.forEach(function(m) { installedNames[m.name] = true; });
-  var all = _moduleData.installed.map(function(m) { return { data: m, status: m.default_enabled !== false ? 'enabled' : 'disabled' }; });
+  var all = _moduleData.installed.map(function(m) { return { data: m, status: m.enabled !== false ? 'enabled' : 'disabled' }; });
   _moduleData.available.forEach(function(m) {
     if (!installedNames[m.name]) all.push({ data: m, status: 'available' });
   });
@@ -7523,9 +7602,126 @@ function _renderModuleCards() {
   });
 }
 
+/* ── Factorio Sandbox ─────────────────────────────────────────────────────── */
+
+function _checkFactorioEnabled() {
+  apiFetch('/api/modules').then(function(r) {
+    var mods = r.modules || [];
+    var fm = mods.find(function(m) { return m.name === 'factorio'; });
+    var nav = document.getElementById('nav-factorio');
+    if (nav) nav.style.display = (fm && fm.enabled) ? '' : 'none';
+  }).catch(function() {});
+}
+
+function loadFactorio() {
+  var bridgePort = 27016;
+  // Try bridge API
+  fetch('http://127.0.0.1:' + bridgePort + '/api/status', {signal: AbortSignal.timeout(3000)})
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
+      var statusEl = document.getElementById('factorio-bridge-status');
+      var detailEl = document.getElementById('factorio-bridge-detail');
+      var tickEl = document.getElementById('factorio-tick');
+      var tickDetailEl = document.getElementById('factorio-tick-detail');
+      if (d.running) {
+        statusEl.textContent = 'Running';
+        statusEl.style.color = 'var(--success)';
+        detailEl.textContent = 'Bridge connected to Factorio';
+        tickEl.textContent = d.tick.toLocaleString();
+        tickEl.style.color = 'var(--foreground)';
+        tickDetailEl.textContent = 'Cadence: ' + (d.cadence || 'adaptive');
+        var sel = document.getElementById('factorio-cadence');
+        if (sel) sel.value = d.cadence || 'adaptive';
+      } else {
+        statusEl.textContent = 'Stopped';
+        statusEl.style.color = 'var(--destructive)';
+        detailEl.textContent = 'Bridge not running';
+      }
+      // Fetch game state
+      return fetch('http://127.0.0.1:' + bridgePort + '/api/state', {signal: AbortSignal.timeout(3000)});
+    })
+    .then(function(r) { return r.json(); })
+    .then(function(state) {
+      if (state.error) {
+        document.getElementById('factorio-state').textContent = 'Error: ' + state.error;
+        return;
+      }
+      var lines = [];
+      lines.push('Tick: ' + (state.tick || 0));
+      lines.push('Entities: ' + (state.entity_count || 0));
+      lines.push('Has Player: ' + (state.has_player || false));
+      if (state.research_name) {
+        lines.push('Research: ' + state.research_name + ' (' + Math.round((state.research_progress || 0) * 100) + '%)');
+      }
+      if (state.inventory && Object.keys(state.inventory).length > 0) {
+        lines.push('');
+        lines.push('Inventory:');
+        Object.keys(state.inventory).sort().forEach(function(k) {
+          lines.push('  ' + k + ': ' + state.inventory[k]);
+        });
+      }
+      document.getElementById('factorio-state').textContent = lines.join('\n');
+      // Resources
+      var resEl = document.getElementById('factorio-resources');
+      resEl.textContent = '';
+      var resources = state.resources || [];
+      if (resources.length === 0) {
+        resEl.textContent = 'No resources in view';
+      } else {
+        resources.forEach(function(r) {
+          var row = document.createElement('div');
+          row.style.cssText = 'display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid var(--border);font-size:12px;';
+          var name = document.createElement('span');
+          name.textContent = r.name;
+          name.style.fontWeight = '600';
+          var amt = document.createElement('span');
+          amt.textContent = r.total_amount.toLocaleString() + ' (' + r.patches + ' patches)';
+          amt.style.color = 'var(--muted)';
+          row.appendChild(name);
+          row.appendChild(amt);
+          resEl.appendChild(row);
+        });
+      }
+    })
+    .catch(function() {
+      document.getElementById('factorio-bridge-status').textContent = 'Offline';
+      document.getElementById('factorio-bridge-status').style.color = 'var(--muted)';
+      document.getElementById('factorio-bridge-detail').textContent = 'Bridge API not reachable (port ' + bridgePort + ')';
+      document.getElementById('factorio-state').textContent = 'Bridge not running. Start with:\n  python fleet/factorio/setup_and_launch.py';
+    });
+}
+
+function setFactorioCadence(mode) {
+  console.warn('Cadence change to', mode, '— requires bridge API endpoint (TODO)');
+}
+
+function setFactorioPhase(phase) {
+  console.warn('Phase change to', phase, '— requires bridge API endpoint (TODO)');
+}
+
+function launchFactorioSpectator() {
+  var statusEl = document.getElementById('factorio-spectator-status');
+  statusEl.textContent = 'Launching Factorio client...';
+  apiFetch('/api/factorio/spectator', { method: 'POST', body: {} })
+    .then(function(r) {
+      if (r.success) {
+        statusEl.textContent = 'Spectator launched! Connect to the game window.';
+        statusEl.style.color = 'var(--success)';
+      } else {
+        statusEl.textContent = 'Error: ' + (r.error || 'unknown');
+        statusEl.style.color = 'var(--destructive)';
+      }
+    })
+    .catch(function() {
+      statusEl.textContent = 'Failed — launch manually: factorio.exe --mp-connect localhost:27015';
+      statusEl.style.color = 'var(--destructive)';
+    });
+}
+
 /* ── Init: populate header dropdown + check walkthrough on load ───────────── */
 _populateModelDropdown();
 _checkWalkthrough();
+_checkFactorioEnabled();
 </script>
 </body>
 </html>

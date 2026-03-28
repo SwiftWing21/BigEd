@@ -171,6 +171,25 @@ def api_modules_installed():
     try:
         hub = _get_hub()
         installed = hub.list_installed()
+        # Enrich each module with its runtime enabled state from fleet.toml
+        # [launcher.tabs].  manifest.json only stores default_enabled (the
+        # install-time default); the operator's actual on/off choice lives in
+        # fleet.toml, so we overlay it here so the UI can show the correct dot
+        # colour and button label.
+        try:
+            from config import load_config
+            cfg = load_config()
+            tabs = cfg.get("launcher", {}).get("tabs", {})
+            for m in installed:
+                name = m.get("name", "")
+                if name in tabs:
+                    # Explicit runtime state takes priority over default_enabled
+                    m["enabled"] = bool(tabs[name])
+                else:
+                    # Not yet in fleet.toml — fall back to default_enabled
+                    m["enabled"] = m.get("default_enabled", False)
+        except Exception:
+            log.warning("api_modules_installed: failed to overlay tab state", exc_info=True)
         return jsonify({"modules": installed})
     except Exception as e:
         log.warning("modules installed failed: %s", e)
