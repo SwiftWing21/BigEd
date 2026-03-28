@@ -304,6 +304,7 @@ SKILL_COMPLEXITY = {
         "screenshot", "billing_ocr", "marathon_log", "rag_compress",
         "knowledge_prune", "review_discards", "packet_optimizer",
         "skill_draft", "claude_efficiency",
+        "factorio_observe",
     ],
     "medium": [
         "web_search", "code_review", "discuss", "code_discuss",
@@ -319,6 +320,7 @@ SKILL_COMPLEXITY = {
         "browser_crawl", "home_assistant", "mqtt_inspect", "unifi_manage",
         "refactor_verify", "ml_bridge", "service_manager", "arxiv_fetch",
         "product_release",
+        "factorio_act", "factorio_train",
     ],
     "complex": [
         "plan_workload", "lead_research", "skill_evolve", "code_write",
@@ -326,6 +328,7 @@ SKILL_COMPLEXITY = {
         "evolution_coordinator", "swarm_consensus", "code_write_review",
         "skill_chain", "model_manager", "oom_prevent", "skill_learn",
         "skill_promote",
+        "factorio_plan",
     ],
 }
 
