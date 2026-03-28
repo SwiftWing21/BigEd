@@ -40,8 +40,31 @@ def _coerce_result(result):
 
 
 HW_STATE_FILE = FLEET_DIR / "hw_state.json"
+QUEUE_PAUSE_FILE = FLEET_DIR / ".queue_paused"
+FOCUS_FILE = os.path.join(os.path.dirname(__file__), ".factorio_focus.json")
 
 IDLE_THRESHOLD = 3  # polls with no task before entering idle mode (~3s at 1s poll)
+
+# Focus state reader with caching (5s TTL)
+_focus_cache: dict = {"state": None, "checked": 0.0}
+
+
+def _read_focus_state(path: str = None, _force: bool = False) -> dict | None:
+    """Read .factorio_focus.json with 5s cache. Returns {on, workers} or None.
+    Pass _force=True to bypass cache (for testing)."""
+    path = path or FOCUS_FILE
+    now = time.time()
+    if not _force and now - _focus_cache["checked"] < 5.0:
+        return _focus_cache["state"]
+    _focus_cache["checked"] = now
+    try:
+        with open(path) as f:
+            state = json.load(f)
+        _focus_cache["state"] = state
+        return state
+    except (FileNotFoundError, json.JSONDecodeError, OSError):
+        _focus_cache["state"] = None
+        return None
 IDLE_SKILLS = ["skill_lifecycle_suite", "code_suite", "benchmark"]
 MAX_CALLS_PER_SESSION = 500  # per-agent capability budget (OWASP LLM08)
 
@@ -659,6 +682,18 @@ def main():
         except Exception:
             pass
 
+        # Check queue pause flag — skip claiming while paused
+        if QUEUE_PAUSE_FILE.exists():
+            time.sleep(1)
+            continue
+
+        # Check Focus mode for Factorio affinity
+        _factorio_affinity = None
+        _focus = _read_focus_state()
+        if _focus and _focus.get("on") and role in _focus.get("workers", []):
+            _factorio_affinity = ["factorio_observe", "factorio_analyze",
+                                  "factorio_plan", "factorio_act", "factorio_train"]
+
         # Use batch claiming when the queue is deep to reduce poll round-trips
         _depth = 0
         try:
@@ -666,10 +701,16 @@ def main():
         except Exception:
             pass
         if _depth > 3:
-            _batch = db.claim_tasks(role, n=2, affinity_skills=affinity_skills)
+            _batch = db.claim_tasks(role, n=2,
+                                    affinity_skills=_factorio_affinity or affinity_skills)
             task = _batch[0] if _batch else None
             # Process remaining batch tasks in subsequent iterations via normal claim
         else:
+            task = db.claim_task(role,
+                                 affinity_skills=_factorio_affinity or affinity_skills)
+
+        # Fallback: if Focus worker found nothing with affinity, try normal queue
+        if not task and _factorio_affinity:
             task = db.claim_task(role, affinity_skills=affinity_skills)
         if not task:
             idle_count += 1
