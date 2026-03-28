@@ -24,6 +24,13 @@ A BigEd module that lets fleet agents play Factorio autonomously through a train
 - No replay viewer — watch live via spectator or read JSONL logs
 - No blueprint string import/export — agent builds from scratch (that's the point)
 
+### Prerequisites
+
+These features do not exist yet and must be built before or alongside this module:
+
+1. **Multi-file Module Hub installs** — The existing `hub.py` downloads single files. This module spans ~15 files across 4 directories. Hub needs archive-based install support (zip package → extract to multiple destinations). **Est: S (3-5k tokens)**
+2. **Supervisor sandbox mode** — The supervisor has no concept of draining queues, pausing idle skills, or dedicating workers to a single domain. Needs: drain API, idle skill pause, dynamic affinity override, dashboard banner. **Est: M (8-15k tokens)**
+
 ---
 
 ## Architecture
@@ -56,8 +63,8 @@ A dedicated long-running bridge process maintains persistent game state, runs th
 ```
 BigEd/launcher/modules/mod_factorio.py         # Launcher tab UI
 
-fleet/modules/factorio/                         # All fleet-side code (isolated)
-├── __init__.py                                 # Module registration
+fleet/factorio/                                 # All fleet-side code (isolated)
+├── __init__.py                                 # Module registration + sys.path setup
 ├── bridge.py                                   # Long-running bridge process
 ├── rcon_client.py                              # Async RCON protocol client
 ├── state_parser.py                             # Raw JSON → structured GameState
@@ -65,7 +72,7 @@ fleet/modules/factorio/                         # All fleet-side code (isolated)
 ├── config.py                                   # BridgeConfig dataclass
 ├── curriculum.py                               # Training progression engine
 ├── world_model.py                              # Persistent in-memory world state
-├── lua_installer.py                            # Lua mod install modes (manual/assisted/managed)
+├── lua_installer.py                            # Lua mod install modes (manual/assisted)
 └── lua_mod/                                    # The Factorio Lua mod (verbatim)
     ├── info.json
     └── control.lua
@@ -82,7 +89,7 @@ fleet/idle_curricula/factorio_04_survival.toml
 ```
 
 **Design rationale:**
-- `fleet/modules/factorio/` keeps all bridge code out of the top-level `fleet/` namespace
+- `fleet/factorio/` is flat under `fleet/` — imports work without sys.path changes since workers already run with `fleet/` as root
 - Lua mod ships inside the Python package — `lua_installer.py` knows where to find it
 - Skills follow standard contract but delegate to bridge for state
 - Curriculum files use existing `idle_curricula/` pattern
@@ -93,10 +100,13 @@ fleet/idle_curricula/factorio_04_survival.toml
 
 ### Lifecycle
 
-Managed by supervisor, similar to `hw_supervisor.py` (Dr. Ders):
-- Supervisor spawns `factorio_bridge.py` when `[factorio] enabled = true`
-- Monitors health, restarts on crash, reports status to dashboard
-- Bridge registers with supervisor on startup, sends heartbeats
+Managed by supervisor using the same spawn-and-poll pattern as `hw_supervisor.py` (Dr. Ders):
+- Supervisor spawns `factorio/bridge.py` when `[factorio] enabled = true`
+- Monitors via `subprocess.Popen.poll()` — restarts on crash
+- Reports bridge status to dashboard via the existing process manager
+- Uses `creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0)` on Windows
+
+No new heartbeat protocol — the existing poll-based monitoring is sufficient.
 
 ### Components
 
@@ -128,20 +138,37 @@ Events drive adaptive cadence AND feed into curriculum scoring.
 2. RCON /biged-state → parse → update WorldModel
 3. RCON /biged-metrics (every Nth tick, configurable)
 4. EventDetector: diff prev/curr, fire events, adjust cadence if adaptive
-5. Write factory-state.md (for fleet workers to read)
+5. Write factory-state.md (debug/dashboard display only — not the canonical worker path)
 6. Drain CommandQueue → RCON /biged-cmd for each action
 7. Write results back to skill callers
 ```
 
+### RCON Failure Handling
+
+The bridge must handle RCON failures gracefully since Factorio may not be running, may crash, or may become unresponsive:
+
+- **Connection failure on startup:** Retry with exponential backoff (1s, 2s, 4s, 8s, max 30s). Log warnings. Dashboard shows "Waiting for Factorio..."
+- **Connection lost mid-game:** Pause tick loop, attempt reconnection with backoff. Keep WorldModel in memory (don't discard state). Resume from last known state on reconnect.
+- **RCON command timeout:** 5s timeout per command. On timeout, skip that tick's actions, log warning, continue. After 3 consecutive timeouts, trigger circuit breaker — pause ticks for 30s, then retry.
+- **Factorio crash detection:** If RCON connection drops AND the Factorio process (if bridge launched it) has exited, report to dashboard and stop tick loop. User must restart manually or bridge can auto-restart Factorio if configured.
+
+### RCON Payload Size
+
+Factorio's RCON implementation may have packet size limits for large state dumps (500 entities with full inventory data). Mitigations:
+
+- **Primary:** The Lua mod's `max_entities` cap (default 500) and position rounding keep payloads reasonable. Test against actual Factorio to determine real limits.
+- **Fallback if needed:** Split `/biged-state` into chunked responses — Lua mod writes full state to `script-output/biged-state.json`, RCON returns only a "state ready" signal, bridge reads the file. This hybrid approach uses RCON for signaling and files for bulk data.
+- **Metrics are always small** — `/biged-metrics` payload is bounded by `tracked_items` list size (~20 items), no chunking needed.
+
 ### Sandbox Mode
 
-When the Factorio module activates, the supervisor enters sandbox mode:
+When the Factorio module activates, the supervisor enters sandbox mode. **This is a new supervisor feature** (see Prerequisites) that requires:
 
-1. Drains the normal task queue (in-progress tasks finish, stops claiming new ones)
-2. Pauses idle skills (no background `code_quality`, `benchmark`, etc.)
-3. Reassigns all available workers to Factorio-affinity skills
-4. Dashboard shows "Sandbox Mode: Factorio" banner
-5. Deactivation exits sandbox mode and resumes normal operation
+1. **Queue drain API** — in-progress tasks finish, supervisor stops claiming new ones
+2. **Idle skill pause** — temporarily disable background idle skills
+3. **Dynamic affinity override** — route available workers to Factorio skills
+4. **Dashboard banner** — show "Sandbox Mode: Factorio" with deactivation button
+5. **Restore on exit** — deactivation resumes normal queue claiming and idle skills
 
 `reserved_workers` config allows keeping N workers for other tasks (default 0 = full dedication).
 
@@ -166,11 +193,13 @@ The bridge communicates with Factorio via RCON (Remote Console). The Lua mod (`c
 - Built into Factorio (just needs `--rcon-port` flag)
 - Adaptive polling is trivial — change how often bridge calls RCON
 
-### Bridge to Fleet Workers: File + Skill API
+### Bridge to Fleet Workers: Bridge API (canonical path)
 
-The bridge writes `factory-state.md` each tick. Fleet workers read this via the `factorio_observe` skill. Actions flow back through the `factorio_act` skill which writes to the bridge's CommandQueue.
+Workers access game state through skills, which call the bridge's in-process API:
+- `factorio_observe` → calls bridge's `get_world_state()` → returns structured GameState
+- `factorio_act` → writes to bridge's CommandQueue → bridge executes via RCON
 
-This matches BigEd's existing file-based handoff pattern — workers don't need to know about RCON.
+The bridge also writes `factory-state.md` each tick for **debug and dashboard display only**. This file is not the canonical worker path — on multi-PC setups, remote workers cannot read local files on the game host. Workers always go through skills → bridge API.
 
 ---
 
@@ -229,7 +258,10 @@ Adaptive mode mirrors the Dr. Ders event-driven wake-up pattern — idle until s
 - `power_outage` — electric network failing
 - `idle_assemblers` — production stalled
 
-Boost duration is configurable (default: hold fast cadence for 30 seconds after event, then decay back to slow).
+Adaptive boost behavior:
+- On event: immediately switch to `adaptive_boost_ms` (default 1500ms) interval
+- Hold boosted cadence for `adaptive_boost_hold_secs` (default 30s)
+- Decay: step down through medium → slow (not instant drop). Decay curve: boost → 5s after hold expires → 30s after another 30s of no events
 
 ---
 
@@ -278,36 +310,41 @@ Biters enabled, adversarial conditions:
 
 ### Curriculum File Format
 
-Each phase is a TOML file using the existing `idle_curricula/` pattern:
+Each phase is a TOML file that adapts the existing `idle_curricula/` `[[tasks]]` format. Factorio lessons are dispatched as tasks with `type = "factorio"` so the existing idle curriculum machinery can process them:
 
 ```toml
 [curriculum]
 name = "factorio_bootstrap"
 phase = 1
 description = "Learn basic Factorio mechanics"
-complexity = "simple"
-cadence = "slow"
 unlock_next = "factorio_02_goals"
 
-[[lessons]]
+[[tasks]]
+type = "factorio"
+skill = "factorio_train"
+
+[tasks.payload]
 name = "hand_craft"
-task = "Craft 10 iron gear wheels from starting inventory"
+instruction = "Craft 10 iron gear wheels from starting inventory"
 success_criteria = "inventory.iron-gear-wheel >= 10"
 max_steps = 20
+complexity = "simple"
 
-[[lessons]]
+[[tasks]]
+type = "factorio"
+skill = "factorio_train"
+
+[tasks.payload]
 name = "place_and_smelt"
-task = "Place a stone furnace and smelt 20 iron plates"
+instruction = "Place a stone furnace and smelt 20 iron plates"
 success_criteria = "production.iron-plate >= 20"
 max_steps = 50
-
-[graduation]
-criteria = "all lessons passed"
+complexity = "simple"
 ```
 
 ### Success Criteria Evaluation
 
-Criteria are evaluated against real game state from the WorldModel, not LLM self-report. Uses a safe expression parser with whitelisted accessors against WorldModel attributes — no arbitrary code execution.
+Criteria are evaluated against real game state from the WorldModel, not LLM self-report. Uses a safe expression parser with whitelisted accessors against WorldModel attributes — no arbitrary code execution. The parser supports comparison operators (`>=`, `<=`, `>`, `<`, `==`) and boolean connectors (`AND`, `OR`) against a fixed set of dotted paths (e.g., `inventory.iron-plate`, `flow.iron-plate`, `entities.furnace`).
 
 ### IQ Scoring Integration
 
@@ -346,7 +383,14 @@ When BigEd runs across multiple machines via federation:
 - **WorldModel is authoritative on Game Host** — remote workers get read-only snapshots via federation sync.
 - **Any PC can run reasoning/planning** — `factorio_plan` and `factorio_train` are compute-heavy (LLM calls), route to whichever node has GPU/API capacity.
 - **Only Game Host executes actions** — remote workers propose actions via CommandQueue. Bridge on Game Host executes via RCON.
-- **Federation router handles dispatch** — uses existing affinity system. `factorio_observe` and `factorio_act` have affinity to Game Host. `factorio_plan` and `factorio_train` go anywhere.
+
+### Node Pinning
+
+The existing federation router dispatches by queue overflow and role affinity, but has no concept of "this skill can only run on this node." Factorio needs this for `factorio_observe` and `factorio_act` (which must talk to the local bridge).
+
+**Approach:** The bridge exposes a localhost-only HTTP API (e.g., `http://localhost:{bridge_port}/api/state`, `/api/command`). Skills that need bridge access call this API. If the API isn't reachable (because the skill is running on a remote node), the skill returns an error and the federation router learns to route it locally. This naturally pins bridge-dependent skills to the game host without requiring new federation router features.
+
+Planning-only skills (`factorio_plan`, `factorio_train`) receive a state snapshot as their task payload — they don't need bridge access and can run anywhere.
 
 ### Config
 
@@ -354,26 +398,25 @@ When BigEd runs across multiple machines via federation:
 # Game Host
 [factorio]
 role = "host"
+bridge_port = 27016              # localhost-only API for skills
 
 # Compute nodes
 [factorio]
 role = "compute"
-host_fleet_id = "..."  # federation ID of Game Host
+host_fleet_id = "..."            # federation ID of Game Host
 ```
-
-No special multi-PC code needed — falls out of federation routing + skill affinity.
 
 ---
 
 ## Viewing & Spectator Mode
 
-Three server modes:
+Three server modes, controlled by two config keys:
 
-| Mode | Description | Overhead |
-|------|-------------|----------|
-| Headless (default) | No window, lowest overhead | ~200-400MB RAM, minimal CPU |
-| Headless + Spectator | Headless server + client connects as observer | +500MB-1GB for client |
-| Client-only | Single process, simplest, closing window kills game | Same as spectator |
+| `server_mode` | `spectator_enabled` | Behavior |
+|---------------|---------------------|----------|
+| `headless` | `false` | Headless only. No window, lowest overhead (~200-400MB RAM). |
+| `headless` | `true` (default) | Headless server + "Launch Spectator" button available in UI. Spectator connects as observer. +500MB-1GB when viewer open. |
+| `client` | (ignored) | Single-process client mode. Simplest, but closing the window kills the game. |
 
 **Headless + Spectator is recommended** because:
 - Agent runs uninterrupted on headless server
@@ -393,15 +436,14 @@ Viewer:           [Launch Spectator]  [Not Running]
 
 ## Lua Mod Installation
 
-Three modes, selectable in the module settings panel:
+Two modes for v0.1.0, selectable in the module settings panel:
 
 | Mode | Behavior | Default |
 |------|----------|---------|
 | Manual | User copies `lua_mod/` to Factorio mods folder. README tells them how. | Yes (safest) |
 | Assisted | Auto-detect `%APPDATA%/Factorio/mods/`, copy mod there. User restarts Factorio. | Opt-in |
-| Managed | Full version sync — detect Factorio install, manage mod version, warn on updates. | Opt-in |
 
-Each level adds automation on top of the previous. The module always works at Manual level — Assisted and Managed are convenience layers.
+Managed mode (full version sync, update warnings) deferred to v0.2.0 — unnecessary complexity before the module is proven to work.
 
 ### Auto-Detection Paths
 
@@ -420,8 +462,8 @@ Each level adds automation on top of the previous. The module always works at Ma
 1. User opens Module Hub tab in launcher
 2. Browses available modules from `registry.json`
 3. Clicks **Install** on "Factorio Sandbox"
-4. Hub downloads package, verifies SHA-256 checksum
-5. Files extracted to correct locations
+4. Hub downloads zip package, verifies SHA-256 checksum
+5. Files extracted to correct locations (requires multi-file hub install — see Prerequisites)
 6. `manifest.json` updated, `fleet.toml [launcher.tabs] factorio = true` auto-set
 7. New "Factorio" tab appears in launcher (hot-load, no restart)
 8. First tab open triggers setup wizard
@@ -431,9 +473,9 @@ Each level adds automation on top of the previous. The module always works at Ma
 Three steps:
 
 **Step 1: Factorio Installation**
-- Lua mod install mode selection (Manual / Assisted / Managed)
+- Lua mod install mode selection (Manual / Assisted)
 - Auto-detect Factorio install path with manual override
-- If Assisted/Managed: copy mod and confirm
+- If Assisted: copy mod and confirm
 
 **Step 2: Server Settings**
 - RCON port, password (with random generation option)
@@ -448,20 +490,9 @@ Three steps:
 
 Wizard writes all settings to `fleet.toml [factorio]`.
 
-### Module Manager Panel (Generic)
+### Module Manager Panel
 
-A new settings panel (similar to MCP settings) for managing all modules:
-
-| Feature | Backend Status | UI Needed |
-|---------|---------------|-----------|
-| Browse available modules | `hub.py` fetches `registry.json` | List panel with install buttons |
-| Install a module | `hub.download_module()` works | Progress indicator |
-| Enable/disable installed | `hub.enable_module()` works | Toggle switch per module |
-| Uninstall a module | `hub.uninstall_module()` works | Button with confirmation |
-| Check for updates | `hub.check_updates()` works | Badge on outdated modules |
-| View module details | Not implemented | Detail panel: description, version, author |
-
-The hub backend is solid — the gap is a launcher UI panel that wires into it. This panel is generic and works for any module, not just Factorio.
+A generic Module Manager UI panel is needed for browsing/installing/managing modules (the hub backend exists but lacks a launcher UI). This is a **separate roadmap item** — not part of this spec's scope. The Factorio module can be installed via the existing hub CLI or a minimal install flow while the full UI is built independently.
 
 ### Module Hub Registry Entry
 
@@ -474,18 +505,21 @@ The hub backend is solid — the gap is a launcher UI panel that wires into it. 
   "category": "training",
   "min_biged_version": "0.400.00b",
   "default_enabled": false,
-  "files": [
-    "BigEd/launcher/modules/mod_factorio.py",
-    "fleet/modules/factorio/*",
-    "fleet/skills/factorio_*.py",
-    "fleet/idle_curricula/factorio_*.toml"
-  ],
+  "archive": "factorio-sandbox-0.1.0.zip",
+  "install_map": {
+    "mod_factorio.py": "BigEd/launcher/modules/mod_factorio.py",
+    "fleet_factorio/": "fleet/factorio/",
+    "skills/": "fleet/skills/",
+    "curricula/": "fleet/idle_curricula/"
+  },
   "depends_on": [],
   "config_section": "factorio",
   "setup_wizard": true,
   "sha256": "..."
 }
 ```
+
+The `install_map` field is new — it tells the hub where to extract each path from the archive. This is part of the multi-file hub install prerequisite.
 
 ---
 
@@ -498,6 +532,7 @@ The hub backend is solid — the gap is a launcher UI panel that wires into it. 
 enabled = false                     # master switch
 role = "host"                       # host | compute
 host_fleet_id = ""                  # federation ID (compute nodes only)
+bridge_port = 27016                 # localhost-only API for skills
 
 # Server
 rcon_host = "localhost"
@@ -515,6 +550,7 @@ cadence_fast_ms = 1000
 cadence_medium_ms = 5000
 cadence_slow_ms = 30000
 adaptive_boost_ms = 1500
+adaptive_boost_hold_secs = 30      # how long to hold boosted cadence after event
 adaptive_events = [
     "resource_depleted",
     "entity_destroyed",
@@ -522,6 +558,11 @@ adaptive_events = [
     "power_outage",
     "idle_assemblers",
 ]
+
+# RCON resilience
+rcon_timeout_secs = 5              # per-command timeout
+rcon_max_retries = 3               # consecutive failures before circuit breaker
+rcon_circuit_breaker_secs = 30     # pause duration when circuit breaker trips
 
 # Agent
 max_actions_per_step = 20
@@ -533,20 +574,24 @@ current_phase = 1                   # 1-4
 auto_advance = true                 # graduate automatically
 
 # Lua mod
-lua_install_mode = "manual"         # manual | assisted | managed
+lua_install_mode = "manual"         # manual | assisted
 
 # Files
-state_file = "fleet/modules/factorio/factory-state.md"
-log_dir = "fleet/modules/factorio/logs"
+state_file = "fleet/factorio/factory-state.md"
+log_dir = "fleet/factorio/logs"
 curriculum_dir = "fleet/idle_curricula"
 ```
 
 ### Skill Affinity Addition
 
+Factorio skills are assigned to a new `sandbox` agent role. This role is created dynamically when the Factorio module is enabled and removed when disabled:
+
 ```toml
 [affinity]
-factorio = ["factorio_observe", "factorio_plan", "factorio_act", "factorio_train"]
+sandbox = ["factorio_observe", "factorio_plan", "factorio_act", "factorio_train"]
 ```
+
+Workers in sandbox mode are temporarily reassigned to the `sandbox` role. When sandbox mode exits, they revert to their original roles.
 
 ### Skill Budget Addition
 
@@ -566,31 +611,35 @@ All four skills follow the standard BigEd skill contract (`SKILL_NAME`, `DESCRIP
 
 ### factorio_observe
 
-Reads the WorldModel snapshot (or `factory-state.md`) and returns a structured observation. No LLM cost — pure parsing.
+Reads the WorldModel state via the bridge's localhost API (`http://localhost:{bridge_port}/api/state`). Returns a structured observation as markdown. No LLM cost — pure parsing.
 
-**Complexity:** simple | **Network:** false
+**Complexity:** simple | **Network:** false (localhost only)
 
 ### factorio_plan
 
-Given current game state + curriculum phase + recent history, produces a strategic plan. This is the "brain" — it decides what to build next, where to expand, what to research.
+Given current game state + curriculum phase + recent history, produces a strategic plan. This is the "brain" — it decides what to build next, where to expand, what to research. Receives state snapshot as task payload — does not need bridge access and can run on any node.
 
 **Complexity:** complex | **Network:** true (LLM API call)
 
 ### factorio_act
 
-Translates a plan into concrete actions and writes them to the bridge's CommandQueue. Validates actions against inventory and game rules before submitting.
+Translates a plan into concrete actions and submits them to the bridge's CommandQueue via localhost API (`http://localhost:{bridge_port}/api/command`). Validates actions against inventory and game rules before submitting. Must run on Game Host.
 
 **Complexity:** medium | **Network:** true (LLM for translation)
 
 ### factorio_train
 
-Runs curriculum evaluation — checks success criteria against WorldModel, tracks lesson progress, handles phase graduation. Also generates feedback for failed attempts.
+Runs curriculum evaluation — checks success criteria against WorldModel, tracks lesson progress, handles phase graduation. Also generates feedback for failed attempts. Receives state snapshot as task payload — can run on any node.
 
 **Complexity:** medium | **Network:** true (LLM for feedback generation)
 
 ---
 
 ## Future Work
+
+### Managed Lua Install Mode (v0.2.0)
+
+Full version sync — detect Factorio install, manage mod version, warn on Factorio updates that might break compatibility. Deferred until the module is proven to work with Manual + Assisted modes.
 
 ### Multi-Character Agent Coordination (Phase 5)
 
@@ -609,6 +658,10 @@ Potential domain split:
 - New curriculum: Agents learn not to conflict (resource contention, spatial blocking)
 
 Planned as Phase 5 of training progression, after single-character mastery.
+
+### Module Manager UI
+
+A generic launcher panel for browsing, installing, enabling/disabling, and updating modules from the Module Hub. Backend exists (`hub.py`), UI is the gap. Separate roadmap item.
 
 ### Other Potential Extensions
 
