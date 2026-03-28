@@ -41,16 +41,31 @@ def _load_all_manifests(cfg: dict) -> list:
             except Exception:
                 log.warning("Failed to load manifest %s", manifest_path, exc_info=True)
 
-    # Also load marketplace modules from DB
+    # Also load marketplace modules from DB (new schema: individual columns)
     try:
         import db
         with db.get_conn() as conn:
             rows = conn.execute(
-                "SELECT manifest_json FROM module_registry WHERE source = 'marketplace'"
+                """SELECT name, version, module_type, description,
+                          requires, conflicts, recommends,
+                          rollback_safe, min_fleet_version
+                   FROM module_registry WHERE source = 'marketplace'"""
             ).fetchall()
         for row in rows:
             try:
-                data = json.loads(row["manifest_json"])
+                data = {
+                    "name": row["name"],
+                    "version": row["version"],
+                    "type": row["module_type"],
+                    "description": row["description"] or "",
+                    "dependencies": {
+                        "requires": json.loads(row["requires"] or "[]"),
+                        "conflicts": json.loads(row["conflicts"] or "[]"),
+                        "recommends": json.loads(row["recommends"] or "[]"),
+                    },
+                    "rollback_safe": bool(row["rollback_safe"]),
+                    "min_fleet_version": row["min_fleet_version"] or "0.0.0",
+                }
                 manifests.append(parse_manifest_dict(data))
             except Exception:
                 log.warning("Failed to parse marketplace manifest from DB", exc_info=True)

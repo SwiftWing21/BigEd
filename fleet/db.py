@@ -500,13 +500,38 @@ def init_db():
             CREATE TABLE IF NOT EXISTS module_registry (
                 name TEXT PRIMARY KEY,
                 version TEXT NOT NULL,
-                type TEXT NOT NULL CHECK(type IN ('launcher', 'marketplace')),
-                manifest_json TEXT NOT NULL,
-                resolved_requires TEXT DEFAULT '[]',
-                resolved_conflicts TEXT DEFAULT '[]',
+                module_type TEXT NOT NULL,
+                description TEXT DEFAULT '',
+                requires TEXT DEFAULT '[]',
+                conflicts TEXT DEFAULT '[]',
+                recommends TEXT DEFAULT '[]',
+                rollback_safe INTEGER DEFAULT 1,
+                min_fleet_version TEXT DEFAULT '0.0.0',
+                source TEXT DEFAULT 'disk',
                 updated_at TEXT DEFAULT (datetime('now'))
             )
         """)
+        # Migration: module_registry old schema had 'type'/'manifest_json' columns — rebuild if needed
+        try:
+            conn.execute("SELECT module_type FROM module_registry LIMIT 0")
+        except Exception:
+            # Old schema present — drop and recreate (it's a cache; safe to wipe)
+            conn.execute("DROP TABLE IF EXISTS module_registry")
+            conn.execute("""
+                CREATE TABLE module_registry (
+                    name TEXT PRIMARY KEY,
+                    version TEXT NOT NULL,
+                    module_type TEXT NOT NULL,
+                    description TEXT DEFAULT '',
+                    requires TEXT DEFAULT '[]',
+                    conflicts TEXT DEFAULT '[]',
+                    recommends TEXT DEFAULT '[]',
+                    rollback_safe INTEGER DEFAULT 1,
+                    min_fleet_version TEXT DEFAULT '0.0.0',
+                    source TEXT DEFAULT 'disk',
+                    updated_at TEXT DEFAULT (datetime('now'))
+                )
+            """)
         # Module state snapshots for rollback
         conn.execute("""
             CREATE TABLE IF NOT EXISTS module_snapshots (
