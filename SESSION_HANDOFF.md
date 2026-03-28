@@ -11,8 +11,9 @@
 |--------|-------|--------------|
 | Version | 0.900.00b (Python) / 0.9.0 (Rust) | 2026-03-25 |
 | Skills | 96 standalone + 6 suites (was 132 files) | 2026-03-26 |
-| Smoke Tests | 45/45 (Python) | 2026-03-26 |
-| Ingest Sources | 17 (12 task + 5 RAG, ~2M+ rows) | 2026-03-26 |
+| Smoke Tests | 48/48 (Python) + 41 restructure/hardening | 2026-03-27 |
+| Factorio Module Tests | 45/45 (9 test files) | 2026-03-27 |
+| Ingest Sources | 18 (12 task + 5 RAG + 1 factorio-knowledge, ~2M+ rows) | 2026-03-27 |
 | API Keys | 12 registered, 3 set | 2026-03-26 |
 | Rust Tests | 116+ | 2026-03-25 |
 | Dashboard Endpoints | 26 (Rust) + 254 (Python, +12 ingest) | 2026-03-26 |
@@ -22,12 +23,143 @@
 | Rust Phase | All 6 phases complete + 18 audit fixes | 2026-03-25 |
 | Helpers | 11 (_contract, _knowledge, _llm_parse, _dispatch, _report, _http, _models, _flywheel_rubric/grading/audit, _oss_core) | 2026-03-26 |
 | Graph Views | 6 (fleet-overview, universe, data-flow, bottleneck-detector, knowledge-graph, training-pipeline) | 2026-03-26 |
-| Graph Layouts | 4 (Radial, Radial Cluster, Cluster/fcose, Grid) | 2026-03-26 |
+| Graph Layouts | 4 (Radial, Radial Cluster, Cluster/fcose, Grid) + Fractal Brain | 2026-03-27 |
+| Audit Reports | 4 (backend, frontend, cross-platform, integration) | 2026-03-27 |
+| v1.0 Blockers | 20 critical issues identified | 2026-03-27 |
 
 ## Last Session
 
-**Date:** 2026-03-26 (late evening)
-**Session:** VS Code Claude Code
+**Date:** 2026-03-27 (session 3)
+**Session:** VS Code Claude Code — Factorio Sandbox Module (design + full implementation)
+
+### Factorio Sandbox Module v0.1.0 — COMPLETE
+
+Built a BigEd module that trains fleet agents to play Factorio autonomously through a 4-phase training curriculum.
+
+**Spec:** `docs/superpowers/specs/2026-03-27-factorio-sandbox-design.md`
+**Plan:** `docs/superpowers/plans/2026-03-27-factorio-sandbox.md`
+
+**Architecture:** Fat module with bridge service — long-running bridge process talks to Factorio via RCON, maintains persistent WorldModel, exposes localhost API. Fleet skills wrap the bridge. Launcher module provides tab UI.
+
+**What was built (25+ files, 45 tests):**
+- `fleet/factorio/` — RCON client, state parser (GameState/GameMetrics/Entity), action translator, WorldModel with diff-based event detection, CadenceController (4 modes + adaptive boost/decay), curriculum engine with safe criteria parser, bridge API (Flask localhost), bridge main process, Lua installer, config
+- `fleet/factorio/lua_mod/` — Factorio 2.0 Lua mod (state serializer + 9 command actions)
+- `fleet/skills/factorio_{observe,plan,act,train}.py` — 4 skills following standard contract
+- `fleet/idle_curricula/factorio_{01,02,03,04}_*.toml` — 4-phase curriculum (bootstrap → goals → KPIs → survival)
+- `BigEd/launcher/modules/mod_factorio.py` — launcher tab (status, cadence slider, spectator button, curriculum progress)
+- `fleet/factorio/knowledge/` — 31 reference docs (15 vanilla wiki + 7 Space Age wiki + 8 Lua API + 1 agent guide)
+- `fleet/factorio/setup_and_launch.py` — one-click setup script
+
+**Config additions:** fleet.toml `[factorio]` section (30+ keys), `[affinity] sandbox`, `[budgets]` for 4 skills, `[[ingest.sources]]` for knowledge dir
+
+**Integration:** process_manager.py spawn/monitor/shutdown for bridge, providers.py skill complexity routing
+
+### RCON Integration Status — NEEDS TUNING
+
+The module is fully built and tested (45/45 Python tests, 48/48 smoke). Live testing against Factorio 2.0.76 + Space Age revealed:
+
+**Working:**
+- RCON auth handshake ✓
+- Lua mod loads cleanly ✓
+- Save creation ✓
+- Server starts with `auto_pause=false` ✓
+
+**Needs fixing next session:**
+1. **`commands.add_command` RCON responses** — Factorio 2.0 doesn't return responses for mod-registered commands via RCON. Fix: switch to `/c remote.call()` pattern (remote interfaces) or inline `/c` Lua that calls mod functions
+2. **Achievement warning** — first `/c` via RCON triggers "disable achievements?" warning. Need auto-accept or pre-command on save creation
+3. **Headless player creation** — `game.get_player(1)` returns nil in headless with no connections. Need to create a character entity programmatically via `on_init`
+4. **Factorio 2.0 API changes** — `game.table_to_json` → `helpers.table_to_json` (already fixed), `require("json")` removed (already fixed)
+
+**Server settings needed:** `auto_pause: false` in server-settings.json (otherwise RCON commands don't execute with no players connected)
+
+### Previous session (2026-03-27 session 2)
+
+**Session:** VS Code Claude Code — knowledge graph overhaul + v1.0 audit (4 Opus pods)
+
+### Knowledge Graph Overhaul — 7-Task Plan Executed
+- **Backend:** Task aggregation (200→33 task groups), compound parent nodes (30 communities), edge deduplication (600→289 edges)
+- **Frontend:** fCoSE layout replacing fractal-brain for organic clustering, compound node styles (:parent), zoom-based LOD with community centroids
+- **Both templates:** dashboard.html + view_graph.html updated with compound support, parent validation (orphan refs crash Cytoscape)
+- **Smoke test:** New graph universe test (46/46 pass)
+- **Spec:** `docs/superpowers/specs/2026-03-27-knowledge-graph-overhaul-design.md`
+- **Plan:** `docs/superpowers/plans/2026-03-27-knowledge-graph-overhaul.md`
+
+### Live Activity Enrichment
+- Backend: `/api/activity/live` + SSE broadcaster now JOIN usage table (model, duration, tokens, speed, cost, IQ, priority, trace_id)
+- Frontend: configurable column pills, Settings → Display tab with localStorage-persisted toggles
+- Default on: Model, Duration, IQ Score. All 8 columns toggleable.
+
+### Dashboard UX
+- Right-click = soft refresh (current section), Shift+right-click = hard reload
+- Select All checkbox on Ingest page
+- Settings → Advanced: "Link to a BigEd" federation UI (peer list, health probes, federation toggles, RAG host mode)
+- Active Units SSE filter: disabled agents + 5min heartbeat
+- Ko-fi removed from public repo README (pushed to upstream)
+
+### v1.0 Audit (4 Opus Pods)
+4 parallel audit reports in `docs/audit/2026-03-27-*-audit.md`:
+- **Backend:** 6 critical (raw sqlite3, claim_task race, alert scoping, no pooling)
+- **Frontend:** 6 critical (isDark() undefined, --destructive missing, model dropdown broken, rAF loop)
+- **Cross-Platform:** 4 critical (Dr. Ders exits NullBackend, AMD VRAM, PyWebView Linux, model tier assumptions)
+- **Integration:** 4 critical (no requirements.txt, sparse backups, no e2e tests, no load tests)
+- **Total:** 20 critical, 26 high, 28 medium, 17 low
+- **Machine readiness:** 3080Ti=READY, 1070=READY with config, Steam Deck=NOT READY (3 critical)
+
+### Cleanup
+- Code drafts: 34→13 files (21 empty deleted)
+- Fonts: 5 hardcoded instances → theme constants
+- .gitignore: +7 patterns (tmp*.json, biged-rs runtime, demo.py, .superpowers/, screenshots)
+- Coder summarize tasks removed from idle curriculum
+
+### Previous Session (2026-03-27 session 1)
+
+### Supervisor Restructure — COMPLETE
+
+Decomposed `fleet/supervisor.py` (1890 lines) into 5 focused modules + thin orchestrator using team-orchestrator (4 parallel pods in worktrees):
+
+| Module | Lines | Responsibility |
+|--------|-------|----------------|
+| `process_manager.py` | 526 | All subprocess lifecycle: Ollama, workers, dashboard, Dr. Ders, Discord, OpenClaw |
+| `health_monitor.py` | 854 | Health sweeps, memory watchdog, circuit breakers, diagnostics, stale task recovery |
+| `scheduler.py` | 726 | Dynamic scaling, auto-triggers, training detection, cost anomaly, capacity bonus |
+| `federation_manager.py` | 163 | Peer heartbeat, overflow routing, mTLS, discovery |
+| `boot_sequence.py` | 225 | 16-step ordered startup sequence |
+| `supervisor.py` | 201 | Thin orchestrator: main loop, signals, status writes (was 1890) |
+| `self_healing.py` | 36 | Re-export shim → health_monitor.py |
+| `diagnostics.py` | 18 | Re-export shim → health_monitor.py |
+
+**Tests:** 25/25 restructure tests + 45/45 smoke tests = zero regressions
+**Commits:** b349dee → 370517b → bc8938a → 5044592 (4 sequential, no conflicts)
+**Spec:** `docs/superpowers/specs/2026-03-26-supervisor-restructure-design.md`
+**Plan:** `docs/superpowers/plans/2026-03-26-supervisor-restructure.md`
+
+### Workflow Hardening — 13 Fixes Complete
+
+Deep audit of all task workflows found 15+ issues (death spirals, memory leaks, chokepoints). Fixed the 13 critical/high items via 4-pod team:
+
+| Pod | Fixes | Key Changes |
+|-----|-------|-------------|
+| pod-health | 3 | Circuit breaker memory cap (1000/skill), deque recovery log, tick stagger |
+| pod-scheduler | 6 | Evolution dedup, research overlap guard, atomic offset, tick stagger, VRAM eviction, staleness cache |
+| pod-dashboard | 3 | SSE client leak reaper, federation peer TTL, rate limiter eviction |
+| pod-ingest | 2 | Cache orphan cleanup, dispatch failure tracking + auto-remove |
+
+**Tests:** 16 new hardening tests (41 total) + 45/45 smoke = zero regressions
+**Commits:** 2b451b0 → b2f5ecb → eb60fe9 → 5bbae14
+**Spec:** `docs/superpowers/specs/2026-03-27-workflow-hardening-design.md`
+**Plan:** `docs/superpowers/plans/2026-03-27-workflow-hardening.md`
+
+### Additional Fixes (inline, not team-dispatched)
+- OOM check: dynamic VRAM estimation (no hardcoded fallback — infers from model name, Ollama API, or 50% GPU)
+- Summarize skill: `content` key mismatch fixed, 575 tasks requeued
+- Agent count: filter to 5min heartbeat (was showing 17 ghost agents)
+- Activity feed: detail column (skill_name, source, error reason)
+- Dashboard: adaptive polling (2s active / 15s minimized / 60s hidden), independent bar scaling, "active"→"running" label
+- Knowledge graph: fcose layout, compact brain, hover-explode, click-select, SSE-driven pulses, all 59 disconnected nodes wired, fractal-brain custom layout
+- PyWebView: Qt backend fix for Python 3.14 (PYWEBVIEW_GUI=qt), dual model dropdowns (GPU/CPU), boot overlay hide fix
+- LHM: auto-launch headless with elevation, dependency checks for Windows/Linux/macOS
+
+### Previous Session (2026-03-26 late evening)
 
 ### Ingestion Hub — Complete Phase 1
 
@@ -255,22 +387,39 @@ Complete Rust rewrite (Phases 0-6), 6-agent audit, 18 fixes, v0.9.0 benchmarks
 - [x] **Live Activity feed** — SSE real-time, radial graph toggle, omnibox dropdown
 - [x] **Performance** — Ollama NUM_PARALLEL=4, CPU affinity, worker CPU uncapped, startup parallelized
 - [x] **Log rotation** — fresh logs each boot, keep last 10 sessions
-- [ ] **Supervisor restructure (5 teams x 5 agents):**
-  - Team 1: process_manager.py — worker spawn/kill/respawn, Ollama, Dr. Ders, PID
-  - Team 2: scheduler.py — task dispatch, idle evolution, DAG queue, dynamic scaling
-  - Team 3: boot.py refactor — staged boot, timeouts, PID checks, model preload
-  - Team 4: health_monitor.py — self-healing + watchdog + diagnostics unified
-  - Team 5: dashboard.py consolidation — extract inline endpoints to blueprints (<1000 lines)
-  - NOTE: needs brainstorm + spec first, then 25-agent execution. Each team works on different files.
+- [x] **Supervisor restructure** — 1890→201 lines, 5 modules extracted, 25 tests, 45/45 smoke green
+- [x] **Workflow hardening** — 13 fixes across 4 subsystems, 16 new tests, zero regressions
+- [x] **Summarize skill fix** — content key mismatch, 575 tasks requeued
+- [x] **Agent count fix** — filter to 5min heartbeat (was showing 17 ghosts)
+- [x] **UI: merged fleet activity into agents panel** — single panel, boot-aware
+- [x] **UI: adaptive polling** — 2s active, 15s/60s hidden, SSE paused when no clients
+- [x] **UI: pipeline bar scaling** — agents/models scale independently
+- [x] **Knowledge graph overhaul** — fcose layout, compact brain, hover-explode, click-select, SSE-driven pulses, all nodes wired
+- [x] **PyWebView launcher migration** — 6-pod team: native window, boot overlay, header controls, settings 6-tab, fractal brain graph, integration. Qt backend fix for Python 3.14.
+- [x] **Knowledge graph overhaul v2** — task aggregation, compound parents, fCoSE, edge dedup, LOD centroids (7-task plan executed)
+- [x] **Live Activity enrichment** — model, duration, IQ, tokens, speed, cost, priority, trace_id + Settings → Display toggles
+- [x] **Link to BigEd UI** — Settings → Advanced: peer list, health probes, federation/discovery/routing/RAG host toggles
+- [x] **Code drafts cleanup** — 34→13 files (21 empty deleted)
+- [x] **Fonts cleanup** — 5 hardcoded → theme constants
+- [x] **v1.0 Audit** — 4 Opus pods: 20 critical, 26 high, 28 medium, 17 low. Reports in docs/audit/
+- [ ] **Factorio RCON tuning** — fix mod command responses (switch to remote.call pattern), achievement auto-accept, headless player creation. See SESSION_HANDOFF.md "RCON Integration Status"
+- [ ] **FIX 20 CRITICAL AUDIT ISSUES** — see docs/audit/2026-03-27-*-audit.md. Top: raw sqlite3, claim_task race, isDark(), requirements.txt, Dr. Ders NullBackend
+- [ ] **Steam Deck readiness** — Dr. Ders NullBackend exit, AMD VRAM detection, PyWebView Qt backend for Linux
+- [ ] **GTX 1070 config** — model tier adjustment (qwen3:8b fills 86% of 8GB VRAM)
+- [ ] **3-machine federation test** — RTX 3080 Ti + GTX 1070 + Steam Deck OLED
+- [ ] **Task Command Center** — brainstorm saved: docs/superpowers/specs/2026-03-27-task-command-center-brainstorm.md
+- [ ] **Hardware profiles** — replace RTX 3080 Ti hardcoded values with auto-detected GPU profiles (cpu_only→datacenter). Self-tuning via autoresearch. Spec: `memory/project_hardware_profiles.md`
+- [ ] **Model backend abstraction** — LocalModelManager ABC to decouple from Ollama. Support vLLM, llama.cpp, LM Studio. Spec: `memory/project_model_backend_abstraction.md`
 - [ ] **Micro Lab** — brainstorm GPU simulation sharing (OpenMM/CFD alongside qwen3:8b)
 - [ ] **Push to upstream/public** — haven't pushed in ~1 week, need testing pass first
 - [ ] **Qwen 3.5 upgrade** — watch for Ollama GGUF availability, then config swap in fleet.toml
+- [ ] **Factorio multi-character (Phase 5)** — planned for after single-agent works. See spec Future Work section
 - [ ] **Web Ingestion Phase 2** — implement spec (3-stage quality gate + Firecrawl crawl)
 - [ ] **Contextual "missing key" toasts** — when API returns `missing_key` error, show toast with entry link
 - [ ] Root-cause Ollama 404 during skill_draft — may be model unload timing
 - [ ] Resizable dashboard panels (Split.js) — ref: `memory/reference_panel_layout.md`
 - [ ] Migrate skills to use new helpers (_knowledge, _report, _llm_parse)
-- [ ] Hardcoded fonts in launcher.py: 46 instances → theme constants
+- [x] Hardcoded fonts in launcher.py: 5 instances → theme constants (was 46 estimate, most already done)
 - [ ] Run skills through PyO3 bridge with new suite routing
 - [ ] Fix WASM compilation (cfg-gate tokio/rusqlite/reqwest behind desktop feature)
 - [ ] WebSocket + MessagePack transport
