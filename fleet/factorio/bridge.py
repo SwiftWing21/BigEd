@@ -61,9 +61,17 @@ class FactorioBridge:
         """Run a single perception -> action tick."""
         self._tick_count += 1
 
-        # 1. Get state
+        # 0. Ensure agent player exists (first tick only)
+        if self._tick_count == 1:
+            try:
+                result = await self.rcon.remote_call("ensure_player")
+                log.info("Player init: %s", result[:200])
+            except Exception as e:
+                log.warning("Player init failed: %s", e)
+
+        # 1. Get state via remote interface
         try:
-            state_raw = await self.rcon.command("/biged-state")
+            state_raw = await self.rcon.remote_call("get_state")
             state = parse_state(state_raw)
             self._consecutive_failures = 0
         except Exception as e:
@@ -80,7 +88,7 @@ class FactorioBridge:
         metrics = None
         if self._tick_count % 5 == 0:
             try:
-                metrics_raw = await self.rcon.command("/biged-metrics")
+                metrics_raw = await self.rcon.remote_call("get_metrics")
                 metrics = parse_metrics(metrics_raw)
             except Exception:
                 log.warning("Metrics fetch failed, skipping")
@@ -116,7 +124,9 @@ class FactorioBridge:
                     if not ta.rcon_command:
                         continue
                     try:
-                        resp = await self.rcon.command(ta.rcon_command)
+                        # Extract JSON payload from "/biged-cmd {json}"
+                        cmd_json = ta.rcon_command.split(" ", 1)[1] if " " in ta.rcon_command else "{}"
+                        resp = await self.rcon.remote_call("exec_cmd", cmd_json)
                         result = json.loads(resp)
                     except json.JSONDecodeError:
                         result = {"raw": resp}

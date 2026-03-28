@@ -59,7 +59,46 @@ class RCONClient:
         if response[0] == -1:
             raise ConnectionRefusedError("RCON authentication failed")
         self._connected = True
-        log.info(f"RCON connected to {self.host}:{self.port}")
+        self._console_primed = False
+        log.info("RCON connected to %s:%d", self.host, self.port)
+
+    async def _prime_console(self) -> None:
+        """Send a dummy /c command to dismiss the achievement warning.
+
+        Factorio shows 'Using Lua console commands will disable achievements'
+        on the first /c command. We send a no-op to clear it so subsequent
+        commands get real responses.
+        """
+        if self._console_primed:
+            return
+        try:
+            await self.command('/c -- biged console init')
+            self._console_primed = True
+            log.info("Console primed (achievement warning dismissed)")
+        except Exception:
+            # First command may return empty — that's the warning. Prime anyway.
+            self._console_primed = True
+
+    async def remote_call(self, fn: str, *args) -> str:
+        """Call a remote interface function and return the result.
+
+        Uses: /c rcon.print(remote.call("biged", fn, ...))
+        This is the reliable way to get data back from mods via RCON in Factorio 2.0.
+        """
+        await self._prime_console()
+        if args:
+            arg_strs = []
+            for a in args:
+                if isinstance(a, str):
+                    # Use Lua long-string [[...]] to avoid quote escaping issues
+                    arg_strs.append("[[" + a + "]]")
+                else:
+                    arg_strs.append(str(a))
+            args_lua = ", " + ", ".join(arg_strs)
+        else:
+            args_lua = ""
+        cmd = f'/c rcon.print(remote.call("biged", "{fn}"{args_lua}))'
+        return await self.command(cmd)
 
     async def disconnect(self) -> None:
         """Close the RCON connection."""
