@@ -465,6 +465,17 @@ def detect_gpu_config() -> dict:
     if config["gpu_count"] > 0 and config["total_vram_gb"] > 100:
         config["memory_mode"] = "unified"
 
+    # APU detection (Steam Deck, iGPU laptops): low carved VRAM + high system RAM
+    # = unified memory managed by OS.  Skip VRAM emergency thresholds for these.
+    if config["gpu_count"] > 0 and config["total_vram_gb"] < 6:
+        try:
+            total_ram_gb = psutil.virtual_memory().total / (1024 ** 3) if _HAS_PSUTIL else 0
+            if total_ram_gb > 12:
+                config["memory_mode"] = "unified"
+                config["is_apu"] = True
+        except Exception:
+            pass
+
     # Single-rig multi-GPU: annotate availability for Ollama model splitting
     if config["gpu_count"] > 1:
         config["multi_gpu_mode"] = "available"
@@ -676,9 +687,9 @@ def check_training_active(cfg):
 # ── Main Loop ─────────────────────────────────────────────────────────────────
 
 def main():
-    if not _HAS_GPU:
-        log.info("No NVIDIA GPU detected. Exiting.")
-        return
+    _gpu_available = _HAS_GPU  # False = CPU-only mode (NullBackend / AMD APU / Steam Deck)
+    if not _gpu_available:
+        log.info("No discrete GPU detected — running in CPU-only monitoring mode")
 
     # PID file — prevent duplicate Dr. Ders
     try:
@@ -723,6 +734,26 @@ def main():
     # Must happen BEFORE any model checks (which involve HTTP calls that can stall).
     write_state("starting", get_current_local_model())
 
+    # Detect APU / unified memory — skip VRAM emergencies on systems like Steam Deck
+    _is_unified_memory = False
+    try:
+        from config import load_config as _load_cfg
+        _fleet_cfg = _load_cfg()
+        if _fleet_cfg.get("gpu", {}).get("memory_mode") == "unified":
+            _is_unified_memory = True
+    except Exception:
+        pass
+    if not _is_unified_memory and not _gpu_available:
+        # Auto-detect: system with >12GB RAM but no discrete GPU = likely APU/unified
+        try:
+            import psutil as _ps
+            _total_ram_gb = _ps.virtual_memory().total / (1024 ** 3)
+            if _total_ram_gb > 12:
+                _is_unified_memory = True
+                log.info(f"Auto-detected unified memory ({_total_ram_gb:.0f}GB RAM, no discrete GPU)")
+        except Exception:
+            pass
+
     # Validate configured models — store available set for tier transitions
     available_tier_models = validate_configured_models(cfg)
 
@@ -763,6 +794,10 @@ def main():
         "ollama_reachable": False,   # is Ollama API responding?
         "model_state_known": False,  # do we know what model is loaded?
     }
+    # CPU-only mode: skip GPU thermal check (psutil CPU temp is checked in main loop)
+    if not _gpu_available:
+        startup_checks["gpu_readable"] = True
+        log.info("Checkpoint: GPU readable skipped (CPU-only mode)")
     for attempt in range(5):
         if not startup_checks["gpu_readable"]:
             gpu_test = read_gpu_thermal()
@@ -924,7 +959,14 @@ def main():
 
             gpu = read_gpu_thermal()
             if not gpu:
-                continue
+                if _gpu_available:
+                    continue
+                # CPU-only mode: synthesize minimal GPU dict so the loop continues
+                gpu = {
+                    "gpu_temp_c": 0, "gpu_power_w": 0.0,
+                    "gpu_fan_pct": -1, "vram_used_gb": 0.0,
+                    "vram_total_gb": 0.0, "vram_pct": 0.0,
+                }
 
             cpu_temp = read_cpu_thermal()
             is_training = check_training_active(cfg)
@@ -1129,11 +1171,26 @@ def main():
             elif not loaded:
                 # RECOVERY: no worker model loaded — find the best available
                 # that fits in current VRAM. Start from largest, step down.
+                # Use *available* VRAM (not total) with headroom to avoid
+                # immediately triggering vram_high after loading.
                 available = get_available_models(host)
+                _total_vram = gpu.get("vram_total_gb", 0) or 0
+                # Estimated model sizes (GB) for headroom check
+                _model_sizes = {"qwen3:8b": 7.0, "qwen3:4b": 3.0,
+                                "qwen3:1.7b": 1.5, "qwen3:0.6b": 0.5}
                 if vram_pct < cfg["vram_high"]:
-                    # VRAM OK — pick largest available tier (default → mid → low → crit)
+                    # VRAM OK — pick largest available tier that fits with headroom
+                    # On 8GB GPUs, qwen3:8b (~7GB) would fill 87% → instant downgrade.
+                    # Require at least 15% headroom (vram_high threshold) after loading.
+                    _avail_vram = _total_vram * (1.0 - vram_pct) if _total_vram > 0 else 99
                     for tier in tier_order:
                         if tier in available:
+                            _est_size = _model_sizes.get(tier, 4.0)
+                            # Check: will loading this model push us past vram_high?
+                            if _total_vram > 0 and _est_size > _avail_vram * 0.90:
+                                log.info(f"RECOVERY: skipping {tier} (~{_est_size}GB) — "
+                                         f"only {_avail_vram:.1f}GB available on {_total_vram:.0f}GB GPU")
+                                continue
                             target_model = tier
                             log.warning(f"RECOVERY: no model loaded, "
                                   f"recovering to {tier}")
@@ -1154,7 +1211,9 @@ def main():
                 # v0.050.03b: use strict > to prevent oscillation at exact boundary.
                 # At exactly vram_emergency (0.92), we stay on current model to avoid
                 # rapid scale-down/recover cycles when VRAM hovers at threshold.
-                if vram_pct > cfg["vram_emergency"]:
+                # Skip VRAM emergencies on unified memory / APU (Steam Deck, Mac, etc.)
+                # — OS manages shared memory, VRAM % is meaningless.
+                if vram_pct > cfg["vram_emergency"] and not _is_unified_memory:
                     if cfg["tier_crit"] in available_tier_models:
                         target_model = cfg["tier_crit"]
                     else:
@@ -1163,7 +1222,7 @@ def main():
                             log.warning(f"Tier 'crit' model {cfg['tier_crit']} not available, "
                                         f"falling back to {target_model}")
                     emergency = True
-                elif vram_pct > cfg["vram_high"]:
+                elif vram_pct > cfg["vram_high"] and not _is_unified_memory:
                     # Step down one tier from current — skip unavailable tiers
                     try:
                         idx = tier_order.index(current_model)

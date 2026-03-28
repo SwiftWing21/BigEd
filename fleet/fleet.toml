@@ -63,7 +63,7 @@ wake_word = ""                       # Empty = disabled. Set to "hey biged" etc.
 tts_enabled = false                  # Local text-to-speech responses
 
 [models]
-local = "qwen3:8b"
+local = "qwen3:0.6b"
 complex = "qwen3:8b"
 complex_provider = "local"    # DEPRECATED: superseded by [api_gate]. Kept for backwards compat.
 conductor_model = "qwen3:4b"  # CPU-pinned user chat model (num_gpu=0, ~2-3GB RAM, 0 VRAM)
@@ -146,6 +146,13 @@ high = 0.85                   # >85% → consider scaling down (only ~1.8GB free
 restore = 0.60                # <60% → operator can scale up via model-profile
 
 [models.tiers]
+# Model VRAM requirements (approximate):
+#   qwen3:8b   ~7GB  (needs 10GB+ VRAM for headroom — triggers downgrade on 8GB cards)
+#   qwen3:4b   ~3GB  (safe for 6-8GB GPUs like GTX 1070/1080)
+#   qwen3:1.7b ~1.5GB (safe for 4GB+ GPUs)
+#   qwen3:0.6b ~0.5GB (CPU failsafe, runs anywhere)
+# Dr. Ders auto-downgrades based on *available* VRAM, not total.
+# For 8GB GPUs: set default/mid to qwen3:4b to avoid instant pressure.
 default = "qwen3:8b"
 mid = "qwen3:8b"
 low = "qwen3:1.7b"
