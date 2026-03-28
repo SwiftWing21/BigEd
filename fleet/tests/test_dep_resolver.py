@@ -391,3 +391,37 @@ def test_prune_snapshots():
     remaining = list_snapshots(limit=100)
     ours = [s for s in remaining if s["label"].startswith("prune-test-")]
     assert len(ours) <= 2
+
+
+# ---------------------------------------------------------------------------
+# Task 9: modules_blueprint coordinator endpoints
+# ---------------------------------------------------------------------------
+
+
+def test_modules_blueprint_has_preview_endpoint():
+    """api_modules_preview_change is callable."""
+    sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+    from modules_blueprint import api_modules_preview_change
+    assert callable(api_modules_preview_change)
+
+
+def test_modules_blueprint_has_snapshot_endpoints():
+    """api_modules_snapshots and api_modules_snapshot_detail are callable."""
+    sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+    from modules_blueprint import api_modules_snapshots, api_modules_snapshot_detail
+    assert callable(api_modules_snapshots)
+    assert callable(api_modules_snapshot_detail)
+
+
+def test_modules_blueprint_has_rollback_endpoint():
+    """api_modules_rollback_preview is callable."""
+    sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+    from modules_blueprint import api_modules_rollback_preview
+    assert callable(api_modules_rollback_preview)
+
+
+def test_modules_blueprint_has_registry_endpoint():
+    """api_modules_registry is callable."""
+    sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+    from modules_blueprint import api_modules_registry
+    assert callable(api_modules_registry)
