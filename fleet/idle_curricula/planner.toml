@@ -53,3 +53,10 @@ type = "security_review"
 [tasks.payload]
 severity_min = "LOW"
 auto_fix = false
+
+# ── Module recommendations (daily) ───────────────────────────────────────────
+[[tasks]]
+type = "module_recommend"
+[tasks.payload]
+lookback_days = 7
+max_suggestions = 3
