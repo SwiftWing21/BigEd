@@ -534,3 +534,105 @@ def test_plan_status_includes_paused_and_directives():
     assert status["paused"] is True
     assert len(status["directives"]) == 1
     assert status["directives"][0]["text"] == "Focus on power"
+
+
+# --- Task: Experiment support (counters, template prompts, Ollama options) ---
+
+def test_brain_cumulative_counters():
+    from factorio.bridge_config import BridgeConfig
+    from factorio.world_model import WorldModel
+    from factorio.action_translator import TranslatedAction
+    from factorio.agent_brain import AgentBrain
+
+    cfg = BridgeConfig(current_phase=1)
+    wm = WorldModel()
+    brain = AgentBrain(cfg, wm, curricula_dir="tests/fixtures/curricula")
+
+    action = TranslatedAction("craft", "/biged-cmd {}", "Craft test")
+    brain.report_result(action, {"success": True})
+    brain.report_result(action, {"success": True})
+    brain.report_result(action, {"success": False, "error": "fail"})
+
+    assert brain.total_actions == 3
+    assert brain.total_successes == 2
+    assert brain.total_failures == 1
+
+
+def test_brain_reset_counters():
+    from factorio.bridge_config import BridgeConfig
+    from factorio.world_model import WorldModel
+    from factorio.action_translator import TranslatedAction
+    from factorio.agent_brain import AgentBrain
+
+    cfg = BridgeConfig(current_phase=1)
+    wm = WorldModel()
+    brain = AgentBrain(cfg, wm, curricula_dir="tests/fixtures/curricula")
+
+    action = TranslatedAction("craft", "/biged-cmd {}", "Craft test")
+    brain.report_result(action, {"success": True})
+    brain.reset_counters()
+    assert brain.total_actions == 0
+    assert brain.total_successes == 0
+    assert brain.total_failures == 0
+
+
+def test_brain_uses_prompt_template(tmp_path):
+    from factorio.bridge_config import BridgeConfig
+    from factorio.world_model import WorldModel
+    from factorio.state_parser import GameState
+    from factorio.agent_brain import AgentBrain
+
+    # Create a custom prompt template
+    prompts_dir = tmp_path / "prompts"
+    prompts_dir.mkdir()
+    (prompts_dir / "custom.toml").write_text('''
+[meta]
+name = "Custom"
+description = "Test"
+
+[templates]
+system_template = "CUSTOM SYSTEM"
+user_template = """State: {state}
+Objective: {objective}
+Results: {previous_results}"""
+''', encoding="utf-8")
+
+    cfg = BridgeConfig(current_phase=1, prompt_template="custom")
+    wm = WorldModel()
+    brain = AgentBrain(cfg, wm, curricula_dir="tests/fixtures/curricula",
+                       prompts_dir=str(prompts_dir))
+    state = GameState(tick=10)
+    system, user = brain._build_prompt(state)
+    assert system == "CUSTOM SYSTEM"
+    assert "State:" in user
+
+
+def test_generate_plan_passes_temperature():
+    import json
+    from unittest.mock import patch, MagicMock
+    from factorio.state_parser import GameState
+    from factorio.bridge_config import BridgeConfig
+    from factorio.world_model import WorldModel
+    from factorio.agent_brain import AgentBrain
+
+    cfg = BridgeConfig(current_phase=1, temperature=0.3, top_p=0.8)
+    wm = WorldModel()
+    brain = AgentBrain(cfg, wm, curricula_dir="tests/fixtures/curricula")
+
+    actions = '[{"action": "wait", "ticks": 60}]'
+    captured_body = {}
+
+    def capture_urlopen(req, timeout=None):
+        captured_body["data"] = json.loads(req.data)
+        body = json.dumps({"response": actions}).encode()
+        mock_resp = MagicMock()
+        mock_resp.read.return_value = body
+        mock_resp.__enter__ = lambda s: s
+        mock_resp.__exit__ = MagicMock(return_value=False)
+        return mock_resp
+
+    with patch("urllib.request.urlopen", side_effect=capture_urlopen):
+        brain._generate_plan(GameState(tick=10))
+
+    assert captured_body["data"]["options"]["temperature"] == 0.3
+    assert captured_body["data"]["options"]["top_p"] == 0.8

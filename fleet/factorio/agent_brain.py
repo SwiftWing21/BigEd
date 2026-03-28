@@ -14,6 +14,7 @@ from factorio.world_model import WorldModel, GameEvent
 from factorio.state_parser import GameState, state_to_markdown
 from factorio.action_translator import translate_action, TranslatedAction, KNOWN_ACTIONS
 from factorio.curriculum_manager import CurriculumManager
+from factorio.prompt_loader import load_prompt_template, render_prompt
 
 log = logging.getLogger("biged.factorio.brain")
 
@@ -90,13 +91,21 @@ class AgentBrain:
     """Plan-and-drain reasoning loop powered by local Ollama."""
 
     def __init__(self, config: BridgeConfig, world_model: WorldModel,
-                 curricula_dir: str | None = None):
+                 curricula_dir: str | None = None, prompts_dir: str | None = None):
         self.config = config
         self.world_model = world_model
         self.curriculum = CurriculumManager(
             current_phase=config.current_phase,
             curricula_dir=curricula_dir or "fleet/factorio/curricula",
         )
+        self._prompts_dir = prompts_dir or "fleet/factorio/prompts"
+        try:
+            self._prompt_template = load_prompt_template(
+                config.prompt_template, prompts_dir=self._prompts_dir)
+        except (FileNotFoundError, ValueError):
+            log.warning("Prompt template '%s' not found, using hardcoded fallback",
+                        config.prompt_template)
+            self._prompt_template = None
         self._plan: list[dict] = []
         self._plan_index: int = 0
         self._consecutive_failures: int = 0
@@ -104,6 +113,10 @@ class AgentBrain:
         self._last_results: list[dict] = []
         self._ollama_cooldown_until: float = 0.0
         self._plan_count: int = 0
+        # Cumulative counters for experiment scoring
+        self.total_actions: int = 0
+        self.total_successes: int = 0
+        self.total_failures: int = 0
         self._lock = threading.Lock()
         self._paused: bool = False
         self._directives: list = []
@@ -206,14 +219,48 @@ class AgentBrain:
         objective = self.curriculum.get_current_objective()
         state_md = state_to_markdown(state)
 
+        # Build objective text
+        obj_text = (
+            f"Phase {objective.get('phase', '?')}: {objective.get('phase_name', '')}\n"
+            f"Lesson: {objective.get('lesson_name', '?')} — {objective.get('description', '')}\n"
+            f"Success criteria: {objective.get('criteria', '?')}\n"
+            f"Hint: {objective.get('hint', '')}"
+        )
+
+        # Build previous results text
+        if self._last_results:
+            result_lines = []
+            for r in self._last_results:
+                status = "OK" if r.get("success") else "FAIL"
+                desc = r.get("description", r.get("action", "?"))
+                err = f" — {r.get('error', '')}" if r.get("error") else ""
+                result_lines.append(f"- [{status}] {desc}{err}")
+            results_text = "\n".join(result_lines)
+        else:
+            results_text = "First plan — no previous results."
+
+        with self._lock:
+            active_directives = list(self._directives)
+
+        # Use template if available, else fall back to hardcoded
+        if self._prompt_template:
+            system, user = render_prompt(self._prompt_template,
+                                         state=state_md, objective=obj_text,
+                                         previous_results=results_text)
+            # Inject directives (templates don't include a {directives} slot)
+            if active_directives:
+                directive_lines = ["# Human Directives (PRIORITY — follow these)"]
+                for d in active_directives:
+                    directive_lines.append(f"- {d.text}")
+                user = "\n".join(directive_lines) + "\n\n" + user
+            return system, user
+
+        # Fallback: original hardcoded format (with directive support)
         lines = [
             "# Current Factory State",
             state_md,
             "",
         ]
-
-        with self._lock:
-            active_directives = list(self._directives)
 
         if active_directives:
             lines.append("# Human Directives (PRIORITY — follow these)")
@@ -223,26 +270,13 @@ class AgentBrain:
 
         lines += [
             "# Current Objective",
-            f"Phase {objective.get('phase', '?')}: {objective.get('phase_name', '')}",
-            f"Lesson: {objective.get('lesson_name', '?')} — {objective.get('description', '')}",
-            f"Success criteria: {objective.get('criteria', '?')}",
-            f"Hint: {objective.get('hint', '')}",
+            obj_text,
             "",
             "# Previous Plan Results",
+            results_text,
+            "",
+            "Generate 5-20 actions to work toward the objective.",
         ]
-
-        if self._last_results:
-            for r in self._last_results:
-                status = "OK" if r.get("success") else "FAIL"
-                desc = r.get("description", r.get("action", "?"))
-                err = f" — {r.get('error', '')}" if r.get("error") else ""
-                lines.append(f"- [{status}] {desc}{err}")
-        else:
-            lines.append("First plan — no previous results.")
-
-        lines.append("")
-        lines.append("Generate 5-20 actions to work toward the objective.")
-
         return SYSTEM_PROMPT, "\n".join(lines)
 
     def _generate_plan(self, state: GameState) -> list[dict]:
@@ -253,12 +287,22 @@ class AgentBrain:
 
         system_prompt, user_prompt = self._build_prompt(state)
 
-        body = json.dumps({
+        body_dict = {
             "model": self.config.ollama_model,
             "prompt": user_prompt,
             "system": system_prompt,
             "stream": False,
-        }).encode("utf-8")
+        }
+        # Add temperature/top_p if configured
+        options = {}
+        if self.config.temperature is not None:
+            options["temperature"] = self.config.temperature
+        if self.config.top_p is not None:
+            options["top_p"] = self.config.top_p
+        if options:
+            body_dict["options"] = options
+
+        body = json.dumps(body_dict).encode("utf-8")
 
         req = urllib.request.Request(
             f"{self.config.ollama_url}/api/generate",
@@ -349,7 +393,7 @@ class AgentBrain:
         # Soft re-plan: idle_assemblers counter tracked across ticks, not per-event
         if has_idle:
             self._idle_assembler_count += 1
-            if self._idle_assembler_count >= 3:
+            if self._idle_assembler_count >= self.config.idle_assembler_replan:
                 log.info("Soft re-plan: %d consecutive idle_assemblers ticks", self._idle_assembler_count)
                 self._plan = []
                 self._plan_index = 0
@@ -380,6 +424,7 @@ class AgentBrain:
 
     def report_result(self, action: TranslatedAction, result: dict) -> None:
         """Track action result. Invalidate plan on consecutive failures."""
+        self.total_actions += 1
         result_record = {
             "action": action.action_type,
             "description": action.description,
@@ -390,8 +435,10 @@ class AgentBrain:
         self._last_results.append(result_record)
 
         if result.get("success"):
+            self.total_successes += 1
             self._consecutive_failures = 0
         else:
+            self.total_failures += 1
             self._consecutive_failures += 1
             if self._consecutive_failures >= self.config.plan_invalidation_failures:
                 log.warning("Plan invalidated: %d consecutive failures", self._consecutive_failures)
@@ -426,3 +473,9 @@ class AgentBrain:
             "paused": self._paused,
             "directives": directives_snapshot,
         }
+
+    def reset_counters(self) -> None:
+        """Reset cumulative counters for experiment runner."""
+        self.total_actions = 0
+        self.total_successes = 0
+        self.total_failures = 0
