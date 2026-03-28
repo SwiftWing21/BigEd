@@ -1,0 +1,32 @@
+[meta]
+phase = 2
+name = "Automate Smelting"
+description = "Build power chain, electric miners, belt-fed smelting line"
+
+[[lessons]]
+name = "Build power chain"
+description = "Place offshore-pump, boiler, and steam-engine"
+criteria = "entities.offshore-pump >= 1 AND entities.boiler >= 1 AND entities.steam-engine >= 1"
+hint = "offshore-pump produces water -> pipe to boiler (needs coal) -> steam-engine generates power. Connect with small-electric-pole."
+max_attempts = 40
+
+[[lessons]]
+name = "Place electric mining drills"
+description = "Place at least 2 electric mining drills on ore"
+criteria = "entities.electric-mining-drill >= 2"
+hint = "Place electric-mining-drill on top of iron-ore or copper-ore patches. Needs power."
+max_attempts = 30
+
+[[lessons]]
+name = "Build belt infrastructure"
+description = "Place at least 10 transport belts"
+criteria = "entities.transport-belt >= 10"
+hint = "Use connect action to lay belts from miners to furnaces. Belt direction matters."
+max_attempts = 40
+
+[[lessons]]
+name = "Automate with inserters"
+description = "Place at least 4 inserters for loading/unloading"
+criteria = "entities.inserter >= 4"
+hint = "Inserters pick from BEHIND, drop in FRONT. Place between belt and furnace."
+max_attempts = 40

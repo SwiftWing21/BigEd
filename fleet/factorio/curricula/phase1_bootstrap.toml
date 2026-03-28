@@ -1,0 +1,25 @@
+[meta]
+phase = 1
+name = "Bootstrap"
+description = "Hand-craft basics, place first furnaces, establish smelting"
+
+[[lessons]]
+name = "Craft iron gear wheels"
+description = "Craft 10 iron gear wheels from starting inventory"
+criteria = "inventory.iron-gear-wheel >= 10"
+hint = "Use craft action: recipe=iron-gear-wheel, count=10. Requires 20 iron plates."
+max_attempts = 20
+
+[[lessons]]
+name = "Place stone furnaces"
+description = "Place at least 3 stone furnaces"
+criteria = "entities.stone-furnace >= 3"
+hint = "Place stone-furnace at integer positions near iron ore patches. Craft more if needed."
+max_attempts = 30
+
+[[lessons]]
+name = "Smelt iron plates"
+description = "Accumulate 50 iron plates in inventory"
+criteria = "inventory.iron-plate >= 50"
+hint = "Furnaces smelt ore into plates. Feed iron-ore into furnaces manually or wait for output."
+max_attempts = 50

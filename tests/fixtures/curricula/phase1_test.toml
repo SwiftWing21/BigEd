@@ -1,0 +1,11 @@
+[meta]
+phase = 1
+name = "Test Bootstrap"
+description = "Test phase"
+
+[[lessons]]
+name = "Test lesson"
+description = "Test description"
+criteria = "inventory.iron-plate >= 10"
+hint = "Test hint"
+max_attempts = 5

@@ -1,0 +1,32 @@
+[meta]
+phase = 3
+name = "First Science"
+description = "Build assemblers, produce red science packs, start research"
+
+[[lessons]]
+name = "Place assembling machines"
+description = "Place at least 2 assembling-machine-1"
+criteria = "entities.assembling-machine-1 >= 2"
+hint = "assembling-machine-1 is 3x3. Place with room for inserters. Set recipe after placing."
+max_attempts = 30
+
+[[lessons]]
+name = "Produce iron gear wheels automatically"
+description = "Accumulate 20 iron gear wheels via assembler production"
+criteria = "inventory.iron-gear-wheel >= 20"
+hint = "Set recipe=iron-gear-wheel on an assembler, feed iron plates via inserter. Wait for output."
+max_attempts = 40
+
+[[lessons]]
+name = "Produce automation science packs"
+description = "Accumulate 10 automation science packs"
+criteria = "inventory.automation-science-pack >= 10"
+hint = "automation-science-pack needs iron-gear-wheel + copper-plate. Set recipe on an assembler, feed ingredients via inserters."
+max_attempts = 60
+
+[[lessons]]
+name = "Start research"
+description = "Place a lab and begin researching automation"
+criteria = "entities.lab >= 1"
+hint = "Place a lab, feed science packs via inserter, then research technology=automation."
+max_attempts = 40
