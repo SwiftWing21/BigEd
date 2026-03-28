@@ -1880,8 +1880,13 @@ textarea.input {
   <div class="section-header">
     <div class="section-title">Factorio Sandbox</div>
     <div class="section-desc">Train AI agents in Factorio through curriculum-based progression</div>
-    <div style="margin-left:auto;display:flex;gap:8px;">
+    <div style="margin-left:auto;display:flex;gap:8px;align-items:center;">
       <button class="btn btn-sm btn-outline" onclick="loadFactorio()">&#8635; Refresh</button>
+      <button id="factorio-pause-btn" class="btn btn-sm" onclick="toggleFactorioPause()" style="margin-left:8px;">
+        <span id="factorio-pause-icon">&#9654;</span> <span id="factorio-pause-text">Running</span>
+      </button>
+      <span id="factorio-brain-status" style="font-size:12px;color:var(--muted);margin-left:12px;">--</span>
+      <span id="factorio-directive-badge" style="font-size:11px;color:var(--accent);margin-left:8px;display:none;"></span>
     </div>
   </div>
 
@@ -1933,7 +1938,45 @@ textarea.input {
     </div>
   </div>
 
-  <div class="card" style="margin-bottom:16px;">
+  <!-- Directives Panel -->
+  <div class="card" style="margin-top:16px;">
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
+      <h3 style="margin:0;font-size:14px;">Directives</h3>
+    </div>
+    <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px;" id="factorio-presets"></div>
+    <div style="display:flex;gap:6px;align-items:center;margin-bottom:8px;">
+      <input type="text" id="factorio-directive-input" class="input" placeholder="Type directive..." style="flex:1">
+      <select id="factorio-directive-mode" class="input" style="width:auto">
+        <option value="1">1 plan</option>
+        <option value="3">3 plans</option>
+        <option value="5">5 plans</option>
+        <option value="sticky">Sticky</option>
+      </select>
+      <button class="btn btn-sm btn-primary" onclick="sendFactorioDirectiveFromInput()">Send</button>
+    </div>
+    <div id="factorio-active-directives"></div>
+  </div>
+
+  <!-- Action Builder -->
+  <details class="card" style="margin-top:16px;">
+    <summary style="cursor:pointer;font-size:14px;font-weight:600;">Action Builder</summary>
+    <div style="margin-top:8px;">
+      <select id="factorio-action-type" class="input" style="width:auto;margin-bottom:8px;" onchange="updateFactorioActionFields()">
+        <option value="place">Place</option>
+        <option value="craft">Craft</option>
+        <option value="research">Research</option>
+        <option value="move">Move</option>
+        <option value="remove">Remove</option>
+        <option value="set_recipe">Set Recipe</option>
+        <option value="connect">Connect Belt</option>
+      </select>
+      <div id="factorio-action-fields" style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:8px;"></div>
+      <button class="btn btn-sm btn-primary" onclick="sendFactorioAction()">Execute</button>
+      <span id="factorio-action-result" style="font-size:12px;color:var(--muted);margin-left:8px;"></span>
+    </div>
+  </details>
+
+  <div class="card" style="margin-bottom:16px;margin-top:16px;">
     <div class="card-title">Game State</div>
     <div id="factorio-state" style="font-family:var(--font-mono);font-size:12px;white-space:pre-wrap;max-height:400px;overflow-y:auto;color:var(--muted);padding:8px;">
       Waiting for bridge connection...
@@ -7701,6 +7744,17 @@ function loadFactorio() {
       document.getElementById('factorio-bridge-detail').textContent = 'Bridge not reachable';
       document.getElementById('factorio-state').textContent = 'Bridge not running. Start with:\n  python fleet/factorio/setup_and_launch.py';
     });
+  _loadFactorioDirectives();
+  _loadFactorioPresets();
+  updateFactorioActionFields();
+  _factorioApi('GET', '/api/plan').then(function(d) {
+    _factorioPaused = d.paused || false;
+    _updatePauseButton();
+    var brainEl = document.getElementById('factorio-brain-status');
+    if (_factorioPaused) brainEl.textContent = 'Paused';
+    else if (d.plan && d.plan.length > 0) brainEl.textContent = 'Step ' + d.plan_index + '/' + d.plan.length;
+    else brainEl.textContent = 'Idle';
+  }).catch(function() {});
 }
 
 function setFactorioCadence(mode) {
@@ -7728,6 +7782,198 @@ function launchFactorioSpectator() {
       statusEl.textContent = 'Failed — launch manually: factorio.exe --mp-connect localhost:27015';
       statusEl.style.color = 'var(--destructive)';
     });
+}
+
+/* ── Factorio Takeover Controls ───────────────────────────────────────────── */
+
+var _factorioPaused = false;
+var _factorioBridgePort = 27016;
+
+function _factorioApi(method, path, body) {
+  var opts = { method: method };
+  if (body) {
+    opts.headers = {'Content-Type': 'application/json'};
+    opts.body = JSON.stringify(body);
+  }
+  return fetch('http://127.0.0.1:' + _factorioBridgePort + path, opts)
+    .then(function(r) { return r.json(); });
+}
+
+function toggleFactorioPause() {
+  var endpoint = _factorioPaused ? '/api/resume' : '/api/pause';
+  _factorioApi('POST', endpoint).then(function(d) {
+    _factorioPaused = d.paused;
+    _updatePauseButton();
+  }).catch(function(e) { console.error('Pause toggle failed:', e); });
+}
+
+function _updatePauseButton() {
+  var btn = document.getElementById('factorio-pause-btn');
+  var icon = document.getElementById('factorio-pause-icon');
+  var text = document.getElementById('factorio-pause-text');
+  if (_factorioPaused) {
+    btn.style.background = 'var(--warning)'; btn.style.color = '#000';
+    icon.textContent = '\u23F8'; text.textContent = 'Paused';
+  } else {
+    btn.style.background = ''; btn.style.color = '';
+    icon.textContent = '\u25B6'; text.textContent = 'Running';
+  }
+}
+
+function sendFactorioDirectiveFromInput() {
+  var input = document.getElementById('factorio-directive-input');
+  var mode = document.getElementById('factorio-directive-mode').value;
+  var text = input.value.trim();
+  if (!text) return;
+  var sticky = mode === 'sticky';
+  var plans = sticky ? 1 : parseInt(mode);
+  _factorioApi('POST', '/api/directive', {text: text, sticky: sticky, plans: plans})
+    .then(function() { input.value = ''; _loadFactorioDirectives(); });
+}
+
+function sendFactorioDirective(text, sticky, plans) {
+  _factorioApi('POST', '/api/directive', {text: text, sticky: sticky, plans: plans})
+    .then(function() { _loadFactorioDirectives(); });
+}
+
+function removeFactorioDirective(id) {
+  _factorioApi('DELETE', '/api/directive/' + id)
+    .then(function() { _loadFactorioDirectives(); });
+}
+
+function _loadFactorioDirectives() {
+  _factorioApi('GET', '/api/directives').then(function(directives) {
+    var el = document.getElementById('factorio-active-directives');
+    var badge = document.getElementById('factorio-directive-badge');
+    el.textContent = '';
+    if (!directives || !directives.length) {
+      var empty = document.createElement('div');
+      empty.style.cssText = 'font-size:12px;color:var(--muted);';
+      empty.textContent = 'No active directives';
+      el.appendChild(empty);
+      badge.style.display = 'none';
+      return;
+    }
+    badge.style.display = 'inline';
+    badge.textContent = '(' + directives.length + ' directives)';
+    directives.forEach(function(d) {
+      var row = document.createElement('div');
+      row.style.cssText = 'display:flex;align-items:center;gap:8px;padding:4px 0;font-size:12px;';
+      var tag = document.createElement('span');
+      tag.style.color = 'var(--accent)';
+      tag.textContent = '[' + (d.sticky ? 'sticky' : d.plans_remaining + ' plans') + ']';
+      var txt = document.createElement('span');
+      txt.textContent = d.text;
+      var btn = document.createElement('button');
+      btn.className = 'btn btn-sm';
+      btn.style.cssText = 'padding:0 4px;font-size:10px;';
+      btn.textContent = '\u2715';
+      btn.onclick = function() { removeFactorioDirective(d.id); };
+      row.appendChild(tag);
+      row.appendChild(txt);
+      row.appendChild(btn);
+      el.appendChild(row);
+    });
+  }).catch(function() {});
+}
+
+function _loadFactorioPresets() {
+  _factorioApi('GET', '/api/presets').then(function(presets) {
+    var el = document.getElementById('factorio-presets');
+    el.textContent = '';
+    presets.forEach(function(p) {
+      var btn = document.createElement('button');
+      btn.className = 'btn btn-sm btn-outline';
+      btn.textContent = p.label;
+      btn.onclick = function() { sendFactorioDirective(p.text, p.sticky, p.plans); };
+      el.appendChild(btn);
+    });
+  }).catch(function() {});
+}
+
+function updateFactorioActionFields() {
+  var type = document.getElementById('factorio-action-type').value;
+  var el = document.getElementById('factorio-action-fields');
+  el.textContent = '';
+
+  function addField(id, label, fieldType, defaultVal, width) {
+    if (label) {
+      var lbl = document.createElement('span');
+      lbl.style.fontSize = '12px';
+      lbl.textContent = label;
+      el.appendChild(lbl);
+    }
+    var inp = document.createElement('input');
+    inp.className = 'input';
+    inp.id = id;
+    inp.type = fieldType || 'text';
+    if (defaultVal !== undefined) inp.value = defaultVal;
+    inp.style.width = width || '80px';
+    el.appendChild(inp);
+  }
+
+  function addSelect(id, options, width) {
+    var sel = document.createElement('select');
+    sel.className = 'input';
+    sel.id = id;
+    sel.style.width = width || 'auto';
+    options.forEach(function(o) {
+      var opt = document.createElement('option');
+      opt.value = o; opt.textContent = o;
+      sel.appendChild(opt);
+    });
+    el.appendChild(sel);
+  }
+
+  if (type === 'place') {
+    addField('fa-entity', '', 'text', '', '140px');
+    document.getElementById('fa-entity').placeholder = 'Entity name';
+    addField('fa-x', 'X:', 'number', 0, '60px');
+    addField('fa-y', 'Y:', 'number', 0, '60px');
+    addSelect('fa-dir', ['north', 'east', 'south', 'west']);
+  } else if (type === 'craft') {
+    addField('fa-recipe', '', 'text', '', '140px');
+    document.getElementById('fa-recipe').placeholder = 'Recipe';
+    addField('fa-count', 'Count:', 'number', 1, '60px');
+  } else if (type === 'research') {
+    addField('fa-tech', '', 'text', '', '180px');
+    document.getElementById('fa-tech').placeholder = 'Technology';
+  } else if (type === 'move') {
+    addField('fa-x', 'X:', 'number', 0, '60px');
+    addField('fa-y', 'Y:', 'number', 0, '60px');
+  } else if (type === 'remove') {
+    addField('fa-unit', 'Unit#:', 'number', '', '80px');
+  } else if (type === 'set_recipe') {
+    addField('fa-unit', 'Unit#:', 'number', '', '80px');
+    addField('fa-recipe', 'Recipe:', 'text', '', '140px');
+  } else if (type === 'connect') {
+    addField('fa-entity', '', 'text', 'transport-belt', '120px');
+    addField('fa-fx', 'From X:', 'number', 0, '50px');
+    addField('fa-fy', 'Y:', 'number', 0, '50px');
+    addField('fa-tx', 'To X:', 'number', 0, '50px');
+    addField('fa-ty', 'Y:', 'number', 0, '50px');
+  }
+}
+
+function sendFactorioAction() {
+  var type = document.getElementById('factorio-action-type').value;
+  var action = {action: type};
+  function v(id) { var e = document.getElementById(id); return e ? e.value : ''; }
+  function n(id) { var e = document.getElementById(id); return e ? (parseInt(e.value) || 0) : 0; }
+
+  if (type === 'place') { action.entity = v('fa-entity'); action.position = {x: n('fa-x'), y: n('fa-y')}; action.direction = v('fa-dir'); }
+  else if (type === 'craft') { action.recipe = v('fa-recipe'); action.count = n('fa-count'); }
+  else if (type === 'research') { action.technology = v('fa-tech'); }
+  else if (type === 'move') { action.position = {x: n('fa-x'), y: n('fa-y')}; }
+  else if (type === 'remove') { action.unit_number = n('fa-unit'); }
+  else if (type === 'set_recipe') { action.unit_number = n('fa-unit'); action.recipe = v('fa-recipe'); }
+  else if (type === 'connect') { action.entity = v('fa-entity'); action.from = {x: n('fa-fx'), y: n('fa-fy')}; action.to = {x: n('fa-tx'), y: n('fa-ty')}; }
+
+  var resultEl = document.getElementById('factorio-action-result');
+  resultEl.textContent = 'Sending...';
+  _factorioApi('POST', '/api/command', {actions: [action]})
+    .then(function(d) { resultEl.textContent = 'Queued: ' + (d.command_id || 'ok'); })
+    .catch(function(e) { resultEl.textContent = 'Error: ' + e; });
 }
 
 /* ── Init: populate header dropdown + check walkthrough on load ───────────── */

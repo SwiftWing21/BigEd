@@ -1270,6 +1270,32 @@ def api_factorio_spectator():
         return jsonify({"success": False, "error": str(e)})
 
 
+@app.route("/api/factorio/pause", methods=["POST"])
+def api_factorio_pause():
+    """Proxy pause request to Factorio bridge."""
+    try:
+        port = load_config().get("factorio", {}).get("bridge_port", 27016)
+        req = urllib.request.Request(f"http://127.0.0.1:{port}/api/pause", method="POST")
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            return jsonify(json.loads(resp.read()))
+    except Exception as e:
+        log.warning("Factorio pause failed: %s", e)
+        return jsonify({"error": str(e)}), 502
+
+
+@app.route("/api/factorio/resume", methods=["POST"])
+def api_factorio_resume():
+    """Proxy resume request to Factorio bridge."""
+    try:
+        port = load_config().get("factorio", {}).get("bridge_port", 27016)
+        req = urllib.request.Request(f"http://127.0.0.1:{port}/api/resume", method="POST")
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            return jsonify(json.loads(resp.read()))
+    except Exception as e:
+        log.warning("Factorio resume failed: %s", e)
+        return jsonify({"error": str(e)}), 502
+
+
 @app.route("/api/modules/legacy")
 def api_modules_legacy():
     """Enabled modules, versions, deprecation status (legacy manifest reader)."""
