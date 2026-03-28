@@ -48,6 +48,10 @@ class BridgeConfig:
     plan_max_actions: int = 20
     plan_invalidation_failures: int = 3
     ollama_cooldown_secs: int = 30
+    prompt_template: str = "baseline"
+    temperature: float | None = None
+    top_p: float | None = None
+    idle_assembler_replan: int = 3
 
     @classmethod
     def from_dict(cls, d: dict) -> "BridgeConfig":

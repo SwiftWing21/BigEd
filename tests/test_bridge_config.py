@@ -67,3 +67,31 @@ def test_ollama_config_from_dict():
     assert cfg.ollama_timeout == 45
     assert cfg.plan_max_actions == 10
     assert cfg.ollama_url == "http://localhost:11434"  # default kept
+
+
+# --- New experiment config fields ---
+
+def test_new_fields_have_defaults():
+    from factorio.bridge_config import BridgeConfig
+    cfg = BridgeConfig()
+    assert cfg.prompt_template == "baseline"
+    assert cfg.temperature is None
+    assert cfg.top_p is None
+    assert cfg.idle_assembler_replan == 3
+
+
+def test_from_dict_picks_up_new_fields():
+    from factorio.bridge_config import BridgeConfig
+    d = {"prompt_template": "compact_v1", "temperature": 0.7, "top_p": 0.9, "idle_assembler_replan": 5}
+    cfg = BridgeConfig.from_dict(d)
+    assert cfg.prompt_template == "compact_v1"
+    assert cfg.temperature == 0.7
+    assert cfg.top_p == 0.9
+    assert cfg.idle_assembler_replan == 5
+
+
+def test_from_dict_ignores_unknown():
+    from factorio.bridge_config import BridgeConfig
+    d = {"prompt_template": "baseline", "bogus_field": 42}
+    cfg = BridgeConfig.from_dict(d)
+    assert cfg.prompt_template == "baseline"
