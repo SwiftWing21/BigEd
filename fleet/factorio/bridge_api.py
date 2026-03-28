@@ -134,6 +134,89 @@ def create_api(world_model, command_queue, brain=None) -> Flask:
         removed = _brain.remove_preset(preset_id)
         return jsonify({"removed": removed})
 
+    @app.route("/api/plan/submit", methods=["POST"])
+    def plan_submit():
+        data = request.get_json(force=True)
+        required = ["actions", "priority", "source", "source_type", "rationale", "confidence"]
+        missing = [f for f in required if f not in data]
+        if missing:
+            return jsonify({"error": f"Missing fields: {missing}"}), 400
+        try:
+            from factorio.agent_brain import PlanSubmission
+            ps = PlanSubmission(
+                actions=data["actions"],
+                priority=int(data["priority"]),
+                source=str(data["source"]),
+                source_type=str(data["source_type"]),
+                rationale=str(data["rationale"]),
+                confidence=float(data["confidence"]),
+            )
+        except (ValueError, TypeError) as e:
+            return jsonify({"error": str(e)}), 400
+        result = _brain.submit_plan(ps)
+        status_code = 200 if result["status"] != "rejected" else 409
+        return jsonify(result), status_code
+
+    @app.route("/api/plan/queue", methods=["GET"])
+    def plan_queue():
+        with _brain._lock:
+            current = None
+            if _brain._plan:
+                current = {
+                    "actions": _brain._plan,
+                    "index": _brain._plan_index,
+                    "total": len(_brain._plan),
+                    "priority": _brain._current_priority,
+                }
+            queued = []
+            for neg_pri, seq, ps in sorted(_brain._plan_queue):
+                queued.append({
+                    "plan_id": ps.plan_id,
+                    "actions": ps.actions,
+                    "priority": ps.priority,
+                    "source": ps.source,
+                    "source_type": ps.source_type,
+                    "rationale": ps.rationale,
+                    "confidence": ps.confidence,
+                })
+            shelved = None
+            if _brain._shelved_plan:
+                sp = _brain._shelved_plan
+                shelved = {"plan_id": sp.plan_id, "actions": sp.actions,
+                           "priority": sp.priority}
+        return jsonify({"current": current, "queued": queued, "shelved": shelved})
+
+    @app.route("/api/plan/history", methods=["GET"])
+    def plan_history():
+        with _brain._lock:
+            history = list(_brain._plan_history)
+        return jsonify({"history": history})
+
+    @app.route("/api/directive/submit", methods=["POST"])
+    def directive_submit():
+        data = request.get_json(force=True)
+        text = data.get("text", "")
+        if not text:
+            return jsonify({"error": "Missing 'text' field"}), 400
+        d_id = _brain.add_directive(
+            text=text,
+            sticky=data.get("sticky", False),
+            plans=data.get("max_plans", 3),
+            priority=data.get("priority", 50),
+            source=data.get("source", "worker"),
+        )
+        return jsonify({"id": d_id, "status": "accepted"})
+
+    @app.route("/api/focus", methods=["GET"])
+    def focus_state():
+        import os, json
+        focus_file = os.path.join(os.path.dirname(__file__), '..', '.factorio_focus.json')
+        try:
+            with open(focus_file) as f:
+                return jsonify(json.load(f))
+        except (FileNotFoundError, json.JSONDecodeError):
+            return jsonify({"on": False, "workers": []})
+
     return app
 
 
