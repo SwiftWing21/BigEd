@@ -1284,9 +1284,6 @@ textarea.input {
     <button class="nav-item" data-section="fleet" onclick="showSection('fleet')">
       <span class="nav-icon">&#9881;</span> Fleet
     </button>
-    <button class="nav-item" data-section="pipeline" onclick="showSection('pipeline')">
-      <span class="nav-icon">&#8644;</span> Pipeline
-    </button>
     <button class="nav-item" data-section="ingest" onclick="showSection('ingest')">
       <span class="nav-icon">&#128229;</span> Ingest
     </button>
@@ -1525,6 +1522,43 @@ textarea.input {
     <div class="section-title">Fleet Status</div>
     <div class="section-desc">Monitor and manage individual agents</div>
   </div>
+
+  <!-- Service Controls: Cosmo Bot + Dr. Ders -->
+  <div style="display:flex;gap:16px;margin-bottom:16px;flex-wrap:wrap">
+    <div class="card" style="flex:1;min-width:260px;margin:0">
+      <div class="card-header" style="padding:12px 16px">
+        <div style="display:flex;align-items:center;gap:8px">
+          <span style="font-size:18px">🤖</span>
+          <div>
+            <span class="card-title" style="font-size:14px">Cosmo Bot</span>
+            <div style="font-size:11px;color:var(--muted-foreground)">Supervisor</div>
+          </div>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px">
+          <span id="cosmo-status" class="badge badge-muted" style="font-size:11px">--</span>
+          <span id="cosmo-uptime" style="font-size:11px;color:var(--muted-foreground)"></span>
+          <button class="btn btn-ghost btn-sm" onclick="restartService('cosmo_bot')" title="Restart Cosmo Bot" style="padding:4px 8px;font-size:12px">&#8635; Restart</button>
+        </div>
+      </div>
+    </div>
+    <div class="card" style="flex:1;min-width:260px;margin:0">
+      <div class="card-header" style="padding:12px 16px">
+        <div style="display:flex;align-items:center;gap:8px">
+          <span style="font-size:18px">🩺</span>
+          <div>
+            <span class="card-title" style="font-size:14px">Dr. Ders</span>
+            <div style="font-size:11px;color:var(--muted-foreground)">Hardware Supervisor</div>
+          </div>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px">
+          <span id="ders-status" class="badge badge-muted" style="font-size:11px">--</span>
+          <span id="ders-uptime" style="font-size:11px;color:var(--muted-foreground)"></span>
+          <button class="btn btn-ghost btn-sm" onclick="restartService('dr_ders')" title="Restart Dr. Ders" style="padding:4px 8px;font-size:12px">&#8635; Restart</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <div class="card">
     <div class="card-header">
       <span class="card-title">Agent Roster</span>
@@ -1551,62 +1585,6 @@ textarea.input {
   </div>
 </div>
 
-<!-- ═══════════════════════════════════════════════════════════════════════
-     3. PIPELINE
-     ═══════════════════════════════════════════════════════════════════ -->
-<div id="section-pipeline" class="section">
-  <div class="section-header">
-    <div class="section-title">Pipeline</div>
-    <div class="section-desc">Task flow, agent activity, and knowledge graph</div>
-  </div>
-
-  <!-- Task Flow + Kanban (side by side) -->
-  <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px;">
-    <div class="card">
-      <div class="card-header"><span class="card-title">Task Flow</span></div>
-      <div class="lane-graph" id="lane-graph-container">
-        <div class="spinner"></div>
-      </div>
-    </div>
-    <div class="card">
-      <div class="card-header"><span class="card-title">Kanban</span></div>
-      <div class="kanban" id="kanban-container" style="flex-wrap:nowrap;overflow-x:auto;">
-        <div class="spinner"></div>
-      </div>
-    </div>
-  </div>
-
-  <!-- Swimlane / Agent Timeline -->
-  <div class="card" style="margin-bottom:16px;">
-    <div class="card-header"><span class="card-title">Agent Timeline</span></div>
-    <div class="swimlane" id="swimlane-container">
-      <div class="spinner"></div>
-    </div>
-  </div>
-
-  <!-- Knowledge / Neural Graph -->
-  <div class="card">
-    <div class="card-header">
-      <span class="card-title">Knowledge Graph</span>
-      <select id="graph-layout-select" class="btn btn-ghost btn-sm" style="appearance:auto;padding:2px 6px;font-size:12px;cursor:pointer" onchange="switchGraphLayout(this.value)">
-        <option value="fractal-brain" selected>Fractal Brain</option>
-        <option value="fcose">fCoSE</option>
-        <option value="concentric">Concentric</option>
-      </select>
-      <button class="btn btn-ghost btn-sm" onclick="loadNeuralGraph()">&#8635; Refresh</button>
-    </div>
-    <div id="cytoscape-container"></div>
-    <div id="neural-graph-legend" class="chart-legend" style="padding:8px 0 0">
-      <span class="chart-legend-item"><span class="chart-legend-dot" style="background:#10b981"></span> Agent</span>
-      <span class="chart-legend-item"><span class="chart-legend-dot" style="background:#f59e0b"></span> Skill</span>
-      <span class="chart-legend-item"><span class="chart-legend-dot" style="background:#3b82f6"></span> Task</span>
-      <span class="chart-legend-item"><span class="chart-legend-dot" style="background:#a78bfa"></span> Model</span>
-      <span class="chart-legend-item"><span class="chart-legend-dot" style="background:#4fc3f7"></span> Folder</span>
-      <span class="chart-legend-item"><span class="chart-legend-dot" style="background:#ec4899"></span> Channel</span>
-      <span class="chart-legend-item"><span class="chart-legend-dot" style="background:#64748b"></span> Config</span>
-    </div>
-  </div>
-</div>
 
 <!-- ═══════════════════════════════════════════════════════════════════════
      4. TASKS
@@ -1706,7 +1684,23 @@ textarea.input {
 <div id="section-analytics" class="section">
   <div class="section-header">
     <div class="section-title">Analytics</div>
-    <div class="section-desc">Token usage, task trends, and performance metrics</div>
+    <div class="section-desc">Task flow, agent activity, performance metrics, and knowledge graph</div>
+  </div>
+
+  <!-- Task Flow -->
+  <div class="card" style="margin-bottom:16px;">
+    <div class="card-header"><span class="card-title">Task Flow</span></div>
+    <div class="lane-graph" id="lane-graph-container">
+      <div class="spinner"></div>
+    </div>
+  </div>
+
+  <!-- Swimlane / Agent Timeline -->
+  <div class="card" style="margin-bottom:16px;">
+    <div class="card-header"><span class="card-title">Agent Timeline</span></div>
+    <div class="swimlane" id="swimlane-container">
+      <div class="spinner"></div>
+    </div>
   </div>
 
   <div class="grid-2 mb-24">
@@ -1770,6 +1764,37 @@ textarea.input {
         <span class="card-title">Model Utilization</span>
       </div>
       <div class="chart-wrap"><canvas id="chart-model-util"></canvas></div>
+    </div>
+  </div>
+
+  <!-- Knowledge / Neural Graph -->
+  <div class="card">
+    <div class="card-header">
+      <span class="card-title">Knowledge Graph</span>
+      <select id="graph-layout-select" class="btn btn-ghost btn-sm" style="appearance:auto;padding:2px 6px;font-size:12px;cursor:pointer" onchange="switchGraphLayout(this.value)">
+        <option value="fractal-brain" selected>Fractal Brain</option>
+        <option value="fcose">fCoSE</option>
+        <option value="concentric">Concentric</option>
+      </select>
+      <button class="btn btn-ghost btn-sm" onclick="loadNeuralGraph()">&#8635; Refresh</button>
+    </div>
+    <div id="cytoscape-container"></div>
+    <div id="neural-graph-legend" class="chart-legend" style="padding:8px 0 0">
+      <span class="chart-legend-item"><span class="chart-legend-dot" style="background:#10b981"></span> Agent</span>
+      <span class="chart-legend-item"><span class="chart-legend-dot" style="background:#f59e0b"></span> Skill</span>
+      <span class="chart-legend-item"><span class="chart-legend-dot" style="background:#3b82f6"></span> Task</span>
+      <span class="chart-legend-item"><span class="chart-legend-dot" style="background:#a78bfa"></span> Model</span>
+      <span class="chart-legend-item"><span class="chart-legend-dot" style="background:#4fc3f7"></span> Folder</span>
+      <span class="chart-legend-item"><span class="chart-legend-dot" style="background:#ec4899"></span> Channel</span>
+      <span class="chart-legend-item"><span class="chart-legend-dot" style="background:#64748b"></span> Config</span>
+    </div>
+  </div>
+
+  <!-- Kanban -->
+  <div class="card" style="margin-top:16px;">
+    <div class="card-header"><span class="card-title">Kanban</span></div>
+    <div class="kanban" id="kanban-container" style="flex-wrap:nowrap;overflow-x:auto;">
+      <div class="spinner"></div>
     </div>
   </div>
 </div>
@@ -2000,8 +2025,7 @@ function showSection(name) {
 function loadSectionData(name) {
   switch (name) {
     case 'dashboard': loadDashboard(); break;
-    case 'fleet': loadFleet(); break;
-    case 'pipeline': loadPipeline(); break;
+    case 'fleet': loadFleet(); loadServiceStatus(); break;
     case 'tasks': loadTasks(); break;
     case 'hitl': loadHITL(); break;
     case 'queue': loadQueue(); break;
@@ -2049,7 +2073,6 @@ function showToast(message, type) {
 var _omniboxItems = [
   {label: 'Dashboard', section: 'dashboard', icon: '■'},
   {label: 'Fleet', section: 'fleet', icon: '⚙'},
-  {label: 'Pipeline', section: 'pipeline', icon: '⇄'},
   {label: 'Ingest', section: 'ingest', icon: '📥'},
   {label: 'Tasks', section: 'tasks', icon: '⚡'},
   {label: 'HITL', section: 'hitl', icon: '✍'},
@@ -3014,6 +3037,48 @@ function loadDashSettings() {
 /* ══════════════════════════════════════════════════════════════════════════
    2. FLEET
    ══════════════════════════════════════════════════════════════════════ */
+function formatUptime(seconds) {
+  if (!seconds || seconds <= 0) return '';
+  if (seconds < 60) return seconds + 's';
+  if (seconds < 3600) return Math.floor(seconds / 60) + 'm';
+  if (seconds < 86400) return Math.floor(seconds / 3600) + 'h ' + Math.floor((seconds % 3600) / 60) + 'm';
+  return Math.floor(seconds / 86400) + 'd ' + Math.floor((seconds % 86400) / 3600) + 'h';
+}
+
+function loadServiceStatus() {
+  apiFetch('/api/fleet/services').then(function(d) {
+    // Cosmo Bot
+    var cosmoEl = document.getElementById('cosmo-status');
+    var cosmoUp = document.getElementById('cosmo-uptime');
+    if (d.cosmo_bot) {
+      var running = d.cosmo_bot.status === 'running';
+      cosmoEl.textContent = running ? 'Running' : 'Offline';
+      cosmoEl.className = 'badge ' + (running ? 'badge-success' : 'badge-danger');
+      cosmoUp.textContent = running ? formatUptime(d.cosmo_bot.uptime_s) : '';
+    }
+    // Dr. Ders
+    var dersEl = document.getElementById('ders-status');
+    var dersUp = document.getElementById('ders-uptime');
+    if (d.dr_ders) {
+      var running = d.dr_ders.status === 'running';
+      dersEl.textContent = running ? 'Running' : 'Offline';
+      dersEl.className = 'badge ' + (running ? 'badge-success' : 'badge-danger');
+      dersUp.textContent = running ? formatUptime(d.dr_ders.uptime_s) : '';
+    }
+  }).catch(function() {});
+}
+
+function restartService(name) {
+  var display = name === 'cosmo_bot' ? 'Cosmo Bot' : 'Dr. Ders';
+  if (!confirm('Restart ' + display + '?')) return;
+  apiFetch('/api/fleet/services/' + name + '/restart', {method: 'POST'}).then(function(d) {
+    showToast(display + ' restarting...', 'info');
+    setTimeout(loadServiceStatus, 3000);
+  }).catch(function(e) {
+    showToast('Failed to restart ' + display, 'error');
+  });
+}
+
 function loadFleet() {
   apiFetch('/api/status').then(function(d) {
     var tbody = document.getElementById('fleet-tbody');
@@ -3119,13 +3184,6 @@ function toggleAgent(name, enabled) {
 /* ══════════════════════════════════════════════════════════════════════════
    3. PIPELINE
    ══════════════════════════════════════════════════════════════════════ */
-function loadPipeline() {
-  loadLaneGraph();
-  loadKanban();
-  loadSwimlane();
-  loadNeuralGraph();
-}
-
 function loadLaneGraph() {
   apiFetch('/api/status').then(function(d) {
     var counts = d.tasks || {};
@@ -3382,12 +3440,16 @@ function loadNeuralGraph() {
   };
   var defaultStyle = { color: '#64748b', size: 20, fontSize: 10, shape: 'ellipse' };
 
-  /* Register fcose layout extension if available */
-  var _hasFcose = typeof cytoscape !== 'undefined' && typeof cytoscapeFcose === 'function';
-  if (_hasFcose) { try { cytoscape.use(cytoscapeFcose); } catch(e) { _hasFcose = false; } }
+  /* Register fcose layout extension if available (idempotent) */
+  if (!window._graphFcoseRegistered) {
+    var hasFcose = typeof cytoscape !== 'undefined' && typeof cytoscapeFcose === 'function';
+    if (hasFcose) { try { cytoscape.use(cytoscapeFcose); window._graphFcoseRegistered = true; } catch(e) {} }
+  }
+  var _hasFcose = !!window._graphFcoseRegistered;
 
   /* Current layout name — read from dropdown or default */
-  var _graphLayoutName = 'fractal-brain';
+  if (!window._graphLayoutName) window._graphLayoutName = 'fractal-brain';
+  var _graphLayoutName = window._graphLayoutName;
 
   function _getLayoutConfig(nodeCount) {
     var name = _graphLayoutName;
@@ -3438,12 +3500,12 @@ function loadNeuralGraph() {
     };
   }
 
-  function switchGraphLayout(name) {
-    _graphLayoutName = name;
+  window.switchGraphLayout = function(name) {
+    window._graphLayoutName = name;
     if (_cyInstance) {
       _cyInstance.layout(_getLayoutConfig(_cyInstance.nodes().length)).run();
     }
-  }
+  };
 
   function buildCyGraph(cyNodes, cyEdges) {
     if (_cyInstance) _cyInstance.destroy();
@@ -4243,19 +4305,7 @@ function loadQueue() {
 function loadQueueStatus() {
   apiFetch('/api/queue/status').then(function(d) {
     _queuePaused = d.paused;
-    var badge = document.getElementById('queue-status-badge');
-    var btn = document.getElementById('queue-pause-btn');
-    if (d.paused) {
-      badge.className = 'badge badge-warning';
-      badge.textContent = 'Paused';
-      btn.textContent = '\u25B6 Resume';
-      btn.className = 'btn btn-success btn-sm';
-    } else {
-      badge.className = 'badge badge-success';
-      badge.textContent = 'Active';
-      btn.textContent = '\u23F8 Pause';
-      btn.className = 'btn btn-warning btn-sm';
-    }
+    _updateQueuePauseUI();
   }).catch(function() {
     var badge = document.getElementById('queue-status-badge');
     if (badge) { badge.textContent = 'offline'; badge.className = 'badge badge-muted'; }
@@ -4340,11 +4390,35 @@ function loadQueueList() {
 }
 
 function toggleQueuePause() {
-  var url = _queuePaused ? '/api/queue/resume' : '/api/queue/pause';
-  apiFetch(url, { method: 'POST' }).then(function() {
-    showToast(_queuePaused ? 'Queue resumed' : 'Queue paused', 'info');
-    loadQueueStatus();
-  }).catch(function(e) { showToast('Failed: ' + e.message, 'error'); });
+  var wasPaused = _queuePaused;
+  var url = wasPaused ? '/api/queue/resume' : '/api/queue/pause';
+  // Optimistic UI update
+  _queuePaused = !wasPaused;
+  _updateQueuePauseUI();
+  apiFetch(url, { method: 'POST', body: {} }).then(function() {
+    showToast(wasPaused ? 'Queue resumed' : 'Queue paused', 'info');
+  }).catch(function(e) {
+    // Revert on failure
+    _queuePaused = wasPaused;
+    _updateQueuePauseUI();
+    showToast('Failed: ' + e.message, 'error');
+  });
+}
+
+function _updateQueuePauseUI() {
+  var badge = document.getElementById('queue-status-badge');
+  var btn = document.getElementById('queue-pause-btn');
+  if (_queuePaused) {
+    badge.className = 'badge badge-warning';
+    badge.textContent = 'Paused';
+    btn.textContent = '\u25B6 Resume';
+    btn.className = 'btn btn-success btn-sm';
+  } else {
+    badge.className = 'badge badge-success';
+    badge.textContent = 'Active';
+    btn.textContent = '\u23F8 Pause';
+    btn.className = 'btn btn-warning btn-sm';
+  }
 }
 
 function removeFromQueue(id) {
@@ -4379,6 +4453,9 @@ function qDrop(e) {
    7. ANALYTICS
    ══════════════════════════════════════════════════════════════════════ */
 function loadAnalytics() {
+  loadLaneGraph();
+  loadKanban();
+  loadSwimlane();
   loadTokenUsageChart();
   loadTasksTimeChart();
   loadCostProviderChart();
@@ -4386,6 +4463,7 @@ function loadAnalytics() {
   loadAnalyticsLanes();
   loadSkillDistChart();
   loadModelUtilChart();
+  loadNeuralGraph();
 }
 
 function loadTokenUsageChart() {
@@ -5809,8 +5887,12 @@ function handleSSE(msg) {
       if (document.getElementById('section-hitl').classList.contains('active')) loadHITL();
       break;
     case 'queue_paused':
+      _queuePaused = true;
+      loadQueueStatus();
+      break;
     case 'queue_resumed':
-      if (document.getElementById('section-queue').classList.contains('active')) loadQueueStatus();
+      _queuePaused = false;
+      loadQueueStatus();
       break;
     case 'queue_reordered':
     case 'queue_removed':
@@ -6924,38 +7006,53 @@ function updateHeaderControls(data) {
 }
 
 function _populateModelDropdown() {
-  apiFetch('/api/health').then(function(h) {
+  Promise.all([
+    apiFetch('/api/health'),
+    fetch('/api/ollama/ps').then(function(r) { return r.ok ? r.json() : {models:[]}; }).catch(function() { return {models:[]}; })
+  ]).then(function(results) {
+    var h = results[0];
+    var ps = results[1];
     var gpuSel = document.getElementById('header-model-gpu');
     var cpuSel = document.getElementById('header-model-cpu');
     if (!gpuSel || !cpuSel) return;
-    var models = (h.subsystems && h.subsystems.ollama && h.subsystems.ollama.available_models) || [];
-    var gpuModel = (h.subsystems && h.subsystems.ollama && h.subsystems.ollama.current_model) || '';
+    var allModels = (h.subsystems && h.subsystems.ollama && h.subsystems.ollama.available_models) || [];
 
-    /* Infer CPU model from fleet config (conductor_model) */
+    /* Determine loaded models from Ollama ps */
+    var loadedModels = (ps.models || []);
+    var gpuModel = '';
     var cpuModel = '';
-    try {
-      var cfg = h.subsystems && h.subsystems.config;
-      if (cfg && cfg.conductor_model) cpuModel = cfg.conductor_model;
-    } catch(e) {}
-    /* Fallback: pick smallest model as likely CPU candidate */
-    if (!cpuModel && models.length > 0) {
-      var sorted = models.slice().sort(function(a,b) {
-        var sa = parseFloat((a.match(/:(\d+\.?\d*)b/) || [0,99])[1]);
-        var sb = parseFloat((b.match(/:(\d+\.?\d*)b/) || [0,99])[1]);
-        return sa - sb;
-      });
-      cpuModel = sorted[0] !== gpuModel ? sorted[0] : (sorted[1] || sorted[0]);
+    loadedModels.forEach(function(m) {
+      var name = m.name || '';
+      var vram = m.size_vram || 0;
+      var total = m.size || 0;
+      /* GPU model = majority in VRAM; CPU model = majority in RAM */
+      if (vram > total * 0.5) {
+        if (!gpuModel) gpuModel = name;
+      } else {
+        if (!cpuModel) cpuModel = name;
+      }
+    });
+    /* Fallback: if only one loaded, check health current_model */
+    if (!gpuModel) {
+      gpuModel = (h.subsystems && h.subsystems.ollama && h.subsystems.ollama.current_model) || '';
+    }
+    /* Fallback: conductor_model from config */
+    if (!cpuModel) {
+      try {
+        var cfg = h.subsystems && h.subsystems.config;
+        if (cfg && cfg.conductor_model) cpuModel = cfg.conductor_model;
+      } catch(e) {}
     }
 
     function _fill(sel, activeModel) {
       while (sel.firstChild) sel.removeChild(sel.firstChild);
-      if (models.length === 0) {
+      if (allModels.length === 0) {
         var opt = document.createElement('option');
         opt.value = ''; opt.textContent = 'offline';
         sel.appendChild(opt);
         return;
       }
-      models.forEach(function(m) {
+      allModels.forEach(function(m) {
         var opt = document.createElement('option');
         opt.value = m; opt.textContent = m;
         if (m === activeModel) opt.selected = true;
@@ -7174,9 +7271,9 @@ var _moduleView = localStorage.getItem('biged_module_view') || 'split';
 
 function loadModules() {
   Promise.all([
-    apiFetch('/api/modules'),
-    apiFetch('/api/modules/available'),
-    apiFetch('/api/modules/suggestions')
+    apiFetch('/api/modules').catch(function() { return {modules: []}; }),
+    apiFetch('/api/modules/available').catch(function() { return {modules: []}; }),
+    apiFetch('/api/modules/suggestions').catch(function() { return {suggestions: []}; })
   ]).then(function(results) {
     _moduleData.installed = results[0].modules || [];
     _moduleData.available = results[1].modules || [];
@@ -7191,7 +7288,7 @@ function loadModules() {
       document.getElementById('module-split-view').style.display = 'flex';
       document.getElementById('module-card-view').style.display = 'none';
     }
-  }).catch(function(e) { console.warn('loadModules failed', e); });
+  });
 }
 
 function toggleModuleView() {
