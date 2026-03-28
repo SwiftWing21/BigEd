@@ -7,7 +7,7 @@
 --   /biged-observe  - dumps a focused observation around a position
 --   /biged-metrics  - dumps production/research metrics
 
-local json = require("json")
+-- Factorio 2.0 uses game.table_to_json() / game.json_to_table() (no require needed)
 
 local CONFIG = {
     observation_radius = 64,
