@@ -841,6 +841,9 @@ lua_install_mode = "manual"
 state_file = "fleet/factorio/factory-state.md"
 log_dir = "fleet/factorio/logs"
 curriculum_dir = "fleet/idle_curricula"
+# Focus mode — worker reservation for Factorio analysis
+focus_workers_default = 2
+analyze_interval_ticks = 50
 
 [factorio.experiments]
 budget_minutes = 10

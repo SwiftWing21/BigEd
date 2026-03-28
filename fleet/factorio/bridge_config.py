@@ -52,6 +52,8 @@ class BridgeConfig:
     temperature: float | None = None
     top_p: float | None = None
     idle_assembler_replan: int = 3
+    focus_workers_default: int = 2
+    analyze_interval_ticks: int = 50
 
     @classmethod
     def from_dict(cls, d: dict) -> "BridgeConfig":
