@@ -14,6 +14,7 @@ from factorio.action_translator import translate_batch
 from factorio.world_model import WorldModel
 from factorio.cadence import CadenceController
 from factorio.bridge_api import create_api, update_status, store_result
+from factorio.agent_brain import AgentBrain
 
 log = logging.getLogger("biged.factorio.bridge")
 
@@ -38,6 +39,7 @@ class FactorioBridge:
         )
         self.cadence.set_mode(config.cadence)
         self.command_queue: queue.Queue = queue.Queue()
+        self.brain = AgentBrain(config, self.world_model)
         self._running = False
         self._consecutive_failures = 0
         self._tick_count = 0
@@ -108,7 +110,7 @@ class FactorioBridge:
         except Exception:
             log.warning("Failed to write state file", exc_info=True)
 
-        # 5. Drain command queue
+        # 5a. Drain human command queue first (priority) — EXISTING CODE, KEEP AS-IS
         while not self.command_queue.empty():
             try:
                 cmd = self.command_queue.get_nowait()
@@ -124,7 +126,6 @@ class FactorioBridge:
                     if not ta.rcon_command:
                         continue
                     try:
-                        # Extract JSON payload from "/biged-cmd {json}"
                         cmd_json = ta.rcon_command.split(" ", 1)[1] if " " in ta.rcon_command else "{}"
                         resp = await self.rcon.remote_call("exec_cmd", cmd_json)
                         result = json.loads(resp)
@@ -137,6 +138,33 @@ class FactorioBridge:
                 store_result(cmd["id"], {"results": results})
             except queue.Empty:
                 break
+
+        # 5b. Ask brain for next autonomous action
+        if self.command_queue.empty():
+            action = await asyncio.to_thread(self.brain.next_action, state, events)
+            if action and action.rcon_command:
+                try:
+                    cmd_json = action.rcon_command.split(" ", 1)[1] if " " in action.rcon_command else "{}"
+                    resp = await self.rcon.remote_call("exec_cmd", cmd_json)
+                    try:
+                        result = json.loads(resp)
+                    except json.JSONDecodeError:
+                        result = {"raw": resp}
+                except Exception as e:
+                    result = {"error": str(e), "success": False}
+                self.brain.report_result(action, result)
+                log.info("Brain action: %s — %s",
+                         action.description,
+                         "OK" if result.get("success") else result.get("error", "unknown"))
+
+        # 5c. Check curriculum progress
+        progress = self.brain.check_progress(state)
+        if progress.get("lesson_passed"):
+            log.info("Lesson passed: %s", progress.get("lesson_name"))
+        if progress.get("phase_complete"):
+            log.info("Phase %d complete!", progress.get("phase"))
+            if self.config.auto_advance:
+                self.brain.curriculum.advance_phase()
 
         # 6. Update bridge status
         update_status(True, state.tick, self.cadence.mode)
@@ -185,7 +213,7 @@ def main():
     bridge = FactorioBridge(config)
 
     # Start localhost API server
-    api_app = create_api(bridge.world_model, bridge.command_queue)
+    api_app = create_api(bridge.world_model, bridge.command_queue, bridge.brain)
     api_thread = threading.Thread(
         target=_run_api_server, args=(api_app, config.bridge_port),
         daemon=True, name="factorio-api",
