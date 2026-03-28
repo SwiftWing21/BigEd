@@ -336,6 +336,9 @@ hub_url = "https://github.com/SwiftWing21/BigEd-ModuleHub"
 enterprise_hub_url = ""           # Private org repo (empty = use public hub)
 auto_update = false               # Check for module updates on boot
 verify_checksums = true           # SHA-256 verification on download
+snapshot_retention = 20           # Max snapshots to keep
+auto_snapshot = true              # Snapshot before every mutating operation
+manifest_dir = "fleet/modules"    # Where launcher module manifests live
 
 # v0.31.00: MCP Server Integration — connect external tool servers to fleet skills
 [mcp]
@@ -807,13 +810,13 @@ enabled = false
 
 # ── Factorio Sandbox Module ───────────────────────────────────────────────────
 [factorio]
-enabled = false
+enabled = true
 role = "host"
 host_fleet_id = ""
 bridge_port = 27016
 rcon_host = "localhost"
 rcon_port = 27015
-rcon_password = ""
+rcon_password = "xf6xJ3_mQAwQqd_36XkKsQ"
 server_mode = "headless"
 factorio_path = ""
 headless_path = ""
