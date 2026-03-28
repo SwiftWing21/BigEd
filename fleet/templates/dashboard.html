@@ -7605,12 +7605,28 @@ function _renderModuleCards() {
 /* ── Factorio Sandbox ─────────────────────────────────────────────────────── */
 
 function _checkFactorioEnabled() {
+  var nav = document.getElementById('nav-factorio');
+  if (!nav) return;
+  // Strategy: check modules API first, then probe bridge directly as fallback
   apiFetch('/api/modules').then(function(r) {
     var mods = r.modules || [];
     var fm = mods.find(function(m) { return m.name === 'factorio'; });
-    var nav = document.getElementById('nav-factorio');
-    if (nav) nav.style.display = (fm && fm.enabled) ? '' : 'none';
-  }).catch(function() {});
+    if (!fm) return;
+    // If enabled field is set (dashboard restarted), use it
+    if (fm.enabled === true || fm.enabled === false) {
+      nav.style.display = fm.enabled ? '' : 'none';
+      return;
+    }
+    // Fallback: module exists but enabled is null (stale Flask cache)
+    // Show the tab if factorio module is in the manifest at all — user can
+    // always navigate there to see bridge status
+    nav.style.display = '';
+  }).catch(function() {
+    // Modules API failed — probe bridge directly
+    fetch('http://127.0.0.1:27016/api/status', {signal: AbortSignal.timeout(2000)})
+      .then(function() { nav.style.display = ''; })
+      .catch(function() {});
+  });
 }
 
 function loadFactorio() {
