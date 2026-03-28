@@ -495,6 +495,30 @@ def init_db():
                 UNIQUE(module_name)
             )
         """)
+        # Module dependency registry (cache — rebuilt from manifest.json files)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS module_registry (
+                name TEXT PRIMARY KEY,
+                version TEXT NOT NULL,
+                type TEXT NOT NULL CHECK(type IN ('launcher', 'marketplace')),
+                manifest_json TEXT NOT NULL,
+                resolved_requires TEXT DEFAULT '[]',
+                resolved_conflicts TEXT DEFAULT '[]',
+                updated_at TEXT DEFAULT (datetime('now'))
+            )
+        """)
+        # Module state snapshots for rollback
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS module_snapshots (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                label TEXT NOT NULL,
+                state_json TEXT NOT NULL,
+                dep_graph_hash TEXT NOT NULL,
+                created_at TEXT DEFAULT (datetime('now')),
+                created_by TEXT DEFAULT 'system'
+            )
+        """)
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_snapshots_created ON module_snapshots(created_at DESC)")
 
 
 def update_intelligence_score(task_id, score):
