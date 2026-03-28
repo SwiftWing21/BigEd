@@ -38,6 +38,7 @@
   --shadow-lg: 0 10px 15px -3px rgba(0,0,0,0.08), 0 4px 6px -4px rgba(0,0,0,0.04);
   --input-bg: #ffffff;
   --input-border: #d1d5db;
+  --destructive: #ef4444;
 }
 .dark {
   --background: #0a0e1a;
@@ -64,6 +65,7 @@
   --shadow-lg: 0 10px 15px -3px rgba(0,0,0,0.5);
   --input-bg: #1e2330;
   --input-border: #374151;
+  --destructive: #ef4444;
 }
 
 /* ── Reset & Base ─────────────────────────────────────────────────────────── */
@@ -1879,6 +1881,7 @@ textarea.input {
 /* ── State ────────────────────────────────────────────────────────────────── */
 var _loaded = {};
 var _sseSource = null;
+var _sseConnected = false;
 var _cyInstance = null;
 var _charts = {};
 var _queuePaused = false;
@@ -1929,9 +1932,17 @@ function setTheme(theme) {
 }
 (function initTheme() {
   var m = document.cookie.match(/biged-theme=(\w+)/);
-  if (m) setTheme(m[1]);
-  else setTheme('dark');
+  setTheme(m ? m[1] : 'system');
+  // React to OS theme changes when in system mode
+  window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', function() {
+    var cm = document.cookie.match(/biged-theme=(\w+)/);
+    if (!cm || cm[1] === 'system') setTheme('system');
+  });
 })();
+
+function isDark() {
+  return document.documentElement.classList.contains('dark');
+}
 
 /* ── Navigation ───────────────────────────────────────────────────────────── */
 function showSection(name) {
@@ -2165,6 +2176,34 @@ var _agentColors = {
 var _statusIcons = { RUNNING: '\u25B6', DONE: '\u2713', FAILED: '\u2717', PENDING: '\u25CB' };
 var _statusColors = { RUNNING: '#3b82f6', DONE: '#10b981', FAILED: '#ef4444', PENDING: '#64748b' };
 
+// ── Live Activity configurable columns ────────────────────────────────────
+var _liveColumns = {
+  model:    { label: 'Model',    default: true,  key: 'model' },
+  duration: { label: 'Duration', default: true,  key: 'duration_s' },
+  tokens:   { label: 'Tokens',   default: false, key: 'out_tokens' },
+  speed:    { label: 'Speed',    default: false, key: 'tok_per_sec' },
+  iq:       { label: 'IQ Score', default: true,  key: 'iq_score' },
+  cost:     { label: 'Cost',     default: false, key: 'cost_usd' },
+  priority: { label: 'Priority', default: false, key: 'priority' },
+  trace:    { label: 'Trace ID', default: false, key: 'trace_id' },
+};
+
+function _getLiveColumnPrefs() {
+  try {
+    var saved = localStorage.getItem('biged_live_columns');
+    if (saved) return JSON.parse(saved);
+  } catch (e) {}
+  var defaults = {};
+  Object.keys(_liveColumns).forEach(function(k) { defaults[k] = _liveColumns[k].default; });
+  return defaults;
+}
+
+function _setLiveColumnPref(col, enabled) {
+  var prefs = _getLiveColumnPrefs();
+  prefs[col] = enabled;
+  localStorage.setItem('biged_live_columns', JSON.stringify(prefs));
+}
+
 function _renderLiveItems(items) {
   var feed = document.getElementById('live-activity-feed');
   if (!feed) return;
@@ -2176,41 +2215,102 @@ function _renderLiveItems(items) {
     feed.appendChild(empty);
     return;
   }
+  var prefs = _getLiveColumnPrefs();
   items.forEach(function(item) {
     var row = document.createElement('div');
-    row.style.cssText = 'display:flex;align-items:center;gap:8px;padding:5px 4px;border-bottom:1px solid var(--border);';
+    row.style.cssText = 'display:flex;align-items:center;gap:6px;padding:5px 4px;border-bottom:1px solid var(--border);';
     if (item.status === 'RUNNING') row.style.background = 'rgba(59,130,246,0.05)';
+    // Priority tint
+    if (item.priority && item.priority <= 2) row.style.borderLeft = '2px solid #ef4444';
+    else if (item.priority === 5) row.style.opacity = '0.6';
 
     var icon = document.createElement('span');
     icon.textContent = _statusIcons[item.status] || '\u25CB';
-    icon.style.cssText = 'width:16px;text-align:center;font-size:11px;color:' + (_statusColors[item.status] || '#64748b') + ';';
+    icon.style.cssText = 'width:14px;text-align:center;font-size:11px;flex-shrink:0;color:' + (_statusColors[item.status] || '#64748b') + ';';
     row.appendChild(icon);
 
     var agent = document.createElement('span');
     agent.textContent = item.agent;
     var ac = _agentColors[item.agent] || '#64748b';
-    agent.style.cssText = 'font-size:11px;font-weight:600;padding:1px 6px;border-radius:3px;background:' + ac + '22;color:' + ac + ';min-width:70px;';
+    agent.style.cssText = 'font-size:11px;font-weight:600;padding:1px 6px;border-radius:3px;background:' + ac + '22;color:' + ac + ';min-width:65px;flex-shrink:0;';
     row.appendChild(agent);
 
     var skill = document.createElement('span');
     skill.textContent = item.type;
-    skill.style.cssText = 'font-size:11px;color:var(--foreground);min-width:100px;';
+    skill.style.cssText = 'font-size:11px;color:var(--foreground);min-width:80px;flex-shrink:0;';
     row.appendChild(skill);
 
     if (item.classification === 'ingest') {
       var cls = document.createElement('span');
       cls.textContent = 'ingest';
-      cls.style.cssText = 'font-size:9px;padding:1px 4px;border-radius:2px;background:#f59e0b22;color:#f59e0b;';
+      cls.style.cssText = 'font-size:9px;padding:1px 4px;border-radius:2px;background:#f59e0b22;color:#f59e0b;flex-shrink:0;';
       row.appendChild(cls);
     }
 
     var tid = document.createElement('span');
     tid.textContent = '#' + item.id;
-    tid.style.cssText = 'font-size:10px;color:var(--muted-foreground);font-family:monospace;';
+    tid.style.cssText = 'font-size:10px;color:var(--muted-foreground);font-family:monospace;flex-shrink:0;';
     row.appendChild(tid);
 
+    // ── Configurable columns ──
+    var pillCss = 'font-size:9px;padding:1px 5px;border-radius:3px;flex-shrink:0;';
+
+    if (prefs.model && item.model) {
+      var m = document.createElement('span');
+      var mLabel = item.model.length > 12 ? item.model.substring(0, 12) : item.model;
+      m.textContent = mLabel;
+      var provColor = item.provider === 'local' ? '#06b6d4' : item.provider === 'claude' ? '#8b5cf6' : '#f59e0b';
+      m.style.cssText = pillCss + 'background:' + provColor + '18;color:' + provColor + ';';
+      row.appendChild(m);
+    }
+
+    if (prefs.duration && item.duration_s != null) {
+      var d = document.createElement('span');
+      d.textContent = item.duration_s + 's';
+      d.style.cssText = pillCss + 'color:var(--muted-foreground);';
+      row.appendChild(d);
+    }
+
+    if (prefs.tokens && (item.in_tokens || item.out_tokens)) {
+      var tk = document.createElement('span');
+      tk.textContent = item.in_tokens + '\u2192' + item.out_tokens;
+      tk.style.cssText = pillCss + 'color:var(--muted-foreground);font-family:monospace;';
+      row.appendChild(tk);
+    }
+
+    if (prefs.speed && item.tok_per_sec) {
+      var sp = document.createElement('span');
+      sp.textContent = item.tok_per_sec + ' t/s';
+      sp.style.cssText = pillCss + 'color:var(--muted-foreground);';
+      row.appendChild(sp);
+    }
+
+    if (prefs.iq && item.iq_score != null) {
+      var iq = document.createElement('span');
+      var iqColor = item.iq_score >= 0.7 ? '#10b981' : item.iq_score >= 0.4 ? '#f59e0b' : '#ef4444';
+      iq.textContent = item.iq_score.toFixed(1);
+      iq.style.cssText = pillCss + 'background:' + iqColor + '22;color:' + iqColor + ';font-weight:600;';
+      iq.title = 'Intelligence Score';
+      row.appendChild(iq);
+    }
+
+    if (prefs.cost && item.cost_usd > 0) {
+      var c = document.createElement('span');
+      c.textContent = '$' + item.cost_usd.toFixed(4);
+      c.style.cssText = pillCss + 'color:#ec4899;';
+      row.appendChild(c);
+    }
+
+    if (prefs.trace && item.trace_id) {
+      var tr = document.createElement('span');
+      tr.textContent = item.trace_id.substring(0, 8);
+      tr.style.cssText = pillCss + 'color:var(--muted-foreground);font-family:monospace;font-size:8px;';
+      row.appendChild(tr);
+    }
+
+    // ── Right side: error or time ──
     var detail = document.createElement('span');
-    detail.style.cssText = 'margin-left:auto;font-size:10px;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;';
+    detail.style.cssText = 'margin-left:auto;font-size:10px;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex-shrink:0;';
     if (item.status === 'FAILED' && item.error) {
       detail.textContent = item.error;
       detail.style.color = 'var(--danger)';
@@ -2534,6 +2634,7 @@ function loadNeuralLanes() {
 }
 
 function renderNeuralFrame() {
+  if (document.hidden || _activityViewMode !== 'graph') { _neuralAnim = null; return; }
   var canvas = document.getElementById('neural-lane-canvas');
   if (!canvas || !_neuralData) { _neuralAnim = null; return; }
   var rect = canvas.parentElement.getBoundingClientRect();
@@ -3261,20 +3362,20 @@ function loadNeuralGraph() {
         animate: 'end',
         animationDuration: 500,
         fit: true,
-        padding: 30,
+        padding: 10,
         nodeRepulsion: function(node) {
-          return node.isParent() ? 12000 : 6000;
+          return node.isParent() ? 6000 : 1500;
         },
         idealEdgeLength: function(edge) {
           var src = edge.source(), tgt = edge.target();
-          if (src.parent().length && tgt.parent().length && src.parent().id() === tgt.parent().id()) return 40;
-          return 100;
+          if (src.parent().length && tgt.parent().length && src.parent().id() === tgt.parent().id()) return 12;
+          return 50;
         },
-        edgeElasticity: 0.45,
-        gravity: 0.25,
-        gravityRange: 3.8,
-        nestingFactor: 0.1,
-        numIter: nodeCount > 200 ? 2500 : 5000,
+        edgeElasticity: 0.2,
+        gravity: 1.0,
+        gravityRange: 6.0,
+        nestingFactor: 0.05,
+        numIter: nodeCount > 200 ? 3000 : 6000,
         packComponents: true,
         componentSpacing: 40,
         nodeDimensionsIncludeLabels: false,
@@ -3392,13 +3493,13 @@ function loadNeuralGraph() {
         {
           selector: ':parent',
           style: {
-            'background-opacity': 0.06,
+            'background-opacity': 0.04,
             'background-color': 'data(color)',
-            'border-width': 1.5,
+            'border-width': 1,
             'border-color': 'data(color)',
-            'border-opacity': 0.25,
+            'border-opacity': 0.15,
             'border-style': 'dashed',
-            'padding': 20,
+            'padding': 8,
             'text-valign': 'top',
             'text-halign': 'center',
             'label': 'data(label)',
@@ -3444,6 +3545,10 @@ function loadNeuralGraph() {
             'opacity': 0.5,
             'line-color': 'data(color)',
           }
+        },
+        {
+          selector: 'edge[weight < 2]',
+          style: { 'display': 'none' }
         },
         {
           selector: 'edge.dimmed',
@@ -3701,7 +3806,7 @@ function loadNeuralGraph() {
       var src = e.source || e.from;
       var tgt = e.target || e.to;
       if (src && tgt && nodeIds[src] && nodeIds[tgt]) {
-        cyEdges.push({ data: { source: src, target: tgt } });
+        cyEdges.push({ data: { source: src, target: tgt, weight: e.weight || 1 } });
       }
     });
 
@@ -3720,6 +3825,13 @@ function loadNeuralGraph() {
       else if (nodeIds['skill:' + skillName]) { skillId = 'skill:' + skillName; }
       if (skillId) {
         cyEdges.push({ data: { source: n.data.id, target: skillId } });
+      }
+    });
+
+    // Validate parent references: remove parent if parent node doesn't exist
+    cyNodes.forEach(function(n) {
+      if (n.data.parent && !nodeIds[n.data.parent]) {
+        n.data.parent = undefined;
       }
     });
 
@@ -5055,6 +5167,7 @@ var _settingsTabDefs = [
   { id: 'hardware',   label: 'Hardware',    sections: ['thermal','gpu','thermal.vram','workers','capacity'] },
   { id: 'apikeys',    label: 'API & Keys',  sections: ['api_gate','_api_keys'] },
   { id: 'operations', label: 'Operations',  sections: ['backup','schedules','mcp','ingest','dispatch_bridge'] },
+  { id: 'display',    label: 'Display',     sections: ['_live_columns'] },
   { id: 'advanced',   label: 'Advanced',    sections: ['federation','security','sso','billing','enterprise','compliance'] }
 ];
 var _activeSettingsTab = 'general';
@@ -5063,6 +5176,65 @@ var _settingsCache = { settings: null, schema: null };
 function loadSettings() {
   _buildSettingsTabBar();
   switchSettingsTab('general');
+}
+
+function _loadFederationPeers() {
+  var list = document.getElementById('federation-peer-list');
+  if (!list) return;
+  apiFetch('/api/settings').then(function(d) {
+    var fed = (d.settings || {}).federation || {};
+    var peers = (fed.values || {}).peers || [];
+    list.textContent = '';
+    if (!peers.length) {
+      var empty = document.createElement('div');
+      empty.textContent = 'No peers linked yet';
+      empty.style.cssText = 'font-size:12px;color:var(--muted-foreground);padding:8px 0;';
+      list.appendChild(empty);
+      return;
+    }
+    peers.forEach(function(url) {
+      var row = document.createElement('div');
+      row.style.cssText = 'display:flex;align-items:center;gap:8px;padding:6px 10px;border-radius:6px;border:1px solid var(--border);margin-bottom:4px;';
+      var dot = document.createElement('span');
+      dot.style.cssText = 'width:8px;height:8px;border-radius:50%;background:#64748b;flex-shrink:0;';
+      dot.title = 'Status unknown';
+      row.appendChild(dot);
+      var urlSpan = document.createElement('span');
+      urlSpan.textContent = url;
+      urlSpan.style.cssText = 'font-size:12px;font-family:monospace;color:var(--foreground);flex:1;';
+      row.appendChild(urlSpan);
+      var removeBtn = document.createElement('button');
+      removeBtn.className = 'btn btn-sm';
+      removeBtn.textContent = 'Unlink';
+      removeBtn.style.cssText = 'font-size:10px;padding:2px 8px;color:var(--danger);';
+      removeBtn.onclick = function() {
+        apiFetch('/api/settings/update', {
+          method: 'POST',
+          body: { section: 'federation', key: 'peers', value: url, action: 'remove' }
+        }).then(function() { _loadFederationPeers(); });
+      };
+      row.appendChild(removeBtn);
+      list.appendChild(row);
+      // Probe peer health
+      fetch(url + '/api/health', { signal: AbortSignal.timeout(3000) })
+        .then(function(r) { if (r.ok) { dot.style.background = '#10b981'; dot.title = 'Online'; } else { dot.style.background = '#ef4444'; dot.title = 'Error'; } })
+        .catch(function() { dot.style.background = '#64748b'; dot.title = 'Unreachable'; });
+    });
+  }).catch(function() {});
+}
+
+function _loadFederationToggles() {
+  apiFetch('/api/settings').then(function(d) {
+    var fed = (d.settings || {}).federation || {};
+    var vals = fed.values || {};
+    var el;
+    el = document.getElementById('fed-toggle-enabled');
+    if (el) el.checked = !!vals.enabled;
+    el = document.getElementById('fed-toggle-discovery_enabled');
+    if (el) el.checked = vals.discovery_enabled !== false;
+    el = document.getElementById('fed-toggle-routing_enabled');
+    if (el) el.checked = vals.routing_enabled !== false;
+  }).catch(function() {});
 }
 
 function _buildSettingsTabBar() {
@@ -5110,6 +5282,165 @@ function loadSettingsTab(tabId) {
   /* Special case: API & Keys tab has custom sub-sections */
   if (tabId === 'apikeys') {
     _loadApiKeysTab(content);
+    return;
+  }
+
+  /* Special case: Advanced tab — Link to BigEd + federation */
+  if (tabId === 'advanced') {
+    content.textContent = '';
+
+    // ── Link to BigEd ──
+    var linkCard = document.createElement('div');
+    linkCard.style.cssText = 'border:1px solid var(--border);border-radius:var(--radius);padding:20px;margin-bottom:20px;';
+
+    var linkTitle = document.createElement('h3');
+    linkTitle.textContent = 'Link to a BigEd';
+    linkTitle.style.cssText = 'font-size:16px;font-weight:700;margin-bottom:4px;color:var(--foreground);';
+    linkCard.appendChild(linkTitle);
+
+    var linkDesc = document.createElement('p');
+    linkDesc.textContent = 'Connect this instance to other BigEd fleets on your network. The host RAG serves as the primary knowledge source for all linked instances.';
+    linkDesc.style.cssText = 'font-size:12px;color:var(--muted-foreground);margin-bottom:16px;';
+    linkCard.appendChild(linkDesc);
+
+    // Current peers
+    var peersLabel = document.createElement('div');
+    peersLabel.textContent = 'Linked Peers';
+    peersLabel.style.cssText = 'font-size:12px;font-weight:600;color:var(--foreground);margin-bottom:8px;';
+    linkCard.appendChild(peersLabel);
+
+    var peerList = document.createElement('div');
+    peerList.id = 'federation-peer-list';
+    peerList.style.cssText = 'margin-bottom:12px;';
+    linkCard.appendChild(peerList);
+
+    // Add peer input
+    var addRow = document.createElement('div');
+    addRow.style.cssText = 'display:flex;gap:8px;align-items:center;margin-bottom:16px;';
+
+    var peerInput = document.createElement('input');
+    peerInput.type = 'text';
+    peerInput.placeholder = 'https://192.168.1.50:5555';
+    peerInput.id = 'federation-peer-input';
+    peerInput.style.cssText = 'flex:1;font-size:12px;padding:6px 10px;border-radius:6px;border:1px solid var(--border);background:var(--card);color:var(--foreground);font-family:monospace;';
+    addRow.appendChild(peerInput);
+
+    var addBtn = document.createElement('button');
+    addBtn.className = 'btn btn-sm btn-primary';
+    addBtn.textContent = 'Link';
+    addBtn.onclick = function() {
+      var url = peerInput.value.trim();
+      if (!url) return;
+      addBtn.textContent = '...';
+      apiFetch('/api/settings/update', {
+        method: 'POST',
+        body: { section: 'federation', key: 'peers', value: url, action: 'append' }
+      }).then(function() {
+        peerInput.value = '';
+        addBtn.textContent = 'Link';
+        _loadFederationPeers();
+      }).catch(function() {
+        addBtn.textContent = 'Error';
+        setTimeout(function() { addBtn.textContent = 'Link'; }, 2000);
+      });
+    };
+    addRow.appendChild(addBtn);
+    linkCard.appendChild(addRow);
+
+    // Federation toggles
+    var toggleGrid = document.createElement('div');
+    toggleGrid.style.cssText = 'display:grid;grid-template-columns:1fr 1fr;gap:10px;';
+
+    var fedToggles = [
+      { key: 'enabled', label: 'Federation Enabled', desc: 'Allow peer discovery and task forwarding' },
+      { key: 'discovery_enabled', label: 'Auto-Discovery', desc: 'Find peers on local network (UDP/mDNS)' },
+      { key: 'routing_enabled', label: 'Task Routing', desc: 'Forward overflow tasks to peers' },
+    ];
+
+    fedToggles.forEach(function(t) {
+      var item = document.createElement('label');
+      item.style.cssText = 'display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:8px;border:1px solid var(--border);cursor:pointer;';
+      var cb = document.createElement('input');
+      cb.type = 'checkbox';
+      cb.id = 'fed-toggle-' + t.key;
+      cb.addEventListener('change', function() {
+        apiFetch('/api/settings/update', {
+          method: 'POST',
+          body: { section: 'federation', key: t.key, value: cb.checked }
+        }).catch(function() { cb.checked = !cb.checked; });
+      });
+      item.appendChild(cb);
+      var textWrap = document.createElement('div');
+      var lbl = document.createElement('div');
+      lbl.textContent = t.label;
+      lbl.style.cssText = 'font-size:13px;font-weight:600;color:var(--foreground);';
+      textWrap.appendChild(lbl);
+      var d = document.createElement('div');
+      d.textContent = t.desc;
+      d.style.cssText = 'font-size:10px;color:var(--muted-foreground);';
+      textWrap.appendChild(d);
+      item.appendChild(textWrap);
+      toggleGrid.appendChild(item);
+    });
+
+    // RAG host toggle
+    var ragItem = document.createElement('label');
+    ragItem.style.cssText = 'display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:8px;border:1px solid var(--border);cursor:pointer;';
+    var ragCb = document.createElement('input');
+    ragCb.type = 'checkbox';
+    ragCb.checked = true;
+    ragCb.id = 'fed-toggle-rag-host';
+    ragItem.appendChild(ragCb);
+    var ragText = document.createElement('div');
+    var ragLbl = document.createElement('div');
+    ragLbl.textContent = 'RAG Host Mode';
+    ragLbl.style.cssText = 'font-size:13px;font-weight:600;color:var(--foreground);';
+    ragText.appendChild(ragLbl);
+    var ragDesc = document.createElement('div');
+    ragDesc.textContent = 'This instance serves as the primary RAG source for linked peers';
+    ragDesc.style.cssText = 'font-size:10px;color:var(--muted-foreground);';
+    ragText.appendChild(ragDesc);
+    ragItem.appendChild(ragText);
+    toggleGrid.appendChild(ragItem);
+
+    linkCard.appendChild(toggleGrid);
+    content.appendChild(linkCard);
+
+    // Load current federation state
+    _loadFederationPeers();
+    _loadFederationToggles();
+    return;
+  }
+
+  /* Special case: Display tab — Live Activity column toggles */
+  if (tabId === 'display') {
+    content.textContent = '';
+    var heading = document.createElement('h3');
+    heading.textContent = 'Live Activity Columns';
+    heading.style.cssText = 'font-size:14px;font-weight:600;margin-bottom:12px;color:var(--foreground);';
+    content.appendChild(heading);
+    var desc = document.createElement('p');
+    desc.textContent = 'Choose which data columns appear in the Live Activity feed.';
+    desc.style.cssText = 'font-size:12px;color:var(--muted-foreground);margin-bottom:16px;';
+    content.appendChild(desc);
+
+    var prefs = _getLiveColumnPrefs();
+    var grid = document.createElement('div');
+    grid.style.cssText = 'display:grid;grid-template-columns:1fr 1fr;gap:8px;';
+    Object.keys(_liveColumns).forEach(function(col) {
+      var lbl = document.createElement('label');
+      lbl.style.cssText = 'display:flex;align-items:center;gap:8px;padding:8px 12px;border-radius:8px;border:1px solid var(--border);cursor:pointer;font-size:13px;color:var(--foreground);';
+      var cb = document.createElement('input');
+      cb.type = 'checkbox';
+      cb.checked = !!prefs[col];
+      cb.addEventListener('change', function() {
+        _setLiveColumnPref(col, cb.checked);
+      });
+      lbl.appendChild(cb);
+      lbl.appendChild(document.createTextNode(_liveColumns[col].label));
+      grid.appendChild(lbl);
+    });
+    content.appendChild(grid);
     return;
   }
 
@@ -5322,11 +5653,13 @@ function connectSSE() {
   _sseSource = new EventSource('/api/stream');
 
   _sseSource.onopen = function() {
+    _sseConnected = true;
     document.getElementById('sse-status').textContent = 'Connected';
     document.getElementById('live-dot').style.background = 'var(--success)';
   };
 
   _sseSource.onerror = function() {
+    _sseConnected = false;
     document.getElementById('sse-status').textContent = 'Reconnecting...';
     document.getElementById('live-dot').style.background = 'var(--warning)';
   };
@@ -5971,7 +6304,7 @@ function loadViews() {
   /* ── SSE handles status + thermal via server push.
      Activity chart polls adaptively (2s active / 60s hidden). ── */
   _schedulePoll('activity', function() {
-    if (document.getElementById('section-dashboard').classList.contains('active')) {
+    if (!_sseConnected && document.getElementById('section-dashboard').classList.contains('active')) {
       loadActivityChart();
     }
   });
@@ -5989,7 +6322,15 @@ function loadViews() {
   /* ── Dev: right-click to refresh ─────────────────────────────────────── */
   document.addEventListener('contextmenu', function(e) {
     e.preventDefault();
-    location.reload();
+    if (e.shiftKey) {
+      // Shift+right-click: hard reload (dev feature)
+      location.reload();
+    } else {
+      // Right-click: soft refresh current section
+      var activeNav = document.querySelector('.nav-item.active');
+      var section = activeNav ? activeNav.dataset.section : 'dashboard';
+      loadSectionData(section);
+    }
   });
 
   /* ── PyWebView bridge: minimize to tray on close ──────────────────────── */
@@ -6493,6 +6834,7 @@ function submitAddSource() {
 function switchModel(model, mode) {
   if (!model) return;
   var sel = document.getElementById('header-model-select');
+  if (!sel) return;
   sel.disabled = true;
   apiFetch('/api/fleet/model-switch', { method: 'POST', body: { model: model } })
     .then(function() {
@@ -6501,7 +6843,7 @@ function switchModel(model, mode) {
     .catch(function(e) {
       showToast('Model switch failed: ' + e.message, 'error');
     })
-    .finally(function() { sel.disabled = false; });
+    .finally(function() { if (sel) sel.disabled = false; });
 }
 
 function fleetStart() {
@@ -6538,9 +6880,9 @@ function updateHeaderControls(data) {
   }
   if (data.thermal && data.thermal.loaded_model) {
     var sel = document.getElementById('header-model-select');
-    if (sel && sel.value !== data.thermal.loaded_model) {
-      sel.value = data.thermal.loaded_model;
-    }
+    if (sel && sel.value !== data.thermal.loaded_model) sel.value = data.thermal.loaded_model;
+    var gpuSel = document.getElementById('header-model-gpu');
+    if (gpuSel && gpuSel.value !== data.thermal.loaded_model) gpuSel.value = data.thermal.loaded_model;
   }
 }
 
