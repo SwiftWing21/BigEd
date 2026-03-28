@@ -54,6 +54,8 @@ class Directive:
     sticky: bool
     plans_remaining: int
     created_at: float
+    priority: int = 50         # affects ordering in planning prompt
+    source: str = "human"      # "human", "worker-2", etc.
 
 
 # Priority bands for plan queue
@@ -157,18 +159,18 @@ class AgentBrain:
         """Return True if the agent is currently paused."""
         return self._paused
 
-    def add_directive(self, text: str, sticky: bool = False, plans: int = 1) -> str:
+    def add_directive(self, text: str, sticky: bool = False, plans: int = 1,
+                      priority: int = 50, source: str = "human") -> str:
         """Add a human directive. Returns the directive id."""
-        directive = Directive(
-            id=uuid.uuid4().hex[:8],
-            text=text,
-            sticky=sticky,
-            plans_remaining=plans,
-            created_at=time.time(),
+        d_id = uuid.uuid4().hex[:8]
+        d = Directive(
+            id=d_id, text=text, sticky=sticky,
+            plans_remaining=plans, created_at=time.time(),
+            priority=priority, source=source,
         )
         with self._lock:
-            self._directives.append(directive)
-        return directive.id
+            self._directives.append(d)
+        return d_id
 
     def remove_directive(self, directive_id: str) -> bool:
         """Remove a directive by id. Returns True if found and removed."""
@@ -194,6 +196,8 @@ class AgentBrain:
                     "sticky": d.sticky,
                     "plans_remaining": d.plans_remaining,
                     "created_at": d.created_at,
+                    "priority": d.priority,
+                    "source": d.source,
                 }
                 for d in self._directives
             ]
