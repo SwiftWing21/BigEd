@@ -1,0 +1,9 @@
+{
+    "name": "biged-bridge",
+    "version": "0.1.0",
+    "title": "BigEd Agent Bridge",
+    "author": "BigEd",
+    "description": "State serializer and command executor for BigEd AI agent bridge",
+    "factorio_version": "2.0",
+    "dependencies": ["base >= 2.0"]
+}
