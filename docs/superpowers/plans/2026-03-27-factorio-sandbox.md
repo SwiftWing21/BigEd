@@ -425,7 +425,7 @@ def load_factorio_config() -> BridgeConfig:
         return BridgeConfig()
 ```
 
-- [ ] **Step 4: Add `[factorio]` section to fleet.toml**
+- [ ] **Step 4: Add `[factorio]` section and affinity/budget entries to fleet.toml**
 
 Append to `fleet/fleet.toml`:
 
@@ -462,6 +462,19 @@ lua_install_mode = "manual"
 state_file = "fleet/factorio/factory-state.md"
 log_dir = "fleet/factorio/logs"
 curriculum_dir = "fleet/idle_curricula"
+```
+
+Also add to the existing `[affinity]` section:
+```toml
+sandbox = ["factorio_observe", "factorio_plan", "factorio_act", "factorio_train"]
+```
+
+And to the existing `[budgets]` section:
+```toml
+factorio_plan = 2.00
+factorio_train = 1.00
+factorio_act = 0.50
+factorio_observe = 0.00
 ```
 
 - [ ] **Step 5: Run tests to verify they pass**
@@ -568,6 +581,13 @@ def test_state_to_markdown():
     assert "iron-plate" in md
     assert "## Entities" in md
     assert "stone-furnace" in md
+
+def test_state_to_markdown_no_metrics():
+    from factorio.state_parser import parse_state, state_to_markdown
+    state = parse_state(json.dumps(SAMPLE_STATE))
+    md = state_to_markdown(state, None)
+    assert "## Inventory" in md
+    assert "Production Flow" not in md  # no metrics = no flow section
 ```
 
 - [ ] **Step 2: Run tests to verify they fail**
@@ -1121,6 +1141,7 @@ class WorldModel:
             events.extend(self._detect_entity_events(state))
             events.extend(self._detect_research_events(state))
             events.extend(self._detect_resource_events(state))
+            events.extend(self._detect_power_events(state, self._metrics))
 
             # Update entity tracking
             self._entity_ids = {e.unit_number for e in state.entities if e.unit_number}
@@ -1157,6 +1178,17 @@ class WorldModel:
                 event_type="research_complete",
                 tick=state.tick,
                 detail=f"Completed: {self._prev_state.research_name}",
+            )]
+        return []
+
+    def _detect_power_events(self, state: GameState, metrics: GameMetrics | None) -> list[GameEvent]:
+        if not metrics:
+            return []
+        if metrics.electric_satisfaction and metrics.electric_satisfaction != "ok":
+            return [GameEvent(
+                event_type="power_outage",
+                tick=state.tick,
+                detail=f"Electric satisfaction: {metrics.electric_satisfaction}",
             )]
         return []
 
@@ -1410,7 +1442,7 @@ def test_evaluate_missing_key_returns_false():
 
 def test_load_curriculum():
     from factorio.curriculum import load_curriculum
-    curriculum = load_curriculum("factorio_01_bootstrap")
+    curriculum = load_curriculum("factorio_01_bootstrap", curriculum_dir="idle_curricula")
     assert curriculum is not None
     assert len(curriculum["tasks"]) > 0
     assert curriculum["tasks"][0]["type"] == "factorio"
@@ -1642,14 +1674,17 @@ The localhost-only Flask app that skills call to access the bridge.
 import json
 import logging
 import queue
+import threading
 from flask import Flask, jsonify, request
 
 log = logging.getLogger("biged.factorio.api")
 
 # Shared state — set by bridge.py before starting the API
+# Protected by _lock for thread safety (Flask thread + asyncio thread)
+_lock = threading.Lock()
 _world_model = None
 _command_queue: queue.Queue | None = None
-_result_store: dict = {}  # command_id → result
+_result_store: dict = {}  # command_id → result (Python 3.7+ insertion order)
 _bridge_status: dict = {"running": False, "tick": 0, "cadence": "adaptive"}
 
 
@@ -1694,18 +1729,20 @@ def create_api(world_model, command_queue) -> Flask:
 
 def update_status(running: bool, tick: int, cadence: str) -> None:
     """Update bridge status (called by bridge tick loop)."""
-    _bridge_status["running"] = running
-    _bridge_status["tick"] = tick
-    _bridge_status["cadence"] = cadence
+    with _lock:
+        _bridge_status["running"] = running
+        _bridge_status["tick"] = tick
+        _bridge_status["cadence"] = cadence
 
 
 def store_result(cmd_id: str, result: dict) -> None:
     """Store command execution result."""
-    _result_store[cmd_id] = result
-    # Keep only last 100 results
-    if len(_result_store) > 100:
-        oldest = list(_result_store.keys())[0]
-        del _result_store[oldest]
+    with _lock:
+        _result_store[cmd_id] = result
+        # Trim to last 100 results (relies on Python 3.7+ dict insertion order)
+        while len(_result_store) > 100:
+            oldest = next(iter(_result_store))
+            del _result_store[oldest]
 ```
 
 - [ ] **Step 2: Commit**
@@ -1713,6 +1750,93 @@ def store_result(cmd_id: str, result: dict) -> None:
 ```bash
 git add fleet/factorio/bridge_api.py
 git commit -m "feat(factorio): add localhost Flask API for skill access"
+```
+
+---
+
+## Task 8b: Bridge API Tests
+
+The bridge API is the critical interface between skills and the bridge — it needs tests.
+
+**Files:**
+- Test: `tests/test_bridge_api.py`
+
+- [ ] **Step 1: Write tests for bridge API**
+
+```python
+# tests/test_bridge_api.py
+"""Tests for the localhost bridge API."""
+import json
+import queue
+import pytest
+from unittest.mock import MagicMock
+
+
+@pytest.fixture
+def client():
+    from factorio.bridge_api import create_api
+    from factorio.world_model import WorldModel
+    wm = WorldModel()
+    cmd_q = queue.Queue()
+    app = create_api(wm, cmd_q)
+    app.config["TESTING"] = True
+    with app.test_client() as c:
+        yield c, wm, cmd_q
+
+
+def test_status_endpoint(client):
+    c, wm, q = client
+    resp = c.get("/api/status")
+    assert resp.status_code == 200
+    data = json.loads(resp.data)
+    assert "running" in data
+
+
+def test_state_returns_snapshot(client):
+    from factorio.state_parser import GameState, Entity
+    c, wm, q = client
+    wm.update(GameState(tick=500, inventory={"iron-plate": 42}))
+    resp = c.get("/api/state")
+    assert resp.status_code == 200
+    data = json.loads(resp.data)
+    assert data["tick"] == 500
+    assert data["inventory"]["iron-plate"] == 42
+
+
+def test_command_queues_actions(client):
+    c, wm, q = client
+    resp = c.post("/api/command", json={"actions": [{"action": "wait", "ticks": 60}]})
+    assert resp.status_code == 200
+    data = json.loads(resp.data)
+    assert data["queued"] is True
+    assert not q.empty()
+
+
+def test_command_rejects_missing_actions(client):
+    c, wm, q = client
+    resp = c.post("/api/command", json={"foo": "bar"})
+    assert resp.status_code == 400
+
+
+def test_state_503_when_no_world_model():
+    from factorio.bridge_api import create_api
+    app = create_api(None, queue.Queue())
+    app.config["TESTING"] = True
+    with app.test_client() as c:
+        resp = c.get("/api/state")
+        assert resp.status_code == 503
+```
+
+- [ ] **Step 2: Run tests to verify they pass**
+
+Run: `cd fleet && python -m pytest ../tests/test_bridge_api.py -v`
+Expected: All 5 tests PASS
+
+- [ ] **Step 3: Commit**
+
+```bash
+git add tests/test_bridge_api.py
+git commit -m "test(factorio): add bridge API endpoint tests"
 ```
 
 ---
@@ -2319,6 +2443,16 @@ def run(payload, config):
         log.warning(f"Criteria evaluation failed: {e}")
         return {"error": f"Criteria evaluation failed: {e}"}
 
+    # Feed result into IQ scoring system
+    try:
+        import reinforcement
+        score = 1.0 if passed else -0.5
+        reinforcement.record_outcome(
+            skill="factorio_train", label=name, score=score
+        )
+    except Exception:
+        log.warning("Could not record IQ outcome", exc_info=True)
+
     return {
         "status": "ok",
         "lesson": name,
@@ -2645,6 +2779,17 @@ class Module:
         )
         cadence_menu.pack(anchor="w", padx=10, pady=10)
 
+        # Spectator button
+        spectator_frame = ctk.CTkFrame(frame, fg_color=BG2, corner_radius=8)
+        spectator_frame.pack(fill="x", padx=10, pady=5)
+
+        self._spectator_btn = ctk.CTkButton(
+            spectator_frame, text="Launch Spectator", font=FONT_SM,
+            fg_color=ACCENT, hover_color=ACCENT_H,
+            command=self._launch_spectator,
+        )
+        self._spectator_btn.pack(anchor="w", padx=10, pady=10)
+
         # Curriculum progress
         curriculum_frame = ctk.CTkFrame(frame, fg_color=BG2, corner_radius=8)
         curriculum_frame.pack(fill="x", padx=10, pady=5)
@@ -2656,6 +2801,43 @@ class Module:
                                        text="Phase 1: Curriculum — Not started",
                                        font=FONT_SM, text_color=DIM)
         self._phase_lbl.pack(anchor="w", padx=10, pady=10)
+
+        # Check if first run — show setup wizard
+        self._check_first_run(frame)
+
+    def _launch_spectator(self):
+        """Launch Factorio client as spectator connecting to the headless server."""
+        import subprocess as sp
+        try:
+            from factorio.lua_installer import detect_factorio_path
+            from factorio.bridge_config import load_factorio_config
+            cfg = load_factorio_config()
+            fpath = detect_factorio_path()
+            if not fpath:
+                log.warning("Factorio install not found")
+                return
+            exe = fpath / "bin" / "x64" / "factorio.exe"
+            if not exe.exists():
+                exe = fpath / "factorio"  # Linux
+            sp.Popen(
+                [str(exe), "--mp-connect", f"localhost:{cfg.rcon_port}"],
+                creationflags=getattr(sp, "CREATE_NO_WINDOW", 0),
+            )
+        except Exception:
+            log.warning("Failed to launch spectator", exc_info=True)
+
+    def _check_first_run(self, parent):
+        """Show setup wizard if RCON password is not configured."""
+        try:
+            import config as fleet_config
+            cfg = fleet_config.load_config()
+            if not cfg.get("factorio", {}).get("rcon_password"):
+                lbl = ctk.CTkLabel(parent,
+                    text="Setup needed — configure RCON password in Settings > Factorio",
+                    font=FONT_SM, text_color=ORANGE)
+                lbl.pack(anchor="w", padx=10, pady=5)
+        except Exception:
+            pass
 
     def on_refresh(self):
         """Poll bridge API for status updates."""
@@ -2708,7 +2890,8 @@ Add a basic integration check to verify the module loads and the bridge config p
 cd fleet && python -m pytest ../tests/test_rcon_client.py ../tests/test_bridge_config.py \
   ../tests/test_state_parser.py ../tests/test_action_translator.py \
   ../tests/test_world_model.py ../tests/test_cadence.py \
-  ../tests/test_curriculum.py ../tests/test_lua_installer.py -v
+  ../tests/test_curriculum.py ../tests/test_lua_installer.py \
+  ../tests/test_bridge_api.py -v
 ```
 
 Expected: All tests PASS
