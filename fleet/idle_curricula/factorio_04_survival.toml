@@ -1,0 +1,32 @@
+[[tasks]]
+type = "factorio"
+skill = "factorio_train"
+
+[tasks.payload]
+name = "defense_perimeter"
+instruction = "Build a defensive perimeter around your factory: walls + gun turrets at chokepoints. Keep turrets supplied with ammunition."
+success_criteria = "entities.gun-turret >= 4 AND entities.stone-wall >= 20"
+max_steps = 200
+complexity = "complex"
+
+[[tasks]]
+type = "factorio"
+skill = "factorio_train"
+
+[tasks.payload]
+name = "power_resilience"
+instruction = "Ensure power stability: build redundant steam engines, maintain coal supply, add electric poles to cover all machines."
+success_criteria = "entities.steam-engine >= 4 AND flow.iron-plate > 0"
+max_steps = 200
+complexity = "complex"
+
+[[tasks]]
+type = "factorio"
+skill = "factorio_train"
+
+[tasks.payload]
+name = "expand_resources"
+instruction = "Your nearby iron is running low. Scout for a new iron ore patch, build miners there, and belt or train the ore back to your smelting area."
+success_criteria = "entities.electric-mining-drill >= 8 AND flow.iron-plate >= 30"
+max_steps = 400
+complexity = "complex"

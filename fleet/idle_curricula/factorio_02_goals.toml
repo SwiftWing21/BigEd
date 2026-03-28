@@ -1,0 +1,32 @@
+[[tasks]]
+type = "factorio"
+skill = "factorio_train"
+
+[tasks.payload]
+name = "automate_red_science"
+instruction = "Build a complete automated red science production line: mine iron+copper, smelt, assemble gears+science packs, feed to lab, start automation research"
+success_criteria = "flow.automation-science-pack > 0"
+max_steps = 200
+complexity = "medium"
+
+[[tasks]]
+type = "factorio"
+skill = "factorio_train"
+
+[tasks.payload]
+name = "green_science"
+instruction = "Add green science (logistic-science-pack) production. Requires electronic circuits (copper wire + iron plate) and transport belts."
+success_criteria = "flow.logistic-science-pack > 0"
+max_steps = 300
+complexity = "medium"
+
+[[tasks]]
+type = "factorio"
+skill = "factorio_train"
+
+[tasks.payload]
+name = "main_bus"
+instruction = "Organize your factory with a main bus: parallel belts of iron plates, copper plates, gears, and green circuits. Tap off with splitters to feed assemblers."
+success_criteria = "entities.transport-belt >= 50 AND entities.splitter >= 4"
+max_steps = 250
+complexity = "medium"
