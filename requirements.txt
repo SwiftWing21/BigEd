@@ -1,0 +1,35 @@
+# BigEd CC — Python runtime dependencies
+# Covers fleet/ (dashboard, workers, skills) and BigEd/launcher/
+# Install: pip install -r requirements.txt
+# Docker:  uv pip install --system -r requirements.txt
+
+# ── Core fleet ────────────────────────────────────────────────────────────────
+flask>=3.0
+httpx>=0.27
+anthropic>=0.40
+psutil>=5.9
+tomlkit>=0.12
+
+# ── AI providers ─────────────────────────────────────────────────────────────
+# providers.py uses `import google.generativeai as genai`
+google-generativeai>=0.8
+
+# ── ML (ml_router.py, predictive_scaler.py) ──────────────────────────────────
+scikit-learn>=1.4
+pandas>=2.1
+
+# ── Security / TLS (fleet_tls.py, tenant_crypto.py) ─────────────────────────
+cryptography>=42.0
+
+# ── MCP server (mcp_server.py, dependency_check.py) ─────────────────────────
+fastmcp>=2.0
+
+# ── Hardware monitoring (gpu.py, hw_supervisor.py, skills) ───────────────────
+# pynvml module is shipped inside nvidia-ml-py
+nvidia-ml-py>=12.0
+
+# ── Desktop launcher (BigEd/launcher/) ───────────────────────────────────────
+customtkinter>=5.2
+pillow>=10.0
+pystray>=0.19
+pywebview>=5.0
