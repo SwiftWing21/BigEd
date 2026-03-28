@@ -41,3 +41,29 @@ def test_load_from_fleet_toml():
     cfg = load_factorio_config()
     assert isinstance(cfg.rcon_port, int)
     assert cfg.cadence in ("fast", "medium", "slow", "adaptive")
+
+
+def test_ollama_config_defaults():
+    from factorio.bridge_config import BridgeConfig
+    cfg = BridgeConfig()
+    assert cfg.ollama_url == "http://localhost:11434"
+    assert cfg.ollama_model == "qwen3:8b"
+    assert cfg.ollama_timeout == 60
+    assert cfg.plan_max_actions == 20
+    assert cfg.plan_invalidation_failures == 3
+    assert cfg.ollama_cooldown_secs == 30
+
+
+def test_ollama_config_from_dict():
+    from factorio.bridge_config import BridgeConfig
+    raw = {
+        "enabled": True,
+        "ollama_model": "qwen3:4b",
+        "ollama_timeout": 45,
+        "plan_max_actions": 10,
+    }
+    cfg = BridgeConfig.from_dict(raw)
+    assert cfg.ollama_model == "qwen3:4b"
+    assert cfg.ollama_timeout == 45
+    assert cfg.plan_max_actions == 10
+    assert cfg.ollama_url == "http://localhost:11434"  # default kept

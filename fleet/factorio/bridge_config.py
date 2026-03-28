@@ -42,6 +42,12 @@ class BridgeConfig:
     state_file: str = "fleet/factorio/factory-state.md"
     log_dir: str = "fleet/factorio/logs"
     curriculum_dir: str = "fleet/idle_curricula"
+    ollama_url: str = "http://localhost:11434"
+    ollama_model: str = "qwen3:8b"
+    ollama_timeout: int = 60
+    plan_max_actions: int = 20
+    plan_invalidation_failures: int = 3
+    ollama_cooldown_secs: int = 30
 
     @classmethod
     def from_dict(cls, d: dict) -> "BridgeConfig":
