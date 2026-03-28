@@ -972,6 +972,112 @@ def cmd_api(args):
         print("Usage: lead_client.py api {enable|disable|status|drain-mode}")
 
 
+def _handle_factorio(args):
+    """Handle factorio subcommands via bridge API."""
+    import json
+    import urllib.request
+    from config import load_config
+    cfg = load_config()
+    port = cfg.get("factorio", {}).get("bridge_port", 27016)
+    base = f"http://127.0.0.1:{port}"
+
+    def _fapi(method, path, body=None):
+        data = json.dumps(body).encode("utf-8") if body else None
+        req = urllib.request.Request(
+            f"{base}{path}", data=data, method=method,
+            headers={"Content-Type": "application/json"} if data else {},
+        )
+        try:
+            with urllib.request.urlopen(req, timeout=10) as resp:
+                return json.loads(resp.read())
+        except Exception as e:
+            print(f"Error: {e}")
+            return None
+
+    cmd = args.fac_cmd
+
+    if cmd == "pause":
+        r = _fapi("POST", "/api/pause")
+        if r:
+            print("Agent paused.")
+
+    elif cmd == "resume":
+        r = _fapi("POST", "/api/resume")
+        if r:
+            print("Agent resumed.")
+
+    elif cmd == "status":
+        status = _fapi("GET", "/api/status")
+        plan = _fapi("GET", "/api/plan")
+        if status:
+            print(f"Bridge: {'Running' if status.get('running') else 'Offline'}")
+            print(f"Paused: {status.get('paused', False)}")
+            print(f"Tick: {status.get('tick', 0)}")
+        if plan:
+            print(f"Plan: step {plan.get('plan_index', 0)}/{len(plan.get('plan', []))}")
+            print(f"Plans generated: {plan.get('plan_count', 0)}")
+            directives = plan.get("directives", [])
+            if directives:
+                print(f"Directives ({len(directives)}):")
+                for d in directives:
+                    tag = "sticky" if d["sticky"] else f"{d['plans_remaining']} plans"
+                    print(f"  [{d['id']}] [{tag}] {d['text']}")
+            progress = plan.get("progress", {})
+            if progress:
+                cl = progress.get('current_lesson', 0)
+                tl = progress.get('total_lessons', 0)
+                print(f"Phase {progress.get('phase', '?')}: lesson {cl + 1}/{tl}")
+
+    elif cmd == "directive":
+        r = _fapi("POST", "/api/directive", {"text": args.text, "sticky": args.sticky, "plans": args.plans})
+        if r:
+            print(f"Directive added: {r.get('id')}")
+
+    elif cmd == "directives":
+        r = _fapi("GET", "/api/directives")
+        if r is not None:
+            if not r:
+                print("No active directives.")
+            for d in r:
+                tag = "sticky" if d["sticky"] else f"{d['plans_remaining']} plans"
+                print(f"  [{d['id']}] [{tag}] {d['text']}")
+
+    elif cmd == "clear-directive":
+        r = _fapi("DELETE", f"/api/directive/{args.id}")
+        if r:
+            print("Removed." if r.get("removed") else "Not found.")
+
+    elif cmd == "clear-directives":
+        r = _fapi("DELETE", "/api/directives")
+        if r:
+            print(f"Cleared {r.get('cleared', 0)} directives.")
+
+    elif cmd == "place":
+        actions = [{"action": "place", "entity": args.entity,
+                    "position": {"x": args.x, "y": args.y}, "direction": args.dir}]
+        r = _fapi("POST", "/api/command", {"actions": actions})
+        if r:
+            print(f"Queued: {r.get('command_id')}")
+
+    elif cmd == "craft":
+        actions = [{"action": "craft", "recipe": args.recipe, "count": args.count}]
+        r = _fapi("POST", "/api/command", {"actions": actions})
+        if r:
+            print(f"Queued: {r.get('command_id')}")
+
+    elif cmd == "research":
+        actions = [{"action": "research", "technology": args.technology}]
+        r = _fapi("POST", "/api/command", {"actions": actions})
+        if r:
+            print(f"Queued: {r.get('command_id')}")
+
+    elif cmd == "move":
+        actions = [{"action": "move", "position": {"x": args.x, "y": args.y}}]
+        r = _fapi("POST", "/api/command", {"actions": actions})
+        if r:
+            print(f"Queued: {r.get('command_id')}")
+
+
 def main():
     parser = argparse.ArgumentParser(description="BigEd Fleet CLI")
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -1166,6 +1272,43 @@ def main():
     api_drain = api_sub.add_parser("drain-mode", help="Set drain mode")
     api_drain.add_argument("mode", choices=["graceful", "hard"])
 
+    # Factorio takeover
+    p_fac = subparsers.add_parser("factorio", help="Factorio agent controls")
+    fac_sub = p_fac.add_subparsers(dest="fac_cmd", required=True)
+
+    fac_sub.add_parser("pause", help="Pause autonomous agent")
+    fac_sub.add_parser("resume", help="Resume autonomous agent")
+    fac_sub.add_parser("status", help="Show agent status, plan, directives")
+
+    p_fdir = fac_sub.add_parser("directive", help="Send a directive")
+    p_fdir.add_argument("text", help="Directive text")
+    p_fdir.add_argument("--sticky", action="store_true", help="Persist until cleared")
+    p_fdir.add_argument("--plans", type=int, default=1, help="Plans to keep active")
+
+    fac_sub.add_parser("directives", help="List active directives")
+
+    p_fclear = fac_sub.add_parser("clear-directive", help="Remove a directive")
+    p_fclear.add_argument("id", help="Directive ID")
+
+    fac_sub.add_parser("clear-directives", help="Clear all directives")
+
+    p_fplace = fac_sub.add_parser("place", help="Place an entity")
+    p_fplace.add_argument("entity", help="Entity name")
+    p_fplace.add_argument("x", type=int, help="X position")
+    p_fplace.add_argument("y", type=int, help="Y position")
+    p_fplace.add_argument("--dir", default="north", help="Direction")
+
+    p_fcraft = fac_sub.add_parser("craft", help="Craft items")
+    p_fcraft.add_argument("recipe", help="Recipe name")
+    p_fcraft.add_argument("count", type=int, help="Count")
+
+    p_fres = fac_sub.add_parser("research", help="Start research")
+    p_fres.add_argument("technology", help="Technology name")
+
+    p_fmove = fac_sub.add_parser("move", help="Move to position")
+    p_fmove.add_argument("x", type=int, help="X")
+    p_fmove.add_argument("y", type=int, help="Y")
+
     args = parser.parse_args()
 
     if args.command == "status":
@@ -1240,6 +1383,8 @@ def main():
         cmd_import(args)
     elif args.command == "api":
         cmd_api(args)
+    elif args.command == "factorio":
+        _handle_factorio(args)
     elif args.command == "backup":
         from backup_manager import BackupManager
         from config import load_config
