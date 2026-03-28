@@ -210,7 +210,7 @@ The Focus toggle lives on the dashboard because it affects the supervisor (worke
 def submit_plan(self, submission: PlanSubmission) -> dict:
     """Accept or reject an external plan based on priority and conflict rules."""
 
-def submit_directive(self, directive: DirectiveSubmission) -> None:
+def submit_directive(self, directive: Directive) -> None:
     """Add a directive to the planning prompt context."""
 
 def _check_conflict(self, incoming: PlanSubmission) -> tuple[bool, str]:
@@ -237,7 +237,7 @@ def _restore_shelved_plan(self) -> None:
 ```python
 self._plan_queue: list[tuple] = []              # heapq min-heap, entries are (-priority, seq, PlanSubmission)
 self._shelved_plan: PlanSubmission | None = None
-self._active_directives: list[DirectiveSubmission] = []
+self._active_directives: list[Directive] = []
 self._plan_history: deque[dict] = deque(maxlen=50)  # completed/rejected log
 self._plan_seq: int = 0                            # monotonic counter for FIFO tiebreaking
 MAX_PLAN_QUEUE_DEPTH: int = 20                     # reject lowest-priority plans when full
@@ -262,7 +262,7 @@ MAX_PLAN_QUEUE_DEPTH: int = 20                     # reject lowest-priority plan
 | File | Changes |
 |------|---------|
 | `fleet/factorio/agent_brain.py` | Priority plan queue, submit_plan/directive, conflict detection, shelving |
-| `fleet/factorio/bridge_api.py` | 5 new endpoints (plan/submit, plan/queue, plan/history, focus, focus GET) |
+| `fleet/factorio/bridge_api.py` | 5 new endpoints (plan/submit, plan/queue, plan/history, directive/submit, focus) |
 | `fleet/factorio/bridge.py` | Wire focus state to supervisor, pass to brain |
 | `fleet/factorio/bridge_config.py` | Add `factorio_focus`, `focus_workers` config fields |
 | `fleet/skills/factorio_analyze.py` | New skill — state analysis + plan/directive submission |
