@@ -76,3 +76,52 @@ def test_plan_endpoint(client):
     data = json.loads(resp.data)
     assert "plan" in data
     assert "progress" in data
+
+
+def test_pause_endpoint(client):
+    c, wm, q = client
+    resp = c.post("/api/pause")
+    assert resp.status_code == 200
+    assert json.loads(resp.data)["paused"] is True
+
+
+def test_resume_endpoint(client):
+    c, wm, q = client
+    c.post("/api/pause")
+    resp = c.post("/api/resume")
+    assert json.loads(resp.data)["paused"] is False
+
+
+def test_directive_crud(client):
+    c, wm, q = client
+    resp = c.post("/api/directive", data=json.dumps({"text": "focus power", "sticky": True}), content_type="application/json")
+    did = json.loads(resp.data)["id"]
+    resp = c.get("/api/directives")
+    assert len(json.loads(resp.data)) == 1
+    c.delete(f"/api/directive/{did}")
+    assert len(json.loads(c.get("/api/directives").data)) == 0
+
+
+def test_clear_directives_endpoint(client):
+    c, wm, q = client
+    c.post("/api/directive", data=json.dumps({"text": "one"}), content_type="application/json")
+    c.post("/api/directive", data=json.dumps({"text": "two"}), content_type="application/json")
+    resp = c.delete("/api/directives")
+    assert json.loads(resp.data)["cleared"] == 2
+
+
+def test_preset_crud(client):
+    c, wm, q = client
+    assert len(json.loads(c.get("/api/presets").data)) == 6
+    resp = c.post("/api/preset", data=json.dumps({"label": "Custom", "text": "custom"}), content_type="application/json")
+    pid = json.loads(resp.data)["id"]
+    assert len(json.loads(c.get("/api/presets").data)) == 7
+    c.delete(f"/api/preset/{pid}")
+    assert len(json.loads(c.get("/api/presets").data)) == 6
+
+
+def test_status_includes_paused(client):
+    c, wm, q = client
+    data = json.loads(c.get("/api/status").data)
+    assert "paused" in data
+    assert data["paused"] is False
