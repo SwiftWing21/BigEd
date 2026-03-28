@@ -7,7 +7,7 @@
 --   /biged-observe  - dumps a focused observation around a position
 --   /biged-metrics  - dumps production/research metrics
 
--- Factorio 2.0 uses game.table_to_json() / game.json_to_table() (no require needed)
+-- Factorio 2.0 uses helpers.table_to_json() / helpers.json_to_table() (no require needed)
 
 local CONFIG = {
     observation_radius = 64,
@@ -111,9 +111,31 @@ local function get_resources(surface, area)
     return result
 end
 
+-- Helper: get or create a player for headless mode
+local function get_agent_player()
+    local player = get_agent_player()
+    if player and player.valid then
+        -- Ensure player has a character (may be missing in headless)
+        if not player.character then
+            local surface = player.surface or game.surfaces[1]
+            local pos = surface.find_non_colliding_position("character", {0, 0}, 50, 1)
+            if pos then
+                player.teleport(pos, surface)
+                player.create_character()
+            end
+        end
+        return player
+    end
+    -- No player at all — can't create one via script in headless without a connection
+    return nil
+end
+
 commands.add_command("biged-state", "Dump game state for agent", function(cmd)
-    local player = game.get_player(1)
-    if not player then return end
+    local player = get_agent_player()
+    if not player then
+        rcon.print(helpers.table_to_json({error = "no player — connect as spectator first or join the server"}))
+        return
+    end
     local surface = player.surface
     local pos = player.position
     local r = CONFIG.observation_radius
@@ -161,12 +183,15 @@ commands.add_command("biged-state", "Dump game state for agent", function(cmd)
         research = research,
         map_explored_chunks = #player.force.get_chunks(surface),
     }
-    rcon.print(game.table_to_json(state))
+    rcon.print(helpers.table_to_json(state))
 end)
 
 commands.add_command("biged-metrics", "Dump production metrics", function(cmd)
-    local player = game.get_player(1)
-    if not player then return end
+    local player = get_agent_player()
+    if not player then
+        rcon.print(helpers.table_to_json({error = "no player available"}))
+        return
+    end
     local force = player.force
     local stats = force.item_production_statistics
     local production = {}
@@ -216,7 +241,7 @@ commands.add_command("biged-metrics", "Dump production metrics", function(cmd)
             table.insert(metrics.research.completed, name)
         end
     end
-    rcon.print(game.table_to_json(metrics))
+    rcon.print(helpers.table_to_json(metrics))
 end)
 
 commands.add_command("biged-cmd", "Execute agent command (JSON)", function(cmd)
@@ -224,7 +249,7 @@ commands.add_command("biged-cmd", "Execute agent command (JSON)", function(cmd)
         rcon.print('{"error": "no command provided"}')
         return
     end
-    local ok, parsed = pcall(game.json_to_table, cmd.parameter)
+    local ok, parsed = pcall(helpers.json_to_table, cmd.parameter)
     if not ok or not parsed then
         rcon.print('{"error": "invalid JSON"}')
         return
@@ -233,7 +258,7 @@ commands.add_command("biged-cmd", "Execute agent command (JSON)", function(cmd)
     local result = { action = action, success = false }
 
     if action == "place" then
-        local player = game.get_player(1)
+        local player = get_agent_player()
         local surface = player.surface
         local name = parsed.entity
         local pos = parsed.position
@@ -241,7 +266,7 @@ commands.add_command("biged-cmd", "Execute agent command (JSON)", function(cmd)
         local inv = player.get_main_inventory()
         if not inv or inv.get_item_count(name) < 1 then
             result.error = "missing item: " .. (name or "nil")
-            rcon.print(game.table_to_json(result))
+            rcon.print(helpers.table_to_json(result))
             return
         end
         local can_place = surface.can_place_entity({
@@ -249,7 +274,7 @@ commands.add_command("biged-cmd", "Execute agent command (JSON)", function(cmd)
         })
         if not can_place then
             result.error = "cannot place " .. name .. " at (" .. pos.x .. ", " .. pos.y .. ")"
-            rcon.print(game.table_to_json(result))
+            rcon.print(helpers.table_to_json(result))
             return
         end
         local entity = surface.create_entity({
@@ -267,7 +292,7 @@ commands.add_command("biged-cmd", "Execute agent command (JSON)", function(cmd)
     elseif action == "set_recipe" then
         local unit = parsed.unit_number
         local recipe = parsed.recipe
-        local entities = game.get_player(1).surface.find_entities_filtered({
+        local entities = get_agent_player().surface.find_entities_filtered({
             type = { "assembling-machine", "furnace" },
         })
         for _, ent in pairs(entities) do
@@ -275,7 +300,7 @@ commands.add_command("biged-cmd", "Execute agent command (JSON)", function(cmd)
                 local items = ent.set_recipe(recipe)
                 result.success = true
                 if items then
-                    local player_inv = game.get_player(1).get_main_inventory()
+                    local player_inv = get_agent_player().get_main_inventory()
                     for item_name, count in pairs(items) do
                         player_inv.insert({ name = item_name, count = count })
                     end
@@ -290,7 +315,7 @@ commands.add_command("biged-cmd", "Execute agent command (JSON)", function(cmd)
     elseif action == "remove" then
         local unit = parsed.unit_number
         local pos = parsed.position
-        local player = game.get_player(1)
+        local player = get_agent_player()
         local target = nil
         if unit then
             local all = player.surface.find_entities_filtered({ force = player.force })
@@ -318,7 +343,7 @@ commands.add_command("biged-cmd", "Execute agent command (JSON)", function(cmd)
         end
 
     elseif action == "craft" then
-        local player = game.get_player(1)
+        local player = get_agent_player()
         local recipe = parsed.recipe
         local count = parsed.count or 1
         local crafted = player.begin_crafting({ recipe = recipe, count = count })
@@ -326,7 +351,7 @@ commands.add_command("biged-cmd", "Execute agent command (JSON)", function(cmd)
         result.crafted = crafted
 
     elseif action == "research" then
-        local force = game.get_player(1).force
+        local force = get_agent_player().force
         local tech_name = parsed.technology
         local tech = force.technologies[tech_name]
         if tech and not tech.researched then
@@ -337,13 +362,13 @@ commands.add_command("biged-cmd", "Execute agent command (JSON)", function(cmd)
         end
 
     elseif action == "move" then
-        local player = game.get_player(1)
+        local player = get_agent_player()
         local pos = parsed.position
         player.teleport(pos, player.surface)
         result.success = true
 
     elseif action == "connect" then
-        local player = game.get_player(1)
+        local player = get_agent_player()
         local surface = player.surface
         local entity_name = parsed.entity or "transport-belt"
         local from = parsed.from
@@ -394,7 +419,7 @@ commands.add_command("biged-cmd", "Execute agent command (JSON)", function(cmd)
         result.error = "unknown action: " .. tostring(action)
     end
 
-    rcon.print(game.table_to_json(result))
+    rcon.print(helpers.table_to_json(result))
 end)
 
 commands.add_command("biged-observe", "Observe area (x y radius)", function(cmd)
@@ -403,7 +428,7 @@ commands.add_command("biged-observe", "Observe area (x y radius)", function(cmd)
     x = tonumber(x) or 0
     y = tonumber(y) or 0
     radius = tonumber(radius) or 32
-    local surface = game.get_player(1).surface
+    local surface = get_agent_player().surface
     local area = { { x - radius, y - radius }, { x + radius, y + radius } }
     local entities = {}
     for _, ent in pairs(surface.find_entities(area)) do
@@ -411,7 +436,7 @@ commands.add_command("biged-observe", "Observe area (x y radius)", function(cmd)
         if s then table.insert(entities, s) end
     end
     local resources = get_resources(surface, area)
-    rcon.print(game.table_to_json({
+    rcon.print(helpers.table_to_json({
         center = { x = x, y = y },
         radius = radius,
         entities = entities,

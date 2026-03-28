@@ -118,7 +118,7 @@ def find_or_create_save(factorio_exe: Path) -> Path:
         capture_output=True,
         text=True,
         creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
-        timeout=60,
+        timeout=300,
     )
     if proc.returncode != 0:
         log.error("Failed to create save: %s", proc.stderr[:500])
