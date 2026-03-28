@@ -934,6 +934,27 @@ def test_graph_universe_task_aggregation():
                   f"{task_groups} task groups, {communities} communities")
 
 
+def test_modules_api():
+    """Module management API endpoints respond correctly."""
+    import urllib.request
+    import json
+    base = "http://localhost:5555"
+    try:
+        r = urllib.request.urlopen(base + "/api/modules", timeout=5)
+        data = json.loads(r.read())
+        assert "modules" in data, "Missing 'modules' key"
+        print(f"  Modules API: {len(data['modules'])} installed")
+        return True, f"{len(data['modules'])} modules installed"
+    except urllib.error.URLError:
+        # Dashboard not running — test the blueprint import instead
+        try:
+            from modules_blueprint import modules_bp
+            assert modules_bp.name == "modules"
+            return True, "blueprint importable (dashboard not running)"
+        except Exception as e:
+            return False, f"blueprint import failed: {e}"
+
+
 def cleanup():
     """Remove smoke test artifacts from DB."""
     import db
@@ -1026,6 +1047,7 @@ def main():
         ("Graph universe task aggregation", test_graph_universe_task_aggregation),
         ("Task lifecycle e2e", test_task_lifecycle_e2e),
         ("Backup creates valid snapshot", test_backup_creates_valid_snapshot),
+        ("Modules API", test_modules_api),
     ])
 
     if not args.fast:
