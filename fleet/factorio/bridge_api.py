@@ -12,12 +12,14 @@ _world_model = None
 _command_queue: "queue.Queue | None" = None
 _result_store: dict = {}  # command_id -> result (Python 3.7+ insertion order)
 _bridge_status: dict = {"running": False, "tick": 0, "cadence": "adaptive"}
+_brain = None
 
 
-def create_api(world_model, command_queue) -> Flask:
-    global _world_model, _command_queue
+def create_api(world_model, command_queue, brain=None) -> Flask:
+    global _world_model, _command_queue, _brain
     _world_model = world_model
     _command_queue = command_queue
+    _brain = brain
 
     app = Flask("factorio_bridge_api")
 
@@ -49,6 +51,14 @@ def create_api(world_model, command_queue) -> Flask:
         if result is None:
             return jsonify({"pending": True})
         return jsonify(result)
+
+    @app.route("/api/plan")
+    def api_plan():
+        if _brain is None:
+            return jsonify({"error": "AgentBrain not initialized"}), 503
+        plan_status = _brain.get_plan_status()
+        progress = _brain.curriculum.get_progress()
+        return jsonify({**plan_status, "progress": progress})
 
     return app
 

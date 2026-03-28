@@ -9,9 +9,14 @@ import pytest
 def client():
     from factorio.bridge_api import create_api
     from factorio.world_model import WorldModel
+    from factorio.bridge_config import BridgeConfig
+    from factorio.agent_brain import AgentBrain
+
     wm = WorldModel()
     cmd_q = queue.Queue()
-    app = create_api(wm, cmd_q)
+    cfg = BridgeConfig(current_phase=1)
+    brain = AgentBrain(cfg, wm, curricula_dir="tests/fixtures/curricula")
+    app = create_api(wm, cmd_q, brain)
     app.config["TESTING"] = True
     with app.test_client() as c:
         yield c, wm, cmd_q
@@ -62,3 +67,12 @@ def test_state_503_when_no_world_model():
     with app.test_client() as c:
         resp = c.get("/api/state")
         assert resp.status_code == 503
+
+
+def test_plan_endpoint(client):
+    c, wm, q = client
+    resp = c.get("/api/plan")
+    assert resp.status_code == 200
+    data = json.loads(resp.data)
+    assert "plan" in data
+    assert "progress" in data
