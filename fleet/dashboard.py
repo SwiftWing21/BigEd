@@ -1198,15 +1198,15 @@ def api_dashboard_aggregate():
         "timeline":   _safe(api_timeline),
         "alerts":     _safe(api_alerts),
         "code_stats": _safe(api_code_stats),
-        "modules":    _safe(api_modules),
+        "modules":    _safe(api_modules_legacy),
         "data_stats": _safe(api_data_stats),
         "evolution":  _safe(api_evolution),
     })
 
 
-@app.route("/api/modules")
-def api_modules():
-    """Enabled modules, versions, deprecation status."""
+@app.route("/api/modules/legacy")
+def api_modules_legacy():
+    """Enabled modules, versions, deprecation status (legacy manifest reader)."""
     modules_dir = Path(__file__).parent.parent / "BigEd" / "launcher" / "modules"
     manifest_path = modules_dir / "manifest.json"
 
@@ -2010,6 +2010,10 @@ try:
     )
 except ImportError:
     pass  # views module optional
+
+# ── Module Manager API (v1.0) ──────────────────────────────────────────────
+from modules_blueprint import modules_bp
+app.register_blueprint(modules_bp)
 
 # ── Ingestion Hub (v0.900.00b) ─────────────────────────────────────────
 try:
