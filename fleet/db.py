@@ -1,11 +1,15 @@
 """SQLite data layer — all DB access goes through this module."""
 import json
+import logging
 import os
 import sqlite3
+import threading
 import time
 import random
 from datetime import datetime, timezone
 from pathlib import Path
+
+log = logging.getLogger(__name__)
 
 
 def utc_to_local(utc_str: str | None) -> str:
@@ -136,13 +140,15 @@ CREATE TABLE IF NOT EXISTS deployments (
 """
 
 
-def get_conn(db_path=None):
-    """Get DB connection, with SQLCipher if available and configured.
+# ── Thread-local connection pool ────────────────────────────────────────────
+_local = threading.local()
+_pool_lock = threading.Lock()
+_pool_size = 0
+_MAX_POOL = 20  # max concurrent thread-local connections
 
-    SQLCipher provides transparent AES-256 encryption for the fleet database.
-    On fresh installs with sqlcipher3 installed, set BIGED_DB_KEY env var to
-    enable encryption. Falls back to plain sqlite3 when sqlcipher3 is absent.
-    """
+
+def _create_connection(db_path=None):
+    """Create a raw SQLite connection with WAL, busy_timeout, and optional SQLCipher."""
     path = db_path or DB_PATH
     try:
         import sqlcipher3 as sqlite3_mod
@@ -161,6 +167,69 @@ def get_conn(db_path=None):
     conn.execute("PRAGMA synchronous=NORMAL")
     conn.execute("PRAGMA busy_timeout=30000")  # 30s in ms — SQLite retries internally
     return conn
+
+
+def get_conn(db_path=None):
+    """Get a thread-local SQLite connection (reused per thread).
+
+    Each thread keeps one connection alive for the lifetime of the thread.
+    Connections are validated before reuse. A global cap (_MAX_POOL) prevents
+    runaway thread counts from exhausting file descriptors.
+
+    Pass db_path to get a non-pooled connection for a specific database
+    (e.g. tenant DBs). Only the default DB_PATH is pooled.
+    """
+    global _pool_size
+
+    # Non-default paths bypass the pool (tenant DBs, one-off connections)
+    if db_path is not None:
+        return _create_connection(db_path)
+
+    conn = getattr(_local, 'conn', None)
+    if conn is not None:
+        try:
+            conn.execute("SELECT 1")  # verify still alive
+            return conn
+        except Exception:
+            log.warning("Thread-local DB connection stale, replacing")
+            _close_thread_conn()
+
+    with _pool_lock:
+        if _pool_size >= _MAX_POOL:
+            raise RuntimeError(f"Connection pool exhausted ({_MAX_POOL})")
+        _pool_size += 1
+
+    try:
+        conn = _create_connection()
+        _local.conn = conn
+        return conn
+    except Exception:
+        with _pool_lock:
+            _pool_size = max(0, _pool_size - 1)
+        raise
+
+
+def _close_thread_conn():
+    """Close this thread's pooled connection and decrement the pool counter."""
+    global _pool_size
+    conn = getattr(_local, 'conn', None)
+    if conn is not None:
+        try:
+            conn.close()
+        except Exception:
+            pass
+        _local.conn = None
+        with _pool_lock:
+            _pool_size = max(0, _pool_size - 1)
+
+
+def close_all():
+    """Shutdown hook — close the calling thread's pooled connection.
+
+    Call from each thread that used get_conn(), or at minimum from the main
+    thread during application shutdown.
+    """
+    _close_thread_conn()
 
 
 def _retry_write(fn, retries=8):
@@ -415,6 +484,17 @@ def init_db():
             conn.execute("SELECT dispatch_failures FROM ingest_staging LIMIT 0")
         except Exception:
             conn.execute("ALTER TABLE ingest_staging ADD COLUMN dispatch_failures INTEGER DEFAULT 0")
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS module_suggestions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                module_name TEXT NOT NULL,
+                reason TEXT NOT NULL,
+                relevance_score REAL NOT NULL,
+                dismissed INTEGER DEFAULT 0,
+                created_at TEXT DEFAULT (datetime('now')),
+                UNIQUE(module_name)
+            )
+        """)
 
 
 def update_intelligence_score(task_id, score):
