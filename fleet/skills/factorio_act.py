@@ -1,7 +1,7 @@
-"""Submit actions to the Factorio bridge CommandQueue."""
+"""Submit actions to the Factorio bridge via plan/submit API."""
 SKILL_NAME = "factorio_act"
 DESCRIPTION = "Translate a plan into Factorio actions and submit to the bridge for execution"
-VERSION = "0.1.0"
+VERSION = "0.2.0"
 REQUIRES_NETWORK = True
 COMPLEXITY = "medium"
 TAGS = ["factorio", "sandbox"]
@@ -19,16 +19,24 @@ def run(payload, config):
     if not actions:
         return {"error": "No actions provided in payload"}
 
-    url = f"http://127.0.0.1:{bridge_port}/api/command"
-    body = json.dumps({"actions": actions}).encode("utf-8")
-
+    plan_data = {
+        "actions": actions,
+        "priority": payload.get("priority", 75),
+        "source": payload.get("worker_name", "actor"),
+        "source_type": "worker",
+        "rationale": payload.get("rationale", "Direct action"),
+        "confidence": payload.get("confidence", 0.9),
+    }
     try:
-        req = urllib.request.Request(url, data=body,
-                                     headers={"Content-Type": "application/json"},
-                                     method="POST")
-        resp = urllib.request.urlopen(req, timeout=5)
+        req = urllib.request.Request(
+            f"http://localhost:{bridge_port}/api/plan/submit",
+            data=json.dumps(plan_data).encode(),
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        resp = urllib.request.urlopen(req, timeout=15)
         result = json.loads(resp.read())
-        return {"status": "ok", "queued": True, "command_id": result.get("command_id")}
+        return {"status": "ok", **result}
     except Exception as e:
-        log.warning(f"Failed to submit actions: {e}")
-        return {"error": f"Bridge API error: {e}"}
+        log.warning(f"Failed to submit plan: {e}")
+        return {"status": "error", "error": str(e)}
