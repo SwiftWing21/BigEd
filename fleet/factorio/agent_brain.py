@@ -1,4 +1,5 @@
 """Agent brain — plan-and-drain loop with Ollama LLM reasoning."""
+import heapq
 import json
 import logging
 import threading
@@ -6,6 +7,7 @@ import time
 import uuid
 import urllib.request
 import urllib.error
+from collections import deque
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -130,6 +132,13 @@ class AgentBrain:
         self._plan_index: int = 0
         self._consecutive_failures: int = 0
         self._idle_assembler_count: int = 0
+        # Priority plan queue (heapq min-heap, entries: (-priority, seq, PlanSubmission))
+        self._plan_queue: list[tuple] = []
+        self._shelved_plan: PlanSubmission | None = None
+        self._plan_history: deque = deque(maxlen=50)
+        self._plan_seq: int = 0
+        self._current_priority: int = PRIORITY_NORMAL
+        self.MAX_PLAN_QUEUE_DEPTH: int = 20
         self._last_results: list[dict] = []
         self._ollama_cooldown_until: float = 0.0
         self._plan_count: int = 0
@@ -495,6 +504,97 @@ class AgentBrain:
             "paused": self._paused,
             "directives": directives_snapshot,
         }
+
+    def submit_plan(self, submission: PlanSubmission) -> dict:
+        """Accept or reject an external plan based on priority and conflict rules."""
+        plan_id = f"p-{uuid.uuid4().hex[:8]}"
+        submission.plan_id = plan_id
+
+        with self._lock:
+            # Queue depth limit
+            if len(self._plan_queue) >= self.MAX_PLAN_QUEUE_DEPTH:
+                entry = {"plan_id": plan_id, "status": "rejected",
+                         "reason": "Plan queue full", "source": submission.source,
+                         "timestamp": time.time()}
+                self._plan_history.append(entry)
+                return {"status": "rejected", "plan_id": plan_id,
+                        "position": -1, "reason": "Plan queue full"}
+
+            # Conflict check (V1: no-op, always accepts)
+            conflicts, reason = self._check_conflict(submission)
+            if conflicts and submission.source_type != "human":
+                entry = {"plan_id": plan_id, "status": "rejected",
+                         "reason": reason, "source": submission.source,
+                         "timestamp": time.time()}
+                self._plan_history.append(entry)
+                return {"status": "rejected", "plan_id": plan_id,
+                        "position": -1, "reason": reason}
+
+            # Preemption check: incoming >= current + 25
+            if (self._plan and
+                    submission.priority >= self._current_priority + 25):
+                self._shelve_current_plan()
+                self._plan = submission.actions
+                self._plan_index = 0
+                self._current_priority = submission.priority
+                entry = {"plan_id": plan_id, "status": "preempted_current",
+                         "source": submission.source, "timestamp": time.time()}
+                self._plan_history.append(entry)
+                return {"status": "preempted_current", "plan_id": plan_id,
+                        "position": 0, "reason": None}
+
+            # Queue the plan
+            seq = self._plan_seq
+            self._plan_seq += 1
+            heapq.heappush(self._plan_queue, (-submission.priority, seq, submission))
+
+            position = sum(1 for p in self._plan_queue
+                           if p[0] < -submission.priority) + (1 if self._plan else 0)
+            status = "accepted" if not self._plan else "queued"
+            entry = {"plan_id": plan_id, "status": status,
+                     "source": submission.source, "timestamp": time.time()}
+            self._plan_history.append(entry)
+            return {"status": status, "plan_id": plan_id,
+                    "position": position, "reason": None}
+
+    def _check_conflict(self, incoming: PlanSubmission) -> tuple[bool, str]:
+        """V1: no-op — always accepts. Priority rules handle ordering."""
+        return (False, "")
+
+    def _shelve_current_plan(self) -> None:
+        """Save current plan for potential resumption after preempting plan completes."""
+        if self._plan:
+            remaining_actions = self._plan[self._plan_index:]
+            if remaining_actions:
+                self._shelved_plan = PlanSubmission(
+                    actions=remaining_actions,
+                    priority=self._current_priority,
+                    source="brain-shelved",
+                    source_type="brain",
+                    rationale="Shelved by preemption",
+                    confidence=0.5,
+                    plan_id=f"shelved-{uuid.uuid4().hex[:8]}",
+                )
+
+    def _restore_shelved_plan(self) -> None:
+        """Restore a previously shelved plan if still valid."""
+        if self._shelved_plan:
+            seq = self._plan_seq
+            self._plan_seq += 1
+            heapq.heappush(self._plan_queue,
+                           (-self._shelved_plan.priority, seq, self._shelved_plan))
+            self._shelved_plan = None
+
+    def _pop_next_plan(self) -> bool:
+        """Pop highest-priority plan from queue into _plan. Returns True if a plan was loaded."""
+        with self._lock:
+            if self._plan_queue:
+                neg_pri, _seq, submission = heapq.heappop(self._plan_queue)
+                self._plan = submission.actions
+                self._plan_index = 0
+                self._current_priority = submission.priority
+                return True
+        return False
 
     def reset_counters(self) -> None:
         """Reset cumulative counters for experiment runner."""
