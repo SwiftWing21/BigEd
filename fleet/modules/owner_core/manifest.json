@@ -1,0 +1,16 @@
+{
+  "name": "owner_core",
+  "version": "1.0.0",
+  "type": "launcher",
+  "description": "Owner-level controls — system settings, licensing, billing, and platform administration",
+  "author": "BigEd",
+  "dependencies": {
+    "requires": [],
+    "conflicts": [],
+    "recommends": []
+  },
+  "profiles": {},
+  "schema_version": "1",
+  "rollback_safe": true,
+  "min_fleet_version": "0.300.00b"
+}

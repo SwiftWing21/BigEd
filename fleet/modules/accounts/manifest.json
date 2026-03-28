@@ -1,0 +1,16 @@
+{
+  "name": "accounts",
+  "version": "1.0.0",
+  "type": "launcher",
+  "description": "Account and organization management — multi-tenant structure, roles, and permissions",
+  "author": "BigEd",
+  "dependencies": {
+    "requires": [],
+    "conflicts": [],
+    "recommends": []
+  },
+  "profiles": {},
+  "schema_version": "1",
+  "rollback_safe": true,
+  "min_fleet_version": "0.300.00b"
+}

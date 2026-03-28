@@ -1,0 +1,16 @@
+{
+  "name": "customers",
+  "version": "1.0.0",
+  "type": "launcher",
+  "description": "Customer profiles and lifecycle management — enrichment, segmentation, and history",
+  "author": "BigEd",
+  "dependencies": {
+    "requires": ["accounts"],
+    "conflicts": [],
+    "recommends": ["crm"]
+  },
+  "profiles": {},
+  "schema_version": "1",
+  "rollback_safe": true,
+  "min_fleet_version": "0.300.00b"
+}

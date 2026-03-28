@@ -1,0 +1,16 @@
+{
+  "name": "agents",
+  "version": "1.0.0",
+  "type": "launcher",
+  "description": "AI agent management panel — spawn, monitor, and configure worker agents",
+  "author": "BigEd",
+  "dependencies": {
+    "requires": [],
+    "conflicts": [],
+    "recommends": ["intelligence"]
+  },
+  "profiles": {},
+  "schema_version": "1",
+  "rollback_safe": true,
+  "min_fleet_version": "0.300.00b"
+}

@@ -1,0 +1,16 @@
+{
+  "name": "outputs",
+  "version": "1.0.0",
+  "type": "launcher",
+  "description": "Output management — view, export, and distribute generated content and reports",
+  "author": "BigEd",
+  "dependencies": {
+    "requires": [],
+    "conflicts": [],
+    "recommends": []
+  },
+  "profiles": {},
+  "schema_version": "1",
+  "rollback_safe": true,
+  "min_fleet_version": "0.300.00b"
+}

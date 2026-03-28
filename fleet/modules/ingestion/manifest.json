@@ -1,0 +1,16 @@
+{
+  "name": "ingestion",
+  "version": "1.0.0",
+  "type": "launcher",
+  "description": "Data ingestion hub — import and index documents, datasets, and knowledge sources",
+  "author": "BigEd",
+  "dependencies": {
+    "requires": [],
+    "conflicts": [],
+    "recommends": ["outputs"]
+  },
+  "profiles": {},
+  "schema_version": "1",
+  "rollback_safe": true,
+  "min_fleet_version": "0.300.00b"
+}

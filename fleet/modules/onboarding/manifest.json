@@ -1,0 +1,16 @@
+{
+  "name": "onboarding",
+  "version": "1.0.0",
+  "type": "launcher",
+  "description": "Guided setup wizard and onboarding flow for new users and deployments",
+  "author": "BigEd",
+  "dependencies": {
+    "requires": [],
+    "conflicts": [],
+    "recommends": ["crm"]
+  },
+  "profiles": {},
+  "schema_version": "1",
+  "rollback_safe": true,
+  "min_fleet_version": "0.300.00b"
+}

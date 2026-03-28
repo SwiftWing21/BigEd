@@ -1,0 +1,16 @@
+{
+  "name": "command_center",
+  "version": "1.0.0",
+  "type": "launcher",
+  "description": "Central command dashboard with fleet overview and task dispatch",
+  "author": "BigEd",
+  "dependencies": {
+    "requires": [],
+    "conflicts": [],
+    "recommends": ["agents"]
+  },
+  "profiles": {},
+  "schema_version": "1",
+  "rollback_safe": true,
+  "min_fleet_version": "0.300.00b"
+}

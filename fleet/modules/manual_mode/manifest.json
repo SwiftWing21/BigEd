@@ -1,0 +1,16 @@
+{
+  "name": "manual_mode",
+  "version": "1.0.0",
+  "type": "launcher",
+  "description": "Manual task entry and direct fleet control for operator-driven workflows",
+  "author": "BigEd",
+  "dependencies": {
+    "requires": [],
+    "conflicts": [],
+    "recommends": []
+  },
+  "profiles": {},
+  "schema_version": "1",
+  "rollback_safe": true,
+  "min_fleet_version": "0.300.00b"
+}
