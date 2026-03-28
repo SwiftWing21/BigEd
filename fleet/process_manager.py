@@ -41,7 +41,6 @@ class ProcessManager:
         self.openclaw_proc: subprocess.Popen | None = None
         self.dashboard_proc: subprocess.Popen | None = None
         self.hw_supervisor_proc: subprocess.Popen | None = None
-        self.factorio_bridge_proc: subprocess.Popen | None = None
         self.training_active: bool = False
         self.ollama_evicted_for_training: bool = False
         self.last_busy: dict[str, float] = {}
@@ -333,26 +332,6 @@ class ProcessManager:
             creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0),
         )
 
-    def start_factorio_bridge(self) -> None:
-        """Start Factorio bridge if enabled in fleet.toml."""
-        try:
-            from config import load_config
-            cfg = load_config()
-            factorio_cfg = cfg.get("factorio", {})
-            if not factorio_cfg.get("enabled", False):
-                return
-            if factorio_cfg.get("role", "host") != "host":
-                return
-        except Exception:
-            return
-
-        log.info("Starting Factorio bridge")
-        self.factorio_bridge_proc = subprocess.Popen(
-            [PYTHON, str(FLEET_DIR / "factorio" / "bridge.py")],
-            cwd=str(FLEET_DIR),
-            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
-        )
-
     def start_dashboard(self) -> None:
         """Start the dashboard web server."""
         if not self.config.get("dashboard", {}).get("enabled", False):
@@ -515,11 +494,6 @@ class ProcessManager:
             log.warning("Dr. Ders crashed — respawning")
             self.start_hw_supervisor()
 
-        # Factorio bridge respawn
-        if self.factorio_bridge_proc and self.factorio_bridge_proc.poll() is not None:
-            log.warning("Factorio bridge crashed — respawning")
-            self.start_factorio_bridge()
-
     def shutdown_all(self) -> None:
         """Clean teardown of all fleet processes."""
         _json_log("INFO", "supervisor_shutdown")
@@ -548,12 +522,5 @@ class ProcessManager:
                 self.hw_supervisor_proc.wait(timeout=5)
             except subprocess.TimeoutExpired:
                 self.hw_supervisor_proc.kill()
-        # Factorio bridge
-        if self.factorio_bridge_proc and self.factorio_bridge_proc.poll() is None:
-            self.factorio_bridge_proc.terminate()
-            try:
-                self.factorio_bridge_proc.wait(timeout=5)
-            except subprocess.TimeoutExpired:
-                self.factorio_bridge_proc.kill()
         self.stop_ollama()
         log.info("Fleet stopped.")

@@ -185,7 +185,7 @@ def main():
         print(f"  - Copy Lua mod to Factorio mods dir")
         print(f"  - Create save if needed")
         print(f"  - Start headless server on RCON port {args.port}")
-        print(f"  - Supervisor would auto-spawn bridge")
+        print(f"  - Start BigEd bridge (self-contained, no supervisor needed)")
         return
 
     # Step 2: Update fleet.toml
@@ -218,36 +218,65 @@ def main():
         sys.exit(1)
 
     # Step 5: Start server
-    print("\n[5/5] Starting Factorio headless server...")
+    print("\n[5/6] Starting Factorio headless server...")
     try:
-        proc = start_headless_server(factorio_exe, save, args.port, password)
+        server_proc = start_headless_server(factorio_exe, save, args.port, password)
     except RuntimeError as e:
         print(f"  ERROR: {e}")
         sys.exit(1)
 
+    # Step 6: Start bridge
+    print("\n[6/6] Starting BigEd bridge...")
+    bridge_proc = subprocess.Popen(
+        [sys.executable, "-m", "factorio.bridge"],
+        cwd=str(FLEET_DIR),
+        env={**os.environ, "PYTHONPATH": str(FLEET_DIR)},
+        creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+    )
+    time.sleep(3)
+    if bridge_proc.poll() is not None:
+        print(f"  WARNING: Bridge exited (may need fleet running). Check logs.")
+    else:
+        log.info("Bridge running (PID %d) on port 27016", bridge_proc.pid)
+        print(f"  Bridge PID: {bridge_proc.pid}")
+
     print("\n" + "=" * 60)
     print("  READY!")
     print("=" * 60)
-    print(f"  Factorio server PID: {proc.pid}")
+    print(f"  Factorio server PID: {server_proc.pid}")
+    print(f"  Bridge PID: {bridge_proc.pid}")
     print(f"  RCON: localhost:{args.port}")
+    print(f"  Bridge API: http://127.0.0.1:27016")
     print(f"  Save: {save}")
     print(f"")
-    print(f"  Next: Start the fleet supervisor and it will auto-spawn")
-    print(f"  the Factorio bridge. Or run it directly:")
-    print(f"    cd fleet && python factorio/bridge.py")
-    print(f"")
-    print(f"  To stop: kill PID {proc.pid} or Ctrl+C")
+    print(f"  The fleet supervisor runs independently — Factorio is")
+    print(f"  self-contained. Ctrl+C to stop both processes.")
 
-    # Keep running until interrupted
+    # Keep running until interrupted — monitor both processes
     try:
-        proc.wait()
+        while True:
+            if server_proc.poll() is not None:
+                print("\nFactorio server exited.")
+                break
+            if bridge_proc.poll() is not None:
+                print("\nBridge exited — restarting...")
+                bridge_proc = subprocess.Popen(
+                    [sys.executable, "-m", "factorio.bridge"],
+                    cwd=str(FLEET_DIR),
+                    env={**os.environ, "PYTHONPATH": str(FLEET_DIR)},
+                    creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+                )
+            time.sleep(5)
     except KeyboardInterrupt:
-        print("\nShutting down Factorio server...")
-        proc.terminate()
+        print("\nShutting down...")
+        bridge_proc.terminate()
+        server_proc.terminate()
         try:
-            proc.wait(timeout=10)
+            bridge_proc.wait(timeout=5)
+            server_proc.wait(timeout=10)
         except subprocess.TimeoutExpired:
-            proc.kill()
+            bridge_proc.kill()
+            server_proc.kill()
         print("Done.")
 
 
