@@ -994,6 +994,25 @@ def _handle_factorio(args):
             print(f"Error: {e}")
             return None
 
+    # Dashboard API helper (port 5555) — for focus toggle
+    from config import load_config as _lc
+    _dcfg = _lc()
+    _dport = _dcfg.get("dashboard", {}).get("port", 5555)
+    _dbase = f"http://127.0.0.1:{_dport}"
+
+    def _dapi(method, path, body=None):
+        data = json.dumps(body).encode("utf-8") if body else None
+        req = urllib.request.Request(
+            f"{_dbase}{path}", data=data, method=method,
+            headers={"Content-Type": "application/json"} if data else {},
+        )
+        try:
+            with urllib.request.urlopen(req, timeout=10) as resp:
+                return json.loads(resp.read())
+        except Exception as e:
+            print(f"Error: {e}")
+            return None
+
     cmd = args.fac_cmd
 
     if cmd == "pause":
@@ -1027,6 +1046,12 @@ def _handle_factorio(args):
                 cl = progress.get('current_lesson', 0)
                 tl = progress.get('total_lessons', 0)
                 print(f"Phase {progress.get('phase', '?')}: lesson {cl + 1}/{tl}")
+        # Focus state via dashboard API
+        focus = _dapi("GET", "/api/factorio/focus")
+        if focus:
+            fstate = "ON" if focus.get("on") else "OFF"
+            fworkers = ", ".join(focus.get("workers", [])) or "none"
+            print(f"Focus: {fstate}  Workers: {fworkers}")
 
     elif cmd == "directive":
         r = _fapi("POST", "/api/directive", {"text": args.text, "sticky": args.sticky, "plans": args.plans})
@@ -1076,6 +1101,43 @@ def _handle_factorio(args):
         r = _fapi("POST", "/api/command", {"actions": actions})
         if r:
             print(f"Queued: {r.get('command_id')}")
+
+    elif cmd == "focus":
+        action = getattr(args, "action", None)
+        if action is None:
+            r = _dapi("GET", "/api/factorio/focus")
+            if r:
+                state = "ON" if r.get("on") else "OFF"
+                workers = ", ".join(r.get("workers", [])) or "none"
+                print(f"Focus: {state}  Workers: {workers}")
+        elif action == "on":
+            r = _dapi("POST", "/api/factorio/focus",
+                      {"on": True, "workers": args.workers})
+            if r:
+                print(f"Focus ON — reserved workers: {', '.join(r.get('workers', []))}")
+        elif action == "off":
+            r = _dapi("POST", "/api/factorio/focus", {"on": False})
+            if r:
+                print("Focus OFF — workers released")
+
+    elif cmd == "plans":
+        r = _dapi("GET", "/api/factorio/plans")
+        if r:
+            current = r.get("current")
+            if current:
+                print(f"Active: step {current['index']}/{current['total']} "
+                      f"(priority {current['priority']})")
+            else:
+                print("Active: none")
+            queued = r.get("queued", [])
+            if queued:
+                print(f"\nQueued ({len(queued)}):")
+                for p in queued:
+                    print(f"  [{p['priority']}] {p['plan_id']} from {p['source']} "
+                          f"— {p['rationale'][:60]}")
+            shelved = r.get("shelved")
+            if shelved:
+                print(f"\nShelved: {shelved['plan_id']} (priority {shelved['priority']})")
 
 
 def main():
@@ -1308,6 +1370,13 @@ def main():
     p_fmove = fac_sub.add_parser("move", help="Move to position")
     p_fmove.add_argument("x", type=int, help="X")
     p_fmove.add_argument("y", type=int, help="Y")
+
+    p_ffocus = fac_sub.add_parser("focus", help="Toggle Factorio focus mode")
+    p_ffocus.add_argument("action", nargs="?", default=None, choices=["on", "off"],
+                          help="on/off (omit to show current state)")
+    p_ffocus.add_argument("--workers", type=int, default=2, help="Number of reserved workers")
+
+    fac_sub.add_parser("plans", help="Show plan queue (active + queued + history)")
 
     args = parser.parse_args()
 
