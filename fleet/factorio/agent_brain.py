@@ -56,6 +56,24 @@ class Directive:
     created_at: float
 
 
+# Priority bands for plan queue
+PRIORITY_CRITICAL = 100  # Human commands — bypass brain veto
+PRIORITY_HIGH = 75       # Fleet worker plans/directives
+PRIORITY_NORMAL = 50     # Brain's own Ollama-generated plans
+PRIORITY_LOW = 25        # Speculative/low-confidence
+
+
+@dataclass
+class PlanSubmission:
+    actions: list[dict]
+    priority: int
+    source: str
+    source_type: str       # "worker" | "brain" | "human"
+    rationale: str
+    confidence: float
+    plan_id: str = ""      # assigned on submission
+
+
 @dataclass
 class Preset:
     id: str
