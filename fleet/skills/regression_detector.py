@@ -39,7 +39,6 @@ SKILL_NAME = "regression_detector"
 DESCRIPTION = "Track quality grades, detect regressions and hallucinations in fleet outputs."
 VERSION = "1.0.0"
 COMPLEXITY = "medium"
-COMPLEXITY = "medium"
 REQUIRES_NETWORK = False
 SUITE = "ml"
 
@@ -185,7 +184,7 @@ def _audit(config) -> dict:
                 })
 
     except Exception:
-        pass
+        log.warning("Agent-level regression query failed", exc_info=True)
 
     # ── 3. Hallucination spot-check on recent outputs ─────────────────────
     try:
@@ -223,7 +222,7 @@ def _audit(config) -> dict:
             })
 
     except Exception:
-        pass
+        log.warning("Hallucination spot-check query failed", exc_info=True)
 
     conn.close()
     log.info(f"Regression audit: {len(findings)} findings")
@@ -260,7 +259,7 @@ def _grade_report(config) -> dict:
                 "success_rate": round(r["done"] / max(r["done"] + r["failed"], 1) * 100, 1),
             })
     except Exception:
-        pass
+        log.warning("Skill grades query failed", exc_info=True)
 
     # Per-agent grades
     agent_grades = []
@@ -285,7 +284,7 @@ def _grade_report(config) -> dict:
                 "scored_tasks": r["scored_tasks"],
             })
     except Exception:
-        pass
+        log.warning("Agent grades query failed", exc_info=True)
 
     # Overall fleet grade
     try:
@@ -299,6 +298,7 @@ def _grade_report(config) -> dict:
         fleet_grade = _letter_grade(overall["fleet_iq"]) if overall["fleet_iq"] else "N/A"
         fleet_iq = round(overall["fleet_iq"], 3) if overall["fleet_iq"] else 0
     except Exception:
+        log.warning("Fleet overall grade query failed", exc_info=True)
         fleet_grade = "N/A"
         fleet_iq = 0
 

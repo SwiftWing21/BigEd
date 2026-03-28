@@ -29,7 +29,6 @@ SKILL_NAME = "packet_optimizer"
 DESCRIPTION = "Audit and optimize sent/received packet sizes across fleet API calls."
 VERSION = "1.0.0"
 COMPLEXITY = "simple"
-COMPLEXITY = "simple"
 REQUIRES_NETWORK = False
 SUITE = "ops"
 
@@ -174,7 +173,7 @@ def _audit(config) -> dict:
                 })
 
     except Exception:
-        pass
+        log.warning("Task payload size query failed", exc_info=True)
 
     # ── 3. Message sizes (inter-agent) ────────────────────────────────────
     try:
@@ -198,7 +197,7 @@ def _audit(config) -> dict:
                 })
 
     except Exception:
-        pass
+        log.warning("Inter-agent message size query failed", exc_info=True)
 
     conn.close()
 
