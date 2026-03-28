@@ -22,6 +22,11 @@ import sys
 import time
 from pathlib import Path
 
+# Force UTF-8 output on Windows (box-drawing characters fail on cp1252)
+if sys.platform == "win32":
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+
 HERE = Path(__file__).parent
 SEP = ";" if sys.platform == "win32" else ":"
 
@@ -217,11 +222,29 @@ def main():
     build_start = time.time()
     step_times = {}
 
-    # Install deps
+    # Install deps — use PYWEBVIEW_GUI=qt to skip pythonnet (not supported on Python 3.14)
     if build_all:
-        t = _run([sys.executable, "-m", "pip", "install", "-r", "requirements.txt"],
-                 "Installing dependencies")
-        step_times["Dependencies"] = t
+        env = os.environ.copy()
+        env["PYWEBVIEW_GUI"] = "qt"
+        print(f"\n{BOLD}{CYAN}▸ Installing dependencies{RESET}")
+        print(f"  {DIM}$ pip install -r requirements.txt{RESET}")
+        t0 = time.time()
+        result = subprocess.run(
+            [sys.executable, "-m", "pip", "install", "-r", "requirements.txt"],
+            cwd=str(HERE), env=env,
+        )
+        elapsed = time.time() - t0
+        if result.returncode != 0:
+            # pythonnet may fail on Python 3.14 — not needed with Qt backend
+            print(f"  {GOLD}⚠ pip returned non-zero (pythonnet likely failed — OK with Qt backend){RESET}")
+            # Retry without pywebview deps, install pywebview --no-deps separately
+            subprocess.run(
+                [sys.executable, "-m", "pip", "install", "pywebview", "--no-deps"],
+                cwd=str(HERE), capture_output=True,
+            )
+        else:
+            print(f"  {GREEN}✓{RESET} {_fmt_time(elapsed)}")
+        step_times["Dependencies"] = elapsed
 
     # Icons — brick.ico + icon_1024.png are locked assets (v0.165.07b+)
     _ico = HERE / "brick.ico"
