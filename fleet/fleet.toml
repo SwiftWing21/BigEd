@@ -795,6 +795,16 @@ content_column = "text"
 destination = "rag"
 enabled = true
 
+# ── Factorio Knowledge Base (30 wiki + API docs for agent RAG) ────────────────
+[[ingest.sources]]
+id = "factorio-knowledge"
+type = "local"
+path = "factorio/knowledge"
+skill = "rag_index"
+agent_role = "sandbox"
+destination = "rag"
+enabled = false
+
 # ── Factorio Sandbox Module ───────────────────────────────────────────────────
 [factorio]
 enabled = false
