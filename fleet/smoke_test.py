@@ -818,6 +818,122 @@ def test_ingest_staging():
     return True, f"{len(staged)} items in staging"
 
 
+def test_task_lifecycle_e2e():
+    """Full task lifecycle: post → claim → complete → verify DONE + result stored."""
+    import db
+    db.init_db()
+
+    # Post a test task with synthetic classification so it doesn't affect metrics
+    task_id = db.post_task(
+        "smoke_lifecycle",
+        json.dumps({"test": True}),
+        priority=5,
+        classification="synthetic_prefix",
+    )
+    if not task_id:
+        return False, "post_task returned no ID"
+
+    # Claim it
+    task = db.claim_task("smoke_lifecycle_agent", affinity_skills=["smoke_lifecycle"])
+    if not task:
+        return False, f"claim_task returned None (task_id={task_id})"
+    if task["id"] != task_id:
+        return False, f"claimed wrong task: got {task['id']}, expected {task_id}"
+
+    # Complete it
+    db.complete_task(task_id, json.dumps({"status": "ok", "test": True}))
+
+    # Verify status and result in DB
+    with db.get_conn() as conn:
+        row = conn.execute(
+            "SELECT status, result_json FROM tasks WHERE id=?", (task_id,)
+        ).fetchone()
+    if not row:
+        return False, f"task {task_id} not found after complete"
+    status = row["status"] if isinstance(row, dict) else row[0]
+    result_json = row["result_json"] if isinstance(row, dict) else row[1]
+    if status != "DONE":
+        return False, f"expected DONE, got {status}"
+    if '"ok"' not in (result_json or ""):
+        return False, f"result missing 'ok': {result_json}"
+
+    return True, f"post #{task_id} -> claim -> complete -> verified DONE + result"
+
+
+def test_backup_creates_valid_snapshot():
+    """Backup should include fleet.db and fleet.toml at minimum."""
+    import tempfile
+    import shutil
+    from pathlib import Path
+    from backup_manager import BackupManager
+
+    # Use a temp directory so we don't pollute the real backup location
+    tmp_dir = Path(tempfile.mkdtemp(prefix="smoke_backup_"))
+    try:
+        mgr = BackupManager({"backup": {
+            "enabled": True,
+            "location": str(tmp_dir),
+            "depth": 2,
+            "targets": {
+                "fleet_db": True,
+                "rag_db": False,
+                "config": True,
+                "knowledge": False,
+            },
+        }})
+        manifest = mgr.perform_backup(trigger="smoke_test")
+
+        # Verify manifest structure
+        if "files" not in manifest:
+            return False, "manifest missing 'files' key"
+
+        files = manifest["files"]
+        missing = []
+        if "fleet.db" not in files:
+            missing.append("fleet.db")
+        if "fleet.toml" not in files:
+            missing.append("fleet.toml")
+        if missing:
+            return False, f"backup missing: {missing} (found: {list(files.keys())})"
+
+        # Verify files actually exist on disk
+        backup_dir = Path(manifest["location"])
+        for fname in ["fleet.db", "fleet.toml"]:
+            if not (backup_dir / fname).exists():
+                return False, f"{fname} not present on disk in backup dir"
+
+        total_kb = manifest["total_size_bytes"] / 1024
+        return True, (
+            f"backup OK — {list(files.keys())} "
+            f"({total_kb:.0f}KB total, id={manifest['id']})"
+        )
+    except Exception as e:
+        return False, str(e)
+    finally:
+        shutil.rmtree(tmp_dir, ignore_errors=True)
+
+
+def test_graph_universe_task_aggregation():
+    """Graph should return task_group nodes, not individual tasks."""
+    import db
+    db.init_db()
+    from views_blueprint import _graph_universe
+    nodes, edges = _graph_universe(db)
+    types = [n.get("type") for n in nodes]
+    individual_tasks = types.count("task")
+    task_groups = types.count("task_group")
+    communities = types.count("community")
+    if individual_tasks != 0:
+        return False, f"Expected 0 individual tasks, got {individual_tasks}"
+    if communities < 1:
+        return False, f"Expected at least 1 community, got {communities}"
+    nodes_with_parent = [n for n in nodes if n.get("parent")]
+    if len(nodes_with_parent) == 0:
+        return False, "Some nodes should have compound parents"
+    return True, (f"{len(nodes)} nodes, {len(edges)} edges, "
+                  f"{task_groups} task groups, {communities} communities")
+
+
 def cleanup():
     """Remove smoke test artifacts from DB."""
     import db
@@ -907,6 +1023,9 @@ def main():
         ("Ingest module", test_ingest_module),
         ("Ingest cache stats", test_ingest_cache_stats),
         ("Ingest staging", test_ingest_staging),
+        ("Graph universe task aggregation", test_graph_universe_task_aggregation),
+        ("Task lifecycle e2e", test_task_lifecycle_e2e),
+        ("Backup creates valid snapshot", test_backup_creates_valid_snapshot),
     ])
 
     if not args.fast:
