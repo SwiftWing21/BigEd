@@ -1218,6 +1218,32 @@ def api_dashboard_aggregate():
     })
 
 
+@app.route("/api/factorio/bridge-status")
+def api_factorio_bridge_status():
+    """Proxy bridge status — avoids CORS issues from browser."""
+    import urllib.request
+    try:
+        from config import load_config
+        port = load_config().get("factorio", {}).get("bridge_port", 27016)
+        resp = urllib.request.urlopen(f"http://127.0.0.1:{port}/api/status", timeout=3)
+        return resp.read(), 200, {"Content-Type": "application/json"}
+    except Exception:
+        return jsonify({"running": False, "error": "bridge unreachable"}), 200
+
+
+@app.route("/api/factorio/bridge-state")
+def api_factorio_bridge_state():
+    """Proxy bridge game state — avoids CORS issues from browser."""
+    import urllib.request
+    try:
+        from config import load_config
+        port = load_config().get("factorio", {}).get("bridge_port", 27016)
+        resp = urllib.request.urlopen(f"http://127.0.0.1:{port}/api/state", timeout=3)
+        return resp.read(), 200, {"Content-Type": "application/json"}
+    except Exception:
+        return jsonify({"error": "bridge unreachable"}), 200
+
+
 @app.route("/api/factorio/spectator", methods=["POST"])
 def api_factorio_spectator():
     """Launch Factorio client as spectator."""

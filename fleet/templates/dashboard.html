@@ -7622,18 +7622,16 @@ function _checkFactorioEnabled() {
     // always navigate there to see bridge status
     nav.style.display = '';
   }).catch(function() {
-    // Modules API failed — probe bridge directly
-    fetch('http://127.0.0.1:27016/api/status', {signal: AbortSignal.timeout(2000)})
-      .then(function() { nav.style.display = ''; })
+    // Modules API failed — probe bridge via dashboard proxy
+    apiFetch('/api/factorio/bridge-status')
+      .then(function(d) { if (d.running) nav.style.display = ''; })
       .catch(function() {});
   });
 }
 
 function loadFactorio() {
-  var bridgePort = 27016;
-  // Try bridge API
-  fetch('http://127.0.0.1:' + bridgePort + '/api/status', {signal: AbortSignal.timeout(3000)})
-    .then(function(r) { return r.json(); })
+  // Use dashboard proxy endpoints (avoids CORS from browser → bridge)
+  apiFetch('/api/factorio/bridge-status')
     .then(function(d) {
       var statusEl = document.getElementById('factorio-bridge-status');
       var detailEl = document.getElementById('factorio-bridge-detail');
@@ -7651,12 +7649,10 @@ function loadFactorio() {
       } else {
         statusEl.textContent = 'Stopped';
         statusEl.style.color = 'var(--destructive)';
-        detailEl.textContent = 'Bridge not running';
+        detailEl.textContent = d.error || 'Bridge not running';
       }
-      // Fetch game state
-      return fetch('http://127.0.0.1:' + bridgePort + '/api/state', {signal: AbortSignal.timeout(3000)});
+      return apiFetch('/api/factorio/bridge-state');
     })
-    .then(function(r) { return r.json(); })
     .then(function(state) {
       if (state.error) {
         document.getElementById('factorio-state').textContent = 'Error: ' + state.error;
@@ -7702,7 +7698,7 @@ function loadFactorio() {
     .catch(function() {
       document.getElementById('factorio-bridge-status').textContent = 'Offline';
       document.getElementById('factorio-bridge-status').style.color = 'var(--muted)';
-      document.getElementById('factorio-bridge-detail').textContent = 'Bridge API not reachable (port ' + bridgePort + ')';
+      document.getElementById('factorio-bridge-detail').textContent = 'Bridge not reachable';
       document.getElementById('factorio-state').textContent = 'Bridge not running. Start with:\n  python fleet/factorio/setup_and_launch.py';
     });
 }
