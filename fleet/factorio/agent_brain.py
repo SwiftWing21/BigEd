@@ -271,7 +271,7 @@ class AgentBrain:
             results_text = "First plan — no previous results."
 
         with self._lock:
-            active_directives = list(self._directives)
+            active_directives = sorted(self._directives, key=lambda d: d.priority, reverse=True)
 
         # Use template if available, else fall back to hardcoded
         if self._prompt_template:
@@ -282,7 +282,7 @@ class AgentBrain:
             if active_directives:
                 directive_lines = ["# Human Directives (PRIORITY — follow these)"]
                 for d in active_directives:
-                    directive_lines.append(f"- {d.text}")
+                    directive_lines.append(f"- [{d.source}] {d.text}")
                 user = "\n".join(directive_lines) + "\n\n" + user
             return system, user
 
@@ -296,7 +296,7 @@ class AgentBrain:
         if active_directives:
             lines.append("# Human Directives (PRIORITY — follow these)")
             for d in active_directives:
-                lines.append(f"- {d.text}")
+                lines.append(f"- [{d.source}] {d.text}")
             lines.append("")
 
         lines += [
@@ -441,9 +441,16 @@ class AgentBrain:
             self._plan_index += 1
             return translate_action(raw)
 
-        # Plan exhausted — generate new one
-        self._plan = self._generate_plan(state)
-        self._plan_index = 0
+        # Plan exhausted — check queue before calling Ollama
+        self._restore_shelved_plan()
+        if self._pop_next_plan():
+            # Queue had a plan; _plan/_plan_index already set by _pop_next_plan
+            pass
+        else:
+            # Queue empty — generate via Ollama
+            self._plan = self._generate_plan(state)
+            self._plan_index = 0
+            self._current_priority = PRIORITY_NORMAL
         self._last_results = []
 
         if not self._plan:
