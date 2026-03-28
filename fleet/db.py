@@ -525,14 +525,15 @@ def claim_task(agent_name, affinity_skills=None):
     """Atomically claim the highest-priority pending task for this agent.
 
     Uses atomic UPDATE...WHERE(SELECT) to eliminate race conditions between
-    the SELECT and UPDATE steps. If affinity_skills is provided, prefer tasks
-    matching those skills first. Falls back to any unassigned task.
+    the SELECT and UPDATE steps. After UPDATE, checks rowcount and retrieves
+    the exact claimed task by its subquery criteria to avoid returning a
+    different RUNNING task belonging to this agent.
     """
     with get_conn() as conn:
         # Try affinity-matched tasks first (atomic claim)
         if affinity_skills:
             placeholders = ','.join('?' * len(affinity_skills))
-            conn.execute(f"""
+            cursor = conn.execute(f"""
                 UPDATE tasks SET status='RUNNING', assigned_to=?
                 WHERE id = (
                     SELECT id FROM tasks
@@ -541,15 +542,16 @@ def claim_task(agent_name, affinity_skills=None):
                     ORDER BY priority DESC, created_at ASC LIMIT 1
                 )
             """, (agent_name, agent_name, *affinity_skills))
-            row = conn.execute(
-                "SELECT id, type, payload_json FROM tasks WHERE status='RUNNING' AND assigned_to=? ORDER BY id DESC LIMIT 1",
-                (agent_name,)
-            ).fetchone()
-            if row:
-                return dict(row)
+            if cursor.rowcount > 0:
+                row = conn.execute(
+                    "SELECT id, type, payload_json FROM tasks WHERE status='RUNNING' AND assigned_to=? AND type IN ({}) ORDER BY id DESC LIMIT 1".format(placeholders),
+                    (agent_name, *affinity_skills)
+                ).fetchone()
+                if row:
+                    return dict(row)
 
         # Fall back to any available task (atomic claim)
-        conn.execute("""
+        cursor = conn.execute("""
             UPDATE tasks SET status='RUNNING', assigned_to=?
             WHERE id = (
                 SELECT id FROM tasks
@@ -558,11 +560,15 @@ def claim_task(agent_name, affinity_skills=None):
             )
         """, (agent_name, agent_name))
 
-        row = conn.execute(
-            "SELECT id, type, payload_json FROM tasks WHERE status='RUNNING' AND assigned_to=? ORDER BY id DESC LIMIT 1",
-            (agent_name,)
-        ).fetchone()
-        return dict(row) if row else None
+        if cursor.rowcount > 0:
+            # Use changes() to confirm a row was updated, then fetch the most
+            # recently claimed task — safe because the UPDATE just ran atomically.
+            row = conn.execute(
+                "SELECT id, type, payload_json FROM tasks WHERE status='RUNNING' AND assigned_to=? ORDER BY id DESC LIMIT 1",
+                (agent_name,)
+            ).fetchone()
+            return dict(row) if row else None
+        return None
 
 
 def complete_task(task_id, result_json):

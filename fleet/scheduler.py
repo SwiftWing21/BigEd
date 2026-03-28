@@ -94,14 +94,10 @@ class Scheduler:
     def count_pending_tasks(self) -> int:
         """Count pending tasks in the queue."""
         try:
-            import sqlite3
-            db_path = FLEET_DIR / "fleet.db"
-            conn = sqlite3.connect(str(db_path), timeout=5)
-            try:
+            from db import get_conn
+            with get_conn() as conn:
                 row = conn.execute("SELECT COUNT(*) FROM tasks WHERE status='PENDING'").fetchone()
                 return row[0] if row else 0
-            finally:
-                conn.close()
         except Exception:
             return 0
 
@@ -152,16 +148,12 @@ class Scheduler:
 
     def _pending_tasks_by_type(self) -> dict:
         try:
-            import sqlite3
-            db_path = FLEET_DIR / "fleet.db"
-            conn = sqlite3.connect(str(db_path), timeout=5)
-            try:
+            from db import get_conn
+            with get_conn() as conn:
                 rows = conn.execute(
                     "SELECT type, COUNT(*) as n FROM tasks WHERE status='PENDING' GROUP BY type"
                 ).fetchall()
                 return {r[0]: r[1] for r in rows}
-            finally:
-                conn.close()
         except Exception:
             return {}
 
@@ -189,10 +181,8 @@ class Scheduler:
 
     def _predict_queue_growth(self) -> int:
         try:
-            import sqlite3
-            db_path = FLEET_DIR / "fleet.db"
-            conn = sqlite3.connect(str(db_path), timeout=5)
-            try:
+            from db import get_conn
+            with get_conn() as conn:
                 recent = conn.execute(
                     "SELECT COUNT(*) FROM tasks WHERE created_at >= datetime('now', '-5 minutes')"
                 ).fetchone()[0]
@@ -200,8 +190,6 @@ class Scheduler:
                     "SELECT COUNT(*) FROM tasks WHERE created_at >= datetime('now', '-10 minutes') "
                     "AND created_at < datetime('now', '-5 minutes')"
                 ).fetchone()[0]
-            finally:
-                conn.close()
             if recent > prior * 1.5 and recent > 3:
                 return recent - prior
         except Exception:

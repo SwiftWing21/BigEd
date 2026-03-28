@@ -204,11 +204,9 @@ def _add_security_headers(response):
 # ── DB helpers ───────────────────────────────────────────────────────────────
 
 def get_conn():
-    conn = sqlite3.connect(DB_PATH, check_same_thread=False, timeout=10)
-    conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA journal_mode=WAL")
-    conn.execute("PRAGMA busy_timeout=10000")
-    return conn
+    """Get fleet.db connection via db module (WAL, retry, optional SQLCipher)."""
+    import db as _db
+    return _db.get_conn()
 
 
 def query(sql, params=()):
@@ -297,7 +295,7 @@ def _alert_monitor():
 
             # Check for crashed workers (stale heartbeats)
             # Skip disabled/quarantined agents and allow 5min grace after startup
-            cfg = cfg if 'cfg' in dir() else _load_config()
+            cfg = _load_config()
             disabled = set(cfg.get("fleet", {}).get("disabled_agents", []))
             agents = query("""
                 SELECT name, last_heartbeat, status FROM agents

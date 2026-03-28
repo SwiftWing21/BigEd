@@ -100,14 +100,10 @@ class FederationManager:
 
     def _count_pending(self) -> int:
         try:
-            import sqlite3
-            db_path = FLEET_DIR / "fleet.db"
-            conn = sqlite3.connect(str(db_path), timeout=5)
-            try:
+            from db import get_conn
+            with get_conn() as conn:
                 row = conn.execute("SELECT COUNT(*) FROM tasks WHERE status='PENDING'").fetchone()
                 return row[0] if row else 0
-            finally:
-                conn.close()
         except Exception:
             return 0
 
