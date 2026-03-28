@@ -1,0 +1,43 @@
+"""Tests for Factorio bridge config loading."""
+import pytest
+
+
+def test_default_config():
+    from factorio.bridge_config import BridgeConfig
+    cfg = BridgeConfig()
+    assert cfg.enabled is False
+    assert cfg.role == "host"
+    assert cfg.rcon_port == 27015
+    assert cfg.cadence == "adaptive"
+    assert cfg.sandbox_mode is True
+    assert cfg.reserved_workers == 0
+    assert cfg.max_actions_per_step == 20
+    assert cfg.rcon_timeout_secs == 5
+    assert cfg.rcon_max_retries == 3
+    assert cfg.adaptive_boost_hold_secs == 30
+
+
+def test_load_from_dict():
+    from factorio.bridge_config import BridgeConfig
+    raw = {
+        "enabled": True,
+        "rcon_port": 27020,
+        "rcon_password": "test123",
+        "cadence": "fast",
+        "sandbox_mode": False,
+        "reserved_workers": 2,
+    }
+    cfg = BridgeConfig.from_dict(raw)
+    assert cfg.enabled is True
+    assert cfg.rcon_port == 27020
+    assert cfg.rcon_password == "test123"
+    assert cfg.cadence == "fast"
+    assert cfg.sandbox_mode is False
+    assert cfg.reserved_workers == 2
+
+
+def test_load_from_fleet_toml():
+    from factorio.bridge_config import load_factorio_config
+    cfg = load_factorio_config()
+    assert isinstance(cfg.rcon_port, int)
+    assert cfg.cadence in ("fast", "medium", "slow", "adaptive")

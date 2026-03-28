@@ -247,6 +247,7 @@ analyst = ["analyze_results", "benchmark", "synthesize", "evaluate", "billing_oc
 # security (legal_draft → removed), and analyst (account_review → evaluate).
 security = ["security_audit", "pen_test", "security_review", "security_apply", "secret_rotate", "db_encrypt", "db_migrate", "key_manager"]
 planner = ["plan_workload", "curriculum_update", "evolution_coordinator", "model_manager", "model_recommend", "oom_prevent", "memory_optimizer", "swarm_consensus", "hardware_profiler"]
+sandbox = ["factorio_observe", "factorio_plan", "factorio_act", "factorio_train"]
 
 [integrations]
 unifi_enabled = false            # UniFi controller API integration
@@ -296,6 +297,10 @@ security_audit = 3.00
 plan_workload = 2.00
 summarize = 1.50
 synthesize = 2.00
+factorio_plan = 2.00
+factorio_train = 1.00
+factorio_act = 0.50
+factorio_observe = 0.00
 
 # v0.42: Auto-boot — fleet starts automatically on system login
 [autoboot]
@@ -789,3 +794,37 @@ agent_role = "archivist"
 content_column = "text"
 destination = "rag"
 enabled = true
+
+# ── Factorio Sandbox Module ───────────────────────────────────────────────────
+[factorio]
+enabled = false
+role = "host"
+host_fleet_id = ""
+bridge_port = 27016
+rcon_host = "localhost"
+rcon_port = 27015
+rcon_password = ""
+server_mode = "headless"
+factorio_path = ""
+headless_path = ""
+save_file = "sandbox.zip"
+spectator_enabled = true
+cadence = "adaptive"
+cadence_fast_ms = 1000
+cadence_medium_ms = 5000
+cadence_slow_ms = 30000
+adaptive_boost_ms = 1500
+adaptive_boost_hold_secs = 30
+adaptive_events = ["resource_depleted", "entity_destroyed", "research_complete", "power_outage", "idle_assemblers"]
+rcon_timeout_secs = 5
+rcon_max_retries = 3
+rcon_circuit_breaker_secs = 30
+max_actions_per_step = 20
+sandbox_mode = true
+reserved_workers = 0
+current_phase = 1
+auto_advance = true
+lua_install_mode = "manual"
+state_file = "fleet/factorio/factory-state.md"
+log_dir = "fleet/factorio/logs"
+curriculum_dir = "fleet/idle_curricula"
