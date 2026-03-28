@@ -29,6 +29,95 @@
 
 ## Last Session
 
+**Date:** 2026-03-28 (session 3)
+**Session:** VS Code Claude Code — Factorio RCON integration, dashboard tab, dual-process viewer
+
+### Factorio RCON — All 3 Issues Fixed
+- **Remote interface:** Switched from `commands.add_command` to `remote.call()` — reliable RCON responses in Factorio 2.0
+- **Achievement warning:** Auto-prime console on connect (send dummy `/c` first)
+- **Headless playerless mode:** `get_agent_context()` uses surface+force directly without requiring a player
+- **API changes fixed:** `helpers.table_to_json`, `force.add_research()`, `force.get_item_production_statistics(surface)`, `force.get_chunks` removed
+
+### Dual-Process Viewer — Working
+- **Standalone headless:** `F:\Factorio` with isolated `--config F:\Factorio\data-biged\config.ini` (separate lock file)
+- **Steam client:** Connects as spectator via Multiplayer → `localhost:34197`
+- Both run simultaneously — no license conflicts
+- Successfully placed first entity in-game via RCON (stone furnace appeared in viewer)
+
+### Dashboard Factorio Tab
+- New "Factorio" nav item (conditionally shown when module enabled)
+- Bridge status, game tick, cadence selector
+- Launch Spectator button, training phase selector
+- Game state display, resource list
+- Proxy endpoints `/api/factorio/bridge-status` and `/api/factorio/bridge-state` (CORS fix)
+
+### Module Manager Fixes
+- Enable/disable toggle fixed: reads runtime state from `fleet.toml [launcher.tabs]` instead of manifest `default_enabled`
+- Dot color + button text update correctly
+- `Promise.all` per-fetch `.catch()` prevents spinner-stuck on API errors
+
+### Build Fixes
+- `build.py`: UTF-8 stdout on Windows, graceful pythonnet failure handling
+- `launcher_tkinter.py`: Added `main()` entry point (was missing, caused exe crash)
+
+### Architecture: Bridge Decoupled from Supervisor
+- Reverted all `process_manager.py` changes — fleet supervisor is clean
+- `setup_and_launch.py` manages both Factorio server + bridge (self-contained)
+- Bridge auto-restarts if it crashes, Ctrl+C stops both
+
+### Next Session Priority: Agent Loop
+The bridge ticks and reads state, RCON executes commands, but **no LLM is driving decisions yet**. Need:
+1. Bridge tick → dispatch `factorio_plan` task to fleet worker with game state + strategy guide
+2. Worker LLM reasons → returns JSON action array
+3. Bridge executes actions via RCON
+4. Curriculum evaluation checks success criteria after each cycle
+5. Auto-advance through 4 training phases
+
+**Standalone headless path:** `F:\Factorio` with `--config F:\Factorio\data-biged\config.ini`
+**RCON password:** stored in `fleet.toml [factorio] rcon_password`
+
+### Previous Session
+
+**Date:** 2026-03-28 (session 2)
+**Session:** VS Code Claude Code — Dashboard nav restructure + model display fix
+
+### Pipeline → Analytics Merge
+- Removed Pipeline as a standalone nav tab — all its content now lives under Analytics
+- **Analytics section order:** Task Flow → Agent Timeline → Token/Tasks/Cost/Perf charts → Neural Activity Map → Skills/Model charts → Knowledge Graph → Kanban (bottom)
+- Removed Pipeline from sidebar nav, omnibox search, `loadSectionData` switch
+- `loadAnalytics()` now calls all former pipeline loaders (lane graph, kanban, swimlane, neural graph)
+
+### Knowledge Graph Scoping Fix
+- `switchGraphLayout()` and related functions were defined inside `loadNeuralGraph()` (function-scoped) but called from HTML `onchange` (global scope) — moved `switchGraphLayout` to `window` scope
+- `cytoscape.use(cytoscapeFcose)` was re-registered on every `loadNeuralGraph()` call — made idempotent with `window._graphFcoseRegistered` guard
+- Graph layout name now persists via `window._graphLayoutName`
+
+### Header Model Dropdowns — Show Running Models
+- **Bug:** GPU/CPU dropdowns showed all 4 installed Ollama models; user couldn't tell which were actually loaded
+- **Fix:** Added `/api/ollama/ps` endpoint in dashboard.py (proxies Ollama `/api/ps`). Frontend now uses VRAM ratio from `size_vram/size` to determine GPU vs CPU model assignment
+- Dashboard restart needed to pick up new endpoint
+
+### Next Priorities
+1. Dashboard restart to activate `/api/ollama/ps` endpoint and verify model dropdowns
+2. Knowledge graph loading — API returns 422 nodes fine, may need browser debugging if still failing
+3. Factorio RCON tuning (carried over)
+4. v1.0 audit blockers (20 critical issues)
+
+## Previous Session
+
+**Date:** 2026-03-28 (session 1)
+**Session:** VS Code Claude Code — Dashboard timeline + queue pause fixes
+
+### Agent Timeline Fix
+- Anchored `maxTs = now` in `loadSwimlane()` so right edge is always "now"
+
+### Queue Pause/Resume — Made Functional
+- Replaced in-memory `_queue_paused` with `.queue_paused` flag file (cross-process)
+- Workers check flag before claiming tasks
+- Optimistic UI toggle with SSE sync
+
+---
+
 **Date:** 2026-03-27 (session 3)
 **Session:** VS Code Claude Code — Factorio Sandbox Module (design + full implementation)
 
