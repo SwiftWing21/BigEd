@@ -568,7 +568,7 @@ class CustomTabBar(ctk.CTkFrame):
         import tkinter as tk
         menu = tk.Menu(self, tearoff=0, bg=BG2, fg=TEXT,
                        activebackground=ACCENT, activeforeground="white",
-                       font=("Segoe UI", 10))
+                       font=FONT_SM)
 
         # Quick switch section
         for name in self._tab_names_order:
@@ -599,7 +599,7 @@ class CustomTabBar(ctk.CTkFrame):
         import tkinter as tk
         sub = tk.Menu(parent_menu, tearoff=0, bg=BG2, fg=TEXT,
                       activebackground=ACCENT, activeforeground="white",
-                      font=("Segoe UI", 10))
+                      font=FONT_SM)
         # Load current default
         app = self.winfo_toplevel()
         current_default = "Command Center"
@@ -617,11 +617,11 @@ class CustomTabBar(ctk.CTkFrame):
         import tkinter as tk
         sub = tk.Menu(parent_menu, tearoff=0, bg=BG2, fg=TEXT,
                       activebackground=ACCENT, activeforeground="white",
-                      font=("Segoe UI", 10))
+                      font=FONT_SM)
         for i, name in enumerate(self._tab_names_order):
             inner = tk.Menu(sub, tearoff=0, bg=BG2, fg=TEXT,
                             activebackground=ACCENT, activeforeground="white",
-                            font=("Segoe UI", 10))
+                            font=FONT_SM)
             if i > 0:
                 inner.add_command(label="Move left",
                                   command=lambda n=name, idx=i: self._reorder_tab(idx, idx - 1))
@@ -2902,7 +2902,7 @@ class BigEdCC(TrayManagerMixin, BootManagerMixin, CommTabMixin, OllamaManagerMix
         btn_row.grid(row=0, column=1, padx=(4, 6), pady=4, sticky="e")
 
         self._task_mic_btn = ctk.CTkButton(
-            btn_row, text="\U0001f3a4", width=32, height=32, font=("Segoe UI", 13),
+            btn_row, text="\U0001f3a4", width=32, height=32, font=FONT_BOLD,
             fg_color="transparent", hover_color=BG2, corner_radius=6,
             command=self._voice_into_task)
         self._task_mic_btn.pack(side="left", padx=(0, 4))
@@ -4353,11 +4353,11 @@ def _relaunch_windowless():
     )
     return True
 
-if __name__ == "__main__":
+def main():
+    """Entry point for tkinter launcher — called by launcher.py or directly."""
     if _relaunch_windowless():
         sys.exit(0)
     if not _acquire_instance_lock():
-        # Show a warning dialog and exit
         import tkinter as tk
         from tkinter import messagebox
         root = tk.Tk()
@@ -4396,3 +4396,7 @@ if __name__ == "__main__":
         raise
     finally:
         _release_instance_lock()
+
+
+if __name__ == "__main__":
+    main()
