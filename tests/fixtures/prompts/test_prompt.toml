@@ -1,0 +1,16 @@
+[meta]
+name = "Test Prompt"
+description = "Fixture for unit tests"
+
+[templates]
+system_template = "You are a test agent. Respond with JSON actions."
+user_template = """# State
+{state}
+
+# Objective
+{objective}
+
+# Previous
+{previous_results}
+
+Generate actions."""
