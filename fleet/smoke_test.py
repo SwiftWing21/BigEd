@@ -955,6 +955,34 @@ def test_modules_api():
             return False, f"blueprint import failed: {e}"
 
 
+def test_dep_resolver_importable():
+    """Dependency resolver module imports and core functions exist."""
+    from dep_resolver import (
+        parse_manifest_dict, build_dependency_graph, resolve,
+        topological_sort, check_version_constraint, parse_constraint,
+    )
+    # Quick sanity: parse a minimal manifest
+    m = parse_manifest_dict({
+        "name": "test", "version": "1.0.0", "type": "launcher",
+        "description": "smoke test", "dependencies": {"requires": [], "conflicts": [], "recommends": []},
+    })
+    assert m.name == "test"
+    graph = build_dependency_graph([m])
+    assert "test" in graph.nodes
+    return True, "dep_resolver importable + graph builds"
+
+
+def test_snapshotter_importable():
+    """Module snapshotter module imports and core functions exist."""
+    from module_snapshotter import (
+        take_snapshot, list_snapshots, get_snapshot,
+        diff_snapshot, restore_snapshot, prune_snapshots,
+    )
+    assert callable(take_snapshot)
+    assert callable(restore_snapshot)
+    return True, "module_snapshotter importable"
+
+
 def cleanup():
     """Remove smoke test artifacts from DB."""
     import db
@@ -1048,6 +1076,8 @@ def main():
         ("Task lifecycle e2e", test_task_lifecycle_e2e),
         ("Backup creates valid snapshot", test_backup_creates_valid_snapshot),
         ("Modules API", test_modules_api),
+        ("Dep resolver importable", test_dep_resolver_importable),
+        ("Snapshotter importable", test_snapshotter_importable),
     ])
 
     if not args.fast:
