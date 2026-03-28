@@ -1309,6 +1309,9 @@ textarea.input {
     <button class="nav-item" data-section="views" onclick="showSection('views')">
       <span class="nav-icon">&#9673;</span> Views
     </button>
+    <button class="nav-item" data-section="modules" onclick="showSection('modules')">
+      <span class="nav-icon">&#128230;</span> Modules
+    </button>
     <button class="nav-item" data-section="settings" onclick="showSection('settings')">
       <span class="nav-icon">&#9881;</span> Settings
     </button>
@@ -1810,6 +1813,39 @@ textarea.input {
 </div>
 
 <!-- ═══════════════════════════════════════════════════════════════════════
+     MODULES
+     ═══════════════════════════════════════════════════════════════════ -->
+<div id="section-modules" class="section">
+  <div class="section-header">
+    <div class="section-title">Modules</div>
+    <div class="section-desc">Browse, install, and manage BigEd modules</div>
+    <div style="margin-left:auto;display:flex;gap:8px;">
+      <button class="btn btn-sm btn-outline" id="module-view-toggle" onclick="toggleModuleView()" title="Switch view">&#9638;</button>
+      <button class="btn btn-sm btn-outline" onclick="loadModules()">&#8635; Refresh</button>
+    </div>
+  </div>
+  <div id="module-suggestions" style="margin-bottom:12px;"></div>
+  <div id="module-split-view" class="glass-panel" style="display:flex;min-height:400px;">
+    <div id="module-list-panel" style="width:30%;border-right:1px solid var(--border);overflow-y:auto;max-height:500px;">
+      <div style="padding:8px;border-bottom:1px solid var(--border);">
+        <input type="text" id="module-search" placeholder="Search modules..." oninput="filterModules()" style="width:100%;padding:6px 10px;border-radius:6px;border:1px solid var(--border);background:var(--card);color:var(--foreground);font-size:12px;">
+      </div>
+      <div id="module-list" style="padding:4px;">
+        <div class="spinner"></div>
+      </div>
+    </div>
+    <div id="module-detail-panel" style="flex:1;padding:20px;overflow-y:auto;max-height:500px;">
+      <div style="color:var(--muted-foreground);text-align:center;padding:40px;font-size:13px;">Select a module to view details</div>
+    </div>
+  </div>
+  <div id="module-card-view" class="glass-panel" style="display:none;">
+    <div id="module-cards" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:12px;padding:16px;">
+      <div class="spinner"></div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════════════
      9. SETTINGS
      ═══════════════════════════════════════════════════════════════════ -->
 <div id="section-settings" class="section">
@@ -1974,6 +2010,7 @@ function loadSectionData(name) {
     case 'settings': loadSettings(); break;
     case 'views': loadViews(); break;
     case 'ingest': loadIngest(); break;
+    case 'modules': loadModules(); break;
   }
 }
 
@@ -3211,7 +3248,7 @@ function loadSwimlane() {
       t._ts = t.created_at ? new Date(t.created_at).getTime() : now;
     });
     var minTs = Math.min.apply(null, tasks.map(function(t) { return t._ts; }));
-    var maxTs = Math.max.apply(null, tasks.map(function(t) { return t._ts; }));
+    var maxTs = now; // anchor right edge to present so timeline always shows "now"
     var range = Math.max(maxTs - minTs, 60000); // at least 1 minute range
     var trackWidth = 600; // pixels
 
@@ -7129,6 +7166,264 @@ function _checkWalkthrough() {
   apiFetch('/api/walkthrough/needed').then(function(r) {
     if (r && r.needed) _showWalkthrough();
   }).catch(function() {});
+}
+
+/* ── Module Manager ──────────────────────────────────────────────────────── */
+var _moduleData = { installed: [], available: [], selected: null };
+var _moduleView = localStorage.getItem('biged_module_view') || 'split';
+
+function loadModules() {
+  Promise.all([
+    apiFetch('/api/modules'),
+    apiFetch('/api/modules/available'),
+    apiFetch('/api/modules/suggestions')
+  ]).then(function(results) {
+    _moduleData.installed = results[0].modules || [];
+    _moduleData.available = results[1].modules || [];
+    var suggestions = results[2].suggestions || [];
+    _renderModuleSuggestions(suggestions);
+    _renderModuleList();
+    _renderModuleCards();
+    if (_moduleView === 'cards') {
+      document.getElementById('module-split-view').style.display = 'none';
+      document.getElementById('module-card-view').style.display = 'block';
+    } else {
+      document.getElementById('module-split-view').style.display = 'flex';
+      document.getElementById('module-card-view').style.display = 'none';
+    }
+  }).catch(function(e) { console.warn('loadModules failed', e); });
+}
+
+function toggleModuleView() {
+  _moduleView = _moduleView === 'split' ? 'cards' : 'split';
+  localStorage.setItem('biged_module_view', _moduleView);
+  loadModules();
+}
+
+function filterModules() {
+  var q = (document.getElementById('module-search').value || '').toLowerCase();
+  document.querySelectorAll('.module-list-item').forEach(function(el) {
+    el.style.display = el.dataset.name.indexOf(q) >= 0 ? '' : 'none';
+  });
+}
+
+function _renderModuleSuggestions(suggestions) {
+  var wrap = document.getElementById('module-suggestions');
+  if (!wrap) return;
+  wrap.textContent = '';
+  if (!suggestions.length) return;
+  suggestions.forEach(function(s) {
+    var card = document.createElement('div');
+    card.style.cssText = 'display:flex;align-items:center;gap:12px;padding:10px 16px;border-radius:8px;border:1px solid #3b82f644;background:#3b82f60a;margin-bottom:6px;';
+    var text = document.createElement('div');
+    text.style.flex = '1';
+    var title = document.createElement('div');
+    title.style.cssText = 'font-size:13px;font-weight:600;color:var(--foreground);';
+    title.textContent = 'Recommended: ' + s.module_name;
+    text.appendChild(title);
+    var reason = document.createElement('div');
+    reason.style.cssText = 'font-size:11px;color:var(--muted-foreground);';
+    reason.textContent = s.reason;
+    text.appendChild(reason);
+    card.appendChild(text);
+    var installBtn = document.createElement('button');
+    installBtn.className = 'btn btn-sm btn-primary';
+    installBtn.textContent = 'Install';
+    installBtn.onclick = function() { _installModule(s.module_name); };
+    card.appendChild(installBtn);
+    var dismissBtn = document.createElement('button');
+    dismissBtn.className = 'btn btn-sm btn-outline';
+    dismissBtn.textContent = '\u2715';
+    dismissBtn.onclick = function() {
+      apiFetch('/api/modules/suggestions/' + s.id + '/dismiss', { method: 'POST' }).then(function() { card.remove(); });
+    };
+    card.appendChild(dismissBtn);
+    wrap.appendChild(card);
+  });
+}
+
+var _statusDots = { enabled: '#10b981', disabled: '#64748b', available: '#3b82f6' };
+
+function _renderModuleList() {
+  var list = document.getElementById('module-list');
+  if (!list) return;
+  list.textContent = '';
+  var installedNames = {};
+  _moduleData.installed.forEach(function(m) { installedNames[m.name] = true; });
+  _moduleData.installed.forEach(function(m) {
+    var enabled = m.default_enabled !== false && m.enabled !== false;
+    _addModuleRow(list, m.name, m.version || '?', enabled ? 'enabled' : 'disabled', m);
+  });
+  _moduleData.available.forEach(function(m) {
+    if (installedNames[m.name]) return;
+    _addModuleRow(list, m.name, m.version || '?', 'available', m);
+  });
+}
+
+function _addModuleRow(container, name, version, status, data) {
+  var row = document.createElement('div');
+  row.className = 'module-list-item';
+  row.dataset.name = name.toLowerCase();
+  row.style.cssText = 'display:flex;align-items:center;gap:8px;padding:8px 10px;cursor:pointer;border-radius:6px;transition:background 0.15s;';
+  row.onmouseenter = function() { row.style.background = 'var(--glass-hover, #333)'; };
+  row.onmouseleave = function() { row.style.background = ''; };
+  row.onclick = function() { _selectModule(name, status, data); };
+  var dot = document.createElement('span');
+  dot.style.cssText = 'width:8px;height:8px;border-radius:50%;flex-shrink:0;background:' + (_statusDots[status] || '#666') + ';';
+  row.appendChild(dot);
+  var label = document.createElement('span');
+  label.textContent = data.label || name;
+  label.style.cssText = 'flex:1;font-size:12px;color:var(--foreground);';
+  row.appendChild(label);
+  var ver = document.createElement('span');
+  ver.textContent = 'v' + version;
+  ver.style.cssText = 'font-size:10px;color:var(--muted-foreground);font-family:monospace;';
+  row.appendChild(ver);
+  container.appendChild(row);
+}
+
+function _selectModule(name, status, data) {
+  _moduleData.selected = { name: name, status: status, data: data };
+  var panel = document.getElementById('module-detail-panel');
+  if (!panel) return;
+  panel.textContent = '';
+  var h = document.createElement('h3');
+  h.textContent = data.label || data.name || name;
+  h.style.cssText = 'font-size:18px;font-weight:700;color:var(--foreground);margin-bottom:4px;';
+  panel.appendChild(h);
+  var badges = document.createElement('div');
+  badges.style.cssText = 'display:flex;gap:8px;align-items:center;margin-bottom:16px;';
+  var badge = document.createElement('span');
+  badge.textContent = status.charAt(0).toUpperCase() + status.slice(1);
+  badge.style.cssText = 'font-size:10px;padding:2px 8px;border-radius:10px;background:' + (_statusDots[status] || '#666') + '22;color:' + (_statusDots[status] || '#666') + ';font-weight:600;';
+  badges.appendChild(badge);
+  if (data.version) {
+    var v = document.createElement('span');
+    v.textContent = 'v' + data.version;
+    v.style.cssText = 'font-size:11px;color:var(--muted-foreground);';
+    badges.appendChild(v);
+  }
+  panel.appendChild(badges);
+  var desc = document.createElement('p');
+  desc.textContent = data.description || 'No description available.';
+  desc.style.cssText = 'font-size:13px;color:var(--muted-foreground);line-height:1.6;margin-bottom:16px;';
+  panel.appendChild(desc);
+  var meta = document.createElement('div');
+  meta.style.cssText = 'display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:20px;font-size:11px;';
+  [['Author', data.author || 'Unknown'], ['License', data.license || 'N/A'],
+   ['File', data.file || 'mod_' + name + '.py'], ['Dependencies', (data.depends_on || data.dependencies || []).join(', ') || 'None']
+  ].forEach(function(f) {
+    var item = document.createElement('div');
+    var lbl = document.createElement('div');
+    lbl.textContent = f[0];
+    lbl.style.cssText = 'color:var(--muted-foreground);font-size:10px;text-transform:uppercase;letter-spacing:0.5px;';
+    item.appendChild(lbl);
+    var val = document.createElement('div');
+    val.textContent = f[1];
+    val.style.color = 'var(--foreground)';
+    item.appendChild(val);
+    meta.appendChild(item);
+  });
+  panel.appendChild(meta);
+  var actions = document.createElement('div');
+  actions.style.cssText = 'display:flex;gap:8px;flex-wrap:wrap;';
+  if (status === 'available') {
+    var ib = document.createElement('button');
+    ib.className = 'btn btn-sm btn-primary';
+    ib.textContent = 'Install';
+    ib.onclick = function() { _installModule(name); };
+    actions.appendChild(ib);
+  } else if (status === 'enabled') {
+    var db2 = document.createElement('button');
+    db2.className = 'btn btn-sm btn-outline';
+    db2.textContent = 'Disable';
+    db2.onclick = function() { _toggleModule(name, 'disable'); };
+    actions.appendChild(db2);
+    var ub = document.createElement('button');
+    ub.className = 'btn btn-sm';
+    ub.textContent = 'Uninstall';
+    ub.style.color = 'var(--destructive, #ef4444)';
+    ub.onclick = function() { _uninstallModule(name); };
+    actions.appendChild(ub);
+  } else if (status === 'disabled') {
+    var eb = document.createElement('button');
+    eb.className = 'btn btn-sm btn-primary';
+    eb.textContent = 'Enable';
+    eb.onclick = function() { _toggleModule(name, 'enable'); };
+    actions.appendChild(eb);
+    var ub2 = document.createElement('button');
+    ub2.className = 'btn btn-sm';
+    ub2.textContent = 'Uninstall';
+    ub2.style.color = 'var(--destructive, #ef4444)';
+    ub2.onclick = function() { _uninstallModule(name); };
+    actions.appendChild(ub2);
+  }
+  panel.appendChild(actions);
+}
+
+function _installModule(name) {
+  apiFetch('/api/modules/install', { method: 'POST', body: { name: name } }).then(function(r) {
+    if (r.error) { alert('Install failed: ' + r.error); return; }
+    loadModules();
+  }).catch(function(e) { alert('Install error: ' + e.message); });
+}
+
+function _toggleModule(name, action) {
+  apiFetch('/api/modules/' + name + '/' + action, { method: 'POST' }).then(function(r) {
+    if (r.error) { alert(action + ' failed: ' + r.error); return; }
+    loadModules();
+  }).catch(function(e) { alert(action + ' error: ' + e.message); });
+}
+
+function _uninstallModule(name) {
+  apiFetch('/api/modules/' + name + '/uninstall', { method: 'DELETE' }).then(function(r) {
+    if (r.error) { alert('Uninstall failed: ' + r.error); return; }
+    loadModules();
+  }).catch(function(e) { alert('Uninstall error: ' + e.message); });
+}
+
+function _renderModuleCards() {
+  var container = document.getElementById('module-cards');
+  if (!container) return;
+  container.textContent = '';
+  var installedNames = {};
+  _moduleData.installed.forEach(function(m) { installedNames[m.name] = true; });
+  var all = _moduleData.installed.map(function(m) { return { data: m, status: m.default_enabled !== false ? 'enabled' : 'disabled' }; });
+  _moduleData.available.forEach(function(m) {
+    if (!installedNames[m.name]) all.push({ data: m, status: 'available' });
+  });
+  all.forEach(function(item) {
+    var card = document.createElement('div');
+    card.style.cssText = 'border:1px ' + (item.status === 'available' ? 'dashed' : 'solid') + ' var(--border);border-radius:10px;padding:16px;cursor:pointer;transition:background 0.15s;';
+    card.onmouseenter = function() { card.style.background = 'var(--glass-hover, #333)'; };
+    card.onmouseleave = function() { card.style.background = ''; };
+    card.onclick = function() {
+      _moduleView = 'split';
+      localStorage.setItem('biged_module_view', 'split');
+      loadModules();
+      setTimeout(function() { _selectModule(item.data.name, item.status, item.data); }, 200);
+    };
+    var top = document.createElement('div');
+    top.style.cssText = 'display:flex;align-items:center;gap:8px;margin-bottom:8px;';
+    var dot = document.createElement('span');
+    dot.style.cssText = 'width:10px;height:10px;border-radius:50%;background:' + (_statusDots[item.status] || '#666') + ';';
+    top.appendChild(dot);
+    var nm = document.createElement('span');
+    nm.textContent = item.data.label || item.data.name;
+    nm.style.cssText = 'font-weight:600;font-size:13px;color:var(--foreground);flex:1;';
+    top.appendChild(nm);
+    var vr = document.createElement('span');
+    vr.textContent = 'v' + (item.data.version || '?');
+    vr.style.cssText = 'font-size:10px;background:' + (_statusDots[item.status] || '#666') + '22;color:' + (_statusDots[item.status] || '#666') + ';padding:2px 6px;border-radius:10px;';
+    top.appendChild(vr);
+    card.appendChild(top);
+    var d = document.createElement('div');
+    var full = item.data.description || '';
+    d.textContent = full.length > 80 ? full.substring(0, 80) + '...' : full;
+    d.style.cssText = 'font-size:11px;color:var(--muted-foreground);line-height:1.4;';
+    card.appendChild(d);
+    container.appendChild(card);
+  });
 }
 
 /* ── Init: populate header dropdown + check walkthrough on load ───────────── */
