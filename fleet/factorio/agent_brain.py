@@ -1,9 +1,12 @@
 """Agent brain — plan-and-drain loop with Ollama LLM reasoning."""
 import json
 import logging
+import threading
 import time
+import uuid
 import urllib.request
 import urllib.error
+from dataclasses import dataclass
 from pathlib import Path
 
 from factorio.bridge_config import BridgeConfig
@@ -43,6 +46,34 @@ Rules:
 - Electric miners/assemblers need power to work"""
 
 
+@dataclass
+class Directive:
+    id: str
+    text: str
+    sticky: bool
+    plans_remaining: int
+    created_at: float
+
+
+@dataclass
+class Preset:
+    id: str
+    label: str
+    text: str
+    sticky: bool
+    plans: int
+
+
+DEFAULT_PRESETS = [
+    Preset(id="preset_focus_power", label="Focus Power", text="Prioritize building and maintaining power infrastructure above all else.", sticky=False, plans=3),
+    Preset(id="preset_expand_mining", label="Expand Mining", text="Expand mining operations — place more miners and belt them to the base.", sticky=False, plans=3),
+    Preset(id="preset_fix_bottlenecks", label="Fix Bottlenecks", text="Find and fix production bottlenecks — look for idle assemblers and full output chests.", sticky=False, plans=3),
+    Preset(id="preset_scale_smelting", label="Scale Smelting", text="Scale up smelting capacity — add more furnaces and ensure they are fed with ore.", sticky=False, plans=3),
+    Preset(id="preset_build_defenses", label="Build Defenses", text="Build defensive structures — turrets, walls, and ammo supply lines.", sticky=False, plans=3),
+    Preset(id="preset_optimize_layout", label="Optimize Layout", text="Optimize the factory layout for throughput — reduce belt length and crossing paths.", sticky=False, plans=3),
+]
+
+
 def flatten_state(state: GameState) -> dict:
     """Convert GameState to flat dict for curriculum criteria evaluation."""
     entity_counts: dict[str, int] = {}
@@ -73,6 +104,102 @@ class AgentBrain:
         self._last_results: list[dict] = []
         self._ollama_cooldown_until: float = 0.0
         self._plan_count: int = 0
+        self._lock = threading.Lock()
+        self._paused: bool = False
+        self._directives: list = []
+        self._presets: list = list(DEFAULT_PRESETS)
+
+    def pause(self) -> None:
+        """Pause agent execution — clears current plan."""
+        with self._lock:
+            self._paused = True
+            self._plan = []
+            self._plan_index = 0
+
+    def resume(self) -> None:
+        """Resume agent execution."""
+        with self._lock:
+            self._paused = False
+
+    @property
+    def is_paused(self) -> bool:
+        """Return True if the agent is currently paused."""
+        return self._paused
+
+    def add_directive(self, text: str, sticky: bool = False, plans: int = 1) -> str:
+        """Add a human directive. Returns the directive id."""
+        directive = Directive(
+            id=uuid.uuid4().hex[:8],
+            text=text,
+            sticky=sticky,
+            plans_remaining=plans,
+            created_at=time.time(),
+        )
+        with self._lock:
+            self._directives.append(directive)
+        return directive.id
+
+    def remove_directive(self, directive_id: str) -> bool:
+        """Remove a directive by id. Returns True if found and removed."""
+        with self._lock:
+            before = len(self._directives)
+            self._directives = [d for d in self._directives if d.id != directive_id]
+            return len(self._directives) < before
+
+    def clear_directives(self) -> int:
+        """Clear all directives. Returns number removed."""
+        with self._lock:
+            count = len(self._directives)
+            self._directives = []
+        return count
+
+    def get_directives(self) -> list[dict]:
+        """Return list of directive dicts."""
+        with self._lock:
+            return [
+                {
+                    "id": d.id,
+                    "text": d.text,
+                    "sticky": d.sticky,
+                    "plans_remaining": d.plans_remaining,
+                    "created_at": d.created_at,
+                }
+                for d in self._directives
+            ]
+
+    def get_presets(self) -> list[dict]:
+        """Return list of preset dicts."""
+        with self._lock:
+            return [
+                {
+                    "id": p.id,
+                    "label": p.label,
+                    "text": p.text,
+                    "sticky": p.sticky,
+                    "plans": p.plans,
+                }
+                for p in self._presets
+            ]
+
+    def add_preset(self, label: str, text: str, sticky: bool, plans: int) -> str:
+        """Add a custom preset. Returns the preset id."""
+        preset = Preset(
+            id=uuid.uuid4().hex[:8],
+            label=label,
+            text=text,
+            sticky=sticky,
+            plans=plans,
+        )
+        with self._lock:
+            self._presets.append(preset)
+        return preset.id
+
+    def remove_preset(self, preset_id: str) -> bool:
+        """Remove a preset by id. Returns True if found and removed."""
+        with self._lock:
+            before = len(self._presets)
+            self._presets = [p for p in self._presets if p.id != preset_id]
+            return len(self._presets) < before
 
     def _build_prompt(self, state: GameState) -> tuple[str, str]:
         """Build (system_prompt, user_prompt) for Ollama."""
@@ -83,6 +210,18 @@ class AgentBrain:
             "# Current Factory State",
             state_md,
             "",
+        ]
+
+        with self._lock:
+            active_directives = list(self._directives)
+
+        if active_directives:
+            lines.append("# Human Directives (PRIORITY — follow these)")
+            for d in active_directives:
+                lines.append(f"- {d.text}")
+            lines.append("")
+
+        lines += [
             "# Current Objective",
             f"Phase {objective.get('phase', '?')}: {objective.get('phase_name', '')}",
             f"Lesson: {objective.get('lesson_name', '?')} — {objective.get('description', '')}",
@@ -136,6 +275,17 @@ class AgentBrain:
                 if actions:
                     self._plan_count += 1
                     log.info("Plan #%d generated: %d actions", self._plan_count, len(actions))
+                    # Expire non-sticky directives
+                    with self._lock:
+                        updated = []
+                        for d in self._directives:
+                            if d.sticky:
+                                updated.append(d)
+                            else:
+                                d.plans_remaining -= 1
+                                if d.plans_remaining > 0:
+                                    updated.append(d)
+                        self._directives = updated
                     return actions
                 if attempt == 0:
                     log.warning("Parse failed, retrying with shorter prompt")
@@ -207,6 +357,9 @@ class AgentBrain:
         else:
             self._idle_assembler_count = 0
 
+        if self._paused:
+            return None
+
         # Drain current plan
         if self._plan_index < len(self._plan):
             raw = self._plan[self._plan_index]
@@ -253,10 +406,23 @@ class AgentBrain:
 
     def get_plan_status(self) -> dict:
         """Return current plan state for the API."""
+        with self._lock:
+            directives_snapshot = [
+                {
+                    "id": d.id,
+                    "text": d.text,
+                    "sticky": d.sticky,
+                    "plans_remaining": d.plans_remaining,
+                    "created_at": d.created_at,
+                }
+                for d in self._directives
+            ]
         return {
             "plan": list(self._plan),
             "plan_index": self._plan_index,
             "plan_count": self._plan_count,
             "planning": False,
             "consecutive_failures": self._consecutive_failures,
+            "paused": self._paused,
+            "directives": directives_snapshot,
         }

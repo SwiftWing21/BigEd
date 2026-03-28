@@ -304,3 +304,233 @@ def test_get_plan_status():
     assert len(status["plan"]) == 2
     assert status["plan_index"] == 1
     assert status["planning"] is False
+
+
+# --- Task 1: pause/resume ---
+
+def test_pause_stops_actions():
+    from factorio.state_parser import GameState
+    from factorio.bridge_config import BridgeConfig
+    from factorio.world_model import WorldModel
+    from factorio.agent_brain import AgentBrain
+
+    cfg = BridgeConfig(current_phase=1)
+    wm = WorldModel()
+    brain = AgentBrain(cfg, wm, curricula_dir="tests/fixtures/curricula")
+    brain._plan = [{"action": "craft", "recipe": "gear", "count": 1}]
+    brain._plan_index = 0
+
+    brain.pause()
+    assert brain.is_paused is True
+    assert brain._plan == []
+    action = brain.next_action(GameState(tick=10), [])
+    assert action is None
+
+
+def test_resume_allows_actions():
+    from factorio.state_parser import GameState
+    from factorio.bridge_config import BridgeConfig
+    from factorio.world_model import WorldModel
+    from factorio.agent_brain import AgentBrain
+
+    cfg = BridgeConfig(current_phase=1)
+    wm = WorldModel()
+    brain = AgentBrain(cfg, wm, curricula_dir="tests/fixtures/curricula")
+
+    brain.pause()
+    brain.resume()
+    assert brain.is_paused is False
+
+    brain._plan = [{"action": "wait", "ticks": 10}]
+    brain._plan_index = 0
+    action = brain.next_action(GameState(tick=10), [])
+    assert action is not None
+    assert action.action_type == "wait"
+
+
+def test_pause_still_processes_events():
+    from factorio.state_parser import GameState
+    from factorio.bridge_config import BridgeConfig
+    from factorio.world_model import WorldModel, GameEvent
+    from factorio.agent_brain import AgentBrain
+
+    cfg = BridgeConfig(current_phase=1)
+    wm = WorldModel()
+    brain = AgentBrain(cfg, wm, curricula_dir="tests/fixtures/curricula")
+    brain._plan = [{"action": "wait", "ticks": 60}]
+    brain._plan_index = 0
+
+    brain.pause()
+    events = [GameEvent(event_type="entity_destroyed", tick=10)]
+    brain._ollama_cooldown_until = float("inf")
+    action = brain.next_action(GameState(tick=10), events)
+    # Plan should be cleared by the invalidation event, action is None (paused)
+    assert action is None
+    assert brain._plan == []
+
+
+def test_brain_has_lock():
+    import threading
+    from factorio.bridge_config import BridgeConfig
+    from factorio.world_model import WorldModel
+    from factorio.agent_brain import AgentBrain
+
+    cfg = BridgeConfig(current_phase=1)
+    wm = WorldModel()
+    brain = AgentBrain(cfg, wm, curricula_dir="tests/fixtures/curricula")
+    assert isinstance(brain._lock, type(threading.Lock()))
+
+
+# --- Task 2: directive system ---
+
+def test_add_directive():
+    from factorio.bridge_config import BridgeConfig
+    from factorio.world_model import WorldModel
+    from factorio.agent_brain import AgentBrain
+
+    cfg = BridgeConfig(current_phase=1)
+    wm = WorldModel()
+    brain = AgentBrain(cfg, wm, curricula_dir="tests/fixtures/curricula")
+
+    directive_id = brain.add_directive("Build more miners", sticky=True)
+    assert len(directive_id) == 8
+    directives = brain.get_directives()
+    assert len(directives) == 1
+    assert directives[0]["text"] == "Build more miners"
+    assert directives[0]["sticky"] is True
+    assert directives[0]["id"] == directive_id
+
+
+def test_add_directive_non_sticky():
+    from factorio.bridge_config import BridgeConfig
+    from factorio.world_model import WorldModel
+    from factorio.agent_brain import AgentBrain
+
+    cfg = BridgeConfig(current_phase=1)
+    wm = WorldModel()
+    brain = AgentBrain(cfg, wm, curricula_dir="tests/fixtures/curricula")
+
+    brain.add_directive("Temporary instruction", sticky=False, plans=3)
+    directives = brain.get_directives()
+    assert directives[0]["plans_remaining"] == 3
+
+
+def test_remove_directive():
+    from factorio.bridge_config import BridgeConfig
+    from factorio.world_model import WorldModel
+    from factorio.agent_brain import AgentBrain
+
+    cfg = BridgeConfig(current_phase=1)
+    wm = WorldModel()
+    brain = AgentBrain(cfg, wm, curricula_dir="tests/fixtures/curricula")
+
+    directive_id = brain.add_directive("Remove me", sticky=False)
+    removed = brain.remove_directive(directive_id)
+    assert removed is True
+    assert brain.get_directives() == []
+
+
+def test_clear_directives():
+    from factorio.bridge_config import BridgeConfig
+    from factorio.world_model import WorldModel
+    from factorio.agent_brain import AgentBrain
+
+    cfg = BridgeConfig(current_phase=1)
+    wm = WorldModel()
+    brain = AgentBrain(cfg, wm, curricula_dir="tests/fixtures/curricula")
+
+    brain.add_directive("First", sticky=False)
+    brain.add_directive("Second", sticky=True)
+    count = brain.clear_directives()
+    assert count == 2
+    assert brain.get_directives() == []
+
+
+def test_directive_in_prompt():
+    from factorio.state_parser import GameState
+    from factorio.bridge_config import BridgeConfig
+    from factorio.world_model import WorldModel
+    from factorio.agent_brain import AgentBrain
+
+    cfg = BridgeConfig(current_phase=1)
+    wm = WorldModel()
+    brain = AgentBrain(cfg, wm, curricula_dir="tests/fixtures/curricula")
+
+    brain.add_directive("Prioritize iron mining", sticky=True)
+    _, user = brain._build_prompt(GameState(tick=10))
+    assert "Human Directives" in user
+    assert "Prioritize iron mining" in user
+
+
+def test_directive_expiry():
+    from factorio.state_parser import GameState
+    from factorio.bridge_config import BridgeConfig
+    from factorio.world_model import WorldModel
+    from factorio.agent_brain import AgentBrain
+
+    cfg = BridgeConfig(current_phase=1)
+    wm = WorldModel()
+    brain = AgentBrain(cfg, wm, curricula_dir="tests/fixtures/curricula")
+
+    brain.add_directive("Sticky forever", sticky=True)
+    brain.add_directive("Expire soon", sticky=False, plans=1)
+
+    actions = '[{"action": "wait", "ticks": 10}]'
+    with patch("urllib.request.urlopen", return_value=_mock_ollama_response(actions)):
+        brain._generate_plan(GameState(tick=10))
+
+    directives = brain.get_directives()
+    assert len(directives) == 1
+    assert directives[0]["text"] == "Sticky forever"
+
+
+# --- Task 3: presets + get_plan_status update ---
+
+def test_default_presets():
+    from factorio.bridge_config import BridgeConfig
+    from factorio.world_model import WorldModel
+    from factorio.agent_brain import AgentBrain
+
+    cfg = BridgeConfig(current_phase=1)
+    wm = WorldModel()
+    brain = AgentBrain(cfg, wm, curricula_dir="tests/fixtures/curricula")
+
+    presets = brain.get_presets()
+    assert len(presets) == 6
+    labels = [p["label"] for p in presets]
+    assert "Focus Power" in labels
+
+
+def test_add_remove_preset():
+    from factorio.bridge_config import BridgeConfig
+    from factorio.world_model import WorldModel
+    from factorio.agent_brain import AgentBrain
+
+    cfg = BridgeConfig(current_phase=1)
+    wm = WorldModel()
+    brain = AgentBrain(cfg, wm, curricula_dir="tests/fixtures/curricula")
+
+    preset_id = brain.add_preset("Custom", "Do custom stuff", sticky=False, plans=2)
+    assert len(brain.get_presets()) == 7
+
+    removed = brain.remove_preset(preset_id)
+    assert removed is True
+    assert len(brain.get_presets()) == 6
+
+
+def test_plan_status_includes_paused_and_directives():
+    from factorio.bridge_config import BridgeConfig
+    from factorio.world_model import WorldModel
+    from factorio.agent_brain import AgentBrain
+
+    cfg = BridgeConfig(current_phase=1)
+    wm = WorldModel()
+    brain = AgentBrain(cfg, wm, curricula_dir="tests/fixtures/curricula")
+
+    brain.pause()
+    brain.add_directive("Focus on power", sticky=True)
+
+    status = brain.get_plan_status()
+    assert status["paused"] is True
+    assert len(status["directives"]) == 1
+    assert status["directives"][0]["text"] == "Focus on power"
