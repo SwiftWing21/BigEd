@@ -84,7 +84,7 @@ local function serialize_entity(entity)
         local recipe = entity.get_recipe()
         data.recipe = recipe and recipe.name or nil
         data.crafting_progress = entity.crafting_progress
-        data.is_crafting = entity.is_crafting
+        data.is_crafting = entity.is_crafting()
         local input_inv = entity.get_inventory(defines.inventory.assembling_machine_input)
                        or entity.get_inventory(defines.inventory.furnace_source)
         local output_inv = entity.get_inventory(defines.inventory.assembling_machine_output)
@@ -468,6 +468,58 @@ local function fn_exec_cmd(json_str)
         end
         result.success = placed > 0
         result.placed = placed
+
+    elseif action == "mine" then
+        local pos = parsed.position or {x = 0, y = 0}
+        if not player then
+            result.error = "mine requires a connected player"
+            return helpers.table_to_json(result)
+        end
+        local area = {{pos.x - 0.5, pos.y - 0.5}, {pos.x + 0.5, pos.y + 0.5}}
+        local entities = surface.find_entities_filtered{area = area, limit = 1}
+        if #entities > 0 then
+            local entity = entities[1]
+            if entity.minable then
+                local products = entity.prototype.mineable_properties
+                if products and products.products then
+                    local inv = player.get_main_inventory()
+                    for _, product in pairs(products.products) do
+                        if product.type == "item" then
+                            local count = product.amount or 1
+                            inv.insert{name = product.name, count = count}
+                        end
+                    end
+                end
+                local mined_name = entity.name
+                entity.destroy()
+                result.success = true
+                result.mined = mined_name
+                result.position = pos
+            else
+                result.error = "entity not minable"
+            end
+        else
+            -- Try resource entities (ore patches)
+            local resources = surface.find_entities_filtered{
+                area = area, type = "resource", limit = 1
+            }
+            if #resources > 0 then
+                local resource = resources[1]
+                local mine_amount = math.min(resource.amount, 5)
+                resource.amount = resource.amount - mine_amount
+                local inv = player.get_main_inventory()
+                inv.insert{name = resource.name, count = mine_amount}
+                if resource.amount <= 0 then
+                    resource.destroy()
+                end
+                result.success = true
+                result.mined = resource.name
+                result.amount = mine_amount
+                result.position = pos
+            else
+                result.error = "nothing to mine at position"
+            end
+        end
 
     else
         result.error = "unknown action: " .. tostring(action)
