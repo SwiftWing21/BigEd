@@ -605,5 +605,22 @@ class ProcessManager:
                 self.hw_supervisor_proc.wait(timeout=5)
             except subprocess.TimeoutExpired:
                 self.hw_supervisor_proc.kill()
+        self._stop_factorio()
         self.stop_ollama()
         log.info("Fleet stopped.")
+
+    def _stop_factorio(self) -> None:
+        """Stop Factorio bridge + headless server if running."""
+        try:
+            import psutil
+            for p in psutil.process_iter(["pid", "name", "cmdline"]):
+                cmdline = " ".join(p.info.get("cmdline") or [])
+                name = (p.info.get("name") or "").lower()
+                if "factorio.bridge" in cmdline or "factorio.setup_and_launch" in cmdline:
+                    p.terminate()
+                    log.info("Stopped Factorio bridge (PID %d)", p.pid)
+                elif name.startswith("factorio") and "--start-server" in cmdline:
+                    p.terminate()
+                    log.info("Stopped Factorio headless (PID %d)", p.pid)
+        except Exception:
+            log.warning("Factorio cleanup failed", exc_info=True)

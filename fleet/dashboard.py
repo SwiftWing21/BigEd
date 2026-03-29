@@ -1576,11 +1576,15 @@ def api_factorio_stop():
     # 3. Kill any remaining factorio bridge/server by scanning processes
     try:
         import psutil
-        for p in psutil.process_iter(["pid", "cmdline"]):
+        for p in psutil.process_iter(["pid", "name", "cmdline"]):
             cmdline = " ".join(p.info.get("cmdline") or [])
+            name = (p.info.get("name") or "").lower()
             if "factorio.bridge" in cmdline or "factorio.setup_and_launch" in cmdline:
                 p.terminate()
-                stopped.append(f"orphan (PID {p.pid})")
+                stopped.append(f"orphan bridge (PID {p.pid})")
+            elif name.startswith("factorio") and "--start-server" in cmdline:
+                p.terminate()
+                stopped.append(f"headless server (PID {p.pid})")
     except Exception:
         pass
 

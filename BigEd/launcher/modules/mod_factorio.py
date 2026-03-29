@@ -668,6 +668,25 @@ class Module:
             pass  # Training endpoint may not exist yet
 
     def on_close(self):
-        """Clean up — terminate server and bridge if we launched them."""
+        """Clean up — terminate server and bridge however they were started."""
         if self._training_active:
             self._stop_training()
+        else:
+            # Kill any Factorio processes even if started by the dashboard
+            self._kill_orphan_factorio()
+
+    def _kill_orphan_factorio(self):
+        """Kill any Factorio bridge/headless processes we didn't launch."""
+        try:
+            import psutil
+            for p in psutil.process_iter(["pid", "name", "cmdline"]):
+                cmdline = " ".join(p.info.get("cmdline") or [])
+                name = (p.info.get("name") or "").lower()
+                if "factorio.bridge" in cmdline or "factorio.setup_and_launch" in cmdline:
+                    p.terminate()
+                    log.info("Killed orphan Factorio bridge (PID %d)", p.pid)
+                elif name.startswith("factorio") and "--start-server" in cmdline:
+                    p.terminate()
+                    log.info("Killed orphan Factorio headless (PID %d)", p.pid)
+        except Exception:
+            log.warning("Orphan Factorio cleanup failed", exc_info=True)

@@ -29,7 +29,8 @@ def _kill_fleet_processes(targets=None):
     """
     if targets is None:
         targets = ["supervisor.py", "hw_supervisor.py", "worker.py",
-                   "dashboard.py", "web_app.py", "dispatch_marathon.py", "train.py", "nmap"]
+                   "dashboard.py", "web_app.py", "dispatch_marathon.py", "train.py", "nmap",
+                   "factorio.bridge", "factorio.setup_and_launch"]
     import psutil
     killed = []
     for proc in psutil.process_iter(['pid', 'name', 'cmdline']):

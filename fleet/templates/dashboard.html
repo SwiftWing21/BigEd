@@ -2044,6 +2044,9 @@ textarea.input {
     <div class="section-title">Factorio Sandbox</div>
     <div class="section-desc">Train AI agents in Factorio through curriculum-based progression</div>
     <div style="margin-left:auto;display:flex;gap:8px;align-items:center;">
+      <span id="factorio-sse-indicator" style="display:inline-flex;align-items:center;gap:4px;font-size:11px;color:var(--muted);padding:2px 8px;border-radius:4px;border:1px solid var(--border);"
+        ><span id="factorio-sse-dot" style="width:6px;height:6px;border-radius:50%;background:var(--muted);display:inline-block;"></span>
+        <span id="factorio-sse-label">Offline</span></span>
       <button class="btn btn-sm btn-outline" onclick="loadFactorio()">&#8635; Refresh</button>
       <button id="factorio-start-btn" class="btn btn-sm" onclick="toggleFactorioServer()" style="margin-left:8px;">
         <span id="factorio-start-icon">&#9654;</span> <span id="factorio-start-text">Start</span>
@@ -6096,6 +6099,8 @@ function handleSSE(msg) {
     case 'status':
       /* Header controls update (always visible, not section-gated) */
       if (msg.data) updateHeaderControls(msg.data);
+      /* Factorio SSE indicator (always update, not section-gated) */
+      _updateFactorioSSEIndicator(msg.data ? msg.data.factorio : null);
       if (document.getElementById('section-dashboard').classList.contains('active')) {
         var data = msg.data || {};
         /* Show adaptive push rate in connection indicator */
@@ -8174,7 +8179,8 @@ function loadFactorio() {
       var detailEl = document.getElementById('factorio-bridge-detail');
       var tickEl = document.getElementById('factorio-tick');
       var tickDetailEl = document.getElementById('factorio-tick-detail');
-      if (!_factorioTransition) _factorioRunning = !!d.running;
+      if (!_factorioTransition && Date.now() > _factorioStopCooldown)
+        _factorioRunning = !!d.running;
       if (d.running) {
         statusEl.textContent = 'Running';
         statusEl.style.color = 'var(--success)';
@@ -8300,6 +8306,22 @@ function _factorioApi(method, path, body) {
 
 var _factorioRunning = false;
 var _factorioTransition = null; // "stopping" | "starting" | null
+var _factorioStopCooldown = 0;  // timestamp — ignore running=true polls until this expires
+
+function _updateFactorioSSEIndicator(fdata) {
+  var dot = document.getElementById('factorio-sse-dot');
+  var label = document.getElementById('factorio-sse-label');
+  if (!dot || !label) return;
+  if (fdata && fdata.running) {
+    dot.style.background = fdata.paused ? 'var(--warning)' : 'var(--success)';
+    label.textContent = fdata.paused ? 'Paused' : 'Tick ' + (fdata.tick || 0).toLocaleString();
+    label.style.color = 'var(--foreground)';
+  } else {
+    dot.style.background = 'var(--muted)';
+    label.textContent = 'Offline';
+    label.style.color = 'var(--muted)';
+  }
+}
 
 function toggleFactorioServer() {
   if (_factorioTransition) return; // already in transition, ignore clicks
@@ -8320,27 +8342,26 @@ function toggleFactorioServer() {
           if (!s.running || polls > 10) {
             clearInterval(pollTimer);
             _factorioRunning = false;
-            // Show "Stopped" briefly
+            _factorioStopCooldown = Date.now() + 5000; // ignore stale polls for 5s
             text.textContent = 'Stopped';
             btn.style.background = 'var(--muted)'; btn.style.color = 'var(--foreground)';
             icon.textContent = '\u25CF';
             setTimeout(function() {
               _factorioTransition = null;
               _updateFactorioButtons();
-              loadFactorio();
             }, 2000);
           }
         }).catch(function() {
           // Bridge unreachable = stopped
           clearInterval(pollTimer);
           _factorioRunning = false;
+          _factorioStopCooldown = Date.now() + 5000;
           text.textContent = 'Stopped';
           btn.style.background = 'var(--muted)'; btn.style.color = 'var(--foreground)';
           icon.textContent = '\u25CF';
           setTimeout(function() {
             _factorioTransition = null;
             _updateFactorioButtons();
-            loadFactorio();
           }, 2000);
         });
       }, 1000);
