@@ -608,6 +608,14 @@ class Module:
             if self._status_lbl:
                 self._status_lbl.configure(text="Bridge: Not Running",
                                            text_color=DIM)
+            # Reset button state when bridge is unreachable
+            if self._training_active:
+                self._training_active = False
+                if self._train_btn:
+                    self._train_btn.configure(text="Start Training",
+                                              fg_color=GREEN or "#22c55e")
+                if self._loss_lbl:
+                    self._loss_lbl.configure(text="", text_color=DIM)
 
         # Fetch ML training metrics
         self._refresh_training_metrics()
