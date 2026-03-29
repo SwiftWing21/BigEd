@@ -138,6 +138,7 @@ BigEd/research/
 # ── Factorio runtime data ─────────────────────────────────────────────────
 fleet/factorio/replay_log.jsonl
 fleet/factorio/server_data/
+fleet/factorio/checkpoints/
 
 # ── Fleet runtime state ──────────────────────────────────────────────────
 fleet/hw_state.json

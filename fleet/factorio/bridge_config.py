@@ -55,6 +55,23 @@ class BridgeConfig:
     focus_workers_default: int = 2
     analyze_interval_ticks: int = 50
 
+    # Mode: "ml" (RL policy) or "llm" (existing agent brain)
+    mode: str = "ml"
+    game_speed: int = 10  # Factorio game.speed multiplier for training
+
+    # ML training hyperparameters
+    ml_learning_rate: float = 3e-4
+    ml_batch_size: int = 64
+    ml_update_every: int = 512
+    ml_checkpoint_every: int = 20
+    ml_max_episode_steps: int = 2000
+    ml_gamma: float = 0.99
+    ml_gae_lambda: float = 0.95
+    ml_clip_ratio: float = 0.2
+    ml_entropy_coeff: float = 0.01
+    ml_value_coeff: float = 0.5
+    ml_checkpoint_dir: str = "fleet/factorio/checkpoints"
+
     @classmethod
     def from_dict(cls, d: dict) -> "BridgeConfig":
         known = {f for f in cls.__dataclass_fields__}
