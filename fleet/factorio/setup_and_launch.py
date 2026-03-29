@@ -72,6 +72,12 @@ def install_lua_mod() -> dict:
         log.info("Lua mod installed to: %s", result.get("installed_to"))
     else:
         log.warning("Lua mod install issue: %s", result.get("error", result.get("instructions")))
+
+    # Also install to server_data/mods/ so the isolated headless server has the mod
+    server_mods = Path(__file__).parent / "server_data" / "mods"
+    server_mods.mkdir(parents=True, exist_ok=True)
+    _install(mode="assisted", mods_dir=str(server_mods))
+
     return result
 
 
@@ -80,8 +86,9 @@ def find_factorio_exe() -> Path | None:
     candidates = []
     if sys.platform == "win32":
         candidates = [
-            Path(os.environ.get("PROGRAMFILES(X86)", "C:\\Program Files (x86)"))
-            / "Steam" / "steamapps" / "common" / "Factorio" / "bin" / "x64" / "factorio.exe",
+            # Standalone headless install FIRST (raw UDP, spectator co-play works)
+            # NEVER use Steam version — it routes multiplayer through Steam relay
+            Path("F:\\Factorio\\bin\\x64\\factorio.exe"),
             Path(os.environ.get("PROGRAMFILES", "C:\\Program Files"))
             / "Factorio" / "bin" / "x64" / "factorio.exe",
         ]
@@ -145,7 +152,6 @@ def start_headless_server(factorio_exe: Path, save: Path, port: int, password: s
         "--rcon-password", password,
         "--config", str(server_config_dir / "config.ini"),
         "--server-settings", str(server_config_dir / "server-settings.json"),
-        "--bind", "0.0.0.0:34197",
     ]
     log.info("Starting Factorio server: %s", " ".join(cmd[:3]) + " ...")
 
