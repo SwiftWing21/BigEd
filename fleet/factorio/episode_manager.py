@@ -44,24 +44,18 @@ PHASE_ITEMS: dict[int, dict[str, int]] = {
     },
 }
 
-# Lua snippet to perform a soft reset: clear entities, reset inventory, teleport to spawn
-_SOFT_RESET_LUA = """\
-/c
-local player = game.players[1]
-if not player then return "no_player" end
--- Clear all entities placed by the player (surface)
-for _, ent in pairs(player.surface.find_entities()) do
-    if ent.valid and ent.name ~= "character" then
-        pcall(function() ent.destroy() end)
-    end
-end
--- Clear inventory
-player.get_main_inventory().clear()
-player.get_quickbar().clear()
--- Teleport to spawn
-player.teleport({0, 0}, player.surface)
-return "soft_reset_done"
-"""
+# Lua snippet to perform a soft reset: clear entities, reset inventory, teleport to spawn.
+# Must be a single /c command — RCON splits on newlines, so join with semicolons.
+_SOFT_RESET_LUA = (
+    '/c local player = game.players[1]; '
+    'if not player then rcon.print("no_player"); return end; '
+    'for _, ent in pairs(player.surface.find_entities()) do '
+    'if ent.valid and ent.name ~= "character" then pcall(function() ent.destroy() end) end '
+    'end; '
+    'player.get_main_inventory().clear(); '
+    'player.teleport({0, 0}, player.surface); '
+    'rcon.print("soft_reset_done")'
+)
 
 
 class EpisodeManager:

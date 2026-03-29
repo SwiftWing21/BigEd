@@ -272,7 +272,7 @@ class FactorioBridge:
 
         # 3. Get action from policy
         mask = self._action_space.get_action_type_mask(state.inventory, self.config.current_phase)
-        mask_t = torch.tensor([mask], dtype=torch.float32)
+        mask_t = torch.tensor([mask], dtype=torch.bool)
         action_type, log_prob, value, params = self._policy.act(grid_t, feat_t, mask_t)
 
         # 4. Sample action parameters and decode
