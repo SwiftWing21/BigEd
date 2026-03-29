@@ -2,8 +2,11 @@
 """Factorio Sandbox Module — launcher tab with status, cadence, curriculum."""
 import json
 import logging
+import os
 import subprocess as sp
+import sys
 import urllib.request
+from pathlib import Path
 
 import customtkinter as ctk
 
@@ -36,6 +39,8 @@ class Module:
         self._reward_lbl = None
         self._loss_lbl = None
         self._training_active = False
+        self._server_proc = None   # Factorio headless server process
+        self._bridge_proc = None   # BigEd bridge process
 
     def _init_theme(self):
         global BG, BG2, BG3, ACCENT, ACCENT_H, GOLD, TEXT, DIM, GREEN, ORANGE, RED
@@ -212,55 +217,193 @@ class Module:
         except Exception:
             log.warning("Failed to save mode to fleet.toml", exc_info=True)
 
-    def _toggle_training(self):
-        """Start or stop ML training via bridge API."""
+    def _is_bridge_alive(self):
+        """Check if the bridge API is reachable."""
         try:
             import config as fleet_config
             cfg = fleet_config.load_config()
             port = cfg.get("factorio", {}).get("bridge_port", 27016)
+            urllib.request.urlopen(f"http://127.0.0.1:{port}/api/status", timeout=2)
+            return True
+        except Exception:
+            return False
 
-            if self._training_active:
-                # Pause training
-                req = urllib.request.Request(
-                    f"http://127.0.0.1:{port}/api/pause",
-                    method="POST",
-                    data=b"{}",
-                    headers={"Content-Type": "application/json"},
+    def _is_proc_alive(self, proc):
+        """Check if a subprocess is still running."""
+        return proc is not None and proc.poll() is None
+
+    def _toggle_training(self):
+        """Start or stop the full Factorio training stack.
+
+        Start: launch headless server → launch bridge → resume training.
+        Stop: pause training → terminate bridge → terminate server.
+        """
+        if self._training_active:
+            self._stop_training()
+        else:
+            self._start_training()
+
+    def _start_training(self):
+        """Launch Factorio headless + bridge and begin RL training."""
+        if self._loss_lbl:
+            self._loss_lbl.configure(text="Starting...", text_color=ORANGE)
+
+        try:
+            import config as fleet_config
+            cfg = fleet_config.load_config()
+            factorio_cfg = cfg.get("factorio", {})
+            port = factorio_cfg.get("bridge_port", 27016)
+            rcon_port = factorio_cfg.get("rcon_port", 27015)
+            rcon_password = factorio_cfg.get("rcon_password", "")
+
+            if not rcon_password:
+                if self._loss_lbl:
+                    self._loss_lbl.configure(text="No RCON password — run setup first",
+                                             text_color=RED)
+                return
+
+            # Ensure mode is ML
+            mode = self._mode_var.get() if self._mode_var else "ml"
+            if mode != "ml":
+                self._mode_var.set("ml")
+                self._on_mode_change("ml")
+
+            fleet_dir = Path(__file__).resolve().parent.parent.parent.parent / "fleet"
+
+            # 1. Launch Factorio headless (if not already running)
+            if not self._is_proc_alive(self._server_proc):
+                sys.path.insert(0, str(fleet_dir))
+                from factorio.setup_and_launch import find_factorio_exe, find_or_create_save
+                exe = find_factorio_exe()
+                if not exe:
+                    if self._loss_lbl:
+                        self._loss_lbl.configure(text="Factorio not found",
+                                                 text_color=RED)
+                    return
+
+                save = find_or_create_save(exe)
+                server_config_dir = fleet_dir / "factorio" / "server_data"
+                server_config_dir.mkdir(exist_ok=True)
+
+                cmd = [
+                    str(exe),
+                    "--start-server", str(save),
+                    "--rcon-port", str(rcon_port),
+                    "--rcon-password", rcon_password,
+                    "--config", str(server_config_dir / "config.ini"),
+                    "--server-settings", str(server_config_dir / "server-settings.json"),
+                ]
+                self._server_proc = sp.Popen(
+                    cmd,
+                    stdout=sp.PIPE, stderr=sp.PIPE,
+                    creationflags=getattr(sp, "CREATE_NO_WINDOW", 0),
                 )
-                urllib.request.urlopen(req, timeout=5)
-                self._training_active = False
-                if self._train_btn:
-                    self._train_btn.configure(
-                        text="Start Training",
-                        fg_color=GREEN or "#22c55e",
-                    )
-                log.info("Training paused")
-            else:
-                # Ensure mode is ML
-                mode = self._mode_var.get() if self._mode_var else "ml"
-                if mode != "ml":
-                    self._mode_var.set("ml")
-                    self._on_mode_change("ml")
+                log.info("Factorio server launched (PID %d)", self._server_proc.pid)
 
-                # Resume training
+                # Brief wait for server to initialize
+                import time
+                time.sleep(3)
+                if not self._is_proc_alive(self._server_proc):
+                    stderr = self._server_proc.stderr.read().decode("utf-8", errors="replace")[:300]
+                    log.warning("Server exited immediately: %s", stderr)
+                    if self._loss_lbl:
+                        self._loss_lbl.configure(text="Server crashed — check logs",
+                                                 text_color=RED)
+                    return
+
+            # 2. Launch bridge (if not already running)
+            if not self._is_proc_alive(self._bridge_proc) and not self._is_bridge_alive():
+                self._bridge_proc = sp.Popen(
+                    [sys.executable, "-m", "factorio.bridge"],
+                    cwd=str(fleet_dir),
+                    env={**os.environ, "PYTHONPATH": str(fleet_dir)},
+                    stdout=sp.PIPE, stderr=sp.PIPE,
+                    creationflags=getattr(sp, "CREATE_NO_WINDOW", 0),
+                )
+                log.info("Bridge launched (PID %d)", self._bridge_proc.pid)
+
+                import time
+                time.sleep(2)
+
+            # 3. Resume training via bridge API
+            try:
                 req = urllib.request.Request(
                     f"http://127.0.0.1:{port}/api/resume",
-                    method="POST",
-                    data=b"{}",
+                    method="POST", data=b"{}",
                     headers={"Content-Type": "application/json"},
                 )
                 urllib.request.urlopen(req, timeout=5)
-                self._training_active = True
-                if self._train_btn:
-                    self._train_btn.configure(
-                        text="Stop Training",
-                        fg_color=RED or "#ef4444",
-                    )
-                log.info("Training started")
-        except Exception:
-            log.warning("Failed to toggle training", exc_info=True)
+            except Exception:
+                log.warning("Resume API call failed (bridge may still be starting)",
+                            exc_info=True)
+
+            self._training_active = True
+            if self._train_btn:
+                self._train_btn.configure(text="Stop Training",
+                                          fg_color=RED or "#ef4444")
             if self._loss_lbl:
-                self._loss_lbl.configure(text="Bridge not running", text_color=ORANGE)
+                self._loss_lbl.configure(text="Running", text_color=GREEN)
+            log.info("Training started (server + bridge + ML)")
+
+        except Exception:
+            log.warning("Failed to start training", exc_info=True)
+            if self._loss_lbl:
+                self._loss_lbl.configure(text="Start failed — check logs",
+                                         text_color=RED)
+
+    def _stop_training(self):
+        """Pause training, then terminate bridge and headless server."""
+        if self._loss_lbl:
+            self._loss_lbl.configure(text="Stopping...", text_color=ORANGE)
+
+        try:
+            # 1. Pause training via bridge API (graceful)
+            import config as fleet_config
+            cfg = fleet_config.load_config()
+            port = cfg.get("factorio", {}).get("bridge_port", 27016)
+            try:
+                req = urllib.request.Request(
+                    f"http://127.0.0.1:{port}/api/pause",
+                    method="POST", data=b"{}",
+                    headers={"Content-Type": "application/json"},
+                )
+                urllib.request.urlopen(req, timeout=5)
+            except Exception:
+                pass  # Bridge may already be down
+
+            # 2. Terminate bridge
+            if self._is_proc_alive(self._bridge_proc):
+                self._bridge_proc.terminate()
+                try:
+                    self._bridge_proc.wait(timeout=5)
+                except sp.TimeoutExpired:
+                    self._bridge_proc.kill()
+                log.info("Bridge terminated")
+            self._bridge_proc = None
+
+            # 3. Terminate headless server
+            if self._is_proc_alive(self._server_proc):
+                self._server_proc.terminate()
+                try:
+                    self._server_proc.wait(timeout=10)
+                except sp.TimeoutExpired:
+                    self._server_proc.kill()
+                log.info("Factorio server terminated")
+            self._server_proc = None
+
+            self._training_active = False
+            if self._train_btn:
+                self._train_btn.configure(text="Start Training",
+                                          fg_color=GREEN or "#22c55e")
+            if self._loss_lbl:
+                self._loss_lbl.configure(text="Stopped", text_color=DIM)
+            log.info("Training stopped (server + bridge)")
+
+        except Exception:
+            log.warning("Failed to stop training", exc_info=True)
+            if self._loss_lbl:
+                self._loss_lbl.configure(text="Stop failed — check logs",
+                                         text_color=RED)
 
     def _check_first_run(self, parent):
         """Show setup prompt if RCON password is not configured."""
@@ -365,5 +508,6 @@ class Module:
             pass  # Training endpoint may not exist yet
 
     def on_close(self):
-        """Clean up."""
-        pass
+        """Clean up — terminate server and bridge if we launched them."""
+        if self._training_active:
+            self._stop_training()
