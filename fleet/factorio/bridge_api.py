@@ -26,7 +26,14 @@ def create_api(world_model, command_queue, brain=None) -> Flask:
 
     @app.route("/api/status")
     def api_status():
-        return jsonify({**_bridge_status, "paused": _brain.is_paused if _brain else False})
+        import time as _t
+        status = {**_bridge_status, "paused": _brain.is_paused if _brain else False}
+        # Mark as not running if no tick update for 30 seconds (stuck loop)
+        last_ts = _bridge_status.get("last_tick_ts", 0)
+        if status["running"] and (_t.time() - last_ts) > 30:
+            status["running"] = False
+            status["stale"] = True
+        return jsonify(status)
 
     @app.route("/api/state")
     def api_state():
@@ -255,10 +262,12 @@ def create_api(world_model, command_queue, brain=None) -> Flask:
 
 
 def update_status(running: bool, tick: int, cadence: str) -> None:
+    import time as _t
     with _lock:
         _bridge_status["running"] = running
         _bridge_status["tick"] = tick
         _bridge_status["cadence"] = cadence
+        _bridge_status["last_tick_ts"] = _t.time()
 
 
 def store_result(cmd_id: str, result: dict) -> None:

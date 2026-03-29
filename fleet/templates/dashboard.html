@@ -8316,6 +8316,10 @@ function _updateFactorioSSEIndicator(fdata) {
     dot.style.background = fdata.paused ? 'var(--warning)' : 'var(--success)';
     label.textContent = fdata.paused ? 'Paused' : 'Tick ' + (fdata.tick || 0).toLocaleString();
     label.style.color = 'var(--foreground)';
+  } else if (fdata && fdata.stale) {
+    dot.style.background = 'var(--warning)';
+    label.textContent = 'Stale';
+    label.style.color = 'var(--warning)';
   } else {
     dot.style.background = 'var(--muted)';
     label.textContent = 'Offline';
