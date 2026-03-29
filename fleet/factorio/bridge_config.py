@@ -35,6 +35,7 @@ class BridgeConfig:
     rcon_circuit_breaker_secs: int = 30
     max_actions_per_step: int = 20
     sandbox_mode: bool = True
+    biters: bool = False  # Enable enemies in training saves (default off)
     reserved_workers: int = 0
     current_phase: int = 1
     auto_advance: bool = True

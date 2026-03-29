@@ -105,8 +105,30 @@ def find_factorio_exe() -> Path | None:
     return None
 
 
-def find_or_create_save(factorio_exe: Path) -> Path:
-    """Find an existing save or create a new one."""
+def _write_map_gen_settings(path: Path, biters: bool = False) -> None:
+    """Write map generation settings JSON. Biters off by default for training."""
+    import json as _json
+    settings = {
+        "autoplace_controls": {
+            "enemy-base": {
+                "frequency": "normal" if biters else "none",
+                "size": "normal" if biters else "none",
+                "richness": "normal" if biters else "none",
+            }
+        },
+        "peaceful_mode": not biters,
+        "enemy_expansion": {"enabled": biters},
+    }
+    path.write_text(_json.dumps(settings, indent=2), encoding="utf-8")
+    log.info("Map gen settings written (biters=%s): %s", biters, path)
+
+
+def find_or_create_save(factorio_exe: Path, biters: bool = False) -> Path:
+    """Find an existing save or create a new one.
+
+    Args:
+        biters: If True, create save with enemies enabled. Default False (training).
+    """
     if sys.platform == "win32":
         saves_dir = Path(os.environ.get("APPDATA", "")) / "Factorio" / "saves"
     else:
@@ -117,11 +139,16 @@ def find_or_create_save(factorio_exe: Path) -> Path:
         log.info("Using existing save: %s", sandbox_save)
         return sandbox_save
 
-    # Create a new save
-    log.info("Creating new sandbox save...")
+    # Create a new save with map gen settings
+    log.info("Creating new sandbox save (biters=%s)...", biters)
     saves_dir.mkdir(parents=True, exist_ok=True)
+
+    map_gen_path = saves_dir / "biged-map-gen-settings.json"
+    _write_map_gen_settings(map_gen_path, biters=biters)
+
     proc = subprocess.run(
-        [str(factorio_exe), "--create", str(sandbox_save)],
+        [str(factorio_exe), "--create", str(sandbox_save),
+         "--map-gen-settings", str(map_gen_path)],
         capture_output=True,
         text=True,
         creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
@@ -133,6 +160,23 @@ def find_or_create_save(factorio_exe: Path) -> Path:
 
     log.info("Save created: %s", sandbox_save)
     return sandbox_save
+
+
+def recreate_save(factorio_exe: Path, biters: bool = False) -> Path:
+    """Delete existing save and create a fresh one. Used when toggling biters."""
+    if sys.platform == "win32":
+        saves_dir = Path(os.environ.get("APPDATA", "")) / "Factorio" / "saves"
+    else:
+        saves_dir = Path.home() / ".factorio" / "saves"
+
+    sandbox_save = saves_dir / "biged-sandbox.zip"
+    if sandbox_save.exists():
+        # Rename old save as backup
+        backup = sandbox_save.with_suffix(f".backup.zip")
+        sandbox_save.rename(backup)
+        log.info("Backed up old save to %s", backup)
+
+    return find_or_create_save(factorio_exe, biters=biters)
 
 
 def start_headless_server(factorio_exe: Path, save: Path, port: int, password: str) -> subprocess.Popen:

@@ -153,6 +153,31 @@ class Module:
             font=FONT_XS, text_color=DIM)
         self._mode_lbl.pack(side="left", padx=(10, 0))
 
+        # Biters toggle
+        biters_row = ctk.CTkFrame(ml_frame, fg_color="transparent")
+        biters_row.pack(fill="x", padx=10, pady=(0, 5))
+
+        self._biters_var = ctk.BooleanVar(value=self._get_biters_setting())
+        biters_cb = ctk.CTkCheckBox(
+            biters_row, text="Enable Biters", font=FONT_SM,
+            variable=self._biters_var,
+            command=self._on_biters_change,
+            fg_color=ACCENT, hover_color=ACCENT_H,
+            text_color=TEXT,
+        )
+        biters_cb.pack(side="left")
+
+        new_save_btn = ctk.CTkButton(
+            biters_row, text="New Save", font=FONT_XS,
+            fg_color=BG3, hover_color=ACCENT_H,
+            command=self._recreate_save, width=70, height=24,
+        )
+        new_save_btn.pack(side="left", padx=(8, 0))
+
+        self._biters_lbl = ctk.CTkLabel(biters_row, text="",
+                                        font=FONT_XS, text_color=DIM)
+        self._biters_lbl.pack(side="left", padx=(8, 0))
+
         # Start/Stop Training button
         btn_row = ctk.CTkFrame(ml_frame, fg_color="transparent")
         btn_row.pack(fill="x", padx=10, pady=(0, 10))
@@ -281,7 +306,8 @@ class Module:
                                                  text_color=RED)
                     return
 
-                save = find_or_create_save(exe)
+                biters = factorio_cfg.get("biters", False)
+                save = find_or_create_save(exe, biters=biters)
                 server_config_dir = fleet_dir / "factorio" / "server_data"
                 server_config_dir.mkdir(exist_ok=True)
 
@@ -420,6 +446,69 @@ class Module:
             if self._loss_lbl:
                 self._loss_lbl.configure(text="Stop failed — check logs",
                                          text_color=RED)
+
+    def _recreate_save(self):
+        """Delete existing save and create fresh one with current biters setting."""
+        if self._training_active:
+            if self._biters_lbl:
+                self._biters_lbl.configure(text="Stop training first", text_color=RED)
+            return
+
+        if self._biters_lbl:
+            self._biters_lbl.configure(text="Creating...", text_color=ORANGE)
+
+        try:
+            fleet_dir = Path(__file__).resolve().parent.parent.parent.parent / "fleet"
+            sys.path.insert(0, str(fleet_dir))
+            from factorio.setup_and_launch import find_factorio_exe, recreate_save
+
+            exe = find_factorio_exe()
+            if not exe:
+                if self._biters_lbl:
+                    self._biters_lbl.configure(text="Factorio not found", text_color=RED)
+                return
+
+            biters = self._biters_var.get()
+            save = recreate_save(exe, biters=biters)
+            if self._biters_lbl:
+                self._biters_lbl.configure(
+                    text=f"Created ({'biters on' if biters else 'peaceful'})",
+                    text_color=GREEN,
+                )
+            log.info("New save created: %s (biters=%s)", save, biters)
+        except Exception:
+            log.warning("Failed to recreate save", exc_info=True)
+            if self._biters_lbl:
+                self._biters_lbl.configure(text="Failed — check logs", text_color=RED)
+
+    def _get_biters_setting(self):
+        """Read biters setting from fleet.toml."""
+        try:
+            import config as fleet_config
+            cfg = fleet_config.load_config()
+            return cfg.get("factorio", {}).get("biters", False)
+        except Exception:
+            return False
+
+    def _on_biters_change(self):
+        """Persist biters setting and offer to recreate save."""
+        value = self._biters_var.get()
+        try:
+            import config as fleet_config
+            cfg = fleet_config.load_config()
+            if "factorio" not in cfg:
+                cfg["factorio"] = {}
+            cfg["factorio"]["biters"] = value
+            fleet_config.save_config(cfg)
+            log.info("Biters set to %s", value)
+        except Exception:
+            log.warning("Failed to save biters setting", exc_info=True)
+
+        if self._biters_lbl:
+            self._biters_lbl.configure(
+                text="New save will use this setting",
+                text_color=ORANGE,
+            )
 
     def _rcon_save_and_quit(self, rcon_port, rcon_password):
         """Send /server-save then /quit via raw RCON TCP socket.
