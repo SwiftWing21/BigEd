@@ -36,7 +36,7 @@ Three-layer system:
 │  - Policy network (actions)         │
 │  - Value network (expected reward)  │
 │  - RL training loop (PPO)           │
-│  - Replay buffer                    │
+│  - Trajectory buffer (on-policy)    │
 └──────────────┬──────────────────────┘
                │ actions
 ┌──────────────▼──────────────────────┐
@@ -85,6 +85,21 @@ Fixed-size grid centered on player position: **64×64 tiles, 4 channels.**
 
 Entities outside the 64×64 window are not visible to the agent. The window moves with the player. This forces the agent to learn local placement patterns first — spatial awareness scales with training, not architecture.
 
+### State Encoder: GameState → Tensors
+
+The existing `state_parser.py` produces a `GameState` dataclass with:
+- `entities`: list of `Entity` objects (name, position `{"x": float, "y": float}`, direction)
+- `inventory`: dict of item name → count
+- `resources`: list of resource dicts
+
+The tensor encoder (`state_encoder.py`) transforms this:
+
+1. **Entity registry:** Static mapping of entity name → integer type ID (e.g., `{"stone-furnace": 1, "inserter": 2, "transport-belt": 3, ...}`). Phase-gated: only IDs in the current phase's entity set are encoded; others map to a generic "unknown" ID.
+2. **World-to-grid coords:** `grid_x = round(entity.x - player.x) + 32`, `grid_y = round(entity.y - player.y) + 32`. Entities outside [0, 63] are clipped.
+3. **Overlapping entities:** Last-write-wins on the grid (later entities in the list overwrite earlier ones at the same tile). This is acceptable because Factorio rarely stacks entities on the same tile.
+4. **Inventory normalization:** Divide counts by phase-appropriate maximums (e.g., 100 for Phase 1 items, 1000 for Phase 4).
+5. **Resource density:** Normalize ore amounts by the maximum observed in the current episode (running max, updated per step).
+
 ### Feature Vector (MLP input)
 
 ~80-dimensional flat vector:
@@ -97,7 +112,7 @@ Entities outside the 64×64 window are not visible to the agent. The window move
 | Production rates | ~15 | Items/min for key resources (normalized) |
 | Time | 2 | Game tick (normalized), episode step (normalized) |
 | Curriculum context | ~10 | Phase one-hot + lesson index + goal embedding |
-| Strategy objective | ~10 | LLM-set goal embedding (from orchestrator) |
+| Strategy objective | 3 | LLM-set goal vector — omitted until Phase 3+ (zeros during early training) |
 
 ### Combined Network
 
@@ -123,20 +138,25 @@ Hierarchical discrete action space:
 
 | ID | Action | Parameters | Parameter Encoding |
 |----|--------|------------|--------------------|
-| 0 | place | entity_type, dx, dy, direction | Categorical(~20) × Discrete(11) × Discrete(11) × Discrete(8) |
-| 1 | craft | recipe_id, count | Categorical(~30) × Discrete(10) |
+| 0 | place | entity_type, dx, dy, direction | Categorical(~8 Phase 1, ~20 Phase 4) × Discrete(11) × Discrete(11) × Discrete(8) |
+| 1 | craft | recipe_id, count | Categorical(~10 Phase 1, ~30 Phase 4) × Discrete(10) |
 | 2 | research | tech_id | Categorical(~20) |
 | 3 | move | dx, dy | Discrete(11) × Discrete(11) — range [-5, +5] |
 | 4 | set_recipe | grid_x, grid_y, recipe_id | Discrete(64) × Discrete(64) × Categorical(~30) |
 | 5 | remove | grid_x, grid_y | Discrete(64) × Discrete(64) |
 | 6 | wait | (none) | — |
+| 7 | mine | dx, dy | Discrete(11) × Discrete(11) — hand-mine resource/entity at offset |
+
+**Phase-gated action/entity sets:** Entity and recipe catalogs expand per phase. Phase 1 uses ~8 entity types and ~10 recipes. This keeps the combinatorial space manageable early (<5K actions) and expands as the agent demonstrates competence.
 
 **Policy outputs:**
-1. Action type: 7-way softmax
+1. Action type: 8-way softmax
 2. Per-action parameter heads: only the selected action's head is used/trained per step
-3. Invalid action masking: mask unavailable actions based on inventory/research state
+3. Invalid action masking: mask unavailable actions based on inventory/research state and current phase entity set
 
 This is a standard hierarchical action space. PPO handles it well with per-head losses.
+
+**Note:** The existing `connect` action (belt routing) from `action_translator.py` is deferred. Belt placement via sequential `place` actions with direction encoding covers the same functionality. Explicit belt routing may be added in Phase 3+ if needed.
 
 ## 5. Reward Function
 
@@ -209,20 +229,38 @@ def run_episode(policy, bridge, curriculum, max_steps=2000):
 
 ### Episode Manager (NEW bridge component)
 
+Two reset strategies, tried in order:
+
+**Strategy A: Lua soft reset (preferred, faster)**
+- RCON: remove all player-placed entities via Lua surface scan
+- RCON: reset player inventory to phase-appropriate starting items
+- RCON: teleport player to spawn
+- No server restart, RCON stays connected
+- ~2-5 seconds per reset
+
+**Strategy B: Save/load (fallback, when soft reset is insufficient)**
+- RCON: `/c game.server_save("pre_episode")`
+- Restart headless server with phase-specific save file
+- Auto-reconnect RCON with retry (up to 10 attempts, 1s interval)
+- ~15-30 seconds per reset (server restart + reconnect)
+
 ```
 class EpisodeManager:
     """Manages game state for RL training episodes."""
 
     def reset(self, phase: int) -> None:
-        """Load the clean save file for the given curriculum phase."""
-        # RCON: /c game.server_save("checkpoint")
-        # RCON: load save file for phase
+        """Reset game state for new episode. Tries Lua soft reset first,
+        falls back to save/load if soft reset fails or phase changed."""
+
+    def soft_reset(self) -> bool:
+        """Lua-based reset: clear entities, reset inventory, teleport.
+        Returns False if phase boundary requires full save/load."""
+
+    def hard_reset(self, save_name: str) -> None:
+        """Full save/load cycle with RCON auto-reconnect."""
 
     def save_checkpoint(self, name: str) -> None:
         """Save current game state for later restoration."""
-
-    def restore_checkpoint(self, name: str) -> None:
-        """Restore a previously saved game state."""
 
     def get_episode_info(self) -> dict:
         """Return episode step count, elapsed time, phase."""
@@ -230,12 +268,17 @@ class EpisodeManager:
 
 ### Training Speed (Real Factorio)
 
-- Factorio headless runs at ~60 UPS (updates per second)
-- Agent acts every 1-5 seconds (cadence-dependent)
-- ~2000 steps/episode → ~30-60 min per episode
-- ~20-40 episodes/day with real game
-- Sufficient for Phase 1 curriculum (simple tasks, fast feedback)
-- Build Python sim for Phase 2+ when speed becomes the bottleneck
+- Factorio headless supports `game.speed = N` for faster-than-realtime
+- At `game.speed = 10`: 600 effective UPS, ~10x faster training
+- Agent acts every 1-5 seconds wall-clock (game time passes faster)
+- With speed=10: ~2000 steps/episode → ~3-6 min wall-clock per episode
+- **~200-400 episodes/day** with game speed manipulation
+- Sufficient through Phase 2 at minimum
+- Build Python sim only if Phase 3+ training speed becomes bottleneck (separate spec if pursued — this is a multi-month effort, labeled aspirational)
+
+### Reward Normalization at Phase Boundaries
+
+When advancing to a new phase (new reward terms introduced), reset the running mean/std statistics for reward normalization. This prevents distribution shift from corrupting the value function estimates during the transition.
 
 ## 7. LLM Orchestrator
 
@@ -397,9 +440,36 @@ Uses Ollama locally for routine narration, Claude API for complex diagnostics.
 
 | Risk | Impact | Mitigation |
 |------|--------|------------|
-| Factorio episode reset is slow | Training bottleneck | Start with real game; build Python sim when needed |
+| Factorio episode reset is slow | Training bottleneck | Lua soft reset (2-5s); game.speed=10; build sim only if needed |
 | Reward shaping is wrong | Agent learns degenerate behavior | LLM diagnostician monitors; phase-gated reward introduction |
-| Action space too large | Slow convergence | Invalid action masking; start with reduced entity/recipe sets per phase |
+| Action space too large | Slow convergence | Phase-gated entity sets (~8 Phase 1, ~20 Phase 4); invalid action masking |
 | State encoding misses key info | Agent can't learn | Validate encoding against known-good states; add channels iteratively |
 | RCON latency | Slow step time | Batch state reads; cache entity grid between steps |
 | Training instability | Wasted compute | PPO is robust; checkpoint frequently; LLM diagnostician catches stalls |
+| Episode reset disconnects RCON | Training halts between episodes | Lua soft reset preferred; hard reset has auto-reconnect with retry |
+| No hand-mining in early game | Agent can't bootstrap without drills | `mine` action added (ID 7) for hand-mining resources |
+| Phase-gated reward distribution shift | Value function estimates corrupted | Reset reward normalization running stats at phase boundaries |
+| RL approach fails entirely | Wasted effort | Keep `agent_brain.py` functional as fallback mode (toggle in fleet.toml) |
+
+## 14. Rollback Strategy
+
+The existing `agent_brain.py` (LLM-driven) is kept functional as a fallback. A `factorio.mode` config key in `fleet.toml` switches between `"ml"` (new RL policy) and `"llm"` (existing agent brain). Default: `"ml"` once the RL pipeline is validated. This allows reverting with a single config change if the RL approach stalls.
+
+## 15. Fleet Skill Updates
+
+The 5 existing skills need interface updates for the ML agent:
+
+| Skill | Current | New |
+|-------|---------|-----|
+| `factorio_observe` | GET /api/state → markdown | Same, add training metrics (episode, reward, phase) |
+| `factorio_act` | POST /api/plan/submit (action list) | Deprecated in ML mode — policy decides actions |
+| `factorio_plan` | Claude/Gemini → directive | Becomes LLM orchestrator trigger (strategy update) |
+| `factorio_analyze` | State → confidence gate | Becomes training diagnostics trigger |
+| `factorio_train` | Curriculum eval + IQ | Becomes episode metrics reporter + curriculum progress |
+
+## 16. Gitignore
+
+Add to `.gitignore`:
+```
+fleet/factorio/checkpoints/
+```
