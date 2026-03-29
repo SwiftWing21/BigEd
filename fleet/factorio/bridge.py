@@ -44,6 +44,46 @@ class FactorioBridge:
         self._consecutive_failures = 0
         self._tick_count = 0
 
+        if self.config.mode == "ml":
+            from factorio.state_encoder import StateEncoder
+            from factorio.ml_policy import FactorioPolicy
+            from factorio.action_space import ActionSpace
+            from factorio.reward import RewardComputer
+            from factorio.trainer import PPOTrainer, TrajectoryBuffer
+            from factorio.episode_manager import EpisodeManager
+            from factorio.curriculum_manager import CurriculumManager
+
+            self._encoder = StateEncoder(phase=config.current_phase)
+            self._action_space = ActionSpace(phase=config.current_phase)
+            self._policy = FactorioPolicy(
+                grid_channels=4, grid_size=64,
+                feature_dim=self._encoder.feature_dim,
+                num_action_types=8,
+                num_entities=self._action_space.num_entity_types,
+                num_recipes=self._action_space.num_recipe_types,
+                num_techs=self._action_space.num_tech_types,
+            )
+            self._reward = RewardComputer(phase=config.current_phase)
+            self._trainer = PPOTrainer(
+                self._policy, lr=config.ml_learning_rate,
+                gamma=config.ml_gamma, gae_lambda=config.ml_gae_lambda,
+                clip_ratio=config.ml_clip_ratio,
+                entropy_coeff=config.ml_entropy_coeff,
+                value_coeff=config.ml_value_coeff,
+                checkpoint_dir=config.ml_checkpoint_dir,
+            )
+            self._episode_mgr = EpisodeManager(
+                rcon=self.rcon, phase=config.current_phase,
+                max_steps=config.ml_max_episode_steps,
+            )
+            self._curriculum = CurriculumManager(
+                current_phase=config.current_phase,
+                curricula_dir=config.curriculum_dir,
+            )
+            self._trajectory_buf = TrajectoryBuffer()
+            self._prev_state = None
+            self._ml_step_count = 0
+
     async def connect_with_retry(self) -> bool:
         """Connect to RCON with exponential backoff."""
         delay = 1.0
@@ -169,6 +209,159 @@ class FactorioBridge:
         # 6. Update bridge status
         update_status(True, state.tick, self.cadence.mode)
 
+    def _sample_params(self, action_type: int, params: dict):
+        """Sample concrete parameter values from policy head logits."""
+        import torch
+        from torch.distributions import Categorical
+        from factorio.action_space import EncodedAction, ActionType
+
+        encoded = EncodedAction(action_type=action_type)
+
+        def _sample(logits_key: str) -> int:
+            if logits_key in params:
+                dist = Categorical(logits=params[logits_key])
+                return dist.sample().item()
+            return 0
+
+        if action_type == ActionType.PLACE:
+            encoded.entity_id = _sample("entity_logits")
+            encoded.dx = _sample("dx_logits")
+            encoded.dy = _sample("dy_logits")
+            encoded.direction = _sample("direction_logits")
+        elif action_type == ActionType.CRAFT:
+            encoded.recipe_id = _sample("recipe_logits")
+            encoded.count = _sample("count_logits") + 1
+        elif action_type == ActionType.RESEARCH:
+            encoded.tech_id = _sample("tech_logits")
+        elif action_type == ActionType.MOVE:
+            encoded.dx = _sample("dx_logits")
+            encoded.dy = _sample("dy_logits")
+        elif action_type == ActionType.SET_RECIPE:
+            encoded.grid_x = _sample("gx_logits")
+            encoded.grid_y = _sample("gy_logits")
+            encoded.recipe_id = _sample("recipe_logits")
+        elif action_type == ActionType.REMOVE:
+            encoded.grid_x = _sample("gx_logits")
+            encoded.grid_y = _sample("gy_logits")
+        elif action_type == ActionType.MINE:
+            encoded.dx = _sample("dx_logits")
+            encoded.dy = _sample("dy_logits")
+
+        return encoded
+
+    async def ml_tick(self) -> None:
+        """Single ML-mode perception -> action cycle."""
+        import torch
+
+        # 1. Get state
+        raw_state = await self.rcon.remote_call("get_state")
+        state = parse_state(raw_state)
+        raw_metrics = None
+        if self._tick_count % 5 == 0:
+            try:
+                raw_metrics_str = await self.rcon.remote_call("get_metrics")
+                raw_metrics = parse_metrics(raw_metrics_str)
+            except Exception:
+                log.warning("Metrics fetch failed in ml_tick, skipping")
+        self.world_model.update(state, raw_metrics)
+
+        # 2. Encode state
+        grid, features = self._encoder.encode(state, raw_metrics)
+        grid_t = torch.tensor(grid).unsqueeze(0)
+        feat_t = torch.tensor(features).unsqueeze(0)
+
+        # 3. Get action from policy
+        mask = self._action_space.get_action_type_mask(state.inventory, self.config.current_phase)
+        mask_t = torch.tensor([mask], dtype=torch.float32)
+        action_type, log_prob, value, params = self._policy.act(grid_t, feat_t, mask_t)
+
+        # 4. Sample action parameters and decode
+        encoded = self._sample_params(action_type.item(), params)
+        action_dict = self._action_space.decode_action(encoded)
+
+        # 5. Execute via RCON
+        from factorio.action_translator import translate_action
+        translated = translate_action(action_dict)
+        result = {"success": False}
+        if translated.rcon_command:
+            try:
+                resp = await self.rcon.remote_call("exec_cmd", translated.rcon_command)
+                result = {"success": "error" not in str(resp).lower()}
+            except Exception:
+                log.warning("Action execution failed", exc_info=True)
+
+        # 6. Check curriculum progress
+        lesson_passed = False
+        phase_complete = False
+        if self._prev_state is not None:
+            flat_state = {
+                "inventory": state.inventory,
+                "entities": {},
+                "research": {"name": state.research_name, "progress": state.research_progress},
+            }
+            # Count entities by name
+            for e in state.entities:
+                flat_state["entities"][e.name] = flat_state["entities"].get(e.name, 0) + 1
+            progress = self._curriculum.check_progress(flat_state)
+            lesson_passed = progress.get("lesson_passed", False)
+            phase_complete = progress.get("phase_complete", False)
+
+        # 7. Compute reward
+        reward = 0.0
+        if self._prev_state is not None:
+            reward = self._reward.compute(
+                self._prev_state, state, result["success"],
+                lesson_passed, phase_complete,
+            )
+
+        # 8. Store transition
+        from factorio.trainer import Transition
+        done = phase_complete or self._episode_mgr.is_episode_done()
+        self._trajectory_buf.add(Transition(
+            grid=grid, features=features,
+            action_type=action_type.item(),
+            log_prob=log_prob.item(),
+            value=value.item(),
+            reward=reward, done=done,
+        ))
+        self._episode_mgr.record_step()
+        self._prev_state = state
+        self._ml_step_count += 1
+        self._tick_count += 1
+
+        # 9. PPO update if enough steps
+        if self._ml_step_count % self.config.ml_update_every == 0:
+            try:
+                stats = self._trainer.update(self._trajectory_buf)
+                self._trajectory_buf.clear()
+                log.info("PPO update: %s", stats)
+            except Exception:
+                log.warning("PPO update failed", exc_info=True)
+
+        # 10. Episode end check
+        if done:
+            self._trainer.total_episodes += 1
+            if self._trainer.total_episodes % self.config.ml_checkpoint_every == 0:
+                try:
+                    self._trainer.save_checkpoint(self._trainer.total_episodes)
+                except Exception:
+                    log.warning("Checkpoint save failed", exc_info=True)
+
+            # Phase advancement
+            if phase_complete:
+                from factorio.action_space import ActionSpace
+                if self._curriculum.advance_phase():
+                    new_phase = self._curriculum._phase
+                    log.info("Advancing to phase %d", new_phase)
+                    self._encoder.set_phase(new_phase)
+                    self._action_space = ActionSpace(phase=new_phase)
+                    self._reward.set_phase(new_phase)
+                    self._reward.reset_normalizer()
+                    self._episode_mgr.set_phase(new_phase)
+
+            await self._episode_mgr.reset()
+            self._prev_state = None
+
     async def run(self) -> None:
         """Main loop — connect, then tick at cadence interval."""
         self._running = True
@@ -179,8 +372,16 @@ class FactorioBridge:
             return
 
         log.info("Bridge connected, entering tick loop")
+
+        if self.config.mode == "ml":
+            await self._episode_mgr.set_game_speed(self.config.game_speed)
+            await self._episode_mgr.reset()
+
         while self._running:
-            await self.tick()
+            if self.config.mode == "ml":
+                await self.ml_tick()
+            else:
+                await self.tick()
             interval = self.cadence.get_interval_secs()
             await asyncio.sleep(interval)
 
