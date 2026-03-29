@@ -13,6 +13,7 @@ log = logging.getLogger("biged.factorio.episode_manager")
 PHASE_ITEMS: dict[int, dict[str, int]] = {
     1: {
         "iron-plate": 8,
+        "coal": 10,
         "stone-furnace": 1,
         "burner-mining-drill": 1,
     },
@@ -92,12 +93,20 @@ class EpisodeManager:
         """Begin a new episode.
 
         Attempts soft_reset(); falls back to hard_reset() on failure.
-        Distributes starting items, increments episode counter, resets step counter.
+        Ensures player has a body, then distributes starting items.
         """
         success = await self.soft_reset()
         if not success:
             log.warning("soft_reset failed — falling back to hard_reset")
             await self.hard_reset()
+
+        # Ensure the agent has a body before inserting items — soft_reset
+        # preserves "character" entities, but if the character died during
+        # the episode, the body is gone and items would be lost.
+        try:
+            await self._rcon.remote_call("ensure_player")
+        except Exception:
+            log.warning("ensure_player in reset failed", exc_info=True)
 
         await self._give_starting_items()
         self._episode_count += 1

@@ -84,7 +84,15 @@ local function serialize_entity(entity)
         local recipe = entity.get_recipe()
         data.recipe = recipe and recipe.name or nil
         data.crafting_progress = entity.crafting_progress
-        data.is_crafting = entity.is_crafting()
+        local ok_craft, craft_val = pcall(function() return entity.is_crafting end)
+        if ok_craft and type(craft_val) == "boolean" then
+            data.is_crafting = craft_val
+        elseif ok_craft and type(craft_val) == "function" then
+            local ok2, val2 = pcall(craft_val)
+            data.is_crafting = ok2 and val2 or false
+        else
+            data.is_crafting = false
+        end
         local input_inv = entity.get_inventory(defines.inventory.assembling_machine_input)
                        or entity.get_inventory(defines.inventory.furnace_source)
         local output_inv = entity.get_inventory(defines.inventory.assembling_machine_output)
@@ -219,6 +227,12 @@ local function fn_get_state()
             position = pos,
             health = (ctx.has_player and ctx.player.character)
                      and ctx.player.character.health or 0,
+            max_health = (ctx.has_player and ctx.player.character)
+                     and ctx.player.character.prototype.max_health or 0,
+            has_character = ctx.has_player and ctx.player.character ~= nil or false,
+            alive = ctx.has_player and ctx.player.character ~= nil
+                    and ctx.player.character.valid
+                    and ctx.player.character.health > 0 or false,
         },
         inventory = inventory,
         entities = entities,
@@ -317,7 +331,12 @@ local function fn_exec_cmd(json_str)
         local pos = parsed.position
         local dir = parsed.direction or 0
         local inv = player and player.get_main_inventory() or nil
-        if not inv or inv.get_item_count(name) < 1 then
+        local has_item = false
+        if inv and name then
+            local ok, count = pcall(inv.get_item_count, inv, name)
+            has_item = ok and count >= 1
+        end
+        if not has_item then
             result.error = "missing item: " .. (name or "nil")
             return helpers.table_to_json(result)
         end
@@ -439,7 +458,8 @@ local function fn_exec_cmd(json_str)
         local cx, cy = from.x, from.y
         local max_steps = math.abs(to.x - from.x) + math.abs(to.y - from.y) + 1
         for step = 1, max_steps do
-            if inv and inv.get_item_count(entity_name) < 1 then
+            local ok_cnt, cnt_val = pcall(inv.get_item_count, inv, entity_name)
+            if not ok_cnt or cnt_val < 1 then
                 result.error = "ran out of " .. entity_name .. " after " .. placed
                 break
             end
@@ -554,12 +574,47 @@ end
 
 local function fn_ensure_player()
     local ctx = get_agent_context()
+
+    -- If we have a player but no character (dead or spectator), respawn one
+    if ctx.has_player and not ctx.player.character then
+        local surface = ctx.surface
+        local spawn = ctx.force.get_spawn_position(surface)
+        local char = surface.create_entity{
+            name = "character", position = spawn, force = ctx.force,
+        }
+        if not char then
+            -- Spawn blocked — try finding a nearby non-colliding position
+            local fallback = surface.find_non_colliding_position("character", spawn, 10, 1)
+            if fallback then
+                char = surface.create_entity{
+                    name = "character", position = fallback, force = ctx.force,
+                }
+            end
+        end
+        if char then
+            ctx.player.character = char
+            game.print("[BigEd Bridge] Respawned agent character at spawn")
+        else
+            return helpers.table_to_json({
+                success = false,
+                error = "spawn_blocked",
+                position = spawn,
+                note = "Could not create character at or near spawn — clear the area",
+            })
+        end
+    end
+
     if ctx.has_player then
+        local p = ctx.player
+        local char = p.character
         return helpers.table_to_json({
             success = true,
-            player_index = ctx.player.index,
-            position = ctx.player.position,
-            has_character = ctx.player.character ~= nil,
+            player_index = p.index,
+            position = p.position,
+            has_character = char ~= nil,
+            health = char and char.health or 0,
+            max_health = char and char.prototype.max_health or 0,
+            alive = char ~= nil and char.valid and char.health > 0,
         })
     end
     -- No player in headless mode — report what we have

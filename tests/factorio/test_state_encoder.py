@@ -9,6 +9,8 @@ def _make_state(entities=None, inventory=None, player_pos=None,
     return GameState(
         tick=tick,
         player_position=player_pos or {"x": 0.0, "y": 0.0},
+        player_health=250, player_max_health=250,
+        player_has_character=True, player_alive=True,
         inventory=inventory or {},
         entities=entities or [],
         research_name=research_name,

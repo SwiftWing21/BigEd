@@ -5,7 +5,8 @@ import pytest
 SAMPLE_STATE = {
     "tick": 5400,
     "time_of_day": 0.5,
-    "player": {"position": {"x": 10.0, "y": -5.0}, "health": 250},
+    "player": {"position": {"x": 10.0, "y": -5.0}, "health": 250,
+               "max_health": 250, "has_character": True, "alive": True},
     "inventory": {"iron-plate": 50, "copper-plate": 30, "stone-furnace": 2},
     "entities": [
         {"name": "stone-furnace", "type": "furnace", "position": {"x": 5, "y": 0},
@@ -76,6 +77,29 @@ def test_state_to_markdown():
     assert "iron-plate" in md
     assert "## Entities" in md
     assert "stone-furnace" in md
+
+def test_parse_state_player_fields():
+    from factorio.state_parser import parse_state
+    state = parse_state(json.dumps(SAMPLE_STATE))
+    assert state.player_health == 250
+    assert state.player_max_health == 250
+    assert state.player_has_character is True
+    assert state.player_alive is True
+
+def test_parse_state_player_no_body():
+    from factorio.state_parser import parse_state
+    raw = json.dumps({"tick": 1, "player": {"position": {"x": 0, "y": 0}, "health": 0}})
+    state = parse_state(raw)
+    assert state.player_alive is False
+    assert state.player_has_character is False
+    assert state.player_max_health == 0
+
+def test_state_to_markdown_shows_body_status():
+    from factorio.state_parser import parse_state, state_to_markdown
+    state = parse_state(json.dumps(SAMPLE_STATE))
+    md = state_to_markdown(state, None)
+    assert "Alive" in md
+    assert "250/250" in md
 
 def test_state_to_markdown_no_metrics():
     from factorio.state_parser import parse_state, state_to_markdown

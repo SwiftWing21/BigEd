@@ -33,6 +33,9 @@ class GameState:
     time_of_day: float = 0.0
     player_position: dict = field(default_factory=dict)
     player_health: float = 0
+    player_max_health: float = 0
+    player_has_character: bool = False
+    player_alive: bool = False
     inventory: dict = field(default_factory=dict)
     entities: list[Entity] = field(default_factory=list)
     entity_count: int = 0
@@ -83,6 +86,9 @@ def parse_state(raw_json: str) -> GameState:
         tick=data.get("tick", 0), time_of_day=data.get("time_of_day", 0.0),
         player_position=player.get("position", {}),
         player_health=player.get("health", 0),
+        player_max_health=player.get("max_health", 0),
+        player_has_character=player.get("has_character", False),
+        player_alive=player.get("alive", False),
         inventory=data.get("inventory", {}), entities=entities,
         entity_count=data.get("entity_count", 0),
         resources=data.get("resources", []),
@@ -120,7 +126,8 @@ def state_to_markdown(state: GameState, metrics: GameMetrics | None = None) -> s
     lines = [f"# Factory State (tick {state.tick})\n"]
     pos = state.player_position
     lines.append(f"**Position:** ({pos.get('x', 0)}, {pos.get('y', 0)})  ")
-    lines.append(f"**Health:** {state.player_health}\n")
+    body_status = "Alive" if state.player_alive else "NO BODY"
+    lines.append(f"**Health:** {state.player_health}/{state.player_max_health} ({body_status})\n")
 
     lines.append("## Inventory")
     if state.inventory:

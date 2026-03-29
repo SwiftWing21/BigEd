@@ -31,6 +31,8 @@ def test_full_pipeline_smoke():
 
     prev_state = GameState(
         tick=0, player_position={"x": 0, "y": 0},
+        player_health=250, player_max_health=250,
+        player_has_character=True, player_alive=True,
         inventory={"iron-plate": 8}, entities=[], resources=[],
     )
 
@@ -42,6 +44,8 @@ def test_full_pipeline_smoke():
         state = GameState(
             tick=step * 60,
             player_position={"x": 0, "y": 0},
+            player_health=250, player_max_health=250,
+            player_has_character=True, player_alive=True,
             inventory={"iron-plate": 8 + step, "iron-gear-wheel": step // 10},
             entities=entities,
             resources=[],

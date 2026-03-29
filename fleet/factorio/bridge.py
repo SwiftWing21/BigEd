@@ -13,7 +13,7 @@ from factorio.state_parser import parse_state, parse_metrics, state_to_markdown
 from factorio.action_translator import translate_batch
 from factorio.world_model import WorldModel
 from factorio.cadence import CadenceController
-from factorio.bridge_api import create_api, update_status, store_result
+from factorio.bridge_api import create_api, update_status, store_result, update_training_status
 from factorio.agent_brain import AgentBrain
 
 log = logging.getLogger("biged.factorio.bridge")
@@ -83,6 +83,8 @@ class FactorioBridge:
             self._trajectory_buf = TrajectoryBuffer()
             self._prev_state = None
             self._ml_step_count = 0
+            self._last_ppo_stats: dict = {}
+            self._last_reward: float = 0.0
 
     async def connect_with_retry(self) -> bool:
         """Connect to RCON with exponential backoff."""
@@ -103,14 +105,6 @@ class FactorioBridge:
         """Run a single perception -> action tick."""
         self._tick_count += 1
 
-        # 0. Ensure agent player exists (first tick only)
-        if self._tick_count == 1:
-            try:
-                result = await self.rcon.remote_call("ensure_player")
-                log.info("Player init: %s", result[:200])
-            except Exception as e:
-                log.warning("Player init failed: %s", e)
-
         # 1. Get state via remote interface
         try:
             state_raw = await self.rcon.remote_call("get_state")
@@ -125,6 +119,21 @@ class FactorioBridge:
                 await asyncio.sleep(self.config.rcon_circuit_breaker_secs)
                 self._consecutive_failures = 0
             return
+
+        # 0. Ensure agent has a body (craft/move/mine require it)
+        if not state.player_alive:
+            log.warning("LLM tick %d: agent has no body — calling ensure_player",
+                        self._tick_count)
+            try:
+                await self.rcon.remote_call("ensure_player")
+                state_raw = await self.rcon.remote_call("get_state")
+                state = parse_state(state_raw)
+                if not state.player_alive:
+                    log.error("Agent still has no body after ensure_player — skipping tick")
+                    return
+            except Exception:
+                log.warning("ensure_player failed — skipping tick", exc_info=True)
+                return
 
         # 2. Get metrics (every 5th tick)
         metrics = None
@@ -253,9 +262,28 @@ class FactorioBridge:
         """Single ML-mode perception -> action cycle."""
         import torch
 
-        # 1. Get state
+        # 0. Get state and verify agent has a body
         raw_state = await self.rcon.remote_call("get_state")
         state = parse_state(raw_state)
+
+        if not state.player_alive:
+            log.warning("ML tick %d: agent has no body — calling ensure_player", self._tick_count)
+            try:
+                result = await self.rcon.remote_call("ensure_player")
+                log.info("Body check result: %s", str(result)[:200])
+                # Re-fetch state after respawn
+                raw_state = await self.rcon.remote_call("get_state")
+                state = parse_state(raw_state)
+                if not state.player_alive:
+                    log.error("Agent still has no body after ensure_player — skipping tick")
+                    self._tick_count += 1
+                    return
+            except Exception:
+                log.warning("ensure_player failed — skipping tick", exc_info=True)
+                self._tick_count += 1
+                return
+
+        # 1. Fetch metrics
         raw_metrics = None
         if self._tick_count % 5 == 0:
             try:
@@ -295,21 +323,28 @@ class FactorioBridge:
             except Exception:
                 log.warning("Action execution failed", exc_info=True)
 
-        # 6. Check curriculum progress
-        lesson_passed = False
-        phase_complete = False
-        if self._prev_state is not None:
-            flat_state = {
-                "inventory": state.inventory,
-                "entities": {},
-                "research": {"name": state.research_name, "progress": state.research_progress},
-            }
-            # Count entities by name
-            for e in state.entities:
-                flat_state["entities"][e.name] = flat_state["entities"].get(e.name, 0) + 1
-            progress = self._curriculum.check_progress(flat_state)
-            lesson_passed = progress.get("lesson_passed", False)
-            phase_complete = progress.get("phase_complete", False)
+        # 6. Check curriculum progress (always — even first tick for body check lesson)
+        resource_totals = {}
+        for r in state.resources:
+            resource_totals[r.get("name", "")] = r.get("total_amount", 0)
+        flat_state = {
+            "inventory": state.inventory,
+            "entities": {},
+            "research": {"name": state.research_name, "progress": state.research_progress},
+            "player": {
+                "health": state.player_health,
+                "max_health": state.player_max_health,
+                "alive": 1 if state.player_alive else 0,
+                "has_character": 1 if state.player_has_character else 0,
+            },
+            "resources": resource_totals,
+        }
+        # Count entities by name
+        for e in state.entities:
+            flat_state["entities"][e.name] = flat_state["entities"].get(e.name, 0) + 1
+        progress = self._curriculum.check_progress(flat_state)
+        lesson_passed = progress.get("lesson_passed", False)
+        phase_complete = progress.get("phase_complete", False)
 
         # 7. Compute reward
         reward = 0.0
@@ -335,13 +370,34 @@ class FactorioBridge:
         self._tick_count += 1
 
         # 9. PPO update if enough steps
+        self._last_reward = reward
         if self._ml_step_count % self.config.ml_update_every == 0:
             try:
                 stats = self._trainer.update(self._trajectory_buf)
                 self._trajectory_buf.clear()
+                self._last_ppo_stats = stats
                 log.info("PPO update: %s", stats)
             except Exception:
                 log.warning("PPO update failed", exc_info=True)
+
+        # 9b. Push training metrics to API
+        progress = self._curriculum.get_progress()
+        update_training_status({
+            "mode": "ml",
+            "episode": self._episode_mgr.episode_count,
+            "step": self._ml_step_count,
+            "phase": progress.get("phase", self.config.current_phase),
+            "phase_name": progress.get("phase_name", ""),
+            "lessons_completed": progress.get("completed", 0),
+            "lessons_total": progress.get("total_lessons", 0),
+            "last_reward": self._last_reward,
+            "policy_loss": self._last_ppo_stats.get("policy_loss"),
+            "value_loss": self._last_ppo_stats.get("value_loss"),
+            "entropy": self._last_ppo_stats.get("entropy"),
+            "total_updates": self._trainer.total_updates,
+            "total_episodes": self._trainer.total_episodes,
+            "buffer_size": len(self._trajectory_buf),
+        })
 
         # 10. Episode end check
         if done:

@@ -26,6 +26,8 @@ async def test_ml_tick_calls_policy():
     from factorio.state_parser import GameState
     state = GameState(
         tick=100, player_position={"x": 0, "y": 0},
+        player_health=250, player_max_health=250,
+        player_has_character=True, player_alive=True,
         inventory={"iron-plate": 10}, entities=[], resources=[],
     )
     grid, features = encoder.encode(state)
