@@ -23,4 +23,12 @@ def run(payload, config):
         log.warning(f"Bridge API unreachable: {e}")
         return {"error": f"Bridge API unreachable at {url}: {e}"}
 
-    return {"status": "ok", "state": state, "tick": state.get("tick", 0)}
+    # Fetch ML training metrics if available
+    training = {}
+    try:
+        resp2 = urllib.request.urlopen(f"http://127.0.0.1:{bridge_port}/api/training/status", timeout=5)
+        training = json.loads(resp2.read())
+    except Exception:
+        pass  # Training endpoint may not exist in LLM mode
+
+    return {"status": "ok", "state": state, "tick": state.get("tick", 0), "training": training}

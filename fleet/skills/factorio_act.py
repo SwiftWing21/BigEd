@@ -19,9 +19,16 @@ def run(payload, config):
     if not actions:
         return {"error": "No actions provided in payload"}
 
+    mode = config.get("factorio", {}).get("mode", "ml")
+    if mode == "ml":
+        log.info("ML mode active — submitting plan as human override (priority elevated)")
+        plan_data_priority = max(payload.get("priority", 75), 90)  # Elevate to override ML
+    else:
+        plan_data_priority = payload.get("priority", 75)
+
     plan_data = {
         "actions": actions,
-        "priority": payload.get("priority", 75),
+        "priority": plan_data_priority,
         "source": payload.get("worker_name", "actor"),
         "source_type": "worker",
         "rationale": payload.get("rationale", "Direct action"),

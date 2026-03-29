@@ -11,6 +11,22 @@ def run(payload, config):
     import logging
     log = logging.getLogger("biged.skill.factorio_train")
 
+    mode = config.get("factorio", {}).get("mode", "ml")
+    if mode == "ml":
+        # In ML mode, report training progress from the bridge
+        import urllib.request
+        import json
+        bridge_port = config.get("factorio", {}).get("bridge_port", 27016)
+        try:
+            resp = urllib.request.urlopen(
+                f"http://localhost:{bridge_port}/api/training/status", timeout=10
+            )
+            training = json.loads(resp.read())
+            return {"status": "ok", "mode": "ml", "training": training}
+        except Exception as e:
+            log.warning("Training status fetch failed: %s", e)
+            return {"status": "error", "error": f"Training status unavailable: {e}"}
+
     state = payload.get("state", {})
     criteria = payload.get("success_criteria", "")
     instruction = payload.get("instruction", "")

@@ -28,6 +28,27 @@ def run(payload, config):
 
     task = payload.get("task", "Build a factory")
 
+    mode = config.get("factorio", {}).get("mode", "ml")
+    if mode == "ml":
+        # In ML mode, submit as a strategy update to the orchestrator
+        strategy_data = {
+            "objective": task,
+            "source": payload.get("worker_name", "planner"),
+        }
+        try:
+            req = urllib.request.Request(
+                f"{base}/api/strategy/update",
+                data=json.dumps(strategy_data).encode(),
+                headers={"Content-Type": "application/json"},
+                method="POST",
+            )
+            resp = urllib.request.urlopen(req, timeout=15)
+            result = json.loads(resp.read())
+            return {"status": "ok", "mode": "ml", "strategy_update": result}
+        except Exception:
+            log.warning("Strategy update failed, falling back to directive", exc_info=True)
+            # Fall through to existing directive logic
+
     # Submit the task objective as a directive so the brain knows what to prioritize
     directive_data = {
         "text": f"Strategic objective: {task}",

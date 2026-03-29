@@ -32,6 +32,23 @@ def run(payload, config):
     except Exception:
         plan_info = {"current": None, "queued": []}
 
+    mode = config.get("factorio", {}).get("mode", "ml")
+    if mode == "ml":
+        # In ML mode, trigger training diagnostics
+        try:
+            req = urllib.request.Request(
+                f"{base}/api/training/diagnose",
+                data=json.dumps({"source": payload.get("worker_name", "analyzer")}).encode(),
+                headers={"Content-Type": "application/json"},
+                method="POST",
+            )
+            resp = urllib.request.urlopen(req, timeout=30)
+            diagnosis = json.loads(resp.read())
+            return {"status": "ok", "mode": "ml", "action": "diagnosis", "result": diagnosis}
+        except Exception:
+            log.warning("Training diagnosis failed", exc_info=True)
+            return {"status": "error", "error": "Training diagnosis unavailable"}
+
     # 3. Call provider for analysis via _models.call_complex
     try:
         from skills._models import call_complex
