@@ -1,6 +1,7 @@
 """Analyze fleet activity and suggest useful modules."""
 SKILL_NAME = "module_recommend"
 DESCRIPTION = "Analyze fleet task patterns and recommend useful modules from the hub"
+VERSION = "1.0.0"
 REQUIRES_NETWORK = True
 
 _MODULE_RELEVANCE = {

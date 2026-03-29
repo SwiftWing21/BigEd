@@ -281,6 +281,151 @@ input, textarea, select { font-family: inherit; font-size: inherit; }
   border-radius: 6px;
 }
 
+/* ── Mode Control Strip ───────────────────────────────────────────────────── */
+.mode-strip {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 40px;
+  padding: 0 16px;
+  background: var(--card);
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+  position: relative;
+}
+.mode-strip-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  position: relative;
+}
+.mode-strip-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.mode-pill {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 12px;
+  border-radius: 20px;
+  background: var(--primary);
+  color: var(--primary-foreground);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  border: none;
+}
+.mode-pill:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+.mode-chevron {
+  font-size: 10px;
+  opacity: 0.8;
+}
+.mode-dropdown {
+  position: absolute;
+  top: 36px;
+  left: 0;
+  min-width: 280px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+  z-index: 91;
+}
+.mode-dropdown-item {
+  padding: 10px 14px;
+  cursor: pointer;
+  border-bottom: 1px solid var(--border);
+}
+.mode-dropdown-item:last-child { border-bottom: none; }
+.mode-dropdown-item:hover { background: rgba(255,255,255,0.05); }
+.mode-dropdown-item.active {
+  background: rgba(16,185,129,0.1);
+  border-left: 3px solid var(--primary);
+}
+.mode-item-name { font-weight: 600; font-size: 13px; }
+.mode-item-desc { font-size: 11px; color: var(--muted-foreground); margin-top: 2px; }
+.mode-item-state {
+  font-size: 10px;
+  text-transform: uppercase;
+  font-weight: 700;
+  margin-top: 3px;
+}
+.mode-item-state.running { color: var(--success); }
+.mode-item-state.starting { color: var(--warning); }
+.mode-item-state.stopped,
+.mode-item-state.available { color: var(--muted-foreground); }
+.mode-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-size: 11px;
+  font-weight: 600;
+  background: var(--muted);
+  color: var(--foreground);
+}
+.mode-gear-btn {
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 3px 8px;
+  font-size: 14px;
+  color: var(--muted-foreground);
+  cursor: pointer;
+}
+.mode-gear-btn:hover { color: var(--foreground); }
+.modifier-drawer {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 12px;
+  padding: 12px 16px;
+  background: var(--card);
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.modifier-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 12px;
+}
+.modifier-label { font-weight: 500; }
+.modifier-toggle {
+  position: relative;
+  width: 36px;
+  height: 20px;
+  flex-shrink: 0;
+}
+.modifier-toggle input { opacity: 0; width: 0; height: 0; }
+.modifier-slider {
+  position: absolute;
+  inset: 0;
+  background: var(--muted);
+  border-radius: 10px;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+.modifier-slider:before {
+  content: '';
+  position: absolute;
+  width: 14px;
+  height: 14px;
+  left: 3px;
+  top: 3px;
+  background: #fff;
+  border-radius: 50%;
+  transition: transform 0.2s;
+}
+.modifier-toggle input:checked + .modifier-slider { background: var(--primary); }
+.modifier-toggle input:checked + .modifier-slider:before { transform: translateX(16px); }
+
 .main-content {
   flex: 1;
   min-width: 0;
@@ -1352,6 +1497,23 @@ textarea.input {
     </div>
   </div>
 
+  <!-- ── Mode Control Strip ─────────────────────────────────────────────── -->
+  <div id="mode-control-strip" class="mode-strip">
+    <div class="mode-strip-left">
+      <button id="mode-selector" class="mode-pill" onclick="toggleModeDropdown()">
+        <span id="mode-icon"></span>
+        <span id="mode-label">Normal Fleet</span>
+        <span class="mode-chevron">&#9660;</span>
+      </button>
+      <div id="mode-dropdown" class="mode-dropdown" style="display:none;"></div>
+    </div>
+    <div class="mode-strip-right">
+      <div id="mode-chips"></div>
+      <button class="mode-gear-btn" onclick="toggleModifierDrawer()" title="Modifiers">&#9881;</button>
+    </div>
+  </div>
+  <div id="modifier-drawer" class="modifier-drawer" style="display:none;"></div>
+
   <div class="main-content">
 
 <!-- ═══════════════════════════════════════════════════════════════════════
@@ -1439,6 +1601,7 @@ textarea.input {
         <span class="chart-legend-item"><span class="chart-legend-dot" style="background:#a78bfa"></span> Models</span>
         <span class="chart-legend-item"><span class="chart-legend-dot" style="background:#f59e0b"></span> Skills</span>
         <span class="chart-legend-item"><span class="chart-legend-dot" style="background:#06b6d4"></span> Knowledge</span>
+        <span class="chart-legend-item" id="factorio-legend" style="display:none"><span class="chart-legend-dot" style="background:#f97316"></span> Factorio</span>
       </div>
     </div>
     <div class="card">
@@ -1882,8 +2045,11 @@ textarea.input {
     <div class="section-desc">Train AI agents in Factorio through curriculum-based progression</div>
     <div style="margin-left:auto;display:flex;gap:8px;align-items:center;">
       <button class="btn btn-sm btn-outline" onclick="loadFactorio()">&#8635; Refresh</button>
-      <button id="factorio-pause-btn" class="btn btn-sm" onclick="toggleFactorioPause()" style="margin-left:8px;">
-        <span id="factorio-pause-icon">&#9654;</span> <span id="factorio-pause-text">Running</span>
+      <button id="factorio-start-btn" class="btn btn-sm" onclick="toggleFactorioServer()" style="margin-left:8px;">
+        <span id="factorio-start-icon">&#9654;</span> <span id="factorio-start-text">Start</span>
+      </button>
+      <button id="factorio-pause-btn" class="btn btn-sm" onclick="toggleFactorioPause()" style="margin-left:4px;display:none;">
+        <span id="factorio-pause-icon">&#9208;</span> <span id="factorio-pause-text">Pause</span>
       </button>
       <span id="factorio-brain-status" style="font-size:12px;color:var(--muted);margin-left:12px;">--</span>
       <span id="factorio-directive-badge" style="font-size:11px;color:var(--accent);margin-left:8px;display:none;"></span>
@@ -2799,6 +2965,12 @@ function loadNeuralLanes() {
   apiFetch('/api/activity/lanes?hours=24').then(function(data) {
     _neuralData = data;
     _neuralPulses = [];
+    // Show Factorio legend dot when lane present
+    var fLeg = document.getElementById('factorio-legend');
+    if (fLeg) {
+      var hasF = (data.lanes || []).some(function(l) { return l.kind === 'factorio'; });
+      fLeg.style.display = hasF ? '' : 'none';
+    }
     // Seed initial pulses from timeline
     if (data.timeline) {
       data.timeline.forEach(function(t, i) {
@@ -2856,7 +3028,7 @@ function renderNeuralFrame() {
   var maxModelTotal = Math.max.apply(null, modelLanes.map(function(l) { return l.total; }).concat([1]));
 
   // Kind colors
-  var kindColor = { agent: '#10b981', model: '#a78bfa' };
+  var kindColor = { agent: '#10b981', model: '#a78bfa', factorio: '#f97316' };
   var statusColor = { done: '#10b981', failed: '#ef4444', running: '#3b82f6' };
 
   // ── DRAW LANES ──────────────────────────────────────────────────
@@ -4796,7 +4968,7 @@ function renderAnalyticsNeuralFrame() {
   var _modelLanes2 = lanes.filter(function(l) { return l.kind === 'model'; });
   var _maxAgent2 = Math.max.apply(null, _agentLanes2.map(function(l) { return l.total; }).concat([1]));
   var _maxModel2 = Math.max.apply(null, _modelLanes2.map(function(l) { return l.total; }).concat([1]));
-  var kindColor = { agent: '#10b981', model: '#a78bfa' };
+  var kindColor = { agent: '#10b981', model: '#a78bfa', factorio: '#f97316' };
   var statusColor = { done: '#10b981', failed: '#ef4444', running: '#3b82f6' };
   var laneMap = {};
   for (var i = 0; i < maxLanes; i++) {
@@ -5401,7 +5573,7 @@ function showKeyInput(envVar, container, signupHint) {
 var _settingsTabDefs = [
   { id: 'general',    label: 'General',     sections: ['fleet','naming','dashboard','logging','ditl'] },
   { id: 'models',     label: 'Models',      sections: ['models','models.tiers','review','idle'] },
-  { id: 'hardware',   label: 'Hardware',    sections: ['thermal','gpu','thermal.vram','workers','capacity'] },
+  { id: 'hardware',   label: 'Hardware',    sections: ['thermal','gpu','ollama','thermal.vram','workers','capacity'] },
   { id: 'apikeys',    label: 'API & Keys',  sections: ['api_gate','_api_keys'] },
   { id: 'operations', label: 'Operations',  sections: ['backup','schedules','mcp','ingest','dispatch_bridge'] },
   { id: 'display',    label: 'Display',     sections: ['_live_columns'] },
@@ -5694,9 +5866,19 @@ function loadSettingsTab(tabId) {
       if (section.charAt(0) === '_') return;
       var sectionSchema = _settingsCache.schema[section];
       if (!sectionSchema) return;
-      var sectionValues = (_settingsCache.settings[section] && _settingsCache.settings[section].values) || {};
-      var isEditable = _settingsCache.settings[section] && _settingsCache.settings[section].editable;
-      _renderSettingsSection(content, section, sectionSchema, sectionValues, isEditable);
+      var sectionData = _settingsCache.settings[section] || {};
+      var sectionValues = sectionData.values || {};
+      // Flatten nested TOML sub-tables (e.g. ollama.optimization → {flash_attention: ...})
+      var flatValues = {};
+      Object.keys(sectionValues).forEach(function(k) {
+        if (sectionValues[k] && typeof sectionValues[k] === 'object' && !Array.isArray(sectionValues[k])) {
+          Object.keys(sectionValues[k]).forEach(function(subK) { flatValues[subK] = sectionValues[k][subK]; });
+        } else {
+          flatValues[k] = sectionValues[k];
+        }
+      });
+      var isEditable = sectionData.editable;
+      _renderSettingsSection(content, section, sectionSchema, flatValues, isEditable);
       rendered = true;
     });
 
@@ -5995,6 +6177,34 @@ function handleSSE(msg) {
           if (memEl) memEl.textContent = data.system.ram_pct + '%';
           var memBar = document.getElementById('thermal-memory-bar');
           if (memBar) { memBar.style.width = Math.min(100, Math.round(data.system.ram_pct)) + '%'; }
+        }
+        /* ── Mode strip real-time update ── */
+        if (data.mode) {
+          var modeUpdate = data.mode;
+          var iconEl2 = document.getElementById('mode-icon');
+          var labelEl2 = document.getElementById('mode-label');
+          var btn2 = document.getElementById('mode-selector');
+          if (iconEl2 && labelEl2) {
+            if (_modeStatus && _modeStatus.available_modes) {
+              var activeM = _modeStatus.available_modes.find(function(m) { return m.id === modeUpdate.active; });
+              if (activeM) {
+                iconEl2.textContent = _modeIcons[activeM.icon] || '';
+                labelEl2.textContent = activeM.name;
+              }
+            }
+          }
+          // Re-enable selector if it was disabled waiting for SSE confirm
+          if (btn2 && btn2.disabled && modeUpdate.state !== 'starting') {
+            btn2.disabled = false;
+            if (window._modeReenableTimer) { clearTimeout(window._modeReenableTimer); window._modeReenableTimer = null; }
+          }
+          // Merge into cache and refresh chips/drawer
+          if (_modeStatus) {
+            _modeStatus.active = modeUpdate.active;
+            _modeStatus.state = modeUpdate.state;
+            if (modeUpdate.modifiers) _modeStatus.modifiers = modeUpdate.modifiers;
+            _applyModeStatus(_modeStatus);
+          }
         }
       }
       break;
@@ -6507,10 +6717,294 @@ function loadViews() {
 /* ══════════════════════════════════════════════════════════════════════════
    INIT
    ══════════════════════════════════════════════════════════════════════ */
+/* ══════════════════════════════════════════════════════════════════════════
+   MODE CONTROL STRIP
+   ══════════════════════════════════════════════════════════════════════ */
+var _modeIcons = {
+  lightning: '\u26A1',
+  factory: '\uD83C\uDFED',
+  brain: '\uD83E\uDDE0',
+  microscope: '\uD83D\uDD2C'
+};
+var _modeStatus = null; // last fetched status cache
+
+function _clearChildren(el) {
+  while (el.firstChild) el.removeChild(el.firstChild);
+}
+
+function loadModeStatus() {
+  apiFetch('/api/mode/status').then(function(data) {
+    _modeStatus = data;
+    _applyModeStatus(data);
+  }).catch(function() {});
+}
+
+function _applyModeStatus(data) {
+  if (!data) return;
+
+  // Update pill icon + label
+  var iconEl = document.getElementById('mode-icon');
+  var labelEl = document.getElementById('mode-label');
+  if (iconEl && labelEl) {
+    var modes = data.available_modes || [];
+    var activeMode = modes.find(function(m) { return m.id === data.active; });
+    var iconName = activeMode ? activeMode.icon : 'lightning';
+    iconEl.textContent = _modeIcons[iconName] || '';
+    labelEl.textContent = activeMode ? activeMode.name : 'Normal Fleet';
+  }
+
+  // Build dropdown items
+  var dd = document.getElementById('mode-dropdown');
+  if (dd) {
+    _clearChildren(dd);
+    (data.available_modes || []).forEach(function(m) {
+      var item = document.createElement('div');
+      item.className = 'mode-dropdown-item' + (m.id === data.active ? ' active' : '');
+
+      var nameEl = document.createElement('div');
+      nameEl.className = 'mode-item-name';
+      nameEl.textContent = (_modeIcons[m.icon] || '') + ' ' + m.name;
+
+      var descEl = document.createElement('div');
+      descEl.className = 'mode-item-desc';
+      descEl.textContent = m.description || '';
+
+      var stateEl = document.createElement('div');
+      var stateVal = m.id === data.active ? (data.state || 'running') : (m.state || 'available');
+      stateEl.className = 'mode-item-state ' + stateVal;
+      stateEl.textContent = stateVal;
+
+      item.appendChild(nameEl);
+      item.appendChild(descEl);
+      item.appendChild(stateEl);
+      item.onclick = function() { selectMode(m.id); };
+      dd.appendChild(item);
+    });
+  }
+
+  // Build modifier chips (only enabled ones)
+  var chipsEl = document.getElementById('mode-chips');
+  if (chipsEl) {
+    _clearChildren(chipsEl);
+    var mods = data.modifiers || {};
+    if (mods.queue_paused) {
+      var c = document.createElement('span');
+      c.className = 'mode-chip';
+      c.textContent = 'Queue Paused';
+      chipsEl.appendChild(c);
+    }
+    if (mods.api_gate && mods.api_gate.enabled) {
+      var c2 = document.createElement('span');
+      c2.className = 'mode-chip';
+      c2.textContent = 'API Gate $' + (mods.api_gate.spent || 0).toFixed(2) + '/$' + (mods.api_gate.budget || 0).toFixed(2);
+      chipsEl.appendChild(c2);
+    }
+    if (mods.eco_mode) {
+      var c3 = document.createElement('span');
+      c3.className = 'mode-chip';
+      c3.textContent = 'Eco Mode';
+      chipsEl.appendChild(c3);
+    }
+    if (mods.offline_mode) {
+      var c4 = document.createElement('span');
+      c4.className = 'mode-chip';
+      c4.textContent = 'Offline';
+      chipsEl.appendChild(c4);
+    }
+    if (mods.hitl_evolution) {
+      var c5 = document.createElement('span');
+      c5.className = 'mode-chip';
+      c5.textContent = 'HITL Evo';
+      chipsEl.appendChild(c5);
+    }
+  }
+
+  // Build modifier drawer toggles
+  var drawer = document.getElementById('modifier-drawer');
+  if (drawer) {
+    _clearChildren(drawer);
+    var mods2 = data.modifiers || {};
+    var modDefs = [
+      { name: 'queue_paused', label: 'Queue Pause', value: !!mods2.queue_paused },
+      { name: 'api_gate', label: 'API Gate', value: !!(mods2.api_gate && mods2.api_gate.enabled) },
+      { name: 'eco_mode', label: 'Eco Mode', value: !!mods2.eco_mode },
+      { name: 'offline_mode', label: 'Offline Mode', value: !!mods2.offline_mode },
+      { name: 'hitl_evolution', label: 'HITL Evolution', value: !!mods2.hitl_evolution }
+    ];
+    modDefs.forEach(function(def) {
+      var item = document.createElement('div');
+      item.className = 'modifier-item';
+
+      var lbl = document.createElement('span');
+      lbl.className = 'modifier-label';
+      lbl.textContent = def.label;
+
+      var toggleWrap = document.createElement('label');
+      toggleWrap.className = 'modifier-toggle';
+
+      var inp = document.createElement('input');
+      inp.type = 'checkbox';
+      inp.checked = def.value;
+      inp.onchange = (function(n) { return function() { toggleModifier(n); }; })(def.name);
+
+      var slider = document.createElement('span');
+      slider.className = 'modifier-slider';
+
+      toggleWrap.appendChild(inp);
+      toggleWrap.appendChild(slider);
+      item.appendChild(lbl);
+      item.appendChild(toggleWrap);
+
+      // Inline budget info for api_gate when enabled
+      if (def.name === 'api_gate' && mods2.api_gate && mods2.api_gate.enabled) {
+        var budget = document.createElement('span');
+        budget.style.cssText = 'font-size:11px;color:var(--muted-foreground);';
+        budget.textContent = '$' + (mods2.api_gate.spent || 0).toFixed(2) + ' / $' + (mods2.api_gate.budget || 0).toFixed(2);
+        item.appendChild(budget);
+      }
+
+      drawer.appendChild(item);
+    });
+  }
+}
+
+function toggleModeDropdown() {
+  var dd = document.getElementById('mode-dropdown');
+  if (!dd) return;
+  var isOpen = dd.style.display !== 'none';
+  if (isOpen) {
+    dd.style.display = 'none';
+  } else {
+    dd.style.display = 'block';
+    setTimeout(function() {
+      document.addEventListener('click', function _closeDd(e) {
+        if (!dd.contains(e.target) && e.target.id !== 'mode-selector') {
+          dd.style.display = 'none';
+          document.removeEventListener('click', _closeDd);
+        }
+      });
+    }, 0);
+  }
+}
+
+function selectMode(modeId) {
+  var dd = document.getElementById('mode-dropdown');
+  if (dd) dd.style.display = 'none';
+  if (_modeStatus && _modeStatus.active === modeId) return;
+
+  apiFetch('/api/mode/switch', { method: 'POST', body: { mode: modeId, force: false } }).then(function(resp) {
+    if (resp.conflict) {
+      _showModeConfirm(resp.message || ('Stop current mode and switch to ' + modeId + '?'), function() {
+        var expectedCurrent = resp.current;
+        var btn = document.getElementById('mode-selector');
+        if (btn) btn.disabled = true;
+        var _reenableTimer = setTimeout(function() { if (btn) btn.disabled = false; }, 10000);
+        window._modeReenableTimer = _reenableTimer;
+
+        apiFetch('/api/mode/switch', { method: 'POST', body: { mode: modeId, force: true, expected_current: expectedCurrent } })
+          .then(function(r) {
+            if (r.error === 'stale') {
+              clearTimeout(_reenableTimer);
+              if (btn) btn.disabled = false;
+              loadModeStatus();
+              showToast('Mode changed while dialog was open — status refreshed', 'warning');
+            } else if (r.fallback) {
+              clearTimeout(_reenableTimer);
+              if (btn) btn.disabled = false;
+              showToast('Mode switch failed: ' + (r.error || 'unknown'), 'error');
+              loadModeStatus();
+            }
+            // SSE will confirm and re-enable button on success
+          })
+          .catch(function(e) {
+            clearTimeout(_reenableTimer);
+            if (btn) btn.disabled = false;
+            showToast('Mode switch error: ' + e, 'error');
+          });
+      });
+    } else if (resp.success) {
+      loadModeStatus();
+    }
+  }).catch(function(e) {
+    showToast('Mode switch error: ' + e, 'error');
+  });
+}
+
+function _showModeConfirm(message, onConfirm) {
+  var overlay = document.createElement('div');
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:200;display:flex;align-items:center;justify-content:center;';
+
+  var card = document.createElement('div');
+  card.style.cssText = 'background:var(--card);border:1px solid var(--border);border-radius:12px;padding:24px;max-width:400px;width:100%;';
+
+  var msg = document.createElement('p');
+  msg.style.marginBottom = '16px';
+  msg.textContent = message;
+
+  var actions = document.createElement('div');
+  actions.style.cssText = 'display:flex;gap:8px;justify-content:flex-end;';
+
+  var cancelBtn = document.createElement('button');
+  cancelBtn.className = 'btn btn-sm btn-outline';
+  cancelBtn.textContent = 'Cancel';
+  cancelBtn.onclick = function() { document.body.removeChild(overlay); };
+
+  var switchBtn = document.createElement('button');
+  switchBtn.className = 'btn btn-sm';
+  switchBtn.style.cssText = 'background:var(--destructive);color:#fff;';
+  switchBtn.textContent = 'Switch';
+  switchBtn.onclick = function() { document.body.removeChild(overlay); onConfirm(); };
+
+  actions.appendChild(cancelBtn);
+  actions.appendChild(switchBtn);
+  card.appendChild(msg);
+  card.appendChild(actions);
+  overlay.appendChild(card);
+  document.body.appendChild(overlay);
+}
+
+function toggleModifierDrawer() {
+  var drawer = document.getElementById('modifier-drawer');
+  if (!drawer) return;
+  drawer.style.display = drawer.style.display === 'none' ? 'grid' : 'none';
+}
+
+function toggleModifier(name) {
+  if (!_modeStatus) return;
+  var mods = _modeStatus.modifiers || {};
+
+  var url;
+  if (name === 'queue_paused') {
+    url = mods.queue_paused ? '/api/queue/resume' : '/api/queue/pause';
+    apiFetch(url, { method: 'POST', body: {} })
+      .then(function() { loadModeStatus(); })
+      .catch(function(e) { console.error('toggleModifier queue_paused failed:', e); loadModeStatus(); });
+  } else if (name === 'api_gate') {
+    var gateEnabled = mods.api_gate && mods.api_gate.enabled;
+    url = gateEnabled ? '/api/gate/disable' : '/api/gate/enable';
+    apiFetch(url, { method: 'POST', body: {} })
+      .then(function() { loadModeStatus(); })
+      .catch(function(e) { console.error('toggleModifier api_gate failed:', e); loadModeStatus(); });
+  } else if (name === 'eco_mode') {
+    apiFetch('/api/config', { method: 'POST', body: { key: 'fleet.eco_mode', value: !mods.eco_mode } })
+      .then(function() { loadModeStatus(); })
+      .catch(function(e) { console.error('toggleModifier eco_mode failed:', e); loadModeStatus(); });
+  } else if (name === 'offline_mode') {
+    apiFetch('/api/config', { method: 'POST', body: { key: 'fleet.offline_mode', value: !mods.offline_mode } })
+      .then(function() { loadModeStatus(); })
+      .catch(function(e) { console.error('toggleModifier offline_mode failed:', e); loadModeStatus(); });
+  } else if (name === 'hitl_evolution') {
+    apiFetch('/api/config', { method: 'POST', body: { key: 'fleet.hitl_evolution', value: !mods.hitl_evolution } })
+      .then(function() { loadModeStatus(); })
+      .catch(function(e) { console.error('toggleModifier hitl_evolution failed:', e); loadModeStatus(); });
+  }
+}
+
 (function init() {
   _loaded['dashboard'] = true;
   loadDashboard();
   connectSSE();
+  loadModeStatus();
 
   /* ── Adaptive polling — 2s active, 60s hidden, SSE stays connected ───── */
   var _POLL_ACTIVE = 2000, _POLL_HIDDEN = 60000;
@@ -7680,6 +8174,7 @@ function loadFactorio() {
       var detailEl = document.getElementById('factorio-bridge-detail');
       var tickEl = document.getElementById('factorio-tick');
       var tickDetailEl = document.getElementById('factorio-tick-detail');
+      if (!_factorioTransition) _factorioRunning = !!d.running;
       if (d.running) {
         statusEl.textContent = 'Running';
         statusEl.style.color = 'var(--success)';
@@ -7739,17 +8234,21 @@ function loadFactorio() {
       }
     })
     .catch(function() {
+      if (!_factorioTransition) {
+        _factorioRunning = false;
+        _updateFactorioButtons();
+      }
       document.getElementById('factorio-bridge-status').textContent = 'Offline';
       document.getElementById('factorio-bridge-status').style.color = 'var(--muted)';
       document.getElementById('factorio-bridge-detail').textContent = 'Bridge not reachable';
-      document.getElementById('factorio-state').textContent = 'Bridge not running. Start with:\n  python fleet/factorio/setup_and_launch.py';
+      document.getElementById('factorio-state').textContent = 'Not running — click Start above';
     });
   _loadFactorioDirectives();
   _loadFactorioPresets();
   updateFactorioActionFields();
   _factorioApi('GET', '/api/plan').then(function(d) {
     _factorioPaused = d.paused || false;
-    _updatePauseButton();
+    _updateFactorioButtons();
     var brainEl = document.getElementById('factorio-brain-status');
     if (_factorioPaused) brainEl.textContent = 'Paused';
     else if (d.plan && d.plan.length > 0) brainEl.textContent = 'Step ' + d.plan_index + '/' + d.plan.length;
@@ -7799,24 +8298,128 @@ function _factorioApi(method, path, body) {
     .then(function(r) { return r.json(); });
 }
 
+var _factorioRunning = false;
+var _factorioTransition = null; // "stopping" | "starting" | null
+
+function toggleFactorioServer() {
+  if (_factorioTransition) return; // already in transition, ignore clicks
+  var btn = document.getElementById('factorio-start-btn');
+  var text = document.getElementById('factorio-start-text');
+  var icon = document.getElementById('factorio-start-icon');
+  if (_factorioRunning) {
+    // Stop flow: Stop → Stopping... → Stopped (2s) → Start
+    _factorioTransition = 'stopping';
+    text.textContent = 'Stopping\u2026'; btn.disabled = true;
+    btn.style.background = 'var(--warning)'; btn.style.color = '#000';
+    apiFetch('/api/factorio/stop', { method: 'POST' }).then(function() {
+      // Poll until bridge is actually dead
+      var polls = 0;
+      var pollTimer = setInterval(function() {
+        polls++;
+        apiFetch('/api/factorio/bridge-status').then(function(s) {
+          if (!s.running || polls > 10) {
+            clearInterval(pollTimer);
+            _factorioRunning = false;
+            // Show "Stopped" briefly
+            text.textContent = 'Stopped';
+            btn.style.background = 'var(--muted)'; btn.style.color = 'var(--foreground)';
+            icon.textContent = '\u25CF';
+            setTimeout(function() {
+              _factorioTransition = null;
+              _updateFactorioButtons();
+              loadFactorio();
+            }, 2000);
+          }
+        }).catch(function() {
+          // Bridge unreachable = stopped
+          clearInterval(pollTimer);
+          _factorioRunning = false;
+          text.textContent = 'Stopped';
+          btn.style.background = 'var(--muted)'; btn.style.color = 'var(--foreground)';
+          icon.textContent = '\u25CF';
+          setTimeout(function() {
+            _factorioTransition = null;
+            _updateFactorioButtons();
+            loadFactorio();
+          }, 2000);
+        });
+      }, 1000);
+    }).catch(function() {
+      _factorioTransition = null;
+      btn.disabled = false;
+      _updateFactorioButtons();
+    });
+  } else {
+    // Start flow: Start → Starting... → poll → Running
+    _factorioTransition = 'starting';
+    text.textContent = 'Starting\u2026'; btn.disabled = true;
+    btn.style.background = 'var(--warning)'; btn.style.color = '#000';
+    apiFetch('/api/factorio/start', { method: 'POST' }).then(function(d) {
+      if (d.success) {
+        var polls = 0;
+        var pollTimer = setInterval(function() {
+          polls++;
+          apiFetch('/api/factorio/bridge-status').then(function(s) {
+            if (s.running) {
+              clearInterval(pollTimer);
+              _factorioRunning = true;
+              _factorioTransition = null;
+              _updateFactorioButtons();
+              loadFactorio();
+            }
+          });
+          if (polls > 30) {
+            clearInterval(pollTimer);
+            _factorioTransition = null;
+            _updateFactorioButtons();
+          }
+        }, 2000);
+      } else {
+        _factorioTransition = null;
+        _updateFactorioButtons();
+      }
+    }).catch(function() {
+      _factorioTransition = null;
+      btn.disabled = false;
+      _updateFactorioButtons();
+    });
+  }
+}
+
 function toggleFactorioPause() {
   var endpoint = _factorioPaused ? '/api/resume' : '/api/pause';
   _factorioApi('POST', endpoint).then(function(d) {
     _factorioPaused = d.paused;
-    _updatePauseButton();
+    _updateFactorioButtons();
   }).catch(function(e) { console.error('Pause toggle failed:', e); });
 }
 
-function _updatePauseButton() {
-  var btn = document.getElementById('factorio-pause-btn');
-  var icon = document.getElementById('factorio-pause-icon');
-  var text = document.getElementById('factorio-pause-text');
-  if (_factorioPaused) {
-    btn.style.background = 'var(--warning)'; btn.style.color = '#000';
-    icon.textContent = '\u23F8'; text.textContent = 'Paused';
+function _updateFactorioButtons() {
+  var startBtn = document.getElementById('factorio-start-btn');
+  var startIcon = document.getElementById('factorio-start-icon');
+  var startText = document.getElementById('factorio-start-text');
+  var pauseBtn = document.getElementById('factorio-pause-btn');
+  var pauseIcon = document.getElementById('factorio-pause-icon');
+  var pauseText = document.getElementById('factorio-pause-text');
+  startBtn.disabled = false;
+
+  if (_factorioRunning) {
+    // Show Stop button + Pause button
+    startBtn.style.background = 'var(--destructive)'; startBtn.style.color = '#fff';
+    startIcon.textContent = '\u25A0'; startText.textContent = 'Stop';
+    pauseBtn.style.display = '';
+    if (_factorioPaused) {
+      pauseBtn.style.background = 'var(--warning)'; pauseBtn.style.color = '#000';
+      pauseIcon.textContent = '\u25B6'; pauseText.textContent = 'Resume';
+    } else {
+      pauseBtn.style.background = ''; pauseBtn.style.color = '';
+      pauseIcon.textContent = '\u23F8'; pauseText.textContent = 'Pause';
+    }
   } else {
-    btn.style.background = ''; btn.style.color = '';
-    icon.textContent = '\u25B6'; text.textContent = 'Running';
+    // Show Start button, hide Pause
+    startBtn.style.background = ''; startBtn.style.color = '';
+    startIcon.textContent = '\u25B6'; startText.textContent = 'Start';
+    pauseBtn.style.display = 'none';
   }
 }
 

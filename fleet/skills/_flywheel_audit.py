@@ -277,9 +277,27 @@ def _check_hallucinations(audit: dict, project_root: Path) -> list[dict]:
     Returns a list of hallucination dicts for any citation that fails verification.
     """
     hallucinations = []
+    resolved_root = project_root.resolve()
     for dim, data in audit["scores"].items():
         for ev in data.get("evidence", []):
             file_path = project_root / ev["file"]
+
+            # Guard against path traversal (e.g. "../../etc/passwd")
+            try:
+                if not file_path.resolve().is_relative_to(resolved_root):
+                    hallucinations.append({
+                        "dimension": dim,
+                        "claim": ev,
+                        "issue": "path traversal outside project root",
+                    })
+                    continue
+            except (ValueError, OSError):
+                hallucinations.append({
+                    "dimension": dim,
+                    "claim": ev,
+                    "issue": "invalid path",
+                })
+                continue
 
             # Skip directory references (path ends with /)
             if ev["file"].endswith("/"):

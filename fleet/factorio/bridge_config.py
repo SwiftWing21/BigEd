@@ -18,7 +18,7 @@ class BridgeConfig:
     server_mode: str = "headless"
     factorio_path: str = ""
     headless_path: str = ""
-    save_file: str = "sandbox.zip"
+    save_file: str = "biged-sandbox.zip"
     spectator_enabled: bool = True
     cadence: str = "adaptive"
     cadence_fast_ms: int = 1000
@@ -59,6 +59,7 @@ class BridgeConfig:
     # Mode: "ml" (RL policy) or "llm" (existing agent brain)
     mode: str = "ml"
     game_speed: int = 10  # Factorio game.speed multiplier for training
+    ml_tick_delay_ms: int = 0  # delay between ML ticks (0 = no sleep, max throughput)
 
     # ML training hyperparameters
     ml_learning_rate: float = 3e-4

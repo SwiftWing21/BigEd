@@ -203,7 +203,7 @@ type = "skill_draft"
 agent_name = "coder_2"
 perspective = "code critic / reviewer"
 skill_name = "code_review_fix"
-description = "Fix or replace frequently failing skill 'code_review' â€” 631 failures. Sample error: HTTP Error 404: Not Found"
+description = "Fix or replace frequently failing skill 'code_review' â€” 633 failures. Sample error: HTTP Error 404: Not Found"
 
 
 [[tasks]]

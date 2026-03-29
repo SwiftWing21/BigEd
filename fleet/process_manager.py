@@ -50,6 +50,83 @@ class ProcessManager:
         """Hot-swap config (called after fleet.toml reload)."""
         self.config = config
 
+    # ── Ollama optimization ─────────────────────────────────────────
+
+    def _detect_vram_gb(self) -> float:
+        """Detect total GPU VRAM in GB using gpu.py backend."""
+        try:
+            from gpu import detect_gpu, read_telemetry
+            backend, has_gpu = detect_gpu()
+            if not has_gpu:
+                return 0.0
+            telem = read_telemetry(backend)
+            if telem and telem.get("vram_total_bytes"):
+                return telem["vram_total_bytes"] / (1024 ** 3)
+        except Exception as e:
+            log.debug(f"VRAM detection failed: {e}")
+        return 0.0
+
+    def _resolve_ollama_env(self) -> dict[str, str]:
+        """Resolve Ollama optimization env vars from fleet.toml + GPU detection.
+
+        Returns dict of env var name → value to inject into Ollama's process env.
+        Explicit (non-'auto') values in fleet.toml always override auto-detection.
+        """
+        opt = self.config.get("ollama", {}).get("optimization", {})
+        gpu_mode = self.config.get("gpu", {}).get("mode", "eco")
+        vram = self._detect_vram_gb() if gpu_mode == "full" else 0.0
+
+        # VRAM-tier defaults
+        if vram <= 0:
+            defaults = {"flash": "0", "kv": "f16", "parallel": "2", "models": "1"}
+        elif vram < 6:
+            defaults = {"flash": "1", "kv": "q4_0", "parallel": "2", "models": "1"}
+        elif vram < 8:
+            defaults = {"flash": "1", "kv": "q8_0", "parallel": "2", "models": "2"}
+        elif vram < 12:
+            defaults = {"flash": "1", "kv": "q8_0", "parallel": "4", "models": "2"}
+        elif vram < 16:
+            defaults = {"flash": "1", "kv": "q8_0", "parallel": "4", "models": "3"}
+        else:
+            defaults = {"flash": "1", "kv": "f16", "parallel": "6", "models": "4"}
+
+        # Resolve each setting: explicit override or auto-detected default
+        flash = opt.get("flash_attention", "auto")
+        if flash == "auto":
+            flash_val = defaults["flash"]
+        elif flash == "on":
+            flash_val = "1"
+        elif flash == "off":
+            flash_val = "0"
+        else:
+            flash_val = defaults["flash"]
+
+        kv = opt.get("kv_cache_type", "auto")
+        kv_val = defaults["kv"] if kv == "auto" else kv
+
+        parallel = opt.get("num_parallel", "auto")
+        parallel_val = defaults["parallel"] if parallel == "auto" else str(parallel)
+
+        models = opt.get("max_loaded_models", "auto")
+        models_val = defaults["models"] if models == "auto" else str(models)
+
+        env_vars = {
+            "OLLAMA_NUM_PARALLEL": parallel_val,
+            "OLLAMA_MAX_LOADED_MODELS": models_val,
+        }
+        # Only set flash/kv if enabled (avoid overriding user's shell env with "0")
+        if flash_val == "1":
+            env_vars["OLLAMA_FLASH_ATTENTION"] = "1"
+        if kv_val != "f16":
+            env_vars["OLLAMA_KV_CACHE_TYPE"] = kv_val
+
+        log.info(
+            f"Ollama optimization: flash={flash_val}, kv_cache={kv_val}, "
+            f"parallel={parallel_val}, max_models={models_val} "
+            f"(VRAM={vram:.1f}GB, gpu_mode={gpu_mode})"
+        )
+        return env_vars
+
     # ── Ollama ──────────────────────────────────────────────────────
 
     def _find_ollama(self) -> str:
@@ -115,9 +192,15 @@ class ProcessManager:
 
     def start_ollama(self, gpu: bool = True) -> None:
         """Start or adopt Ollama."""
+        opt_env = self._resolve_ollama_env()
         if self.find_running_ollama():
             loaded = self.discover_loaded_models()
             log.info(f"Ollama already running — adopting ({len(loaded)} models loaded)")
+            log.warning(
+                "Adopted Ollama was started externally — optimization env vars "
+                "(flash_attention, kv_cache_type) only apply to fleet-started Ollama. "
+                "Restart Ollama via fleet for optimized settings."
+            )
             _json_log("INFO", "ollama_adopt", models_loaded=len(loaded))
             return
         ollama_exe = self._find_ollama()
@@ -126,11 +209,11 @@ class ProcessManager:
             env["CUDA_VISIBLE_DEVICES"] = "-1"
         elif "CUDA_VISIBLE_DEVICES" in env:
             del env["CUDA_VISIBLE_DEVICES"]
-        env.setdefault("OLLAMA_NUM_PARALLEL", "4")
-        env.setdefault("OLLAMA_MAX_LOADED_MODELS", "3")
+        # Apply resolved optimization settings
+        env.update(opt_env)
         mode = "GPU" if gpu else "CPU"
         log.info(f"Starting Ollama ({mode} mode) — {ollama_exe}")
-        _json_log("INFO", "ollama_start", mode=mode, exe=ollama_exe)
+        _json_log("INFO", "ollama_start", mode=mode, exe=ollama_exe, **opt_env)
         try:
             self.ollama_proc = subprocess.Popen(
                 [ollama_exe, "serve"], env=env,

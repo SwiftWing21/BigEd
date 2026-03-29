@@ -63,7 +63,7 @@ wake_word = ""                       # Empty = disabled. Set to "hey biged" etc.
 tts_enabled = false                  # Local text-to-speech responses
 
 [models]
-local = "qwen3:8b"
+local = "qwen3:0.6b"
 complex = "qwen3:8b"
 complex_provider = "local"    # DEPRECATED: superseded by [api_gate]. Kept for backwards compat.
 conductor_model = "qwen3:4b"  # CPU-pinned user chat model (num_gpu=0, ~2-3GB RAM, 0 VRAM)
@@ -120,6 +120,23 @@ cluster_enabled = false              # Enable networked GPU cluster
 cluster_peers = []                   # Peer URLs for GPU cluster: ["http://rig2:11434"]
 vram_aggregation = false             # Aggregate VRAM across GPUs for model selection
 model_parallelism = "none"           # none | tensor | pipeline (Ollama handles this)
+
+# Ollama server-level optimizations — applied to ALL local models at Ollama startup
+# "auto" = detect from GPU VRAM at boot. Explicit values override auto-detection.
+# These are env vars passed to Ollama's process; only take effect on fleet-started Ollama.
+[ollama.optimization]
+flash_attention = "auto"             # auto | on | off — enables OLLAMA_FLASH_ATTENTION=1
+kv_cache_type = "auto"              # auto | f16 | q8_0 | q4_0 | tq — OLLAMA_KV_CACHE_TYPE
+num_parallel = "auto"               # auto | 1-8 — OLLAMA_NUM_PARALLEL (concurrent requests)
+max_loaded_models = "auto"          # auto | 1-8 — OLLAMA_MAX_LOADED_MODELS
+# VRAM tier auto-detection (when "auto"):
+#   0 GB (CPU)    → flash=off,  kv=f16,  parallel=2, models=1
+#   4-6 GB        → flash=on,   kv=q4_0, parallel=2, models=1
+#   6-8 GB        → flash=on,   kv=q8_0, parallel=2, models=2
+#   8-12 GB       → flash=on,   kv=q8_0, parallel=4, models=2
+#   12-16 GB      → flash=on,   kv=q8_0, parallel=4, models=3
+#   16+ GB        → flash=on,   kv=f16,  parallel=6, models=4
+# "tq" (TurboQuant) reserved for future Ollama mainline support.
 
 [thermal]
 # Softened thresholds — only react to actual danger, not normal load
@@ -816,11 +833,11 @@ host_fleet_id = ""
 bridge_port = 27016
 rcon_host = "localhost"
 rcon_port = 27015
-rcon_password = "ZNLmyF4gAwrAa1pyhR-7cQ"
+rcon_password = "5DONo9tx9GjqZ0HViLiudQ"
 server_mode = "headless"
 factorio_path = ""
 headless_path = ""
-save_file = "sandbox.zip"
+save_file = "biged-sandbox.zip"
 spectator_enabled = true
 cadence = "adaptive"
 cadence_fast_ms = 1000
@@ -844,6 +861,9 @@ curriculum_dir = "fleet/idle_curricula"
 # Focus mode — worker reservation for Factorio analysis
 focus_workers_default = 2
 analyze_interval_ticks = 50
+mode = "ml"
+game_speed = 10
+ml_tick_delay_ms = 0  # 0 = max throughput (~30-50 actions/sec), >0 = ms between ticks
 
 [factorio.experiments]
 budget_minutes = 10

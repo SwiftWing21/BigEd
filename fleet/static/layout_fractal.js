@@ -4,6 +4,8 @@
  * BA fractal + Fibonacci spiral: radial degree placement, golden angle
  * distribution, island grouping on Fibonacci arms, offline orbits,
  * activity drift.  O(n) single-pass — handles 10K+ nodes instantly.
+ *
+ * Positions in model-space (0,0 center). Cytoscape fit() handles viewport.
  */
 (function () {
   'use strict';
@@ -20,13 +22,14 @@
   };
 
   var defaults = {
-    padding: 30,
+    padding: 10,
+    fit: true,
     animate: false,
-    rMax: 0,       // 0 = auto from container
-    rBase: 80,     // base radius for island Fibonacci spiral
-    degreeExp: 0.6,
+    brainRadius: 300,    // model-space radius for the main brain
+    islandGap: 40,       // gap between island edge and main brain
+    degreeExp: 0.55,
     activityWeight: 0.4,
-    offlineOrbitScale: 1.3
+    offlineOrbitScale: 1.08  // subtle — keeps idle nodes near the surface
   };
 
   function FractalBrainLayout(options) {
@@ -40,12 +43,10 @@
     var nCount = nodes.length;
     if (nCount === 0) return this;
 
-    var container = opts.cy ? opts.cy.container() : null;
-    var W = container ? container.clientWidth : 800;
-    var H = container ? container.clientHeight : 600;
-    var cx = W / 2, cy = H / 2;
-    var rMax = opts.rMax || Math.min(W, H) / 2.5;
-    var rBase = opts.rBase;
+    // Model-space center (Cytoscape fit() will map to viewport)
+    var cx = 0, cy = 0;
+    // Scale brain radius to node count — sqrt keeps density consistent
+    var brainR = Math.max(60, Math.sqrt(nCount) * 12);
 
     // ── 1. Compute degrees + max degree ──────────────────────────
     var maxDeg = 1;
@@ -85,19 +86,40 @@
     // Sort: largest component first
     components.sort(function (a, b) { return b.length - a.length; });
 
-    // ── 3. Position each island on a Fibonacci spiral ────────────
+    // ── 3. Position each island ────────────────────────────────────
     var positions = {};
 
     for (var g = 0; g < components.length; g++) {
       var comp = components[g];
-      // Island center on Fibonacci spiral (first island at center)
-      var groupR = g === 0 ? 0 : rBase * Math.pow(PHI, g * 0.5);
-      var groupTheta = g * GOLDEN_ANGLE;
-      var islandCx = cx + groupR * Math.cos(groupTheta);
-      var islandCy = cy + groupR * Math.sin(groupTheta);
+      var frac = comp.length / (nCount || 1);
 
-      // Scale island radius by component size
-      var islandR = rMax * Math.min(1, comp.length / (nCount || 1) + 0.15);
+      // Island radius proportional to sqrt of its share of total nodes
+      var islandR = brainR * Math.sqrt(frac) * 1.1;
+      // Minimum so tiny components aren't invisible
+      islandR = Math.max(islandR, 20);
+
+      var islandCx, islandCy;
+      if (g === 0) {
+        // Main component centered
+        islandCx = cx;
+        islandCy = cy;
+      } else {
+        // Tuck secondary islands into the brain surface, not outside it
+        // Small components (≤3 nodes) scatter along the outer shell
+        // Larger components get their own pocket just outside
+        var mainR = brainR * Math.sqrt(components[0].length / nCount) * 1.1;
+        var theta = g * GOLDEN_ANGLE;
+        var orbitR;
+        if (comp.length <= 3) {
+          // Scatter singles/pairs along the brain's outer edge
+          orbitR = mainR * (0.8 + (g % 5) * 0.08);
+        } else {
+          // Larger islands sit snug against the main brain
+          orbitR = mainR + islandR * 0.5;
+        }
+        islandCx = cx + orbitR * Math.cos(theta);
+        islandCy = cy + orbitR * Math.sin(theta);
+      }
 
       // Sort nodes within island: by tier then degree descending
       comp.sort(function (a, b) {
@@ -118,23 +140,22 @@
         var r = islandR * Math.pow(1 - deg / maxDeg, opts.degreeExp);
 
         // Golden angle spiral within the island
-        var theta = i * GOLDEN_ANGLE;
+        var angle = i * GOLDEN_ANGLE;
 
         // Activity drift: active nodes pull toward center
         if (activity > 0) {
           r = r * (1 - activity * opts.activityWeight);
         }
 
-        // Offline/idle orbit: push outward
+        // Offline/idle: nudge slightly outward (not a hard orbit)
         if (status === 'IDLE' || status === 'OFFLINE' || status === 'ERROR') {
-          r = Math.max(r, islandR * opts.offlineOrbitScale);
-          // Slightly jitter angle for visual separation
-          theta += (i % 3 - 1) * 0.15;
+          r = r * opts.offlineOrbitScale;
+          angle += (i % 3 - 1) * 0.1;
         }
 
         positions[node.id()] = {
-          x: islandCx + r * Math.cos(theta),
-          y: islandCy + r * Math.sin(theta)
+          x: islandCx + r * Math.cos(angle),
+          y: islandCy + r * Math.sin(angle)
         };
       }
     }

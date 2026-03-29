@@ -9,7 +9,6 @@ log = logging.getLogger(__name__)
 SKILL_NAME = "quality_flywheel"
 DESCRIPTION = "Audit project context files, grade quality, propose improvements, learn from feedback"
 VERSION = "1.0.0"
-COMPLEXITY = "medium"
 COMPLEXITY = "complex"
 REQUIRES_NETWORK = False
 SUITE = ""
@@ -176,9 +175,31 @@ def _apply(payload, config):
     if not claude_md.exists():
         return {"error": "No CLAUDE.md to apply to"}
 
-    # Append the suggestion
+    # Insert the suggestion — replace existing section if one matches,
+    # otherwise append at the end.  This prevents repeated _apply()
+    # calls from bloating CLAUDE.md.
     current = claude_md.read_text(encoding="utf-8")
-    updated = current.rstrip() + "\n\n" + draft["suggestion"] + "\n"
+    suggestion = draft["suggestion"].strip()
+
+    # Extract a heading from the suggestion (## Foo) to detect duplicates
+    import re
+    heading_match = re.search(r"^(#{1,3}\s+.+)$", suggestion, re.MULTILINE)
+    if heading_match:
+        heading = heading_match.group(1).strip()
+        # Find existing section with same heading and replace it
+        # Match from the heading to the next heading of same or higher level
+        level = len(heading) - len(heading.lstrip("#"))
+        pattern = re.compile(
+            rf"^{re.escape(heading)}\s*\n(.*?)(?=^#{{1,{level}}}\s|\Z)",
+            re.MULTILINE | re.DOTALL,
+        )
+        if pattern.search(current):
+            updated = pattern.sub(suggestion + "\n\n", current, count=1)
+        else:
+            updated = current.rstrip() + "\n\n" + suggestion + "\n"
+    else:
+        updated = current.rstrip() + "\n\n" + suggestion + "\n"
+
     claude_md.write_text(updated, encoding="utf-8")
 
     # Re-grade to verify improvement

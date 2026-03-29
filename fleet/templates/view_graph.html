@@ -630,19 +630,19 @@ button { font-family: inherit; cursor: pointer; border: none; background: none; 
           animate: !massive ? 'end' : false,
           animationDuration: 500,
           fit: true,
-          padding: 30,
+          padding: 10,
           nodeRepulsion: function(node) {
-            return node.isParent() ? 12000 : 6000;
+            return node.isParent() ? 6000 : 1500;
           },
           idealEdgeLength: function(edge) {
             var src = edge.source(), tgt = edge.target();
-            if (src.parent().length && tgt.parent().length && src.parent().id() === tgt.parent().id()) return 40;
-            return 100;
+            if (src.parent().length && tgt.parent().length && src.parent().id() === tgt.parent().id()) return 12;
+            return 50;
           },
-          edgeElasticity: 0.45,
-          gravity: 0.25,
-          gravityRange: 3.8,
-          nestingFactor: 0.1,
+          edgeElasticity: 0.2,
+          gravity: 1.0,
+          gravityRange: 6.0,
+          nestingFactor: 0.05,
           numIter: large ? 2500 : 5000,
           packComponents: true,
           componentSpacing: 40,
@@ -760,13 +760,13 @@ button { font-family: inherit; cursor: pointer; border: none; background: none; 
         {
           selector: ':parent',
           style: {
-            'background-opacity': 0.06,
+            'background-opacity': 0.04,
             'background-color': 'data(color)',
-            'border-width': 1.5,
+            'border-width': 1,
             'border-color': 'data(color)',
-            'border-opacity': 0.25,
+            'border-opacity': 0.15,
             'border-style': 'dashed',
-            'padding': 20,
+            'padding': 8,
             'text-valign': 'top',
             'text-halign': 'center',
             'label': 'data(label)',

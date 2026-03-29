@@ -12,6 +12,7 @@ _world_model = None
 _command_queue: "queue.Queue | None" = None
 _result_store: dict = {}  # command_id -> result (Python 3.7+ insertion order)
 _bridge_status: dict = {"running": False, "tick": 0, "cadence": "adaptive"}
+_training_status: dict = {}  # updated by bridge.py after each ML tick
 _brain = None
 
 
@@ -207,6 +208,39 @@ def create_api(world_model, command_queue, brain=None) -> Flask:
         )
         return jsonify({"id": d_id, "status": "accepted"})
 
+    @app.route("/api/training/status")
+    def api_training_status():
+        """ML training metrics — polled by launcher, factorio_observe, factorio_train."""
+        with _lock:
+            if _training_status:
+                return jsonify(_training_status)
+        # Fallback: assemble from brain curriculum (LLM mode)
+        if _brain is not None:
+            progress = _brain.curriculum.get_progress()
+            return jsonify({
+                "mode": "llm",
+                "episode": 0,
+                "step": 0,
+                "phase": progress.get("phase", 1),
+                "phase_name": progress.get("phase_name", ""),
+                "lessons_completed": progress.get("completed", 0),
+                "lessons_total": progress.get("total_lessons", 0),
+                "last_reward": None,
+                "policy_loss": None,
+                "value_loss": None,
+                "entropy": None,
+            })
+        return jsonify({"error": "Training not active"}), 503
+
+    @app.route("/api/training/diagnose")
+    def api_training_diagnose():
+        """Lightweight diagnostics for factorio_analyze skill."""
+        with _lock:
+            status = dict(_training_status) if _training_status else {}
+        status["bridge_running"] = _bridge_status.get("running", False)
+        status["tick"] = _bridge_status.get("tick", 0)
+        return jsonify(status)
+
     @app.route("/api/focus", methods=["GET"])
     def focus_state():
         import os, json
@@ -233,3 +267,9 @@ def store_result(cmd_id: str, result: dict) -> None:
         while len(_result_store) > 100:
             oldest = next(iter(_result_store))
             del _result_store[oldest]
+
+
+def update_training_status(status: dict) -> None:
+    """Called by bridge.py after each ML tick to push training metrics."""
+    with _lock:
+        _training_status.update(status)

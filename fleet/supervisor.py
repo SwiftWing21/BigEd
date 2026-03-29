@@ -53,6 +53,42 @@ _hm = None     # HealthMonitor
 _fm = None     # FederationManager
 _config = None
 
+# -- Factorio focus mode ------------------------------------------------------
+_focus_file = os.path.join(os.path.dirname(__file__), ".factorio_focus.json")
+_last_analyze_gen = 0
+
+
+def _maybe_generate_factorio_tasks(now):
+    """Auto-generate factorio_analyze tasks every 60s when Focus mode is ON."""
+    global _last_analyze_gen
+    try:
+        with open(_focus_file) as f:
+            focus = json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError, OSError):
+        return
+    if not focus.get("on"):
+        return
+    # Generate factorio_analyze every 60s
+    if now - _last_analyze_gen < 60:
+        return
+    _last_analyze_gen = now
+    # Check if there's already a pending factorio_analyze task
+    try:
+        with db.get_conn() as conn:
+            row = conn.execute(
+                "SELECT id FROM tasks WHERE type='factorio_analyze' AND status='PENDING' LIMIT 1"
+            ).fetchone()
+        if row:
+            return
+        def _do():
+            db.post_task("factorio_analyze",
+                         json.dumps({"auto_generated": True, "priority": 75}),
+                         priority=75)
+        db._retry_write(_do)
+        log.info("Focus mode: auto-generated factorio_analyze task")
+    except Exception:
+        log.warning("Failed to generate factorio_analyze task", exc_info=True)
+
 
 def write_status_md():
     """Write fleet status snapshot to STATUS.md."""
@@ -148,6 +184,9 @@ def main():
         _fm.tick(now)
         _pm.check_alive()
 
+        # Factorio focus mode: auto-generate analysis tasks
+        _maybe_generate_factorio_tasks(now)
+
         # Log Dr. Ders transitions
         hw_state = _pm.read_hw_state()
         if hw_state and hw_state.get("status") == "transitioning":
@@ -190,6 +229,14 @@ def main():
                 }), encoding="utf-8")
             except Exception:
                 pass
+
+        # Check for restart request from dashboard
+        restart_flag = FLEET_DIR / ".restart_requested"
+        if restart_flag.exists():
+            restart_flag.unlink(missing_ok=True)
+            log.info("Restart requested via dashboard — restarting supervisor")
+            _pm.shutdown_all()
+            os.execv(sys.executable, [sys.executable] + sys.argv)
 
         time.sleep(5)
       except Exception:
