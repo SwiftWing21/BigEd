@@ -39,3 +39,4 @@ fleet = [
 [tool.pytest.ini_options]
 pythonpath = ["fleet"]
 testpaths = ["tests"]
+asyncio_mode = "auto"
