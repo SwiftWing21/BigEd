@@ -135,8 +135,9 @@ BigEd/CONSOLE_UPGRADE_PLAN.md
 BigEd/SECURITY_COMPLIANCE_BLUEPRINT.md
 BigEd/research/
 
-# ── Factorio experiment replay data (large, machine-generated) ───────────
+# ── Factorio runtime data ─────────────────────────────────────────────────
 fleet/factorio/replay_log.jsonl
+fleet/factorio/server_data/
 
 # ── Fleet runtime state ──────────────────────────────────────────────────
 fleet/hw_state.json

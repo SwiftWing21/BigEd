@@ -129,12 +129,23 @@ def find_or_create_save(factorio_exe: Path) -> Path:
 
 
 def start_headless_server(factorio_exe: Path, save: Path, port: int, password: str) -> subprocess.Popen:
-    """Launch Factorio headless server with RCON enabled."""
+    """Launch Factorio headless server with RCON enabled.
+
+    Uses a separate config directory so the headless server doesn't hold
+    the AppData/Roaming/Factorio/.lock — allowing the GUI client to run
+    simultaneously as a spectator.
+    """
+    # Isolate server config so GUI client can co-exist
+    server_config_dir = Path(__file__).parent / "server_data"
+    server_config_dir.mkdir(exist_ok=True)
     cmd = [
         str(factorio_exe),
         "--start-server", str(save),
         "--rcon-port", str(port),
         "--rcon-password", password,
+        "--config", str(server_config_dir / "config.ini"),
+        "--server-settings", str(server_config_dir / "server-settings.json"),
+        "--bind", "0.0.0.0:34197",
     ]
     log.info("Starting Factorio server: %s", " ".join(cmd[:3]) + " ...")
 
