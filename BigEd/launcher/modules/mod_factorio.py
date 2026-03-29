@@ -352,15 +352,18 @@ class Module:
                                          text_color=RED)
 
     def _stop_training(self):
-        """Pause training, then terminate bridge and headless server."""
+        """Gracefully save game, then shut down bridge and headless server."""
         if self._loss_lbl:
-            self._loss_lbl.configure(text="Stopping...", text_color=ORANGE)
+            self._loss_lbl.configure(text="Saving...", text_color=ORANGE)
 
         try:
-            # 1. Pause training via bridge API (graceful)
             import config as fleet_config
             cfg = fleet_config.load_config()
             port = cfg.get("factorio", {}).get("bridge_port", 27016)
+            rcon_port = cfg.get("factorio", {}).get("rcon_port", 27015)
+            rcon_password = cfg.get("factorio", {}).get("rcon_password", "")
+
+            # 1. Save model checkpoint via bridge API
             try:
                 req = urllib.request.Request(
                     f"http://127.0.0.1:{port}/api/pause",
@@ -368,10 +371,19 @@ class Module:
                     headers={"Content-Type": "application/json"},
                 )
                 urllib.request.urlopen(req, timeout=5)
+                log.info("Training paused")
             except Exception:
                 pass  # Bridge may already be down
 
-            # 2. Terminate bridge
+            # 2. Save game world via RCON before shutting down server
+            saved_game = self._rcon_save_and_quit(rcon_port, rcon_password)
+            if saved_game:
+                log.info("Game saved successfully before shutdown")
+                if self._loss_lbl:
+                    self._loss_lbl.configure(text="Saved. Shutting down...",
+                                             text_color=ORANGE)
+
+            # 3. Terminate bridge
             if self._is_proc_alive(self._bridge_proc):
                 self._bridge_proc.terminate()
                 try:
@@ -381,14 +393,18 @@ class Module:
                 log.info("Bridge terminated")
             self._bridge_proc = None
 
-            # 3. Terminate headless server
+            # 4. Wait for server to exit from /quit, then force if needed
             if self._is_proc_alive(self._server_proc):
-                self._server_proc.terminate()
                 try:
-                    self._server_proc.wait(timeout=10)
+                    self._server_proc.wait(timeout=15)
+                    log.info("Factorio server exited cleanly")
                 except sp.TimeoutExpired:
-                    self._server_proc.kill()
-                log.info("Factorio server terminated")
+                    log.warning("Server didn't exit after /quit — terminating")
+                    self._server_proc.terminate()
+                    try:
+                        self._server_proc.wait(timeout=5)
+                    except sp.TimeoutExpired:
+                        self._server_proc.kill()
             self._server_proc = None
 
             self._training_active = False
@@ -404,6 +420,53 @@ class Module:
             if self._loss_lbl:
                 self._loss_lbl.configure(text="Stop failed — check logs",
                                          text_color=RED)
+
+    def _rcon_save_and_quit(self, rcon_port, rcon_password):
+        """Send /server-save then /quit via raw RCON TCP socket.
+
+        Uses a direct TCP connection so it works even if the bridge is down.
+        Returns True if save command was sent successfully.
+        """
+        import socket
+        import struct
+
+        SERVERDATA_AUTH = 3
+        SERVERDATA_EXECCOMMAND = 2
+
+        def _encode(req_id, pkt_type, body):
+            body_bytes = body.encode("utf-8") + b"\x00\x00"
+            size = 4 + 4 + len(body_bytes)
+            return struct.pack("<iii", size, req_id, pkt_type) + body_bytes
+
+        def _send_cmd(sock, req_id, cmd):
+            sock.sendall(_encode(req_id, SERVERDATA_EXECCOMMAND, cmd))
+
+        try:
+            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            sock.settimeout(10)
+            sock.connect(("127.0.0.1", rcon_port))
+
+            # Authenticate
+            sock.sendall(_encode(1, SERVERDATA_AUTH, rcon_password))
+            sock.recv(4096)  # auth response
+
+            # Save the game
+            _send_cmd(sock, 2, "/server-save")
+            sock.recv(4096)
+            log.info("RCON: /server-save sent")
+
+            import time
+            time.sleep(2)  # give it a moment to flush to disk
+
+            # Quit gracefully — server will auto-save again and exit
+            _send_cmd(sock, 3, "/quit")
+            log.info("RCON: /quit sent")
+
+            sock.close()
+            return True
+        except Exception:
+            log.warning("RCON save-and-quit failed", exc_info=True)
+            return False
 
     def _check_first_run(self, parent):
         """Show setup prompt if RCON password is not configured."""
