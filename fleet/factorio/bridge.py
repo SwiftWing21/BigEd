@@ -286,7 +286,12 @@ class FactorioBridge:
         if translated.rcon_command:
             try:
                 resp = await self.rcon.remote_call("exec_cmd", translated.rcon_command)
-                result = {"success": "error" not in str(resp).lower()}
+                resp_str = str(resp).lower()
+                result = {"success": "error" not in resp_str}
+                if self._tick_count <= 20 or self._tick_count % 50 == 0:
+                    log.info("ML step %d: %s → %s",
+                             self._tick_count, translated.description,
+                             "OK" if result["success"] else resp_str[:100])
             except Exception:
                 log.warning("Action execution failed", exc_info=True)
 
@@ -373,17 +378,33 @@ class FactorioBridge:
 
         log.info("Bridge connected, entering tick loop")
 
+        # Ensure agent player exists (both modes)
+        try:
+            result = await self.rcon.remote_call("ensure_player")
+            log.info("Player init: %s", str(result)[:200])
+        except Exception as e:
+            log.warning("Player init failed: %s", e)
+
         if self.config.mode == "ml":
             await self._episode_mgr.set_game_speed(self.config.game_speed)
             await self._episode_mgr.reset()
+            log.info("ML training ready — phase %d, game speed %dx",
+                     self.config.current_phase, self.config.game_speed)
 
         while self._running:
             if self.config.mode == "ml":
                 await self.ml_tick()
+                # ML mode: use dedicated tick delay (default 0 = max throughput)
+                # instead of cadence system (designed for slow LLM brain)
+                ml_delay = self.config.ml_tick_delay_ms / 1000.0
+                if ml_delay > 0:
+                    await asyncio.sleep(ml_delay)
+                else:
+                    await asyncio.sleep(0)  # yield to event loop (API server, etc.)
             else:
                 await self.tick()
-            interval = self.cadence.get_interval_secs()
-            await asyncio.sleep(interval)
+                interval = self.cadence.get_interval_secs()
+                await asyncio.sleep(interval)
 
     def stop(self) -> None:
         """Signal the bridge to stop."""
