@@ -7,7 +7,7 @@ log = logging.getLogger("biged.factorio.actions")
 
 DIRECTION_MAP = {"north": 0, "east": 2, "south": 4, "west": 6}
 KNOWN_ACTIONS = {"place", "remove", "set_recipe", "craft", "research",
-                 "move", "connect", "observe", "wait"}
+                 "move", "connect", "observe", "wait", "mine"}
 
 
 def _direction_to_int(d) -> int:
@@ -37,6 +37,13 @@ def translate_action(action: dict) -> TranslatedAction:
         ticks = action.get("ticks", 60)
         return TranslatedAction(action_type="wait", rcon_command=None,
                                 description=f"Wait {ticks} ticks")
+
+    elif action_type == "mine":
+        pos = action.get("position", {})
+        x, y = pos.get("x", 0), pos.get("y", 0)
+        cmd = json.dumps({"action": "mine", "position": {"x": x, "y": y}})
+        return TranslatedAction(action_type="mine", rcon_command=cmd,
+                                description=f"Mine at ({x}, {y})")
 
     payload = dict(action)
     if "direction" in payload:
