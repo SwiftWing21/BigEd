@@ -41,9 +41,11 @@ class ActionType(IntEnum):
 # Direction helpers
 # ---------------------------------------------------------------------------
 
+# 8 bins → 4 cardinal directions (Factorio entities only use cardinal).
+# Adjacent bins map to the same direction for robustness.
 DIRECTION_NAMES: list[str] = [
-    "north", "northeast", "east", "southeast",
-    "south", "southwest", "west", "northwest",
+    "north", "east", "east", "south",
+    "south", "west", "west", "north",
 ]
 
 _DIRECTION_INDEX: dict[str, int] = {d: i for i, d in enumerate(DIRECTION_NAMES)}

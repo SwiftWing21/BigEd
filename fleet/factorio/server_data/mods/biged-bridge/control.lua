@@ -432,8 +432,23 @@ local function fn_exec_cmd(json_str)
             result.error = "missing item: " .. (name or "nil")
             return helpers.table_to_json(result)
         end
+        -- Validate mining drills have resources underneath
+        local proto = prototypes.entity[name]
+        if proto and proto.type == "mining-drill" then
+            local cb = proto.collision_box
+            local drill_area = {
+                {pos.x + cb.left_top.x, pos.y + cb.left_top.y},
+                {pos.x + cb.right_bottom.x, pos.y + cb.right_bottom.y},
+            }
+            local res_under = surface.find_entities_filtered{area=drill_area, type="resource"}
+            if #res_under == 0 then
+                result.error = "no resources under drill at (" .. pos.x .. ", " .. pos.y .. ")"
+                return helpers.table_to_json(result)
+            end
+        end
         local can_place = surface.can_place_entity({
             name = name, position = pos, direction = dir, force = force,
+            build_check_type = defines.build_check_type.manual,
         })
         if not can_place then
             result.error = "cannot place " .. name .. " at (" .. pos.x .. ", " .. pos.y .. ")"
@@ -441,6 +456,7 @@ local function fn_exec_cmd(json_str)
         end
         local entity = surface.create_entity({
             name = name, position = pos, direction = dir, force = force,
+            move_stuck_players = true,
         })
         if entity then
             inv.remove({ name = name, count = 1 })
@@ -596,10 +612,10 @@ local function fn_exec_cmd(json_str)
         local placed = 0
         local dx = to.x > from.x and 1 or (to.x < from.x and -1 or 0)
         local dy = to.y > from.y and 1 or (to.y < from.y and -1 or 0)
-        local dir = 0
-        if dx == 1 then dir = 2
-        elseif dx == -1 then dir = 6
-        elseif dy == 1 then dir = 4
+        local dir = 0  -- north
+        if dx == 1 then dir = 4       -- east (Factorio 2.0)
+        elseif dx == -1 then dir = 12 -- west
+        elseif dy == 1 then dir = 8   -- south
         end
         local cx, cy = from.x, from.y
         local max_steps = math.abs(to.x - from.x) + math.abs(to.y - from.y) + 1

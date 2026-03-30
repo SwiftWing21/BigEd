@@ -491,8 +491,8 @@ class FactorioBridge:
             action_name = action_dict.get("action", "")
             # Place needs wider reach (2x scale); move/mine use 1x
             scale = 2 if action_name == "place" else 1
-            action_dict["position"]["x"] = action_dict["position"]["x"] * scale + int(px)
-            action_dict["position"]["y"] = action_dict["position"]["y"] * scale + int(py)
+            action_dict["position"]["x"] = action_dict["position"]["x"] * scale + round(px)
+            action_dict["position"]["y"] = action_dict["position"]["y"] * scale + round(py)
 
         # 5. Execute via RCON
         from factorio.action_translator import translate_action

@@ -5,7 +5,7 @@ from dataclasses import dataclass
 
 log = logging.getLogger("biged.factorio.actions")
 
-DIRECTION_MAP = {"north": 0, "east": 2, "south": 4, "west": 6}
+DIRECTION_MAP = {"north": 0, "east": 4, "south": 8, "west": 12}  # Factorio 2.0 (16-dir)
 KNOWN_ACTIONS = {"place", "remove", "set_recipe", "craft", "research",
                  "move", "connect", "observe", "wait", "mine"}
 
@@ -52,8 +52,9 @@ def translate_action(action: dict) -> TranslatedAction:
     for key in ("position", "from", "to"):
         if key in payload and isinstance(payload[key], dict):
             pos = payload[key]
-            pos["x"] = int(round(pos.get("x", 0)))
-            pos["y"] = int(round(pos.get("y", 0)))
+            # Snap to 0.5 grid for proper alignment of 2x2 entities (drills, furnaces)
+            pos["x"] = round(pos.get("x", 0) * 2) / 2
+            pos["y"] = round(pos.get("y", 0) * 2) / 2
 
     cmd_json = json.dumps(payload, separators=(",", ":"))
     desc = _describe_action(action_type, action)
