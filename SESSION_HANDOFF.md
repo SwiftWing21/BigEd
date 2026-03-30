@@ -21,57 +21,56 @@
 | Branch | main | 2026-03-29 |
 | Rust Crates | 6 (core, supervisor, server, bridge, gui, wasm) | 2026-03-25 |
 | Rust Phase | All 6 phases complete + 18 audit fixes | 2026-03-25 |
-| Helpers | 11 (_contract, _knowledge, _llm_parse, _dispatch, _report, _http, _models, _flywheel_rubric/grading/audit, _oss_core) | 2026-03-26 |
-| Graph Views | 6 (fleet-overview, universe, data-flow, bottleneck-detector, knowledge-graph, training-pipeline) | 2026-03-26 |
-| Graph Layouts | 4 (Radial, Radial Cluster, Cluster/fcose, Grid) + Fractal Brain | 2026-03-27 |
-| Audit Reports | 4 (backend, frontend, cross-platform, integration) | 2026-03-27 |
-| v1.0 Blockers | 20 critical issues identified | 2026-03-27 |
 | ModuleHub | 9 modules registered (+ factorio) | 2026-03-29 |
 
 ## Last Session
 
 **Date:** 2026-03-29 (session 13)
-**Session:** VS Code Claude Code — Death Spiral Debugging + Fleet Lifecycle
+**Session:** VS Code Claude Code — Death Spiral → ML Agent Training
 
-### Bugs Fixed (code changed, NOT YET COMMITTED)
-1. **Factorio mode switch `NameError`** — 7 Factorio endpoints in dashboard.py used bare `load_config()` instead of `_load_config()`. Factorio Sandbox could never start from mode dropdown. VERIFIED WORKING.
-2. **Scheduler `TypeError` crash every tick** — `[affinity] enabled = true` in fleet.toml is a bool, `_skill_to_role()` did `skill in skills` treating it as a list. Added `isinstance(skills, list)` guard in scheduler.py.
-3. **DB connection pool exhaustion** — `_pool_size` counter in db.py only incremented, never decremented when Flask dev server threads died. After 20 requests all DB access failed (`/api/tasks/waiting-human` 500'd every 2s). Replaced blind counter with `_pool_conns` dict tracking `thread_id → connection` with dead-thread reaping. VERIFIED WORKING (no more 500s).
-4. **Fleet lifecycle gaps** — No way to stop/restart fleet once auto-started:
-   - Rewrote `/api/fleet/stop` in process_control.py — kills all fleet processes via psutil cmdline scan + self-terminates dashboard
-   - Added `/api/fleet/restart` endpoint — stop all, relaunch supervisor, self-terminate
-   - Added `auto_start = false` to fleet.toml `[fleet]` section
-   - Both launchers (tkinter + webview) now check `auto_start` setting (webview always starts — it IS the dashboard)
-5. **RCON password mismatch** — `setup_and_launch.py` generates a random RCON password but didn't sync to fleet.toml. Manually synced for this session. Root cause still needs fixing.
+### Summary
+Went from "nothing works, death spiral" to an RL agent training in Factorio with ore-rich maps, passing curriculum lessons. Major debugging session with 6 commits fixing cascading infrastructure bugs + Factorio integration.
 
-### Verified Working
-- Mode switch to Factorio Sandbox from dropdown — activates correctly
-- Bridge connects to RCON and enters tick loop
-- `/api/tasks/waiting-human` returns 200 (pool fix works)
-- Scheduler scaling ticks without crashing
-- 51/51 smoke tests passing
+### Commits (6)
+1. `ded93a9` — **Death spiral fix:** DB connection pool exhaustion (thread-aware reaping), 7x `load_config()` → `_load_config()`, scheduler TypeError on bool affinity, fleet lifecycle (`/api/fleet/stop` rewrite, `/api/fleet/restart`, `auto_start` toggle)
+2. `1950808` — **RCON password race:** pass password via `BIGED_RCON_PASSWORD` env var from `setup_and_launch` to bridge subprocess, `os.fsync()` after fleet.toml write
+3. `9929202` — **Curriculum path:** `fleet.toml curriculum_dir` → `fleet/factorio/curricula`, CurriculumManager resolves relative paths from project root
+4. `727ed5c` — **Headless character creation:** 2-strategy ensure_player (create_character API for connected players, surface.create_entity fallback for headless)
+5. `070e026` — **Disconnected player guard:** don't assign character to disconnected players (Factorio API restriction), fix `prototype.max_health` → `entity.max_health` for Factorio 2.0
+6. `ebf1c20` — **Map gen settings:** add iron/copper/coal/stone/uranium/oil/trees with generous richness (was barren map)
 
-### Still Broken (3 items — see Next Priorities)
-1. **`ensure_player` Lua mod** — returns empty, agent has no body. Bridge ticks but skips every tick. Mod needs reload or Lua fix.
-2. **RCON password race** — `setup_and_launch.py` generates random password but doesn't reliably sync to fleet.toml before bridge reads config.
-3. **Phase 1 curriculum missing** — `No curriculum found for phase 1 in fleet/factorio/curricula`
+### Current Factorio Agent State
+- **Agent is training:** Phase 1 (Bootstrap), 8 lessons, game speed 10x
+- **Lesson 0 passed:** Body check (character alive, 250 HP)
+- **Lesson 1 passed:** Find iron ore (ores present on map)
+- Agent attempts: mine, move, craft, research, set_recipe, remove_entity
+- **Headless server running** at RCON port 27015, bridge at 27016
 
-### Files Modified (unstaged)
-- `fleet/dashboard.py` — 7x `load_config()` → `_load_config()` in Factorio endpoints
-- `fleet/scheduler.py` — `_skill_to_role()` skips non-list affinity values
-- `fleet/db.py` — connection pool rewrite (thread-aware reaping)
-- `fleet/process_control.py` — rewritten `/api/fleet/stop`, new `/api/fleet/restart`
-- `fleet/fleet.toml` — added `auto_start = false`, synced RCON password
-- `BigEd/launcher/launcher_tkinter.py` — `_should_auto_start()` method, conditional boot
-- `BigEd/launcher/launcher_webview.py` — always starts supervisor (webview IS the dashboard)
+### Known Issues (for next session)
+1. **`"mine requires a connected player"`** — standalone character entity (Strategy 2) can't mine because it's not attached to a LuaPlayer. Need either: (a) implement mining via direct RCON entity manipulation, or (b) figure out how to create a connected player in headless mode, or (c) pre-join a spectator client
+2. **`"invalid json"` on many actions** — move, research, craft, set_recipe all return `{"error": "invalid json"}`. The Lua action handlers may be returning malformed responses or the action translator is sending bad RCON commands
+3. **soft_reset returns "no_player"** — episode manager can't reset properly, falls back to hard_reset (save + restart). Needs to handle headless character
+4. **Dashboard Refresh button** doesn't work (browser cache? JS issue). Shift+right-click works.
+5. **Stale RUNNING tasks** — 2,219 ghost tasks from dead workers, need sweep-to-FAILED on boot
+6. **3 duplicate web_app.py processes** — investigate why 3 dashboard instances spawn
+7. **`pythonw.exe` ignores SIGTERM** — `/api/fleet/stop` should use `p.kill()` on Windows
 
-**Commits this session:** 0 (fixes not committed yet)
+### Files Modified This Session
+- `fleet/dashboard.py` — 7x load_config fix
+- `fleet/scheduler.py` — affinity type guard
+- `fleet/db.py` — connection pool rewrite
+- `fleet/process_control.py` — fleet stop/restart endpoints
+- `fleet/fleet.toml` — auto_start, curriculum_dir, RCON password
+- `BigEd/launcher/launcher_tkinter.py` — auto_start check
+- `BigEd/launcher/launcher_webview.py` — always start supervisor
+- `fleet/factorio/lua_mod/control.lua` — headless character, disconnected player guard, max_health fix
+- `fleet/factorio/bridge_config.py` — RCON password env override
+- `fleet/factorio/setup_and_launch.py` — env var pass-through, fsync, map gen resources
+- `fleet/factorio/curriculum_manager.py` — relative path resolution
 
 **Next priorities:**
-1. **Fix `ensure_player` Lua mod** — character body not created, bridge skips all ticks
-2. **Fix RCON password sync** — `setup_and_launch.py` must write password to fleet.toml before starting bridge
-3. **Fix phase 1 curriculum path** — curricula not found in `fleet/factorio/curricula`
-4. **Commit all session 13 fixes** — 7 files changed, all tested
-5. **Stale RUNNING tasks** — 2,219 ghost tasks from dead workers need sweep-to-FAILED on boot
-6. **`pythonw.exe` on Windows ignores SIGTERM** — `/api/fleet/stop` should use `p.kill()`
-7. **3 duplicate web_app.py processes** — investigate why 3 dashboard instances spawn
+1. **Fix mining for headless character** — the #1 blocker for meaningful RL training
+2. **Fix invalid JSON action responses** — most actions fail to parse
+3. **Fix soft_reset for headless** — episode manager needs headless support
+4. **Dashboard decomposition** — execute the spec from session 12
+5. **Dashboard training visualization** — reward curves, action distribution charts
