@@ -10,67 +10,57 @@
 | Metric | Value | Last Updated |
 |--------|-------|--------------|
 | Version | 0.900.00b (Python) / 0.9.0 (Rust) | 2026-03-25 |
-| Skills | 96 standalone + 6 suites (was 132 files) | 2026-03-26 |
 | Smoke Tests | 51/51 | 2026-03-29 |
-| Factorio Module Tests | 81/81 (state parser + ML + curriculum + episode) | 2026-03-29 |
-| Ingest Sources | 18 (12 task + 5 RAG + 1 factorio-knowledge, ~2M+ rows) | 2026-03-27 |
-| API Keys | 12 registered, 3 set | 2026-03-26 |
-| Rust Tests | 116+ | 2026-03-25 |
-| Dashboard Endpoints | 26 (Rust) + 256+ (Python, +/api/fleet/restart) | 2026-03-29 |
-| DB Tables | 9 (Rust schema) | 2026-03-25 |
+| Factorio Module Tests | 81/81 | 2026-03-29 |
 | Branch | main | 2026-03-29 |
-| Rust Crates | 6 (core, supervisor, server, bridge, gui, wasm) | 2026-03-25 |
-| Rust Phase | All 6 phases complete + 18 audit fixes | 2026-03-25 |
-| ModuleHub | 9 modules registered (+ factorio) | 2026-03-29 |
+| Factorio Training | Phase 1, 5/8 lessons (body, find ore, mine iron, mine stone, craft gears) | 2026-03-29 |
 
 ## Last Session
 
-**Date:** 2026-03-29 (session 13)
-**Session:** VS Code Claude Code — Death Spiral → ML Agent Training
+**Date:** 2026-03-29 (session 13 — marathon)
+**Session:** VS Code Claude Code — Death Spiral → Full ML Training Pipeline
 
 ### Summary
-Went from "nothing works, death spiral" to an RL agent training in Factorio with ore-rich maps, passing curriculum lessons. Major debugging session with 6 commits fixing cascading infrastructure bugs + Factorio integration.
+Went from "nothing works, death spiral" to an RL+LLM hybrid agent training in Factorio, passing 5 curriculum lessons. 11 commits across infrastructure bugs, Factorio integration, and training pipeline.
 
-### Commits (6)
-1. `ded93a9` — **Death spiral fix:** DB connection pool exhaustion (thread-aware reaping), 7x `load_config()` → `_load_config()`, scheduler TypeError on bool affinity, fleet lifecycle (`/api/fleet/stop` rewrite, `/api/fleet/restart`, `auto_start` toggle)
-2. `1950808` — **RCON password race:** pass password via `BIGED_RCON_PASSWORD` env var from `setup_and_launch` to bridge subprocess, `os.fsync()` after fleet.toml write
-3. `9929202` — **Curriculum path:** `fleet.toml curriculum_dir` → `fleet/factorio/curricula`, CurriculumManager resolves relative paths from project root
-4. `727ed5c` — **Headless character creation:** 2-strategy ensure_player (create_character API for connected players, surface.create_entity fallback for headless)
-5. `070e026` — **Disconnected player guard:** don't assign character to disconnected players (Factorio API restriction), fix `prototype.max_health` → `entity.max_health` for Factorio 2.0
-6. `ebf1c20` — **Map gen settings:** add iron/copper/coal/stone/uranium/oil/trees with generous richness (was barren map)
+### Commits (11)
+1. `ded93a9` — Death spiral fix (pool exhaustion, load_config, scheduler, fleet lifecycle)
+2. `1950808` — RCON password env var pass-through
+3. `9929202` — Curriculum path fix
+4. `727ed5c` — Headless character creation (2-strategy)
+5. `070e026` — Disconnected player guard + Factorio 2.0 max_health fix
+6. `ebf1c20` — Map gen settings with ore resources
+7. `1958ba8` — Preserve ore/trees on episode reset + bigger starting area
+8. `d6446ce` — Buff Phase 1 starting items (50 iron, 20 copper, etc.)
+9. `9b730f6` — Hybrid LLM teacher for RL training (500-step stuck threshold)
+10. `1495cde` — ML tick updates bridge status (dashboard "Running" fix)
+11. `e295628` — Strip /biged-cmd prefix (fixed ALL "invalid JSON" errors)
 
-### Current Factorio Agent State
-- **Agent is training:** Phase 1 (Bootstrap), 8 lessons, game speed 10x
-- **Lesson 0 passed:** Body check (character alive, 250 HP)
-- **Lesson 1 passed:** Find iron ore (ores present on map)
-- Agent attempts: mine, move, craft, research, set_recipe, remove_entity
-- **Headless server running** at RCON port 27015, bridge at 27016
+### Factorio Agent Status
+- **Hybrid RL+LLM**: PPO policy explores, LLM teacher intervenes when stuck 500+ steps
+- **5/8 Phase 1 lessons passed**: Body check, Find iron, Mine iron, Mine stone, Craft gear wheels
+- **Stuck on lesson 5**: "Place a stone furnace" — agent crafts too many inserters/gears, runs out of stone-furnace items
+- **Agent uses connected player** (swiftwing) — user must be connected for mine/craft/place to work
+- **Ore replenishes** on episode reset (5M per tile, 8 patches around spawn)
 
-### Known Issues (for next session)
-1. **`"mine requires a connected player"`** — standalone character entity (Strategy 2) can't mine because it's not attached to a LuaPlayer. Need either: (a) implement mining via direct RCON entity manipulation, or (b) figure out how to create a connected player in headless mode, or (c) pre-join a spectator client
-2. **`"invalid json"` on many actions** — move, research, craft, set_recipe all return `{"error": "invalid json"}`. The Lua action handlers may be returning malformed responses or the action translator is sending bad RCON commands
-3. **soft_reset returns "no_player"** — episode manager can't reset properly, falls back to hard_reset (save + restart). Needs to handle headless character
-4. **Dashboard Refresh button** doesn't work (browser cache? JS issue). Shift+right-click works.
-5. **Stale RUNNING tasks** — 2,219 ghost tasks from dead workers, need sweep-to-FAILED on boot
-6. **3 duplicate web_app.py processes** — investigate why 3 dashboard instances spawn
-7. **`pythonw.exe` ignores SIGTERM** — `/api/fleet/stop` should use `p.kill()` on Windows
+### Key Architecture Decisions
+- **Hybrid teacher**: After 500 steps on same lesson, LLM (Ollama qwen3:8b) generates action plan, executes via RCON, backs off 50 ticks
+- **Action translator bug fixed**: `/biged-cmd` prefix was being passed to `exec_cmd` which expects raw JSON
+- **Episode reset preserves**: resources and trees (was destroying everything)
+- **Bridge status**: `update_status(True, ...)` now called in ML tick path (was missing)
 
-### Files Modified This Session
-- `fleet/dashboard.py` — 7x load_config fix
-- `fleet/scheduler.py` — affinity type guard
-- `fleet/db.py` — connection pool rewrite
-- `fleet/process_control.py` — fleet stop/restart endpoints
-- `fleet/fleet.toml` — auto_start, curriculum_dir, RCON password
-- `BigEd/launcher/launcher_tkinter.py` — auto_start check
-- `BigEd/launcher/launcher_webview.py` — always start supervisor
-- `fleet/factorio/lua_mod/control.lua` — headless character, disconnected player guard, max_health fix
-- `fleet/factorio/bridge_config.py` — RCON password env override
-- `fleet/factorio/setup_and_launch.py` — env var pass-through, fsync, map gen resources
-- `fleet/factorio/curriculum_manager.py` — relative path resolution
+### Known Issues
+1. **Agent needs connected player** — standalone headless character can observe but can't mine/craft/place. User must be in-game. Long-term: need programmatic player creation or RCON-based inventory management
+2. **setup_and_launch holds RCON** — blocks bridge connection until killed. Needs to disconnect after health check
+3. **RCON password regen on every Start** — `setup_and_launch` generates new password even when server is already running
+4. **Dependency resolver needed** — user requested: "if not in inventory → try craft → if can't craft → check has vs need → acquire diff". This would let the teacher work backwards from goals
+5. **Dashboard Refresh button** — works for data fetch but "Running" display was broken (fixed), needs testing
+6. **Stale RUNNING tasks** — 2,219 ghost tasks from dead workers need sweep
+7. **3 duplicate web_app.py processes** — investigate multi-spawn
 
 **Next priorities:**
-1. **Fix mining for headless character** — the #1 blocker for meaningful RL training
-2. **Fix invalid JSON action responses** — most actions fail to parse
-3. **Fix soft_reset for headless** — episode manager needs headless support
-4. **Dashboard decomposition** — execute the spec from session 12
-5. **Dashboard training visualization** — reward curves, action distribution charts
+1. **Dependency resolver for teacher** — backwards-chaining from lesson goals through crafting recipes to raw resources
+2. **Programmatic player** — agent should work without user connected
+3. **Curriculum tuning** — lesson 5+ needs better item budgeting or explicit craft-first hints
+4. **Dashboard training viz** — reward curves, action distribution charts
+5. **setup_and_launch RCON cleanup** — disconnect after health check
