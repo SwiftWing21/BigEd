@@ -113,11 +113,18 @@ def _write_map_gen_settings(path: Path, biters: bool = False) -> None:
     import json as _json
     settings = {
         "autoplace_controls": {
+            "iron-ore": {"frequency": "normal", "size": "big", "richness": "very-good"},
+            "copper-ore": {"frequency": "normal", "size": "big", "richness": "very-good"},
+            "coal": {"frequency": "normal", "size": "big", "richness": "very-good"},
+            "stone": {"frequency": "normal", "size": "big", "richness": "very-good"},
+            "uranium-ore": {"frequency": "normal", "size": "normal", "richness": "normal"},
+            "crude-oil": {"frequency": "normal", "size": "normal", "richness": "very-good"},
+            "trees": {"frequency": "normal", "size": "normal", "richness": "normal"},
             "enemy-base": {
                 "frequency": "normal" if biters else "none",
                 "size": "normal" if biters else "none",
                 "richness": "normal" if biters else "none",
-            }
+            },
         },
         "peaceful_mode": not biters,
         "enemy_expansion": {"enabled": biters},
