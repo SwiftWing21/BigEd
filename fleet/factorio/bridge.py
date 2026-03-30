@@ -45,7 +45,7 @@ class FactorioBridge:
         self._tick_count = 0
 
         # Hybrid teacher: LLM intervenes when RL is stuck on a lesson
-        self._teacher_stuck_threshold = 500  # steps on same lesson before LLM help
+        self._teacher_stuck_threshold = 100  # steps on same lesson before LLM help (was 500)
         self._teacher_lesson_step_count = 0
         self._teacher_last_lesson = -1
         self._teacher_cooldown = 0  # skip N ticks after teacher intervention

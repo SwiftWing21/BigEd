@@ -7,23 +7,24 @@ from factorio.state_parser import GameState
 
 log = logging.getLogger(__name__)
 
-# Reward constants
-_TIME_PENALTY = -0.01
-_FAILED_ACTION_PENALTY = -0.1
-_LESSON_PASS_BONUS = 1.01  # net reward >= 1.0 after time penalty
-_PHASE_COMPLETE_BONUS = 5.0
-_NEW_ITEM_BONUS = 0.01
-_RESEARCH_PROGRESS_SCALE = 0.1
-_NEW_ENTITY_BONUS = 0.05      # phase 2+
-_PRODUCTION_DELTA_SCALE = 0.02  # phase 2+
-_PRODUCTION_DELTA_CAP = 5.0     # max units counted per step
-# Distance-based exploration penalty — discourages wandering when resources exist
-_WANDER_PENALTY_SCALE = -0.005   # per-step penalty scaled by distance from nearest ore
-_WANDER_DISTANCE_THRESHOLD = 20  # tiles — beyond this, penalty kicks in
-_NEAR_RESOURCE_BONUS = 0.005     # small bonus for being within 10 tiles of ore
-# Economic score — production value delta drives reward signal
-_ECONOMIC_SCALE = 0.01           # scale factor for raw economic delta
-_ECONOMIC_INVENTORY_SCALE = 0.001  # small bonus for inventory value increase
+# Reward constants — tuned to break "shuffle" local minimum
+_TIME_PENALTY = -0.001           # was -0.01 — reduced so non-move actions aren't punished as hard
+_FAILED_ACTION_PENALTY = -0.02   # was -0.1 — reduced so agent isn't terrified of trying things
+_SUCCESSFUL_ACTION_BONUS = 0.05  # NEW — any successful non-move action gets a bonus
+_LESSON_PASS_BONUS = 2.0         # was 1.01 — bigger carrot for lesson completion
+_PHASE_COMPLETE_BONUS = 10.0     # was 5.0
+_NEW_ITEM_BONUS = 0.1            # was 0.01 — first time getting a new item type is exciting
+_RESEARCH_PROGRESS_SCALE = 0.2   # was 0.1
+_NEW_ENTITY_BONUS = 0.5          # was 0.05 — placing a building is a BIG deal
+_PRODUCTION_DELTA_SCALE = 0.05   # was 0.02 — phase 2+
+_PRODUCTION_DELTA_CAP = 5.0
+# Distance-based — keep but reduce so it doesn't dominate
+_WANDER_PENALTY_SCALE = -0.002   # was -0.005
+_WANDER_DISTANCE_THRESHOLD = 20
+_NEAR_RESOURCE_BONUS = 0.001     # was 0.005 — reduce so it doesn't reward shuffling
+# Economic score — THE primary reward signal
+_ECONOMIC_SCALE = 0.05           # was 0.01 — 5x boost
+_ECONOMIC_INVENTORY_SCALE = 0.005  # was 0.001 — inventory value matters more
 
 
 class RunningStats:
@@ -145,6 +146,8 @@ class RewardComputer:
 
         if not action_success:
             r += _FAILED_ACTION_PENALTY
+        else:
+            r += _SUCCESSFUL_ACTION_BONUS  # reward ANY successful action to break shuffle
 
         if lesson_passed:
             r += _LESSON_PASS_BONUS
@@ -168,9 +171,8 @@ class RewardComputer:
         # Economic production score — rewards producing valuable items
         r += self._economic_reward(curr, metrics)
 
-        # Phase 2+ signals
-        if self._phase >= 2:
-            r += self._entity_placement_bonus(curr)
+        # Entity placement bonus — ALL phases (placing buildings is always good)
+        r += self._entity_placement_bonus(curr)
             r += self._production_delta_bonus(prev, curr)
 
         return r
