@@ -1,0 +1,244 @@
+{
+  "iron-plate": {
+    "category": "smelting",
+    "ingredients": [{"name": "iron-ore", "amount": 1}],
+    "results": [{"name": "iron-plate", "amount": 1}],
+    "energy": 3.2,
+    "enabled": true
+  },
+  "copper-plate": {
+    "category": "smelting",
+    "ingredients": [{"name": "copper-ore", "amount": 1}],
+    "results": [{"name": "copper-plate", "amount": 1}],
+    "energy": 3.2,
+    "enabled": true
+  },
+  "steel-plate": {
+    "category": "smelting",
+    "ingredients": [{"name": "iron-plate", "amount": 5}],
+    "results": [{"name": "steel-plate", "amount": 1}],
+    "energy": 16.0,
+    "enabled": true
+  },
+  "stone-brick": {
+    "category": "smelting",
+    "ingredients": [{"name": "stone", "amount": 2}],
+    "results": [{"name": "stone-brick", "amount": 1}],
+    "energy": 3.2,
+    "enabled": true
+  },
+  "stone-furnace": {
+    "category": "crafting",
+    "ingredients": [{"name": "stone", "amount": 5}],
+    "results": [{"name": "stone-furnace", "amount": 1}],
+    "energy": 0.5,
+    "enabled": true
+  },
+  "iron-gear-wheel": {
+    "category": "crafting",
+    "ingredients": [{"name": "iron-plate", "amount": 2}],
+    "results": [{"name": "iron-gear-wheel", "amount": 1}],
+    "energy": 0.5,
+    "enabled": true
+  },
+  "copper-cable": {
+    "category": "crafting",
+    "ingredients": [{"name": "copper-plate", "amount": 1}],
+    "results": [{"name": "copper-cable", "amount": 2}],
+    "energy": 0.5,
+    "enabled": true
+  },
+  "electronic-circuit": {
+    "category": "crafting",
+    "ingredients": [
+      {"name": "iron-plate", "amount": 1},
+      {"name": "copper-cable", "amount": 3}
+    ],
+    "results": [{"name": "electronic-circuit", "amount": 1}],
+    "energy": 0.5,
+    "enabled": true
+  },
+  "transport-belt": {
+    "category": "crafting",
+    "ingredients": [
+      {"name": "iron-gear-wheel", "amount": 1},
+      {"name": "iron-plate", "amount": 1}
+    ],
+    "results": [{"name": "transport-belt", "amount": 2}],
+    "energy": 0.5,
+    "enabled": true
+  },
+  "inserter": {
+    "category": "crafting",
+    "ingredients": [
+      {"name": "electronic-circuit", "amount": 1},
+      {"name": "iron-gear-wheel", "amount": 1},
+      {"name": "iron-plate", "amount": 1}
+    ],
+    "results": [{"name": "inserter", "amount": 1}],
+    "energy": 0.5,
+    "enabled": true
+  },
+  "burner-inserter": {
+    "category": "crafting",
+    "ingredients": [
+      {"name": "iron-gear-wheel", "amount": 1},
+      {"name": "iron-plate", "amount": 1}
+    ],
+    "results": [{"name": "burner-inserter", "amount": 1}],
+    "energy": 0.5,
+    "enabled": true
+  },
+  "burner-mining-drill": {
+    "category": "crafting",
+    "ingredients": [
+      {"name": "iron-gear-wheel", "amount": 3},
+      {"name": "iron-plate", "amount": 3},
+      {"name": "stone-furnace", "amount": 1}
+    ],
+    "results": [{"name": "burner-mining-drill", "amount": 1}],
+    "energy": 2.0,
+    "enabled": true
+  },
+  "electric-mining-drill": {
+    "category": "crafting",
+    "ingredients": [
+      {"name": "electronic-circuit", "amount": 3},
+      {"name": "iron-gear-wheel", "amount": 5},
+      {"name": "iron-plate", "amount": 10}
+    ],
+    "results": [{"name": "electric-mining-drill", "amount": 1}],
+    "energy": 2.0,
+    "enabled": true
+  },
+  "assembling-machine-1": {
+    "category": "crafting",
+    "ingredients": [
+      {"name": "electronic-circuit", "amount": 3},
+      {"name": "iron-gear-wheel", "amount": 5},
+      {"name": "iron-plate", "amount": 9}
+    ],
+    "results": [{"name": "assembling-machine-1", "amount": 1}],
+    "energy": 0.5,
+    "enabled": true
+  },
+  "small-electric-pole": {
+    "category": "crafting",
+    "ingredients": [
+      {"name": "copper-cable", "amount": 2},
+      {"name": "wood", "amount": 1}
+    ],
+    "results": [{"name": "small-electric-pole", "amount": 2}],
+    "energy": 0.5,
+    "enabled": true
+  },
+  "pipe": {
+    "category": "crafting",
+    "ingredients": [{"name": "iron-plate", "amount": 1}],
+    "results": [{"name": "pipe", "amount": 1}],
+    "energy": 0.5,
+    "enabled": true
+  },
+  "offshore-pump": {
+    "category": "crafting",
+    "ingredients": [
+      {"name": "electronic-circuit", "amount": 2},
+      {"name": "iron-gear-wheel", "amount": 1},
+      {"name": "pipe", "amount": 1}
+    ],
+    "results": [{"name": "offshore-pump", "amount": 1}],
+    "energy": 0.5,
+    "enabled": true
+  },
+  "boiler": {
+    "category": "crafting",
+    "ingredients": [
+      {"name": "pipe", "amount": 4},
+      {"name": "stone-furnace", "amount": 1}
+    ],
+    "results": [{"name": "boiler", "amount": 1}],
+    "energy": 0.5,
+    "enabled": true
+  },
+  "steam-engine": {
+    "category": "crafting",
+    "ingredients": [
+      {"name": "iron-gear-wheel", "amount": 8},
+      {"name": "iron-plate", "amount": 10},
+      {"name": "pipe", "amount": 5}
+    ],
+    "results": [{"name": "steam-engine", "amount": 1}],
+    "energy": 0.5,
+    "enabled": true
+  },
+  "wooden-chest": {
+    "category": "crafting",
+    "ingredients": [{"name": "wood", "amount": 2}],
+    "results": [{"name": "wooden-chest", "amount": 1}],
+    "energy": 0.5,
+    "enabled": true
+  },
+  "iron-chest": {
+    "category": "crafting",
+    "ingredients": [{"name": "iron-plate", "amount": 8}],
+    "results": [{"name": "iron-chest", "amount": 1}],
+    "energy": 0.5,
+    "enabled": true
+  },
+  "automation-science-pack": {
+    "category": "crafting",
+    "ingredients": [
+      {"name": "copper-plate", "amount": 1},
+      {"name": "iron-gear-wheel", "amount": 1}
+    ],
+    "results": [{"name": "automation-science-pack", "amount": 1}],
+    "energy": 5.0,
+    "enabled": true
+  },
+  "logistic-science-pack": {
+    "category": "crafting",
+    "ingredients": [
+      {"name": "inserter", "amount": 1},
+      {"name": "transport-belt", "amount": 1}
+    ],
+    "results": [{"name": "logistic-science-pack", "amount": 1}],
+    "energy": 6.0,
+    "enabled": true
+  },
+  "lab": {
+    "category": "crafting",
+    "ingredients": [
+      {"name": "electronic-circuit", "amount": 10},
+      {"name": "iron-gear-wheel", "amount": 10},
+      {"name": "transport-belt", "amount": 4}
+    ],
+    "results": [{"name": "lab", "amount": 1}],
+    "energy": 2.0,
+    "enabled": true
+  },
+  "firearm-magazine": {
+    "category": "crafting",
+    "ingredients": [{"name": "iron-plate", "amount": 4}],
+    "results": [{"name": "firearm-magazine", "amount": 1}],
+    "energy": 1.0,
+    "enabled": true
+  },
+  "gun-turret": {
+    "category": "crafting",
+    "ingredients": [
+      {"name": "copper-plate", "amount": 10},
+      {"name": "iron-gear-wheel", "amount": 10},
+      {"name": "iron-plate", "amount": 20}
+    ],
+    "results": [{"name": "gun-turret", "amount": 1}],
+    "energy": 8.0,
+    "enabled": true
+  },
+  "stone-wall": {
+    "category": "crafting",
+    "ingredients": [{"name": "stone-brick", "amount": 5}],
+    "results": [{"name": "stone-wall", "amount": 1}],
+    "energy": 0.5,
+    "enabled": true
+  }
+}

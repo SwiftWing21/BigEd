@@ -6,6 +6,7 @@ Uses RecipeDAG for recipe lookups and graph traversal.
 from __future__ import annotations
 
 import math
+import re
 from dataclasses import dataclass, field
 
 
@@ -357,3 +358,27 @@ def _best_entity(category: str, entities: dict[str, int]) -> str | None:
         if entities.get(entity_name, 0) > 0:
             return entity_name
     return priority[-1] if priority else None
+
+
+# ---------------------------------------------------------------------------
+# Criteria parser — extracts item goals from curriculum criteria strings
+# ---------------------------------------------------------------------------
+
+_ITEM_CRITERIA_RE = re.compile(
+    r"(inventory|entities)\.([\w\-]+)\s*>=\s*(\d+)"
+)
+
+
+def parse_criteria_to_items(criteria: str) -> dict[str, int]:
+    """Extract item goals from curriculum criteria strings.
+
+    Recognizes inventory.* and entities.* with >= operator.
+    Other criteria (player.*, resources.*, flow.*) are ignored.
+    For OR criteria, extracts from the first branch only.
+    """
+    first_branch = criteria.split(" OR ")[0].strip()
+    result: dict[str, int] = {}
+    for match in _ITEM_CRITERIA_RE.finditer(first_branch):
+        _section, item_name, amount_str = match.groups()
+        result[item_name] = int(amount_str)
+    return result
