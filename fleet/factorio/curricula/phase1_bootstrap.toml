@@ -1,83 +1,73 @@
 [meta]
 phase = 1
 name = "Bootstrap"
-description = "Verify body, orient, mine resources, hand-craft basics, place first furnaces"
+description = "Place furnaces, fuel them, smelt ore into plates, build first automation"
 
 # ── Lesson 0: Body check ──────────────────────────────────────────────────────
-# The agent's very first task: confirm it has a character and is alive.
-# This always passes on a healthy start, but teaches the agent that player
-# state matters and establishes the "check before act" pattern.
-
 [[lessons]]
 name = "Body check"
 description = "Verify the agent has a character body with health > 0"
 criteria = "player.alive >= 1 AND player.health > 0"
-hint = "You should already have a body. If this fails, ensure_player will respawn you."
+hint = "You should already have a body."
 max_attempts = 5
 
-# ── Lesson 1: Survey resources ────────────────────────────────────────────────
-# Before doing anything, learn what's around you. Move to find ore.
-
-[[lessons]]
-name = "Find iron ore"
-description = "Move around until iron ore is visible in nearby resources"
-criteria = "resources.iron-ore > 0"
-hint = "Use the move action to walk around. Iron ore patches appear as brown-grey spots."
-max_attempts = 30
-
-# ── Lesson 2: Hand-mine raw materials ────────────────────────────────────────
-# Use the mine action on ore patches to collect raw resources.
-# Starting inventory has 8 iron-plate, 1 furnace, 1 drill — but the agent
-# needs to learn that mining is how you get MORE materials.
-
-[[lessons]]
-name = "Mine iron ore"
-description = "Hand-mine at least 5 iron ore from a nearby patch"
-criteria = "inventory.iron-ore >= 5"
-hint = "Use mine action at positions where iron-ore resource patches exist. Each mine yields ~5 ore."
-max_attempts = 30
-
-[[lessons]]
-name = "Mine stone"
-description = "Hand-mine at least 5 stone from a nearby patch"
-criteria = "inventory.stone >= 5"
-hint = "Stone patches look different from iron. Move to find them, then mine."
-max_attempts = 30
-
-# ── Lesson 3: Craft basics ──────────────────────────────────────────────────
-# Now use the starting iron plates + mined resources to craft.
-
-[[lessons]]
-name = "Craft iron gear wheels"
-description = "Craft 4 iron gear wheels from iron plates"
-criteria = "inventory.iron-gear-wheel >= 4"
-hint = "Use craft action: recipe=iron-gear-wheel, count=4. Requires 8 iron plates (you start with 8)."
-max_attempts = 20
-
-# ── Lesson 4: Place infrastructure ──────────────────────────────────────────
-# Place the starting furnace and drill near ore.
-
+# ── Lesson 1: Place a furnace ────────────────────────────────────────────────
+# Agent starts with 10 furnaces — just need to place one.
 [[lessons]]
 name = "Place a stone furnace"
-description = "Place your starting stone furnace near an iron ore patch"
+description = "Place a stone furnace from your inventory"
 criteria = "entities.stone-furnace >= 1"
-hint = "Place stone-furnace at an integer position near iron ore. You have 1 in your starting inventory."
-max_attempts = 20
+hint = "Use place action with entity=stone-furnace at any nearby position."
+max_attempts = 50
 
+# ── Lesson 2: Place more furnaces ────────────────────────────────────────────
+[[lessons]]
+name = "Place 3 furnaces"
+description = "Place at least 3 stone furnaces"
+criteria = "entities.stone-furnace >= 3"
+hint = "Keep placing furnaces at different positions."
+max_attempts = 50
+
+# ── Lesson 3: Place a burner drill ──────────────────────────────────────────
 [[lessons]]
 name = "Place a burner mining drill"
-description = "Place a burner mining drill on an iron ore patch"
+description = "Place a burner mining drill on an ore patch"
 criteria = "entities.burner-mining-drill >= 1"
-hint = "Place burner-mining-drill directly on iron ore. It needs fuel (coal or wood) to run."
-max_attempts = 20
+hint = "Place burner-mining-drill on iron or coal ore. Must be on a resource tile."
+max_attempts = 50
 
-# ── Lesson 5: Accumulate ────────────────────────────────────────────────────
-# With infrastructure placed, accumulate plates (manually feeding furnace or
-# just waiting for drill output if coal is available).
-
+# ── Lesson 4: Insert fuel ────────────────────────────────────────────────────
+# The key behavior: put coal INTO a furnace.
 [[lessons]]
-name = "Accumulate iron plates"
-description = "Have at least 30 iron plates in inventory"
-criteria = "inventory.iron-plate >= 30"
-hint = "Mine more iron ore, smelt in furnaces. Feed coal into drill and furnace as fuel."
-max_attempts = 80
+name = "Fuel a furnace"
+description = "Insert coal into a placed furnace"
+criteria = "inventory.iron-plate >= 210"
+hint = "Use insert action: position of a furnace, item=coal. Then insert iron-ore. Wait for plates."
+max_attempts = 100
+
+# ── Lesson 5: Smelt plates ──────────────────────────────────────────────────
+# If the furnace has coal + ore, plates are produced. Agent starts with 200
+# iron-plate, so this triggers when smelting produces additional plates.
+[[lessons]]
+name = "Smelt iron plates"
+description = "Have at least 250 iron plates (start with 200, smelt 50 more)"
+criteria = "inventory.iron-plate >= 250"
+hint = "Insert coal then iron-ore into a furnace. Plates appear in furnace output."
+max_attempts = 200
+
+# ── Lesson 6: Place transport belt ──────────────────────────────────────────
+[[lessons]]
+name = "Place transport belts"
+description = "Place at least 5 transport belts"
+criteria = "entities.transport-belt >= 5"
+hint = "Place transport-belt entities to start building logistics."
+max_attempts = 100
+
+# ── Lesson 7: Build a smelting setup ────────────────────────────────────────
+# Multiple furnaces + drills + belts = automation
+[[lessons]]
+name = "Build automation"
+description = "Have 5+ furnaces, 3+ drills, and 300+ iron plates"
+criteria = "entities.stone-furnace >= 5 AND entities.burner-mining-drill >= 3 AND inventory.iron-plate >= 300"
+hint = "Place more furnaces and drills. Feed them coal and ore. Belts can connect them."
+max_attempts = 300

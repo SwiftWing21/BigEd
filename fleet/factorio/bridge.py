@@ -430,7 +430,23 @@ class FactorioBridge:
                 self._tick_count += 1
                 return
 
-        # 0a. Spawn leash — keep agent near resources during early training
+        # 0a. Periodic resupply — keep agents stocked so they focus on placement/smelting
+        if self._tick_count % 500 == 0 and self.config.current_phase <= 2:
+            try:
+                resupply_lua = (
+                    f'/c local inv = storage.agent_inventories and storage.agent_inventories[{agent_id}]; '
+                    'if inv and inv.valid then '
+                    'local items = {["iron-ore"]=100,["copper-ore"]=100,["coal"]=100,["stone"]=50,'
+                    '["iron-plate"]=100,["copper-plate"]=50,["iron-gear-wheel"]=20,["stone-furnace"]=5}; '
+                    'for name, count in pairs(items) do '
+                    'if inv.get_item_count(name) < count then '
+                    'inv.insert{name=name, count=count - inv.get_item_count(name)} end end end'
+                )
+                await self.rcon.command(resupply_lua)
+            except Exception:
+                pass  # non-critical
+
+        # 0a2. Spawn leash — keep agent near resources during early training
         #     Phase 1 ore patches are within ~100 tiles of origin
         pos = state.player_position
         if pos:

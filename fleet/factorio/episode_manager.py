@@ -12,13 +12,20 @@ log = logging.getLogger("biged.factorio.episode_manager")
 # Starting items per training phase
 PHASE_ITEMS: dict[int, dict[str, int]] = {
     1: {
-        "iron-plate": 50,
-        "copper-plate": 20,
-        "coal": 30,
-        "stone": 20,
-        "stone-furnace": 4,
-        "burner-mining-drill": 2,
-        "wooden-chest": 2,
+        # Generous starting kit — skip mining grind, focus on craft/place/insert/smelt
+        "iron-ore": 200,
+        "copper-ore": 200,
+        "coal": 200,
+        "stone": 100,
+        "iron-plate": 200,
+        "copper-plate": 100,
+        "iron-gear-wheel": 50,
+        "copper-cable": 50,
+        "stone-furnace": 10,
+        "burner-mining-drill": 5,
+        "transport-belt": 50,
+        "burner-inserter": 10,
+        "wooden-chest": 5,
     },
     2: {
         "iron-plate": 20,
