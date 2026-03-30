@@ -162,13 +162,28 @@ class EpisodeManager:
             log.warning("hard_reset: /save command failed", exc_info=True)
 
     async def _give_starting_items(self) -> None:
-        """Insert phase-appropriate starting items into the player inventory."""
+        """Insert phase-appropriate starting items into the agent inventory.
+
+        Works headless: uses player inventory if connected, falls back to
+        the script-owned agent inventory (same one exec_cmd uses).
+        """
         items = PHASE_ITEMS.get(self._phase, PHASE_ITEMS[1])
         inserts = "; ".join(
-            f'player.insert{{name="{name}", count={count}}}'
+            f'inv.insert{{name="{name}", count={count}}}'
             for name, count in items.items()
         )
-        lua = f"/c local player = game.players[1]; if player then {inserts} end"
+        lua = (
+            "/c local inv; "
+            "local p = game.players[1]; "
+            "if p and p.character then inv = p.get_main_inventory() end; "
+            "if not inv then "
+            "  if not storage.biged_inventory or not storage.biged_inventory.valid then "
+            "    storage.biged_inventory = game.create_inventory(80) "
+            "  end; "
+            "  inv = storage.biged_inventory "
+            "end; "
+            f"{inserts}"
+        )
         try:
             await self._rcon.command(lua)
             log.debug("Starting items given for phase %d", self._phase)
