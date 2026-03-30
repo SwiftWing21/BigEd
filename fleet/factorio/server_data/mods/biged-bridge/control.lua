@@ -580,18 +580,34 @@ local function fn_exec_cmd(json_str)
         end
 
     elseif action == "move" then
-        -- Move the agent character (teleport). Works with player or headless character.
+        -- Move the agent character (teleport). Validates destination is safe.
         local char = ctx.character
         if not char or not char.valid then
-            result.error = "move requires a character (use ensure_player first)"
+            result.error = "move requires a character"
             return helpers.table_to_json(result)
         end
         local pos = parsed.position
         if not pos or pos.x == nil or pos.y == nil then
             result.error = "move requires position with x and y"
         else
-            char.teleport(pos, surface)
-            result.success = true
+            -- Check destination tile is walkable (not water/out-of-map)
+            local tile = surface.get_tile(math.floor(pos.x), math.floor(pos.y))
+            if not tile or not tile.valid then
+                result.error = "move target out of bounds"
+            elseif tile.name == "water" or tile.name == "deepwater"
+                   or tile.name == "water-green" or tile.name == "out-of-map" then
+                result.error = "move target is water/void at (" .. pos.x .. ", " .. pos.y .. ")"
+            else
+                -- Use find_non_colliding_position for safety
+                local safe = surface.find_non_colliding_position("character", pos, 3, 0.5)
+                if safe then
+                    char.teleport(safe, surface)
+                    result.success = true
+                    result.actual_position = char.position
+                else
+                    result.error = "no safe position near (" .. pos.x .. ", " .. pos.y .. ")"
+                end
+            end
         end
 
     elseif action == "connect" then
