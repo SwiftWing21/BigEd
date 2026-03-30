@@ -215,18 +215,18 @@ def start_headless_server(factorio_exe: Path, save: Path, port: int, password: s
     ]
     log.info("Starting Factorio server: %s", " ".join(cmd[:3]) + " ...")
 
+    # Send stdout/stderr to devnull — PIPE causes buffer stall which blocks RCON
     proc = subprocess.Popen(
         cmd,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
         creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
     )
 
     # Wait a moment and check it didn't crash immediately
     time.sleep(3)
     if proc.poll() is not None:
-        stderr = proc.stderr.read().decode("utf-8", errors="replace")[:500]
-        raise RuntimeError(f"Factorio server exited immediately: {stderr}")
+        raise RuntimeError(f"Factorio server exited immediately (code {proc.returncode})")
 
     log.info("Factorio server running (PID %d) on RCON port %d", proc.pid, port)
     return proc
@@ -322,6 +322,17 @@ def main():
         log.info("Bridge running (PID %d) on port 27016", bridge_proc.pid)
         print(f"  Bridge PID: {bridge_proc.pid}")
 
+    # Write PID file so dashboard can manage processes
+    pid_file = Path(__file__).parent / "server_data" / "pids.json"
+    import json as _json
+    pid_file.write_text(_json.dumps({
+        "server_pid": server_proc.pid,
+        "bridge_pid": bridge_proc.pid,
+        "rcon_port": args.port,
+        "rcon_password": password,
+        "started_at": time.time(),
+    }))
+
     print("\n" + "=" * 60)
     print("  READY!")
     print("=" * 60)
@@ -329,37 +340,10 @@ def main():
     print(f"  Bridge PID: {bridge_proc.pid}")
     print(f"  RCON: localhost:{args.port}")
     print(f"  Bridge API: http://127.0.0.1:27016")
-    print(f"  Save: {save}")
+    print(f"  PIDs saved to: {pid_file}")
     print(f"")
-    print(f"  The fleet supervisor runs independently — Factorio is")
-    print(f"  self-contained. Ctrl+C to stop both processes.")
-
-    # Keep running until interrupted — monitor both processes
-    try:
-        while True:
-            if server_proc.poll() is not None:
-                print("\nFactorio server exited.")
-                break
-            if bridge_proc.poll() is not None:
-                print("\nBridge exited — restarting...")
-                bridge_proc = subprocess.Popen(
-                    [sys.executable, "-m", "factorio.bridge"],
-                    cwd=str(FLEET_DIR),
-                    env=bridge_env,
-                    creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
-                )
-            time.sleep(5)
-    except KeyboardInterrupt:
-        print("\nShutting down...")
-        bridge_proc.terminate()
-        server_proc.terminate()
-        try:
-            bridge_proc.wait(timeout=5)
-            server_proc.wait(timeout=10)
-        except subprocess.TimeoutExpired:
-            bridge_proc.kill()
-            server_proc.kill()
-        print("Done.")
+    print(f"  setup_and_launch exiting — processes run independently.")
+    print(f"  Use dashboard or lead_client to stop/restart.")
 
 
 if __name__ == "__main__":

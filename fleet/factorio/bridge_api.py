@@ -14,13 +14,15 @@ _result_store: dict = {}  # command_id -> result (Python 3.7+ insertion order)
 _bridge_status: dict = {"running": False, "tick": 0, "cadence": "adaptive"}
 _training_status: dict = {}  # updated by bridge.py after each ML tick
 _brain = None
+_rcon_client = None  # set by bridge.py for status reporting
 
 
-def create_api(world_model, command_queue, brain=None) -> Flask:
-    global _world_model, _command_queue, _brain
+def create_api(world_model, command_queue, brain=None, rcon=None) -> Flask:
+    global _world_model, _command_queue, _brain, _rcon_client
     _world_model = world_model
     _command_queue = command_queue
     _brain = brain
+    _rcon_client = rcon
 
     app = Flask("factorio_bridge_api")
 
@@ -33,6 +35,12 @@ def create_api(world_model, command_queue, brain=None) -> Flask:
         if status["running"] and (_t.time() - last_ts) > 30:
             status["running"] = False
             status["stale"] = True
+        # Component health for dashboard status lights
+        status["components"] = {
+            "bridge": True,  # if we're responding, bridge API is up
+            "rcon": bool(_rcon_client and _rcon_client._connected),
+            "headless": bool(_rcon_client and _rcon_client._connected and status.get("running")),
+        }
         return jsonify(status)
 
     @app.route("/api/state")

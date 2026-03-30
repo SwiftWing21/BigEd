@@ -1594,12 +1594,83 @@ def api_factorio_spectator():
 _factorio_procs: dict = {}  # track {"server": Popen, "bridge": Popen}
 
 
+def _factorio_kill_all():
+    """Kill all Factorio processes (server, bridge, setup_and_launch). Returns list of what was stopped."""
+    import psutil
+    stopped = []
+    # 1. Graceful bridge shutdown via API
+    try:
+        port = _load_config().get("factorio", {}).get("bridge_port", 27016)
+        req = urllib.request.Request(f"http://127.0.0.1:{port}/api/shutdown", method="POST")
+        urllib.request.urlopen(req, timeout=2)
+        stopped.append("bridge (via API)")
+        import time as _t; _t.sleep(1)
+    except Exception:
+        pass
+    # 2. Kill by process scan — terminate then kill
+    for p in psutil.process_iter(["pid", "name", "cmdline"]):
+        try:
+            cmdline = " ".join(p.info.get("cmdline") or [])
+            pname = (p.info.get("name") or "").lower()
+            is_bridge = "factorio.bridge" in cmdline
+            is_launcher = "factorio.setup_and_launch" in cmdline
+            is_server = pname.startswith("factorio") and "--start-server" in cmdline
+            if is_bridge or is_launcher or is_server:
+                label = "bridge" if is_bridge else "launcher" if is_launcher else "server"
+                p.terminate()
+                try:
+                    p.wait(timeout=3)
+                except psutil.TimeoutExpired:
+                    p.kill()
+                stopped.append(f"{label} (PID {p.pid})")
+        except (psutil.NoSuchProcess, psutil.AccessDenied):
+            pass
+    _factorio_procs.clear()
+    # 3. Clean PID file
+    pid_file = os.path.join(os.path.dirname(__file__), "factorio", "server_data", "pids.json")
+    try:
+        os.remove(pid_file)
+    except FileNotFoundError:
+        pass
+    return stopped
+
+
+def _factorio_wait_for_rcon(port=27015, password="", timeout=30):
+    """Block until RCON accepts auth or timeout. Returns True if ready."""
+    import struct, socket, time as _t
+    deadline = _t.time() + timeout
+    while _t.time() < deadline:
+        sock = None
+        try:
+            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            sock.settimeout(3)
+            sock.connect(("127.0.0.1", port))
+            body = password.encode("utf-8")
+            payload = struct.pack("<ii", 1, 3) + body + b"\x00\x00"
+            pkt = struct.pack("<i", len(payload)) + payload
+            sock.sendall(pkt)
+            data = sock.recv(4096)
+            if data and len(data) >= 12:
+                _, rid, _ = struct.unpack("<iii", data[:12])
+                if rid >= 0:
+                    return True
+        except Exception:
+            pass
+        finally:
+            try:
+                if sock: sock.close()
+            except Exception:
+                pass
+        _t.sleep(2)
+    return False
+
+
 @app.route("/api/factorio/start", methods=["POST"])
 def api_factorio_start():
-    """Start Factorio headless server + bridge via setup_and_launch helpers."""
+    """Start Factorio headless server + bridge. setup_and_launch exits after starting."""
     import subprocess as sp
     try:
-        # Check if bridge is already running
+        # Check if bridge is already running and healthy
         port = _load_config().get("factorio", {}).get("bridge_port", 27016)
         try:
             resp = urllib.request.urlopen(f"http://127.0.0.1:{port}/api/status", timeout=2)
@@ -1609,17 +1680,20 @@ def api_factorio_start():
         except Exception:
             pass
 
-        # Launch setup_and_launch as a subprocess
+        # Launch setup_and_launch — it starts server + bridge, writes PIDs, then exits
         fleet_dir = os.path.dirname(__file__)
         proc = sp.Popen(
             [sys.executable, "-m", "factorio.setup_and_launch"],
             cwd=fleet_dir,
-            stdout=sp.PIPE, stderr=sp.PIPE,
+            stdout=sp.DEVNULL, stderr=sp.DEVNULL,
             creationflags=getattr(sp, "CREATE_NO_WINDOW", 0),
         )
-        _factorio_procs["launcher"] = proc
-        log.info("Factorio setup_and_launch started (PID %d)", proc.pid)
-        return jsonify({"success": True, "pid": proc.pid})
+        try:
+            proc.wait(timeout=30)
+        except sp.TimeoutExpired:
+            log.warning("setup_and_launch timed out after 30s")
+        log.info("Factorio setup_and_launch completed (exit %s)", proc.returncode)
+        return jsonify({"success": True, "launcher_exit": proc.returncode})
     except Exception as e:
         log.warning("Factorio start failed: %s", e)
         return jsonify({"success": False, "error": str(e)}), 500
@@ -1627,72 +1701,65 @@ def api_factorio_start():
 
 @app.route("/api/factorio/stop", methods=["POST"])
 def api_factorio_stop():
-    """Stop Factorio bridge + headless server."""
-    stopped = []
-    # 1. Tell bridge to shut down gracefully
-    try:
-        port = _load_config().get("factorio", {}).get("bridge_port", 27016)
-        req = urllib.request.Request(f"http://127.0.0.1:{port}/api/shutdown", method="POST")
-        urllib.request.urlopen(req, timeout=3)
-        stopped.append("bridge (via API)")
-    except Exception:
-        pass
-
-    # 2. Kill tracked procs
-    for name, proc in list(_factorio_procs.items()):
-        try:
-            if proc.poll() is None:
-                proc.terminate()
-                stopped.append(f"{name} (PID {proc.pid})")
-        except Exception:
-            pass
-    _factorio_procs.clear()
-
-    # 3. Kill any remaining factorio bridge/server by scanning processes
-    try:
-        import psutil
-        for p in psutil.process_iter(["pid", "name", "cmdline"]):
-            cmdline = " ".join(p.info.get("cmdline") or [])
-            name = (p.info.get("name") or "").lower()
-            if "factorio.bridge" in cmdline or "factorio.setup_and_launch" in cmdline:
-                p.terminate()
-                stopped.append(f"orphan bridge (PID {p.pid})")
-            elif name.startswith("factorio") and "--start-server" in cmdline:
-                p.terminate()
-                stopped.append(f"headless server (PID {p.pid})")
-    except Exception:
-        pass
-
+    """Stop all Factorio processes cleanly."""
+    stopped = _factorio_kill_all()
     log.info("Factorio stopped: %s", stopped or "nothing running")
     return jsonify({"success": True, "stopped": stopped})
 
 
 @app.route("/api/factorio/restart", methods=["POST"])
 def api_factorio_restart():
-    """Restart Factorio bridge (stop, wait, start). Server stays up."""
-    import time as _t
-    # Stop bridge only (not the headless server)
-    port = _load_config().get("factorio", {}).get("bridge_port", 27016)
-    try:
-        req = urllib.request.Request(f"http://127.0.0.1:{port}/api/shutdown", method="POST")
-        urllib.request.urlopen(req, timeout=3)
-    except Exception:
-        pass
-    # Kill bridge processes (not headless server)
-    try:
-        import psutil
-        for p in psutil.process_iter(["pid", "cmdline"]):
-            cmdline = " ".join(p.info.get("cmdline") or [])
-            if "factorio.bridge" in cmdline or "factorio.setup_and_launch" in cmdline:
-                p.terminate()
-    except Exception:
-        pass
-    _t.sleep(1.5)
-    # Relaunch
+    """Full restart: stop everything, start fresh."""
+    stopped = _factorio_kill_all()
+    import time as _t; _t.sleep(2)
     resp = api_factorio_start()
     resp_data = resp.get_json() if hasattr(resp, "get_json") else {}
-    log.info("Factorio bridge restarted: %s", resp_data)
-    return jsonify({"success": True, "restarted": True, **resp_data})
+    log.info("Factorio restarted: stopped=%s, start=%s", stopped, resp_data)
+    return jsonify({"success": True, "stopped": stopped, **resp_data})
+
+
+@app.route("/api/factorio/restart-bridge", methods=["POST"])
+def api_factorio_restart_bridge():
+    """Restart just the bridge (server stays up). For code reloads."""
+    import subprocess as sp
+    import psutil
+    stopped = []
+    # Kill bridge only
+    try:
+        port = _load_config().get("factorio", {}).get("bridge_port", 27016)
+        req = urllib.request.Request(f"http://127.0.0.1:{port}/api/shutdown", method="POST")
+        urllib.request.urlopen(req, timeout=2)
+        stopped.append("bridge (via API)")
+    except Exception:
+        pass
+    import time as _t; _t.sleep(1)
+    for p in psutil.process_iter(["pid", "cmdline"]):
+        try:
+            cmdline = " ".join(p.info.get("cmdline") or [])
+            if "factorio.bridge" in cmdline:
+                p.kill()
+                stopped.append(f"bridge (PID {p.pid})")
+        except (psutil.NoSuchProcess, psutil.AccessDenied):
+            pass
+    _t.sleep(1)
+    # Wait for RCON to be available (server should still be up)
+    cfg = _load_config().get("factorio", {})
+    rcon_port = cfg.get("rcon_port", 27015)
+    rcon_pw = cfg.get("rcon_password", "")
+    rcon_ready = _factorio_wait_for_rcon(rcon_port, rcon_pw, timeout=10)
+    if not rcon_ready:
+        return jsonify({"success": False, "error": "RCON not responding — server may be down",
+                        "stopped": stopped}), 503
+    # Start bridge
+    fleet_dir = os.path.dirname(__file__)
+    bridge_proc = sp.Popen(
+        [sys.executable, "-m", "factorio.bridge"],
+        cwd=fleet_dir,
+        stdout=sp.DEVNULL, stderr=sp.DEVNULL,
+        creationflags=getattr(sp, "CREATE_NO_WINDOW", 0),
+    )
+    log.info("Bridge restarted (PID %d), RCON ready", bridge_proc.pid)
+    return jsonify({"success": True, "stopped": stopped, "bridge_pid": bridge_proc.pid})
 
 
 @app.route("/api/factorio/pause", methods=["POST"])
@@ -1879,6 +1946,13 @@ def api_mode_switch():
                     if current == "factorio":
                         with app.test_request_context():
                             api_factorio_stop()
+                        # Unpause queue so workers resume normal tasks
+                        try:
+                            _QUEUE_PAUSE_FILE.unlink(missing_ok=True)
+                            _broadcast_sse({"type": "queue_paused", "data": {"paused": False}})
+                            log.info("Queue unpaused (leaving Factorio mode)")
+                        except Exception:
+                            log.warning("Failed to unpause queue on Factorio exit", exc_info=True)
                     elif current == "training":
                         try:
                             import db as _db
@@ -1909,10 +1983,21 @@ def api_mode_switch():
 
             try:
                 if target == "factorio":
+                    # Pause queue first — free Ollama for Factorio's ML agent
+                    try:
+                        _QUEUE_PAUSE_FILE.write_text("paused_by_factorio", encoding="utf-8")
+                        _broadcast_sse({"type": "queue_paused", "data": {"paused": True}})
+                        log.info("Queue paused (entering Factorio mode)")
+                    except Exception:
+                        log.warning("Failed to pause queue on Factorio entry", exc_info=True)
+                    # Start headless server + bridge
                     with app.test_request_context():
                         resp = api_factorio_start()
                     resp_data = resp.get_json() if hasattr(resp, "get_json") else {}
                     if not resp_data.get("success") and not resp_data.get("already_running"):
+                        # Undo queue pause on failure
+                        _QUEUE_PAUSE_FILE.unlink(missing_ok=True)
+                        _broadcast_sse({"type": "queue_paused", "data": {"paused": False}})
                         raise RuntimeError(resp_data.get("error", "Factorio start failed"))
                 elif target == "training":
                     # Acquire training lock in DB
@@ -3209,13 +3294,20 @@ def _sse_broadcaster():
                     _fp2 = _lc2().get("factorio", {}).get("bridge_port", 27016)
                     _fr2 = _ur2.urlopen(f"http://127.0.0.1:{_fp2}/api/status", timeout=1)
                     _fd2 = json.loads(_fr2.read())
+                    _components = _fd2.get("components", {})
+                    factorio_sse = {
+                        "running": _fd2.get("running", False),
+                        "tick": _fd2.get("tick", 0),
+                        "paused": _fd2.get("paused", False),
+                        "cadence": _fd2.get("cadence", "unknown"),
+                        "stale": _fd2.get("stale", False),
+                        "components": {
+                            "bridge": _components.get("bridge", False),
+                            "rcon": _components.get("rcon", False),
+                            "headless": _components.get("headless", False),
+                        },
+                    }
                     if _fd2.get("running"):
-                        factorio_sse = {
-                            "running": True,
-                            "tick": _fd2.get("tick", 0),
-                            "paused": _fd2.get("paused", False),
-                            "cadence": _fd2.get("cadence", "unknown"),
-                        }
                         # Inject a factorio pulse so the neural canvas shows activity
                         if not _fd2.get("paused"):
                             recent_tasks.append({
