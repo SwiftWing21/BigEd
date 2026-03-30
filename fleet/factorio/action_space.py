@@ -489,9 +489,23 @@ class ActionSpace:
         )
         mask[ActionType.PLACE.value] = 1 if has_placeable else 0
 
-        # REMOVE disabled in Phase 1-2 — agent should build, not deconstruct
+        # REMOVE disabled in Phase 1-2
         if phase <= 2:
             mask[ActionType.REMOVE.value] = 0
+
+        # Lesson-aware action restrictions for Phase 1
+        if phase == 1:
+            if lesson_index <= 2:
+                # Lessons 0-2: PLACE focused — disable CRAFT, RESEARCH, SET_RECIPE
+                # Agent has items, just needs to learn to PLACE and MOVE
+                mask[ActionType.CRAFT.value] = 0
+                mask[ActionType.RESEARCH.value] = 0
+                mask[ActionType.SET_RECIPE.value] = 0
+            elif lesson_index <= 4:
+                # Lessons 3-4: INSERT + PLACE focused — add INSERT, keep CRAFT off
+                mask[ActionType.RESEARCH.value] = 0
+                mask[ActionType.SET_RECIPE.value] = 0
+            # Lessons 5+: everything except REMOVE
 
         # Ensure the always-valid actions are set (defensive)
         mask[ActionType.WAIT.value] = 1
