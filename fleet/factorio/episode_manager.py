@@ -62,21 +62,14 @@ _SOFT_RESET_LUA = (
     'if ent.valid and not keep[ent.name] and not keep[ent.type] then '
     'pcall(function() ent.destroy() end) end '
     'end; '
-    # Clear and teleport — works with player or headless character
-    'local player = game.players[1]; '
-    'if player and player.character then '
-    '  player.get_main_inventory().clear(); '
-    '  player.teleport({0, 0}, surface); '
-    'end; '
-    'if storage.biged_character and storage.biged_character.valid then '
-    '  storage.biged_character.teleport({0, 0}, surface); '
-    'end; '
-    # Clear script inventory too
-    'if storage.biged_inventory and storage.biged_inventory.valid then '
-    '  storage.biged_inventory.clear(); '
-    'end; '
+    # Teleport standalone agent character to spawn
+    'local char = storage.agent_chars and storage.agent_chars[1]; '
+    'if char and char.valid then char.teleport({0, 0}, surface) end; '
+    # Clear agent script inventory
+    'local inv = storage.agent_inventories and storage.agent_inventories[1]; '
+    'if inv and inv.valid then inv.clear() end; '
     # Replenish ore near spawn (5M per tile, never runs dry)
-    'local s = player.surface; '
+    'local s = surface; '
     'local ores = {{"iron-ore",3,0},{"iron-ore",-3,0},{"copper-ore",0,3},'
     '{"copper-ore",0,-3},{"coal",4,4},{"coal",-4,-4},{"stone",-4,4},{"stone",4,-4}}; '
     'for _,o in pairs(ores) do for dx=-3,3 do for dy=-3,3 do '
@@ -134,9 +127,9 @@ class EpisodeManager:
         # preserves "character" entities, but if the character died during
         # the episode, the body is gone and items would be lost.
         try:
-            await self._rcon.remote_call("ensure_player")
+            await self._rcon.remote_call("ensure_agent")
         except Exception:
-            log.warning("ensure_player in reset failed", exc_info=True)
+            log.warning("ensure_agent in reset failed", exc_info=True)
 
         await self._give_starting_items()
         self._episode_count += 1
@@ -185,14 +178,11 @@ class EpisodeManager:
             for name, count in items.items()
         )
         lua = (
-            "/c local inv; "
-            "local p = game.players[1]; "
-            "if p and p.character then inv = p.get_main_inventory() end; "
-            "if not inv then "
-            "  if not storage.biged_inventory or not storage.biged_inventory.valid then "
-            "    storage.biged_inventory = game.create_inventory(80) "
-            "  end; "
-            "  inv = storage.biged_inventory "
+            "/c local inv = storage.agent_inventories and storage.agent_inventories[1]; "
+            "if not inv or not inv.valid then "
+            "  storage.agent_inventories = storage.agent_inventories or {}; "
+            "  storage.agent_inventories[1] = game.create_inventory(200); "
+            "  inv = storage.agent_inventories[1]; "
             "end; "
             f"{inserts}"
         )

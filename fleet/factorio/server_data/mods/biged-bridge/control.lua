@@ -27,91 +27,83 @@ local CONFIG = {
     },
 }
 
--- ─── Agent context (works with or without a player) ─────────────────────────
--- Headless mode: script-owned inventory + standalone character entity.
--- Player mode: uses connected player's inventory + character.
--- Both modes share the same action interface.
+-- ─── Standalone Agent Character System (FLE-style) ─────────────────────────
+-- Agent characters are standalone entities on the map — NOT player characters.
+-- Human players connect as spectators and are completely unaffected.
+-- storage.agent_chars[i] = character entity for agent i
+-- storage.agent_inventories[i] = script inventory for agent i
 
-local agent_player_index = nil  -- stored in global for save/load persistence
+local function create_agent(agent_id)
+    agent_id = agent_id or 1
+    local surface = game.get_surface("nauvis") or game.surfaces[1]
+    local force = game.forces["player"]
+    local spawn = force.get_spawn_position(surface)
 
-local function get_or_create_agent_inventory()
-    if storage.biged_inventory and storage.biged_inventory.valid then
-        return storage.biged_inventory
+    -- Create standalone character entity (NOT player-associated)
+    local char = surface.create_entity{
+        name = "character", position = spawn, force = force,
+    }
+    if not char then
+        local fallback = surface.find_non_colliding_position("character", spawn, 10, 1)
+        if fallback then
+            char = surface.create_entity{
+                name = "character", position = fallback, force = force,
+            }
+        end
     end
-    storage.biged_inventory = game.create_inventory(CONFIG.agent_inventory_size)
-    return storage.biged_inventory
+    if not char then
+        game.print("[BigEd] ERROR: could not create agent " .. agent_id)
+        return nil, nil
+    end
+
+    -- Create script inventory (independent of any entity)
+    local inv = game.create_inventory(CONFIG.agent_inventory_size)
+
+    storage.agent_chars = storage.agent_chars or {}
+    storage.agent_inventories = storage.agent_inventories or {}
+    storage.agent_chars[agent_id] = char
+    storage.agent_inventories[agent_id] = inv
+
+    game.print("[BigEd] Agent " .. agent_id .. " created at (" ..
+        math.floor(char.position.x) .. ", " .. math.floor(char.position.y) .. ")")
+    return char, inv
 end
 
-local function get_agent_context()
-    -- Returns: { player, character, surface, force, inventory,
-    --            has_player, has_character }
+local function get_agent_context(agent_id)
+    agent_id = agent_id or 1
     local ctx = {
-        surface = game.surfaces[1],
+        surface = game.get_surface("nauvis") or game.surfaces[1],
         force = game.forces["player"],
-        player = nil,
         character = nil,
-        has_player = false,
         has_character = false,
         inventory = nil,
     }
 
-    -- Try saved agent_player_index — but only if they are the sole player.
-    -- With multiple players (spectator connected), skip to headless fallback.
-    local total_players = 0
-    for _ in pairs(game.players) do total_players = total_players + 1 end
+    -- Look up agent character — never touches game.players
+    storage.agent_chars = storage.agent_chars or {}
+    storage.agent_inventories = storage.agent_inventories or {}
 
-    if agent_player_index and total_players <= 1 then
-        local p = game.get_player(agent_player_index)
-        if p and p.valid then
-            ctx.player = p
-            ctx.has_player = true
-            ctx.surface = p.surface or ctx.surface
-            ctx.force = p.force or ctx.force
-            if p.character and p.character.valid then
-                ctx.character = p.character
-                ctx.has_character = true
-                ctx.inventory = p.get_main_inventory()
-            end
-        end
-    end
-    if not ctx.has_player then
-        -- Only claim a player if there is exactly one (headless mode).
-        -- With multiple players (spectator connected), never hijack a human.
-        local all_players = game.players
-        local count = 0
-        local solo = nil
-        for _, p in pairs(all_players) do
-            if p.valid then count = count + 1; solo = p end
-        end
-        if count == 1 and solo then
-            ctx.player = solo
-            ctx.has_player = true
-            ctx.surface = solo.surface or ctx.surface
-            ctx.force = solo.force or ctx.force
-            agent_player_index = solo.index
-            storage.agent_player_index = solo.index
-            if solo.character and solo.character.valid then
-                ctx.character = solo.character
-                ctx.has_character = true
-                ctx.inventory = solo.get_main_inventory()
-            end
-        end
-        -- If multiple players, fall through to headless character below
-    end
-
-    -- Headless fallback: use stored character
-    if not ctx.has_character and storage.biged_character then
-        if storage.biged_character.valid and storage.biged_character.health > 0 then
-            ctx.character = storage.biged_character
+    local char = storage.agent_chars[agent_id]
+    if char and char.valid and char.health > 0 then
+        ctx.character = char
+        ctx.has_character = true
+    else
+        -- Character dead/invalid — recreate
+        local new_char, new_inv = create_agent(agent_id)
+        if new_char then
+            ctx.character = new_char
             ctx.has_character = true
-        else
-            storage.biged_character = nil
         end
     end
 
-    -- Always ensure we have an inventory (script-owned if no player)
-    if not ctx.inventory then
-        ctx.inventory = get_or_create_agent_inventory()
+    -- Look up agent inventory
+    local inv = storage.agent_inventories[agent_id]
+    if inv and inv.valid then
+        ctx.inventory = inv
+    else
+        local new_inv = game.create_inventory(CONFIG.agent_inventory_size)
+        storage.agent_inventories[agent_id] = new_inv
+        ctx.inventory = new_inv
     end
 
     return ctx
@@ -245,24 +237,18 @@ end
 
 -- ─── Remote interface functions (return JSON strings) ────────────────────────
 
-local function fn_get_state()
-    local ctx = get_agent_context()
+local function fn_get_state(agent_id_str)
+    local agent_id = tonumber(agent_id_str) or 1
+    local ctx = get_agent_context(agent_id)
     local surface = ctx.surface
     local force = ctx.force
     if not surface then
         return helpers.table_to_json({error = "no surface available"})
     end
 
-    -- Position: use character (player or headless), else origin
+    -- Position: always from standalone character entity
     local char = ctx.character
-    local pos
-    if ctx.has_player and ctx.player.character then
-        pos = ctx.player.position
-    elseif char then
-        pos = char.position
-    else
-        pos = {x = 0, y = 0}
-    end
+    local pos = char and char.position or {x = 0, y = 0}
     local r = CONFIG.observation_radius
     local area = { { pos.x - r, pos.y - r }, { pos.x + r, pos.y + r } }
 
@@ -311,10 +297,7 @@ local function fn_get_state()
     return helpers.table_to_json({
         tick = game.tick,
         time_of_day = surface.daytime,
-        has_player = ctx.has_player,
         has_character = ctx.has_character,
-        headless_character = (not ctx.has_player and ctx.has_character) or false,
-        headless_inventory = not ctx.has_player,
         player = {
             position = pos,
             health = char and char.health or 0,
@@ -404,10 +387,11 @@ local function fn_exec_cmd(json_str)
     if not ok or not parsed then
         return '{"error": "invalid JSON"}'
     end
-    local ctx = get_agent_context()
+    local agent_id = parsed.agent_id or 1
+    local ctx = get_agent_context(agent_id)
     local surface = ctx.surface
     local force = ctx.force
-    local inv = ctx.inventory  -- player inventory OR script inventory
+    local inv = ctx.inventory  -- script inventory for this agent
     if not surface then
         return helpers.table_to_json({error = "no surface available"})
     end
@@ -732,198 +716,112 @@ local function fn_observe(x, y, radius)
     })
 end
 
-local function fn_ensure_player()
-    -- Hard multi-player guard: NEVER touch players when spectators are connected.
-    local num_players = 0
-    for _ in pairs(game.players) do num_players = num_players + 1 end
-    local multi = num_players > 1
+local function fn_ensure_agent(agent_id_str)
+    local agent_id = tonumber(agent_id_str) or 1
+    local ctx = get_agent_context(agent_id)  -- auto-creates if needed
 
-    -- If multiple players, clear saved agent_player_index to prevent hijacking
-    if multi and agent_player_index then
-        agent_player_index = nil
-    end
-
-    local ctx = get_agent_context()
-
-    -- Only respawn a connected player's character if they are the SOLE player.
-    if ctx.has_player and ctx.player.connected and not ctx.has_character and not multi then
-        local ok, err = pcall(function()
-            ctx.player.set_controller{type = defines.controllers.god}
-            ctx.player.create_character()
-        end)
-        if ok and ctx.player.character and ctx.player.character.valid then
-            game.print("[BigEd Bridge] Respawned character (sole player)")
-        end
-    end
-
-    if ctx.has_player and not multi then
-        local p = ctx.player
-        local char = p.character
-        if char and char.valid then
-            return helpers.table_to_json({
-                success = true,
-                player_index = p.index,
-                position = p.position,
-                has_character = true,
-                health = char.health,
-                max_health = char.max_health,
-                alive = char.health > 0,
-            })
-        end
-    end
-
-    -- Headless mode: check existing headless character
     if ctx.has_character and ctx.character and ctx.character.valid then
         return helpers.table_to_json({
             success = true,
-            headless = true,
-            has_player = false,
+            agent_id = agent_id,
             has_character = true,
             position = ctx.character.position,
             health = ctx.character.health,
             max_health = ctx.character.max_health,
             alive = ctx.character.health > 0,
-        })
-    end
-
-    -- Strategy 1: Only use a connected player if they are the SOLE player
-    -- (headless with no spectator). Never hijack a human spectator.
-    local player_count = 0
-    local sole_player = nil
-    for _, p in pairs(game.players) do
-        if p.valid then player_count = player_count + 1; sole_player = p end
-    end
-    if player_count == 1 and sole_player and sole_player.connected and not sole_player.character then
-        local ok, err = pcall(function()
-            sole_player.set_controller{type = defines.controllers.god}
-            sole_player.create_character()
-        end)
-        if ok and sole_player.character and sole_player.character.valid then
-            agent_player_index = sole_player.index
-            storage.agent_player_index = sole_player.index
-            game.print("[BigEd Bridge] Respawned character for sole player " .. sole_player.name)
-            return helpers.table_to_json({
-                success = true,
-                headless = true,
-                has_player = true,
-                player_index = sole_player.index,
-                has_character = true,
-                position = sole_player.character.position,
-                health = sole_player.character.health,
-                max_health = sole_player.character.max_health,
-                alive = sole_player.character.health > 0,
-            })
-        end
-    end
-
-    -- Strategy 2: Standalone character entity (pure headless, no player)
-    local surface = game.get_surface("nauvis") or game.surfaces[1]
-    local force = game.forces["player"]
-    if not surface then
-        return helpers.table_to_json({
-            success = false, error = "no_surface",
-        })
-    end
-
-    local spawn = force.get_spawn_position(surface)
-    local char = surface.create_entity{
-        name = "character", position = spawn, force = force,
-    }
-    if not char then
-        local fallback = surface.find_non_colliding_position("character", spawn, 10, 1)
-        if fallback then
-            char = surface.create_entity{
-                name = "character", position = fallback, force = force,
-            }
-        end
-    end
-    if char then
-        storage.biged_character = char
-        -- Ensure script inventory exists
-        get_or_create_agent_inventory()
-        game.print("[BigEd Bridge] Headless agent ready: character + script inventory")
-        return helpers.table_to_json({
-            success = true,
-            headless = true,
-            has_player = false,
-            has_character = true,
-            position = char.position,
-            health = char.health,
-            max_health = char.max_health,
-            alive = char.health > 0,
+            inventory_valid = ctx.inventory and ctx.inventory.valid or false,
         })
     end
 
     return helpers.table_to_json({
         success = false,
+        agent_id = agent_id,
         error = "spawn_blocked",
-        headless = true,
-        position = spawn,
     })
 end
 
 local function fn_status()
-    local ctx = get_agent_context()
+    local num_agents = 0
+    if storage.agent_chars then
+        for id, char in pairs(storage.agent_chars) do
+            if char and char.valid then num_agents = num_agents + 1 end
+        end
+    end
     return helpers.table_to_json({
         mod = "biged-bridge",
-        version = "0.4.0",
+        version = "0.5.0",
         tick = game.tick,
-        has_player = ctx.has_player,
-        has_character = ctx.has_character,
-        headless_character = (not ctx.has_player and ctx.has_character) or false,
-        headless_inventory = not ctx.has_player and ctx.inventory ~= nil,
-        player_index = agent_player_index,
+        num_agents = num_agents,
+        has_character = num_agents > 0,
         surface_count = #game.surfaces,
-        force_name = ctx.force and ctx.force.name or "none",
     })
 end
 
 -- ─── Register remote interface ──────────────────────────────────────────────
 
 remote.add_interface("biged", {
-    get_state = fn_get_state,
-    get_metrics = fn_get_metrics,
-    exec_cmd = fn_exec_cmd,
-    observe = fn_observe,
-    ensure_player = fn_ensure_player,
-    status = fn_status,
+    get_state    = fn_get_state,
+    get_metrics  = fn_get_metrics,
+    exec_cmd     = fn_exec_cmd,
+    observe      = fn_observe,
+    ensure_agent = fn_ensure_agent,   -- RENAMED from ensure_player
+    status       = fn_status,
 })
 
 -- ─── Lifecycle ──────────────────────────────────────────────────────────────
 
 script.on_init(function()
-    storage.agent_player_index = nil
-    storage.biged_character = nil
-    storage.biged_inventory = nil  -- script-owned inventory for headless mode
-    game.print("[BigEd Bridge] v0.4.0 loaded. Remote interface: biged")
-    game.print("[BigEd Bridge] Headless mode: script inventory + standalone character")
+    storage.agent_chars = {}
+    storage.agent_inventories = {}
+    -- Create first agent immediately
+    create_agent(1)
+    game.print("[BigEd Bridge] v0.5.0 — standalone character mode")
 end)
 
 script.on_load(function()
-    -- Defer agent_player_index restore — get_agent_context checks player count.
-    -- Don't blindly restore here; let the multi-player guard handle it.
-    -- agent_player_index stays nil until get_agent_context confirms sole player.
+    -- Nothing to do. storage.agent_chars and storage.agent_inventories
+    -- are persisted automatically by Factorio's save system.
 end)
 
 script.on_configuration_changed(function()
-    if storage.biged_character and not storage.biged_character.valid then
+    -- Migrate from old storage schema (v0.4.0 → v0.5.0)
+    if storage.biged_character or storage.biged_inventory or storage.agent_player_index then
+        storage.agent_chars = storage.agent_chars or {}
+        storage.agent_inventories = storage.agent_inventories or {}
+        if storage.biged_character and storage.biged_character.valid then
+            storage.agent_chars[1] = storage.biged_character
+        end
+        if storage.biged_inventory and storage.biged_inventory.valid then
+            storage.agent_inventories[1] = storage.biged_inventory
+        end
         storage.biged_character = nil
-        game.print("[BigEd Bridge] Headless character invalidated after config change")
-    end
-    if storage.biged_inventory and not storage.biged_inventory.valid then
         storage.biged_inventory = nil
-        game.print("[BigEd Bridge] Script inventory invalidated — will recreate on next use")
+        storage.agent_player_index = nil
+        game.print("[BigEd Bridge] Migrated from v0.4.0 to v0.5.0 standalone character system")
+    end
+    -- Validate all agent characters
+    if storage.agent_chars then
+        for id, char in pairs(storage.agent_chars) do
+            if not char.valid then
+                storage.agent_chars[id] = nil
+                game.print("[BigEd] Agent " .. id .. " character invalidated — will recreate")
+            end
+        end
+    end
+    if storage.agent_inventories then
+        for id, inv in pairs(storage.agent_inventories) do
+            if not inv.valid then
+                storage.agent_inventories[id] = nil
+                game.print("[BigEd] Agent " .. id .. " inventory invalidated — will recreate")
+            end
+        end
     end
 end)
 
 script.on_event(defines.events.on_player_joined_game, function(event)
-    -- Never auto-claim a joining player as the agent. The agent uses
-    -- headless character (storage.biged_character). Only claim if this
-    -- is the sole player on a headless server (no spectators).
-    local count = 0
-    for _ in pairs(game.players) do count = count + 1 end
-    if count <= 1 and not agent_player_index then
-        agent_player_index = event.player_index
-        storage.agent_player_index = event.player_index
+    local p = game.get_player(event.player_index)
+    if p then
+        game.print("[BigEd] Welcome, " .. p.name .. "! You are a spectator. Agent characters are independent.")
     end
+    -- NO state mutation. NO character creation for players.
 end)

@@ -142,17 +142,17 @@ class FactorioBridge:
 
         # 0. Ensure agent has a body (craft/move/mine require it)
         if not state.player_alive:
-            log.warning("LLM tick %d: agent has no body — calling ensure_player",
+            log.warning("LLM tick %d: agent has no body — calling ensure_agent",
                         self._tick_count)
             try:
-                await self.rcon.remote_call("ensure_player")
+                await self.rcon.remote_call("ensure_agent")
                 state_raw = await self.rcon.remote_call("get_state")
                 state = parse_state(state_raw)
                 if not state.player_alive:
-                    log.error("Agent still has no body after ensure_player — skipping tick")
+                    log.error("Agent still has no body after ensure_agent — skipping tick")
                     return
             except Exception:
-                log.warning("ensure_player failed — skipping tick", exc_info=True)
+                log.warning("ensure_agent failed — skipping tick", exc_info=True)
                 return
 
         # 2. Get metrics (every 5th tick)
@@ -369,19 +369,19 @@ class FactorioBridge:
         state = parse_state(raw_state)
 
         if not state.player_alive:
-            log.warning("ML tick %d: agent has no body — calling ensure_player", self._tick_count)
+            log.warning("ML tick %d: agent has no body — calling ensure_agent", self._tick_count)
             try:
-                result = await self.rcon.remote_call("ensure_player")
+                result = await self.rcon.remote_call("ensure_agent")
                 log.info("Body check result: %s", str(result)[:200])
                 # Re-fetch state after respawn
                 raw_state = await self.rcon.remote_call("get_state")
                 state = parse_state(raw_state)
                 if not state.player_alive:
-                    log.error("Agent still has no body after ensure_player — skipping tick")
+                    log.error("Agent still has no body after ensure_agent — skipping tick")
                     self._tick_count += 1
                     return
             except Exception:
-                log.warning("ensure_player failed — skipping tick", exc_info=True)
+                log.warning("ensure_agent failed — skipping tick", exc_info=True)
                 self._tick_count += 1
                 return
 
@@ -659,7 +659,7 @@ class FactorioBridge:
 
         # Ensure agent player exists (both modes)
         try:
-            result = await self.rcon.remote_call("ensure_player")
+            result = await self.rcon.remote_call("ensure_agent")
             log.info("Player init: %s", str(result)[:200])
         except Exception as e:
             log.warning("Player init failed: %s", e)
