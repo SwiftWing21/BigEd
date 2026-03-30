@@ -302,7 +302,8 @@ Existing trunk (320→256→128)       # 128 local + 128 world + 64 features
   │
   NEW:
   ├─ pack_head (128→64)            # MAX_PACK_SLOTS=64, unused slots masked
-  └─ offset_head (128→11×11)       # discrete dx, dy matching existing bin system
+  ├─ pack_offset_dx (128→11)       # discrete [-5,+5] bins, same as existing place_dx
+  └─ pack_offset_dy (128→11)       # discrete [-5,+5] bins, same as existing place_dy
 ```
 
 ### Parameter Head Routing
@@ -310,13 +311,15 @@ Existing trunk (320→256→128)       # 128 local + 128 world + 64 features
 `get_action_params()` gains two new cases:
 
 ```python
-elif action_type == ActionType.PACK:
-    return {"pack_logits": self.pack_head(trunk), "offset": self.offset_head(trunk)}
-elif action_type == ActionType.STAMP:
-    return {"pack_logits": self.pack_head(trunk), "offset": self.offset_head(trunk)}
+elif action_type in (ActionType.PACK, ActionType.STAMP):
+    return {
+        "pack_logits": self.pack_head(trunk),       # (B, 64)
+        "offset_dx_logits": self.pack_offset_dx(trunk),  # (B, 11)
+        "offset_dy_logits": self.pack_offset_dy(trunk),  # (B, 11)
+    }
 ```
 
-`_sample_params()` in bridge.py gains matching cases to sample pack_id from masked pack_logits and (dx, dy) from offset logits.
+`_sample_params()` in bridge.py gains a matching case: sample `pack_id` from `pack_logits` (masked by `pack_mask`), sample `dx`/`dy` from offset logits independently (same pattern as existing `place_dx`/`place_dy`).
 
 ### Action Masking
 
@@ -337,6 +340,11 @@ def get_action_mask(phase, lesson, inventory, packs_available):
         for pack in registry.get_available(phase, lesson)
     ]
     return mask, pack_mask
+
+# pack_mask is passed to policy.act() as a second argument:
+#   policy.act(grid, features, action_mask=mask, pack_mask=pack_mask)
+# Inside act(), pack_mask is applied to pack_head logits before sampling:
+#   pack_logits[~pack_mask] = -1e9  # mask unavailable packs
 ```
 
 ### Sampling Flow
