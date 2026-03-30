@@ -33,13 +33,19 @@ _COMPLEXITY_EXPONENT = 1.1
 
 # Bonus multiplier for items that represent automation milestones
 _MILESTONE_MULTIPLIERS: dict[str, float] = {
-    "automation-science-pack": 2.0,   # red science — first automation goal
-    "logistic-science-pack": 3.0,     # green science — target milestone
-    "lab": 5.0,                       # labs are critical infrastructure
-    "assembling-machine-1": 2.0,      # automation building block
-    "electric-mining-drill": 2.0,     # automation building block
-    "steam-engine": 2.0,              # power generation
-    "boiler": 1.5,                    # power generation
+    "iron-plate": 3.0,                # smelting is THE key behavior to learn
+    "copper-plate": 3.0,              # smelting is THE key behavior to learn
+    "steel-plate": 5.0,               # advanced smelting
+    "stone-brick": 2.0,               # smelting
+    "automation-science-pack": 5.0,   # red science — first automation goal
+    "logistic-science-pack": 8.0,     # green science — target milestone
+    "lab": 10.0,                      # labs are critical infrastructure
+    "assembling-machine-1": 3.0,      # automation building block
+    "electric-mining-drill": 3.0,     # automation building block
+    "steam-engine": 3.0,              # power generation
+    "boiler": 2.0,                    # power generation
+    "iron-gear-wheel": 2.0,           # key intermediate
+    "electronic-circuit": 3.0,        # key intermediate
 }
 
 
