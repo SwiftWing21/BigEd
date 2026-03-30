@@ -57,6 +57,16 @@ _SOFT_RESET_LUA = (
     'end; '
     'player.get_main_inventory().clear(); '
     'player.teleport({0, 0}, player.surface); '
+    # Replenish ore near spawn (5M per tile, never runs dry)
+    'local s = player.surface; '
+    'local ores = {{"iron-ore",3,0},{"iron-ore",-3,0},{"copper-ore",0,3},'
+    '{"copper-ore",0,-3},{"coal",4,4},{"coal",-4,-4},{"stone",-4,4},{"stone",4,-4}}; '
+    'for _,o in pairs(ores) do for dx=-3,3 do for dy=-3,3 do '
+    'local pos = {o[2]+dx, o[3]+dy}; '
+    'local existing = s.find_entities_filtered{name=o[1], position=pos, radius=0.5}; '
+    'if #existing == 0 then s.create_entity{name=o[1], position=pos, amount=5000000} '
+    'else for _,e in pairs(existing) do if e.amount < 1000000 then e.amount = 5000000 end end end '
+    'end end end; '
     'rcon.print("soft_reset_done")'
 )
 
