@@ -13,20 +13,20 @@
 | Smoke Tests | 51/51 | 2026-03-29 |
 | Factorio Module Tests | 81/81 | 2026-03-29 |
 | Branch | main | 2026-03-29 |
-| Factorio Training | Phase 1, 5/8 lessons (body, find ore, mine iron, mine stone, craft gears) | 2026-03-29 |
+| Factorio Training | Phase 1, 5/8 lessons, hybrid RL+LLM, 4x speed | 2026-03-29 |
 
 ## Last Session
 
-**Date:** 2026-03-29 (session 13 — marathon)
-**Session:** VS Code Claude Code — Death Spiral → Full ML Training Pipeline
+**Date:** 2026-03-29 (session 13 — marathon, ~6 hours)
+**Session:** VS Code Claude Code — Death Spiral → Full Hybrid ML Training Pipeline
 
 ### Summary
-Went from "nothing works, death spiral" to an RL+LLM hybrid agent training in Factorio, passing 5 curriculum lessons. 11 commits across infrastructure bugs, Factorio integration, and training pipeline.
+Went from "nothing works, death spiral" to a hybrid RL+LLM agent training in Factorio, passing 5/8 Phase 1 curriculum lessons. 14 commits across infrastructure, Factorio integration, training pipeline, and performance tuning.
 
-### Commits (11)
+### Commits (14)
 1. `ded93a9` — Death spiral fix (pool exhaustion, load_config, scheduler, fleet lifecycle)
 2. `1950808` — RCON password env var pass-through
-3. `9929202` — Curriculum path fix
+3. `9929202` — Curriculum path fix (fleet.toml → fleet/factorio/curricula)
 4. `727ed5c` — Headless character creation (2-strategy)
 5. `070e026` — Disconnected player guard + Factorio 2.0 max_health fix
 6. `ebf1c20` — Map gen settings with ore resources
@@ -35,32 +35,33 @@ Went from "nothing works, death spiral" to an RL+LLM hybrid agent training in Fa
 9. `9b730f6` — Hybrid LLM teacher for RL training (500-step stuck threshold)
 10. `1495cde` — ML tick updates bridge status (dashboard "Running" fix)
 11. `e295628` — Strip /biged-cmd prefix (fixed ALL "invalid JSON" errors)
+12. `5e1decd` — Replenish ore on episode reset (5M per tile)
+13. `a9c95ac` — Non-blocking hybrid teacher (RL trains while LLM thinks)
+14. `7a1034a` — CPU model for teacher (qwen3:1.7b), game speed 4x
 
-### Factorio Agent Status
-- **Hybrid RL+LLM**: PPO policy explores, LLM teacher intervenes when stuck 500+ steps
-- **5/8 Phase 1 lessons passed**: Body check, Find iron, Mine iron, Mine stone, Craft gear wheels
-- **Stuck on lesson 5**: "Place a stone furnace" — agent crafts too many inserters/gears, runs out of stone-furnace items
-- **Agent uses connected player** (swiftwing) — user must be connected for mine/craft/place to work
-- **Ore replenishes** on episode reset (5M per tile, 8 patches around spawn)
+### Factorio Agent Architecture
+- **Hybrid RL+LLM**: PPO neural net explores continuously, LLM teacher (qwen3:1.7b CPU) intervenes when stuck 500+ steps
+- **Non-blocking**: Teacher runs as background asyncio task, actions queued and executed one per tick interleaved with RL
+- **Episode reset**: preserves ore/trees, replenishes to 5M/tile, gives starting items (50 iron, 20 copper, 4 furnaces, etc.)
+- **Game speed**: 4x (10x disconnects spectator client)
+- **Teacher model**: qwen3:1.7b on CPU (8b GPU model tanked Factorio FPS 120→20)
 
-### Key Architecture Decisions
-- **Hybrid teacher**: After 500 steps on same lesson, LLM (Ollama qwen3:8b) generates action plan, executes via RCON, backs off 50 ticks
-- **Action translator bug fixed**: `/biged-cmd` prefix was being passed to `exec_cmd` which expects raw JSON
-- **Episode reset preserves**: resources and trees (was destroying everything)
-- **Bridge status**: `update_status(True, ...)` now called in ML tick path (was missing)
+### Current Training State
+- **5/8 Phase 1 lessons**: Body check, Find iron, Mine iron, Mine stone, Craft gear wheels
+- **Stuck on lesson 5**: "Place a stone furnace" — agent uses up starting furnaces crafting other things
+- **Agent uses connected player** (swiftwing) — user must be in-game for mine/craft/place
 
-### Known Issues
-1. **Agent needs connected player** — standalone headless character can observe but can't mine/craft/place. User must be in-game. Long-term: need programmatic player creation or RCON-based inventory management
-2. **setup_and_launch holds RCON** — blocks bridge connection until killed. Needs to disconnect after health check
-3. **RCON password regen on every Start** — `setup_and_launch` generates new password even when server is already running
-4. **Dependency resolver needed** — user requested: "if not in inventory → try craft → if can't craft → check has vs need → acquire diff". This would let the teacher work backwards from goals
-5. **Dashboard Refresh button** — works for data fetch but "Running" display was broken (fixed), needs testing
-6. **Stale RUNNING tasks** — 2,219 ghost tasks from dead workers need sweep
-7. **3 duplicate web_app.py processes** — investigate multi-spawn
+### Known Issues (Priority Order)
+1. **Dependency resolver needed** — user requested: backwards-chain from goal → craft recipe → acquire raw materials. This would let teacher/RL solve "place furnace" by first crafting one from stone
+2. **Agent needs connected player** — standalone headless character can observe but can't mine/craft/place. Need programmatic player creation or RCON inventory management
+3. **setup_and_launch holds RCON** — blocks bridge connection until killed. Needs disconnect after health check
+4. **RCON password regen on Start** — generates new password even when server already running
+5. **Stale RUNNING tasks** — 2,219 ghost tasks need sweep on boot
+6. **Dashboard Refresh button** — data fetches work, visual status fixed, needs more testing
 
 **Next priorities:**
-1. **Dependency resolver for teacher** — backwards-chaining from lesson goals through crafting recipes to raw resources
-2. **Programmatic player** — agent should work without user connected
-3. **Curriculum tuning** — lesson 5+ needs better item budgeting or explicit craft-first hints
-4. **Dashboard training viz** — reward curves, action distribution charts
-5. **setup_and_launch RCON cleanup** — disconnect after health check
+1. **Dependency resolver for teacher** — backwards-chaining crafting tree
+2. **Programmatic player** — agent works without user connected
+3. **Curriculum tuning** — lesson 5+ item budgeting
+4. **Dashboard training viz** — reward curves, action charts
+5. **setup_and_launch RCON cleanup**
