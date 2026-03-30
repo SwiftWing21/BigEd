@@ -873,9 +873,9 @@ script.on_init(function()
 end)
 
 script.on_load(function()
-    if storage.agent_player_index then
-        agent_player_index = storage.agent_player_index
-    end
+    -- Defer agent_player_index restore — get_agent_context checks player count.
+    -- Don't blindly restore here; let the multi-player guard handle it.
+    -- agent_player_index stays nil until get_agent_context confirms sole player.
 end)
 
 script.on_configuration_changed(function()
@@ -890,7 +890,12 @@ script.on_configuration_changed(function()
 end)
 
 script.on_event(defines.events.on_player_joined_game, function(event)
-    if not agent_player_index then
+    -- Never auto-claim a joining player as the agent. The agent uses
+    -- headless character (storage.biged_character). Only claim if this
+    -- is the sole player on a headless server (no spectators).
+    local count = 0
+    for _ in pairs(game.players) do count = count + 1 end
+    if count <= 1 and not agent_player_index then
         agent_player_index = event.player_index
         storage.agent_player_index = event.player_index
     end
