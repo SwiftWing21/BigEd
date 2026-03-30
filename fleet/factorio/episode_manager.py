@@ -12,10 +12,13 @@ log = logging.getLogger("biged.factorio.episode_manager")
 # Starting items per training phase
 PHASE_ITEMS: dict[int, dict[str, int]] = {
     1: {
-        "iron-plate": 8,
-        "coal": 10,
-        "stone-furnace": 1,
-        "burner-mining-drill": 1,
+        "iron-plate": 50,
+        "copper-plate": 20,
+        "coal": 30,
+        "stone": 20,
+        "stone-furnace": 4,
+        "burner-mining-drill": 2,
+        "wooden-chest": 2,
     },
     2: {
         "iron-plate": 20,
