@@ -71,7 +71,27 @@ local function create_agent(agent_id)
         storage.agent_inventories[agent_id] = inv
     end
 
-    game.print("[BigEd] Agent " .. agent_id .. " created at (" ..
+    -- Floating name label above agent (visible to spectators)
+    local agent_names = {"Alpha", "Beta", "Gamma", "Delta", "Epsilon", "Zeta", "Eta", "Theta"}
+    local label = agent_names[agent_id] or ("Agent " .. agent_id)
+    local colors = {
+        {r=0.3, g=0.9, b=1},   -- cyan
+        {r=1, g=0.7, b=0.2},   -- orange
+        {r=0.5, g=1, b=0.5},   -- green
+        {r=1, g=0.4, b=0.8},   -- pink
+    }
+    local color = colors[((agent_id - 1) % #colors) + 1]
+    rendering.draw_text{
+        text = label,
+        surface = surface,
+        target = char,
+        target_offset = {0, -2.5},
+        color = color,
+        scale = 1.5,
+        alignment = "center",
+    }
+
+    game.print("[BigEd] Agent " .. agent_id .. " (" .. label .. ") created at (" ..
         math.floor(char.position.x) .. ", " .. math.floor(char.position.y) .. ")")
     return char, inv
 end
