@@ -84,11 +84,15 @@ class BlueprintStamp:
 
 ### Policy Network Additions
 
-Two new heads on the existing 128-dim trunk:
-- `pack_head (128 → max_packs)` — which pack/stamp to invoke
-- `offset_head (128 → 2)` — dx, dy offset for placement (continuous)
+Two new heads on the existing 128-dim trunk output:
+- `pack_head (128 → MAX_PACK_SLOTS)` — which pack/stamp to invoke (fixed 64 slots, unused slots masked)
+- `offset_head (128 → 11×11)` — discrete dx, dy grid matching existing [-5,+5] bin system
 
 The existing action mask mechanism gates pack availability by phase and inventory.
+
+### Thread Safety
+
+PackRegistry uses copy-on-write for `packs`/`stamps`/`learned_packs` — mutations create a new dict, swap atomically. No locks needed for read-heavy access during training.
 
 ---
 
@@ -264,10 +268,12 @@ A candidate becomes a real pack if:
 ```
 Checkpoint complete
   → Record action subsequence from buffer
-  → Replay 3x in similar starting states
+  → Replay 3x in same episode (reset to pre-checkpoint state via Factorio save/load)
   → If passes all criteria → registry.promote_learned(candidate)
   → Available to all agents in future runs
 ```
+
+**Replay mechanism:** Before each checkpoint attempt, the bridge auto-saves the game state via RCON (`/save checkpoint_N_pre`). Replay uses `/load checkpoint_N_pre` to restore the same starting conditions. This is the simplest reliable replay — no state approximation needed.
 
 ### Storage
 
@@ -287,7 +293,7 @@ Learned packs that drop below 40% success rate over 20 invocations get demoted b
 ### Modified Architecture
 
 ```
-Existing trunk (256→128)
+Existing trunk (320→256→128)       # 128 local + 128 world + 64 features
   ├─ action_head (128→11)          # was 9, now +PACK +STAMP
   ├─ entity_head (128→max_ents)    # unchanged
   ├─ recipe_head (128→max_recs)    # unchanged
@@ -295,9 +301,22 @@ Existing trunk (256→128)
   ├─ position/direction heads      # unchanged
   │
   NEW:
-  ├─ pack_head (128→max_packs)     # which pack/stamp to invoke
-  └─ offset_head (128→2)           # dx, dy offset for placement
+  ├─ pack_head (128→64)            # MAX_PACK_SLOTS=64, unused slots masked
+  └─ offset_head (128→11×11)       # discrete dx, dy matching existing bin system
 ```
+
+### Parameter Head Routing
+
+`get_action_params()` gains two new cases:
+
+```python
+elif action_type == ActionType.PACK:
+    return {"pack_logits": self.pack_head(trunk), "offset": self.offset_head(trunk)}
+elif action_type == ActionType.STAMP:
+    return {"pack_logits": self.pack_head(trunk), "offset": self.offset_head(trunk)}
+```
+
+`_sample_params()` in bridge.py gains matching cases to sample pack_id from masked pack_logits and (dx, dy) from offset logits.
 
 ### Action Masking
 
@@ -334,15 +353,25 @@ def get_action_mask(phase, lesson, inventory, packs_available):
 
 - No PPO algorithm changes needed
 - PACK/STAMP are two more action types in the categorical distribution
-- Log probability includes pack selection probability
-- Value function learns that packs yield higher cumulative reward
 - Entropy bonus naturally encourages exploring pack usage early in training
+
+**PPO trajectory handling during pack execution:**
+
+During pack execution, the policy is NOT called — the PackExecutor replays primitives. These internal ticks are **excluded from the PPO trajectory buffer**. Instead:
+- The PACK action's log_prob is the probability of selecting PACK + selecting the specific pack_id
+- The PACK action's reward is the **cumulative reward** of all primitives within the pack, plus the completion bonus (or abort penalty)
+- The PACK action's value target uses the cumulative discounted return from pack start to pack end
+- This treats the pack as a single temporally-extended action (Options framework semantics)
+
+For STAMP actions: single tick, single reward, standard PPO transition — no special handling needed.
 
 ### State Encoder Addition
 
-One new feature added to the feature vector:
+One new feature added to the feature vector (bumps `_BASE_FEATURE_DIM` from 68 to 69):
 - `active_pack_progress` — 0.0 if no pack running, else `step_index / total_steps`
 - Lets the value function know a pack is in-flight and estimate remaining reward
+
+**Note:** This changes the policy's input dimension. Saved model checkpoints from before this change are incompatible and require retraining. Version the checkpoint format in the save metadata.
 
 ---
 
@@ -376,22 +405,71 @@ fleet/factorio/
 
 ## Lua Mod Changes
 
-One new RCON command handler in the Factorio mod:
+### Blueprint RCON Command
+
+New handler in the Factorio mod for `/biged-blueprint`:
 
 ```lua
--- /biged-blueprint handler
--- Decodes blueprint string, places entities at given position
--- Returns: {success: bool, entities_placed: [{name, position}...]}
--- Deducts items from player inventory
--- Validates placement area is clear
+-- 1. Decode blueprint string using game.decode_blueprint_string(str)
+-- 2. Offset all entity positions by the given (x, y) anchor
+-- 3. For each entity in the blueprint:
+--    a. Check player inventory has the item
+--    b. Check placement area is clear (game.can_place_entity)
+--    c. Place entity (surface.create_entity)
+--    d. Deduct item from player inventory
+--    e. Handle special cases:
+--       - Wire connections (red/green circuit network)
+--       - Module insertion
+--       - Recipe assignment
+--       - Fluid connections (pipes, pumps)
+-- 4. Return {success: bool, entities_placed: [{name, position}...],
+--           entities_failed: [{name, position, reason}...]}
+--
+-- Partial placement: if some entities fail, placed entities remain.
+-- The agent can retry or adapt. No rollback.
 ```
+
+### Production Metrics Extension
+
+The existing `get_metrics` remote call must track ALL item types in `total_produced`, not a fixed subset. Checkpoints 1-7 rely on `produced.automation-science-pack` through `produced.space-science-pack`. Use Factorio's `game.forces["player"].item_production_statistics` which tracks all items automatically.
 
 ## Migration
 
-- Existing 4-phase curriculum files remain as sub-lessons within checkpoints 0-3
+### Curriculum Transition (4 phases → 8 checkpoints)
+
+The `CurriculumManager` currently globs `phase{N}_*.toml`. The new checkpoint system:
+
+1. **Checkpoint files use the existing naming convention:** `phase{N}_checkpoint.toml` (e.g., `phase5_yellow_science.toml`)
+2. **Checkpoints 0-3** wrap the existing phase 1-4 TOML files — no changes to existing files
+3. **Checkpoints 4-7** are new TOML files added to `curricula/`
+4. `CurriculumManager` gains a `checkpoint` property that maps phase→checkpoint (phases 1-4 map to checkpoints 0-3, phases 5-8 map to checkpoints 4-7)
+5. The `_load_phase()` glob pattern remains `phase{N}_*.toml` — no loader changes
+
+### Entity/Recipe Registry Expansion
+
+Checkpoints 3-7 require entities and recipes not in current registries. New entries added to `ENTITY_REGISTRY` and `RECIPE_REGISTRY` in `action_space.py`:
+
+- **Checkpoint 3:** oil-refinery, chemical-plant, pumpjack, storage-tank
+- **Checkpoint 4:** electric-furnace, assembling-machine-2, rail, train-stop
+- **Checkpoint 5:** assembling-machine-3, beacon, speed-module, productivity-module
+- **Checkpoint 6:** rocket-silo, centrifuge, nuclear-reactor (optional)
+- **Checkpoint 7:** (no new entities — uses checkpoint 6 set)
+
+**Registry versioning:** Entity indices are deterministic (sorted by name). Adding entities changes indices. Saved model checkpoints are version-tagged and incompatible across registry changes — retraining required.
+
+### Bridge Integration Points
+
+- `bridge.py:90` — `num_action_types=9` must become `num_action_types=len(ActionType)` (dynamic)
+- `bridge.py:337` — `_sample_params()` gains PACK/STAMP cases
+- `bridge.py:576` — action mask tensor sized by `len(ActionType)` (already dynamic via enum)
+- `action_space.py:484` — `get_action_type_mask()` returns `[1] * len(ActionType)` (auto-extends)
+
+### Other
+
 - Phase-gated entity/recipe sets continue working within checkpoints
 - No breaking changes to existing LLM brain mode (packs are ML-policy-only initially)
-- Dependency resolver (`dependency_resolver.py`) gets imported by PackExecutor but its API doesn't change
+- Dependency resolver (`dependency_resolver.py`) gets imported by PackExecutor — needs shared `RecipeDAG` instance from bridge (passed via constructor injection)
+- Saved ML checkpoints are incompatible after this change (new action types + feature dim + registry expansion)
 
 ## Future Upgrades
 
