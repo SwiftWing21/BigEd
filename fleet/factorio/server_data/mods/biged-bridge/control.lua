@@ -56,13 +56,20 @@ local function create_agent(agent_id)
         return nil, nil
     end
 
-    -- Create script inventory (independent of any entity)
-    local inv = game.create_inventory(CONFIG.agent_inventory_size)
+    -- Make agent character destructible=false (immune to fire/damage)
+    -- This prevents the crash landing fire from killing it every tick
+    char.destructible = false
 
+    -- Reuse existing inventory if valid, otherwise create new one
     storage.agent_chars = storage.agent_chars or {}
     storage.agent_inventories = storage.agent_inventories or {}
     storage.agent_chars[agent_id] = char
-    storage.agent_inventories[agent_id] = inv
+
+    local inv = storage.agent_inventories[agent_id]
+    if not inv or not inv.valid then
+        inv = game.create_inventory(CONFIG.agent_inventory_size)
+        storage.agent_inventories[agent_id] = inv
+    end
 
     game.print("[BigEd] Agent " .. agent_id .. " created at (" ..
         math.floor(char.position.x) .. ", " .. math.floor(char.position.y) .. ")")
@@ -84,7 +91,7 @@ local function get_agent_context(agent_id)
     storage.agent_inventories = storage.agent_inventories or {}
 
     local char = storage.agent_chars[agent_id]
-    if char and char.valid and char.health > 0 then
+    if char and char.valid then
         ctx.character = char
         ctx.has_character = true
     else
