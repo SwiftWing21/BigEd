@@ -61,6 +61,7 @@ class BridgeConfig:
     mode: str = "ml"
     game_speed: int = 10  # Factorio game.speed multiplier for training
     ml_tick_delay_ms: int = 0  # delay between ML ticks (0 = no sleep, max throughput)
+    num_agents: int = 4  # number of standalone agent characters in same world
 
     # ML training hyperparameters
     ml_learning_rate: float = 3e-4

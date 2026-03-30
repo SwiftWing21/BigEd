@@ -366,27 +366,67 @@ class FactorioBridge:
         return encoded
 
     async def ml_tick(self) -> None:
-        """Single ML-mode perception -> action cycle."""
+        """Run one ML tick for ALL agents, then advance counters."""
+        import torch
+
+        # 0e. Drain human command queue (plans, demonstrations) — once per tick
+        if not hasattr(self, '_pending_demo_actions'):
+            self._pending_demo_actions = []
+            self._pending_demo_cmd_id = None
+
+        if not self._pending_demo_actions and not self.command_queue.empty():
+            try:
+                cmd = self.command_queue.get_nowait()
+                from factorio.action_translator import translate_batch
+                translated = translate_batch(cmd.get("actions", []))
+                self._pending_demo_actions = [ta for ta in translated if ta.rcon_command]
+                self._pending_demo_cmd_id = cmd.get("id")
+                log.info("Demo queue: %d actions loaded", len(self._pending_demo_actions))
+            except Exception:
+                log.warning("Queue command load failed", exc_info=True)
+
+        if self._pending_demo_actions:
+            ta = self._pending_demo_actions.pop(0)
+            try:
+                rcon_cmd = ta.rcon_command
+                if rcon_cmd.startswith("/biged-cmd "):
+                    rcon_cmd = rcon_cmd[len("/biged-cmd "):]
+                resp = await self.rcon.remote_call("exec_cmd", rcon_cmd)
+                log.info("Demo step: %s -> %s", ta.description, str(resp)[:100])
+            except Exception:
+                log.warning("Demo action failed: %s", ta.description, exc_info=True)
+            if not self._pending_demo_actions and self._pending_demo_cmd_id:
+                store_result(self._pending_demo_cmd_id, {"results": "executed"})
+                self._pending_demo_cmd_id = None
+            return  # Demo action takes priority this tick
+
+        # Run ML tick for each agent
+        num_agents = getattr(self.config, 'num_agents', 1)
+        for agent_id in range(1, num_agents + 1):
+            await self._ml_tick_agent(agent_id)
+
+    async def _ml_tick_agent(self, agent_id: int = 1) -> None:
+        """Single ML-mode perception -> action cycle for one agent."""
         import torch
 
         # 0. Get state and verify agent has a body
-        raw_state = await self.rcon.remote_call("get_state")
+        raw_state = await self.rcon.remote_call("get_state", str(agent_id))
         state = parse_state(raw_state)
 
         if not state.player_alive:
-            log.warning("ML tick %d: agent has no body — calling ensure_agent", self._tick_count)
+            log.warning("ML tick %d agent %d: no body — calling ensure_agent",
+                        self._tick_count, agent_id)
             try:
-                result = await self.rcon.remote_call("ensure_agent")
-                log.info("Body check result: %s", str(result)[:200])
-                # Re-fetch state after respawn
-                raw_state = await self.rcon.remote_call("get_state")
+                result = await self.rcon.remote_call("ensure_agent", str(agent_id))
+                log.info("Agent %d body check: %s", agent_id, str(result)[:200])
+                raw_state = await self.rcon.remote_call("get_state", str(agent_id))
                 state = parse_state(raw_state)
                 if not state.player_alive:
-                    log.error("Agent still has no body after ensure_agent — skipping tick")
+                    log.error("Agent %d still has no body — skipping", agent_id)
                     self._tick_count += 1
                     return
             except Exception:
-                log.warning("ensure_agent failed — skipping tick", exc_info=True)
+                log.warning("ensure_agent(%d) failed — skipping", agent_id, exc_info=True)
                 self._tick_count += 1
                 return
 
@@ -469,39 +509,6 @@ class FactorioBridge:
         # 0d. Update bridge status so dashboard shows Running
         update_status(True, state.tick, self.cadence.mode)
 
-        # 0e. Drain human command queue — ONE action per tick (interleaved with RL)
-        #     Batch commands are expanded into _pending_demo_actions and executed
-        #     one per tick so mine→craft→place sequences have time to take effect.
-        if not hasattr(self, '_pending_demo_actions'):
-            self._pending_demo_actions = []
-            self._pending_demo_cmd_id = None
-
-        if not self._pending_demo_actions and not self.command_queue.empty():
-            try:
-                cmd = self.command_queue.get_nowait()
-                from factorio.action_translator import translate_batch
-                translated = translate_batch(cmd.get("actions", []))
-                self._pending_demo_actions = [ta for ta in translated if ta.rcon_command]
-                self._pending_demo_cmd_id = cmd.get("id")
-                log.info("Demo queue: %d actions loaded", len(self._pending_demo_actions))
-            except Exception:
-                log.warning("Queue command load failed", exc_info=True)
-
-        if self._pending_demo_actions:
-            ta = self._pending_demo_actions.pop(0)
-            try:
-                rcon_cmd = ta.rcon_command
-                if rcon_cmd.startswith("/biged-cmd "):
-                    rcon_cmd = rcon_cmd[len("/biged-cmd "):]
-                resp = await self.rcon.remote_call("exec_cmd", rcon_cmd)
-                log.info("Demo step: %s -> %s", ta.description, str(resp)[:100])
-            except Exception:
-                log.warning("Demo action failed: %s", ta.description, exc_info=True)
-            if not self._pending_demo_actions and self._pending_demo_cmd_id:
-                store_result(self._pending_demo_cmd_id, {"results": "executed"})
-                self._pending_demo_cmd_id = None
-            return  # Skip RL action this tick — demo action took priority
-
         # 1. Fetch metrics
         raw_metrics = None
         if self._tick_count % 5 == 0:
@@ -560,7 +567,8 @@ class FactorioBridge:
             action_dict["position"]["x"] = abs_x
             action_dict["position"]["y"] = abs_y
 
-        # 5. Execute via RCON
+        # 5. Execute via RCON (inject agent_id so exec_cmd uses the right character)
+        action_dict["agent_id"] = agent_id
         from factorio.action_translator import translate_action
         translated = translate_action(action_dict)
         result = {"success": False}
@@ -717,12 +725,14 @@ class FactorioBridge:
 
         log.info("Bridge connected, entering tick loop")
 
-        # Ensure agent player exists (both modes)
-        try:
-            result = await self.rcon.remote_call("ensure_agent")
-            log.info("Player init: %s", str(result)[:200])
-        except Exception as e:
-            log.warning("Player init failed: %s", e)
+        # Ensure all agent characters exist
+        num_agents = getattr(self.config, 'num_agents', 1)
+        for aid in range(1, num_agents + 1):
+            try:
+                result = await self.rcon.remote_call("ensure_agent", str(aid))
+                log.info("Agent %d init: %s", aid, str(result)[:200])
+            except Exception as e:
+                log.warning("Agent %d init failed: %s", aid, e)
 
         if self.config.mode == "ml":
             await self._episode_mgr.set_game_speed(self.config.game_speed)

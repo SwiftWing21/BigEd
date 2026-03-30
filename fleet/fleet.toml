@@ -65,7 +65,7 @@ wake_word = ""                       # Empty = disabled. Set to "hey biged" etc.
 tts_enabled = false                  # Local text-to-speech responses
 
 [models]
-local = "qwen3:0.6b"
+local = "qwen3:8b"
 complex = "qwen3:8b"
 complex_provider = "local"    # DEPRECATED: superseded by [api_gate]. Kept for backwards compat.
 conductor_model = "qwen3:4b"  # CPU-pinned user chat model (num_gpu=0, ~2-3GB RAM, 0 VRAM)
@@ -835,7 +835,7 @@ host_fleet_id = ""
 bridge_port = 27016
 rcon_host = "localhost"
 rcon_port = 27015
-rcon_password = "UE1NmGqCCiWVMwDFTB7mNg"
+rcon_password = "5X8BgWAAs1vCBVbXL22PnA"
 server_mode = "headless"
 factorio_path = ""
 headless_path = ""
@@ -866,7 +866,8 @@ analyze_interval_ticks = 50
 mode = "ml"
 game_speed = 2  # 10x disconnects, 4x stutters — 2x smooth for spectating
 ml_tick_delay_ms = 0  # 0 = max throughput (~30-50 actions/sec), >0 = ms between ticks
-ollama_model = "qwen3:1.7b"  # CPU model for teacher — keeps GPU free for Factorio rendering
+num_agents = 4  # standalone agent characters in same world (shared policy)
+ollama_model = "qwen3:8b"  # GPU model for teacher — better plan quality
 
 [factorio.experiments]
 budget_minutes = 10
