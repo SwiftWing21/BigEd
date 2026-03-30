@@ -208,16 +208,13 @@ local function get_resources(surface, area)
         end
         resources[name].patches = resources[name].patches + 1
         resources[name].total_amount = resources[name].total_amount + ent.amount
-        -- Sample resource positions (every 8th tile, up to 64)
-        if pos_count < 64 and resources[name].patches % 8 == 1 then
-            table.insert(positions, {
-                name = name,
-                x = ent.position.x,
-                y = ent.position.y,
-                amount = ent.amount,
-            })
-            pos_count = pos_count + 1
-        end
+        -- Send all resource positions in local area (no sampling cap)
+        table.insert(positions, {
+            name = name,
+            x = ent.position.x,
+            y = ent.position.y,
+            amount = ent.amount,
+        })
     end
     local result = {}
     for _, v in pairs(resources) do table.insert(result, v) end
