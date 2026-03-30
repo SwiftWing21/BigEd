@@ -12,7 +12,12 @@ class CurriculumManager:
 
     def __init__(self, current_phase: int = 1, curricula_dir: str = "fleet/factorio/curricula"):
         self._phase = current_phase
-        self._curricula_dir = Path(curricula_dir)
+        path = Path(curricula_dir)
+        if not path.is_absolute():
+            # Resolve relative to project root (grandparent of this file: fleet/factorio/ -> fleet/ -> project/)
+            fleet_dir = Path(__file__).parent.parent
+            path = fleet_dir.parent / curricula_dir
+        self._curricula_dir = path
         self._meta: dict = {}
         self._lessons: list[dict] = []
         self._tracker: LessonTracker | None = None
