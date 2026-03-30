@@ -353,6 +353,9 @@ class FactorioBridge:
                 self._tick_count += 1
                 return  # skip RL action this tick, let teacher results settle
 
+        # 0c. Update bridge status so dashboard shows Running
+        update_status(True, state.tick, self.cadence.mode)
+
         # 1. Fetch metrics
         raw_metrics = None
         if self._tick_count % 5 == 0:
