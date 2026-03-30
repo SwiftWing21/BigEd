@@ -71,21 +71,28 @@ local function get_agent_context()
         end
     end
     if not ctx.has_player then
-        for _, p in pairs(game.players) do
-            if p.valid then
-                ctx.player = p
-                ctx.has_player = true
-                ctx.surface = p.surface or ctx.surface
-                ctx.force = p.force or ctx.force
-                agent_player_index = p.index
-                if p.character and p.character.valid then
-                    ctx.character = p.character
-                    ctx.has_character = true
-                    ctx.inventory = p.get_main_inventory()
-                end
-                break
+        -- Only claim a player if there is exactly one (headless mode).
+        -- With multiple players (spectator connected), never hijack a human.
+        local all_players = game.players
+        local count = 0
+        local solo = nil
+        for _, p in pairs(all_players) do
+            if p.valid then count = count + 1; solo = p end
+        end
+        if count == 1 and solo then
+            ctx.player = solo
+            ctx.has_player = true
+            ctx.surface = solo.surface or ctx.surface
+            ctx.force = solo.force or ctx.force
+            agent_player_index = solo.index
+            storage.agent_player_index = solo.index
+            if solo.character and solo.character.valid then
+                ctx.character = solo.character
+                ctx.has_character = true
+                ctx.inventory = solo.get_main_inventory()
             end
         end
+        -- If multiple players, fall through to headless character below
     end
 
     -- Headless fallback: use stored character
@@ -725,29 +732,33 @@ local function fn_ensure_player()
         })
     end
 
-    -- Strategy 1: Connected players with god controller
+    -- Strategy 1: Only use a connected player if they are the SOLE player
+    -- (headless with no spectator). Never hijack a human spectator.
+    local player_count = 0
+    local sole_player = nil
     for _, p in pairs(game.players) do
-        if p.valid and p.connected and not p.character then
-            local ok, err = pcall(function()
-                p.set_controller{type = defines.controllers.god}
-                p.create_character()
-            end)
-            if ok and p.character and p.character.valid then
-                agent_player_index = p.index
-                storage.agent_player_index = p.index
-                game.print("[BigEd Bridge] Respawned character via connected player " .. p.name)
-                return helpers.table_to_json({
-                    success = true,
-                    headless = true,
-                    has_player = true,
-                    player_index = p.index,
-                    has_character = true,
-                    position = p.character.position,
-                    health = p.character.health,
-                    max_health = p.character.max_health,
-                    alive = p.character.health > 0,
-                })
-            end
+        if p.valid then player_count = player_count + 1; sole_player = p end
+    end
+    if player_count == 1 and sole_player and sole_player.connected and not sole_player.character then
+        local ok, err = pcall(function()
+            sole_player.set_controller{type = defines.controllers.god}
+            sole_player.create_character()
+        end)
+        if ok and sole_player.character and sole_player.character.valid then
+            agent_player_index = sole_player.index
+            storage.agent_player_index = sole_player.index
+            game.print("[BigEd Bridge] Respawned character for sole player " .. sole_player.name)
+            return helpers.table_to_json({
+                success = true,
+                headless = true,
+                has_player = true,
+                player_index = sole_player.index,
+                has_character = true,
+                position = sole_player.character.position,
+                health = sole_player.character.health,
+                max_health = sole_player.character.max_health,
+                alive = sole_player.character.health > 0,
+            })
         end
     end
 
