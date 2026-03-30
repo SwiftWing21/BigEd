@@ -8,7 +8,7 @@ Grid  (4 channels, grid_size x grid_size):
   ch 2 — resource density  (ore type id / 4, from resource_positions)
   ch 3 — resource amount   (amount / 5000, from resource_positions)
 
-Feature vector (64 dims):
+Feature vector (64 base dims, 80 with spatial memory):
   [0:30]   inventory counts for TRACKED_ITEMS, normalized per item
   [30:50]  research tech one-hot (20 slots from TECH_REGISTRY)
   [50]     research progress 0-1
@@ -62,7 +62,8 @@ _ITEM_MAX: dict[str, float] = {
 
 _NUM_TECHS = 20            # fixed one-hot width (TECH_REGISTRY has 11 entries)
 _MAX_ENTITY_ID = max(ENTITY_REGISTRY.values()) if ENTITY_REGISTRY else 1
-_FEATURE_DIM = 64          # 30 + 20 + 1 + 3 + 2 + 4 + 1 + 3
+_BASE_FEATURE_DIM = 64     # 30 + 20 + 1 + 3 + 2 + 4 + 1 + 3
+_SPATIAL_FEATURE_DIM = 16  # bearing/distance to resources + counts + nearest entity
 _GRID_CHANNELS = 4
 _TICK_NORM = 216_000.0     # ~1 hour of Factorio ticks (60 tps × 3600 s)
 _POWER_CAP_MW = 100.0      # normalisation cap for capacity_mw
@@ -82,12 +83,14 @@ class StateEncoder:
         grid_size: int = 64,
         lesson_index: int = 0,
         strategy_goal: list[float] | None = None,
+        spatial_memory=None,
     ) -> None:
         self._phase = max(1, min(4, phase))
         self._grid_size = grid_size
         self._lesson_index = lesson_index
         self._strategy_goal: list[float] = list(strategy_goal) if strategy_goal else [0.0, 0.0, 0.0]
         self._half = grid_size // 2
+        self._spatial_memory = spatial_memory
 
     # ------------------------------------------------------------------
     # Public setters
@@ -108,7 +111,9 @@ class StateEncoder:
 
     @property
     def feature_dim(self) -> int:
-        return _FEATURE_DIM
+        if self._spatial_memory is not None:
+            return _BASE_FEATURE_DIM + _SPATIAL_FEATURE_DIM
+        return _BASE_FEATURE_DIM
 
     @property
     def grid_channels(self) -> int:
@@ -133,7 +138,16 @@ class StateEncoder:
         features — shape (feature_dim,)
         """
         grid = self._encode_grid(state)
-        features = self._encode_features(state, metrics)
+        base_features = self._encode_features(state, metrics)
+        if self._spatial_memory is not None:
+            px = state.player_position.get("x", 0.0)
+            py = state.player_position.get("y", 0.0)
+            spatial = np.array(
+                self._spatial_memory.get_features(px, py), dtype=np.float32,
+            )
+            features = np.concatenate([base_features, spatial])
+        else:
+            features = base_features
         return grid, features
 
     # ------------------------------------------------------------------
@@ -193,7 +207,7 @@ class StateEncoder:
         state: GameState,
         metrics: GameMetrics | None,
     ) -> np.ndarray:
-        feats = np.zeros(_FEATURE_DIM, dtype=np.float32)
+        feats = np.zeros(_BASE_FEATURE_DIM, dtype=np.float32)
 
         # [0:30] inventory
         for i, item in enumerate(TRACKED_ITEMS):
