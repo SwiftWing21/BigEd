@@ -44,6 +44,12 @@ class FactorioBridge:
         self._consecutive_failures = 0
         self._tick_count = 0
 
+        # Hybrid teacher: LLM intervenes when RL is stuck on a lesson
+        self._teacher_stuck_threshold = 500  # steps on same lesson before LLM help
+        self._teacher_lesson_step_count = 0
+        self._teacher_last_lesson = -1
+        self._teacher_cooldown = 0  # skip N ticks after teacher intervention
+
         if self.config.mode == "ml":
             from factorio.state_encoder import StateEncoder
             from factorio.ml_policy import FactorioPolicy
@@ -218,6 +224,52 @@ class FactorioBridge:
         # 6. Update bridge status
         update_status(True, state.tick, self.cadence.mode)
 
+    async def _teacher_intervention(self, state) -> bool:
+        """LLM teacher generates and executes actions when RL agent is stuck.
+
+        Uses the existing AgentBrain (Ollama LLM) to read the curriculum hint,
+        understand the game state, and produce a plan of concrete actions.
+        Returns True if the teacher acted (caller should skip RL action).
+        """
+        objective = self._curriculum.get_current_objective()
+        hint = objective.get("hint", "")
+        lesson = objective.get("lesson_name", "?")
+        log.info("Teacher intervention for lesson '%s' — hint: %s", lesson, hint)
+
+        try:
+            # Sync curriculum state so the brain sees the current lesson
+            self.brain.curriculum._phase = self._curriculum._phase
+            self.brain.curriculum._tracker = self._curriculum._tracker
+            self.brain.curriculum._lessons = self._curriculum._lessons
+            self.brain.curriculum._meta = self._curriculum._meta
+
+            # Generate plan via Ollama (blocking — runs in executor)
+            plan = await asyncio.get_event_loop().run_in_executor(
+                None, self.brain._generate_plan, state)
+            if not plan:
+                log.warning("Teacher produced no plan")
+                return False
+
+            # Execute up to 10 actions from the teacher plan
+            executed = 0
+            from factorio.action_translator import translate_action
+            for action_dict in plan[:10]:
+                translated = translate_action(action_dict)
+                if translated.rcon_command:
+                    try:
+                        resp = await self.rcon.remote_call("exec_cmd", translated.rcon_command)
+                        log.info("Teacher action: %s → %s",
+                                 translated.description, str(resp)[:100])
+                        executed += 1
+                    except Exception:
+                        log.warning("Teacher action failed", exc_info=True)
+            log.info("Teacher executed %d/%d planned actions", executed, len(plan))
+            self._teacher_cooldown = 50  # let RL observe results for 50 ticks
+            return executed > 0
+        except Exception:
+            log.warning("Teacher intervention failed", exc_info=True)
+            return False
+
     def _sample_params(self, action_type: int, params: dict):
         """Sample concrete parameter values from policy head logits."""
         import torch
@@ -282,6 +334,24 @@ class FactorioBridge:
                 log.warning("ensure_player failed — skipping tick", exc_info=True)
                 self._tick_count += 1
                 return
+
+        # 0b. Hybrid teacher: track lesson progress and intervene if stuck
+        current_lesson = self._curriculum.get_progress().get("completed", 0)
+        if current_lesson != self._teacher_last_lesson:
+            self._teacher_last_lesson = current_lesson
+            self._teacher_lesson_step_count = 0
+        self._teacher_lesson_step_count += 1
+
+        if self._teacher_cooldown > 0:
+            self._teacher_cooldown -= 1
+        elif self._teacher_lesson_step_count >= self._teacher_stuck_threshold:
+            log.info("RL stuck on lesson %d for %d steps — calling LLM teacher",
+                     current_lesson, self._teacher_lesson_step_count)
+            taught = await self._teacher_intervention(state)
+            if taught:
+                self._teacher_lesson_step_count = 0  # reset counter
+                self._tick_count += 1
+                return  # skip RL action this tick, let teacher results settle
 
         # 1. Fetch metrics
         raw_metrics = None
