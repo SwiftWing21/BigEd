@@ -685,51 +685,57 @@ local function fn_exec_cmd(json_str)
         result.placed = placed
 
     elseif action == "mine" then
+        -- FLE-style: ALWAYS check resource entities (ore) first, then fallback to
+        -- regular entities (trees/rocks). Prevents accidentally mining furnaces/drills.
         local pos = parsed.position or {x = 0, y = 0}
         if not inv then
             result.error = "no inventory available for mining"
             return helpers.table_to_json(result)
         end
         local area = {{pos.x - 0.5, pos.y - 0.5}, {pos.x + 0.5, pos.y + 0.5}}
-        local entities = surface.find_entities_filtered{area = area, limit = 1}
-        if #entities > 0 then
-            local entity = entities[1]
-            if entity.minable then
-                local products = entity.prototype.mineable_properties
-                if products and products.products then
-                    for _, product in pairs(products.products) do
-                        if product.type == "item" then
-                            inv.insert{name = product.name, count = product.amount or 1}
-                        end
-                    end
-                end
-                local mined_name = entity.name
-                entity.destroy()
-                result.success = true
-                result.mined = mined_name
-                result.position = pos
-            else
-                result.error = "entity not minable"
+
+        -- Priority 1: Resource entities (ore patches) — the main thing we want to mine
+        local resources = surface.find_entities_filtered{
+            area = area, type = "resource", limit = 1
+        }
+        if #resources > 0 then
+            local resource = resources[1]
+            local mine_amount = math.min(resource.amount, 10)  -- 10 per action (was 5)
+            resource.amount = resource.amount - mine_amount
+            inv.insert{name = resource.name, count = mine_amount}
+            if resource.amount <= 0 then
+                resource.destroy()
             end
-        else
-            -- Try resource entities (ore patches)
-            local resources = surface.find_entities_filtered{
-                area = area, type = "resource", limit = 1
-            }
-            if #resources > 0 then
-                local resource = resources[1]
-                local mine_amount = math.min(resource.amount, 5)
-                resource.amount = resource.amount - mine_amount
-                inv.insert{name = resource.name, count = mine_amount}
-                if resource.amount <= 0 then
-                    resource.destroy()
-                end
                 result.success = true
                 result.mined = resource.name
                 result.amount = mine_amount
                 result.position = pos
+        else
+            -- Priority 2: Natural entities only (trees, rocks) — never mine buildings
+            local naturals = surface.find_entities_filtered{
+                area = area, type = {"tree", "simple-entity"}, limit = 1
+            }
+            if #naturals > 0 then
+                local entity = naturals[1]
+                if entity.minable then
+                    local products = entity.prototype.mineable_properties
+                    if products and products.products then
+                        for _, product in pairs(products.products) do
+                            if product.type == "item" then
+                                inv.insert{name = product.name, count = product.amount or 1}
+                            end
+                        end
+                    end
+                    local mined_name = entity.name
+                    entity.destroy()
+                    result.success = true
+                    result.mined = mined_name
+                    result.position = pos
+                else
+                    result.error = "entity not minable"
+                end
             else
-                result.error = "nothing to mine at position"
+                result.error = "no resource or tree at position"
             end
         end
 
