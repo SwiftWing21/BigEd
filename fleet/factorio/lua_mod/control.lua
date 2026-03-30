@@ -173,6 +173,8 @@ end
 
 local function get_resources(surface, area)
     local resources = {}
+    local positions = {}
+    local pos_count = 0
     local res_entities = surface.find_entities_filtered({
         area = area, type = "resource",
     })
@@ -183,10 +185,20 @@ local function get_resources(surface, area)
         end
         resources[name].patches = resources[name].patches + 1
         resources[name].total_amount = resources[name].total_amount + ent.amount
+        -- Sample resource positions (every 8th tile, up to 64)
+        if pos_count < 64 and resources[name].patches % 8 == 1 then
+            table.insert(positions, {
+                name = name,
+                x = ent.position.x,
+                y = ent.position.y,
+                amount = ent.amount,
+            })
+            pos_count = pos_count + 1
+        end
     end
     local result = {}
     for _, v in pairs(resources) do table.insert(result, v) end
-    return result
+    return result, positions
 end
 
 -- ─── Remote interface functions (return JSON strings) ────────────────────────
@@ -243,7 +255,7 @@ local function fn_get_state()
         end
     end
 
-    local resources = get_resources(surface, area)
+    local resources, resource_positions = get_resources(surface, area)
     local research = nil
     local current = force.current_research
     if current then
@@ -267,6 +279,7 @@ local function fn_get_state()
         entities = entities,
         entity_count = count,
         resources = resources,
+        resource_positions = resource_positions,
         research = research,
         map_explored_chunks = 0,  -- force.get_chunks removed in 2.0; TODO: use force.is_chunk_charted
     })

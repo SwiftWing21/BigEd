@@ -373,6 +373,21 @@ class FactorioBridge:
                 self._tick_count += 1
                 return
 
+        # 0a. Spawn leash — keep agent near resources during early training
+        #     Phase 1 ore patches are within ~100 tiles of origin
+        pos = state.player_position
+        if pos:
+            px = pos.get("x", 0) if isinstance(pos, dict) else getattr(pos, "x", 0)
+            py = pos.get("y", 0) if isinstance(pos, dict) else getattr(pos, "y", 0)
+            if abs(px) > 200 or abs(py) > 200:
+                try:
+                    await self.rcon.remote_call("exec_cmd",
+                        '{"action":"move","position":{"x":0,"y":0}}')
+                    log.info("Spawn leash: teleported agent from (%d,%d) back to origin",
+                             int(px), int(py))
+                except Exception:
+                    pass
+
         # 0b. Hybrid teacher: track lesson progress and intervene if stuck
         #     LLM runs in background — RL keeps ticking while teacher thinks.
         #     When teacher plan arrives, execute actions over the next few ticks.
@@ -456,12 +471,14 @@ class FactorioBridge:
 
         # 4b. Convert relative offsets to absolute world coordinates
         #     Policy outputs [-5, +5] relative to player.
-        #     Scale by 2 to cover [-10, +10] range without changing network.
         if "position" in action_dict and state.player_position:
             px = state.player_position.get("x", 0) if isinstance(state.player_position, dict) else getattr(state.player_position, "x", 0)
             py = state.player_position.get("y", 0) if isinstance(state.player_position, dict) else getattr(state.player_position, "y", 0)
-            action_dict["position"]["x"] = action_dict["position"]["x"] * 2 + int(px)
-            action_dict["position"]["y"] = action_dict["position"]["y"] * 2 + int(py)
+            action_name = action_dict.get("action", "")
+            # Place needs wider reach (2x scale); move/mine use 1x
+            scale = 2 if action_name == "place" else 1
+            action_dict["position"]["x"] = action_dict["position"]["x"] * scale + int(px)
+            action_dict["position"]["y"] = action_dict["position"]["y"] * scale + int(py)
 
         # 5. Execute via RCON
         from factorio.action_translator import translate_action

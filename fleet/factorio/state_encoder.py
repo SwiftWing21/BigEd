@@ -5,8 +5,8 @@ Convert Factorio GameState into tensors for the CNN+MLP policy network.
 Grid  (4 channels, grid_size x grid_size):
   ch 0 — entity type ID from ENTITY_REGISTRY, normalized  (id / max_id)
   ch 1 — entity direction, normalized 0-1  (direction / 7.0)
-  ch 2 — resource density  (deferred — zeros)
-  ch 3 — connectivity      (deferred — zeros)
+  ch 2 — resource density  (ore type id / 4, from resource_positions)
+  ch 3 — resource amount   (amount / 5000, from resource_positions)
 
 Feature vector (64 dims):
   [0:30]   inventory counts for TRACKED_ITEMS, normalized per item
@@ -161,9 +161,26 @@ class StateEncoder:
                     continue
                 grid[0, gy, gx] = entity_id / _MAX_ENTITY_ID
                 grid[1, gy, gx] = entity.direction / 7.0
-                # channels 2 and 3 are deferred — remain 0
             except Exception:
                 log.warning("Failed to encode entity %r", entity.name, exc_info=True)
+
+        # Channel 2-3: resource positions (ore visibility)
+        _RESOURCE_IDS = {"iron-ore": 1, "copper-ore": 2, "coal": 3, "stone": 4}
+        for rp in getattr(state, "resource_positions", []):
+            try:
+                rx = rp.get("x", 0.0)
+                ry = rp.get("y", 0.0)
+                gx = round(rx - px) + half
+                gy = round(ry - py) + half
+                if not (0 <= gx < g and 0 <= gy < g):
+                    continue
+                rid = _RESOURCE_IDS.get(rp.get("name", ""), 0)
+                if rid == 0:
+                    continue
+                grid[2, gy, gx] = rid / 4.0
+                grid[3, gy, gx] = min(rp.get("amount", 0) / 5000.0, 1.0)
+            except Exception:
+                pass
 
         return grid
 
