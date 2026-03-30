@@ -2,13 +2,14 @@
 """
 Convert Factorio GameState into tensors for the CNN+MLP policy network.
 
-Grid  (4 channels, grid_size x grid_size):
+Grid  (5 channels, grid_size x grid_size):
   ch 0 — entity type ID from ENTITY_REGISTRY, normalized  (id / max_id)
   ch 1 — entity direction, normalized 0-1  (direction / 7.0)
   ch 2 — resource density  (ore type id / 4, from resource_positions)
   ch 3 — resource amount   (amount / 5000, from resource_positions)
+  ch 4 — terrain type  (water=1.0, grass~0.2, sand~0.4, concrete~0.7)
 
-Feature vector (64 base dims, 80 with spatial memory):
+Feature vector (68 base dims, 84 with spatial memory):
   [0:30]   inventory counts for TRACKED_ITEMS, normalized per item
   [30:50]  research tech one-hot (20 slots from TECH_REGISTRY)
   [50]     research progress 0-1
@@ -17,6 +18,7 @@ Feature vector (64 base dims, 80 with spatial memory):
   [56:60]  curriculum phase one-hot (4 phases)
   [60]     lesson index normalized (/ 20)
   [61:64]  strategy goal vector (zeros by default)
+  [64:68]  global resource counts (iron/copper/coal/stone, normalized)
 """
 import logging
 import numpy as np
@@ -62,10 +64,24 @@ _ITEM_MAX: dict[str, float] = {
 
 _NUM_TECHS = 20            # fixed one-hot width (TECH_REGISTRY has 11 entries)
 _MAX_ENTITY_ID = max(ENTITY_REGISTRY.values()) if ENTITY_REGISTRY else 1
-_BASE_FEATURE_DIM = 64     # 30 + 20 + 1 + 3 + 2 + 4 + 1 + 3
+_BASE_FEATURE_DIM = 68     # 30 + 20 + 1 + 3 + 2 + 4 + 1 + 3 + 4 (global resources)
 _SPATIAL_FEATURE_DIM = 16  # bearing/distance to resources + counts + nearest entity
-_GRID_CHANNELS = 4
+_GRID_CHANNELS = 5         # entity type, direction, resource type, resource amount, terrain
 _TICK_NORM = 216_000.0     # ~1 hour of Factorio ticks (60 tps × 3600 s)
+
+# Terrain tile type → normalized ID for grid channel 4
+_TERRAIN_IDS: dict[str, float] = {
+    "water": 1.0, "deepwater": 1.0, "water-green": 1.0,
+    "grass-1": 0.2, "grass-2": 0.2, "grass-3": 0.25, "grass-4": 0.25,
+    "dirt-1": 0.3, "dirt-2": 0.3, "dirt-3": 0.35, "dirt-4": 0.35,
+    "sand-1": 0.4, "sand-2": 0.4, "sand-3": 0.45,
+    "dry-dirt": 0.35, "red-desert-0": 0.5, "red-desert-1": 0.5,
+    "red-desert-2": 0.55, "red-desert-3": 0.55,
+    "concrete": 0.7, "refined-concrete": 0.75, "stone-path": 0.65,
+    "hazard-concrete-left": 0.7, "hazard-concrete-right": 0.7,
+    "landfill": 0.6,
+    "out-of-map": 0.0,
+}
 _POWER_CAP_MW = 100.0      # normalisation cap for capacity_mw
 _POWER_COUNT_CAP = 50.0    # normalisation cap for electric entity count
 
@@ -203,6 +219,20 @@ class StateEncoder:
             except Exception:
                 pass
 
+        # Channel 4: terrain type (water=1.0, grass~0.2, sand~0.4, concrete~0.7)
+        for tile in getattr(state, "terrain", []):
+            try:
+                tx = tile.get("x", 0.0)
+                ty = tile.get("y", 0.0)
+                gx = round(tx - px) + half
+                gy = round(ty - py) + half
+                if not (0 <= gx < g and 0 <= gy < g):
+                    continue
+                tid = _TERRAIN_IDS.get(tile.get("t", ""), 0.15)
+                grid[4, gy, gx] = tid
+            except Exception:
+                pass
+
         return grid
 
     # ------------------------------------------------------------------
@@ -265,5 +295,12 @@ class StateEncoder:
         goal = self._strategy_goal
         for j in range(min(3, len(goal))):
             feats[61 + j] = float(goal[j])
+
+        # [64:68] global resource counts (normalized, strategic awareness)
+        _GLOBAL_NORM = 1e9  # 1 billion ore as cap
+        _GLOBAL_RESOURCES = ["iron-ore", "copper-ore", "coal", "stone"]
+        global_res = getattr(state, "global_resources", {})
+        for i, rname in enumerate(_GLOBAL_RESOURCES):
+            feats[64 + i] = float(min(global_res.get(rname, 0) / _GLOBAL_NORM, 1.0))
 
         return feats

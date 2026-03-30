@@ -69,7 +69,7 @@ class FactorioBridge:
             )
             self._action_space = ActionSpace(phase=config.current_phase)
             self._policy = FactorioPolicy(
-                grid_channels=4, grid_size=64,
+                grid_channels=5, grid_size=64,
                 feature_dim=self._encoder.feature_dim,
                 num_action_types=8,
                 num_entities=self._action_space.num_entity_types,

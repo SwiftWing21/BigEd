@@ -194,6 +194,24 @@ local function serialize_entity(entity)
     return data
 end
 
+local function get_terrain(surface, area, step)
+    -- Sample terrain type at regular intervals across the observation area.
+    -- step=2 means every other tile (64x64 area → 32x32 samples = 1024 entries).
+    step = step or 2
+    local tiles = {}
+    for x = area[1][1], area[2][1], step do
+        for y = area[1][2], area[2][2], step do
+            local ix = math.floor(x)
+            local iy = math.floor(y)
+            local tile = surface.get_tile(ix, iy)
+            if tile and tile.valid then
+                table.insert(tiles, {x=ix, y=iy, t=tile.name})
+            end
+        end
+    end
+    return tiles
+end
+
 local function get_resources(surface, area)
     local resources = {}
     local positions = {}
@@ -274,11 +292,17 @@ local function fn_get_state()
     end
 
     local resources, resource_positions = get_resources(surface, area)
+    local terrain_tiles = get_terrain(surface, area, 2)
     local research = nil
     local current = force.current_research
     if current then
         research = { name = current.name, progress = force.research_progress }
     end
+
+    -- Global resource counts (single cheap call — strategic awareness)
+    local global_resources = {}
+    local ok_rc, rc = pcall(surface.get_resource_counts)
+    if ok_rc and rc then global_resources = rc end
 
     return helpers.table_to_json({
         tick = game.tick,
@@ -299,6 +323,8 @@ local function fn_get_state()
         entity_count = count,
         resources = resources,
         resource_positions = resource_positions,
+        terrain = terrain_tiles,
+        global_resources = global_resources,
         research = research,
         map_explored_chunks = 0,
     })

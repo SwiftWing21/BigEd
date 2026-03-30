@@ -41,6 +41,8 @@ class GameState:
     entity_count: int = 0
     resources: list[dict] = field(default_factory=list)
     resource_positions: list[dict] = field(default_factory=list)
+    terrain: list[dict] = field(default_factory=list)
+    global_resources: dict = field(default_factory=dict)
     research_name: str = ""
     research_progress: float = 0.0
     map_explored_chunks: int = 0
@@ -94,6 +96,8 @@ def parse_state(raw_json: str) -> GameState:
         entity_count=data.get("entity_count", 0),
         resources=data.get("resources", []),
         resource_positions=data.get("resource_positions", []),
+        terrain=data.get("terrain", []),
+        global_resources=data.get("global_resources", {}),
         research_name=research.get("name", ""),
         research_progress=research.get("progress", 0.0),
         map_explored_chunks=data.get("map_explored_chunks", 0),
