@@ -138,11 +138,27 @@ def _get_training_status():
         return None
 
 
+def _get_plan_status():
+    """Check plan queue + history from bridge."""
+    try:
+        import urllib.request
+        resp = urllib.request.urlopen("http://127.0.0.1:27016/api/plan/queue", timeout=2)
+        queue_data = json.loads(resp.read())
+        resp2 = urllib.request.urlopen("http://127.0.0.1:27016/api/plan/history", timeout=2)
+        history_data = json.loads(resp2.read())
+        queued = len(queue_data.get("queued", []))
+        has_current = 1 if queue_data.get("current") else 0
+        completed = len(history_data.get("history", []))
+        return {"queued": queued, "active": has_current, "completed": completed}
+    except Exception:
+        return None
+
+
 class ProcessManagerApp:
     def __init__(self):
         self.root = tk.Tk()
         self.root.title("Factorio Process Manager")
-        self.root.geometry("420x380")
+        self.root.geometry("420x400")
         self.root.resizable(False, False)
         self.root.configure(bg="#1a1a2e")
 
@@ -184,6 +200,10 @@ class ProcessManagerApp:
         self.lesson_label = tk.Label(status_frame, text="", font=("Consolas", 10),
                                      bg="#0f3460", fg=yellow, anchor="w")
         self.lesson_label.pack(fill="x")
+
+        self.plans_label = tk.Label(status_frame, text="", font=("Consolas", 10),
+                                    bg="#0f3460", fg=fg, anchor="w")
+        self.plans_label.pack(fill="x")
 
         # Orphan warning
         self.orphan_label = tk.Label(self.root, text="", font=("Consolas", 10),
@@ -284,6 +304,18 @@ class ProcessManagerApp:
             else:
                 self.training_label.configure(text="Train:   inactive", fg=gray)
                 self.lesson_label.configure(text="")
+
+            # Plan queue
+            ps = _get_plan_status()
+            if ps is not None:
+                active = ps["active"]
+                queued = ps["queued"]
+                done = ps["completed"]
+                self.plans_label.configure(
+                    text=f"Plans:   {queued} queued / {active} active — {done} done",
+                    fg=green if active else gray)
+            else:
+                self.plans_label.configure(text="Plans:   n/a", fg=gray)
 
         except Exception as e:
             self.server_label.configure(text=f"Error: {e}", fg="#ff4444")

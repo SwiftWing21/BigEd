@@ -2099,7 +2099,10 @@ textarea.input {
     <div class="card">
       <div class="card-title">Viewer</div>
       <p style="font-size:12px;color:var(--muted);margin:4px 0 12px;">Connect your Factorio client to watch the agent play</p>
-      <button class="btn btn-primary" onclick="launchFactorioSpectator()">Launch Spectator</button>
+      <div style="display:flex;gap:8px;">
+        <button class="btn btn-primary" onclick="launchFactorioSpectator()">Launch Spectator</button>
+        <button class="btn btn-outline" onclick="launchFactorioFPM()">Process Manager</button>
+      </div>
       <div id="factorio-spectator-status" style="font-size:11px;color:var(--muted);margin-top:6px;"></div>
     </div>
     <div class="card">
@@ -8327,6 +8330,25 @@ function launchFactorioSpectator() {
     })
     .catch(function() {
       statusEl.textContent = 'Failed — launch manually: factorio.exe --mp-connect localhost:27015';
+      statusEl.style.color = 'var(--destructive)';
+    });
+}
+
+function launchFactorioFPM() {
+  var statusEl = document.getElementById('factorio-spectator-status');
+  statusEl.textContent = 'Launching Process Manager...';
+  apiFetch('/api/factorio/fpm', { method: 'POST', body: {} })
+    .then(function(r) {
+      if (r.success) {
+        statusEl.textContent = 'Process Manager launched.';
+        statusEl.style.color = 'var(--success)';
+      } else {
+        statusEl.textContent = 'Error: ' + (r.error || 'unknown');
+        statusEl.style.color = 'var(--destructive)';
+      }
+    })
+    .catch(function() {
+      statusEl.textContent = 'Failed to launch FPM';
       statusEl.style.color = 'var(--destructive)';
     });
 }

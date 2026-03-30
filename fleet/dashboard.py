@@ -1591,6 +1591,24 @@ def api_factorio_spectator():
         return jsonify({"success": False, "error": str(e)})
 
 
+@app.route("/api/factorio/fpm", methods=["POST"])
+def api_factorio_fpm():
+    """Launch Factorio Process Manager GUI."""
+    import subprocess as sp
+    try:
+        fpm_script = os.path.join(os.path.dirname(__file__), "factorio", "process_manager.py")
+        sp.Popen(
+            [sys.executable, fpm_script],
+            cwd=os.path.dirname(__file__),
+            stdout=sp.DEVNULL, stderr=sp.DEVNULL,
+            creationflags=getattr(sp, "CREATE_NO_WINDOW", 0),
+        )
+        return jsonify({"success": True})
+    except Exception as e:
+        log.warning("FPM launch failed: %s", e)
+        return jsonify({"success": False, "error": str(e)})
+
+
 _factorio_procs: dict = {}  # track {"server": Popen, "bridge": Popen}
 
 
