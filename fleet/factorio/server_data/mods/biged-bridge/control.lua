@@ -55,8 +55,12 @@ local function get_agent_context()
         inventory = nil,
     }
 
-    -- Try to find a real player (connected spectator or saved index)
-    if agent_player_index then
+    -- Try saved agent_player_index — but only if they are the sole player.
+    -- With multiple players (spectator connected), skip to headless fallback.
+    local total_players = 0
+    for _ in pairs(game.players) do total_players = total_players + 1 end
+
+    if agent_player_index and total_players <= 1 then
         local p = game.get_player(agent_player_index)
         if p and p.valid then
             ctx.player = p
