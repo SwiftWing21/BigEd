@@ -77,7 +77,13 @@ class FactorioBridge:
                 num_techs=self._action_space.num_tech_types,
                 world_grid_channels=self._encoder.world_grid_channels,
             )
-            self._reward = RewardComputer(phase=config.current_phase, spatial_memory=self._spatial_memory)
+            from factorio.economic_scorer import EconomicScorer
+            self._economic_scorer = EconomicScorer()
+            self._reward = RewardComputer(
+                phase=config.current_phase,
+                spatial_memory=self._spatial_memory,
+                economic_scorer=self._economic_scorer,
+            )
             self._trainer = PPOTrainer(
                 self._policy, lr=config.ml_learning_rate,
                 gamma=config.ml_gamma, gae_lambda=config.ml_gae_lambda,
@@ -543,6 +549,7 @@ class FactorioBridge:
             reward = self._reward.compute(
                 self._prev_state, state, result["success"],
                 lesson_passed, phase_complete,
+                metrics=raw_metrics,
             )
 
         # 8. Store transition

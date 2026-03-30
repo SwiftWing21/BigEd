@@ -21,6 +21,9 @@ _PRODUCTION_DELTA_CAP = 5.0     # max units counted per step
 _WANDER_PENALTY_SCALE = -0.005   # per-step penalty scaled by distance from nearest ore
 _WANDER_DISTANCE_THRESHOLD = 20  # tiles — beyond this, penalty kicks in
 _NEAR_RESOURCE_BONUS = 0.005     # small bonus for being within 10 tiles of ore
+# Economic score — production value delta drives reward signal
+_ECONOMIC_SCALE = 0.01           # scale factor for raw economic delta
+_ECONOMIC_INVENTORY_SCALE = 0.001  # small bonus for inventory value increase
 
 
 class RunningStats:
@@ -68,12 +71,15 @@ class RewardComputer:
     Phase 2+: adds entity placement bonus and production delta bonus.
     """
 
-    def __init__(self, phase: int = 1, spatial_memory=None) -> None:
+    def __init__(self, phase: int = 1, spatial_memory=None, economic_scorer=None) -> None:
         self._phase = phase
         self._stats = RunningStats()
         # Track entity unit_numbers seen to count new placements
         self._seen_entity_ids: set[int] = set()
         self._spatial_memory = spatial_memory
+        self._economic_scorer = economic_scorer
+        self._prev_produced: dict[str, int] = {}
+        self._prev_inventory_value: float = 0.0
 
     def set_phase(self, phase: int) -> None:
         self._phase = phase
@@ -92,6 +98,7 @@ class RewardComputer:
         action_success: bool,
         lesson_passed: bool,
         phase_complete: bool,
+        metrics=None,
     ) -> float:
         """Compute the reward for one environment step.
 
@@ -101,13 +108,15 @@ class RewardComputer:
             action_success: Whether the action was executed without error.
             lesson_passed: Whether the current lesson objective was achieved.
             phase_complete: Whether all lessons in the current phase are done.
+            metrics: Optional GameMetrics with production data.
 
         Returns:
             Scalar reward (float).
         """
         try:
             reward = self._raw_reward(
-                prev_state, curr_state, action_success, lesson_passed, phase_complete
+                prev_state, curr_state, action_success, lesson_passed, phase_complete,
+                metrics,
             )
         except Exception:
             log.warning("RewardComputer.compute failed; returning time penalty", exc_info=True)
@@ -127,6 +136,7 @@ class RewardComputer:
         action_success: bool,
         lesson_passed: bool,
         phase_complete: bool,
+        metrics=None,
     ) -> float:
         r = 0.0
 
@@ -154,6 +164,9 @@ class RewardComputer:
 
         # Distance-from-resources penalty — discourages wandering when ore exists
         r += self._distance_reward(curr)
+
+        # Economic production score — rewards producing valuable items
+        r += self._economic_reward(curr, metrics)
 
         # Phase 2+ signals
         if self._phase >= 2:
@@ -213,6 +226,36 @@ class RewardComputer:
             return _WANDER_PENALTY_SCALE * (excess / 100.0)
 
         return 0.0
+
+    def _economic_reward(self, curr: GameState, metrics=None) -> float:
+        """Reward based on economic production value delta.
+
+        Uses total_produced from metrics (cumulative production counts)
+        and inventory value increase. Complex items score more than raw ores.
+        """
+        if self._economic_scorer is None:
+            return 0.0
+
+        r = 0.0
+
+        # Production delta from metrics (cumulative production stats)
+        if metrics is not None:
+            curr_produced = getattr(metrics, "total_produced", {})
+            if curr_produced and self._prev_produced:
+                delta = self._economic_scorer.score_delta(
+                    self._prev_produced, curr_produced
+                )
+                r += delta * _ECONOMIC_SCALE
+            if curr_produced:
+                self._prev_produced = dict(curr_produced)
+
+        # Inventory value increase (small bonus — items in hand are useful)
+        curr_inv_value = self._economic_scorer.score_inventory_value(curr.inventory)
+        inv_delta = max(0.0, curr_inv_value - self._prev_inventory_value)
+        r += inv_delta * _ECONOMIC_INVENTORY_SCALE
+        self._prev_inventory_value = curr_inv_value
+
+        return r
 
     def _entity_placement_bonus(self, curr: GameState) -> float:
         """Bonus for each newly placed entity (identified by unit_number)."""
