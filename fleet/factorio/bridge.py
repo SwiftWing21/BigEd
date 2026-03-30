@@ -231,12 +231,64 @@ class FactorioBridge:
 
         Runs Ollama inference in a thread executor so it doesn't block
         the RL tick loop. Returns a list of action dicts (or empty).
+
+        If the dependency resolver can fully satisfy the goal with craft
+        actions alone, the LLM call is bypassed entirely.
         """
         objective = self._curriculum.get_current_objective()
         hint = objective.get("hint", "")
         lesson = objective.get("lesson_name", "?")
         log.info("Teacher thinking about lesson '%s' — hint: %s", lesson, hint)
 
+        # --- Dependency resolver shortcut ---
+        try:
+            from factorio.dependency_resolver import (
+                resolve, parse_criteria_to_items, entities_to_counts,
+            )
+            from factorio.recipe_dag import RecipeDAG
+
+            criteria = objective.get("criteria", "")
+            goals = parse_criteria_to_items(criteria)
+            if goals:
+                dag = RecipeDAG(str(Path(__file__).resolve().parent / "data" / "recipes.json"))
+                entity_counts = entities_to_counts(state.entities)
+                # Try to resolve each goal item
+                all_craft_only = True
+                combined_actions: list[dict] = []
+                for item, amount in goals.items():
+                    plan = resolve(item, amount, dict(state.inventory),
+                                   entity_counts, dag)
+                    if plan.is_complete():
+                        actions = plan.to_actions()
+                        # Check if all actions are craft (no acquire/smelt/build)
+                        if any(a["action"] not in ("craft",) for a in actions):
+                            all_craft_only = False
+                        combined_actions.extend(actions)
+                    else:
+                        all_craft_only = False
+
+                if all_craft_only and combined_actions:
+                    log.info("Resolver fully satisfied lesson '%s' with %d craft "
+                             "actions — bypassing LLM", lesson, len(combined_actions))
+                    return combined_actions
+
+                # Partial resolution — inject summary into brain context for LLM
+                if combined_actions:
+                    # Build a summary from the last plan (best effort)
+                    summary_lines = []
+                    for a in combined_actions:
+                        summary_lines.append(
+                            f"- {a['action']}: {a.get('recipe') or a.get('item', '?')} "
+                            f"x{a.get('count', 1)}")
+                    summary = "\n".join(summary_lines)
+                    self.brain.add_context("dependency_plan", summary)
+                    log.info("Resolver injected %d-action plan into brain context",
+                             len(combined_actions))
+        except Exception:
+            log.warning("Dependency resolver failed — falling through to LLM",
+                        exc_info=True)
+
+        # --- LLM fallback ---
         try:
             # Sync curriculum state so the brain sees the current lesson
             self.brain.curriculum._phase = self._curriculum._phase

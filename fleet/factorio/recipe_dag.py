@@ -1,8 +1,11 @@
 """RecipeDAG — Factorio recipe dependency graph with JSON loading and flattening."""
 import json
+import logging
 import math
 from collections import defaultdict
 from pathlib import Path
+
+log = logging.getLogger("biged.factorio.recipe_dag")
 
 
 class RecipeDAG:
@@ -116,3 +119,37 @@ class RecipeDAG:
         self.recipes[name] = data
         result_item = data.get("result", name)
         self._item_to_recipe[result_item] = data
+
+
+def sync_recipes(live_recipes: dict[str, dict], dag: "RecipeDAG") -> dict[str, int]:
+    """Diff live game recipes against static DAG; patch in-memory DAG.
+
+    Args:
+        live_recipes: Recipe dict from RCON (same schema as recipes.json)
+        dag: RecipeDAG instance to update in-memory
+
+    Returns:
+        {"updated": N, "added": N, "missing": N} change summary
+    """
+    updated = 0
+    added = 0
+    missing = 0
+
+    for name, live in live_recipes.items():
+        static = dag.recipes.get(name)
+        if static is None:
+            log.info("RCON sync: new recipe '%s' — adding to in-memory DAG", name)
+            dag.update_recipe(name, live)
+            added += 1
+        elif live != static:
+            log.warning("RCON sync: recipe '%s' differs from static JSON — "
+                        "updating in-memory DAG", name)
+            dag.update_recipe(name, live)
+            updated += 1
+
+    for name in dag.recipes:
+        if name not in live_recipes:
+            log.warning("RCON sync: static recipe '%s' not found in live game", name)
+            missing += 1
+
+    return {"updated": updated, "added": added, "missing": missing}

@@ -263,3 +263,18 @@ def test_resolve_multi_result_recipe(tmp_path):
     actions = plan.to_actions()
     # Should craft/process petroleum-gas, 1 craft yields 55 which covers 50
     assert len(actions) >= 1
+
+
+def test_brain_add_context():
+    """AgentBrain.add_context stores and pops context."""
+    from factorio.agent_brain import AgentBrain
+    from factorio.bridge_config import BridgeConfig
+    from factorio.world_model import WorldModel
+    config = BridgeConfig()
+    wm = WorldModel()
+    brain = AgentBrain(config, wm, curricula_dir="fleet/factorio/curricula")
+    brain.add_context("dependency_plan", "test summary")
+    assert brain._extra_context.get("dependency_plan") == "test summary"
+    val = brain.pop_context("dependency_plan")
+    assert val == "test summary"
+    assert brain.pop_context("dependency_plan") is None

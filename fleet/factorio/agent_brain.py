@@ -150,6 +150,15 @@ class AgentBrain:
         self._paused: bool = False
         self._directives: list = []
         self._presets: list = list(DEFAULT_PRESETS)
+        self._extra_context: dict[str, str] = {}
+
+    def add_context(self, key: str, value: str) -> None:
+        """Store extra context to inject into the next plan generation prompt."""
+        self._extra_context[key] = value
+
+    def pop_context(self, key: str) -> str | None:
+        """Pop extra context (consumed after one use)."""
+        return self._extra_context.pop(key, None)
 
     def pause(self) -> None:
         """Pause agent execution — clears current plan."""
@@ -317,6 +326,11 @@ class AgentBrain:
             return []
 
         system_prompt, user_prompt = self._build_prompt(state)
+
+        # Inject one-shot extra context (e.g. dependency resolver plan)
+        extra = self.pop_context("dependency_plan")
+        if extra:
+            user_prompt += f"\n\n# Dependency Analysis\n{extra}\n"
 
         body_dict = {
             "model": self.config.ollama_model,
