@@ -15,14 +15,17 @@ _bridge_status: dict = {"running": False, "tick": 0, "cadence": "adaptive"}
 _training_status: dict = {}  # updated by bridge.py after each ML tick
 _brain = None
 _rcon_client = None  # set by bridge.py for status reporting
+_spatial_memory = None  # set by bridge.py for spatial map API
+_reward_history: list[dict] = []  # rolling window of recent rewards
 
 
-def create_api(world_model, command_queue, brain=None, rcon=None) -> Flask:
-    global _world_model, _command_queue, _brain, _rcon_client
+def create_api(world_model, command_queue, brain=None, rcon=None, spatial_memory=None) -> Flask:
+    global _world_model, _command_queue, _brain, _rcon_client, _spatial_memory
     _world_model = world_model
     _command_queue = command_queue
     _brain = brain
     _rcon_client = rcon
+    _spatial_memory = spatial_memory
 
     app = Flask("factorio_bridge_api")
 
@@ -276,6 +279,44 @@ def create_api(world_model, command_queue, brain=None, rcon=None) -> Flask:
         except (FileNotFoundError, json.JSONDecodeError):
             return jsonify({"on": False, "workers": []})
 
+    @app.route("/api/spatial-map")
+    def api_spatial_map():
+        """Spatial memory data for dashboard map visualization."""
+        if _spatial_memory is None:
+            return jsonify({"error": "Spatial memory not active (ML mode only)"}), 503
+        # Player position from latest bridge status
+        px = _bridge_status.get("player_x", 0.0)
+        py = _bridge_status.get("player_y", 0.0)
+
+        resources = []
+        for entry in _spatial_memory.resources.values():
+            resources.append({
+                "name": entry.name, "x": entry.x, "y": entry.y,
+                "amount": entry.amount,
+            })
+
+        entities = []
+        for entry in _spatial_memory.entities.values():
+            entities.append({
+                "name": entry.name, "x": entry.x, "y": entry.y,
+            })
+
+        return jsonify({
+            "player": {"x": px, "y": py},
+            "resources": resources,
+            "entities": entities,
+            "summary": {
+                "resources": _spatial_memory.resource_summary(),
+                "entities": _spatial_memory.entity_summary(),
+            },
+        })
+
+    @app.route("/api/reward-history")
+    def api_reward_history():
+        """Rolling window of recent per-step rewards for chart."""
+        with _lock:
+            return jsonify({"rewards": list(_reward_history)})
+
     return app
 
 
@@ -300,3 +341,19 @@ def update_training_status(status: dict) -> None:
     """Called by bridge.py after each ML tick to push training metrics."""
     with _lock:
         _training_status.update(status)
+        # Track reward history for chart (rolling 500-step window)
+        if "last_reward" in status and status["last_reward"] is not None:
+            _reward_history.append({
+                "step": status.get("step", 0),
+                "reward": status["last_reward"],
+                "episode": status.get("episode", 0),
+            })
+            if len(_reward_history) > 500:
+                del _reward_history[:len(_reward_history) - 500]
+
+
+def update_player_position(x: float, y: float) -> None:
+    """Called by bridge.py each tick to track player position for spatial map."""
+    with _lock:
+        _bridge_status["player_x"] = x
+        _bridge_status["player_y"] = y

@@ -13,7 +13,7 @@ from factorio.state_parser import parse_state, parse_metrics, state_to_markdown
 from factorio.action_translator import translate_batch
 from factorio.world_model import WorldModel
 from factorio.cadence import CadenceController
-from factorio.bridge_api import create_api, update_status, store_result, update_training_status
+from factorio.bridge_api import create_api, update_status, store_result, update_training_status, update_player_position
 from factorio.agent_brain import AgentBrain
 
 log = logging.getLogger("biged.factorio.bridge")
@@ -395,6 +395,10 @@ class FactorioBridge:
 
         # 0b. Update spatial memory from current state
         self._spatial_memory.update_from_state(state, state.tick)
+        # Push player position for dashboard spatial map
+        px = state.player_position.get("x", 0.0) if isinstance(state.player_position, dict) else 0.0
+        py = state.player_position.get("y", 0.0) if isinstance(state.player_position, dict) else 0.0
+        update_player_position(px, py)
 
         # 0c. Hybrid teacher: track lesson progress and intervene if stuck
         #     LLM runs in background — RL keeps ticking while teacher thinks.
@@ -696,7 +700,8 @@ def main():
     bridge = FactorioBridge(config)
 
     # Start localhost API server
-    api_app = create_api(bridge.world_model, bridge.command_queue, bridge.brain, rcon=bridge.rcon)
+    spatial_mem = getattr(bridge, '_spatial_memory', None)
+    api_app = create_api(bridge.world_model, bridge.command_queue, bridge.brain, rcon=bridge.rcon, spatial_memory=spatial_mem)
     api_thread = threading.Thread(
         target=_run_api_server, args=(api_app, config.bridge_port),
         daemon=True, name="factorio-api",

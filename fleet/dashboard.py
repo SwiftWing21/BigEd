@@ -1868,6 +1868,34 @@ def api_factorio_training_status_proxy():
         return jsonify({"error": "Bridge unreachable"}), 502
 
 
+@app.route("/api/factorio/spatial-map")
+def api_factorio_spatial_map_proxy():
+    """Proxy spatial memory data for dashboard map visualization."""
+    import urllib.request
+    port = _load_config().get("factorio", {}).get("bridge_port", 27016)
+    try:
+        resp = urllib.request.urlopen(
+            f"http://127.0.0.1:{port}/api/spatial-map", timeout=5
+        )
+        return resp.read(), 200, {"Content-Type": "application/json"}
+    except Exception:
+        return jsonify({"error": "Bridge unreachable"}), 502
+
+
+@app.route("/api/factorio/reward-history")
+def api_factorio_reward_history_proxy():
+    """Proxy reward history for dashboard chart."""
+    import urllib.request
+    port = _load_config().get("factorio", {}).get("bridge_port", 27016)
+    try:
+        resp = urllib.request.urlopen(
+            f"http://127.0.0.1:{port}/api/reward-history", timeout=5
+        )
+        return resp.read(), 200, {"Content-Type": "application/json"}
+    except Exception:
+        return jsonify({"error": "Bridge unreachable"}), 502
+
+
 # ── Mode Control API ─────────────────────────────────────────────────────────
 
 @app.route("/api/mode/status")

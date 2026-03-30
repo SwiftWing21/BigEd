@@ -2044,9 +2044,21 @@ textarea.input {
     <div class="section-title">Factorio Sandbox</div>
     <div class="section-desc">Train AI agents in Factorio through curriculum-based progression</div>
     <div style="margin-left:auto;display:flex;gap:8px;align-items:center;">
-      <span id="factorio-sse-indicator" style="display:inline-flex;align-items:center;gap:4px;font-size:11px;color:var(--muted);padding:2px 8px;border-radius:4px;border:1px solid var(--border);"
-        ><span id="factorio-sse-dot" style="width:6px;height:6px;border-radius:50%;background:var(--muted);display:inline-block;"></span>
-        <span id="factorio-sse-label">Offline</span></span>
+      <span id="factorio-sse-indicator" style="display:inline-flex;align-items:center;gap:6px;font-size:11px;color:var(--muted);padding:2px 8px;border-radius:4px;border:1px solid var(--border);">
+        <span style="display:inline-flex;align-items:center;gap:3px;" title="Bridge API">
+          <span id="factorio-dot-bridge" style="width:6px;height:6px;border-radius:50%;background:var(--muted);display:inline-block;"></span>
+          <span style="color:var(--muted);font-size:10px;">B</span>
+        </span>
+        <span style="display:inline-flex;align-items:center;gap:3px;" title="RCON Connection">
+          <span id="factorio-dot-rcon" style="width:6px;height:6px;border-radius:50%;background:var(--muted);display:inline-block;"></span>
+          <span style="color:var(--muted);font-size:10px;">R</span>
+        </span>
+        <span style="display:inline-flex;align-items:center;gap:3px;" title="Headless Server">
+          <span id="factorio-dot-headless" style="width:6px;height:6px;border-radius:50%;background:var(--muted);display:inline-block;"></span>
+          <span style="color:var(--muted);font-size:10px;">H</span>
+        </span>
+        <span id="factorio-sse-label" style="margin-left:2px;">Offline</span>
+      </span>
       <button class="btn btn-sm btn-outline" onclick="loadFactorio()">&#8635; Refresh</button>
       <button id="factorio-start-btn" class="btn btn-sm" onclick="toggleFactorioServer()" style="margin-left:8px;">
         <span id="factorio-start-icon">&#9654;</span> <span id="factorio-start-text">Start</span>
@@ -2104,6 +2116,33 @@ textarea.input {
         </div>
         <div id="factorio-lesson-progress" style="font-size:12px;color:var(--muted);">No lessons started</div>
       </div>
+    </div>
+  </div>
+
+  <!-- Spatial Map + Reward Chart -->
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px;">
+    <div class="card">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
+        <div class="card-title" style="margin:0;">Spatial Map</div>
+        <span id="spatial-map-stats" style="font-size:11px;color:var(--muted);"></span>
+      </div>
+      <canvas id="spatial-map-canvas" width="400" height="400"
+        style="width:100%;aspect-ratio:1;border-radius:6px;border:1px solid var(--border);background:#0a0a0a;image-rendering:pixelated;"></canvas>
+      <div style="display:flex;gap:12px;margin-top:6px;font-size:10px;color:var(--muted);flex-wrap:wrap;">
+        <span><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#4af;margin-right:3px;vertical-align:middle;"></span>Iron</span>
+        <span><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#f84;margin-right:3px;vertical-align:middle;"></span>Copper</span>
+        <span><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#333;margin-right:3px;vertical-align:middle;"></span>Coal</span>
+        <span><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#aaa;margin-right:3px;vertical-align:middle;"></span>Stone</span>
+        <span><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#fa0;margin-right:3px;vertical-align:middle;"></span>Furnace</span>
+        <span><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#0f0;margin-right:3px;vertical-align:middle;"></span>Drill</span>
+        <span><span style="display:inline-block;width:8px;height:8px;border-radius:2px;background:#fff;margin-right:3px;vertical-align:middle;"></span>Player</span>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-title">Reward History</div>
+      <canvas id="reward-chart-canvas" width="400" height="340"
+        style="width:100%;border-radius:6px;border:1px solid var(--border);background:#0a0a0a;margin-top:8px;"></canvas>
+      <div id="reward-chart-stats" style="font-size:11px;color:var(--muted);margin-top:6px;"></div>
     </div>
   </div>
 
@@ -2306,6 +2345,8 @@ function showSection(name) {
   document.getElementById('header-section-title').textContent =
     name.charAt(0).toUpperCase() + name.slice(1);
   closeSidebar();
+  // Stop spatial map polling when leaving factorio tab
+  if (name !== 'factorio') _stopSpatialMapPolling();
   if (!_loaded[name]) {
     _loaded[name] = true;
     loadSectionData(name);
@@ -2325,7 +2366,7 @@ function loadSectionData(name) {
     case 'views': loadViews(); break;
     case 'ingest': loadIngest(); break;
     case 'modules': loadModules(); break;
-    case 'factorio': loadFactorio(); break;
+    case 'factorio': loadFactorio(); _startSpatialMapPolling(); break;
   }
 }
 
@@ -8181,19 +8222,20 @@ function loadFactorio() {
       var tickDetailEl = document.getElementById('factorio-tick-detail');
       if (!_factorioTransition && Date.now() > _factorioStopCooldown)
         _factorioRunning = !!d.running;
+      var comp = d.components || {};
       if (d.running) {
         statusEl.textContent = 'Running';
         statusEl.style.color = 'var(--success)';
-        detailEl.textContent = 'Bridge connected to Factorio';
+        detailEl.textContent = 'Bridge \u2713  RCON ' + (comp.rcon ? '\u2713' : '\u2717') + '  Headless ' + (comp.headless ? '\u2713' : '\u2717');
         tickEl.textContent = d.tick.toLocaleString();
         tickEl.style.color = 'var(--foreground)';
         tickDetailEl.textContent = 'Cadence: ' + (d.cadence || 'adaptive');
         var sel = document.getElementById('factorio-cadence');
         if (sel) sel.value = d.cadence || 'adaptive';
       } else {
-        statusEl.textContent = 'Stopped';
-        statusEl.style.color = 'var(--destructive)';
-        detailEl.textContent = d.error || 'Bridge not running';
+        statusEl.textContent = comp.bridge ? 'Connecting' : 'Stopped';
+        statusEl.style.color = comp.bridge ? 'var(--warning)' : 'var(--destructive)';
+        detailEl.textContent = 'Bridge ' + (comp.bridge ? '\u2713' : '\u2717') + '  RCON ' + (comp.rcon ? '\u2713' : '\u2717') + '  Headless ' + (comp.headless ? '\u2713' : '\u2717');
       }
       return apiFetch('/api/factorio/bridge-state');
     })
@@ -8289,6 +8331,225 @@ function launchFactorioSpectator() {
     });
 }
 
+/* ── Spatial Map + Reward Chart ──────────────────────────────────────────── */
+
+var _spatialMapTimer = null;
+var _rewardChartTimer = null;
+
+function _startSpatialMapPolling() {
+  if (_spatialMapTimer) return;
+  _pollSpatialMap();
+  _spatialMapTimer = setInterval(_pollSpatialMap, 3000);
+  _pollRewardChart();
+  _rewardChartTimer = setInterval(_pollRewardChart, 5000);
+}
+
+function _stopSpatialMapPolling() {
+  if (_spatialMapTimer) { clearInterval(_spatialMapTimer); _spatialMapTimer = null; }
+  if (_rewardChartTimer) { clearInterval(_rewardChartTimer); _rewardChartTimer = null; }
+}
+
+function _pollSpatialMap() {
+  apiFetch('/api/factorio/spatial-map').then(function(d) {
+    if (d.error) return;
+    _renderSpatialMap(d);
+  }).catch(function() {});
+}
+
+function _renderSpatialMap(data) {
+  var canvas = document.getElementById('spatial-map-canvas');
+  if (!canvas) return;
+  var ctx = canvas.getContext('2d');
+  var w = canvas.width, h = canvas.height;
+  ctx.fillStyle = '#0a0a0a';
+  ctx.fillRect(0, 0, w, h);
+
+  var resources = data.resources || [];
+  var entities = data.entities || [];
+  var player = data.player || {x: 0, y: 0};
+
+  // Auto-fit: find bounding box of all points
+  var allX = [player.x], allY = [player.y];
+  resources.forEach(function(r) { allX.push(r.x); allY.push(r.y); });
+  entities.forEach(function(e) { allX.push(e.x); allY.push(e.y); });
+
+  var minX = Math.min.apply(null, allX), maxX = Math.max.apply(null, allX);
+  var minY = Math.min.apply(null, allY), maxY = Math.max.apply(null, allY);
+  var rangeX = Math.max(maxX - minX, 50), rangeY = Math.max(maxY - minY, 50);
+  var range = Math.max(rangeX, rangeY) * 1.15; // 15% padding
+  var centerX = (minX + maxX) / 2, centerY = (minY + maxY) / 2;
+
+  function toScreen(wx, wy) {
+    return {
+      x: ((wx - centerX) / range + 0.5) * w,
+      y: ((wy - centerY) / range + 0.5) * h
+    };
+  }
+
+  // Draw grid lines through origin
+  var origin = toScreen(0, 0);
+  ctx.strokeStyle = '#1a1a1a';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(origin.x, 0); ctx.lineTo(origin.x, h);
+  ctx.moveTo(0, origin.y); ctx.lineTo(w, origin.y);
+  ctx.stroke();
+
+  // Resource colors
+  var resColors = {'iron-ore': '#4af', 'copper-ore': '#f84', 'coal': '#555', 'stone': '#aaa'};
+
+  // Draw resources as small dots
+  resources.forEach(function(r) {
+    var p = toScreen(r.x, r.y);
+    var color = resColors[r.name] || '#666';
+    var alpha = Math.min(r.amount / 5000, 1.0) * 0.6 + 0.2;
+    ctx.globalAlpha = alpha;
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, 2.5, 0, Math.PI * 2);
+    ctx.fill();
+  });
+  ctx.globalAlpha = 1.0;
+
+  // Entity colors
+  var entColors = {
+    'stone-furnace': '#fa0', 'burner-mining-drill': '#0f0', 'electric-mining-drill': '#0f0',
+    'assembling-machine-1': '#0af', 'transport-belt': '#888', 'inserter': '#a8f',
+    'burner-inserter': '#a8f', 'lab': '#f0f', 'small-electric-pole': '#ff0',
+    'boiler': '#f44', 'steam-engine': '#f88'
+  };
+
+  // Draw entities as small squares
+  entities.forEach(function(e) {
+    var p = toScreen(e.x, e.y);
+    var color = entColors[e.name] || '#666';
+    ctx.fillStyle = color;
+    ctx.fillRect(p.x - 2, p.y - 2, 4, 4);
+  });
+
+  // Draw player as white diamond
+  var pp = toScreen(player.x, player.y);
+  ctx.fillStyle = '#fff';
+  ctx.beginPath();
+  ctx.moveTo(pp.x, pp.y - 5);
+  ctx.lineTo(pp.x + 4, pp.y);
+  ctx.lineTo(pp.x, pp.y + 5);
+  ctx.lineTo(pp.x - 4, pp.y);
+  ctx.closePath();
+  ctx.fill();
+
+  // Scale indicator
+  var scaleLen = 50;
+  var worldDist = Math.round(range * scaleLen / w);
+  ctx.fillStyle = '#666';
+  ctx.font = '10px monospace';
+  ctx.fillText(worldDist + ' tiles', 8, h - 12);
+  ctx.strokeStyle = '#666';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(8, h - 8); ctx.lineTo(8 + scaleLen, h - 8);
+  ctx.stroke();
+
+  // Stats
+  var stats = document.getElementById('spatial-map-stats');
+  if (stats && data.summary) {
+    var rs = data.summary.resources || {};
+    var es = data.summary.entities || {};
+    var rCount = Object.values(rs).reduce(function(a, b) { return a + b; }, 0);
+    var eCount = Object.values(es).reduce(function(a, b) { return a + b; }, 0);
+    stats.textContent = rCount + ' patches \u00B7 ' + eCount + ' buildings';
+  }
+}
+
+function _pollRewardChart() {
+  apiFetch('/api/factorio/reward-history').then(function(d) {
+    if (d.error) return;
+    _renderRewardChart(d.rewards || []);
+  }).catch(function() {});
+}
+
+function _renderRewardChart(rewards) {
+  var canvas = document.getElementById('reward-chart-canvas');
+  if (!canvas || rewards.length < 2) return;
+  var ctx = canvas.getContext('2d');
+  var w = canvas.width, h = canvas.height;
+  var pad = {top: 10, right: 10, bottom: 20, left: 40};
+  var plotW = w - pad.left - pad.right;
+  var plotH = h - pad.top - pad.bottom;
+
+  ctx.fillStyle = '#0a0a0a';
+  ctx.fillRect(0, 0, w, h);
+
+  var vals = rewards.map(function(r) { return r.reward; });
+  var minR = Math.min.apply(null, vals);
+  var maxR = Math.max.apply(null, vals);
+  if (maxR === minR) { maxR = minR + 1; }
+
+  // Y-axis labels
+  ctx.fillStyle = '#555';
+  ctx.font = '10px monospace';
+  ctx.textAlign = 'right';
+  ctx.fillText(maxR.toFixed(2), pad.left - 4, pad.top + 10);
+  ctx.fillText(minR.toFixed(2), pad.left - 4, pad.top + plotH);
+  ctx.fillText('0.00', pad.left - 4, pad.top + plotH * (1 - (0 - minR) / (maxR - minR)));
+
+  // Zero line
+  var zeroY = pad.top + plotH * (1 - (0 - minR) / (maxR - minR));
+  ctx.strokeStyle = '#333';
+  ctx.lineWidth = 1;
+  ctx.setLineDash([3, 3]);
+  ctx.beginPath();
+  ctx.moveTo(pad.left, zeroY);
+  ctx.lineTo(pad.left + plotW, zeroY);
+  ctx.stroke();
+  ctx.setLineDash([]);
+
+  // Reward line
+  ctx.strokeStyle = '#4af';
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  for (var i = 0; i < rewards.length; i++) {
+    var x = pad.left + (i / (rewards.length - 1)) * plotW;
+    var y = pad.top + plotH * (1 - (vals[i] - minR) / (maxR - minR));
+    if (i === 0) ctx.moveTo(x, y);
+    else ctx.lineTo(x, y);
+  }
+  ctx.stroke();
+
+  // Moving average (20-step)
+  if (rewards.length > 20) {
+    ctx.strokeStyle = '#fa0';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    var started = false;
+    for (var j = 19; j < rewards.length; j++) {
+      var sum = 0;
+      for (var k = j - 19; k <= j; k++) sum += vals[k];
+      var avg = sum / 20;
+      var ax = pad.left + (j / (rewards.length - 1)) * plotW;
+      var ay = pad.top + plotH * (1 - (avg - minR) / (maxR - minR));
+      if (!started) { ctx.moveTo(ax, ay); started = true; }
+      else ctx.lineTo(ax, ay);
+    }
+    ctx.stroke();
+  }
+
+  // X-axis label
+  ctx.fillStyle = '#555';
+  ctx.font = '10px monospace';
+  ctx.textAlign = 'center';
+  ctx.fillText('Step ' + rewards[0].step + ' \u2192 ' + rewards[rewards.length - 1].step, w / 2, h - 4);
+
+  // Stats
+  var statsEl = document.getElementById('reward-chart-stats');
+  if (statsEl) {
+    var sum = 0; for (var m = 0; m < vals.length; m++) sum += vals[m];
+    var mean = sum / vals.length;
+    var last = vals[vals.length - 1];
+    statsEl.textContent = 'Mean: ' + mean.toFixed(3) + ' \u00B7 Last: ' + last.toFixed(3) + ' \u00B7 ' + vals.length + ' steps';
+  }
+}
+
 /* ── Factorio Takeover Controls ───────────────────────────────────────────── */
 
 var _factorioPaused = false;
@@ -8309,21 +8570,31 @@ var _factorioTransition = null; // "stopping" | "starting" | null
 var _factorioStopCooldown = 0;  // timestamp — ignore running=true polls until this expires
 
 function _updateFactorioSSEIndicator(fdata) {
-  var dot = document.getElementById('factorio-sse-dot');
+  var dotB = document.getElementById('factorio-dot-bridge');
+  var dotR = document.getElementById('factorio-dot-rcon');
+  var dotH = document.getElementById('factorio-dot-headless');
   var label = document.getElementById('factorio-sse-label');
-  if (!dot || !label) return;
+  if (!label) return;
+
+  var c = (fdata && fdata.components) || {};
+  var green = 'var(--success)', red = 'var(--danger)', grey = 'var(--muted)', yellow = 'var(--warning)';
+
+  if (dotB) dotB.style.background = c.bridge ? green : (fdata ? red : grey);
+  if (dotR) dotR.style.background = c.rcon ? green : (fdata ? red : grey);
+  if (dotH) dotH.style.background = c.headless ? green : (fdata ? red : grey);
+
   if (fdata && fdata.running) {
-    dot.style.background = fdata.paused ? 'var(--warning)' : 'var(--success)';
     label.textContent = fdata.paused ? 'Paused' : 'Tick ' + (fdata.tick || 0).toLocaleString();
     label.style.color = 'var(--foreground)';
   } else if (fdata && fdata.stale) {
-    dot.style.background = 'var(--warning)';
     label.textContent = 'Stale';
-    label.style.color = 'var(--warning)';
+    label.style.color = yellow;
+  } else if (fdata && (c.bridge || c.rcon)) {
+    label.textContent = 'Connecting';
+    label.style.color = yellow;
   } else {
-    dot.style.background = 'var(--muted)';
     label.textContent = 'Offline';
-    label.style.color = 'var(--muted)';
+    label.style.color = grey;
   }
 }
 
@@ -8332,13 +8603,13 @@ function toggleFactorioServer() {
   var btn = document.getElementById('factorio-start-btn');
   var text = document.getElementById('factorio-start-text');
   var icon = document.getElementById('factorio-start-icon');
+
   if (_factorioRunning) {
-    // Stop flow: Stop → Stopping... → Stopped (2s) → Start
+    // Stop flow: switch mode back to normal (stops bridge + unpauses queue)
     _factorioTransition = 'stopping';
     text.textContent = 'Stopping\u2026'; btn.disabled = true;
     btn.style.background = 'var(--warning)'; btn.style.color = '#000';
-    apiFetch('/api/factorio/stop', { method: 'POST' }).then(function() {
-      // Poll until bridge is actually dead
+    apiFetch('/api/mode/switch', { method: 'POST', body: { mode: 'normal', force: true, expected_current: 'factorio' } }).then(function() {
       var polls = 0;
       var pollTimer = setInterval(function() {
         polls++;
@@ -8346,7 +8617,7 @@ function toggleFactorioServer() {
           if (!s.running || polls > 10) {
             clearInterval(pollTimer);
             _factorioRunning = false;
-            _factorioStopCooldown = Date.now() + 5000; // ignore stale polls for 5s
+            _factorioStopCooldown = Date.now() + 5000;
             text.textContent = 'Stopped';
             btn.style.background = 'var(--muted)'; btn.style.color = 'var(--foreground)';
             icon.textContent = '\u25CF';
@@ -8356,7 +8627,6 @@ function toggleFactorioServer() {
             }, 2000);
           }
         }).catch(function() {
-          // Bridge unreachable = stopped
           clearInterval(pollTimer);
           _factorioRunning = false;
           _factorioStopCooldown = Date.now() + 5000;
@@ -8375,11 +8645,11 @@ function toggleFactorioServer() {
       _updateFactorioButtons();
     });
   } else {
-    // Start flow: Start → Starting... → poll → Running
+    // Start flow: switch mode to factorio (pauses queue + starts bridge + headless)
     _factorioTransition = 'starting';
     text.textContent = 'Starting\u2026'; btn.disabled = true;
     btn.style.background = 'var(--warning)'; btn.style.color = '#000';
-    apiFetch('/api/factorio/start', { method: 'POST' }).then(function(d) {
+    apiFetch('/api/mode/switch', { method: 'POST', body: { mode: 'factorio', force: true } }).then(function(d) {
       if (d.success) {
         var polls = 0;
         var pollTimer = setInterval(function() {
@@ -8402,6 +8672,7 @@ function toggleFactorioServer() {
       } else {
         _factorioTransition = null;
         _updateFactorioButtons();
+        if (d.error) showToast('Factorio start failed: ' + d.error, 'error');
       }
     }).catch(function() {
       _factorioTransition = null;
