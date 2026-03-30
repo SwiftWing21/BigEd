@@ -95,7 +95,12 @@ local function get_agent_context(agent_id)
         ctx.character = char
         ctx.has_character = true
     else
-        -- Character dead/invalid — recreate
+        -- Character dead/invalid — recreate (log the reason)
+        local reason = "unknown"
+        if not char then reason = "nil"
+        elseif not char.valid then reason = "invalid"
+        end
+        game.print("[BigEd] Agent " .. agent_id .. " char lost (" .. reason .. ") — recreating")
         local new_char, new_inv = create_agent(agent_id)
         if new_char then
             ctx.character = new_char
