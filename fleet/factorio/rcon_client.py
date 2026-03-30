@@ -32,7 +32,7 @@ def decode_packet(data: bytes) -> tuple[int, int, str]:
 class RCONClient:
     """Async RCON client with reconnection and timeout support."""
 
-    def __init__(self, host: str, port: int, password: str, timeout: float = 5.0):
+    def __init__(self, host: str, port: int, password: str, timeout: float = 10.0):
         self.host = host
         self.port = port
         self.password = password
@@ -124,14 +124,32 @@ class RCONClient:
 
     async def _read_packet(self) -> tuple[int, int, str]:
         """Read one RCON packet from the stream."""
-        size_data = await asyncio.wait_for(
-            self._reader.readexactly(4), timeout=self.timeout
-        )
-        size = struct.unpack("<i", size_data)[0]
-        payload = await asyncio.wait_for(
-            self._reader.readexactly(size), timeout=self.timeout
-        )
-        return decode_packet(size_data + payload)
+        # Read all available data — readexactly can stall on Windows IocpProactor
+        data = b""
+        deadline = asyncio.get_event_loop().time() + self.timeout
+        while len(data) < 4:
+            remaining = deadline - asyncio.get_event_loop().time()
+            if remaining <= 0:
+                raise TimeoutError("RCON read timed out waiting for size header")
+            chunk = await asyncio.wait_for(
+                self._reader.read(4096), timeout=remaining
+            )
+            if not chunk:
+                raise ConnectionError("RCON connection closed")
+            data += chunk
+        size = struct.unpack("<i", data[:4])[0]
+        total_needed = 4 + size
+        while len(data) < total_needed:
+            remaining = deadline - asyncio.get_event_loop().time()
+            if remaining <= 0:
+                raise TimeoutError("RCON read timed out waiting for payload")
+            chunk = await asyncio.wait_for(
+                self._reader.read(4096), timeout=remaining
+            )
+            if not chunk:
+                raise ConnectionError("RCON connection closed")
+            data += chunk
+        return decode_packet(data[:total_needed])
 
     async def __aenter__(self):
         await self.connect()
