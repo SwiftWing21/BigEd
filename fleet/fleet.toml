@@ -835,7 +835,7 @@ host_fleet_id = ""
 bridge_port = 27016
 rcon_host = "localhost"
 rcon_port = 27015
-rcon_password = "BxXdADkDBPz4Hi-vCxRHQA"
+rcon_password = "UE1NmGqCCiWVMwDFTB7mNg"
 server_mode = "headless"
 factorio_path = ""
 headless_path = ""
@@ -864,7 +864,7 @@ curriculum_dir = "fleet/factorio/curricula"
 focus_workers_default = 2
 analyze_interval_ticks = 50
 mode = "ml"
-game_speed = 4  # 10x disconnects spectator client, 4x is smooth for observation
+game_speed = 2  # 10x disconnects, 4x stutters — 2x smooth for spectating
 ml_tick_delay_ms = 0  # 0 = max throughput (~30-50 actions/sec), >0 = ms between ticks
 ollama_model = "qwen3:1.7b"  # CPU model for teacher — keeps GPU free for Factorio rendering
 

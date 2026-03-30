@@ -7,8 +7,8 @@
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/cytoscape/3.28.1/cytoscape.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/dagre/0.8.5/dagre.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/cytoscape-dagre/2.5.0/cytoscape-dagre.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/cytoscape-fcose/2.2.0/cytoscape-fcose.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/cytoscape-dagre@2.5.0/cytoscape-dagre.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/cytoscape-fcose@2.2.0/cytoscape-fcose.min.js"></script>
 <script src="/static/layout_fractal.js"></script>
 <style>
 /* ── Theme Tokens ─────────────────────────────────────────────────────────── */
@@ -2991,7 +2991,7 @@ function loadNeuralLanes() {
 }
 
 function renderNeuralFrame() {
-  if (document.hidden || _activityViewMode !== 'graph') { _neuralAnim = null; return; }
+  if (document.hidden) { _neuralAnim = null; return; }
   var canvas = document.getElementById('neural-lane-canvas');
   if (!canvas || !_neuralData) { _neuralAnim = null; return; }
   var rect = canvas.parentElement.getBoundingClientRect();
