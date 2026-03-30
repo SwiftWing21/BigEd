@@ -608,6 +608,16 @@ class FactorioBridge:
             except Exception:
                 log.warning("Action execution failed", exc_info=True)
 
+        # 5b. Track successful inserts for curriculum
+        if not hasattr(self, '_insert_count'):
+            self._insert_count = 0
+            self._production_snapshot = {}
+        if result.get("success") and action_dict.get("action") == "insert":
+            self._insert_count += 1
+        # Track production from metrics
+        if raw_metrics and hasattr(raw_metrics, 'total_produced'):
+            self._production_snapshot = dict(raw_metrics.total_produced)
+
         # 6. Check curriculum progress (always — even first tick for body check lesson)
         resource_totals = {}
         for r in state.resources:
@@ -623,6 +633,9 @@ class FactorioBridge:
                 "has_character": 1 if state.player_has_character else 0,
             },
             "resources": resource_totals,
+            # Extra tracking for curriculum criteria
+            "inserts": self._insert_count,
+            "produced": self._production_snapshot,
         }
         # Count entities by name
         for e in state.entities:
