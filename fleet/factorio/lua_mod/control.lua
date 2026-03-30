@@ -732,20 +732,30 @@ local function fn_observe(x, y, radius)
 end
 
 local function fn_ensure_player()
+    -- Hard multi-player guard: NEVER touch players when spectators are connected.
+    local num_players = 0
+    for _ in pairs(game.players) do num_players = num_players + 1 end
+    local multi = num_players > 1
+
+    -- If multiple players, clear saved agent_player_index to prevent hijacking
+    if multi and agent_player_index then
+        agent_player_index = nil
+    end
+
     local ctx = get_agent_context()
 
-    -- If we have a CONNECTED player but no character, respawn one.
-    if ctx.has_player and ctx.player.connected and not ctx.has_character then
+    -- Only respawn a connected player's character if they are the SOLE player.
+    if ctx.has_player and ctx.player.connected and not ctx.has_character and not multi then
         local ok, err = pcall(function()
             ctx.player.set_controller{type = defines.controllers.god}
             ctx.player.create_character()
         end)
         if ok and ctx.player.character and ctx.player.character.valid then
-            game.print("[BigEd Bridge] Respawned character for connected player")
+            game.print("[BigEd Bridge] Respawned character (sole player)")
         end
     end
 
-    if ctx.has_player then
+    if ctx.has_player and not multi then
         local p = ctx.player
         local char = p.character
         if char and char.valid then
