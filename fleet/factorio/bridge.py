@@ -469,6 +469,24 @@ class FactorioBridge:
         # 0d. Update bridge status so dashboard shows Running
         update_status(True, state.tick, self.cadence.mode)
 
+        # 0e. Drain human command queue (plans, demonstrations)
+        while not self.command_queue.empty():
+            try:
+                cmd = self.command_queue.get_nowait()
+                actions = cmd.get("actions", [])
+                from factorio.action_translator import translate_batch
+                translated = translate_batch(actions)
+                for ta in translated:
+                    if ta.rcon_command:
+                        rcon_cmd = ta.rcon_command
+                        if rcon_cmd.startswith("/biged-cmd "):
+                            rcon_cmd = rcon_cmd[len("/biged-cmd "):]
+                        resp = await self.rcon.remote_call("exec_cmd", rcon_cmd)
+                        log.info("Queue cmd: %s -> %s", ta.description, str(resp)[:100])
+                store_result(cmd["id"], {"results": "executed"})
+            except Exception:
+                log.warning("Queue command failed", exc_info=True)
+
         # 1. Fetch metrics
         raw_metrics = None
         if self._tick_count % 5 == 0:
