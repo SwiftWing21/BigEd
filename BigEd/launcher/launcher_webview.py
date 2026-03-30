@@ -206,13 +206,22 @@ def _shutdown():
         except Exception:
             pass
         _tray_icon = None
+    # Checkpoint WAL and close DB connections before exit
+    try:
+        fleet_dir = str(Path(__file__).resolve().parent.parent.parent / "fleet")
+        if fleet_dir not in sys.path:
+            sys.path.insert(0, fleet_dir)
+        import db
+        db.shutdown()
+    except Exception as e:
+        log.warning("DB shutdown error: %s", e)
     _release_instance_lock()
     for w in webview.windows:
         try:
             w.destroy()
         except Exception:
             pass
-    os._exit(0)
+    sys.exit(0)
 
 
 # -- Entry point ---------------------------------------------------------------
@@ -232,7 +241,7 @@ def main():
         return
 
     _relaunch_windowless()
-    _start_supervisor()
+    _start_supervisor()  # webview launcher requires dashboard as its UI — always start
 
     if not _wait_for_dashboard():
         log.error("Dashboard did not start within 30 seconds")

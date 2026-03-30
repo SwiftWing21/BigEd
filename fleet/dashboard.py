@@ -241,6 +241,81 @@ def _load_config():
 
 # ── Mode Control helpers ─────────────────────────────────────────────────────
 
+# Track desired mode so the UI stays consistent while a mode is starting up.
+# Auto-expires after 30s if the target never becomes active.
+_desired_mode = None        # {"mode": str, "since": float} or None
+_DESIRED_MODE_TIMEOUT = 30  # seconds
+
+
+def _set_desired_mode(mode_id: str | None):
+    global _desired_mode
+    if mode_id and mode_id != "normal":
+        _desired_mode = {"mode": mode_id, "since": time.time()}
+    else:
+        _desired_mode = None
+
+
+def _persist_mode(mode_id: str):
+    """Save last_mode to fleet.toml so it survives restarts."""
+    try:
+        import tomlkit
+        toml_path = FLEET_DIR / "fleet.toml"
+        doc = tomlkit.parse(toml_path.read_text(encoding="utf-8"))
+        doc.setdefault("fleet", {})["last_mode"] = mode_id
+        toml_path.write_text(tomlkit.dumps(doc), encoding="utf-8")
+    except Exception as e:
+        log.warning("Failed to persist last_mode: %s", e)
+
+
+def _restore_mode():
+    """On dashboard startup, restore last_mode and trigger switch if needed."""
+    try:
+        cfg = _load_config()
+        saved = cfg.get("fleet", {}).get("last_mode", "normal")
+        if saved and saved != "normal":
+            available_ids = {m["id"] for m in _detect_available_modes()}
+            if saved in available_ids:
+                log.info("Restoring saved mode: %s", saved)
+                _set_desired_mode(saved)
+                # Trigger startup in background
+                def _bg_restore():
+                    try:
+                        with app.test_request_context(json={"mode": saved, "force": False}):
+                            api_mode_switch()
+                    except Exception as e:
+                        log.warning("Mode restore failed for %s: %s", saved, e)
+                threading.Thread(target=_bg_restore, daemon=True, name="mode-restore").start()
+    except Exception as e:
+        log.warning("_restore_mode failed: %s", e)
+
+
+def _get_effective_mode() -> tuple:
+    """Return (active_mode, state) considering desired-mode intent.
+
+    If a mode switch was requested recently and the probe says 'normal',
+    report the desired mode as 'starting' until it either comes up or times out.
+    """
+    global _desired_mode
+    probed = _get_active_mode()
+    probed_state = _get_mode_state(probed)
+
+    if _desired_mode:
+        target = _desired_mode["mode"]
+        elapsed = time.time() - _desired_mode["since"]
+        if probed == target:
+            # Mode is up — clear desire
+            _desired_mode = None
+            return probed, probed_state
+        if elapsed < _DESIRED_MODE_TIMEOUT:
+            # Still waiting for mode to start
+            return target, "starting"
+        # Timed out — mode never started, revert
+        log.warning("Mode %s failed to start within %ds — reverting to normal", target, _DESIRED_MODE_TIMEOUT)
+        _desired_mode = None
+
+    return probed, probed_state
+
+
 def _detect_available_modes() -> list:
     """Return list of mode dicts available based on config + module probing."""
     modes = [
@@ -1525,7 +1600,7 @@ def api_factorio_start():
     import subprocess as sp
     try:
         # Check if bridge is already running
-        port = load_config().get("factorio", {}).get("bridge_port", 27016)
+        port = _load_config().get("factorio", {}).get("bridge_port", 27016)
         try:
             resp = urllib.request.urlopen(f"http://127.0.0.1:{port}/api/status", timeout=2)
             data = json.loads(resp.read())
@@ -1556,7 +1631,7 @@ def api_factorio_stop():
     stopped = []
     # 1. Tell bridge to shut down gracefully
     try:
-        port = load_config().get("factorio", {}).get("bridge_port", 27016)
+        port = _load_config().get("factorio", {}).get("bridge_port", 27016)
         req = urllib.request.Request(f"http://127.0.0.1:{port}/api/shutdown", method="POST")
         urllib.request.urlopen(req, timeout=3)
         stopped.append("bridge (via API)")
@@ -1596,7 +1671,7 @@ def api_factorio_stop():
 def api_factorio_pause():
     """Proxy pause request to Factorio bridge."""
     try:
-        port = load_config().get("factorio", {}).get("bridge_port", 27016)
+        port = _load_config().get("factorio", {}).get("bridge_port", 27016)
         req = urllib.request.Request(f"http://127.0.0.1:{port}/api/pause", method="POST")
         with urllib.request.urlopen(req, timeout=5) as resp:
             return jsonify(json.loads(resp.read()))
@@ -1609,7 +1684,7 @@ def api_factorio_pause():
 def api_factorio_resume():
     """Proxy resume request to Factorio bridge."""
     try:
-        port = load_config().get("factorio", {}).get("bridge_port", 27016)
+        port = _load_config().get("factorio", {}).get("bridge_port", 27016)
         req = urllib.request.Request(f"http://127.0.0.1:{port}/api/resume", method="POST")
         with urllib.request.urlopen(req, timeout=5) as resp:
             return jsonify(json.loads(resp.read()))
@@ -1661,7 +1736,7 @@ def api_factorio_focus_state():
 def api_factorio_plans_proxy():
     """Proxy plan queue from Factorio bridge."""
     import urllib.request
-    port = load_config().get("factorio", {}).get("bridge_port", 27016)
+    port = _load_config().get("factorio", {}).get("bridge_port", 27016)
     try:
         resp = urllib.request.urlopen(f"http://localhost:{port}/api/plan/queue", timeout=10)
         return jsonify(json.loads(resp.read()))
@@ -1674,7 +1749,7 @@ def api_factorio_plans_proxy():
 def api_factorio_plan_history_proxy():
     """Proxy plan history from Factorio bridge."""
     import urllib.request
-    port = load_config().get("factorio", {}).get("bridge_port", 27016)
+    port = _load_config().get("factorio", {}).get("bridge_port", 27016)
     try:
         resp = urllib.request.urlopen(f"http://localhost:{port}/api/plan/history", timeout=10)
         return jsonify(json.loads(resp.read()))
@@ -1687,7 +1762,7 @@ def api_factorio_plan_history_proxy():
 def api_factorio_training_status_proxy():
     """Proxy ML training metrics from Factorio bridge."""
     import urllib.request
-    port = load_config().get("factorio", {}).get("bridge_port", 27016)
+    port = _load_config().get("factorio", {}).get("bridge_port", 27016)
     try:
         resp = urllib.request.urlopen(
             f"http://127.0.0.1:{port}/api/training/status", timeout=5
@@ -1704,9 +1779,8 @@ def api_factorio_training_status_proxy():
 def api_mode_status():
     """Return active mode, available modes, and modifier states."""
     try:
-        active = _get_active_mode()
+        active, state = _get_effective_mode()
         available = _detect_available_modes()
-        state = _get_mode_state(active)
         detail = _get_mode_detail(active)
         modifiers = _get_modifier_states()
 
@@ -1801,6 +1875,8 @@ def api_mode_switch():
             # Start new mode
             if target == "normal":
                 # Normal is the baseline — teardown above is sufficient
+                _set_desired_mode(None)
+                _persist_mode("normal")
                 return jsonify({"success": True, "mode": "normal", "state": "running"})
 
             try:
@@ -1836,6 +1912,8 @@ def api_mode_switch():
                     "fallback": True,
                 })
 
+            _set_desired_mode(target)
+            _persist_mode(target)
             _broadcast_sse({"type": "mode_switch", "data": {"mode": target, "state": "starting"}})
             return jsonify({"success": True, "mode": target, "state": "starting"})
 
@@ -3122,10 +3200,10 @@ def _sse_broadcaster():
                 # Mode control — active mode + modifier states for strip
                 mode_sse = None
                 try:
-                    _active_mode = _get_active_mode()
+                    _active_mode, _mode_state = _get_effective_mode()
                     mode_sse = {
                         "active": _active_mode,
-                        "state": _get_mode_state(_active_mode),
+                        "state": _mode_state,
                         "modifiers": _get_modifier_states(),
                     }
                 except Exception:
@@ -5428,6 +5506,9 @@ if __name__ == "__main__":
             print(f"Fleet Dashboard v2: https://{bind_addr}:{args.port} (TLS)")
         else:
             print(f"Fleet Dashboard v2: http://{bind_addr}:{args.port} (no TLS — openssl not found)")
+
+    # Restore last active mode from fleet.toml
+    _restore_mode()
 
     app.run(host=bind_addr, port=args.port, debug=False, threaded=True,
             ssl_context=ssl_ctx)

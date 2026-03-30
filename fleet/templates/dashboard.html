@@ -6991,15 +6991,15 @@ function toggleModifier(name) {
       .then(function() { loadModeStatus(); })
       .catch(function(e) { console.error('toggleModifier api_gate failed:', e); loadModeStatus(); });
   } else if (name === 'eco_mode') {
-    apiFetch('/api/config', { method: 'POST', body: { key: 'fleet.eco_mode', value: !mods.eco_mode } })
+    apiFetch('/api/settings/fleet', { method: 'PUT', body: { eco_mode: !mods.eco_mode } })
       .then(function() { loadModeStatus(); })
       .catch(function(e) { console.error('toggleModifier eco_mode failed:', e); loadModeStatus(); });
   } else if (name === 'offline_mode') {
-    apiFetch('/api/config', { method: 'POST', body: { key: 'fleet.offline_mode', value: !mods.offline_mode } })
+    apiFetch('/api/settings/fleet', { method: 'PUT', body: { offline_mode: !mods.offline_mode } })
       .then(function() { loadModeStatus(); })
       .catch(function(e) { console.error('toggleModifier offline_mode failed:', e); loadModeStatus(); });
   } else if (name === 'hitl_evolution') {
-    apiFetch('/api/config', { method: 'POST', body: { key: 'fleet.hitl_evolution', value: !mods.hitl_evolution } })
+    apiFetch('/api/settings/fleet', { method: 'PUT', body: { hitl_evolution: !mods.hitl_evolution } })
       .then(function() { loadModeStatus(); })
       .catch(function(e) { console.error('toggleModifier hitl_evolution failed:', e); loadModeStatus(); });
   }

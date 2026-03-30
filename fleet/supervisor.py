@@ -150,6 +150,12 @@ def shutdown(sig, frame):
     _json_log("INFO", "supervisor_shutdown")
     if _pm:
         _pm.shutdown_all()
+    # Checkpoint WAL and close DB connections before exit
+    try:
+        import db
+        db.shutdown()
+    except Exception as e:
+        log.warning("DB shutdown error: %s", e)
     log.info("Fleet stopped.")
     sys.exit(0)
 

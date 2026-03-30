@@ -143,7 +143,7 @@ CREATE TABLE IF NOT EXISTS deployments (
 # ── Thread-local connection pool ────────────────────────────────────────────
 _local = threading.local()
 _pool_lock = threading.Lock()
-_pool_size = 0
+_pool_conns: dict = {}  # thread_id -> connection (tracks live connections)
 _MAX_POOL = 20  # max concurrent thread-local connections
 
 
@@ -179,8 +179,6 @@ def get_conn(db_path=None):
     Pass db_path to get a non-pooled connection for a specific database
     (e.g. tenant DBs). Only the default DB_PATH is pooled.
     """
-    global _pool_size
-
     # Non-default paths bypass the pool (tenant DBs, one-off connections)
     if db_path is not None:
         return _create_connection(db_path)
@@ -195,23 +193,32 @@ def get_conn(db_path=None):
             _close_thread_conn()
 
     with _pool_lock:
-        if _pool_size >= _MAX_POOL:
+        # Reap connections from dead threads before checking capacity
+        dead = [tid for tid in _pool_conns if not any(
+            t.ident == tid for t in threading.enumerate()
+        )]
+        for tid in dead:
+            try:
+                _pool_conns[tid].close()
+            except Exception:
+                pass
+            del _pool_conns[tid]
+
+        if len(_pool_conns) >= _MAX_POOL:
             raise RuntimeError(f"Connection pool exhausted ({_MAX_POOL})")
-        _pool_size += 1
 
     try:
         conn = _create_connection()
         _local.conn = conn
+        with _pool_lock:
+            _pool_conns[threading.get_ident()] = conn
         return conn
     except Exception:
-        with _pool_lock:
-            _pool_size = max(0, _pool_size - 1)
         raise
 
 
 def _close_thread_conn():
-    """Close this thread's pooled connection and decrement the pool counter."""
-    global _pool_size
+    """Close this thread's pooled connection and remove from pool tracking."""
     conn = getattr(_local, 'conn', None)
     if conn is not None:
         try:
@@ -220,7 +227,7 @@ def _close_thread_conn():
             pass
         _local.conn = None
         with _pool_lock:
-            _pool_size = max(0, _pool_size - 1)
+            _pool_conns.pop(threading.get_ident(), None)
 
 
 def close_all():
@@ -230,6 +237,35 @@ def close_all():
     thread during application shutdown.
     """
     _close_thread_conn()
+
+
+def shutdown():
+    """Full shutdown — checkpoint WAL, close connections, release file locks.
+
+    Call once from the main thread during application exit. This ensures
+    the WAL is flushed to the main DB file so the next startup doesn't
+    see stale locks or need recovery.
+    """
+    try:
+        conn = getattr(_local, 'conn', None)
+        if conn is None:
+            # Open a temporary connection just for checkpoint
+            conn = sqlite3.connect(str(DB_PATH), timeout=5)
+            try:
+                conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+            except Exception as e:
+                log.warning("WAL checkpoint failed: %s", e)
+            finally:
+                conn.close()
+        else:
+            try:
+                conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+            except Exception as e:
+                log.warning("WAL checkpoint failed: %s", e)
+            _close_thread_conn()
+    except Exception as e:
+        log.warning("db.shutdown() error: %s", e)
+    log.info("Database shutdown complete")
 
 
 def _retry_write(fn, retries=8):

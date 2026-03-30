@@ -120,8 +120,39 @@ def boot(config=None):
         log.warning("PID manager unavailable: %s", e)
     boot_status.update_stage("pid", "done")
 
-    # 3. DB init
+    # 3. DB init (with stale WAL recovery)
     boot_status.update_stage("db", "starting")
+    # Recover from unclean shutdown: checkpoint any leftover WAL
+    wal_path = FLEET_DIR / "fleet.db-wal"
+    if wal_path.exists() and wal_path.stat().st_size > 0:
+        log.info("Stale WAL detected (%d bytes) — running recovery checkpoint", wal_path.stat().st_size)
+        try:
+            import sqlite3 as _sqlite3
+            _rc = _sqlite3.connect(str(FLEET_DIR / "fleet.db"), timeout=10)
+            _rc.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+            _rc.close()
+            log.info("WAL recovery checkpoint complete")
+        except Exception as e:
+            log.warning("WAL recovery failed (will retry on next boot): %s", e)
+    # Free stale dashboard port
+    try:
+        import socket as _sock
+        _s = _sock.socket(_sock.AF_INET, _sock.SOCK_STREAM)
+        _s.settimeout(1)
+        if _s.connect_ex(("127.0.0.1", 5555)) == 0:
+            log.warning("Port 5555 still in use — killing stale dashboard process")
+            try:
+                import psutil
+                for proc in psutil.process_iter(["pid", "cmdline"]):
+                    cmdline = proc.info.get("cmdline") or []
+                    if any("dashboard" in str(c) for c in cmdline):
+                        log.info("Killing stale dashboard PID %d", proc.pid)
+                        proc.kill()
+            except Exception as e:
+                log.warning("Could not kill stale dashboard: %s", e)
+        _s.close()
+    except Exception:
+        pass
     db.init_db()
     db.register_agent("supervisor", "supervisor", os.getpid())
     boot_status.update_stage("db", "done")

@@ -159,6 +159,8 @@ class Scheduler:
 
     def _skill_to_role(self, skill: str, affinity_map: dict) -> str | None:
         for role, skills in affinity_map.items():
+            if not isinstance(skills, list):
+                continue
             if skill in skills:
                 return role
         return None

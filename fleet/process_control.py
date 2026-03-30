@@ -106,65 +106,152 @@ def api_fleet_start():
 @fleet_bp.route("/api/fleet/stop", methods=["POST"])
 @_require_role("operator")
 def api_fleet_stop():
-    """Stop fleet gracefully — SIGTERM supervisor + workers, SIGKILL after timeout.
+    """Stop fleet gracefully — kill all fleet processes (workers, supervisor, dashboard).
 
-    Uses psutil to find and terminate all fleet processes. Graceful shutdown
-    waits up to 10 seconds for processes to exit before force-killing.
+    Finds processes by scanning cmdlines (psutil) rather than relying solely on
+    DB PIDs, which can be stale. Responds before self-terminating the dashboard.
     Rate-limited to 3/min to prevent accidental repeated stops.
     """
     if not _check_rate_limit("fleet_stop", max_per_min=3):
         return jsonify({"error": "Rate limited — fleet stop can only be called 3 times per minute"}), 429
     try:
         terminated = []
-        force_killed = []
+        my_pid = os.getpid()
 
-        # Collect all fleet PIDs from DB
-        agents = query("SELECT name, pid FROM agents WHERE pid IS NOT NULL")
-
-        pids_to_kill = []
-        for a in agents:
-            pid = a.get("pid")
-            if pid:
-                pids_to_kill.append((a["name"], pid))
-
-        # Phase 1: SIGTERM all processes
-        for name, pid in pids_to_kill:
-            try:
-                os.kill(pid, signal.SIGTERM)
-                terminated.append({"name": name, "pid": pid})
-            except (OSError, ProcessLookupError):
-                pass
-
-        # Phase 2: Wait briefly, then force-kill survivors using psutil
+        # Phase 1: Find ALL fleet processes via psutil cmdline scan
         try:
             import psutil
-            time.sleep(2)
-            for name, pid in pids_to_kill:
-                try:
-                    p = psutil.Process(pid)
-                    if p.is_running():
-                        p.kill()
-                        force_killed.append({"name": name, "pid": pid})
-                except (psutil.NoSuchProcess, psutil.AccessDenied):
-                    pass
+            fleet_patterns = [
+                "supervisor.py", "hw_supervisor.py", "web_app.py",
+                "worker.py", "fleet_bridge.py",
+            ]
+            for p in psutil.process_iter(["pid", "name", "cmdline"]):
+                if p.pid == my_pid:
+                    continue  # don't kill ourselves yet
+                cmdline = " ".join(p.info.get("cmdline") or [])
+                for pattern in fleet_patterns:
+                    if pattern in cmdline:
+                        try:
+                            p.terminate()
+                            terminated.append({"name": pattern, "pid": p.pid})
+                        except (psutil.NoSuchProcess, psutil.AccessDenied):
+                            pass
+                        break
         except ImportError:
-            # psutil not available — SIGTERM was already sent
-            pass
+            # Fallback: kill by DB PIDs only
+            agents = query("SELECT name, pid FROM agents WHERE pid IS NOT NULL")
+            for a in agents:
+                pid = a.get("pid")
+                if pid and pid != my_pid:
+                    try:
+                        os.kill(pid, signal.SIGTERM)
+                        terminated.append({"name": a["name"], "pid": pid})
+                    except (OSError, ProcessLookupError):
+                        pass
 
-        # Phase 3: Mark all agents as OFFLINE in DB
+        # Phase 2: Mark all agents as OFFLINE in DB
         try:
             with _get_conn() as conn:
                 conn.execute("UPDATE agents SET status='OFFLINE', pid=NULL")
         except Exception:
             pass
 
-        log.info("Fleet stop requested via API, terminated=%d, force_killed=%d",
-                 len(terminated), len(force_killed))
+        # Phase 3: Checkpoint DB
+        try:
+            import db
+            db.shutdown()
+        except Exception:
+            pass
+
+        log.info("Fleet stop: terminated %d processes", len(terminated))
+
+        # Phase 4: Schedule self-termination AFTER sending the response
+        import threading
+        def _self_terminate():
+            time.sleep(0.5)  # let response flush
+            os._exit(0)
+        threading.Thread(target=_self_terminate, daemon=True).start()
+
         return jsonify({
-            "status": "stopped",
+            "status": "stopping",
             "terminated": terminated,
-            "force_killed": force_killed,
         })
+    except Exception as e:
+        return jsonify({"error": _safe_error(e)}), 500
+
+
+@fleet_bp.route("/api/fleet/restart", methods=["POST"])
+@_require_role("operator")
+def api_fleet_restart():
+    """Restart fleet — stop all processes then re-launch supervisor + dashboard.
+
+    Rate-limited to 3/min.
+    """
+    if not _check_rate_limit("fleet_restart", max_per_min=3):
+        return jsonify({"error": "Rate limited"}), 429
+    import subprocess
+    import threading
+
+    try:
+        my_pid = os.getpid()
+        terminated = []
+
+        # Kill all fleet processes except ourselves
+        try:
+            import psutil
+            fleet_patterns = [
+                "supervisor.py", "hw_supervisor.py",
+                "worker.py", "fleet_bridge.py",
+            ]
+            for p in psutil.process_iter(["pid", "name", "cmdline"]):
+                if p.pid == my_pid:
+                    continue
+                cmdline = " ".join(p.info.get("cmdline") or [])
+                for pattern in fleet_patterns:
+                    if pattern in cmdline:
+                        try:
+                            p.terminate()
+                            terminated.append(pattern)
+                        except (psutil.NoSuchProcess, psutil.AccessDenied):
+                            pass
+                        break
+            # Also kill other web_app.py instances
+            for p in psutil.process_iter(["pid", "cmdline"]):
+                if p.pid == my_pid:
+                    continue
+                cmdline = " ".join(p.info.get("cmdline") or [])
+                if "web_app.py" in cmdline:
+                    try:
+                        p.terminate()
+                        terminated.append("web_app.py")
+                    except (psutil.NoSuchProcess, psutil.AccessDenied):
+                        pass
+        except ImportError:
+            pass
+
+        # Mark agents offline
+        try:
+            with _get_conn() as conn:
+                conn.execute("UPDATE agents SET status='OFFLINE', pid=NULL")
+        except Exception:
+            pass
+
+        log.info("Fleet restart: killed %d processes, relaunching", len(terminated))
+
+        # Relaunch supervisor (it will start a new dashboard)
+        def _relaunch():
+            time.sleep(1)
+            subprocess.Popen(
+                [sys.executable, str(FLEET_DIR / "supervisor.py")],
+                cwd=str(FLEET_DIR),
+                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+            )
+            time.sleep(0.5)
+            os._exit(0)  # kill this dashboard process
+        threading.Thread(target=_relaunch, daemon=True).start()
+
+        return jsonify({"status": "restarting", "killed": terminated})
     except Exception as e:
         return jsonify({"error": _safe_error(e)}), 500
 

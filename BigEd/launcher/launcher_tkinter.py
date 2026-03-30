@@ -775,8 +775,8 @@ class BigEdCC(TrayManagerMixin, BootManagerMixin, CommTabMixin, OllamaManagerMix
         if _should_show_walkthrough():
             self._safe_after(500, lambda: WalkthroughDialog(self))
 
-        # Auto-start fleet on launch — skip if first-run walkthrough is pending
-        if not _should_show_walkthrough():
+        # Auto-start fleet on launch — respects fleet.toml auto_start setting
+        if not _should_show_walkthrough() and self._should_auto_start():
             self._safe_after(1000, self._start_system)
 
         # v0.175: System tray integration
@@ -784,6 +784,18 @@ class BigEdCC(TrayManagerMixin, BootManagerMixin, CommTabMixin, OllamaManagerMix
         if self._get_start_minimized() and not _should_show_walkthrough():
             # Start minimized to tray — hide window immediately
             self._safe_after(200, self._minimize_to_tray)
+
+    def _should_auto_start(self) -> bool:
+        """Check fleet.toml auto_start setting (default: False)."""
+        try:
+            import tomllib
+            toml_path = os.path.join(
+                os.path.dirname(__file__), "..", "..", "fleet", "fleet.toml")
+            with open(toml_path, "rb") as f:
+                data = tomllib.load(f)
+            return bool(data.get("fleet", {}).get("auto_start", False))
+        except Exception:
+            return False
 
     _CLOSE_PREFS_FILE = DATA_DIR / "close_preferences.json"
 
@@ -891,6 +903,15 @@ class BigEdCC(TrayManagerMixin, BootManagerMixin, CommTabMixin, OllamaManagerMix
             try:
                 time.sleep(0.5)
                 _zombie_sweep()
+            except Exception:
+                pass
+
+            # 5. Checkpoint WAL and close DB connections
+            try:
+                self._safe_after(0, lambda: self._shutdown_status.configure(text="Closing database..."))
+                sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "fleet"))
+                import db
+                db.shutdown()
             except Exception:
                 pass
 
