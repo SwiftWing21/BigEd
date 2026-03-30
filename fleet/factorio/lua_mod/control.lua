@@ -432,23 +432,24 @@ local function fn_exec_cmd(json_str)
             result.error = "missing item: " .. (name or "nil")
             return helpers.table_to_json(result)
         end
-        -- Validate mining drills have resources underneath
-        local proto = prototypes.entity[name]
-        if proto and proto.type == "mining-drill" then
-            local cb = proto.collision_box
-            local drill_area = {
-                {pos.x + cb.left_top.x, pos.y + cb.left_top.y},
-                {pos.x + cb.right_bottom.x, pos.y + cb.right_bottom.y},
-            }
-            local res_under = surface.find_entities_filtered{area=drill_area, type="resource"}
-            if #res_under == 0 then
-                result.error = "no resources under drill at (" .. pos.x .. ", " .. pos.y .. ")"
-                return helpers.table_to_json(result)
+        -- Validate mining drills have resources underneath (safe — pcall in case API differs)
+        local ok_proto, proto = pcall(function() return prototypes.entity[name] end)
+        if ok_proto and proto and proto.type == "mining-drill" then
+            local ok_cb, cb = pcall(function() return proto.collision_box end)
+            if ok_cb and cb then
+                local drill_area = {
+                    {pos.x + cb.left_top.x, pos.y + cb.left_top.y},
+                    {pos.x + cb.right_bottom.x, pos.y + cb.right_bottom.y},
+                }
+                local res_under = surface.find_entities_filtered{area=drill_area, type="resource"}
+                if #res_under == 0 then
+                    result.error = "no resources under drill at (" .. pos.x .. ", " .. pos.y .. ")"
+                    return helpers.table_to_json(result)
+                end
             end
         end
         local can_place = surface.can_place_entity({
             name = name, position = pos, direction = dir, force = force,
-            build_check_type = defines.build_check_type.manual,
         })
         if not can_place then
             result.error = "cannot place " .. name .. " at (" .. pos.x .. ", " .. pos.y .. ")"

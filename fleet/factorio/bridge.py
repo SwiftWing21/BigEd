@@ -513,7 +513,11 @@ class FactorioBridge:
                 resp = await self.rcon.remote_call("exec_cmd", cmd)
                 resp_str = str(resp).lower()
                 result = {"success": "error" not in resp_str}
-                if self._tick_count <= 20 or self._tick_count % 50 == 0:
+                # Always log place/craft failures for debugging
+                if not result["success"] and translated.action_type in ("place", "craft"):
+                    log.warning("ML step %d FAILED %s: %s",
+                                self._tick_count, translated.description, resp_str[:200])
+                elif self._tick_count <= 50 or self._tick_count % 25 == 0:
                     log.info("ML step %d: %s -> %s",
                              self._tick_count, translated.description,
                              "OK" if result["success"] else resp_str[:100])
