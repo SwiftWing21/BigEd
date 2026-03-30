@@ -51,18 +51,30 @@ PHASE_ITEMS: dict[int, dict[str, int]] = {
 # Lua snippet to perform a soft reset: clear entities, reset inventory, teleport to spawn.
 # Must be a single /c command — RCON splits on newlines, so join with semicolons.
 _SOFT_RESET_LUA = (
-    '/c local player = game.players[1]; '
-    'if not player then rcon.print("no_player"); return end; '
+    '/c local surface = game.get_surface("nauvis"); '
+    'local force = game.forces["player"]; '
+    # Clear non-infrastructure entities
     'local keep = {["character"]=true, ["resource"]=true, ["tree"]=true, '
     '["furnace"]=true, ["mining-drill"]=true, ["assembling-machine"]=true, '
     '["transport-belt"]=true, ["inserter"]=true, ["electric-pole"]=true, '
     '["boiler"]=true, ["generator"]=true, ["lab"]=true, ["container"]=true}; '
-    'for _, ent in pairs(player.surface.find_entities()) do '
+    'for _, ent in pairs(surface.find_entities()) do '
     'if ent.valid and not keep[ent.name] and not keep[ent.type] then '
     'pcall(function() ent.destroy() end) end '
     'end; '
-    'player.get_main_inventory().clear(); '
-    'player.teleport({0, 0}, player.surface); '
+    # Clear and teleport — works with player or headless character
+    'local player = game.players[1]; '
+    'if player and player.character then '
+    '  player.get_main_inventory().clear(); '
+    '  player.teleport({0, 0}, surface); '
+    'end; '
+    'if storage.biged_character and storage.biged_character.valid then '
+    '  storage.biged_character.teleport({0, 0}, surface); '
+    'end; '
+    # Clear script inventory too
+    'if storage.biged_inventory and storage.biged_inventory.valid then '
+    '  storage.biged_inventory.clear(); '
+    'end; '
     # Replenish ore near spawn (5M per tile, never runs dry)
     'local s = player.surface; '
     'local ores = {{"iron-ore",3,0},{"iron-ore",-3,0},{"copper-ore",0,3},'
