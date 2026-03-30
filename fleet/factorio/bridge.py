@@ -60,8 +60,13 @@ class FactorioBridge:
             from factorio.trainer import PPOTrainer, TrajectoryBuffer
             from factorio.episode_manager import EpisodeManager
             from factorio.curriculum_manager import CurriculumManager
+            from factorio.spatial_memory import SpatialMemory
 
-            self._encoder = StateEncoder(phase=config.current_phase)
+            self._spatial_memory = SpatialMemory()
+            self._encoder = StateEncoder(
+                phase=config.current_phase,
+                spatial_memory=self._spatial_memory,
+            )
             self._action_space = ActionSpace(phase=config.current_phase)
             self._policy = FactorioPolicy(
                 grid_channels=4, grid_size=64,
@@ -388,7 +393,10 @@ class FactorioBridge:
                 except Exception:
                     pass
 
-        # 0b. Hybrid teacher: track lesson progress and intervene if stuck
+        # 0b. Update spatial memory from current state
+        self._spatial_memory.update_from_state(state, state.tick)
+
+        # 0c. Hybrid teacher: track lesson progress and intervene if stuck
         #     LLM runs in background — RL keeps ticking while teacher thinks.
         #     When teacher plan arrives, execute actions over the next few ticks.
         current_lesson = self._curriculum.get_progress().get("completed", 0)
@@ -442,7 +450,7 @@ class FactorioBridge:
             self._teacher_pending = asyncio.create_task(
                 self._teacher_generate_plan(state))
 
-        # 0c. Update bridge status so dashboard shows Running
+        # 0d. Update bridge status so dashboard shows Running
         update_status(True, state.tick, self.cadence.mode)
 
         # 1. Fetch metrics
@@ -598,6 +606,26 @@ class FactorioBridge:
                     self._episode_mgr.set_phase(new_phase)
 
             await self._episode_mgr.reset()
+
+            # Survey wide area for spatial memory after reset
+            try:
+                survey_lua = (
+                    '/c local s=game.get_surface("nauvis"); local out={}; '
+                    'for _,r in pairs(s.find_entities_filtered{type="resource", '
+                    'position={0,0}, radius=200}) do '
+                    'out[#out+1]={name=r.name, x=math.floor(r.position.x), '
+                    'y=math.floor(r.position.y), amount=r.amount} end; '
+                    'rcon.print(game.helpers.table_to_json(out))'
+                )
+                survey_raw = await self.rcon.command(survey_lua)
+                import json as _json
+                survey_data = _json.loads(survey_raw)
+                self._spatial_memory.update_from_survey(survey_data)
+                self._spatial_memory.clear_entities_in_radius((0, 0), 200)
+                log.info("Spatial memory survey: %d resources loaded", len(survey_data))
+            except Exception:
+                log.warning("Post-reset spatial survey failed", exc_info=True)
+
             self._prev_state = None
 
     async def run(self) -> None:
