@@ -385,6 +385,10 @@ local function fn_exec_cmd(json_str)
         local name = parsed.entity
         local pos = parsed.position
         local dir = parsed.direction or 0
+        if not name or not pos then
+            result.error = "place requires 'entity' and 'position'"
+            return helpers.table_to_json(result)
+        end
         local has_item = false
         if inv and name then
             local ok_cnt, cnt_val = pcall(inv.get_item_count, inv, name)
@@ -516,12 +520,16 @@ local function fn_exec_cmd(json_str)
 
     elseif action == "research" then
         local tech_name = parsed.technology
-        local tech = force.technologies[tech_name]
-        if tech and not tech.researched then
-            force.add_research(tech_name)
-            result.success = true
+        if not tech_name or tech_name == "" then
+            result.error = "no technology specified"
         else
-            result.error = tech and "already researched" or "unknown technology"
+            local tech = force.technologies[tech_name]
+            if tech and not tech.researched then
+                force.add_research(tech_name)
+                result.success = true
+            else
+                result.error = tech and "already researched" or "unknown technology: " .. tostring(tech_name)
+            end
         end
 
     elseif action == "move" then
@@ -532,13 +540,21 @@ local function fn_exec_cmd(json_str)
             return helpers.table_to_json(result)
         end
         local pos = parsed.position
-        char.teleport(pos, surface)
-        result.success = true
+        if not pos or pos.x == nil or pos.y == nil then
+            result.error = "move requires position with x and y"
+        else
+            char.teleport(pos, surface)
+            result.success = true
+        end
 
     elseif action == "connect" then
         local entity_name = parsed.entity or "transport-belt"
         local from = parsed.from
         local to = parsed.to
+        if not from or not to then
+            result.error = "connect requires 'from' and 'to' positions"
+            return helpers.table_to_json(result)
+        end
         if not inv then
             result.error = "no inventory for connection items"
             return helpers.table_to_json(result)
