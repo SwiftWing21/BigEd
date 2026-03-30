@@ -50,7 +50,10 @@ def update_fleet_toml(password: str) -> None:
         count=1,
     )
 
-    TOML_PATH.write_text(text, encoding="utf-8")
+    with open(TOML_PATH, "w", encoding="utf-8") as f:
+        f.write(text)
+        f.flush()
+        os.fsync(f.fileno())
     log.info("fleet.toml updated: enabled=true, rcon_password set")
 
 
@@ -288,10 +291,15 @@ def main():
 
     # Step 6: Start bridge
     print("\n[6/6] Starting BigEd bridge...")
+    bridge_env = {
+        **os.environ,
+        "PYTHONPATH": str(FLEET_DIR),
+        "BIGED_RCON_PASSWORD": password,
+    }
     bridge_proc = subprocess.Popen(
         [sys.executable, "-m", "factorio.bridge"],
         cwd=str(FLEET_DIR),
-        env={**os.environ, "PYTHONPATH": str(FLEET_DIR)},
+        env=bridge_env,
         creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
     )
     time.sleep(3)
@@ -324,7 +332,7 @@ def main():
                 bridge_proc = subprocess.Popen(
                     [sys.executable, "-m", "factorio.bridge"],
                     cwd=str(FLEET_DIR),
-                    env={**os.environ, "PYTHONPATH": str(FLEET_DIR)},
+                    env=bridge_env,
                     creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
                 )
             time.sleep(5)

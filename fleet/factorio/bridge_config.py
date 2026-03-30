@@ -1,5 +1,6 @@
 """Bridge configuration — loads from fleet.toml [factorio] section."""
 import logging
+import os
 from dataclasses import dataclass, field
 
 log = logging.getLogger("biged.factorio.config")
@@ -86,7 +87,14 @@ def load_factorio_config() -> BridgeConfig:
         from config import load_config
         cfg = load_config()
         section = cfg.get("factorio", {})
-        return BridgeConfig.from_dict(section)
+        bc = BridgeConfig.from_dict(section)
     except Exception:
         log.warning("Could not load [factorio] from fleet.toml, using defaults")
-        return BridgeConfig()
+        bc = BridgeConfig()
+
+    # Environment variable override — avoids filesystem buffering race
+    env_password = os.environ.get("BIGED_RCON_PASSWORD")
+    if env_password:
+        bc.rcon_password = env_password
+
+    return bc
