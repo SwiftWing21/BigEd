@@ -425,7 +425,7 @@ local function fn_exec_cmd(json_str)
         end
         local has_item = false
         if inv and name then
-            local ok_cnt, cnt_val = pcall(inv.get_item_count, inv, name)
+            local ok_cnt, cnt_val = pcall(function() return inv.get_item_count(name) end)
             has_item = ok_cnt and cnt_val >= 1
         end
         if not has_item then
@@ -621,7 +621,7 @@ local function fn_exec_cmd(json_str)
         local cx, cy = from.x, from.y
         local max_steps = math.abs(to.x - from.x) + math.abs(to.y - from.y) + 1
         for step = 1, max_steps do
-            local ok_cnt, cnt_val = pcall(inv.get_item_count, inv, entity_name)
+            local ok_cnt, cnt_val = pcall(function() return inv.get_item_count(entity_name) end)
             if not ok_cnt or cnt_val < 1 then
                 result.error = "ran out of " .. entity_name .. " after " .. placed
                 break
