@@ -56,6 +56,12 @@ class CurriculumManager:
         log.info("Loaded phase %d: %s (%d lessons)", phase, self._meta.get("name", "?"), len(self._lessons))
         return True
 
+    def current_lesson_index(self) -> int:
+        """Return the index of the current lesson (0-based)."""
+        if not self._tracker:
+            return 0
+        return self._tracker.current_index
+
     def get_current_objective(self) -> dict:
         """Return the current lesson objective for the LLM prompt."""
         if not self._tracker or not self._lessons:

@@ -518,10 +518,21 @@ class FactorioBridge:
         world_t = torch.tensor(world_grid).unsqueeze(0)
         feat_t = torch.tensor(features).unsqueeze(0)
 
-        # 3. Get action from policy
-        mask = self._action_space.get_action_type_mask(state.inventory, self.config.current_phase)
+        # 3. Get action from policy (with lesson-aware masking)
+        current_lesson = self._curriculum.current_lesson_index()
+        mask = self._action_space.get_action_type_mask(
+            state.inventory, self.config.current_phase, current_lesson)
         mask_t = torch.tensor([mask], dtype=torch.bool)
         action_type, log_prob, value, params = self._policy.act(grid_t, feat_t, mask_t, world_grid=world_t)
+
+        # Apply recipe mask for CRAFT/INSERT — block irrelevant recipes in Phase 1
+        recipe_mask = self._action_space.get_recipe_mask(
+            self.config.current_phase, current_lesson)
+        if action_type.item() in (ActionType.CRAFT.value, ActionType.INSERT.value):
+            if "recipe_logits" in params:
+                import torch as _torch
+                rmask = _torch.tensor([recipe_mask], dtype=_torch.bool)
+                params["recipe_logits"] = params["recipe_logits"].masked_fill(~rmask, -1e8)
 
         # 4. Sample action parameters and decode
         encoded = self._sample_params(action_type.item(), params)
@@ -535,8 +546,18 @@ class FactorioBridge:
             action_name = action_dict.get("action", "")
             # Place needs wider reach (2x scale); move/mine use 1x
             scale = 2 if action_name == "place" else 1
-            action_dict["position"]["x"] = action_dict["position"]["x"] * scale + round(px)
-            action_dict["position"]["y"] = action_dict["position"]["y"] * scale + round(py)
+            abs_x = action_dict["position"]["x"] * scale + round(px)
+            abs_y = action_dict["position"]["y"] * scale + round(py)
+
+            # Leash: clamp to exploration radius around spawn (0,0)
+            # Phase 1: 30 tiles (ore field), Phase 2: 60, Phase 3+: 200
+            _LEASH = {1: 30, 2: 60, 3: 200, 4: 500}
+            max_r = _LEASH.get(self.config.current_phase, 200)
+            abs_x = max(-max_r, min(max_r, abs_x))
+            abs_y = max(-max_r, min(max_r, abs_y))
+
+            action_dict["position"]["x"] = abs_x
+            action_dict["position"]["y"] = abs_y
 
         # 5. Execute via RCON
         from factorio.action_translator import translate_action

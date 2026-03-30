@@ -448,17 +448,31 @@ class ActionSpace:
     # Action mask
     # ------------------------------------------------------------------
 
-    def get_action_type_mask(self, inventory: dict, phase: int) -> list[int]:
+    # Lesson-gated recipe allowlists — only these recipes can be crafted at each lesson.
+    # Prevents random crafting of boilers/steam-engines when the agent should be learning smelting.
+    _LESSON_RECIPES: dict[int, set[str]] = {
+        # Lessons 0-4: mine + craft basics (gears need iron-plate)
+        0: {"iron-plate", "copper-plate", "stone-furnace", "iron-gear-wheel"},
+        1: {"iron-plate", "copper-plate", "stone-furnace", "iron-gear-wheel"},
+        2: {"iron-plate", "copper-plate", "stone-furnace", "iron-gear-wheel"},
+        3: {"iron-plate", "copper-plate", "stone-furnace", "iron-gear-wheel"},
+        4: {"iron-plate", "copper-plate", "stone-furnace", "iron-gear-wheel"},
+        # Lesson 5-6: place furnace + drill
+        5: {"iron-plate", "copper-plate", "stone-furnace", "burner-mining-drill",
+            "iron-gear-wheel", "coal"},
+        6: {"iron-plate", "copper-plate", "stone-furnace", "burner-mining-drill",
+            "iron-gear-wheel", "coal"},
+        # Lesson 7: accumulate 30 iron plates — smelting focused
+        7: {"iron-plate", "copper-plate", "stone-furnace", "burner-mining-drill",
+            "iron-gear-wheel", "burner-inserter", "coal", "transport-belt"},
+    }
+    # Phase 2+: all recipes unlocked
+    _PHASE2_UNLOCK_ALL = True
+
+    def get_action_type_mask(self, inventory: dict, phase: int, lesson_index: int = 0) -> list[int]:
         """
         Return a binary mask (length == len(ActionType) == 9) indicating
         which action types are currently valid.
-
-        Rules
-        -----
-        - WAIT, MOVE, MINE  : always valid (1)
-        - PLACE             : valid if any placeable entity is in inventory
-        - CRAFT, SET_RECIPE, RESEARCH, REMOVE : always nominally valid (let
-          the game engine reject illegal combinations at execution time)
         """
         mask = [1] * len(ActionType)
 
@@ -477,4 +491,22 @@ class ActionSpace:
         mask[ActionType.MOVE.value] = 1
         mask[ActionType.MINE.value] = 1
 
+        return mask
+
+    def get_recipe_mask(self, phase: int, lesson_index: int = 0) -> list[int]:
+        """Return binary mask over recipe vocabulary. 1 = allowed, 0 = blocked.
+
+        In Phase 1, only lesson-relevant recipes are allowed.
+        Phase 2+: all recipes unlocked.
+        """
+        if phase >= 2:
+            return [1] * len(self._recipes)
+
+        allowed = self._LESSON_RECIPES.get(lesson_index, self._LESSON_RECIPES.get(7, set()))
+        mask = []
+        for recipe_name in self._recipes:
+            mask.append(1 if recipe_name in allowed else 0)
+        # Ensure at least one recipe is allowed (fallback)
+        if sum(mask) == 0:
+            mask = [1] * len(self._recipes)
         return mask
