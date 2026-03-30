@@ -16,6 +16,7 @@
 local CONFIG = {
     observation_radius = 64,
     max_entities = 500,
+    agent_inventory_size = 200,
     tracked_items = {
         "iron-plate", "copper-plate", "steel-plate",
         "iron-gear-wheel", "electronic-circuit", "advanced-circuit",
@@ -27,15 +28,23 @@ local CONFIG = {
 }
 
 -- ─── Agent context (works with or without a player) ─────────────────────────
--- In headless mode with 0 players, we use the surface + force directly.
--- When a player connects (spectator), we use that player for inventory/crafting.
+-- Headless mode: script-owned inventory + standalone character entity.
+-- Player mode: uses connected player's inventory + character.
+-- Both modes share the same action interface.
 
 local agent_player_index = nil  -- stored in global for save/load persistence
 
+local function get_or_create_agent_inventory()
+    if storage.biged_inventory and storage.biged_inventory.valid then
+        return storage.biged_inventory
+    end
+    storage.biged_inventory = game.create_inventory(CONFIG.agent_inventory_size)
+    return storage.biged_inventory
+end
+
 local function get_agent_context()
-    -- Returns: { player = LuaPlayer|nil, character = LuaEntity|nil,
-    --            surface = LuaSurface, force = LuaForce,
-    --            has_player = bool, has_character = bool }
+    -- Returns: { player, character, surface, force, inventory,
+    --            has_player, has_character }
     local ctx = {
         surface = game.surfaces[1],
         force = game.forces["player"],
@@ -43,6 +52,7 @@ local function get_agent_context()
         character = nil,
         has_player = false,
         has_character = false,
+        inventory = nil,
     }
 
     -- Try to find a real player (connected spectator or saved index)
@@ -56,6 +66,7 @@ local function get_agent_context()
             if p.character and p.character.valid then
                 ctx.character = p.character
                 ctx.has_character = true
+                ctx.inventory = p.get_main_inventory()
             end
         end
     end
@@ -70,21 +81,26 @@ local function get_agent_context()
                 if p.character and p.character.valid then
                     ctx.character = p.character
                     ctx.has_character = true
+                    ctx.inventory = p.get_main_inventory()
                 end
                 break
             end
         end
     end
 
-    -- Headless fallback: use global.biged_character if no player exists
+    -- Headless fallback: use stored character
     if not ctx.has_character and storage.biged_character then
         if storage.biged_character.valid and storage.biged_character.health > 0 then
             ctx.character = storage.biged_character
             ctx.has_character = true
         else
-            -- Character died or was invalidated — clear the reference
             storage.biged_character = nil
         end
+    end
+
+    -- Always ensure we have an inventory (script-owned if no player)
+    if not ctx.inventory then
+        ctx.inventory = get_or_create_agent_inventory()
     end
 
     return ctx
@@ -173,6 +189,8 @@ end
 
 local function get_resources(surface, area)
     local resources = {}
+    local positions = {}
+    local pos_count = 0
     local res_entities = surface.find_entities_filtered({
         area = area, type = "resource",
     })
@@ -183,10 +201,20 @@ local function get_resources(surface, area)
         end
         resources[name].patches = resources[name].patches + 1
         resources[name].total_amount = resources[name].total_amount + ent.amount
+        -- Sample resource positions (every 8th tile, up to 64)
+        if pos_count < 64 and resources[name].patches % 8 == 1 then
+            table.insert(positions, {
+                name = name,
+                x = ent.position.x,
+                y = ent.position.y,
+                amount = ent.amount,
+            })
+            pos_count = pos_count + 1
+        end
     end
     local result = {}
     for _, v in pairs(resources) do table.insert(result, v) end
-    return result
+    return result, positions
 end
 
 -- ─── Remote interface functions (return JSON strings) ────────────────────────
@@ -202,7 +230,7 @@ local function fn_get_state()
     -- Position: use character (player or headless), else origin
     local char = ctx.character
     local pos
-    if ctx.has_player then
+    if ctx.has_player and ctx.player.character then
         pos = ctx.player.position
     elseif char then
         pos = char.position
@@ -229,21 +257,19 @@ local function fn_get_state()
         end
     end
 
-    -- Inventory: only if player exists (headless character has no inventory UI)
+    -- Inventory: from ctx (player inventory or script inventory)
     local inventory = {}
-    if ctx.has_player then
-        local inv = ctx.player.get_main_inventory()
-        if inv then
-            for i = 1, #inv do
-                local stack = inv[i]
-                if stack.valid_for_read then
-                    inventory[stack.name] = (inventory[stack.name] or 0) + stack.count
-                end
+    local inv = ctx.inventory
+    if inv and inv.valid then
+        for i = 1, #inv do
+            local stack = inv[i]
+            if stack.valid_for_read then
+                inventory[stack.name] = (inventory[stack.name] or 0) + stack.count
             end
         end
     end
 
-    local resources = get_resources(surface, area)
+    local resources, resource_positions = get_resources(surface, area)
     local research = nil
     local current = force.current_research
     if current then
@@ -256,6 +282,7 @@ local function fn_get_state()
         has_player = ctx.has_player,
         has_character = ctx.has_character,
         headless_character = (not ctx.has_player and ctx.has_character) or false,
+        headless_inventory = not ctx.has_player,
         player = {
             position = pos,
             health = char and char.health or 0,
@@ -267,8 +294,9 @@ local function fn_get_state()
         entities = entities,
         entity_count = count,
         resources = resources,
+        resource_positions = resource_positions,
         research = research,
-        map_explored_chunks = 0,  -- force.get_chunks removed in 2.0; TODO: use force.is_chunk_charted
+        map_explored_chunks = 0,
     })
 end
 
@@ -279,7 +307,6 @@ local function fn_get_metrics()
     if not force or not surface then
         return helpers.table_to_json({error = "no force/surface available"})
     end
-    -- Factorio 2.0: get_item_production_statistics takes a surface parameter
     local stats = force.get_item_production_statistics(surface)
     local production = {}
     local consumption = {}
@@ -290,7 +317,6 @@ local function fn_get_metrics()
         if consumed > 0 then consumption[item_name] = consumed end
     end
     local flow = {}
-    -- Factorio 2.0: get_flow_count may have changed signature
     local fok, _ = pcall(function()
         for _, item_name in pairs(CONFIG.tracked_items) do
             local rate = stats.get_flow_count{
@@ -345,9 +371,9 @@ local function fn_exec_cmd(json_str)
         return '{"error": "invalid JSON"}'
     end
     local ctx = get_agent_context()
-    local player = ctx.player  -- may be nil in headless
     local surface = ctx.surface
     local force = ctx.force
+    local inv = ctx.inventory  -- player inventory OR script inventory
     if not surface then
         return helpers.table_to_json({error = "no surface available"})
     end
@@ -359,11 +385,10 @@ local function fn_exec_cmd(json_str)
         local name = parsed.entity
         local pos = parsed.position
         local dir = parsed.direction or 0
-        local inv = player and player.get_main_inventory() or nil
         local has_item = false
         if inv and name then
-            local ok, count = pcall(inv.get_item_count, inv, name)
-            has_item = ok and count >= 1
+            local ok_cnt, cnt_val = pcall(inv.get_item_count, inv, name)
+            has_item = ok_cnt and cnt_val >= 1
         end
         if not has_item then
             result.error = "missing item: " .. (name or "nil")
@@ -398,10 +423,9 @@ local function fn_exec_cmd(json_str)
             if ent.unit_number == unit then
                 local items = ent.set_recipe(recipe)
                 result.success = true
-                if items and player then
-                    local player_inv = player.get_main_inventory()
+                if items and inv then
                     for item_name, count in pairs(items) do
-                        player_inv.insert({ name = item_name, count = count })
+                        inv.insert({ name = item_name, count = count })
                     end
                 end
                 break
@@ -428,8 +452,7 @@ local function fn_exec_cmd(json_str)
         end
         if target and target.valid then
             local products = target.prototype.mineable_properties
-            if products and products.products and player then
-                local inv = player.get_main_inventory()
+            if products and products.products and inv then
                 for _, prod in pairs(products.products) do
                     inv.insert({ name = prod.name, count = prod.amount or 1 })
                 end
@@ -441,21 +464,60 @@ local function fn_exec_cmd(json_str)
         end
 
     elseif action == "craft" then
-        if not player then
-            result.error = "craft requires a connected player"
+        -- Manual craft: read recipe prototype, consume inputs, produce outputs.
+        -- Works with both player inventory and script inventory.
+        if not inv then
+            result.error = "no inventory available for crafting"
             return helpers.table_to_json(result)
         end
-        local recipe = parsed.recipe
+        local recipe_name = parsed.recipe
         local count = parsed.count or 1
-        local crafted = player.begin_crafting({ recipe = recipe, count = count })
-        result.success = crafted > 0
-        result.crafted = crafted
+        local recipe = prototypes.recipe[recipe_name]
+        if not recipe then
+            result.error = "unknown recipe: " .. tostring(recipe_name)
+            return helpers.table_to_json(result)
+        end
+        -- Check how many we can craft
+        local can_craft = count
+        for _, ingredient in pairs(recipe.ingredients) do
+            local have = inv.get_item_count(ingredient.name)
+            local max_from_this = math.floor(have / ingredient.amount)
+            can_craft = math.min(can_craft, max_from_this)
+        end
+        if can_craft <= 0 then
+            result.error = "insufficient ingredients for " .. recipe_name
+            local missing = {}
+            for _, ingredient in pairs(recipe.ingredients) do
+                local have = inv.get_item_count(ingredient.name)
+                local need = ingredient.amount * count
+                if have < need then
+                    table.insert(missing, ingredient.name .. ": have=" .. have .. " need=" .. need)
+                end
+            end
+            result.missing = table.concat(missing, ", ")
+            return helpers.table_to_json(result)
+        end
+        -- Consume inputs
+        for _, ingredient in pairs(recipe.ingredients) do
+            inv.remove({ name = ingredient.name, count = ingredient.amount * can_craft })
+        end
+        -- Produce outputs
+        local crafted_items = {}
+        for _, product in pairs(recipe.products) do
+            local amt = math.floor((product.amount or 1) * can_craft)
+            if amt > 0 then
+                inv.insert({ name = product.name, count = amt })
+                crafted_items[product.name] = amt
+            end
+        end
+        result.success = true
+        result.crafted = can_craft
+        result.items = crafted_items
 
     elseif action == "research" then
         local tech_name = parsed.technology
         local tech = force.technologies[tech_name]
         if tech and not tech.researched then
-            -- Factorio 2.0: current_research is read-only, use add_research
             force.add_research(tech_name)
             result.success = true
         else
@@ -463,19 +525,24 @@ local function fn_exec_cmd(json_str)
         end
 
     elseif action == "move" then
-        if not player then
-            result.error = "move requires a connected player"
+        -- Move the agent character (teleport). Works with player or headless character.
+        local char = ctx.character
+        if not char or not char.valid then
+            result.error = "move requires a character (use ensure_player first)"
             return helpers.table_to_json(result)
         end
         local pos = parsed.position
-        player.teleport(pos, surface)
+        char.teleport(pos, surface)
         result.success = true
 
     elseif action == "connect" then
         local entity_name = parsed.entity or "transport-belt"
         local from = parsed.from
         local to = parsed.to
-        local inv = player and player.get_main_inventory() or nil
+        if not inv then
+            result.error = "no inventory for connection items"
+            return helpers.table_to_json(result)
+        end
         local placed = 0
         local dx = to.x > from.x and 1 or (to.x < from.x and -1 or 0)
         local dy = to.y > from.y and 1 or (to.y < from.y and -1 or 0)
@@ -502,7 +569,7 @@ local function fn_exec_cmd(json_str)
                     direction = dir, force = force,
                 })
                 if ent then
-                    if inv then inv.remove({ name = entity_name, count = 1 }) end
+                    inv.remove({ name = entity_name, count = 1 })
                     placed = placed + 1
                 end
             end
@@ -520,8 +587,8 @@ local function fn_exec_cmd(json_str)
 
     elseif action == "mine" then
         local pos = parsed.position or {x = 0, y = 0}
-        if not player then
-            result.error = "mine requires a connected player"
+        if not inv then
+            result.error = "no inventory available for mining"
             return helpers.table_to_json(result)
         end
         local area = {{pos.x - 0.5, pos.y - 0.5}, {pos.x + 0.5, pos.y + 0.5}}
@@ -531,11 +598,9 @@ local function fn_exec_cmd(json_str)
             if entity.minable then
                 local products = entity.prototype.mineable_properties
                 if products and products.products then
-                    local inv = player.get_main_inventory()
                     for _, product in pairs(products.products) do
                         if product.type == "item" then
-                            local count = product.amount or 1
-                            inv.insert{name = product.name, count = count}
+                            inv.insert{name = product.name, count = product.amount or 1}
                         end
                     end
                 end
@@ -556,7 +621,6 @@ local function fn_exec_cmd(json_str)
                 local resource = resources[1]
                 local mine_amount = math.min(resource.amount, 5)
                 resource.amount = resource.amount - mine_amount
-                local inv = player.get_main_inventory()
                 inv.insert{name = resource.name, count = mine_amount}
                 if resource.amount <= 0 then
                     resource.destroy()
@@ -604,8 +668,7 @@ end
 local function fn_ensure_player()
     local ctx = get_agent_context()
 
-    -- If we have a CONNECTED player but no character (dead or spectator), respawn one.
-    -- Disconnected players can't have characters assigned (Factorio API restriction).
+    -- If we have a CONNECTED player but no character, respawn one.
     if ctx.has_player and ctx.player.connected and not ctx.has_character then
         local ok, err = pcall(function()
             ctx.player.set_controller{type = defines.controllers.god}
@@ -614,14 +677,12 @@ local function fn_ensure_player()
         if ok and ctx.player.character and ctx.player.character.valid then
             game.print("[BigEd Bridge] Respawned character for connected player")
         end
-        -- If pcall failed, fall through to headless strategies below
     end
 
     if ctx.has_player then
         local p = ctx.player
         local char = p.character
         if char and char.valid then
-            -- Player exists and has a living character — all good
             return helpers.table_to_json({
                 success = true,
                 player_index = p.index,
@@ -632,12 +693,9 @@ local function fn_ensure_player()
                 alive = char.health > 0,
             })
         end
-        -- Player exists but no character (disconnected/dead) — fall through
-        -- to headless character creation strategies below
     end
 
-    -- No connected player or player has no character — headless mode.
-    -- Check if we already have a valid headless character
+    -- Headless mode: check existing headless character
     if ctx.has_character and ctx.character and ctx.character.valid then
         return helpers.table_to_json({
             success = true,
@@ -651,9 +709,7 @@ local function fn_ensure_player()
         })
     end
 
-    -- Strategy 1: Try connected players with god/spectator controller.
-    -- create_character() only works on connected players with god controller.
-    -- Disconnected players from save file can't be used (Factorio API restriction).
+    -- Strategy 1: Connected players with god controller
     for _, p in pairs(game.players) do
         if p.valid and p.connected and not p.character then
             local ok, err = pcall(function()
@@ -679,14 +735,12 @@ local function fn_ensure_player()
         end
     end
 
-    -- Strategy 2: Standalone character entity (no player object at all).
-    -- Works in pure headless with zero saved players.
+    -- Strategy 2: Standalone character entity (pure headless, no player)
     local surface = game.get_surface("nauvis") or game.surfaces[1]
     local force = game.forces["player"]
     if not surface then
         return helpers.table_to_json({
             success = false, error = "no_surface",
-            note = "No surface available to spawn character",
         })
     end
 
@@ -695,7 +749,6 @@ local function fn_ensure_player()
         name = "character", position = spawn, force = force,
     }
     if not char then
-        -- Spawn blocked — try nearby
         local fallback = surface.find_non_colliding_position("character", spawn, 10, 1)
         if fallback then
             char = surface.create_entity{
@@ -705,9 +758,9 @@ local function fn_ensure_player()
     end
     if char then
         storage.biged_character = char
-        game.print("[BigEd Bridge] Created standalone headless character at ("
-                   .. math.floor(char.position.x) .. ", "
-                   .. math.floor(char.position.y) .. ")")
+        -- Ensure script inventory exists
+        get_or_create_agent_inventory()
+        game.print("[BigEd Bridge] Headless agent ready: character + script inventory")
         return helpers.table_to_json({
             success = true,
             headless = true,
@@ -725,7 +778,6 @@ local function fn_ensure_player()
         error = "spawn_blocked",
         headless = true,
         position = spawn,
-        note = "Could not create headless character at or near spawn — clear the area",
     })
 end
 
@@ -733,11 +785,12 @@ local function fn_status()
     local ctx = get_agent_context()
     return helpers.table_to_json({
         mod = "biged-bridge",
-        version = "0.3.0",
+        version = "0.4.0",
         tick = game.tick,
         has_player = ctx.has_player,
         has_character = ctx.has_character,
         headless_character = (not ctx.has_player and ctx.has_character) or false,
+        headless_inventory = not ctx.has_player and ctx.inventory ~= nil,
         player_index = agent_player_index,
         surface_count = #game.surfaces,
         force_name = ctx.force and ctx.force.name or "none",
@@ -758,31 +811,30 @@ remote.add_interface("biged", {
 -- ─── Lifecycle ──────────────────────────────────────────────────────────────
 
 script.on_init(function()
-    -- Store agent player index in global for save/load persistence
     storage.agent_player_index = nil
-    storage.biged_character = nil  -- headless character entity reference
-    game.print("[BigEd Bridge] v0.3.0 loaded. Remote interface: biged")
+    storage.biged_character = nil
+    storage.biged_inventory = nil  -- script-owned inventory for headless mode
+    game.print("[BigEd Bridge] v0.4.0 loaded. Remote interface: biged")
+    game.print("[BigEd Bridge] Headless mode: script inventory + standalone character")
 end)
 
 script.on_load(function()
-    -- Restore agent player index from save
     if storage.agent_player_index then
         agent_player_index = storage.agent_player_index
     end
-    -- Note: storage.biged_character is auto-restored by Factorio as an entity reference.
-    -- Validation happens lazily in get_agent_context() since entity.valid checks
-    -- are not allowed during on_load (the game world isn't fully loaded yet).
 end)
 
--- Validate headless character after config changes (save/load boundary)
 script.on_configuration_changed(function()
     if storage.biged_character and not storage.biged_character.valid then
         storage.biged_character = nil
         game.print("[BigEd Bridge] Headless character invalidated after config change")
     end
+    if storage.biged_inventory and not storage.biged_inventory.valid then
+        storage.biged_inventory = nil
+        game.print("[BigEd Bridge] Script inventory invalidated — will recreate on next use")
+    end
 end)
 
--- Persist agent player index when it changes
 script.on_event(defines.events.on_player_joined_game, function(event)
     if not agent_player_index then
         agent_player_index = event.player_index
