@@ -468,6 +468,10 @@ class ActionSpace:
         )
         mask[ActionType.PLACE.value] = 1 if has_placeable else 0
 
+        # REMOVE disabled in Phase 1-2 — agent should build, not deconstruct
+        if phase <= 2:
+            mask[ActionType.REMOVE.value] = 0
+
         # Ensure the always-valid actions are set (defensive)
         mask[ActionType.WAIT.value] = 1
         mask[ActionType.MOVE.value] = 1
