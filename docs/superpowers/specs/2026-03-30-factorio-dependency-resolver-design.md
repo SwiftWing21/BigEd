@@ -282,7 +282,9 @@ async def _teacher_generate_plan(state):
     await brain.generate_plan(state)
 ```
 
-The existing cooldown (`_teacher_cooldown = 50`) and step counter still apply. The resolver just makes the teacher smarter about *what* to plan when it fires.
+The existing cooldown (`_teacher_cooldown = 5` ticks per action) and stuck threshold (`_teacher_stuck_threshold = 500` steps) still apply. The resolver just makes the teacher smarter about *what* to plan when it fires.
+
+**Note on pseudocode:** The integration snippet above is illustrative. The actual implementation must use `self` (it's a method on the bridge class), `self._curriculum.get_current_objective()` (not `curriculum.get_current_lesson()`), and other real attribute names from `bridge.py`. The `brain.add_context()` method does not currently exist — implementation must add it to `AgentBrain` (a simple dict-based context store that gets injected into `_generate_plan()`'s prompt template).
 
 ### Criteria Parser Helper
 
