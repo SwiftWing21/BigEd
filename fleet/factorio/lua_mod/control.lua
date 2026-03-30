@@ -33,12 +33,16 @@ local CONFIG = {
 local agent_player_index = nil  -- stored in global for save/load persistence
 
 local function get_agent_context()
-    -- Returns: { player = LuaPlayer|nil, surface = LuaSurface, force = LuaForce, has_player = bool }
+    -- Returns: { player = LuaPlayer|nil, character = LuaEntity|nil,
+    --            surface = LuaSurface, force = LuaForce,
+    --            has_player = bool, has_character = bool }
     local ctx = {
         surface = game.surfaces[1],
         force = game.forces["player"],
         player = nil,
+        character = nil,
         has_player = false,
+        has_character = false,
     }
 
     -- Try to find a real player (connected spectator or saved index)
@@ -49,6 +53,10 @@ local function get_agent_context()
             ctx.has_player = true
             ctx.surface = p.surface or ctx.surface
             ctx.force = p.force or ctx.force
+            if p.character and p.character.valid then
+                ctx.character = p.character
+                ctx.has_character = true
+            end
         end
     end
     if not ctx.has_player then
@@ -59,8 +67,23 @@ local function get_agent_context()
                 ctx.surface = p.surface or ctx.surface
                 ctx.force = p.force or ctx.force
                 agent_player_index = p.index
+                if p.character and p.character.valid then
+                    ctx.character = p.character
+                    ctx.has_character = true
+                end
                 break
             end
+        end
+    end
+
+    -- Headless fallback: use global.biged_character if no player exists
+    if not ctx.has_character and storage.biged_character then
+        if storage.biged_character.valid and storage.biged_character.health > 0 then
+            ctx.character = storage.biged_character
+            ctx.has_character = true
+        else
+            -- Character died or was invalidated — clear the reference
+            storage.biged_character = nil
         end
     end
 
@@ -176,8 +199,16 @@ local function fn_get_state()
         return helpers.table_to_json({error = "no surface available"})
     end
 
-    -- Position: use player position if available, else origin
-    local pos = ctx.has_player and ctx.player.position or {x = 0, y = 0}
+    -- Position: use character (player or headless), else origin
+    local char = ctx.character
+    local pos
+    if ctx.has_player then
+        pos = ctx.player.position
+    elseif char then
+        pos = char.position
+    else
+        pos = {x = 0, y = 0}
+    end
     local r = CONFIG.observation_radius
     local area = { { pos.x - r, pos.y - r }, { pos.x + r, pos.y + r } }
 
@@ -198,7 +229,7 @@ local function fn_get_state()
         end
     end
 
-    -- Inventory: only if player exists
+    -- Inventory: only if player exists (headless character has no inventory UI)
     local inventory = {}
     if ctx.has_player then
         local inv = ctx.player.get_main_inventory()
@@ -223,16 +254,14 @@ local function fn_get_state()
         tick = game.tick,
         time_of_day = surface.daytime,
         has_player = ctx.has_player,
+        has_character = ctx.has_character,
+        headless_character = (not ctx.has_player and ctx.has_character) or false,
         player = {
             position = pos,
-            health = (ctx.has_player and ctx.player.character)
-                     and ctx.player.character.health or 0,
-            max_health = (ctx.has_player and ctx.player.character)
-                     and ctx.player.character.prototype.max_health or 0,
-            has_character = ctx.has_player and ctx.player.character ~= nil or false,
-            alive = ctx.has_player and ctx.player.character ~= nil
-                    and ctx.player.character.valid
-                    and ctx.player.character.health > 0 or false,
+            health = char and char.health or 0,
+            max_health = char and char.prototype.max_health or 0,
+            has_character = ctx.has_character,
+            alive = ctx.has_character and char.valid and char.health > 0 or false,
         },
         inventory = inventory,
         entities = entities,
@@ -576,7 +605,7 @@ local function fn_ensure_player()
     local ctx = get_agent_context()
 
     -- If we have a player but no character (dead or spectator), respawn one
-    if ctx.has_player and not ctx.player.character then
+    if ctx.has_player and not ctx.has_character then
         local surface = ctx.surface
         local spawn = ctx.force.get_spawn_position(surface)
         local char = surface.create_entity{
@@ -617,14 +646,98 @@ local function fn_ensure_player()
             alive = char ~= nil and char.valid and char.health > 0,
         })
     end
-    -- No player in headless mode — report what we have
+
+    -- No connected player — headless mode.
+    -- Check if we already have a valid headless character
+    if ctx.has_character and ctx.character and ctx.character.valid then
+        return helpers.table_to_json({
+            success = true,
+            headless = true,
+            has_player = false,
+            has_character = true,
+            position = ctx.character.position,
+            health = ctx.character.health,
+            max_health = ctx.character.prototype.max_health,
+            alive = ctx.character.health > 0,
+        })
+    end
+
+    -- Strategy 1: Try disconnected players from save file.
+    -- Saves created with a player will have entries in game.players even in headless.
+    -- Use create_character() which is the proper Factorio API.
+    for _, p in pairs(game.players) do
+        if p.valid and not p.character then
+            local ok, err = pcall(function()
+                -- Ensure god controller so create_character() works
+                p.set_controller{type = defines.controllers.god}
+                p.create_character()
+            end)
+            if ok and p.character and p.character.valid then
+                agent_player_index = p.index
+                storage.agent_player_index = p.index
+                game.print("[BigEd Bridge] Respawned character via disconnected player " .. p.name)
+                return helpers.table_to_json({
+                    success = true,
+                    headless = true,
+                    has_player = true,
+                    player_index = p.index,
+                    has_character = true,
+                    position = p.character.position,
+                    health = p.character.health,
+                    max_health = p.character.prototype.max_health,
+                    alive = p.character.health > 0,
+                })
+            end
+        end
+    end
+
+    -- Strategy 2: Standalone character entity (no player object at all).
+    -- Works in pure headless with zero saved players.
+    local surface = game.get_surface("nauvis") or game.surfaces[1]
+    local force = game.forces["player"]
+    if not surface then
+        return helpers.table_to_json({
+            success = false, error = "no_surface",
+            note = "No surface available to spawn character",
+        })
+    end
+
+    local spawn = force.get_spawn_position(surface)
+    local char = surface.create_entity{
+        name = "character", position = spawn, force = force,
+    }
+    if not char then
+        -- Spawn blocked — try nearby
+        local fallback = surface.find_non_colliding_position("character", spawn, 10, 1)
+        if fallback then
+            char = surface.create_entity{
+                name = "character", position = fallback, force = force,
+            }
+        end
+    end
+    if char then
+        storage.biged_character = char
+        game.print("[BigEd Bridge] Created standalone headless character at ("
+                   .. math.floor(char.position.x) .. ", "
+                   .. math.floor(char.position.y) .. ")")
+        return helpers.table_to_json({
+            success = true,
+            headless = true,
+            has_player = false,
+            has_character = true,
+            position = char.position,
+            health = char.health,
+            max_health = char.prototype.max_health,
+            alive = char.health > 0,
+        })
+    end
+
     return helpers.table_to_json({
-        success = true,
+        success = false,
+        error = "spawn_blocked",
         headless = true,
-        has_player = false,
-        has_surface = ctx.surface ~= nil,
-        has_force = ctx.force ~= nil,
-        note = "Running in playerless headless mode. Place/research/observe work. Craft/move require a connected player.",
+        position = spawn,
+        note = "Could not create headless character at or near spawn — clear the area",
     })
 end
 
@@ -632,9 +745,11 @@ local function fn_status()
     local ctx = get_agent_context()
     return helpers.table_to_json({
         mod = "biged-bridge",
-        version = "0.2.0",
+        version = "0.3.0",
         tick = game.tick,
         has_player = ctx.has_player,
+        has_character = ctx.has_character,
+        headless_character = (not ctx.has_player and ctx.has_character) or false,
         player_index = agent_player_index,
         surface_count = #game.surfaces,
         force_name = ctx.force and ctx.force.name or "none",
@@ -657,13 +772,25 @@ remote.add_interface("biged", {
 script.on_init(function()
     -- Store agent player index in global for save/load persistence
     storage.agent_player_index = nil
-    game.print("[BigEd Bridge] v0.2.0 loaded. Remote interface: biged")
+    storage.biged_character = nil  -- headless character entity reference
+    game.print("[BigEd Bridge] v0.3.0 loaded. Remote interface: biged")
 end)
 
 script.on_load(function()
     -- Restore agent player index from save
     if storage.agent_player_index then
         agent_player_index = storage.agent_player_index
+    end
+    -- Note: storage.biged_character is auto-restored by Factorio as an entity reference.
+    -- Validation happens lazily in get_agent_context() since entity.valid checks
+    -- are not allowed during on_load (the game world isn't fully loaded yet).
+end)
+
+-- Validate headless character after config changes (save/load boundary)
+script.on_configuration_changed(function()
+    if storage.biged_character and not storage.biged_character.valid then
+        storage.biged_character = nil
+        game.print("[BigEd Bridge] Headless character invalidated after config change")
     end
 end)
 
