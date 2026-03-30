@@ -17,6 +17,10 @@ _RESEARCH_PROGRESS_SCALE = 0.1
 _NEW_ENTITY_BONUS = 0.05      # phase 2+
 _PRODUCTION_DELTA_SCALE = 0.02  # phase 2+
 _PRODUCTION_DELTA_CAP = 5.0     # max units counted per step
+# Distance-based exploration penalty — discourages wandering when resources exist
+_WANDER_PENALTY_SCALE = -0.005   # per-step penalty scaled by distance from nearest ore
+_WANDER_DISTANCE_THRESHOLD = 20  # tiles — beyond this, penalty kicks in
+_NEAR_RESOURCE_BONUS = 0.005     # small bonus for being within 10 tiles of ore
 
 
 class RunningStats:
@@ -64,11 +68,12 @@ class RewardComputer:
     Phase 2+: adds entity placement bonus and production delta bonus.
     """
 
-    def __init__(self, phase: int = 1) -> None:
+    def __init__(self, phase: int = 1, spatial_memory=None) -> None:
         self._phase = phase
         self._stats = RunningStats()
         # Track entity unit_numbers seen to count new placements
         self._seen_entity_ids: set[int] = set()
+        self._spatial_memory = spatial_memory
 
     def set_phase(self, phase: int) -> None:
         self._phase = phase
@@ -147,12 +152,67 @@ class RewardComputer:
         research_delta = max(0.0, curr.research_progress - prev.research_progress)
         r += research_delta * _RESEARCH_PROGRESS_SCALE
 
+        # Distance-from-resources penalty — discourages wandering when ore exists
+        r += self._distance_reward(curr)
+
         # Phase 2+ signals
         if self._phase >= 2:
             r += self._entity_placement_bonus(curr)
             r += self._production_delta_bonus(prev, curr)
 
         return r
+
+    def _distance_reward(self, curr: GameState) -> float:
+        """Penalty for wandering far from resources AND infrastructure.
+
+        No penalty if:
+        - No known resources (exploring is correct)
+        - Near own infrastructure (building production chains)
+        - Resources are depleted
+
+        Penalty only when far from BOTH resources AND built entities.
+        """
+        if self._spatial_memory is None:
+            return 0.0
+
+        summary = self._spatial_memory.resource_summary()
+        if not summary:
+            return 0.0  # no known resources — exploring is fine
+
+        px = curr.player_position.get("x", 0)
+        py = curr.player_position.get("y", 0)
+
+        # Distance to nearest resource
+        min_resource_dist = float("inf")
+        for rtype in ("iron-ore", "copper-ore", "coal", "stone"):
+            result = self._spatial_memory.nearest_resource(px, py, rtype)
+            if result is not None:
+                _, dist = result
+                min_resource_dist = min(min_resource_dist, dist)
+
+        # Distance to nearest own infrastructure
+        min_entity_dist = float("inf")
+        for ename in ("stone-furnace", "burner-mining-drill", "assembling-machine-1",
+                       "transport-belt", "inserter", "lab"):
+            result = self._spatial_memory.nearest_entity_by_name(px, py, ename)
+            if result is not None:
+                _, dist = result
+                min_entity_dist = min(min_entity_dist, dist)
+
+        # Near resources OR near own infrastructure = no penalty
+        min_useful_dist = min(min_resource_dist, min_entity_dist)
+
+        if min_useful_dist == float("inf"):
+            return 0.0  # nothing remembered — no penalty
+
+        if min_useful_dist <= 10:
+            return _NEAR_RESOURCE_BONUS
+
+        if min_useful_dist > _WANDER_DISTANCE_THRESHOLD:
+            excess = min(min_useful_dist - _WANDER_DISTANCE_THRESHOLD, 100)
+            return _WANDER_PENALTY_SCALE * (excess / 100.0)
+
+        return 0.0
 
     def _entity_placement_bonus(self, curr: GameState) -> float:
         """Bonus for each newly placed entity (identified by unit_number)."""

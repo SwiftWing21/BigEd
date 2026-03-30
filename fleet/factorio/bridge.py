@@ -76,7 +76,7 @@ class FactorioBridge:
                 num_recipes=self._action_space.num_recipe_types,
                 num_techs=self._action_space.num_tech_types,
             )
-            self._reward = RewardComputer(phase=config.current_phase)
+            self._reward = RewardComputer(phase=config.current_phase, spatial_memory=self._spatial_memory)
             self._trainer = PPOTrainer(
                 self._policy, lr=config.ml_learning_rate,
                 gamma=config.ml_gamma, gae_lambda=config.ml_gae_lambda,
