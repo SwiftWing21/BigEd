@@ -454,6 +454,15 @@ class FactorioBridge:
         encoded = self._sample_params(action_type.item(), params)
         action_dict = self._action_space.decode_action(encoded)
 
+        # 4b. Convert relative offsets to absolute world coordinates
+        #     Policy outputs [-5, +5] relative to player.
+        #     Scale by 2 to cover [-10, +10] range without changing network.
+        if "position" in action_dict and state.player_position:
+            px = state.player_position.get("x", 0) if isinstance(state.player_position, dict) else getattr(state.player_position, "x", 0)
+            py = state.player_position.get("y", 0) if isinstance(state.player_position, dict) else getattr(state.player_position, "y", 0)
+            action_dict["position"]["x"] = action_dict["position"]["x"] * 2 + int(px)
+            action_dict["position"]["y"] = action_dict["position"]["y"] * 2 + int(py)
+
         # 5. Execute via RCON
         from factorio.action_translator import translate_action
         translated = translate_action(action_dict)
@@ -642,7 +651,7 @@ def main():
     bridge = FactorioBridge(config)
 
     # Start localhost API server
-    api_app = create_api(bridge.world_model, bridge.command_queue, bridge.brain)
+    api_app = create_api(bridge.world_model, bridge.command_queue, bridge.brain, rcon=bridge.rcon)
     api_thread = threading.Thread(
         target=_run_api_server, args=(api_app, config.bridge_port),
         daemon=True, name="factorio-api",
