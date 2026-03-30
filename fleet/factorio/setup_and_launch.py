@@ -113,10 +113,10 @@ def _write_map_gen_settings(path: Path, biters: bool = False) -> None:
     import json as _json
     settings = {
         "autoplace_controls": {
-            "iron-ore": {"frequency": "normal", "size": "big", "richness": "very-good"},
-            "copper-ore": {"frequency": "normal", "size": "big", "richness": "very-good"},
-            "coal": {"frequency": "normal", "size": "big", "richness": "very-good"},
-            "stone": {"frequency": "normal", "size": "big", "richness": "very-good"},
+            "iron-ore": {"frequency": "very-high", "size": "very-big", "richness": "very-good"},
+            "copper-ore": {"frequency": "very-high", "size": "very-big", "richness": "very-good"},
+            "coal": {"frequency": "very-high", "size": "very-big", "richness": "very-good"},
+            "stone": {"frequency": "very-high", "size": "big", "richness": "very-good"},
             "uranium-ore": {"frequency": "normal", "size": "normal", "richness": "normal"},
             "crude-oil": {"frequency": "normal", "size": "normal", "richness": "very-good"},
             "trees": {"frequency": "normal", "size": "normal", "richness": "normal"},
@@ -126,6 +126,12 @@ def _write_map_gen_settings(path: Path, biters: bool = False) -> None:
                 "richness": "normal" if biters else "none",
             },
         },
+        "property_expression_names": {
+            "control-setting:iron-ore:frequency:multiplier": "2",
+            "control-setting:copper-ore:frequency:multiplier": "2",
+            "control-setting:coal:frequency:multiplier": "2",
+        },
+        "starting_area": "very-big",
         "peaceful_mode": not biters,
         "enemy_expansion": {"enabled": biters},
     }
