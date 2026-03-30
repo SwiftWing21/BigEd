@@ -685,6 +685,63 @@ local function fn_exec_cmd(json_str)
             end
         end
 
+    elseif action == "insert" then
+        -- Insert items from agent inventory into a nearby entity (furnace, machine, etc.)
+        local pos = parsed.position or {x = 0, y = 0}
+        local item_name = parsed.item
+        local count = parsed.count or 1
+        if not item_name then
+            result.error = "insert requires 'item' field"
+        elseif not inv then
+            result.error = "no inventory available"
+        else
+            -- Check agent has the item
+            local have = inv.get_item_count(item_name)
+            if have < 1 then
+                result.error = "no " .. item_name .. " in inventory"
+            else
+                -- Find nearest entity at position that can accept items
+                local area = {{pos.x - 1, pos.y - 1}, {pos.x + 1, pos.y + 1}}
+                local targets = surface.find_entities_filtered{
+                    area = area, force = force, limit = 1,
+                    type = {"furnace", "assembling-machine", "lab", "boiler",
+                            "mining-drill", "container", "car", "cargo-wagon"},
+                }
+                if #targets == 0 then
+                    result.error = "no insertable entity near (" .. pos.x .. ", " .. pos.y .. ")"
+                else
+                    local target = targets[1]
+                    -- Try fuel inventory first (for coal into furnaces/drills/boilers)
+                    local inserted = 0
+                    local fuel_inv = target.get_fuel_inventory()
+                    if fuel_inv and fuel_inv.valid then
+                        local to_insert = math.min(count, have)
+                        inserted = fuel_inv.insert{name = item_name, count = to_insert}
+                    end
+                    -- If not fuel, try input/source inventory (ore into furnace, items into assembler)
+                    if inserted == 0 then
+                        local src_inv = target.get_inventory(defines.inventory.furnace_source)
+                                     or target.get_inventory(defines.inventory.assembling_machine_input)
+                                     or target.get_inventory(defines.inventory.lab_input)
+                                     or target.get_inventory(defines.inventory.chest)
+                        if src_inv and src_inv.valid then
+                            local to_insert = math.min(count, have)
+                            inserted = src_inv.insert{name = item_name, count = to_insert}
+                        end
+                    end
+                    if inserted > 0 then
+                        inv.remove{name = item_name, count = inserted}
+                        result.success = true
+                        result.inserted = inserted
+                        result.target = target.name
+                        result.target_position = target.position
+                    else
+                        result.error = "could not insert " .. item_name .. " into " .. target.name
+                    end
+                end
+            end
+        end
+
     else
         result.error = "unknown action: " .. tostring(action)
     end

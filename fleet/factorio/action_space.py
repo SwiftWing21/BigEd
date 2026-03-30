@@ -35,6 +35,7 @@ class ActionType(IntEnum):
     REMOVE     = 5
     WAIT       = 6
     MINE       = 7
+    INSERT     = 8  # Insert items from inventory into a nearby entity (furnace, machine)
 
 
 # ---------------------------------------------------------------------------
@@ -409,7 +410,7 @@ class ActionSpace:
         # Position (undo +5 offset)
         x = encoded.dx - 5
         y = encoded.dy - 5
-        if action_name in ("place", "remove", "mine", "move"):
+        if action_name in ("place", "remove", "mine", "move", "insert"):
             result["position"] = {"x": x, "y": y}
 
         # Direction
@@ -423,11 +424,13 @@ class ActionSpace:
             if action_name in ("place", "remove", "set_recipe"):
                 result["entity"] = entity_name
 
-        # Recipe
+        # Recipe / item (INSERT reuses recipe_id to select inventory item)
         if encoded.recipe_id > 0 and encoded.recipe_id <= len(self._recipes):
             recipe_name = self._recipes[encoded.recipe_id - 1]
             if action_name in ("craft", "set_recipe"):
                 result["recipe"] = recipe_name
+            elif action_name == "insert":
+                result["item"] = recipe_name  # recipe list doubles as item selector
 
         # Technology
         if encoded.tech_id > 0:
@@ -436,7 +439,7 @@ class ActionSpace:
                 result["tech"] = tech_name
 
         # Count
-        if action_name in ("craft", "mine"):
+        if action_name in ("craft", "mine", "insert"):
             result["count"] = encoded.count
 
         return result
@@ -447,7 +450,7 @@ class ActionSpace:
 
     def get_action_type_mask(self, inventory: dict, phase: int) -> list[int]:
         """
-        Return a binary mask (length == len(ActionType) == 8) indicating
+        Return a binary mask (length == len(ActionType) == 9) indicating
         which action types are currently valid.
 
         Rules

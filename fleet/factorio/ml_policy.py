@@ -182,6 +182,12 @@ class FactorioPolicy(nn.Module):
         self.mine_dx = nn.Linear(128, self._DX_DY_BINS)
         self.mine_dy = nn.Linear(128, self._DX_DY_BINS)
 
+        # INSERT: dx, dy (target entity position), recipe (item to insert), count
+        self.insert_dx = nn.Linear(128, self._DX_DY_BINS)
+        self.insert_dy = nn.Linear(128, self._DX_DY_BINS)
+        self.insert_item = nn.Linear(128, num_recipes)  # reuse recipe vocab as item selector
+        self.insert_count = nn.Linear(128, self._COUNT_BINS)
+
         # WAIT has no parameters
 
         self._init_weights()
@@ -296,6 +302,13 @@ class FactorioPolicy(nn.Module):
             return {
                 "dx_logits": self.mine_dx(shared),
                 "dy_logits": self.mine_dy(shared),
+            }
+        elif at == ActionType.INSERT.value:
+            return {
+                "dx_logits": self.insert_dx(shared),
+                "dy_logits": self.insert_dy(shared),
+                "recipe_logits": self.insert_item(shared),
+                "count_logits": self.insert_count(shared),
             }
         elif at == ActionType.WAIT.value:
             return {}

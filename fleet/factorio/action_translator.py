@@ -7,7 +7,7 @@ log = logging.getLogger("biged.factorio.actions")
 
 DIRECTION_MAP = {"north": 0, "east": 4, "south": 8, "west": 12}  # Factorio 2.0 (16-dir)
 KNOWN_ACTIONS = {"place", "remove", "set_recipe", "craft", "research",
-                 "move", "connect", "observe", "wait", "mine"}
+                 "move", "connect", "observe", "wait", "mine", "insert"}
 
 
 def _direction_to_int(d) -> int:
@@ -88,4 +88,7 @@ def _describe_action(action_type: str, action: dict) -> str:
         return f"Set recipe {action.get('recipe', '?')} on #{action.get('unit_number', '?')}"
     if action_type == "connect":
         return f"Connect {action.get('entity', 'belt')} from {action.get('from', '?')} to {action.get('to', '?')}"
+    if action_type == "insert":
+        pos = action.get("position", {})
+        return f"Insert {action.get('count', 1)}x {action.get('item', '?')} at ({pos.get('x', 0)}, {pos.get('y', 0)})"
     return action_type

@@ -71,7 +71,7 @@ class FactorioBridge:
             self._policy = FactorioPolicy(
                 grid_channels=5, grid_size=64,
                 feature_dim=self._encoder.feature_dim,
-                num_action_types=8,
+                num_action_types=9,
                 num_entities=self._action_space.num_entity_types,
                 num_recipes=self._action_space.num_recipe_types,
                 num_techs=self._action_space.num_tech_types,
@@ -357,6 +357,11 @@ class FactorioBridge:
         elif action_type == ActionType.MINE:
             encoded.dx = _sample("dx_logits")
             encoded.dy = _sample("dy_logits")
+        elif action_type == ActionType.INSERT:
+            encoded.dx = _sample("dx_logits")
+            encoded.dy = _sample("dy_logits")
+            encoded.recipe_id = _sample("recipe_logits")  # item selector
+            encoded.count = _sample("count_logits") + 1
 
         return encoded
 
