@@ -75,6 +75,7 @@ class FactorioBridge:
                 num_entities=self._action_space.num_entity_types,
                 num_recipes=self._action_space.num_recipe_types,
                 num_techs=self._action_space.num_tech_types,
+                world_grid_channels=self._encoder.world_grid_channels,
             )
             self._reward = RewardComputer(phase=config.current_phase, spatial_memory=self._spatial_memory)
             self._trainer = PPOTrainer(
@@ -467,15 +468,16 @@ class FactorioBridge:
                 log.warning("Metrics fetch failed in ml_tick, skipping")
         self.world_model.update(state, raw_metrics)
 
-        # 2. Encode state
-        grid, features = self._encoder.encode(state, raw_metrics)
+        # 2. Encode state (local grid + world minimap + features)
+        grid, world_grid, features = self._encoder.encode(state, raw_metrics)
         grid_t = torch.tensor(grid).unsqueeze(0)
+        world_t = torch.tensor(world_grid).unsqueeze(0)
         feat_t = torch.tensor(features).unsqueeze(0)
 
         # 3. Get action from policy
         mask = self._action_space.get_action_type_mask(state.inventory, self.config.current_phase)
         mask_t = torch.tensor([mask], dtype=torch.bool)
-        action_type, log_prob, value, params = self._policy.act(grid_t, feat_t, mask_t)
+        action_type, log_prob, value, params = self._policy.act(grid_t, feat_t, mask_t, world_grid=world_t)
 
         # 4. Sample action parameters and decode
         encoded = self._sample_params(action_type.item(), params)
@@ -552,6 +554,7 @@ class FactorioBridge:
             log_prob=log_prob.item(),
             value=value.item(),
             reward=reward, done=done,
+            world_grid=world_grid,
         ))
         self._episode_mgr.record_step()
         self._prev_state = state

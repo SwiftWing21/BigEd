@@ -29,13 +29,14 @@ log = logging.getLogger(__name__)
 @dataclass
 class Transition:
     """Single environment step stored in the trajectory buffer."""
-    grid: np.ndarray          # (C, H, W) float32
+    grid: np.ndarray          # (C, H, W) float32 — local view
     features: np.ndarray      # (feature_dim,) float32
     action_type: int
     log_prob: float
     value: float
     reward: float
     done: bool
+    world_grid: np.ndarray | None = None  # (C, H, W) float32 — zoomed-out minimap
 
 
 # ---------------------------------------------------------------------------
@@ -70,6 +71,15 @@ class TrajectoryBuffer:
             np.stack([t.features for t in self._data], axis=0),
             dtype=torch.float32, device=device,
         )
+        # World grids — fall back to zeros if any transition lacks them
+        has_world = all(t.world_grid is not None for t in self._data)
+        if has_world:
+            world_grids = torch.tensor(
+                np.stack([t.world_grid for t in self._data], axis=0),
+                dtype=torch.float32, device=device,
+            )
+        else:
+            world_grids = torch.zeros_like(grids)
         actions = torch.tensor(
             [t.action_type for t in self._data],
             dtype=torch.long, device=device,
@@ -92,6 +102,7 @@ class TrajectoryBuffer:
         )
         return {
             "grids": grids,
+            "world_grids": world_grids,
             "features": features,
             "actions": actions,
             "old_log_probs": old_log_probs,
@@ -230,6 +241,7 @@ class PPOTrainer:
         advantages = (advantages - adv_mean) / adv_std
 
         grids = tensors["grids"]
+        world_grids = tensors["world_grids"]
         features = tensors["features"]
         actions = tensors["actions"]
         old_log_probs = tensors["old_log_probs"]
@@ -249,6 +261,7 @@ class PPOTrainer:
                     continue
 
                 mb_grids = grids[idx]
+                mb_world_grids = world_grids[idx]
                 mb_features = features[idx]
                 mb_actions = actions[idx]
                 mb_old_log_probs = old_log_probs[idx]
@@ -256,7 +269,7 @@ class PPOTrainer:
                 mb_returns = returns[idx]
 
                 new_log_probs, new_values, entropy = self.policy.evaluate_action(
-                    mb_grids, mb_features, mb_actions
+                    mb_grids, mb_features, mb_actions, world_grid=mb_world_grids
                 )
 
                 ratio = torch.exp(new_log_probs - mb_old_log_probs)

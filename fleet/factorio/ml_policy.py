@@ -77,12 +77,12 @@ class _FeatureEncoder(nn.Module):
 # ---------------------------------------------------------------------------
 
 class _Trunk(nn.Module):
-    """(B, 192) → (B, 128)."""
+    """(B, input_dim) → (B, 128)."""
 
-    def __init__(self) -> None:
+    def __init__(self, input_dim: int = 320) -> None:
         super().__init__()
         self.net = nn.Sequential(
-            nn.Linear(192, 256),
+            nn.Linear(input_dim, 256),
             nn.ReLU(),
             nn.Linear(256, 128),
             nn.ReLU(),
@@ -102,13 +102,14 @@ class FactorioPolicy(nn.Module):
 
     Parameters
     ----------
-    grid_channels   : number of input channels in the spatial grid
-    grid_size       : spatial side length (assumed square)
-    feature_dim     : length of the non-spatial feature vector
-    num_action_types: number of discrete action types (== len(ActionType))
-    num_entities    : vocabulary size for entity parameter head
-    num_recipes     : vocabulary size for recipe parameter head
-    num_techs       : vocabulary size for technology parameter head
+    grid_channels       : number of input channels in the local spatial grid
+    grid_size           : spatial side length (assumed square)
+    feature_dim         : length of the non-spatial feature vector
+    num_action_types    : number of discrete action types (== len(ActionType))
+    num_entities        : vocabulary size for entity parameter head
+    num_recipes         : vocabulary size for recipe parameter head
+    num_techs           : vocabulary size for technology parameter head
+    world_grid_channels : number of input channels in the world minimap grid
     """
 
     # Grid coordinate range for set_recipe / remove heads
@@ -129,6 +130,7 @@ class FactorioPolicy(nn.Module):
         num_entities: int,
         num_recipes: int,
         num_techs: int,
+        world_grid_channels: int = 4,
     ) -> None:
         super().__init__()
 
@@ -137,12 +139,13 @@ class FactorioPolicy(nn.Module):
         self.num_recipes = num_recipes
         self.num_techs = num_techs
 
-        # Encoders
+        # Encoders — local grid + world minimap + features
         self.grid_encoder = _GridEncoder(grid_channels)
+        self.world_encoder = _GridEncoder(world_grid_channels)
         self.feature_encoder = _FeatureEncoder(feature_dim)
 
-        # Shared trunk
-        self.trunk = _Trunk()
+        # Shared trunk: 128 (local) + 128 (world) + 64 (features) = 320
+        self.trunk = _Trunk(input_dim=320)
 
         # Action-type head + value head
         self.action_head = nn.Linear(128, num_action_types)
@@ -205,12 +208,17 @@ class FactorioPolicy(nn.Module):
         self,
         grid: torch.Tensor,
         features: torch.Tensor,
+        world_grid: torch.Tensor | None = None,
     ) -> torch.Tensor:
         """Run CNN + MLP + trunk, return (B, 128) shared representation."""
         spatial = self.grid_encoder(grid)          # (B, 128)
-        context = self.feature_encoder(features)   # (B,  64)
-        combined = torch.cat([spatial, context], dim=-1)  # (B, 192)
-        return self.trunk(combined)                # (B, 128)
+        if world_grid is not None:
+            world = self.world_encoder(world_grid)  # (B, 128)
+        else:
+            world = torch.zeros_like(spatial)       # (B, 128)
+        context = self.feature_encoder(features)    # (B,  64)
+        combined = torch.cat([spatial, world, context], dim=-1)  # (B, 320)
+        return self.trunk(combined)                 # (B, 128)
 
     # ------------------------------------------------------------------
     # Public API
@@ -220,6 +228,7 @@ class FactorioPolicy(nn.Module):
         self,
         grid: torch.Tensor,
         features: torch.Tensor,
+        world_grid: torch.Tensor | None = None,
     ) -> tuple[torch.Tensor, torch.Tensor]:
         """
         Main forward pass.
@@ -229,7 +238,7 @@ class FactorioPolicy(nn.Module):
         action_logits : (B, num_action_types)
         value         : (B, 1)
         """
-        shared = self._shared_forward(grid, features)
+        shared = self._shared_forward(grid, features, world_grid)
         return self.action_head(shared), self.value_head(shared)
 
     def get_action_params(
@@ -300,6 +309,7 @@ class FactorioPolicy(nn.Module):
         grid: torch.Tensor,
         features: torch.Tensor,
         action_mask: torch.Tensor | None = None,
+        world_grid: torch.Tensor | None = None,
     ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, dict[str, torch.Tensor]]:
         """
         Sample an action from the policy.
@@ -309,6 +319,7 @@ class FactorioPolicy(nn.Module):
         grid         : (B, C, H, W)
         features     : (B, feature_dim)
         action_mask  : optional (B, num_action_types) bool — True = allowed
+        world_grid   : optional (B, C, H, W) — zoomed-out minimap
 
         Returns
         -------
@@ -317,7 +328,7 @@ class FactorioPolicy(nn.Module):
         value        : (B,)   estimated state value (squeezed)
         params       : dict   parameter logits for the sampled action type
         """
-        shared = self._shared_forward(grid, features)
+        shared = self._shared_forward(grid, features, world_grid)
         action_logits = self.action_head(shared)  # (B, A)
 
         if action_mask is not None:
@@ -340,6 +351,7 @@ class FactorioPolicy(nn.Module):
         grid: torch.Tensor,
         features: torch.Tensor,
         action_type: torch.Tensor,
+        world_grid: torch.Tensor | None = None,
     ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """
         Evaluate stored actions for PPO update.
@@ -349,6 +361,7 @@ class FactorioPolicy(nn.Module):
         grid        : (B, C, H, W)
         features    : (B, feature_dim)
         action_type : (B,) integer action indices
+        world_grid  : optional (B, C, H, W) — zoomed-out minimap
 
         Returns
         -------
@@ -356,7 +369,7 @@ class FactorioPolicy(nn.Module):
         value    : (B,)
         entropy  : scalar
         """
-        shared = self._shared_forward(grid, features)
+        shared = self._shared_forward(grid, features, world_grid)
         action_logits = self.action_head(shared)
         dist = Categorical(logits=action_logits)
         log_prob = dist.log_prob(action_type)

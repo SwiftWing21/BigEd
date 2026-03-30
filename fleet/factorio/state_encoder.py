@@ -120,6 +120,10 @@ class StateEncoder:
         return _GRID_CHANNELS
 
     @property
+    def world_grid_channels(self) -> int:
+        return 4  # resource type, amount, entity type, player marker
+
+    @property
     def grid_size(self) -> int:
         return self._grid_size
 
@@ -131,24 +135,27 @@ class StateEncoder:
         self,
         state: GameState,
         metrics: GameMetrics | None = None,
-    ) -> tuple[np.ndarray, np.ndarray]:
-        """Return (grid, features) as float32 ndarrays.
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+        """Return (grid, world_grid, features) as float32 ndarrays.
 
-        grid    — shape (4, grid_size, grid_size)
-        features — shape (feature_dim,)
+        grid       — shape (4, grid_size, grid_size) — local view
+        world_grid — shape (4, 64, 64) — zoomed-out minimap from spatial memory
+        features   — shape (feature_dim,)
         """
         grid = self._encode_grid(state)
         base_features = self._encode_features(state, metrics)
+        px = state.player_position.get("x", 0.0)
+        py = state.player_position.get("y", 0.0)
         if self._spatial_memory is not None:
-            px = state.player_position.get("x", 0.0)
-            py = state.player_position.get("y", 0.0)
             spatial = np.array(
                 self._spatial_memory.get_features(px, py), dtype=np.float32,
             )
             features = np.concatenate([base_features, spatial])
+            world_grid = self._spatial_memory.render_world_grid(px, py)
         else:
             features = base_features
-        return grid, features
+            world_grid = np.zeros((4, 64, 64), dtype=np.float32)
+        return grid, world_grid, features
 
     # ------------------------------------------------------------------
     # Grid encoding
