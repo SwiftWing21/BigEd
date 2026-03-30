@@ -173,7 +173,7 @@ class RewardComputer:
 
         # Entity placement bonus — ALL phases (placing buildings is always good)
         r += self._entity_placement_bonus(curr)
-            r += self._production_delta_bonus(prev, curr)
+        r += self._production_delta_bonus(prev, curr)
 
         return r
 
