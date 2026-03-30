@@ -469,23 +469,38 @@ class FactorioBridge:
         # 0d. Update bridge status so dashboard shows Running
         update_status(True, state.tick, self.cadence.mode)
 
-        # 0e. Drain human command queue (plans, demonstrations)
-        while not self.command_queue.empty():
+        # 0e. Drain human command queue — ONE action per tick (interleaved with RL)
+        #     Batch commands are expanded into _pending_demo_actions and executed
+        #     one per tick so mine→craft→place sequences have time to take effect.
+        if not hasattr(self, '_pending_demo_actions'):
+            self._pending_demo_actions = []
+            self._pending_demo_cmd_id = None
+
+        if not self._pending_demo_actions and not self.command_queue.empty():
             try:
                 cmd = self.command_queue.get_nowait()
-                actions = cmd.get("actions", [])
                 from factorio.action_translator import translate_batch
-                translated = translate_batch(actions)
-                for ta in translated:
-                    if ta.rcon_command:
-                        rcon_cmd = ta.rcon_command
-                        if rcon_cmd.startswith("/biged-cmd "):
-                            rcon_cmd = rcon_cmd[len("/biged-cmd "):]
-                        resp = await self.rcon.remote_call("exec_cmd", rcon_cmd)
-                        log.info("Queue cmd: %s -> %s", ta.description, str(resp)[:100])
-                store_result(cmd["id"], {"results": "executed"})
+                translated = translate_batch(cmd.get("actions", []))
+                self._pending_demo_actions = [ta for ta in translated if ta.rcon_command]
+                self._pending_demo_cmd_id = cmd.get("id")
+                log.info("Demo queue: %d actions loaded", len(self._pending_demo_actions))
             except Exception:
-                log.warning("Queue command failed", exc_info=True)
+                log.warning("Queue command load failed", exc_info=True)
+
+        if self._pending_demo_actions:
+            ta = self._pending_demo_actions.pop(0)
+            try:
+                rcon_cmd = ta.rcon_command
+                if rcon_cmd.startswith("/biged-cmd "):
+                    rcon_cmd = rcon_cmd[len("/biged-cmd "):]
+                resp = await self.rcon.remote_call("exec_cmd", rcon_cmd)
+                log.info("Demo step: %s -> %s", ta.description, str(resp)[:100])
+            except Exception:
+                log.warning("Demo action failed: %s", ta.description, exc_info=True)
+            if not self._pending_demo_actions and self._pending_demo_cmd_id:
+                store_result(self._pending_demo_cmd_id, {"results": "executed"})
+                self._pending_demo_cmd_id = None
+            return  # Skip RL action this tick — demo action took priority
 
         # 1. Fetch metrics
         raw_metrics = None
