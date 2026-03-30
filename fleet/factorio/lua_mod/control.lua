@@ -259,7 +259,7 @@ local function fn_get_state()
         player = {
             position = pos,
             health = char and char.health or 0,
-            max_health = char and char.prototype.max_health or 0,
+            max_health = char and char.max_health or 0,
             has_character = ctx.has_character,
             alive = ctx.has_character and char.valid and char.health > 0 or false,
         },
@@ -604,50 +604,39 @@ end
 local function fn_ensure_player()
     local ctx = get_agent_context()
 
-    -- If we have a player but no character (dead or spectator), respawn one
-    if ctx.has_player and not ctx.has_character then
-        local surface = ctx.surface
-        local spawn = ctx.force.get_spawn_position(surface)
-        local char = surface.create_entity{
-            name = "character", position = spawn, force = ctx.force,
-        }
-        if not char then
-            -- Spawn blocked — try finding a nearby non-colliding position
-            local fallback = surface.find_non_colliding_position("character", spawn, 10, 1)
-            if fallback then
-                char = surface.create_entity{
-                    name = "character", position = fallback, force = ctx.force,
-                }
-            end
+    -- If we have a CONNECTED player but no character (dead or spectator), respawn one.
+    -- Disconnected players can't have characters assigned (Factorio API restriction).
+    if ctx.has_player and ctx.player.connected and not ctx.has_character then
+        local ok, err = pcall(function()
+            ctx.player.set_controller{type = defines.controllers.god}
+            ctx.player.create_character()
+        end)
+        if ok and ctx.player.character and ctx.player.character.valid then
+            game.print("[BigEd Bridge] Respawned character for connected player")
         end
-        if char then
-            ctx.player.character = char
-            game.print("[BigEd Bridge] Respawned agent character at spawn")
-        else
-            return helpers.table_to_json({
-                success = false,
-                error = "spawn_blocked",
-                position = spawn,
-                note = "Could not create character at or near spawn — clear the area",
-            })
-        end
+        -- If pcall failed, fall through to headless strategies below
     end
 
     if ctx.has_player then
         local p = ctx.player
         local char = p.character
-        return helpers.table_to_json({
-            success = true,
-            player_index = p.index,
-            position = p.position,
-            has_character = char ~= nil,
-            health = char and char.health or 0,
-            max_health = char and char.prototype.max_health or 0,
-            alive = char ~= nil and char.valid and char.health > 0,
-        })
+        if char and char.valid then
+            -- Player exists and has a living character — all good
+            return helpers.table_to_json({
+                success = true,
+                player_index = p.index,
+                position = p.position,
+                has_character = true,
+                health = char.health,
+                max_health = char.max_health,
+                alive = char.health > 0,
+            })
+        end
+        -- Player exists but no character (disconnected/dead) — fall through
+        -- to headless character creation strategies below
     end
 
-    -- No connected player — headless mode.
+    -- No connected player or player has no character — headless mode.
     -- Check if we already have a valid headless character
     if ctx.has_character and ctx.character and ctx.character.valid then
         return helpers.table_to_json({
@@ -657,25 +646,24 @@ local function fn_ensure_player()
             has_character = true,
             position = ctx.character.position,
             health = ctx.character.health,
-            max_health = ctx.character.prototype.max_health,
+            max_health = ctx.character.max_health,
             alive = ctx.character.health > 0,
         })
     end
 
-    -- Strategy 1: Try disconnected players from save file.
-    -- Saves created with a player will have entries in game.players even in headless.
-    -- Use create_character() which is the proper Factorio API.
+    -- Strategy 1: Try connected players with god/spectator controller.
+    -- create_character() only works on connected players with god controller.
+    -- Disconnected players from save file can't be used (Factorio API restriction).
     for _, p in pairs(game.players) do
-        if p.valid and not p.character then
+        if p.valid and p.connected and not p.character then
             local ok, err = pcall(function()
-                -- Ensure god controller so create_character() works
                 p.set_controller{type = defines.controllers.god}
                 p.create_character()
             end)
             if ok and p.character and p.character.valid then
                 agent_player_index = p.index
                 storage.agent_player_index = p.index
-                game.print("[BigEd Bridge] Respawned character via disconnected player " .. p.name)
+                game.print("[BigEd Bridge] Respawned character via connected player " .. p.name)
                 return helpers.table_to_json({
                     success = true,
                     headless = true,
@@ -684,7 +672,7 @@ local function fn_ensure_player()
                     has_character = true,
                     position = p.character.position,
                     health = p.character.health,
-                    max_health = p.character.prototype.max_health,
+                    max_health = p.character.max_health,
                     alive = p.character.health > 0,
                 })
             end
@@ -727,7 +715,7 @@ local function fn_ensure_player()
             has_character = true,
             position = char.position,
             health = char.health,
-            max_health = char.prototype.max_health,
+            max_health = char.max_health,
             alive = char.health > 0,
         })
     end
