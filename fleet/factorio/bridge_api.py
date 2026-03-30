@@ -248,6 +248,16 @@ def create_api(world_model, command_queue, brain=None) -> Flask:
         status["tick"] = _bridge_status.get("tick", 0)
         return jsonify(status)
 
+    @app.route("/api/shutdown", methods=["POST"])
+    def api_shutdown():
+        """Gracefully stop the bridge process."""
+        import os
+        log.info("Shutdown requested via API")
+        update_status(False, _bridge_status.get("tick", 0), "shutdown")
+        # Schedule exit after response is sent
+        threading.Timer(0.5, lambda: os._exit(0)).start()
+        return jsonify({"shutting_down": True})
+
     @app.route("/api/focus", methods=["GET"])
     def focus_state():
         import os, json

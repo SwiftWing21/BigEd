@@ -1667,6 +1667,34 @@ def api_factorio_stop():
     return jsonify({"success": True, "stopped": stopped})
 
 
+@app.route("/api/factorio/restart", methods=["POST"])
+def api_factorio_restart():
+    """Restart Factorio bridge (stop, wait, start). Server stays up."""
+    import time as _t
+    # Stop bridge only (not the headless server)
+    port = _load_config().get("factorio", {}).get("bridge_port", 27016)
+    try:
+        req = urllib.request.Request(f"http://127.0.0.1:{port}/api/shutdown", method="POST")
+        urllib.request.urlopen(req, timeout=3)
+    except Exception:
+        pass
+    # Kill bridge processes (not headless server)
+    try:
+        import psutil
+        for p in psutil.process_iter(["pid", "cmdline"]):
+            cmdline = " ".join(p.info.get("cmdline") or [])
+            if "factorio.bridge" in cmdline or "factorio.setup_and_launch" in cmdline:
+                p.terminate()
+    except Exception:
+        pass
+    _t.sleep(1.5)
+    # Relaunch
+    resp = api_factorio_start()
+    resp_data = resp.get_json() if hasattr(resp, "get_json") else {}
+    log.info("Factorio bridge restarted: %s", resp_data)
+    return jsonify({"success": True, "restarted": True, **resp_data})
+
+
 @app.route("/api/factorio/pause", methods=["POST"])
 def api_factorio_pause():
     """Proxy pause request to Factorio bridge."""
