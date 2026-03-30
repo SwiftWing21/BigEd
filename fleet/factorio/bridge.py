@@ -256,9 +256,13 @@ class FactorioBridge:
             for action_dict in plan[:10]:
                 translated = translate_action(action_dict)
                 if translated.rcon_command:
+                    # Strip /biged-cmd prefix — exec_cmd expects raw JSON
+                    cmd = translated.rcon_command
+                    if cmd.startswith("/biged-cmd "):
+                        cmd = cmd[len("/biged-cmd "):]
                     try:
-                        resp = await self.rcon.remote_call("exec_cmd", translated.rcon_command)
-                        log.info("Teacher action: %s → %s",
+                        resp = await self.rcon.remote_call("exec_cmd", cmd)
+                        log.info("Teacher action: %s -> %s",
                                  translated.description, str(resp)[:100])
                         executed += 1
                     except Exception:
@@ -386,11 +390,15 @@ class FactorioBridge:
         result = {"success": False}
         if translated.rcon_command:
             try:
-                resp = await self.rcon.remote_call("exec_cmd", translated.rcon_command)
+                # Strip /biged-cmd prefix — exec_cmd expects raw JSON
+                cmd = translated.rcon_command
+                if cmd.startswith("/biged-cmd "):
+                    cmd = cmd[len("/biged-cmd "):]
+                resp = await self.rcon.remote_call("exec_cmd", cmd)
                 resp_str = str(resp).lower()
                 result = {"success": "error" not in resp_str}
                 if self._tick_count <= 20 or self._tick_count % 50 == 0:
-                    log.info("ML step %d: %s → %s",
+                    log.info("ML step %d: %s -> %s",
                              self._tick_count, translated.description,
                              "OK" if result["success"] else resp_str[:100])
             except Exception:
