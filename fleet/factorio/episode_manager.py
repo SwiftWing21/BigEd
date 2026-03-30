@@ -53,7 +53,10 @@ PHASE_ITEMS: dict[int, dict[str, int]] = {
 _SOFT_RESET_LUA = (
     '/c local player = game.players[1]; '
     'if not player then rcon.print("no_player"); return end; '
-    'local keep = {["character"]=true, ["resource"]=true, ["tree"]=true}; '
+    'local keep = {["character"]=true, ["resource"]=true, ["tree"]=true, '
+    '["furnace"]=true, ["mining-drill"]=true, ["assembling-machine"]=true, '
+    '["transport-belt"]=true, ["inserter"]=true, ["electric-pole"]=true, '
+    '["boiler"]=true, ["generator"]=true, ["lab"]=true, ["container"]=true}; '
     'for _, ent in pairs(player.surface.find_entities()) do '
     'if ent.valid and not keep[ent.name] and not keep[ent.type] then '
     'pcall(function() ent.destroy() end) end '
