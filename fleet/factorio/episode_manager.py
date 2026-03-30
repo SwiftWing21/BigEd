@@ -53,18 +53,13 @@ PHASE_ITEMS: dict[int, dict[str, int]] = {
 _SOFT_RESET_LUA = (
     '/c local surface = game.get_surface("nauvis"); '
     'local force = game.forces["player"]; '
-    # Clear non-infrastructure entities
-    'local keep = {["character"]=true, ["resource"]=true, ["tree"]=true, '
-    '["furnace"]=true, ["mining-drill"]=true, ["assembling-machine"]=true, '
-    '["transport-belt"]=true, ["inserter"]=true, ["electric-pole"]=true, '
-    '["boiler"]=true, ["generator"]=true, ["lab"]=true, ["container"]=true}; '
-    'local player_chars = {}; '
-    'for _, p in pairs(game.players) do '
-    '  if p.character then player_chars[p.character.unit_number] = true end '
-    'end; '
+    # Only destroy disposable entities — keep ALL infrastructure, resources, characters
+    'local destroy_types = {["corpse"]=true, ["particle"]=true, '
+    '["projectile"]=true, ["item-on-ground"]=true, ["explosion"]=true, '
+    '["fire"]=true, ["sticker"]=true, ["smoke"]=true, '
+    '["highlight-box"]=true, ["flying-text"]=true}; '
     'for _, ent in pairs(surface.find_entities()) do '
-    'if ent.valid and not keep[ent.name] and not keep[ent.type] '
-    'and not player_chars[ent.unit_number] then '
+    'if ent.valid and destroy_types[ent.type] then '
     'pcall(function() ent.destroy() end) end '
     'end; '
     # Teleport standalone agent character to spawn

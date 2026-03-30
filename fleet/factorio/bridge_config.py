@@ -67,7 +67,7 @@ class BridgeConfig:
     ml_batch_size: int = 64
     ml_update_every: int = 512
     ml_checkpoint_every: int = 20
-    ml_max_episode_steps: int = 2000
+    ml_max_episode_steps: int = 10000
     ml_gamma: float = 0.99
     ml_gae_lambda: float = 0.95
     ml_clip_ratio: float = 0.2
