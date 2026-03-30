@@ -526,9 +526,10 @@ class FactorioBridge:
         action_type, log_prob, value, params = self._policy.act(grid_t, feat_t, mask_t, world_grid=world_t)
 
         # Apply recipe mask for CRAFT/INSERT — block irrelevant recipes in Phase 1
+        from factorio.action_space import ActionType as _AT
         recipe_mask = self._action_space.get_recipe_mask(
             self.config.current_phase, current_lesson)
-        if action_type.item() in (ActionType.CRAFT.value, ActionType.INSERT.value):
+        if action_type.item() in (_AT.CRAFT.value, _AT.INSERT.value):
             if "recipe_logits" in params:
                 import torch as _torch
                 rmask = _torch.tensor([recipe_mask], dtype=_torch.bool)
