@@ -27,29 +27,116 @@ log = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 class _GridEncoder(nn.Module):
-    """Conv stack: (B, C, 64, 64) → (B, 128)."""
+    """Conv stack: (B, C, 64, 64) → (B, 128).
+
+    When *return_spatial* is True, ``forward`` also returns the 8×8
+    feature map produced by the 3rd conv layer (before adaptive pooling).
+    This is used by ``_SpatialPlacementHead`` for coordinate-conditioned
+    placement decisions.
+    """
 
     def __init__(self, in_channels: int) -> None:
         super().__init__()
-        self.conv = nn.Sequential(
+        # Build conv layers individually so we can tap intermediate output
+        self.conv1 = nn.Sequential(
             nn.Conv2d(in_channels, 16, kernel_size=5, stride=2, padding=2),
             nn.ReLU(),
+        )
+        self.conv2 = nn.Sequential(
             nn.Conv2d(16, 32, kernel_size=3, stride=2, padding=1),
             nn.ReLU(),
+        )
+        self.conv3 = nn.Sequential(
             nn.Conv2d(32, 64, kernel_size=3, stride=2, padding=1),
             nn.ReLU(),
-            nn.AdaptiveAvgPool2d(4),
         )
+        self.pool = nn.AdaptiveAvgPool2d(4)
         # After pool: (B, 64, 4, 4) → flatten 1024
         self.fc = nn.Sequential(
             nn.Linear(64 * 4 * 4, 128),
             nn.ReLU(),
         )
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        h = self.conv(x)
+    def forward(
+        self, x: torch.Tensor, return_spatial: bool = False,
+    ) -> torch.Tensor | tuple[torch.Tensor, torch.Tensor]:
+        h = self.conv1(x)   # (B, 16, 32, 32)
+        h = self.conv2(h)   # (B, 32, 16, 16)
+        h = self.conv3(h)   # (B, 64,  8,  8)
+        spatial_features = h  # save before pooling
+        h = self.pool(h)     # (B, 64,  4,  4)
         h = h.flatten(1)
-        return self.fc(h)
+        embedding = self.fc(h)  # (B, 128)
+        if return_spatial:
+            return embedding, spatial_features
+        return embedding
+
+
+# ---------------------------------------------------------------------------
+# Spatial placement head — coordinate-conditioned via attention on conv features
+# ---------------------------------------------------------------------------
+
+class _SpatialPlacementHead(nn.Module):
+    """Produce dx/dy logits by attending to spatial conv features.
+
+    Instead of predicting placement coordinates from a 128-dim bottleneck,
+    this head operates on the 8×8 feature map from the 3rd conv layer
+    (64 channels) concatenated with resource channels pooled to 8×8.
+
+    Architecture:
+        conv_features (B, 64, 8, 8)
+      + resource_grid (B, 2, 64, 64) → pool → (B, 2, 8, 8)
+      → concat → (B, 66, 8, 8)
+      → 1×1 conv → (B, 1, 8, 8) placement heatmap
+      → flatten → (B, 64)
+      + shared trunk (B, 128) → concat → (B, 192)
+      → FC → dx_logits (B, 11), dy_logits (B, 11)
+    """
+
+    _SPATIAL_SIZE = 8  # matches conv3 output spatial dim
+
+    def __init__(self, dx_dy_bins: int = 11) -> None:
+        super().__init__()
+        self.resource_pool = nn.AdaptiveAvgPool2d(self._SPATIAL_SIZE)
+        # 64 conv channels + 2 resource channels = 66
+        self.attn_conv = nn.Sequential(
+            nn.Conv2d(66, 32, kernel_size=1),
+            nn.ReLU(),
+            nn.Conv2d(32, 1, kernel_size=1),
+        )
+        # Heatmap (64) + shared trunk (128) = 192
+        self.dx_head = nn.Linear(192, dx_dy_bins)
+        self.dy_head = nn.Linear(192, dx_dy_bins)
+
+    def forward(
+        self,
+        shared: torch.Tensor,
+        spatial_features: torch.Tensor,
+        resource_grid: torch.Tensor,
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        """
+        Parameters
+        ----------
+        shared           : (B, 128) trunk output
+        spatial_features : (B, 64, 8, 8) conv features before pooling
+        resource_grid    : (B, 2, 64, 64) resource channels (ch 2-3 of grid)
+
+        Returns
+        -------
+        dx_logits : (B, dx_dy_bins)
+        dy_logits : (B, dx_dy_bins)
+        """
+        # Pool resource channels to match conv spatial resolution
+        res_pooled = self.resource_pool(resource_grid)  # (B, 2, 8, 8)
+        combined = torch.cat([spatial_features, res_pooled], dim=1)  # (B, 66, 8, 8)
+
+        # Compute placement heatmap
+        heatmap = self.attn_conv(combined)  # (B, 1, 8, 8)
+        heatmap_flat = heatmap.flatten(1)   # (B, 64)
+
+        # Combine spatial attention with shared trunk
+        fused = torch.cat([heatmap_flat, shared], dim=-1)  # (B, 192)
+        return self.dx_head(fused), self.dy_head(fused)
 
 
 # ---------------------------------------------------------------------------
@@ -152,11 +239,17 @@ class FactorioPolicy(nn.Module):
         self.value_head = nn.Linear(128, 1)
 
         # ---- Per-action parameter heads ----
-        # PLACE: entity, dx, dy, direction
+        # PLACE: entity, dx, dy (spatial), direction
         self.place_entity    = nn.Linear(128, num_entities)
+        self.place_spatial   = _SpatialPlacementHead(dx_dy_bins=self._DX_DY_BINS)
+        # Fallback linear heads used when spatial features are unavailable
         self.place_dx        = nn.Linear(128, self._DX_DY_BINS)
         self.place_dy        = nn.Linear(128, self._DX_DY_BINS)
         self.place_direction = nn.Linear(128, self._DIR_BINS)
+
+        # Side-effect storage for spatial features (set by _shared_forward)
+        self._last_spatial_features: torch.Tensor | None = None
+        self._last_grid: torch.Tensor | None = None
 
         # CRAFT: recipe, count
         self.craft_recipe = nn.Linear(128, num_recipes)
@@ -190,6 +283,12 @@ class FactorioPolicy(nn.Module):
 
         # WAIT has no parameters
 
+        # Pack/stamp selection heads
+        from factorio.pack_registry import MAX_PACK_SLOTS
+        self.pack_head = nn.Linear(128, MAX_PACK_SLOTS)  # 64 slots
+        self.pack_offset_dx = nn.Linear(128, self._DX_DY_BINS)  # 11 bins
+        self.pack_offset_dy = nn.Linear(128, self._DX_DY_BINS)  # 11 bins
+
         self._init_weights()
 
     # ------------------------------------------------------------------
@@ -198,9 +297,10 @@ class FactorioPolicy(nn.Module):
 
     def _init_weights(self) -> None:
         for module in self.modules():
-            if isinstance(module, nn.Linear):
+            if isinstance(module, (nn.Linear, nn.Conv2d)):
                 nn.init.orthogonal_(module.weight, gain=math.sqrt(2))
-                nn.init.constant_(module.bias, 0.0)
+                if module.bias is not None:
+                    nn.init.constant_(module.bias, 0.0)
 
         # Value head uses small gain to start near zero
         nn.init.orthogonal_(self.value_head.weight, gain=0.01)
@@ -216,15 +316,21 @@ class FactorioPolicy(nn.Module):
         features: torch.Tensor,
         world_grid: torch.Tensor | None = None,
     ) -> torch.Tensor:
-        """Run CNN + MLP + trunk, return (B, 128) shared representation."""
-        spatial = self.grid_encoder(grid)          # (B, 128)
+        """Run CNN + MLP + trunk, return (B, 128) shared representation.
+
+        Side effects: stores ``_last_spatial_features`` (8×8 conv map) and
+        ``_last_grid`` for use by the spatial placement head.
+        """
+        spatial, spatial_feat = self.grid_encoder(grid, return_spatial=True)
+        self._last_spatial_features = spatial_feat  # (B, 64, 8, 8)
+        self._last_grid = grid                       # (B, C, 64, 64)
         if world_grid is not None:
-            world = self.world_encoder(world_grid)  # (B, 128)
+            world = self.world_encoder(world_grid)   # (B, 128)
         else:
-            world = torch.zeros_like(spatial)       # (B, 128)
-        context = self.feature_encoder(features)    # (B,  64)
+            world = torch.zeros_like(spatial)        # (B, 128)
+        context = self.feature_encoder(features)     # (B,  64)
         combined = torch.cat([spatial, world, context], dim=-1)  # (B, 320)
-        return self.trunk(combined)                 # (B, 128)
+        return self.trunk(combined)                  # (B, 128)
 
     # ------------------------------------------------------------------
     # Public API
@@ -267,10 +373,20 @@ class FactorioPolicy(nn.Module):
         at = action_type
 
         if at == ActionType.PLACE.value:
+            # Use spatial attention head when conv features are available
+            if self._last_spatial_features is not None and self._last_grid is not None:
+                resource_grid = self._last_grid[:, 2:4, :, :]  # ch 2-3: resource channels
+                dx_logits, dy_logits = self.place_spatial(
+                    shared, self._last_spatial_features, resource_grid,
+                )
+            else:
+                # Fallback: simple linear heads (e.g. loaded from old checkpoint)
+                dx_logits = self.place_dx(shared)
+                dy_logits = self.place_dy(shared)
             return {
                 "entity_logits":    self.place_entity(shared),
-                "dx_logits":        self.place_dx(shared),
-                "dy_logits":        self.place_dy(shared),
+                "dx_logits":        dx_logits,
+                "dy_logits":        dy_logits,
                 "direction_logits": self.place_direction(shared),
             }
         elif at == ActionType.CRAFT.value:
@@ -309,6 +425,12 @@ class FactorioPolicy(nn.Module):
                 "dy_logits": self.insert_dy(shared),
                 "recipe_logits": self.insert_item(shared),
                 "count_logits": self.insert_count(shared),
+            }
+        elif at == ActionType.PACK.value or at == ActionType.STAMP.value:
+            return {
+                "pack_logits": self.pack_head(shared),
+                "offset_dx_logits": self.pack_offset_dx(shared),
+                "offset_dy_logits": self.pack_offset_dy(shared),
             }
         elif at == ActionType.WAIT.value:
             return {}
@@ -404,11 +526,24 @@ class FactorioPolicy(nn.Module):
             raise
 
     def load(self, path: str) -> None:
-        """Load model state dict from *path* (weights_only=True for security)."""
+        """Load model state dict from *path* (weights_only=True for security).
+
+        Uses ``strict=False`` so that old checkpoints missing the spatial
+        placement head still load successfully (the new head starts with
+        freshly-initialised weights).
+        """
         try:
             state = torch.load(path, weights_only=True)
-            self.load_state_dict(state)
-            log.info("FactorioPolicy loaded from %s", path)
+            missing, unexpected = self.load_state_dict(state, strict=False)
+            if missing:
+                log.info(
+                    "FactorioPolicy loaded from %s (new keys initialised fresh: %s)",
+                    path, ", ".join(missing),
+                )
+            else:
+                log.info("FactorioPolicy loaded from %s", path)
+            if unexpected:
+                log.warning("Unexpected keys in checkpoint: %s", unexpected)
         except Exception:
             log.warning("FactorioPolicy.load failed for path=%s", path, exc_info=True)
             raise
