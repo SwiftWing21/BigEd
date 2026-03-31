@@ -8,7 +8,7 @@ def test_hardcoded_packs_load():
     reg = PackRegistry()
     packs_dir = Path(__file__).parent.parent.parent / "fleet" / "factorio" / "packs"
     count = reg.load_packs(packs_dir / "hardcoded")
-    assert count >= 7, f"Expected >= 7 packs, got {count}"
+    assert count >= 21, f"Expected >= 21 packs, got {count}"
 
 
 def test_blueprint_stamps_load():
@@ -84,3 +84,20 @@ def test_phase_ordering():
     assert 0 in phases_seen, "No phase-0 packs found"
     assert 1 in phases_seen, "No phase-1 packs found"
     assert 2 in phases_seen, "No phase-2 packs found"
+
+
+def test_late_game_packs_exist():
+    """Verify packs exist for checkpoints 3-7 (blue science through space)."""
+    from factorio.pack_registry import PackRegistry
+
+    reg = PackRegistry()
+    packs_dir = Path(__file__).parent.parent.parent / "fleet" / "factorio" / "packs"
+    reg.load_packs(packs_dir / "hardcoded")
+    phases = set()
+    for item in reg._items:
+        phases.add(item.phase_required)
+    assert 3 in phases, "No phase-3 (blue science) packs found"
+    assert 4 in phases, "No phase-4 (purple science) packs found"
+    assert 5 in phases, "No phase-5 (yellow science) packs found"
+    assert 6 in phases, "No phase-6 (rocket) packs found"
+    assert 7 in phases, "No phase-7 (space science) packs found"

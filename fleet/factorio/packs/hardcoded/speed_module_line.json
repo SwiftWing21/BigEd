@@ -1,0 +1,12 @@
+{
+  "name": "speed_module_line",
+  "phase_required": 5,
+  "origin": "hardcoded",
+  "required_items": {"assembling-machine-3": 1, "inserter": 2},
+  "actions": [
+    {"action": "place", "entity": "assembling-machine-3", "position": {"x": 0, "y": 0}},
+    {"action": "set_recipe", "entity": "assembling-machine-3", "recipe": "speed-module", "position": {"x": 0, "y": 0}},
+    {"action": "place", "entity": "inserter", "position": {"x": -2, "y": 0}, "direction": "east"},
+    {"action": "place", "entity": "inserter", "position": {"x": 2, "y": 0}, "direction": "east"}
+  ]
+}
