@@ -866,6 +866,7 @@ analyze_interval_ticks = 50
 mode = "ml"
 game_speed = 2  # 10x disconnects, 4x stutters — 2x smooth for spectating
 ml_tick_delay_ms = 0  # 0 = max throughput (~30-50 actions/sec), >0 = ms between ticks
+ml_max_checkpoints = 5  # keep N most recent PPO checkpoints, delete oldest
 num_agents = 1  # standalone agent characters in same world (shared policy)
 ollama_model = "qwen3:8b"  # GPU model for teacher — better plan quality
 

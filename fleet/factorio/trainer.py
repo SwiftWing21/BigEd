@@ -161,6 +161,7 @@ class PPOTrainer:
         batch_size: int = 64,
         checkpoint_dir: str = "fleet/factorio/checkpoints",
         device: Optional[str] = None,
+        max_checkpoints: int = 5,
     ) -> None:
         if device is None:
             device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -176,6 +177,7 @@ class PPOTrainer:
         self._batch_size = batch_size
         self._checkpoint_dir = Path(checkpoint_dir)
         self._checkpoint_dir.mkdir(parents=True, exist_ok=True)
+        self._max_checkpoints = max_checkpoints
 
         self.policy = policy.to(self._device)
         self.optimizer = optim.Adam(self.policy.parameters(), lr=lr)
@@ -240,7 +242,12 @@ class PPOTrainer:
         rewards_list = [t.reward for t in buffer.get_all()]
         values_list = [t.value for t in buffer.get_all()]
         dones_list = [t.done for t in buffer.get_all()]
-        next_value = 0.0  # terminal bootstrap
+        # Use V(s_T) for truncated episodes; 0 for true terminal
+        last_done = buffer.get_all()[-1].done
+        if last_done:
+            next_value = 0.0  # true terminal
+        else:
+            next_value = buffer.get_all()[-1].value  # truncated: bootstrap
         advantages_list = self._compute_gae(rewards_list, values_list, dones_list, next_value)
 
         advantages = torch.tensor(advantages_list, dtype=torch.float32, device=self._device)
@@ -345,7 +352,21 @@ class PPOTrainer:
         except Exception:
             log.warning("save_checkpoint failed for episode=%d", episode, exc_info=True)
             raise
+        self._rotate_checkpoints()
         return str(path)
+
+    def _rotate_checkpoints(self) -> None:
+        """Delete oldest checkpoints if count exceeds max_checkpoints."""
+        if self._max_checkpoints <= 0:
+            return
+        pts = sorted(self._checkpoint_dir.glob("ppo_ep*.pt"))
+        while len(pts) > self._max_checkpoints:
+            oldest = pts.pop(0)
+            try:
+                oldest.unlink()
+                log.info("Rotated old checkpoint: %s", oldest.name)
+            except Exception:
+                log.warning("Failed to delete old checkpoint: %s", oldest, exc_info=True)
 
     def load_checkpoint(self, path: str) -> int:
         """Load trainer state from *path*. Returns the episode number."""
