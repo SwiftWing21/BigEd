@@ -1052,6 +1052,21 @@ class FactorioBridge:
 
         log.info("Bridge connected, entering tick loop")
 
+        # Remove crash-site wreckage (respawns on every new save)
+        try:
+            await self.rcon.command(
+                '/c for _, e in pairs(game.surfaces[1].find_entities_filtered'
+                '{name={"crash-site-spaceship",'
+                '"crash-site-spaceship-wreck-small-1","crash-site-spaceship-wreck-small-2",'
+                '"crash-site-spaceship-wreck-small-3","crash-site-spaceship-wreck-small-4",'
+                '"crash-site-spaceship-wreck-small-5","crash-site-spaceship-wreck-small-6",'
+                '"crash-site-spaceship-wreck-big-1","crash-site-spaceship-wreck-big-2",'
+                '"crash-site-chest-1","crash-site-chest-2"}}) do e.destroy() end'
+            )
+            log.info("Crash-site wreckage cleared")
+        except Exception:
+            log.warning("Failed to clear crash-site wreckage", exc_info=True)
+
         # Ensure all agent characters exist
         num_agents = getattr(self.config, 'num_agents', 1)
         for aid in range(1, num_agents + 1):
