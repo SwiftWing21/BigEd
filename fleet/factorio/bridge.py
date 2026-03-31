@@ -473,16 +473,16 @@ class FactorioBridge:
                 self._tick_count += 1
                 return
 
-        # 0a. Periodic resupply — creative mode: stock agent SCRIPT inventories
-        #     The Lua mod uses storage.agent_inventories (script inventories),
-        #     NOT character main inventory. get_state reads from these.
+        # 0a. Periodic resupply — creative mode: stock agent inventories
+        #     Uses remote.call("biged","get_state") to force context creation,
+        #     then stocks the inventory that get_agent_context actually uses.
         if self._tick_count % 200 == 0:
             try:
                 resupply_lua = (
-                    f'/c storage.agent_inventories = storage.agent_inventories or {{}}; '
-                    f'local inv = storage.agent_inventories[{agent_id}]; '
-                    f'if inv and inv.valid then '
-                    f'  local items = {{["stone-furnace"]=50,["burner-mining-drill"]=50,'
+                    f'/c remote.call("biged","get_state","{agent_id}"); '
+                    f'local inv = storage.agent_inventories and storage.agent_inventories[{agent_id}]; '
+                    f'if not inv or not inv.valid then return end; '
+                    f'local items = {{["stone-furnace"]=50,["burner-mining-drill"]=50,'
                     f'["electric-mining-drill"]=50,["assembling-machine-1"]=50,'
                     f'["assembling-machine-2"]=20,["transport-belt"]=200,'
                     f'["fast-transport-belt"]=100,["inserter"]=100,["fast-inserter"]=50,'
@@ -496,10 +496,9 @@ class FactorioBridge:
                     f'["steel-plate"]=100,["iron-gear-wheel"]=100,["copper-cable"]=100,'
                     f'["electronic-circuit"]=100,["solar-panel"]=50,["accumulator"]=50,'
                     f'["solid-fuel"]=100}}; '
-                    f'  for name, count in pairs(items) do '
-                    f'    if inv.get_item_count(name) < count then '
-                    f'      inv.insert{{name=name, count=count - inv.get_item_count(name)}} '
-                    f'    end '
+                    f'for name, count in pairs(items) do '
+                    f'  if inv.get_item_count(name) < count then '
+                    f'    inv.insert{{name=name, count=count - inv.get_item_count(name)}} '
                     f'  end '
                     f'end'
                 )
