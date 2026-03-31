@@ -1,7 +1,7 @@
 [meta]
 phase = 1
 name = "Sandbox Building"
-description = "Creative mode — infinite resources, focus on factory layout and automation"
+description = "Creative mode — blueprint-first factory building with deterministic tools"
 
 # ── Lesson 0: Body check ──────────────────────────────────────────────────────
 [[lessons]]
@@ -11,59 +11,34 @@ criteria = "player.alive >= 1"
 hint = "You should already have a body."
 max_attempts = 5
 
-# ── Lesson 1: Place a furnace ────────────────────────────────────────────────
+# ── Lesson 1: Place any entity ───────────────────────────────────────────────
 [[lessons]]
-name = "Place a furnace"
-description = "Place any furnace from inventory"
-criteria = "entities.stone-furnace >= 1"
-hint = "Use place action with entity=stone-furnace."
-max_attempts = 50
+name = "Place any entity"
+description = "Place any building from inventory"
+criteria = "entities.stone-furnace >= 1 OR entities.transport-belt >= 1 OR entities.inserter >= 1"
+hint = "Use PLACE action with any entity. Creative mode auto-inserts items."
+max_attempts = 100
 
-# ── Lesson 2: Place a belt ──────────────────────────────────────────────────
+# ── Lesson 2: Place a blueprint stamp ────────────────────────────────────────
 [[lessons]]
-name = "Place a transport belt"
-description = "Place a transport belt"
-criteria = "entities.transport-belt >= 1"
-hint = "Use place action with entity=transport-belt."
-max_attempts = 50
+name = "Place a blueprint stamp"
+description = "Successfully place a multi-entity blueprint (3+ entities at once)"
+criteria = "entities.stone-furnace >= 3 OR entities.transport-belt >= 5"
+hint = "Use STAMP action to place a pre-built layout like smelter_column or basic_power_station."
+max_attempts = 200
 
-# ── Lesson 3: Place an inserter ─────────────────────────────────────────────
-[[lessons]]
-name = "Place an inserter"
-description = "Place an inserter next to a machine"
-criteria = "entities.inserter >= 1 OR entities.burner-inserter >= 1"
-hint = "Use place action with entity=inserter."
-max_attempts = 50
-
-# ── Lesson 4: Build a production line ───────────────────────────────────────
-# Furnace + belt + inserter = basic automation pattern
+# ── Lesson 3: Build a production line ────────────────────────────────────────
 [[lessons]]
 name = "Build a production line"
-description = "Place at least 3 furnaces, 5 belts, and 2 inserters"
-criteria = "entities.stone-furnace >= 3 AND entities.transport-belt >= 5 AND entities.inserter >= 2"
-hint = "Build a row of furnaces with belts feeding them via inserters."
-max_attempts = 200
+description = "Place furnaces with belts and inserters forming a line"
+criteria = "entities.stone-furnace >= 4 AND entities.transport-belt >= 4 AND entities.burner-inserter >= 2"
+hint = "Use the iron_smelter_4x template or smelter_column blueprint."
+max_attempts = 300
 
-# ── Lesson 5: Power infrastructure ──────────────────────────────────────────
-[[lessons]]
-name = "Build power"
-description = "Place a boiler, steam engine, and electric pole"
-criteria = "entities.boiler >= 1 AND entities.steam-engine >= 1 AND entities.small-electric-pole >= 1"
-hint = "Place boiler + steam-engine + pole. Connects automatically with pipes."
-max_attempts = 200
-
-# ── Lesson 6: Assembler automation ──────────────────────────────────────────
-[[lessons]]
-name = "Build assembler setup"
-description = "Place an assembling machine with inserters feeding it"
-criteria = "entities.assembling-machine-1 >= 1 AND entities.inserter >= 4"
-hint = "Place assembling-machine-1 with input and output inserters."
-max_attempts = 200
-
-# ── Lesson 7: Factory scale ────────────────────────────────────────────────
+# ── Lesson 4: Scale the factory ──────────────────────────────────────────────
 [[lessons]]
 name = "Scale the factory"
-description = "20+ buildings total — belts, inserters, machines, furnaces"
-criteria = "entities.transport-belt >= 10 AND entities.inserter >= 6 AND entities.stone-furnace >= 5"
-hint = "Expand your production lines. More belts, more inserters, more furnaces."
+description = "20+ buildings placed — belts, inserters, furnaces"
+criteria = "entities.transport-belt >= 10 AND entities.inserter >= 4 AND entities.stone-furnace >= 4"
+hint = "Place more blueprints. Expand with additional smelter lines and belt segments."
 max_attempts = 500

@@ -263,6 +263,37 @@ def create_api(world_model, command_queue, brain=None, rcon=None, spatial_memory
         status["tick"] = _bridge_status.get("tick", 0)
         return jsonify(status)
 
+    @app.route("/api/build/iron_line", methods=["POST"])
+    def api_build_iron_line():
+        """Build the litmus test iron plate production chain."""
+        if _command_queue is None:
+            return jsonify({"error": "CommandQueue not available"}), 503
+        data = request.get_json(silent=True) or {}
+        ore_x = data.get("ore_x", 10)
+        ore_y = data.get("ore_y", 10)
+
+        try:
+            from factorio.zone_manager import ZoneManager
+            from factorio.factory_builder import IronLinePlan
+
+            zm = ZoneManager()
+            plan = IronLinePlan(zone_manager=zm, ore_position=(ore_x, ore_y))
+            entities = plan.compute()
+            commands = plan.to_rcon_commands()
+
+            cmd_id = f"iron_line_{len(commands)}"
+            _command_queue.put({"id": cmd_id, "actions": commands})
+
+            return jsonify({
+                "queued": True,
+                "command_id": cmd_id,
+                "entity_count": len(entities),
+                "zones": zm.to_dict(),
+            })
+        except Exception:
+            log.warning("iron_line build failed", exc_info=True)
+            return jsonify({"error": "build failed"}), 500
+
     @app.route("/api/shutdown", methods=["POST"])
     def api_shutdown():
         """Gracefully stop the bridge process."""
