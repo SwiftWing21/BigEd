@@ -386,3 +386,93 @@ def api_factorio_spatial_map_proxy():
 def api_factorio_reward_history_proxy():
     """Proxy reward history for dashboard chart."""
     return _proxy_bridge_raw("/api/reward-history", timeout=5)
+
+
+# ── Training Visualization ──────────────────────────────────────────────────
+
+@factorio_bp.route("/api/factorio/training-viz")
+def api_factorio_training_viz():
+    """Composite training visualization data.
+
+    Returns reward history, current lesson/phase, spatial memory summary,
+    and steps per episode — all sourced from the Factorio bridge.
+    """
+    result = {
+        "reward_history": [],
+        "lesson": None,
+        "phase": None,
+        "spatial_summary": {},
+        "steps_per_episode": [],
+    }
+
+    # 1. Training status (lesson, phase)
+    training, status = _proxy_bridge("/api/training/status", timeout=5)
+    if status == 200:
+        result["lesson"] = training.get("current_lesson") or training.get("lesson")
+        result["phase"] = training.get("current_phase") or training.get("phase")
+        result["steps_per_episode"] = training.get("steps_per_episode", [])
+
+    # 2. Reward history (last 1000 steps)
+    rewards, status = _proxy_bridge("/api/reward-history", timeout=5,
+                                    fallback={"history": []})
+    if status == 200:
+        history = rewards.get("history", rewards.get("rewards", []))
+        result["reward_history"] = history[-1000:]
+
+    # 3. Spatial memory summary
+    spatial, status = _proxy_bridge("/api/spatial-map", timeout=5,
+                                    fallback={})
+    if status == 200:
+        result["spatial_summary"] = {
+            "resource_count": len(spatial.get("resources", [])),
+            "entity_count": len(spatial.get("entities", [])),
+            "explored_chunks": spatial.get("explored_chunks", 0),
+        }
+
+    return jsonify(result)
+
+
+# ── Game Speed Control ──────────────────────────────────────────────────────
+
+@factorio_bp.route("/api/factorio/game-speed", methods=["GET"])
+def api_factorio_game_speed_get():
+    """Return current game speed from the Factorio bridge."""
+    data, status = _proxy_bridge("/api/game-speed", timeout=5,
+                                 fallback={"speed": 1.0})
+    return jsonify(data), status
+
+
+@factorio_bp.route("/api/factorio/game-speed", methods=["POST"])
+def api_factorio_game_speed_set():
+    """Set game speed via bridge RCON.
+
+    JSON body: {"speed": 1.0}  — valid range 0.5 to 10.0
+    """
+    data = request.get_json(silent=True) or {}
+    speed = data.get("speed")
+    if speed is None:
+        return jsonify({"error": "speed is required"}), 400
+
+    try:
+        speed = float(speed)
+    except (TypeError, ValueError):
+        return jsonify({"error": "speed must be a number"}), 400
+
+    if not (0.5 <= speed <= 10.0):
+        return jsonify({"error": "speed must be between 0.5 and 10.0"}), 400
+
+    # Proxy to bridge which sends RCON command
+    port = _load_config().get("factorio", {}).get("bridge_port", 27016)
+    url = f"http://127.0.0.1:{port}/api/game-speed"
+    try:
+        import json as _json
+        payload = _json.dumps({"speed": speed}).encode("utf-8")
+        req = urllib.request.Request(
+            url, data=payload, method="POST",
+            headers={"Content-Type": "application/json"},
+        )
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            result = json.loads(resp.read())
+            return jsonify(result)
+    except Exception:
+        return jsonify({"error": "Bridge unreachable"}), 502
