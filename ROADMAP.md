@@ -1,10 +1,10 @@
 <!-- doc-revision
   doc: ROADMAP.md
-  revision: 2
-  updated: 2026-03-24
-  updatedBy: claude-opus-4.6
-  metrics: skills=130+ endpoints=236 smoke=38 tables=20
-  status: current (release gate + audit coverage updated)
+  revision: 3
+  updated: 2026-03-31
+  updatedBy: claude-sonnet-4-6
+  metrics: skills=125 endpoints=228+ smoke=51 tables=29 tests=465/477
+  status: current (sessions 0331/0331b — dashboard decomp, enterprise wiring, Factorio overhaul)
 -->
 # BigEd CC Roadmap
 
