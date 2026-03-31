@@ -777,6 +777,9 @@ def api_marketplace_install(package_id):
 @marketplace_bp.route("/api/marketplace/packages/<package_id>/install", methods=["DELETE"])
 def api_marketplace_uninstall(package_id):
     """Uninstall a package from a tenant."""
+    err = _require_role("operator")
+    if err:
+        return err
     try:
         data = request.get_json()
         if not data:
