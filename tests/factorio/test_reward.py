@@ -16,8 +16,9 @@ def test_time_penalty():
     rc = RewardComputer(phase=1)
     s1 = _make_state()
     s2 = _make_state()
-    reward = rc.compute(s1, s2, action_success=True, lesson_passed=False, phase_complete=False)
-    assert reward < 0  # time penalty
+    # Failed action: no success bonus, so time penalty + failure penalty dominate
+    reward = rc.compute(s1, s2, action_success=False, lesson_passed=False, phase_complete=False)
+    assert reward < 0  # time penalty + failed action penalty
 
 
 def test_lesson_passed_reward():
@@ -61,6 +62,23 @@ def test_phase2_production_bonus():
     assert reward > -0.01
 
 
+def test_consecutive_move_penalty():
+    """Agents that keep walking without doing anything get penalized."""
+    rc = RewardComputer(phase=1)
+    s1 = _make_state()
+    s2 = _make_state()
+    # First 2 moves: no consecutive penalty
+    r1 = rc.compute(s1, s2, True, False, False, action_type=3)  # MOVE=3
+    r2 = rc.compute(s1, s2, True, False, False, action_type=3)
+    # 3rd+ consecutive move: penalty kicks in
+    r3 = rc.compute(s1, s2, True, False, False, action_type=3)
+    assert r3 < r2  # 3rd move is penalized more
+    # Non-move resets the counter
+    r_place = rc.compute(s1, s2, True, False, False, action_type=0)  # PLACE=0
+    r_after = rc.compute(s1, s2, True, False, False, action_type=3)
+    assert r_after > r3  # counter was reset, so this move is cheaper than 3rd consecutive
+
+
 def test_reset_normalizer():
     rc = RewardComputer(phase=1)
     rc.compute(_make_state(), _make_state(), True, False, False)
@@ -68,3 +86,23 @@ def test_reset_normalizer():
     rc.reset_normalizer()
     reward = rc.compute(_make_state(), _make_state(), True, False, False)
     assert isinstance(reward, float)
+
+
+def test_ore_proximity_bonus_lesson2():
+    """Agent near ore in lesson 2 should get a proximity bonus."""
+    from factorio.reward import RewardComputer
+    from factorio.state_parser import GameState
+
+    rc = RewardComputer(phase=1)
+    prev = GameState(player_position={"x": 0, "y": 0}, inventory={}, entities=[])
+    curr = GameState(player_position={"x": 5, "y": 5}, inventory={}, entities=[])
+
+    r_base = rc.compute(prev, curr, action_success=True, lesson_passed=False,
+                        phase_complete=False, action_type=0, lesson_index=3)
+
+    rc2 = RewardComputer(phase=1)
+    r_near = rc2.compute(prev, curr, action_success=True, lesson_passed=False,
+                         phase_complete=False, action_type=0,
+                         lesson_index=2, near_ore=True)
+
+    assert r_near > r_base, "Near-ore bonus should increase reward in lesson 2"

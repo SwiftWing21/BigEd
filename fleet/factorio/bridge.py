@@ -920,12 +920,25 @@ class FactorioBridge:
         agent_rw = self._agent_reward.get(agent_id, self._reward)
         reward = 0.0
         if self._prev_state is not None:
+            # Check if agent is near ore (for lesson 2 shaped reward)
+            near_ore = False
+            if current_lesson == 2 and agent_mem:
+                for rtype in ("iron-ore", "copper-ore", "coal", "stone"):
+                    try:
+                        result_ore = agent_mem.nearest_resource(px, py, rtype)
+                        if result_ore is not None and result_ore[1] < 3.0:
+                            near_ore = True
+                            break
+                    except Exception:
+                        log.warning("near_ore check failed for %s", rtype, exc_info=True)
             reward = agent_rw.compute(
                 self._prev_state, state, result["success"],
                 lesson_passed, phase_complete,
                 metrics=raw_metrics,
                 action_type=action_type.item(),
                 other_agent_positions=other_positions,
+                lesson_index=current_lesson,
+                near_ore=near_ore,
             )
 
         # 8. Store transition

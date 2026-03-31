@@ -35,6 +35,7 @@ _CLUSTER_DISTANCE_THRESHOLD = 8.0  # tiles — agents closer than this get penal
 _PACK_COMPLETE_BONUS = 1.0
 _STAMP_COMPLETE_BONUS = 2.0
 _PACK_ABORT_PENALTY = -0.5
+_ORE_PROXIMITY_BONUS = 0.1  # lesson 2: reward for being adjacent to ore
 
 
 class RunningStats:
@@ -116,6 +117,8 @@ class RewardComputer:
         other_agent_positions: list[tuple[float, float]] | None = None,
         pack_completed: bool = False,
         pack_aborted: bool = False,
+        lesson_index: int = -1,
+        near_ore: bool = False,
     ) -> float:
         """Compute the reward for one environment step.
 
@@ -130,6 +133,8 @@ class RewardComputer:
             other_agent_positions: Positions of peer agents for clustering penalty.
             pack_completed: Whether the current pack was completed this step.
             pack_aborted: Whether the current pack was aborted this step.
+            lesson_index: Current lesson index (used for shaped rewards).
+            near_ore: Whether the agent is adjacent to an ore tile (lesson 2 bonus).
 
         Returns:
             Scalar reward (float).
@@ -139,6 +144,7 @@ class RewardComputer:
                 prev_state, curr_state, action_success, lesson_passed, phase_complete,
                 metrics, action_type, other_agent_positions,
                 pack_completed, pack_aborted,
+                lesson_index, near_ore,
             )
         except Exception:
             log.warning("RewardComputer.compute failed; returning time penalty", exc_info=True)
@@ -163,6 +169,8 @@ class RewardComputer:
         other_agent_positions: list[tuple[float, float]] | None = None,
         pack_completed: bool = False,
         pack_aborted: bool = False,
+        lesson_index: int = -1,
+        near_ore: bool = False,
     ) -> float:
         r = 0.0
 
@@ -219,6 +227,10 @@ class RewardComputer:
                 r += _PACK_COMPLETE_BONUS
         if pack_aborted:
             r += _PACK_ABORT_PENALTY
+
+        # Ore proximity bonus — lesson 2 only, guides agent toward ore for drill placement
+        if lesson_index == 2 and near_ore:
+            r += _ORE_PROXIMITY_BONUS
 
         return r
 
