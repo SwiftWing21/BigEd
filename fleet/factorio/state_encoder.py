@@ -9,7 +9,7 @@ Grid  (5 channels, grid_size x grid_size):
   ch 3 — resource amount   (amount / 5000, from resource_positions)
   ch 4 — terrain type  (water=1.0, grass~0.2, sand~0.4, concrete~0.7)
 
-Feature vector (68 base dims, 84 with spatial memory):
+Feature vector (69 base dims, 85 with spatial memory):
   [0:30]   inventory counts for TRACKED_ITEMS, normalized per item
   [30:50]  research tech one-hot (20 slots from TECH_REGISTRY)
   [50]     research progress 0-1
@@ -19,6 +19,7 @@ Feature vector (68 base dims, 84 with spatial memory):
   [60]     lesson index normalized (/ 20)
   [61:64]  strategy goal vector (zeros by default)
   [64:68]  global resource counts (iron/copper/coal/stone, normalized)
+  [68]     active pack progress 0-1
 """
 import logging
 import numpy as np
@@ -64,8 +65,9 @@ _ITEM_MAX: dict[str, float] = {
 
 _NUM_TECHS = 20            # fixed one-hot width (TECH_REGISTRY has 11 entries)
 _MAX_ENTITY_ID = max(ENTITY_REGISTRY.values()) if ENTITY_REGISTRY else 1
-_BASE_FEATURE_DIM = 68     # 30 + 20 + 1 + 3 + 2 + 4 + 1 + 3 + 4 (global resources)
+_BASE_FEATURE_DIM = 69     # 30 + 20 + 1 + 3 + 2 + 4 + 1 + 3 + 4 (global resources) + 1 (pack progress)
 _SPATIAL_FEATURE_DIM = 16  # bearing/distance to resources + counts + nearest entity
+_AGENT_FEATURE_DIM = 10    # 4 agent one-hot + 6 peer proximity (3 peers × 2: bearing, distance)
 _GRID_CHANNELS = 5         # entity type, direction, resource type, resource amount, terrain
 _TICK_NORM = 216_000.0     # ~1 hour of Factorio ticks (60 tps × 3600 s)
 
@@ -100,6 +102,7 @@ class StateEncoder:
         lesson_index: int = 0,
         strategy_goal: list[float] | None = None,
         spatial_memory=None,
+        num_agents: int = 1,
     ) -> None:
         self._phase = max(1, min(4, phase))
         self._grid_size = grid_size
@@ -107,6 +110,7 @@ class StateEncoder:
         self._strategy_goal: list[float] = list(strategy_goal) if strategy_goal else [0.0, 0.0, 0.0]
         self._half = grid_size // 2
         self._spatial_memory = spatial_memory
+        self._num_agents = num_agents
 
     # ------------------------------------------------------------------
     # Public setters
@@ -127,9 +131,12 @@ class StateEncoder:
 
     @property
     def feature_dim(self) -> int:
+        dim = _BASE_FEATURE_DIM
         if self._spatial_memory is not None:
-            return _BASE_FEATURE_DIM + _SPATIAL_FEATURE_DIM
-        return _BASE_FEATURE_DIM
+            dim += _SPATIAL_FEATURE_DIM
+        if self._num_agents > 1:
+            dim += _AGENT_FEATURE_DIM
+        return dim
 
     @property
     def grid_channels(self) -> int:
@@ -151,27 +158,65 @@ class StateEncoder:
         self,
         state: GameState,
         metrics: GameMetrics | None = None,
+        spatial_memory=None,
+        agent_id: int = 1,
+        other_agent_positions: list[tuple[float, float]] | None = None,
+        pack_progress: float = 0.0,
     ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         """Return (grid, world_grid, features) as float32 ndarrays.
 
-        grid       — shape (4, grid_size, grid_size) — local view
+        grid       — shape (5, grid_size, grid_size) — local view
         world_grid — shape (4, 64, 64) — zoomed-out minimap from spatial memory
         features   — shape (feature_dim,)
+
+        Args:
+            spatial_memory: Per-agent spatial memory override (uses self._spatial_memory if None).
+            agent_id: 1-based agent index for identity features.
+            other_agent_positions: List of (x, y) positions of peer agents for proximity features.
         """
         grid = self._encode_grid(state)
-        base_features = self._encode_features(state, metrics)
+        base_features = self._encode_features(state, metrics, pack_progress=pack_progress)
         px = state.player_position.get("x", 0.0)
         py = state.player_position.get("y", 0.0)
-        if self._spatial_memory is not None:
-            spatial = np.array(
-                self._spatial_memory.get_features(px, py), dtype=np.float32,
-            )
+        mem = spatial_memory if spatial_memory is not None else self._spatial_memory
+        if mem is not None:
+            spatial = np.array(mem.get_features(px, py), dtype=np.float32)
             features = np.concatenate([base_features, spatial])
-            world_grid = self._spatial_memory.render_world_grid(px, py)
+            world_grid = mem.render_world_grid(px, py)
         else:
             features = base_features
             world_grid = np.zeros((4, 64, 64), dtype=np.float32)
+
+        # Multi-agent identity + proximity features
+        if self._num_agents > 1:
+            agent_feats = self._encode_agent_features(
+                agent_id, px, py, other_agent_positions or [])
+            features = np.concatenate([features, agent_feats])
+
         return grid, world_grid, features
+
+    def _encode_agent_features(
+        self,
+        agent_id: int,
+        px: float, py: float,
+        other_positions: list[tuple[float, float]],
+    ) -> np.ndarray:
+        """Encode agent identity (one-hot) + bearing/distance to up to 3 peers."""
+        feats = np.zeros(_AGENT_FEATURE_DIM, dtype=np.float32)
+        # [0:4] agent one-hot (supports up to 4 agents)
+        idx = max(0, min(3, agent_id - 1))
+        feats[idx] = 1.0
+        # [4:10] peer proximity: 3 slots × (bearing_norm, distance_norm)
+        _DIST_NORM = 60.0  # normalize distance over ~60 tiles
+        import math
+        for i, (ox, oy) in enumerate(other_positions[:3]):
+            dx = ox - px
+            dy = oy - py
+            dist = math.sqrt(dx * dx + dy * dy)
+            bearing = math.atan2(dy, dx) / math.pi  # [-1, 1]
+            feats[4 + i * 2] = bearing
+            feats[4 + i * 2 + 1] = min(dist / _DIST_NORM, 1.0)
+        return feats
 
     # ------------------------------------------------------------------
     # Grid encoding
@@ -243,6 +288,7 @@ class StateEncoder:
         self,
         state: GameState,
         metrics: GameMetrics | None,
+        pack_progress: float = 0.0,
     ) -> np.ndarray:
         feats = np.zeros(_BASE_FEATURE_DIM, dtype=np.float32)
 
@@ -302,5 +348,8 @@ class StateEncoder:
         global_res = getattr(state, "global_resources", {})
         for i, rname in enumerate(_GLOBAL_RESOURCES):
             feats[64 + i] = float(min(global_res.get(rname, 0) / _GLOBAL_NORM, 1.0))
+
+        # [68] active pack progress
+        feats[68] = float(np.clip(pack_progress, 0.0, 1.0))
 
         return feats
