@@ -72,7 +72,7 @@ class BridgeConfig:
     ml_gamma: float = 0.99
     ml_gae_lambda: float = 0.95
     ml_clip_ratio: float = 0.2
-    ml_entropy_coeff: float = 0.01
+    ml_entropy_coeff: float = 0.05
     ml_value_coeff: float = 0.5
     ml_checkpoint_dir: str = "fleet/factorio/checkpoints"
 

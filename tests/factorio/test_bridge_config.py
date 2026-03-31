@@ -9,11 +9,11 @@ def test_ml_config_defaults():
     assert cfg.ml_batch_size == 64
     assert cfg.ml_update_every == 512
     assert cfg.ml_checkpoint_every == 20
-    assert cfg.ml_max_episode_steps == 2000
+    assert cfg.ml_max_episode_steps == 10000
     assert cfg.ml_gamma == 0.99
     assert cfg.ml_gae_lambda == 0.95
     assert cfg.ml_clip_ratio == 0.2
-    assert cfg.ml_entropy_coeff == 0.01
+    assert cfg.ml_entropy_coeff == 0.05
     assert cfg.ml_value_coeff == 0.5
     assert cfg.ml_checkpoint_dir == "fleet/factorio/checkpoints"
 
