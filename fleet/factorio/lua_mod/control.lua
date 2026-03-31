@@ -5,11 +5,12 @@
 -- Bridge calls via: /c rcon.print(remote.call("biged", "get_state"))
 --
 -- Remote interface functions:
---   remote.call("biged", "get_state")     -> JSON state dump
---   remote.call("biged", "get_metrics")   -> JSON production metrics
---   remote.call("biged", "exec_cmd", j)   -> execute JSON command, return result
---   remote.call("biged", "observe", x,y,r)-> focused area observation
---   remote.call("biged", "status")        -> bridge status / health check
+--   remote.call("biged", "get_state")          -> JSON state dump
+--   remote.call("biged", "get_metrics")        -> JSON production metrics
+--   remote.call("biged", "exec_cmd", j)        -> execute JSON command, return result
+--   remote.call("biged", "observe", x,y,r)     -> focused area observation
+--   remote.call("biged", "status")             -> bridge status / health check
+--   remote.call("biged", "biged_blueprint", j) -> decode + place blueprint at position
 
 -- Factorio 2.0: helpers.table_to_json() / helpers.json_to_table()
 
@@ -448,6 +449,14 @@ local function fn_exec_cmd(json_str)
             result.error = "missing item: " .. (name or "nil")
             return helpers.table_to_json(result)
         end
+        -- Snap position to correct grid for entity size (2x2 entities need integer coords)
+        local ok_proto, proto = pcall(function() return prototypes.entity[name] end)
+        if ok_proto and proto then
+            local tw = proto.tile_width or 1
+            local th = proto.tile_height or 1
+            if tw % 2 == 0 then pos.x = math.floor(pos.x + 0.5) end
+            if th % 2 == 0 then pos.y = math.floor(pos.y + 0.5) end
+        end
         -- Validate mining drills have resources underneath (safe — pcall in case API differs)
         local ok_proto, proto = pcall(function() return prototypes.entity[name] end)
         if ok_proto and proto and proto.type == "mining-drill" then
@@ -796,6 +805,86 @@ local function fn_exec_cmd(json_str)
             end
         end
 
+    elseif action == "place_near_resource" then
+        -- High-level: find nearest resource and place entity on it
+        -- Required: entity (name), optional: resource_type (default "iron-ore"), search_radius (default 20)
+        local name = parsed.entity
+        local resource_type = parsed.resource_type or "iron-ore"
+        local search_radius = parsed.search_radius or 20
+        if not name then
+            result.error = "place_near_resource requires 'entity'"
+            return helpers.table_to_json(result)
+        end
+        -- Check inventory
+        local has_item = false
+        if inv and name then
+            local ok_cnt, cnt_val = pcall(function() return inv.get_item_count(name) end)
+            has_item = ok_cnt and cnt_val >= 1
+        end
+        if not has_item then
+            result.error = "missing item: " .. (name or "nil")
+            return helpers.table_to_json(result)
+        end
+        -- Get agent position
+        local char = ctx.character
+        if not char or not char.valid then
+            result.error = "no character for placement"
+            return helpers.table_to_json(result)
+        end
+        local agent_pos = char.position
+        -- Find resource patches nearby
+        local search_area = {
+            {agent_pos.x - search_radius, agent_pos.y - search_radius},
+            {agent_pos.x + search_radius, agent_pos.y + search_radius}
+        }
+        local resources = surface.find_entities_filtered{
+            area = search_area, type = "resource", name = resource_type
+        }
+        if #resources == 0 then
+            result.error = "no " .. resource_type .. " within " .. search_radius .. " tiles"
+            return helpers.table_to_json(result)
+        end
+        -- Sort by distance to agent
+        table.sort(resources, function(a, b)
+            local da = (a.position.x - agent_pos.x)^2 + (a.position.y - agent_pos.y)^2
+            local db = (b.position.x - agent_pos.x)^2 + (b.position.y - agent_pos.y)^2
+            return da < db
+        end)
+        -- Try placing at resource positions (snap to appropriate grid)
+        local proto = prototypes.entity[name]
+        local placed = false
+        for _, res in ipairs(resources) do
+            -- Snap position based on entity size (2x2 = integer, 1x1 = half)
+            local px, py = res.position.x, res.position.y
+            if proto then
+                local tw = proto.tile_width or 1
+                local th = proto.tile_height or 1
+                if tw % 2 == 0 then px = math.floor(px + 0.5) end
+                if th % 2 == 0 then py = math.floor(py + 0.5) end
+            end
+            local can = surface.can_place_entity{
+                name = name, position = {px, py}, direction = 0, force = force
+            }
+            if can then
+                local entity = surface.create_entity{
+                    name = name, position = {px, py}, direction = 0, force = force,
+                    move_stuck_players = true,
+                }
+                if entity then
+                    inv.remove{name = name, count = 1}
+                    result.success = true
+                    result.unit_number = entity.unit_number
+                    result.actual_position = entity.position
+                    result.resource = resource_type
+                    placed = true
+                    break
+                end
+            end
+        end
+        if not placed then
+            result.error = "could not find valid placement on " .. resource_type
+        end
+
     else
         result.error = "unknown action: " .. tostring(action)
     end
@@ -868,15 +957,140 @@ local function fn_status()
     })
 end
 
+-- ─── Blueprint placement handler ────────────────────────────────────────────
+
+local function fn_biged_blueprint(json_str)
+    local ok, result = pcall(function()
+        if not json_str then
+            return helpers.table_to_json({success = false, error = "no command provided"})
+        end
+        local ok_parse, cmd = pcall(helpers.json_to_table, json_str)
+        if not ok_parse or not cmd then
+            return helpers.table_to_json({success = false, error = "invalid JSON"})
+        end
+        if not cmd.blueprint then
+            return helpers.table_to_json({success = false, error = "missing 'blueprint' field"})
+        end
+
+        -- Get agent inventory (same pattern as exec_cmd)
+        local agent_id = cmd.agent_id or 1
+        local ctx = get_agent_context(agent_id)
+        local inv = ctx.inventory
+        if not inv or not inv.valid then
+            return helpers.table_to_json({success = false, error = "no agent inventory"})
+        end
+
+        -- Decode the blueprint string via a temporary inventory
+        local bp_inv = game.create_inventory(1)
+        local slot = bp_inv[1]
+        local ok_import, import_err = pcall(function() return slot.import_stack(cmd.blueprint) end)
+        if not ok_import then
+            bp_inv.destroy()
+            return helpers.table_to_json({success = false, error = "import failed: " .. tostring(import_err)})
+        end
+
+        if not slot.is_blueprint then
+            bp_inv.destroy()
+            return helpers.table_to_json({success = false, error = "invalid blueprint string"})
+        end
+
+        local entities = slot.get_blueprint_entities()
+        bp_inv.destroy()
+
+        if not entities or #entities == 0 then
+            return helpers.table_to_json({success = false, error = "blueprint has no entities"})
+        end
+
+        -- Place entities one by one at the offset position
+        local surface = ctx.surface
+        local force = ctx.force
+        local anchor_x = cmd.position and cmd.position.x or 0
+        local anchor_y = cmd.position and cmd.position.y or 0
+        local placed = {}
+        local failed = {}
+
+        for _, bp_entity in pairs(entities) do
+            local ent_name = bp_entity.name
+            local ent_x = (bp_entity.position.x or 0) + anchor_x
+            local ent_y = (bp_entity.position.y or 0) + anchor_y
+            local direction = bp_entity.direction or 0
+
+            -- Check agent has the item
+            local item_count = inv.get_item_count(ent_name)
+            if item_count < 1 then
+                table.insert(failed, {name = ent_name, position = {x = ent_x, y = ent_y}, reason = "no item"})
+            else
+                -- Check placement is valid
+                local can_place = surface.can_place_entity{
+                    name = ent_name,
+                    position = {ent_x, ent_y},
+                    direction = direction,
+                    force = force,
+                }
+                if can_place then
+                    local created = surface.create_entity{
+                        name = ent_name,
+                        position = {ent_x, ent_y},
+                        direction = direction,
+                        force = force,
+                        move_stuck_players = true,
+                    }
+                    if created then
+                        inv.remove{name = ent_name, count = 1}
+                        table.insert(placed, {name = ent_name, position = {x = ent_x, y = ent_y}})
+
+                        -- Handle recipe assignment from blueprint
+                        if bp_entity.recipe and created.type == "assembling-machine" then
+                            pcall(function() created.recipe = bp_entity.recipe end)
+                        end
+                        -- Handle module insertion from blueprint
+                        if bp_entity.items then
+                            local mod_inv = created.get_module_inventory()
+                            if mod_inv then
+                                for mod_name, mod_count in pairs(bp_entity.items) do
+                                    local available = inv.get_item_count(mod_name)
+                                    local to_insert = math.min(available, mod_count)
+                                    if to_insert > 0 then
+                                        mod_inv.insert{name = mod_name, count = to_insert}
+                                        inv.remove{name = mod_name, count = to_insert}
+                                    end
+                                end
+                            end
+                        end
+                    else
+                        table.insert(failed, {name = ent_name, position = {x = ent_x, y = ent_y}, reason = "create failed"})
+                    end
+                else
+                    table.insert(failed, {name = ent_name, position = {x = ent_x, y = ent_y}, reason = "blocked"})
+                end
+            end
+        end
+
+        local success = #placed > 0
+        return helpers.table_to_json({
+            success = success,
+            entities_placed = placed,
+            entities_failed = failed,
+            total_placed = #placed,
+            total_failed = #failed,
+        })
+    end)
+    if not ok then
+        return helpers.table_to_json({success = false, error = tostring(result)})
+    end
+    return result
+end
+
 -- ─── Register remote interface ──────────────────────────────────────────────
 
 remote.add_interface("biged", {
-    get_state    = fn_get_state,
-    get_metrics  = fn_get_metrics,
-    exec_cmd     = fn_exec_cmd,
-    observe      = fn_observe,
-    ensure_agent = fn_ensure_agent,   -- RENAMED from ensure_player
-    status       = fn_status,
+    get_state        = fn_get_state,
+    get_metrics      = fn_get_metrics,
+    exec_cmd         = fn_exec_cmd,
+    observe          = fn_observe,
+    ensure_agent     = fn_ensure_agent,   -- RENAMED from ensure_player
+    status           = fn_status,
+    biged_blueprint  = fn_biged_blueprint,
 })
 
 -- ─── Lifecycle ──────────────────────────────────────────────────────────────
@@ -932,7 +1146,8 @@ end)
 script.on_event(defines.events.on_player_joined_game, function(event)
     local p = game.get_player(event.player_index)
     if p then
-        game.print("[BigEd] Welcome, " .. p.name .. "! You are a spectator. Agent characters are independent.")
+        -- Set to spectator mode so human viewers can't interact with agent world
+        p.set_controller{type = defines.controllers.spectator}
+        game.print("[BigEd] " .. p.name .. " connected as spectator. Agent characters are independent.")
     end
-    -- NO state mutation. NO character creation for players.
 end)
