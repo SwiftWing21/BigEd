@@ -287,6 +287,10 @@ def deploy_skill_to_tenant(tenant_id: str, skill_path: str) -> bool:
 
     Returns True on success. Raises ValueError on validation failure.
     """
+    # Path traversal guard — check before any I/O
+    if ".." in str(skill_path):
+        raise ValueError("Invalid skill path: path traversal detected")
+
     tenant = get_tenant(tenant_id)
     if not tenant:
         raise ValueError(f"Tenant {tenant_id} not found")
@@ -300,8 +304,15 @@ def deploy_skill_to_tenant(tenant_id: str, skill_path: str) -> bool:
 
     # Resolve skill path
     src = Path(skill_path)
+
     if not src.is_absolute():
         src = FLEET_DIR / "skills" / (skill_path if skill_path.endswith(".py") else f"{skill_path}.py")
+
+    # Containment check: resolved path must be within fleet/skills/
+    try:
+        src.resolve().relative_to((FLEET_DIR / "skills").resolve())
+    except ValueError:
+        raise ValueError("Invalid skill path: must be within fleet/skills/")
 
     if not src.exists():
         raise ValueError(f"Skill file not found: {src}")
@@ -348,9 +359,20 @@ def get_tenant_skills(tenant_id: str) -> list[dict]:
 def remove_tenant_skill(tenant_id: str, skill_name: str) -> bool:
     """Remove a skill from a tenant's skill directory."""
     skills_dir = _tenant_skills_dir(tenant_id)
+
+    # Path traversal guard
+    if ".." in skill_name or "/" in skill_name or "\\" in skill_name:
+        raise ValueError("Invalid skill name: path traversal detected")
+
     # Accept with or without .py extension
     filename = skill_name if skill_name.endswith(".py") else f"{skill_name}.py"
     target = skills_dir / filename
+
+    # Containment check
+    try:
+        target.resolve().relative_to(skills_dir.resolve())
+    except ValueError:
+        raise ValueError("Invalid skill name: resolves outside tenant directory")
 
     if not target.exists():
         raise ValueError(f"Skill {skill_name} not found for tenant {tenant_id}")
