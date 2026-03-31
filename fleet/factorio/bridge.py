@@ -130,6 +130,9 @@ class FactorioBridge:
             self._pack_registry.load_packs(packs_dir / "learned")
             log.info("PackRegistry loaded: %d items", len(self._pack_registry._items))
 
+            from factorio.pack_recorder import PackRecorder
+            self._pack_recorder = PackRecorder(max_length=100)
+
             self._pack_executors: dict[int, PackExecutor] = {}
             self._pack_pending_transition: dict[int, dict] = {}
 
@@ -817,7 +820,13 @@ class FactorioBridge:
             except Exception:
                 log.warning("Action execution failed", exc_info=True)
 
-        # 5b. Track successful inserts for curriculum
+        # 5b. Record primitive actions for learned pack discovery
+        if result.get("success") and action_dict.get("action") in (
+            "place", "craft", "insert", "mine", "set_recipe", "remove"
+        ):
+            self._pack_recorder.record(action_dict)
+
+        # 5c. Track successful inserts for curriculum
         if not hasattr(self, '_insert_count'):
             self._insert_count = 0
             self._production_snapshot = {}
@@ -826,6 +835,19 @@ class FactorioBridge:
         # Track production from metrics
         if raw_metrics and hasattr(raw_metrics, 'total_produced'):
             self._production_snapshot = dict(raw_metrics.total_produced)
+
+        # 5d. Auto-save before checkpoint attempt for learned pack replay
+        checkpoint_id = self._curriculum.checkpoint
+        if not hasattr(self, '_last_checkpoint_save'):
+            self._last_checkpoint_save = -1
+        if checkpoint_id != self._last_checkpoint_save:
+            try:
+                save_name = f"checkpoint_{checkpoint_id}_pre"
+                await self.rcon.command(f'/c game.auto_save("{save_name}")')
+                self._last_checkpoint_save = checkpoint_id
+                log.info("Auto-saved game state as '%s'", save_name)
+            except Exception:
+                log.warning("Checkpoint auto-save failed", exc_info=True)
 
         # 6. Check curriculum progress (always — even first tick for body check lesson)
         resource_totals = {}
@@ -922,6 +944,16 @@ class FactorioBridge:
 
             # Phase advancement
             if phase_complete:
+                # Try to extract a learned pack from recent actions
+                candidate = self._pack_recorder.on_checkpoint_complete(self._curriculum.checkpoint)
+                if candidate:
+                    slot = self._pack_registry.promote_learned(candidate)
+                    if slot is not None:
+                        log.info("Promoted learned pack '%s' to slot %d", candidate.name, slot)
+                        packs_dir = Path(__file__).parent / "packs" / "learned"
+                        self._pack_registry.save_learned(packs_dir)
+                self._pack_recorder.clear()
+
                 from factorio.action_space import ActionSpace
                 if self._curriculum.advance_phase():
                     new_phase = self._curriculum._phase
