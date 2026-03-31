@@ -19,12 +19,23 @@ local CONFIG = {
     max_entities = 500,
     agent_inventory_size = 200,
     tracked_items = {
-        "iron-plate", "copper-plate", "steel-plate",
-        "iron-gear-wheel", "electronic-circuit", "advanced-circuit",
+        -- Raw resources
+        "iron-ore", "copper-ore", "coal", "stone", "wood",
+        -- Plates & bricks
+        "iron-plate", "copper-plate", "steel-plate", "stone-brick",
+        -- Intermediates
+        "iron-gear-wheel", "iron-stick", "copper-cable",
+        "electronic-circuit", "advanced-circuit",
+        -- Science
         "automation-science-pack", "logistic-science-pack",
-        "transport-belt", "inserter", "assembling-machine-1",
-        "assembling-machine-2", "stone-furnace", "electric-mining-drill",
-        "pipe", "offshore-pump", "boiler", "steam-engine",
+        -- Logistics
+        "transport-belt", "inserter", "burner-inserter", "fast-inserter",
+        -- Power & fluids
+        "small-electric-pole", "pipe", "offshore-pump", "boiler", "steam-engine",
+        -- Machines
+        "assembling-machine-1", "assembling-machine-2",
+        "burner-mining-drill", "electric-mining-drill",
+        "stone-furnace", "lab", "wooden-chest",
     },
 }
 
@@ -440,12 +451,14 @@ local function fn_exec_cmd(json_str)
             result.error = "place requires 'entity' and 'position'"
             return helpers.table_to_json(result)
         end
-        -- Creative/sandbox mode: auto-insert item if not in inventory
+        local has_item = false
         if inv and name then
             local ok_cnt, cnt_val = pcall(function() return inv.get_item_count(name) end)
-            if ok_cnt and (not cnt_val or cnt_val < 1) then
-                pcall(function() inv.insert{name = name, count = 50} end)
-            end
+            has_item = ok_cnt and cnt_val >= 1
+        end
+        if not has_item then
+            result.error = "missing item: " .. (name or "nil")
+            return helpers.table_to_json(result)
         end
         -- Snap position to correct grid for entity size (2x2 entities need integer coords)
         local ok_proto, proto = pcall(function() return prototypes.entity[name] end)
@@ -555,15 +568,26 @@ local function fn_exec_cmd(json_str)
             result.error = "unknown recipe: " .. tostring(recipe_name)
             return helpers.table_to_json(result)
         end
-        -- Creative mode: auto-insert missing ingredients
+        -- Check how many we can craft
+        local can_craft = count
         for _, ingredient in pairs(recipe.ingredients) do
             local have = inv.get_item_count(ingredient.name)
-            local need = ingredient.amount * count
-            if have < need then
-                pcall(function() inv.insert{name = ingredient.name, count = need - have} end)
-            end
+            local max_from_this = math.floor(have / ingredient.amount)
+            can_craft = math.min(can_craft, max_from_this)
         end
-        local can_craft = count
+        if can_craft <= 0 then
+            result.error = "insufficient ingredients for " .. recipe_name
+            local missing = {}
+            for _, ingredient in pairs(recipe.ingredients) do
+                local have = inv.get_item_count(ingredient.name)
+                local need = ingredient.amount * count
+                if have < need then
+                    table.insert(missing, ingredient.name .. ": have=" .. have .. " need=" .. need)
+                end
+            end
+            result.missing = table.concat(missing, ", ")
+            return helpers.table_to_json(result)
+        end
         -- Consume inputs
         for _, ingredient in pairs(recipe.ingredients) do
             inv.remove({ name = ingredient.name, count = ingredient.amount * can_craft })
@@ -745,14 +769,10 @@ local function fn_exec_cmd(json_str)
         elseif not inv then
             result.error = "no inventory available"
         else
-            -- Creative mode: auto-insert item if not in inventory
+            -- Check agent has the item
             local have = inv.get_item_count(item_name)
-            if have < count then
-                pcall(function() inv.insert{name = item_name, count = count * 10} end)
-                have = inv.get_item_count(item_name)
-            end
             if have < 1 then
-                result.error = "no " .. item_name .. " in inventory (even after auto-insert)"
+                result.error = "no " .. item_name .. " in inventory"
             else
                 -- Find nearest entity at position that can accept items
                 local area = {{pos.x - 1, pos.y - 1}, {pos.x + 1, pos.y + 1}}
@@ -806,12 +826,15 @@ local function fn_exec_cmd(json_str)
             result.error = "place_near_resource requires 'entity'"
             return helpers.table_to_json(result)
         end
-        -- Creative mode: auto-insert item if not in inventory
+        -- Check inventory
+        local has_item = false
         if inv and name then
             local ok_cnt, cnt_val = pcall(function() return inv.get_item_count(name) end)
-            if ok_cnt and (not cnt_val or cnt_val < 1) then
-                pcall(function() inv.insert{name = name, count = 50} end)
-            end
+            has_item = ok_cnt and cnt_val >= 1
+        end
+        if not has_item then
+            result.error = "missing item: " .. (name or "nil")
+            return helpers.table_to_json(result)
         end
         -- Get agent position
         local char = ctx.character

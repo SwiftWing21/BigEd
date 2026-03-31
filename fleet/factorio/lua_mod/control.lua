@@ -19,12 +19,23 @@ local CONFIG = {
     max_entities = 500,
     agent_inventory_size = 200,
     tracked_items = {
-        "iron-plate", "copper-plate", "steel-plate",
-        "iron-gear-wheel", "electronic-circuit", "advanced-circuit",
+        -- Raw resources
+        "iron-ore", "copper-ore", "coal", "stone", "wood",
+        -- Plates & bricks
+        "iron-plate", "copper-plate", "steel-plate", "stone-brick",
+        -- Intermediates
+        "iron-gear-wheel", "iron-stick", "copper-cable",
+        "electronic-circuit", "advanced-circuit",
+        -- Science
         "automation-science-pack", "logistic-science-pack",
-        "transport-belt", "inserter", "assembling-machine-1",
-        "assembling-machine-2", "stone-furnace", "electric-mining-drill",
-        "pipe", "offshore-pump", "boiler", "steam-engine",
+        -- Logistics
+        "transport-belt", "inserter", "burner-inserter", "fast-inserter",
+        -- Power & fluids
+        "small-electric-pole", "pipe", "offshore-pump", "boiler", "steam-engine",
+        -- Machines
+        "assembling-machine-1", "assembling-machine-2",
+        "burner-mining-drill", "electric-mining-drill",
+        "stone-furnace", "lab", "wooden-chest",
     },
 }
 
