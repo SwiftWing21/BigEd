@@ -18,13 +18,23 @@ _RESEARCH_PROGRESS_SCALE = 0.2   # was 0.1
 _NEW_ENTITY_BONUS = 0.5          # was 0.05 — placing a building is a BIG deal
 _PRODUCTION_DELTA_SCALE = 0.05   # was 0.02 — phase 2+
 _PRODUCTION_DELTA_CAP = 5.0
-# Distance-based — keep but reduce so it doesn't dominate
-_WANDER_PENALTY_SCALE = -0.002   # was -0.005
-_WANDER_DISTANCE_THRESHOLD = 20
-_NEAR_RESOURCE_BONUS = 0.001     # was 0.005 — reduce so it doesn't reward shuffling
+# Distance-based — agents MUST stay near resources/infrastructure
+_WANDER_PENALTY_SCALE = -0.02    # was -0.002 — 10x stronger to stop wandering
+_WANDER_DISTANCE_THRESHOLD = 10  # was 20 — penalize sooner
+_NEAR_RESOURCE_BONUS = 0.003     # was 0.001 — stronger magnet toward resources
 # Economic score — THE primary reward signal
 _ECONOMIC_SCALE = 0.05           # was 0.01 — 5x boost
 _ECONOMIC_INVENTORY_SCALE = 0.005  # was 0.001 — inventory value matters more
+# Consecutive-move penalty — walking repeatedly without doing anything useful
+_CONSECUTIVE_MOVE_PENALTY = -0.01  # per consecutive MOVE beyond 2
+_MOVE_ACTION_TYPE = 3              # ActionType.MOVE value
+# Agent clustering penalty — repel agents from each other
+_CLUSTER_PENALTY_SCALE = -0.01     # penalty when agents are within threshold
+_CLUSTER_DISTANCE_THRESHOLD = 8.0  # tiles — agents closer than this get penalized
+# Pack / stamp completion bonuses
+_PACK_COMPLETE_BONUS = 1.0
+_STAMP_COMPLETE_BONUS = 2.0
+_PACK_ABORT_PENALTY = -0.5
 
 
 class RunningStats:
@@ -81,6 +91,7 @@ class RewardComputer:
         self._economic_scorer = economic_scorer
         self._prev_produced: dict[str, int] = {}
         self._prev_inventory_value: float = 0.0
+        self._consecutive_moves: int = 0
 
     def set_phase(self, phase: int) -> None:
         self._phase = phase
@@ -88,6 +99,7 @@ class RewardComputer:
     def reset_normalizer(self) -> None:
         self._stats.reset()
         self._seen_entity_ids.clear()
+        self._consecutive_moves = 0
 
     def normalize(self, reward: float) -> float:
         return self._stats.normalize(reward)
@@ -100,6 +112,10 @@ class RewardComputer:
         lesson_passed: bool,
         phase_complete: bool,
         metrics=None,
+        action_type: int = -1,
+        other_agent_positions: list[tuple[float, float]] | None = None,
+        pack_completed: bool = False,
+        pack_aborted: bool = False,
     ) -> float:
         """Compute the reward for one environment step.
 
@@ -110,6 +126,10 @@ class RewardComputer:
             lesson_passed: Whether the current lesson objective was achieved.
             phase_complete: Whether all lessons in the current phase are done.
             metrics: Optional GameMetrics with production data.
+            action_type: Integer action type (3=MOVE) for consecutive-move penalty.
+            other_agent_positions: Positions of peer agents for clustering penalty.
+            pack_completed: Whether the current pack was completed this step.
+            pack_aborted: Whether the current pack was aborted this step.
 
         Returns:
             Scalar reward (float).
@@ -117,7 +137,8 @@ class RewardComputer:
         try:
             reward = self._raw_reward(
                 prev_state, curr_state, action_success, lesson_passed, phase_complete,
-                metrics,
+                metrics, action_type, other_agent_positions,
+                pack_completed, pack_aborted,
             )
         except Exception:
             log.warning("RewardComputer.compute failed; returning time penalty", exc_info=True)
@@ -138,11 +159,26 @@ class RewardComputer:
         lesson_passed: bool,
         phase_complete: bool,
         metrics=None,
+        action_type: int = -1,
+        other_agent_positions: list[tuple[float, float]] | None = None,
+        pack_completed: bool = False,
+        pack_aborted: bool = False,
     ) -> float:
         r = 0.0
 
         # Always-on signals
         r += _TIME_PENALTY
+
+        # Consecutive-move penalty — stop aimless walking
+        if action_type == _MOVE_ACTION_TYPE:
+            self._consecutive_moves += 1
+            if self._consecutive_moves > 2:
+                r += _CONSECUTIVE_MOVE_PENALTY * (self._consecutive_moves - 2)
+        else:
+            self._consecutive_moves = 0
+
+        # Agent clustering penalty — repel from peers
+        r += self._clustering_penalty(curr, other_agent_positions)
 
         if not action_success:
             r += _FAILED_ACTION_PENALTY
@@ -175,7 +211,35 @@ class RewardComputer:
         r += self._entity_placement_bonus(curr)
         r += self._production_delta_bonus(prev, curr)
 
+        # Pack / stamp completion bonuses
+        if pack_completed:
+            if action_type == 10:  # STAMP
+                r += _STAMP_COMPLETE_BONUS
+            else:
+                r += _PACK_COMPLETE_BONUS
+        if pack_aborted:
+            r += _PACK_ABORT_PENALTY
+
         return r
+
+    def _clustering_penalty(
+        self, curr: GameState,
+        other_positions: list[tuple[float, float]] | None,
+    ) -> float:
+        """Penalize being too close to other agents — prevents convergence."""
+        if not other_positions:
+            return 0.0
+        import math
+        px = curr.player_position.get("x", 0)
+        py = curr.player_position.get("y", 0)
+        penalty = 0.0
+        for ox, oy in other_positions:
+            dist = math.sqrt((ox - px) ** 2 + (oy - py) ** 2)
+            if dist < _CLUSTER_DISTANCE_THRESHOLD:
+                # Stronger penalty the closer they are
+                closeness = 1.0 - (dist / _CLUSTER_DISTANCE_THRESHOLD)
+                penalty += _CLUSTER_PENALTY_SCALE * closeness
+        return penalty
 
     def _distance_reward(self, curr: GameState) -> float:
         """Penalty for wandering far from resources AND infrastructure.
@@ -224,8 +288,9 @@ class RewardComputer:
             return _NEAR_RESOURCE_BONUS
 
         if min_useful_dist > _WANDER_DISTANCE_THRESHOLD:
-            excess = min(min_useful_dist - _WANDER_DISTANCE_THRESHOLD, 100)
-            return _WANDER_PENALTY_SCALE * (excess / 100.0)
+            # Linear ramp: full penalty at 30 tiles excess (was 100)
+            excess = min(min_useful_dist - _WANDER_DISTANCE_THRESHOLD, 30)
+            return _WANDER_PENALTY_SCALE * (excess / 30.0)
 
         return 0.0
 
