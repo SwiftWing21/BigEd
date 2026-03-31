@@ -186,12 +186,12 @@ def _sse_broadcaster():
                 # Mode control -- active mode + modifier states for strip
                 mode_sse = None
                 try:
-                    import dashboard
-                    _active_mode, _mode_state = dashboard._get_effective_mode()
+                    from mode_blueprint import _get_effective_mode, _get_modifier_states
+                    _active_mode, _mode_state = _get_effective_mode()
                     mode_sse = {
                         "active": _active_mode,
                         "state": _mode_state,
-                        "modifiers": dashboard._get_modifier_states(),
+                        "modifiers": _get_modifier_states(),
                     }
                 except Exception:
                     pass
