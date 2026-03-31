@@ -782,8 +782,11 @@ class FactorioBridge:
                     })
                     stamp_result = {"success": False}
                     try:
-                        resp = await self.rcon.remote_call("biged-blueprint", stamp_cmd)
-                        stamp_result = {"success": True} if resp else {"success": False}
+                        resp = await self.rcon.remote_call("biged_blueprint", stamp_cmd)
+                        try:
+                            stamp_result = json.loads(resp) if resp else {"success": False}
+                        except (json.JSONDecodeError, TypeError):
+                            stamp_result = {"success": False, "error": str(resp)[:200]}
                     except Exception:
                         log.warning("Blueprint stamp failed", exc_info=True)
                     # Compute reward and store transition
