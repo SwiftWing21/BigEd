@@ -48,6 +48,12 @@ jobs:
         env:
           FLEET_TEST_DB: ":memory:"
 
+      - name: Run unit tests (pytest)
+        working-directory: fleet
+        run: python -m pytest ../tests/ -v --tb=short -x
+        env:
+          FLEET_TEST_DB: ":memory:"
+
       - name: Verify skill imports
         working-directory: fleet
         run: |
