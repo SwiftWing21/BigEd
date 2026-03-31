@@ -1,10 +1,10 @@
 <!-- doc-revision
   doc: AUDIT_TRACKER.md
-  revision: 1
-  updated: 2026-03-20
-  updatedBy: unknown
-  metrics: skills=130+ endpoints=236 smoke=38 tables=20
-  status: stale (hasn't been updated since 0.110.00b)
+  revision: 2
+  updated: 2026-03-31
+  updatedBy: claude-sonnet-4-6
+  metrics: skills=125 endpoints=228+ smoke=51 tables=29 tests=465/477
+  status: current (refreshed at v0.900.00b — sessions 0331/0331b)
 -->
 # BigEd CC — Audit Tracker
 
@@ -39,23 +39,24 @@
 
 ## Scoreboard
 
-> Last updated: **v0.053.00b** | Audited by: Sonnet (2026-03-20)
+> Last updated: **v0.900.00b** | Audited by: Sonnet (2026-03-31)
+> Skills: 125 | Blueprints: 10 | DB tables: 29 | pytest: 465/477 | Dashboard: 3360 lines (decomposed from 5680)
 
 | Dimension | Grade | Trend | Key Gap |
 |-----------|-------|-------|---------|
-| **Architecture / SoC** | A | → | theme.py extracted, fleet_api.py + data_access.py complete, launcher -234 LOC |
-| **Code Quality** | A | → | All P1/P2/P3 resolved; deferred imports documented |
-| **Testing** | A | → | 22/22 smoke + 32 skill unit tests + 22 dashboard tests + 7 security tests |
-| **Security** | A | → | SQLCipher, TLS, RBAC, API attribution, adversarial testing |
-| **Reliability / S1** | A | → | S1 complete |
-| **Observability / S2** | A | → | /api/health, /api/agents/performance, JSON logging, alerts pipeline |
-| **Usability / UX** | A+ | ↑ | System detection auto-configures fleet; settings display panel; API key validation; setup scripts |
-| **Dynamic Abilities** | S | → | Auto-trigger evolution/research, swarm affinity, multi-backend |
-| **Module / Plugin Support** | A | ↑ | ModuleHub client (hub.py) with download/verify/install; manifest.json; plugin discovery partial |
-| **Data Processing + HITL** | S | → | Tier 2 LLM scoring, distributed tracing, auto-intelligence |
-| **Performance** | A | → | Code-aware token estimation (P2-02), configurable timeout (P3-01) |
-| **Documentation** | S | ↑ | README, CONTRIBUTING, SETUP.md, setup scripts, BETA_PREP — comprehensive public-ready docs |
-| **Overall** | **S** | ↑ | All milestones complete. UX A+, Docs S. Zero open issues. |
+| **Architecture / SoC** | A | ↑ | Dashboard 5680→3360 via 4-phase decomp (10 blueprints); Phase 5 pending (~1400 lines remain) |
+| **Code Quality** | A- | → | No bare excepts; 1 raw sqlite3 in account_review.py (launcher DB, different from fleet.db); 36 sys.path.insert calls removed |
+| **Testing** | A | ↑ | 465/477 pytest; 27 new tests (db, providers, health_monitor); 12 Factorio failures (direction/curriculum, tracked) |
+| **Security** | A | ↑ | JWT bypass fixed, path traversal blocked, inter-fleet auth added, marketplace uninstall auth, RBAC unified (5 roles) |
+| **Reliability / S1** | A | → | Self-healing, circuit breakers active; SSO sessions persist to DB; tick loop freeze bug pending (Factorio) |
+| **Observability / S2** | A | → | SSE broadcaster extracted to module; /api/health, JSON logging, alerts pipeline active |
+| **Usability / UX** | A | → | Factorio FPM agent spinbox (1-8); deterministic factory building tools added |
+| **Dynamic Abilities** | A+ | ↑ | ML router, experiment auto-window wired, guardrails.evaluate_output wired, billing.record_usage wired |
+| **Module / Plugin Support** | A | → | ModuleHub, marketplace auth enforced, module snapshots, module registry (29 tables) |
+| **Data Processing + HITL** | S | → | 18 HF ingest sources, HITL inline actions, distributed tracing, IQ scoring |
+| **Performance** | A | → | Code-aware token estimation, model prefs from fleet.toml, ActionType enum (hot path) |
+| **Documentation** | B+ | ↓ | SESSION_HANDOFF 2 sessions stale (now fixed); AUDIT_TRACKER at v0.053 (now fixed); doc_freshness reports 19 stale refs |
+| **Overall** | **A** | → | Architecture/Security significantly improved. Dashboard decomp Phase 5 + 12 Factorio test failures are main gaps. |
 
 ---
 
@@ -63,13 +64,65 @@
 
 ### CRITICAL (P0) — Block release
 
-*None at v0.21.01.*
+*None at v0.900.00b.* [Previously listed items all resolved — see history below]
 
 ---
 
 ### HIGH (P1) — Fix before next milestone
 
+#### P1-04 — 12 Factorio test failures [NEW v0.900.00b]
+**File:** `tests/test_action_translator.py`, `tests/test_curriculum.py`
+**Detail:** `test_translate_direction_names` assertion failure; `test_curriculum::test_load_curriculum` returns None. These fail consistently in CI.
+**Fix:** Fix direction name mapping in action_translator; fix curriculum load path.
+
+#### P1-05 — Factorio tick loop freeze after phase advance [NEW v0.900.00b]
+**File:** `fleet/factorio/lua_mod/control.lua` (storage.agent_chars)
+**Detail:** Step counter stops after phase advance — `storage.agent_chars` references go stale. Adopt-existing-NPC fix committed but requires bridge server restart.
+**Fix:** Restart bridge. If issue persists, add explicit character re-lookup after phase transitions.
+
+---
+
+### MEDIUM (P2) — Fix within 2 milestones
+
+#### P2-10 — Dashboard Phase 5 pending (~1400 lines remain) [NEW v0.900.00b]
+**File:** `fleet/dashboard.py` (3360 lines, was 5680)
+**Detail:** Phases 1-4 complete. Remaining: monitoring, metering, ops, knowledge graph endpoints. App factory pattern not yet applied.
+**Fix:** Execute `docs/superpowers/plans/2026-03-31-dashboard-decomposition.md`.
+
+#### P2-11 — account_review.py uses raw sqlite3.connect() [NEW v0.900.00b]
+**File:** `fleet/skills/account_review.py:52`
+**Detail:** Connects directly to the launcher DB (`data_access.py` manages this DB). Different from fleet.db (which uses db.py) — intentional but bypasses connection pooling.
+**Fix:** Route through a proper DAL method or at minimum add WAL busy timeout.
+
+#### P2-12 — doc_freshness reports 19 stale refs [NEW v0.900.00b]
+**Detail:** `doc_freshness` skill finds 19 stale metric references across .md files. Many relate to old skill/test counts.
+**Fix:** Run `python fleet/skills/doc_freshness.py` and update identified files.
+
+---
+
+### LOW (P3) — Track, fix when passing
+
+#### P3-01 — `_call_local` timeout hardcoded to 120s [CARRIED v0.053.00b]
+**File:** `fleet/providers.py:326`
+**Detail:** Not configurable via fleet.toml. Long-running local calls may need adjustment.
+**Fix:** Read from `config.get("fleet", {}).get("local_timeout", 120)`.
+
+#### P3-08 — Full Factorio recipe dump not yet run [NEW v0.900.00b]
+**File:** `fleet/factorio/recipes.json` (only 27 starter recipes)
+**Detail:** `dump_recipes.lua` is ready but not yet executed in a running Factorio instance.
+**Fix:** Run Factorio, execute `dump_recipes.lua`, replace starter recipes.json with full game data.
+
+#### P3-09 — Factorio tech debt plan not executed [NEW v0.900.00b]
+**File:** `docs/superpowers/plans/2026-03-31-factorio-tech-debt.md`
+**Detail:** 7 tasks: bridge extraction, reward config, phase encoder, Lua refactor, GAE/checkpoints, dedup, tests.
+**Fix:** Execute plan in dedicated session.
+
+---
+
+### RESOLVED (Historical)
+
 #### P1-01 — Double budget DB query per inference call [DONE v0.21.04]
+**File:** `fleet/skills/_models.py:61,94`
 **File:** `fleet/skills/_models.py:61,94`
 **Detail:** `check_budget()` is called twice in `call_complex()` — once for enforcement check (line 61), once for cost pre-estimation (line 94). Each call hits `db.get_usage_summary()`. High-frequency skills (flashcard, rag_query) run this 2x per task.
 **Fix:** Cached result from first call, reused in second check. Single DB round-trip.
@@ -178,17 +231,20 @@
 
 ### 1. Separation of Concerns (SoC)
 
-**Current Grade: A**
+**Current Grade: A** (updated v0.900.00b)
 
 | Component | SoC Quality | Notes |
 |-----------|-------------|-------|
-| `fleet/providers.py` | ✓ Clean | Model routing only. No business logic. |
+| `fleet/providers.py` | ✓ Clean | Model routing only. Model prefs now from fleet.toml. |
 | `fleet/skills/_models.py` | ✓ Clean | Inference dispatch + budget. Imports clean. |
-| `fleet/db.py` | ✓ Clean | DAL only. No fleet logic. |
+| `fleet/db.py` | ✓ Clean | DAL only. Testable (init_db path param, FLEET_TEST_DB). |
 | `fleet/supervisor.py` | ✓ Good | Process lifecycle. Some config coupling. |
 | `fleet/hw_supervisor.py` | ✓ Good | GPU/thermal only. Well-bounded. |
-| `fleet/dashboard.py` | ⚠ Acceptable | 40+ endpoints in one file. Consider Blueprint split. |
-| `BigEd/launcher/launcher.py` | ⚠ God-object | 4,561 LOC. TECH_DEBT 4.3/4.4 unresolved. |
+| `fleet/dashboard.py` | ↑ Improved | 3360 LOC (was 5680). 10 blueprints extracted. Phase 5 pending. |
+| `fleet/dashboard_utils.py` | ✓ Clean | Shared helpers extracted. Eliminates duplication with process_control. |
+| `fleet/sse_blueprint.py` | ✓ Clean | SSE broadcaster separated from main dashboard. |
+| `fleet/alerts.py` | ✓ Clean | Alert monitor extracted as standalone module. |
+| `BigEd/launcher/launcher.py` | ⚠ God-object | Still large. TECH_DEBT 4.3/4.4 resolved but overall size remains. |
 | `BigEd/launcher/ui/settings.py` | ⚠ Large | 1,301 LOC. Split by tab is natural next step. |
 | `BigEd/launcher/ui/theme.py` | ✗ Missing | Theme constants duplicated across UI files. |
 
