@@ -158,7 +158,7 @@ class ProcessManagerApp:
     def __init__(self):
         self.root = tk.Tk()
         self.root.title("Factorio Process Manager")
-        self.root.geometry("420x400")
+        self.root.geometry("420x450")
         self.root.resizable(False, False)
         self.root.configure(bg="#1a1a2e")
 
@@ -210,6 +210,34 @@ class ProcessManagerApp:
                                      bg=bg, fg=red)
         self.orphan_label.pack(pady=2)
 
+        # Agent count control
+        agent_frame = tk.Frame(self.root, bg="#0f3460", padx=10, pady=6)
+        agent_frame.pack(fill="x", padx=10, pady=5)
+
+        tk.Label(agent_frame, text="Agents:", font=("Consolas", 11),
+                 bg="#0f3460", fg=fg).pack(side="left")
+
+        self._agent_count = tk.IntVar(value=self._load_agent_count())
+        self._agent_spin = tk.Spinbox(
+            agent_frame, from_=1, to=8, width=3,
+            textvariable=self._agent_count,
+            font=("Consolas", 12, "bold"), bg="#1a1a2e", fg=green,
+            buttonbackground=btn_bg, relief="flat", justify="center",
+            command=self._on_agent_count_changed,
+        )
+        self._agent_spin.pack(side="left", padx=(8, 5))
+
+        self._agent_apply_btn = tk.Button(
+            agent_frame, text="Apply & Restart", font=("Consolas", 9),
+            bg=btn_bg, fg=yellow, relief="flat", cursor="hand2",
+            command=self._on_apply_agents, state="disabled",
+        )
+        self._agent_apply_btn.pack(side="left", padx=5)
+
+        self._agent_status = tk.Label(agent_frame, text="", font=("Consolas", 9),
+                                       bg="#0f3460", fg=gray)
+        self._agent_status.pack(side="left", padx=5)
+
         # Buttons
         btn_frame = tk.Frame(self.root, bg=bg)
         btn_frame.pack(pady=10)
@@ -232,6 +260,58 @@ class ProcessManagerApp:
                                 bg="#0a0a1a", fg="#888", insertbackground=fg,
                                 relief="flat", state="disabled")
         self.log_text.pack(fill="x", padx=10, pady=(5, 10))
+
+    def _load_agent_count(self) -> int:
+        """Load num_agents from fleet.toml, default 1."""
+        try:
+            toml_path = FLEET_DIR / "fleet.toml"
+            if toml_path.exists():
+                text = toml_path.read_text()
+                for line in text.splitlines():
+                    stripped = line.strip()
+                    if stripped.startswith("num_agents"):
+                        val = stripped.split("=", 1)[1].split("#")[0].strip()
+                        return int(val)
+        except Exception:
+            pass
+        return 1
+
+    def _save_agent_count(self, count: int) -> bool:
+        """Update num_agents in fleet.toml."""
+        try:
+            toml_path = FLEET_DIR / "fleet.toml"
+            text = toml_path.read_text()
+            lines = text.splitlines()
+            for i, line in enumerate(lines):
+                if line.strip().startswith("num_agents"):
+                    lines[i] = f"num_agents = {count}  # standalone agent characters in same world (shared policy)"
+                    toml_path.write_text("\n".join(lines) + "\n")
+                    return True
+        except Exception:
+            pass
+        return False
+
+    def _on_agent_count_changed(self):
+        """Called when spinbox value changes."""
+        current = self._load_agent_count()
+        new_val = self._agent_count.get()
+        if new_val != current:
+            self._agent_apply_btn.configure(state="normal")
+            self._agent_status.configure(text=f"({current} → {new_val})", fg="#ffbb33")
+        else:
+            self._agent_apply_btn.configure(state="disabled")
+            self._agent_status.configure(text="")
+
+    def _on_apply_agents(self):
+        """Save new agent count and restart bridge."""
+        count = self._agent_count.get()
+        if self._save_agent_count(count):
+            self._agent_apply_btn.configure(state="disabled")
+            self._agent_status.configure(text=f"saved ({count})", fg="#00d26a")
+            self._log(f"Agent count → {count}, restarting bridge...")
+            self._run_in_thread(_restart_bridge, "Restart Bridge")
+        else:
+            self._agent_status.configure(text="save failed!", fg="#ff4444")
 
     def _log(self, msg):
         self.log_text.configure(state="normal")
