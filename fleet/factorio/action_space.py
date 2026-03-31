@@ -36,6 +36,9 @@ class ActionType(IntEnum):
     WAIT       = 6
     MINE       = 7
     INSERT     = 8  # Insert items from inventory into a nearby entity (furnace, machine)
+    PLACE_NEAR = 9  # High-level: find nearest resource and place entity on it
+    PACK       = 10  # Execute a multi-step action pack
+    STAMP      = 11  # Place a Factorio blueprint in one RCON call
 
 
 # ---------------------------------------------------------------------------
@@ -81,6 +84,23 @@ ENTITY_REGISTRY: dict[str, int] = {
     "pipe-to-ground":        22,
     "gun-turret":            23,
     "wall":                  24,
+    # Checkpoint 3 (blue science) — phase 5
+    "oil-refinery":          25,
+    "chemical-plant":        26,
+    "pumpjack":              27,
+    "storage-tank":          28,
+    # Checkpoint 4 (purple science) — phase 6
+    "electric-furnace":      29,
+    "rail":                  30,
+    "train-stop":            31,
+    # Checkpoint 5 (yellow science) — phase 7
+    "assembling-machine-3":  32,
+    "beacon":                33,
+    "speed-module":          34,
+    "productivity-module":   35,
+    # Checkpoint 6 (rocket) — phase 8
+    "rocket-silo":           36,
+    "centrifuge":            37,
 }
 
 _ENTITY_ID_TO_NAME: dict[int, str] = {v: k for k, v in ENTITY_REGISTRY.items()}
@@ -131,6 +151,39 @@ RECIPE_REGISTRY: dict[str, int] = {
     "stone":                 38,
     "iron-ore":              39,
     "copper-ore":            40,
+    # Checkpoint 3 (blue science) — phase 5
+    "chemical-science-pack": 41,
+    "sulfur":                42,
+    "plastic-bar":           43,
+    "sulfuric-acid":         44,
+    "battery":               45,
+    "engine-unit":           46,
+    "oil-refinery":          47,
+    "chemical-plant":        48,
+    "pumpjack":              49,
+    "storage-tank":          50,
+    # Checkpoint 4 (purple science) — phase 6
+    "production-science-pack": 51,
+    "electric-furnace":      52,
+    "rail":                  53,
+    "train-stop":            54,
+    "stone-brick":           55,
+    # Checkpoint 5 (yellow science) — phase 7
+    "utility-science-pack":  56,
+    "processing-unit":       57,
+    "low-density-structure": 58,
+    "assembling-machine-3":  59,
+    "beacon":                60,
+    "speed-module":          61,
+    "productivity-module":   62,
+    # Checkpoint 6 (rocket) — phase 8
+    "rocket-part":           63,
+    "rocket-control-unit":   64,
+    "rocket-fuel":           65,
+    "rocket-silo":           66,
+    "satellite":             67,
+    "space-science-pack":    68,
+    "centrifuge":            69,
 }
 
 _RECIPE_ID_TO_NAME: dict[int, str] = {v: k for k, v in RECIPE_REGISTRY.items()}
@@ -214,8 +267,25 @@ PHASE_ENTITIES: dict[int, set[str]] = {
         "underground-belt",
         "splitter",
     },
-    4: set(ENTITY_REGISTRY.keys()),  # all entities
 }
+PHASE_ENTITIES[4] = {
+    *PHASE_ENTITIES[3],
+    "assembling-machine-2", "medium-electric-pole", "pipe-to-ground",
+    "gun-turret", "wall",
+}
+PHASE_ENTITIES[5] = {
+    *PHASE_ENTITIES[4],
+    "oil-refinery", "chemical-plant", "pumpjack", "storage-tank",
+}
+PHASE_ENTITIES[6] = {
+    *PHASE_ENTITIES[5],
+    "electric-furnace", "rail", "train-stop",
+}
+PHASE_ENTITIES[7] = {
+    *PHASE_ENTITIES[6],
+    "assembling-machine-3", "beacon", "speed-module", "productivity-module",
+}
+PHASE_ENTITIES[8] = set(ENTITY_REGISTRY.keys())  # all entities
 
 PHASE_RECIPES: dict[int, set[str]] = {
     1: {
@@ -250,8 +320,29 @@ PHASE_RECIPES: dict[int, set[str]] = {
         "firearm-magazine", "gun-turret", "wall",
         "coal", "iron-ore", "copper-ore", "stone",
     },
-    4: set(RECIPE_REGISTRY.keys()),  # all recipes
 }
+PHASE_RECIPES[4] = {
+    *PHASE_RECIPES[3],
+    "assembling-machine-2", "medium-electric-pole", "pipe-to-ground",
+    "gun-turret", "wall",
+}
+PHASE_RECIPES[5] = {
+    *PHASE_RECIPES[4],
+    "chemical-science-pack", "sulfur", "plastic-bar", "sulfuric-acid",
+    "battery", "engine-unit", "oil-refinery", "chemical-plant",
+    "pumpjack", "storage-tank",
+}
+PHASE_RECIPES[6] = {
+    *PHASE_RECIPES[5],
+    "production-science-pack", "electric-furnace", "rail", "train-stop",
+    "stone-brick",
+}
+PHASE_RECIPES[7] = {
+    *PHASE_RECIPES[6],
+    "utility-science-pack", "processing-unit", "low-density-structure",
+    "assembling-machine-3", "beacon", "speed-module", "productivity-module",
+}
+PHASE_RECIPES[8] = set(RECIPE_REGISTRY.keys())  # all recipes
 
 
 # ---------------------------------------------------------------------------
@@ -284,15 +375,15 @@ class ActionSpace:
     Parameters
     ----------
     phase : int
-        Current curriculum phase (1–4).  Higher phases unlock more entities
+        Current curriculum phase (1–8).  Higher phases unlock more entities
         and recipes, expanding the action space.
     """
 
     def __init__(self, phase: int) -> None:
         self._phase = phase
         # Build sorted lists so indices are stable within a phase.
-        raw_entities = PHASE_ENTITIES.get(phase, PHASE_ENTITIES[4])
-        raw_recipes  = PHASE_RECIPES.get(phase, PHASE_RECIPES[4])
+        raw_entities = PHASE_ENTITIES.get(phase, PHASE_ENTITIES[8])
+        raw_recipes  = PHASE_RECIPES.get(phase, PHASE_RECIPES[8])
 
         # Sort for determinism; index 0 = "none", so lists are 1-based.
         self._entities: list[str] = sorted(raw_entities)
@@ -405,6 +496,10 @@ class ActionSpace:
             log.warning("decode_action: invalid action_type %d", encoded.action_type)
             action_name = "wait"
 
+        # PLACE_NEAR maps to the Lua "place_near_resource" action
+        if action_name == "place_near":
+            action_name = "place_near_resource"
+
         result: dict = {"action": action_name}
 
         # Position (undo +5 offset)
@@ -421,7 +516,7 @@ class ActionSpace:
         # Entity
         if encoded.entity_id > 0 and encoded.entity_id <= len(self._entities):
             entity_name = self._entities[encoded.entity_id - 1]
-            if action_name in ("place", "remove", "set_recipe"):
+            if action_name in ("place", "remove", "set_recipe", "place_near_resource"):
                 result["entity"] = entity_name
 
         # Recipe / item (INSERT reuses recipe_id to select inventory item)
@@ -431,6 +526,11 @@ class ActionSpace:
                 result["recipe"] = recipe_name
             elif action_name == "insert":
                 result["item"] = recipe_name  # recipe list doubles as item selector
+            elif action_name == "place_near_resource":
+                # Map recipe to resource type for place_near_resource
+                _ORE_MAP = {"iron-ore": "iron-ore", "copper-ore": "copper-ore",
+                            "coal": "coal", "stone": "stone"}
+                result["resource_type"] = _ORE_MAP.get(recipe_name, "iron-ore")
 
         # Technology
         if encoded.tech_id > 0:
@@ -478,7 +578,7 @@ class ActionSpace:
 
     def get_action_type_mask(self, inventory: dict, phase: int, lesson_index: int = 0) -> list[int]:
         """
-        Return a binary mask (length == len(ActionType) == 9) indicating
+        Return a binary mask (length == len(ActionType) == 12) indicating
         which action types are currently valid.
         """
         mask = [1] * len(ActionType)
@@ -495,17 +595,29 @@ class ActionSpace:
 
         # Lesson-aware action restrictions for Phase 1
         if phase == 1:
-            if lesson_index <= 2:
-                # Lessons 0-2: PLACE focused — disable CRAFT, RESEARCH, SET_RECIPE
-                # Agent has items, just needs to learn to PLACE and MOVE
+            if lesson_index <= 1:
+                # Lessons 0-1: PLACE only — disable CRAFT, RESEARCH, SET_RECIPE, INSERT
+                # No entities placed yet, so INSERT is wasted. Focus on placement.
                 mask[ActionType.CRAFT.value] = 0
                 mask[ActionType.RESEARCH.value] = 0
                 mask[ActionType.SET_RECIPE.value] = 0
+                mask[ActionType.INSERT.value] = 0
+            elif lesson_index <= 2:
+                # Lesson 2: PLACE drill — still no INSERT needed (drill needs fuel later)
+                mask[ActionType.CRAFT.value] = 0
+                mask[ActionType.RESEARCH.value] = 0
+                mask[ActionType.SET_RECIPE.value] = 0
+                mask[ActionType.INSERT.value] = 0
             elif lesson_index <= 4:
-                # Lessons 3-4: INSERT + PLACE focused — add INSERT, keep CRAFT off
+                # Lessons 3-4: INSERT + PLACE focused — teach feeding machines
+                mask[ActionType.CRAFT.value] = 0
                 mask[ActionType.RESEARCH.value] = 0
                 mask[ActionType.SET_RECIPE.value] = 0
             # Lessons 5+: everything except REMOVE
+
+        # PLACE_NEAR: same requirement as PLACE (need placeable entity in inventory)
+        if ActionType.PLACE_NEAR.value < len(mask):
+            mask[ActionType.PLACE_NEAR.value] = mask[ActionType.PLACE.value]
 
         # Ensure the always-valid actions are set (defensive)
         mask[ActionType.WAIT.value] = 1
