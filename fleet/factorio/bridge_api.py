@@ -178,6 +178,8 @@ def create_api(world_model, command_queue, brain=None, rcon=None, spatial_memory
 
     @app.route("/api/plan/queue", methods=["GET"])
     def plan_queue():
+        if _brain is None:
+            return jsonify({"error": "AgentBrain not initialized"}), 503
         with _brain._lock:
             current = None
             if _brain._plan:
@@ -207,6 +209,8 @@ def create_api(world_model, command_queue, brain=None, rcon=None, spatial_memory
 
     @app.route("/api/plan/history", methods=["GET"])
     def plan_history():
+        if _brain is None:
+            return jsonify({"error": "AgentBrain not initialized"}), 503
         with _brain._lock:
             history = list(_brain._plan_history)
         return jsonify({"history": history})

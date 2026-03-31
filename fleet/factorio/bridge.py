@@ -486,7 +486,7 @@ class FactorioBridge:
                 )
                 await self.rcon.command(resupply_lua)
             except Exception:
-                pass  # non-critical
+                log.warning("Resupply failed for agent %d", agent_id, exc_info=True)
 
         # 0a2. Spawn leash — keep agent near resources during early training
         #     Uses same phase-based radius as the per-action leash (line ~578)
@@ -504,7 +504,7 @@ class FactorioBridge:
                     log.info("Spawn leash: teleported agent %d from (%d,%d) back to origin (leash=%d)",
                              agent_id, int(px), int(py), leash_r)
                 except Exception:
-                    pass
+                    log.warning("Spawn leash teleport failed for agent %d", agent_id, exc_info=True)
 
         # 0b. Update per-agent spatial memory from current state
         agent_mem = self._agent_spatial.get(agent_id, self._spatial_memory)
