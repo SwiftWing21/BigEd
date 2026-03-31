@@ -487,6 +487,7 @@ class FactorioPolicy(nn.Module):
         features: torch.Tensor,
         action_type: torch.Tensor,
         world_grid: torch.Tensor | None = None,
+        action_mask: torch.Tensor | None = None,
     ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """
         Evaluate stored actions for PPO update.
@@ -497,6 +498,9 @@ class FactorioPolicy(nn.Module):
         features    : (B, feature_dim)
         action_type : (B,) integer action indices
         world_grid  : optional (B, C, H, W) — zoomed-out minimap
+        action_mask : optional (B, num_action_types) bool — True = allowed.
+                      Must match the mask used during act() for correct PPO
+                      importance-sampling ratios.
 
         Returns
         -------
@@ -506,6 +510,8 @@ class FactorioPolicy(nn.Module):
         """
         shared = self._shared_forward(grid, features, world_grid)
         action_logits = self.action_head(shared)
+        if action_mask is not None:
+            action_logits = action_logits.masked_fill(~action_mask, -1e8)
         dist = Categorical(logits=action_logits)
         log_prob = dist.log_prob(action_type)
         value = self.value_head(shared).squeeze(-1)

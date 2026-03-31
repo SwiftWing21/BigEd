@@ -610,6 +610,7 @@ class FactorioBridge:
                         value=saved["value"],
                         reward=cum_reward, done=False,
                         world_grid=saved.get("world_grid"),
+                        action_mask=saved.get("action_mask"),
                     ))
                 self._prev_state = state
                 self._tick_count += 1
@@ -730,6 +731,7 @@ class FactorioBridge:
                         log_prob=log_prob.item(), value=value.item(),
                         reward=fail_reward, done=False,
                         world_grid=world_grid,
+                        action_mask=mask,
                     ))
                     self._prev_state = state
                     self._tick_count += 1
@@ -787,6 +789,7 @@ class FactorioBridge:
                         log_prob=log_prob.item(), value=value.item(),
                         reward=stamp_reward, done=False,
                         world_grid=world_grid,
+                        action_mask=mask,
                     ))
                     self._prev_state = state
                     self._tick_count += 1
@@ -802,6 +805,7 @@ class FactorioBridge:
                         "action_type": action_type_val,
                         "log_prob": log_prob.item(), "value": value.item(),
                         "world_grid": world_grid,
+                        "action_mask": mask,
                     }
                     # Execute first primitive
                     first_action["agent_id"] = agent_id
@@ -934,6 +938,7 @@ class FactorioBridge:
             value=value.item(),
             reward=reward, done=done,
             world_grid=world_grid,
+            action_mask=mask,
         ))
         self._episode_mgr.record_step()
         self._prev_state = state

@@ -37,6 +37,7 @@ class Transition:
     reward: float
     done: bool
     world_grid: np.ndarray | None = None  # (C, H, W) float32 — zoomed-out minimap
+    action_mask: list | None = None       # bool list used during act() — needed for evaluate_action
 
 
 # ---------------------------------------------------------------------------
@@ -100,6 +101,15 @@ class TrajectoryBuffer:
             [t.done for t in self._data],
             dtype=torch.float32, device=device,
         )
+        # Action masks — needed for evaluate_action during PPO update
+        has_masks = all(t.action_mask is not None for t in self._data)
+        if has_masks:
+            action_masks = torch.tensor(
+                [t.action_mask for t in self._data],
+                dtype=torch.bool, device=device,
+            )
+        else:
+            action_masks = None
         return {
             "grids": grids,
             "world_grids": world_grids,
@@ -109,6 +119,7 @@ class TrajectoryBuffer:
             "values": values,
             "rewards": rewards,
             "dones": dones,
+            "action_masks": action_masks,
         }
 
 
@@ -245,6 +256,7 @@ class PPOTrainer:
         features = tensors["features"]
         actions = tensors["actions"]
         old_log_probs = tensors["old_log_probs"]
+        action_masks = tensors.get("action_masks")  # may be None if not stored
 
         N = len(buffer)
         total_policy_loss = 0.0
@@ -267,9 +279,12 @@ class PPOTrainer:
                 mb_old_log_probs = old_log_probs[idx]
                 mb_advantages = advantages[idx]
                 mb_returns = returns[idx]
+                mb_masks = action_masks[idx] if action_masks is not None else None
 
                 new_log_probs, new_values, entropy = self.policy.evaluate_action(
-                    mb_grids, mb_features, mb_actions, world_grid=mb_world_grids
+                    mb_grids, mb_features, mb_actions,
+                    world_grid=mb_world_grids,
+                    action_mask=mb_masks,
                 )
 
                 ratio = torch.exp(new_log_probs - mb_old_log_probs)

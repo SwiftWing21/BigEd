@@ -75,3 +75,30 @@ def test_policy_param_count():
     total = sum(p.numel() for p in policy.parameters())
     assert total < 2_000_000
     assert total > 100_000
+
+
+def test_evaluate_action_respects_mask():
+    """evaluate_action must produce same log_probs as act() for masked actions."""
+    policy = FactorioPolicy(
+        grid_channels=5, grid_size=64, feature_dim=69,
+        num_action_types=12, num_entities=8, num_recipes=10, num_techs=20,
+    )
+    grid = torch.randn(1, 5, 64, 64)
+    feat = torch.randn(1, 69)
+
+    # Mask: only WAIT(0) and MINE(1) allowed
+    mask = torch.zeros(1, 12, dtype=torch.bool)
+    mask[0, 0] = True  # WAIT
+    mask[0, 1] = True  # MINE
+
+    # Get action with mask
+    action_type, log_prob_act, _, _ = policy.act(grid, feat, mask)
+
+    # evaluate_action with same mask should give same log_prob
+    log_prob_eval, _, _ = policy.evaluate_action(
+        grid, feat, action_type, action_mask=mask,
+    )
+
+    assert torch.allclose(log_prob_act, log_prob_eval, atol=1e-5), (
+        f"act log_prob={log_prob_act.item():.6f} != evaluate log_prob={log_prob_eval.item():.6f}"
+    )
