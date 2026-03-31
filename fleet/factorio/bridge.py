@@ -19,6 +19,9 @@ from factorio.reward import _PACK_COMPLETE_BONUS, _PACK_ABORT_PENALTY
 
 log = logging.getLogger("biged.factorio.bridge")
 
+# Phase-based leash radius (tiles from origin) — shared by spawn leash + action clamping
+_PHASE_LEASH_RADIUS = {1: 30, 2: 60, 3: 200, 4: 500, 5: 500, 6: 500, 7: 500, 8: 500}
+
 
 class FactorioBridge:
     """Main bridge between BigEd fleet and Factorio headless server."""
@@ -140,6 +143,8 @@ class FactorioBridge:
             self._insert_count: int = 0
             self._production_snapshot: dict = {}
             self._last_checkpoint_save: int = 0
+            self._pending_demo_actions: list = []
+            self._pending_demo_cmd_id = None
 
     async def connect_with_retry(self) -> bool:
         """Connect to RCON with exponential backoff."""
@@ -413,10 +418,6 @@ class FactorioBridge:
         import torch
 
         # 0e. Drain human command queue (plans, demonstrations) — once per tick
-        if not hasattr(self, '_pending_demo_actions'):
-            self._pending_demo_actions = []
-            self._pending_demo_cmd_id = None
-
         if not self._pending_demo_actions and not self.command_queue.empty():
             try:
                 cmd = self.command_queue.get_nowait()
@@ -508,8 +509,7 @@ class FactorioBridge:
 
         # 0a2. Spawn leash — keep agent near resources during early training
         #     Uses same phase-based radius as the per-action leash (line ~578)
-        _LEASH_RADIUS = {1: 30, 2: 60, 3: 200, 4: 500}
-        leash_r = _LEASH_RADIUS.get(self.config.current_phase, 200)
+        leash_r = _PHASE_LEASH_RADIUS.get(self.config.current_phase, 200)
         pos = state.player_position
         if pos:
             px = pos.get("x", 0) if isinstance(pos, dict) else getattr(pos, "x", 0)
@@ -608,7 +608,7 @@ class FactorioBridge:
 
         # If pack is in-flight, execute next step (skip policy)
         if _executor.is_active:
-            prev_result = getattr(self, '_pack_prev_results', {}).get(agent_id, {"success": True})
+            prev_result = self._pack_prev_results.get(agent_id, {"success": True})
             next_action = _executor.next_step(prev_result)
             if next_action is None:
                 # Pack finished — compute cumulative reward and store PPO transition
@@ -729,8 +729,7 @@ class FactorioBridge:
 
             # Leash: FAIL moves outside radius instead of silently clamping.
             # Clamping erased the failure signal — agent never learned boundaries.
-            _LEASH = {1: 30, 2: 60, 3: 200, 4: 500}
-            max_r = _LEASH.get(self.config.current_phase, 200)
+            max_r = _PHASE_LEASH_RADIUS.get(self.config.current_phase, 200)
             if abs(abs_x) > max_r or abs(abs_y) > max_r:
                 if action_dict.get("action") == "move":
                     # Reject the move — give the policy a clear failure signal
