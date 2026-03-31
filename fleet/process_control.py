@@ -3,7 +3,6 @@ import json
 import logging
 import os
 import re
-import sqlite3
 import sys
 import signal
 import time
@@ -44,11 +43,8 @@ def _require_role(role):
 # ── DB helpers (duplicated from dashboard — trivial, avoids circular import) ─
 
 def _get_conn():
-    conn = sqlite3.connect(DB_PATH, check_same_thread=False, timeout=10)
-    conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA journal_mode=WAL")
-    conn.execute("PRAGMA busy_timeout=10000")
-    return conn
+    import db
+    return db.get_conn()
 
 
 def query(sql, params=()):
