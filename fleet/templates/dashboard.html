@@ -3280,13 +3280,41 @@ function renderNeuralFrame() {
     ctx.fill();
   }
 
+  // ── MODEL PULSE INDICATOR: glowing ring on model lanes during active inference ──
+  var activeModels = window._neuralActiveModels || {};
+  if (Object.keys(activeModels).length > 0) {
+    var pulseClock = (Date.now() / 600) % (Math.PI * 2);
+    var pulseAlpha = 0.35 + Math.sin(pulseClock) * 0.25;
+    for (var ai = 0; ai < maxLanes; ai++) {
+      var aLane = lanes[ai];
+      if (aLane.kind !== 'model') continue;
+      var modelKey = aLane.agent;
+      if (!activeModels[modelKey]) continue;
+      var mly = aLane._y + aLane._laneH / 2;
+      var ringX = barStart + barW - 8;
+      ctx.globalAlpha = pulseAlpha;
+      ctx.strokeStyle = '#a78bfa';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(ringX, mly, 5, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.globalAlpha = pulseAlpha * 0.4;
+      ctx.fillStyle = '#a78bfa';
+      ctx.beginPath();
+      ctx.arc(ringX, mly, 5, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.globalAlpha = 1;
+    }
+  }
+
   // ── ANIMATED PULSES ─────────────────────────────────────────────
   _neuralPulses.forEach(function(p) {
     var li = laneMap[p.agent];
     if (li === undefined) return;
     var lane = lanes[li];
     var py = lane._y + lane._laneH / 2;
-    var px = barStart + p.x * barW;
+    // Clamp px so pulses never render outside the bar area
+    var px = barStart + Math.max(0, Math.min(1, p.x)) * barW;
     var col = statusColor[p.status.toLowerCase()] || statusColor.done;
 
     // Glow
@@ -6203,18 +6231,29 @@ function handleSSE(msg) {
           }
         }
         /* ── Real-time neural pulses from task completions ── */
-        if (data.recent && data.recent.length > 0 && window._neuralPulses) {
+        if (data.recent && data.recent.length > 0 && window._neuralPulses !== undefined) {
           data.recent.forEach(function(t) {
             _neuralPulses.push({
               agent: t.agent, skill: t.skill, status: t.status,
-              x: -0.05, alpha: 0.7 + Math.random() * 0.3,
+              x: 0.0,  // start at left edge of bar area (not negative — prevents off-canvas render)
+              alpha: 0.7 + Math.random() * 0.3,
               speed: 0.003 + Math.random() * 0.003, size: 4 + Math.random() * 3
             });
           });
           // Cap pulse count to prevent memory bloat
           if (_neuralPulses.length > 80) _neuralPulses.splice(0, _neuralPulses.length - 60);
-          // Refresh lane bars with latest data
-          loadActivityChart();
+          // Kick animation loop if not running; do NOT re-fetch lane data on every SSE tick
+          if (!_neuralAnim && _neuralData) {
+            _neuralAnim = requestAnimationFrame(renderNeuralFrame);
+          }
+        }
+        /* ── Model pulse: highlight model lane when inference is active ── */
+        if (data.agents && window._neuralPulses !== undefined && window._neuralData) {
+          var runningModels = {};
+          (data.agents || []).forEach(function(a) {
+            if (a.status === 'BUSY' && a.model) runningModels[a.model] = true;
+          });
+          window._neuralActiveModels = runningModels;
         }
         /* ── System load ── */
         if (data.system) {
