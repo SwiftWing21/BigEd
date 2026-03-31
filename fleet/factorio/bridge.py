@@ -1068,18 +1068,21 @@ class FactorioBridge:
 
         # Remove crash-site wreckage (respawns on every new save)
         try:
-            await self.rcon.command(
-                '/c for _, e in pairs(game.surfaces[1].find_entities_filtered'
-                '{name={"crash-site-spaceship",'
-                '"crash-site-spaceship-wreck-small-1","crash-site-spaceship-wreck-small-2",'
-                '"crash-site-spaceship-wreck-small-3","crash-site-spaceship-wreck-small-4",'
-                '"crash-site-spaceship-wreck-small-5","crash-site-spaceship-wreck-small-6",'
-                '"crash-site-spaceship-wreck-big-1","crash-site-spaceship-wreck-big-2",'
-                '"crash-site-chest-1","crash-site-chest-2"}}) do e.destroy() end'
+            result = await self.rcon.command(
+                '/c local s = game.surfaces[1]; local count = 0; '
+                'for _, e in pairs(s.find_entities_filtered{area={{-100,-100},{100,100}}}) do '
+                '  if e.name:find("crash") or e.name:find("wreck") '
+                '     or e.name == "big-sand-rock" or e.name == "big-rock" or e.name == "huge-rock" '
+                '     or e.name:find("dead%-tree") or e.name:find("dead%-grey") '
+                '     or e.name:find("dry%-tree") or e.name:find("tree%-") then '
+                '    e.destroy(); count = count + 1 '
+                '  end '
+                'end; '
+                'rcon.print(count)'
             )
-            log.info("Crash-site wreckage cleared")
+            log.info("Cleared %s obstacles (crash debris, rocks, trees)", result.strip() or "0")
         except Exception:
-            log.warning("Failed to clear crash-site wreckage", exc_info=True)
+            log.warning("Failed to clear obstacles", exc_info=True)
 
         # Enable creative/sandbox mode — research all, cheat mode, fast crafting
         try:
