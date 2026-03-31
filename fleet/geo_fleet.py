@@ -89,6 +89,13 @@ def _ensure_schema():
 
 # ── Config ───────────────────────────────────────────────────────────────────
 
+def _get_federation_token() -> str:
+    """Get the federation shared secret from fleet.toml."""
+    from config import load_config
+    cfg = load_config()
+    return cfg.get("federation", {}).get("shared_secret", "")
+
+
 def _load_geo_config() -> dict:
     """Load [geo] section from fleet.toml."""
     try:
@@ -302,11 +309,15 @@ def route_to_region(task: dict, preferred_region: str) -> dict:
 
     try:
         import urllib.request
+        token = _get_federation_token()
+        headers = {"Content-Type": "application/json"}
+        if token:
+            headers["Authorization"] = f"Bearer {token}"
         req = urllib.request.Request(
             f"{endpoint}/api/trigger",
             data=body,
             method="POST",
-            headers={"Content-Type": "application/json"},
+            headers=headers,
         )
         resp = urllib.request.urlopen(req, timeout=15)
         result = json.loads(resp.read())
@@ -432,11 +443,15 @@ def apply_auto_scale(region: str, target_agents: int) -> dict:
     body = json.dumps({"target_agents": clamped}).encode()
     try:
         import urllib.request
+        token = _get_federation_token()
+        headers = {"Content-Type": "application/json"}
+        if token:
+            headers["Authorization"] = f"Bearer {token}"
         req = urllib.request.Request(
             f"{endpoint}/api/fleet/scale",
             data=body,
             method="POST",
-            headers={"Content-Type": "application/json"},
+            headers=headers,
         )
         urllib.request.urlopen(req, timeout=15)
     except Exception as exc:
@@ -702,12 +717,16 @@ def sync_skills_to_cdn(region: str) -> dict:
         for cdn_url in cdn_urls:
             try:
                 import urllib.request
+                token = _get_federation_token()
                 upload_url = f"{cdn_url.rstrip('/')}/upload/skills/{skill_name}"
+                headers = {"Content-Type": "application/octet-stream"}
+                if token:
+                    headers["Authorization"] = f"Bearer {token}"
                 req = urllib.request.Request(
                     upload_url,
                     data=content,
                     method="PUT",
-                    headers={"Content-Type": "application/octet-stream"},
+                    headers=headers,
                 )
                 urllib.request.urlopen(req, timeout=30)
                 synced += 1
