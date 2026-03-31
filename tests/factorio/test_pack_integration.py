@@ -122,7 +122,7 @@ def test_reward_pack_signals():
 def test_state_encoder_pack_progress():
     """Verify state encoder includes pack_progress in features."""
     from factorio.state_encoder import StateEncoder, _BASE_FEATURE_DIM
-    assert _BASE_FEATURE_DIM == 69
+    assert _BASE_FEATURE_DIM == 73
 
     enc = StateEncoder(phase=1, grid_size=64)
 
@@ -134,7 +134,7 @@ def test_state_encoder_pack_progress():
     )
 
     grid, world, features = enc.encode(state, None, pack_progress=0.75)
-    assert features[68] == pytest.approx(0.75)
+    assert features[72] == pytest.approx(0.75)
 
 
 def test_curriculum_checkpoints():

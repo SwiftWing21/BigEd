@@ -106,3 +106,33 @@ def test_ore_proximity_bonus_lesson2():
                          lesson_index=2, near_ore=True)
 
     assert r_near > r_base, "Near-ore bonus should increase reward in lesson 2"
+
+
+# -------------------------------------------------------------------
+# Configurable reward constants (Task 2)
+# -------------------------------------------------------------------
+
+def test_reward_constants_from_config():
+    """RewardComputer reads constants from config when provided."""
+    rc = RewardComputer(phase=1, reward_config={
+        "time_penalty": -0.05,
+        "lesson_pass_bonus": 5.0,
+    })
+    assert rc._time_penalty == -0.05
+    assert rc._lesson_pass_bonus == 5.0
+
+
+def test_reward_defaults_without_config():
+    """RewardComputer uses hardcoded defaults when no config provided."""
+    rc = RewardComputer(phase=1)
+    assert rc._time_penalty == -0.001
+    assert rc._lesson_pass_bonus == 2.0
+    assert rc._failed_action_penalty == -0.02
+    assert rc._successful_action_bonus == 0.05
+
+
+def test_reward_partial_config():
+    """Partial config overrides only specified keys."""
+    rc = RewardComputer(phase=1, reward_config={"time_penalty": -0.1})
+    assert rc._time_penalty == -0.1
+    assert rc._lesson_pass_bonus == 2.0  # uses default

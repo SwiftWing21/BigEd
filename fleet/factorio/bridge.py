@@ -69,6 +69,9 @@ class FactorioBridge:
             # Per-agent spatial memory + reward — prevents convergence to same spot
             num_agents = getattr(config, 'num_agents', 1)
             from factorio.economic_scorer import EconomicScorer
+            from config import load_config
+            _fleet_cfg = load_config()
+            _reward_cfg = _fleet_cfg.get("factorio", {}).get("reward", {})
             self._economic_scorer = EconomicScorer()
             self._agent_spatial: dict[int, SpatialMemory] = {}
             self._agent_reward: dict[int, RewardComputer] = {}
@@ -79,6 +82,7 @@ class FactorioBridge:
                     phase=config.current_phase,
                     spatial_memory=self._agent_spatial[aid],
                     economic_scorer=self._economic_scorer,
+                    reward_config=_reward_cfg,
                 )
             # Shared encoder (spatial memory passed per-call) and policy
             self._spatial_memory = self._agent_spatial.get(1, SpatialMemory())  # compat
@@ -101,6 +105,7 @@ class FactorioBridge:
                 phase=config.current_phase,
                 spatial_memory=self._spatial_memory,
                 economic_scorer=self._economic_scorer,
+                reward_config=_reward_cfg,
             ))  # compat fallback
             self._trainer = PPOTrainer(
                 self._policy, lr=config.ml_learning_rate,

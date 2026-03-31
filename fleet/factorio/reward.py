@@ -84,7 +84,8 @@ class RewardComputer:
     Phase 2+: adds entity placement bonus and production delta bonus.
     """
 
-    def __init__(self, phase: int = 1, spatial_memory=None, economic_scorer=None) -> None:
+    def __init__(self, phase: int = 1, spatial_memory=None, economic_scorer=None,
+                 reward_config: dict | None = None) -> None:
         self._phase = phase
         self._stats = RunningStats()
         # Track entity unit_numbers seen to count new placements
@@ -94,6 +95,31 @@ class RewardComputer:
         self._prev_produced: dict[str, int] = {}
         self._prev_inventory_value: float = 0.0
         self._consecutive_moves: int = 0
+
+        # Reward constants — configurable via fleet.toml [factorio.reward]
+        cfg = reward_config or {}
+        self._time_penalty = cfg.get("time_penalty", _TIME_PENALTY)
+        self._failed_action_penalty = cfg.get("failed_action_penalty", _FAILED_ACTION_PENALTY)
+        self._successful_action_bonus = cfg.get("successful_action_bonus", _SUCCESSFUL_ACTION_BONUS)
+        self._lesson_pass_bonus = cfg.get("lesson_pass_bonus", _LESSON_PASS_BONUS)
+        self._phase_complete_bonus = cfg.get("phase_complete_bonus", _PHASE_COMPLETE_BONUS)
+        self._new_item_bonus = cfg.get("new_item_bonus", _NEW_ITEM_BONUS)
+        self._research_progress_scale = cfg.get("research_progress_scale", _RESEARCH_PROGRESS_SCALE)
+        self._new_entity_bonus = cfg.get("new_entity_bonus", _NEW_ENTITY_BONUS)
+        self._production_delta_scale = cfg.get("production_delta_scale", _PRODUCTION_DELTA_SCALE)
+        self._production_delta_cap = cfg.get("production_delta_cap", _PRODUCTION_DELTA_CAP)
+        self._wander_penalty_scale = cfg.get("wander_penalty_scale", _WANDER_PENALTY_SCALE)
+        self._wander_distance_threshold = cfg.get("wander_distance_threshold", _WANDER_DISTANCE_THRESHOLD)
+        self._near_resource_bonus = cfg.get("near_resource_bonus", _NEAR_RESOURCE_BONUS)
+        self._economic_scale = cfg.get("economic_scale", _ECONOMIC_SCALE)
+        self._economic_inventory_scale = cfg.get("economic_inventory_scale", _ECONOMIC_INVENTORY_SCALE)
+        self._consecutive_move_penalty = cfg.get("consecutive_move_penalty", _CONSECUTIVE_MOVE_PENALTY)
+        self._cluster_penalty_scale = cfg.get("cluster_penalty_scale", _CLUSTER_PENALTY_SCALE)
+        self._cluster_distance_threshold = cfg.get("cluster_distance_threshold", _CLUSTER_DISTANCE_THRESHOLD)
+        self._pack_complete_bonus = cfg.get("pack_complete_bonus", _PACK_COMPLETE_BONUS)
+        self._stamp_complete_bonus = cfg.get("stamp_complete_bonus", _STAMP_COMPLETE_BONUS)
+        self._pack_abort_penalty = cfg.get("pack_abort_penalty", _PACK_ABORT_PENALTY)
+        self._ore_proximity_bonus = cfg.get("ore_proximity_bonus", _ORE_PROXIMITY_BONUS)
 
     def set_phase(self, phase: int) -> None:
         self._phase = phase
@@ -149,7 +175,7 @@ class RewardComputer:
             )
         except Exception:
             log.warning("RewardComputer.compute failed; returning time penalty", exc_info=True)
-            reward = _TIME_PENALTY
+            reward = self._time_penalty
 
         self._stats.update(reward)
         return float(reward)
@@ -176,13 +202,13 @@ class RewardComputer:
         r = 0.0
 
         # Always-on signals
-        r += _TIME_PENALTY
+        r += self._time_penalty
 
         # Consecutive-move penalty — stop aimless walking
         if action_type == ActionType.MOVE.value:
             self._consecutive_moves += 1
             if self._consecutive_moves > 2:
-                r += _CONSECUTIVE_MOVE_PENALTY * (self._consecutive_moves - 2)
+                r += self._consecutive_move_penalty * (self._consecutive_moves - 2)
         else:
             self._consecutive_moves = 0
 
@@ -190,25 +216,25 @@ class RewardComputer:
         r += self._clustering_penalty(curr, other_agent_positions)
 
         if not action_success:
-            r += _FAILED_ACTION_PENALTY
+            r += self._failed_action_penalty
         elif action_type != ActionType.MOVE.value:
-            r += _SUCCESSFUL_ACTION_BONUS  # reward successful non-MOVE actions only
+            r += self._successful_action_bonus  # reward successful non-MOVE actions only
 
         if lesson_passed:
-            r += _LESSON_PASS_BONUS
+            r += self._lesson_pass_bonus
 
         if phase_complete:
-            r += _PHASE_COMPLETE_BONUS
+            r += self._phase_complete_bonus
 
         # Exploration: new item types in inventory
         prev_items = set(prev.inventory.keys())
         curr_items = set(curr.inventory.keys())
         new_items = curr_items - prev_items
-        r += len(new_items) * _NEW_ITEM_BONUS
+        r += len(new_items) * self._new_item_bonus
 
         # Research progress delta
         research_delta = max(0.0, curr.research_progress - prev.research_progress)
-        r += research_delta * _RESEARCH_PROGRESS_SCALE
+        r += research_delta * self._research_progress_scale
 
         # Distance-from-resources penalty — discourages wandering when ore exists
         r += self._distance_reward(curr)
@@ -223,15 +249,15 @@ class RewardComputer:
         # Pack / stamp completion bonuses
         if pack_completed:
             if action_type == ActionType.STAMP.value:
-                r += _STAMP_COMPLETE_BONUS
+                r += self._stamp_complete_bonus
             else:
-                r += _PACK_COMPLETE_BONUS
+                r += self._pack_complete_bonus
         if pack_aborted:
-            r += _PACK_ABORT_PENALTY
+            r += self._pack_abort_penalty
 
         # Ore proximity bonus — lesson 2 only, guides agent toward ore for drill placement
         if lesson_index == 2 and near_ore:
-            r += _ORE_PROXIMITY_BONUS
+            r += self._ore_proximity_bonus
 
         return r
 
@@ -247,10 +273,10 @@ class RewardComputer:
         penalty = 0.0
         for ox, oy in other_positions:
             dist = math.sqrt((ox - px) ** 2 + (oy - py) ** 2)
-            if dist < _CLUSTER_DISTANCE_THRESHOLD:
+            if dist < self._cluster_distance_threshold:
                 # Stronger penalty the closer they are
-                closeness = 1.0 - (dist / _CLUSTER_DISTANCE_THRESHOLD)
-                penalty += _CLUSTER_PENALTY_SCALE * closeness
+                closeness = 1.0 - (dist / self._cluster_distance_threshold)
+                penalty += self._cluster_penalty_scale * closeness
         return penalty
 
     def _distance_reward(self, curr: GameState) -> float:
@@ -297,12 +323,12 @@ class RewardComputer:
             return 0.0  # nothing remembered — no penalty
 
         if min_useful_dist <= 10:
-            return _NEAR_RESOURCE_BONUS
+            return self._near_resource_bonus
 
-        if min_useful_dist > _WANDER_DISTANCE_THRESHOLD:
+        if min_useful_dist > self._wander_distance_threshold:
             # Linear ramp: full penalty at 30 tiles excess (was 100)
-            excess = min(min_useful_dist - _WANDER_DISTANCE_THRESHOLD, 30)
-            return _WANDER_PENALTY_SCALE * (excess / 30.0)
+            excess = min(min_useful_dist - self._wander_distance_threshold, 30)
+            return self._wander_penalty_scale * (excess / 30.0)
 
         return 0.0
 
@@ -324,14 +350,14 @@ class RewardComputer:
                 delta = self._economic_scorer.score_delta(
                     self._prev_produced, curr_produced
                 )
-                r += delta * _ECONOMIC_SCALE
+                r += delta * self._economic_scale
             if curr_produced:
                 self._prev_produced = dict(curr_produced)
 
         # Inventory value increase (small bonus — items in hand are useful)
         curr_inv_value = self._economic_scorer.score_inventory_value(curr.inventory)
         inv_delta = max(0.0, curr_inv_value - self._prev_inventory_value)
-        r += inv_delta * _ECONOMIC_INVENTORY_SCALE
+        r += inv_delta * self._economic_inventory_scale
         self._prev_inventory_value = curr_inv_value
 
         return r
@@ -343,7 +369,7 @@ class RewardComputer:
             uid = entity.unit_number
             if uid and uid not in self._seen_entity_ids:
                 self._seen_entity_ids.add(uid)
-                bonus += _NEW_ENTITY_BONUS
+                bonus += self._new_entity_bonus
         return bonus
 
     def _production_delta_bonus(self, prev: GameState, curr: GameState) -> float:
@@ -354,5 +380,5 @@ class RewardComputer:
         for item, count in curr_inv.items():
             prev_count = prev_inv.get(item, 0)
             delta += max(0, count - prev_count)
-        delta = min(delta, _PRODUCTION_DELTA_CAP)
-        return delta * _PRODUCTION_DELTA_SCALE
+        delta = min(delta, self._production_delta_cap)
+        return delta * self._production_delta_scale

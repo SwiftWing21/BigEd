@@ -869,6 +869,30 @@ ml_tick_delay_ms = 0  # 0 = max throughput (~30-50 actions/sec), >0 = ms between
 num_agents = 1  # standalone agent characters in same world (shared policy)
 ollama_model = "qwen3:8b"  # GPU model for teacher — better plan quality
 
+[factorio.reward]
+time_penalty = -0.001
+failed_action_penalty = -0.02
+successful_action_bonus = 0.05
+lesson_pass_bonus = 2.0
+phase_complete_bonus = 10.0
+new_item_bonus = 0.1
+research_progress_scale = 0.2
+new_entity_bonus = 0.5
+production_delta_scale = 0.05
+production_delta_cap = 5.0
+wander_penalty_scale = -0.02
+wander_distance_threshold = 10
+near_resource_bonus = 0.003
+economic_scale = 0.05
+economic_inventory_scale = 0.005
+consecutive_move_penalty = -0.01
+cluster_penalty_scale = -0.01
+cluster_distance_threshold = 8.0
+pack_complete_bonus = 1.0
+stamp_complete_bonus = 2.0
+pack_abort_penalty = -0.5
+ore_proximity_bonus = 0.1
+
 [factorio.experiments]
 budget_minutes = 10
 max_experiments = 0
