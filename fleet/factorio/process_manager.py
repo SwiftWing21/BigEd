@@ -235,7 +235,7 @@ class ProcessManagerApp:
         self._agent_apply_btn.pack(side="left", padx=5)
 
         self._agent_status = tk.Label(agent_frame, text="", font=("Consolas", 9),
-                                       bg="#0f3460", fg=gray)
+                                       bg="#0f3460", fg="#666666")
         self._agent_status.pack(side="left", padx=5)
 
         # Buttons
