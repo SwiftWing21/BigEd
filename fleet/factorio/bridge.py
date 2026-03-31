@@ -55,35 +55,49 @@ class FactorioBridge:
         if self.config.mode == "ml":
             from factorio.state_encoder import StateEncoder
             from factorio.ml_policy import FactorioPolicy
-            from factorio.action_space import ActionSpace
+            from factorio.action_space import ActionSpace, ActionType
             from factorio.reward import RewardComputer
             from factorio.trainer import PPOTrainer, TrajectoryBuffer
             from factorio.episode_manager import EpisodeManager
             from factorio.curriculum_manager import CurriculumManager
             from factorio.spatial_memory import SpatialMemory
 
-            self._spatial_memory = SpatialMemory()
+            # Per-agent spatial memory + reward — prevents convergence to same spot
+            num_agents = getattr(config, 'num_agents', 1)
+            from factorio.economic_scorer import EconomicScorer
+            self._economic_scorer = EconomicScorer()
+            self._agent_spatial: dict[int, SpatialMemory] = {}
+            self._agent_reward: dict[int, RewardComputer] = {}
+            self._agent_positions: dict[int, tuple[float, float]] = {}
+            for aid in range(1, num_agents + 1):
+                self._agent_spatial[aid] = SpatialMemory()
+                self._agent_reward[aid] = RewardComputer(
+                    phase=config.current_phase,
+                    spatial_memory=self._agent_spatial[aid],
+                    economic_scorer=self._economic_scorer,
+                )
+            # Shared encoder (spatial memory passed per-call) and policy
+            self._spatial_memory = self._agent_spatial.get(1, SpatialMemory())  # compat
             self._encoder = StateEncoder(
                 phase=config.current_phase,
                 spatial_memory=self._spatial_memory,
+                num_agents=num_agents,
             )
             self._action_space = ActionSpace(phase=config.current_phase)
             self._policy = FactorioPolicy(
                 grid_channels=5, grid_size=64,
                 feature_dim=self._encoder.feature_dim,
-                num_action_types=9,
+                num_action_types=len(ActionType),  # 10 with PLACE_NEAR
                 num_entities=self._action_space.num_entity_types,
                 num_recipes=self._action_space.num_recipe_types,
                 num_techs=self._action_space.num_tech_types,
                 world_grid_channels=self._encoder.world_grid_channels,
             )
-            from factorio.economic_scorer import EconomicScorer
-            self._economic_scorer = EconomicScorer()
-            self._reward = RewardComputer(
+            self._reward = self._agent_reward.get(1, RewardComputer(
                 phase=config.current_phase,
                 spatial_memory=self._spatial_memory,
                 economic_scorer=self._economic_scorer,
-            )
+            ))  # compat fallback
             self._trainer = PPOTrainer(
                 self._policy, lr=config.ml_learning_rate,
                 gamma=config.ml_gamma, gae_lambda=config.ml_gae_lambda,
@@ -105,6 +119,19 @@ class FactorioBridge:
             self._ml_step_count = 0
             self._last_ppo_stats: dict = {}
             self._last_reward: float = 0.0
+
+            from factorio.pack_registry import PackRegistry
+            from factorio.pack_executor import PackExecutor
+
+            self._pack_registry = PackRegistry()
+            packs_dir = Path(__file__).parent / "packs"
+            self._pack_registry.load_packs(packs_dir / "hardcoded")
+            self._pack_registry.load_stamps(packs_dir / "blueprints")
+            self._pack_registry.load_packs(packs_dir / "learned")
+            log.info("PackRegistry loaded: %d items", len(self._pack_registry._items))
+
+            self._pack_executors: dict[int, PackExecutor] = {}
+            self._pack_pending_transition: dict[int, dict] = {}
 
     async def connect_with_retry(self) -> bool:
         """Connect to RCON with exponential backoff."""
@@ -362,6 +389,14 @@ class FactorioBridge:
             encoded.dy = _sample("dy_logits")
             encoded.recipe_id = _sample("recipe_logits")  # item selector
             encoded.count = _sample("count_logits") + 1
+        elif action_type == ActionType.PLACE_NEAR:
+            # Reuse PLACE entity selection; recipe selects resource type
+            encoded.entity_id = _sample("entity_logits")
+            encoded.recipe_id = _sample("recipe_logits")
+        elif action_type == ActionType.PACK or action_type == ActionType.STAMP:
+            encoded.entity_id = _sample("pack_logits")   # reuse entity_id for pack_id
+            encoded.dx = _sample("offset_dx_logits")
+            encoded.dy = _sample("offset_dy_logits")
 
         return encoded
 
@@ -447,26 +482,37 @@ class FactorioBridge:
                 pass  # non-critical
 
         # 0a2. Spawn leash — keep agent near resources during early training
-        #     Phase 1 ore patches are within ~100 tiles of origin
+        #     Uses same phase-based radius as the per-action leash (line ~578)
+        _LEASH_RADIUS = {1: 30, 2: 60, 3: 200, 4: 500}
+        leash_r = _LEASH_RADIUS.get(self.config.current_phase, 200)
         pos = state.player_position
         if pos:
             px = pos.get("x", 0) if isinstance(pos, dict) else getattr(pos, "x", 0)
             py = pos.get("y", 0) if isinstance(pos, dict) else getattr(pos, "y", 0)
-            if abs(px) > 200 or abs(py) > 200:
+            if abs(px) > leash_r or abs(py) > leash_r:
                 try:
-                    await self.rcon.remote_call("exec_cmd",
-                        '{"action":"move","position":{"x":0,"y":0}}')
-                    log.info("Spawn leash: teleported agent from (%d,%d) back to origin",
-                             int(px), int(py))
+                    cmd = json.dumps({"action": "move", "position": {"x": 0, "y": 0},
+                                      "agent_id": agent_id})
+                    await self.rcon.remote_call("exec_cmd", cmd)
+                    log.info("Spawn leash: teleported agent %d from (%d,%d) back to origin (leash=%d)",
+                             agent_id, int(px), int(py), leash_r)
                 except Exception:
                     pass
 
-        # 0b. Update spatial memory from current state
-        self._spatial_memory.update_from_state(state, state.tick)
-        # Push player position for dashboard spatial map
+        # 0b. Update per-agent spatial memory from current state
+        agent_mem = self._agent_spatial.get(agent_id, self._spatial_memory)
+        agent_mem.update_from_state(state, state.tick)
+        # Track agent position for proximity awareness
         px = state.player_position.get("x", 0.0) if isinstance(state.player_position, dict) else 0.0
         py = state.player_position.get("y", 0.0) if isinstance(state.player_position, dict) else 0.0
+        self._agent_positions[agent_id] = (px, py)
         update_player_position(px, py)
+
+        # Pack executor for this agent
+        if agent_id not in self._pack_executors:
+            from factorio.pack_executor import PackExecutor
+            self._pack_executors[agent_id] = PackExecutor()
+        _executor = self._pack_executors[agent_id]
 
         # 0c. Hybrid teacher: track lesson progress and intervene if stuck
         #     LLM runs in background — RL keeps ticking while teacher thinks.
@@ -535,8 +581,83 @@ class FactorioBridge:
                 log.warning("Metrics fetch failed in ml_tick, skipping")
         self.world_model.update(state, raw_metrics)
 
+        # If pack is in-flight, execute next step (skip policy)
+        if _executor.is_active:
+            prev_result = getattr(self, '_pack_prev_results', {}).get(agent_id, {"success": True})
+            next_action = _executor.next_step(prev_result)
+            if next_action is None:
+                # Pack finished — compute cumulative reward and store PPO transition
+                pack_completed = _executor.completed
+                pack_aborted = _executor.abort_reason is not None
+                cum_reward = _executor.cumulative_reward
+                if pack_completed:
+                    cum_reward += 1.0   # _PACK_COMPLETE_BONUS
+                elif pack_aborted:
+                    cum_reward += -0.5  # _PACK_ABORT_PENALTY
+                saved = self._pack_pending_transition.pop(agent_id, None)
+                if saved:
+                    from factorio.trainer import Transition
+                    self._trajectory_buf.add(Transition(
+                        grid=saved["grid"], features=saved["features"],
+                        action_type=saved["action_type"],
+                        log_prob=saved["log_prob"],
+                        value=saved["value"],
+                        reward=cum_reward, done=False,
+                        world_grid=saved.get("world_grid"),
+                    ))
+                self._prev_state = state
+                self._tick_count += 1
+                return
+            else:
+                # Execute primitive action from pack
+                next_action["agent_id"] = agent_id
+                from factorio.action_translator import translate_action as _translate
+                translated = _translate(next_action)
+                exec_result = {"success": False}
+                if translated.rcon_command:
+                    try:
+                        cmd = translated.rcon_command
+                        if cmd.startswith("/biged-cmd "):
+                            cmd = cmd[len("/biged-cmd "):]
+                        resp = await self.rcon.remote_call("exec_cmd", cmd)
+                        resp_str = str(resp).lower()
+                        exec_result = {"success": "error" not in resp_str}
+                    except Exception:
+                        log.warning("Pack step failed", exc_info=True)
+                if not hasattr(self, '_pack_prev_results'):
+                    self._pack_prev_results = {}
+                self._pack_prev_results[agent_id] = exec_result
+                # Accumulate step reward (not stored in PPO buffer)
+                other_positions = [
+                    pos for aid, pos in self._agent_positions.items() if aid != agent_id
+                ]
+                agent_rw = self._agent_reward.get(agent_id, self._reward)
+                if self._prev_state is not None:
+                    raw_metrics_for_pack = None
+                    step_reward = agent_rw.compute(
+                        self._prev_state, state, exec_result["success"],
+                        False, False, metrics=raw_metrics_for_pack,
+                        action_type=next_action.get("action_type_int", 0),
+                        other_agent_positions=other_positions,
+                    )
+                    _executor.accumulate_reward(step_reward)
+                self._prev_state = state
+                self._tick_count += 1
+                return
+
         # 2. Encode state (local grid + world minimap + features)
-        grid, world_grid, features = self._encoder.encode(state, raw_metrics)
+        #    Use per-agent spatial memory and inject agent identity + peer positions
+        other_positions = [
+            pos for aid, pos in self._agent_positions.items() if aid != agent_id
+        ]
+        pack_progress = _executor.progress if _executor.is_active else 0.0
+        grid, world_grid, features = self._encoder.encode(
+            state, raw_metrics,
+            spatial_memory=agent_mem,
+            agent_id=agent_id,
+            other_agent_positions=other_positions,
+            pack_progress=pack_progress,
+        )
         grid_t = torch.tensor(grid).unsqueeze(0)
         world_t = torch.tensor(world_grid).unsqueeze(0)
         feat_t = torch.tensor(features).unsqueeze(0)
@@ -564,14 +685,15 @@ class FactorioBridge:
 
         # 4b. Convert relative offsets to absolute world coordinates
         #     Policy outputs [-5, +5] relative to player.
-        if "position" in action_dict and state.player_position:
+        #     place_near_resource doesn't use position (Lua finds the best spot).
+        if "position" in action_dict and state.player_position and action_dict.get("action") != "place_near_resource":
             px = state.player_position.get("x", 0) if isinstance(state.player_position, dict) else getattr(state.player_position, "x", 0)
             py = state.player_position.get("y", 0) if isinstance(state.player_position, dict) else getattr(state.player_position, "y", 0)
-            action_name = action_dict.get("action", "")
-            # Place needs wider reach (2x scale); move/mine use 1x
-            scale = 2 if action_name == "place" else 1
-            abs_x = action_dict["position"]["x"] * scale + round(px)
-            abs_y = action_dict["position"]["y"] * scale + round(py)
+            # All actions use 1:1 offset mapping (no scaling).
+            # The 11 dx/dy bins map to [-5, +5] tile offsets from player position.
+            # 2x scaling was causing odd-offset positions to be unreachable.
+            abs_x = action_dict["position"]["x"] + round(px)
+            abs_y = action_dict["position"]["y"] + round(py)
 
             # Leash: clamp to exploration radius around spawn (0,0)
             # Phase 1: 30 tiles (ore field), Phase 2: 60, Phase 3+: 200
@@ -582,6 +704,93 @@ class FactorioBridge:
 
             action_dict["position"]["x"] = abs_x
             action_dict["position"]["y"] = abs_y
+
+        # Handle PACK/STAMP action selection
+        from factorio.action_space import ActionType as _AT
+        action_type_val = action_type.item()
+        if action_type_val == _AT.PACK.value or action_type_val == _AT.STAMP.value:
+            pack_id = encoded.entity_id
+            if pack_id < len(self._pack_registry._items):
+                is_stamp = self._pack_registry.is_stamp(pack_id)
+                item = self._pack_registry.get_by_id(pack_id)
+
+                if is_stamp:
+                    # STAMP: single RCON call for blueprint placement
+                    dx = encoded.dx - 5
+                    dy = encoded.dy - 5
+                    px = state.player_position.get("x", 0) if isinstance(state.player_position, dict) else 0
+                    py = state.player_position.get("y", 0) if isinstance(state.player_position, dict) else 0
+                    stamp_cmd = json.dumps({
+                        "blueprint": item.blueprint_string,
+                        "position": {"x": px + dx, "y": py + dy},
+                        "agent_id": agent_id,
+                    })
+                    stamp_result = {"success": False}
+                    try:
+                        resp = await self.rcon.remote_call("biged-blueprint", stamp_cmd)
+                        stamp_result = {"success": True} if resp else {"success": False}
+                    except Exception:
+                        log.warning("Blueprint stamp failed", exc_info=True)
+                    # Compute reward and store transition
+                    agent_rw = self._agent_reward.get(agent_id, self._reward)
+                    stamp_reward = 0.0
+                    if self._prev_state is not None:
+                        stamp_reward = agent_rw.compute(
+                            self._prev_state, state, stamp_result["success"],
+                            False, False, metrics=raw_metrics,
+                            action_type=action_type_val,
+                            other_agent_positions=other_positions,
+                            pack_completed=stamp_result["success"],
+                            pack_aborted=not stamp_result["success"],
+                        )
+                    from factorio.trainer import Transition
+                    self._trajectory_buf.add(Transition(
+                        grid=grid, features=features,
+                        action_type=action_type_val,
+                        log_prob=log_prob.item(), value=value.item(),
+                        reward=stamp_reward, done=False,
+                        world_grid=world_grid,
+                    ))
+                    self._prev_state = state
+                    self._tick_count += 1
+                    return
+                else:
+                    # PACK: start multi-tick execution
+                    dx = encoded.dx - 5
+                    dy = encoded.dy - 5
+                    first_action = _executor.start(item, offset=(dx, dy))
+                    # Save transition for deferred storage when pack completes
+                    self._pack_pending_transition[agent_id] = {
+                        "grid": grid, "features": features,
+                        "action_type": action_type_val,
+                        "log_prob": log_prob.item(), "value": value.item(),
+                        "world_grid": world_grid,
+                    }
+                    # Execute first primitive
+                    first_action["agent_id"] = agent_id
+                    from factorio.action_translator import translate_action as _translate
+                    translated = _translate(first_action)
+                    exec_result = {"success": False}
+                    if translated.rcon_command:
+                        try:
+                            cmd = translated.rcon_command
+                            if cmd.startswith("/biged-cmd "):
+                                cmd = cmd[len("/biged-cmd "):]
+                            resp = await self.rcon.remote_call("exec_cmd", cmd)
+                            resp_str = str(resp).lower()
+                            exec_result = {"success": "error" not in resp_str}
+                        except Exception:
+                            log.warning("Pack first step failed", exc_info=True)
+                    if not hasattr(self, '_pack_prev_results'):
+                        self._pack_prev_results = {}
+                    self._pack_prev_results[agent_id] = exec_result
+                    self._prev_state = state
+                    self._tick_count += 1
+                    return
+            else:
+                log.warning("Invalid pack_id %d (registry has %d items)",
+                            pack_id, len(self._pack_registry._items))
+                # Fall through to normal execution
 
         # 5. Execute via RCON (inject agent_id so exec_cmd uses the right character)
         action_dict["agent_id"] = agent_id
@@ -644,13 +853,16 @@ class FactorioBridge:
         lesson_passed = progress.get("lesson_passed", False)
         phase_complete = progress.get("phase_complete", False)
 
-        # 7. Compute reward
+        # 7. Compute reward (per-agent reward computer + proximity penalty)
+        agent_rw = self._agent_reward.get(agent_id, self._reward)
         reward = 0.0
         if self._prev_state is not None:
-            reward = self._reward.compute(
+            reward = agent_rw.compute(
                 self._prev_state, state, result["success"],
                 lesson_passed, phase_complete,
                 metrics=raw_metrics,
+                action_type=action_type.item(),
+                other_agent_positions=other_positions,
             )
 
         # 8. Store transition
