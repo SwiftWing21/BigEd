@@ -1,0 +1,32 @@
+[meta]
+phase = 5
+name = "Blue Science (Chemical)"
+description = "Oil processing and chemical science"
+
+[[lessons]]
+name = "Build oil refinery"
+criteria = "entities.oil-refinery >= 1 AND entities.pumpjack >= 1"
+description = "Set up basic oil processing"
+hint = "Place a pumpjack on an oil field, connect to a refinery"
+max_attempts = 80
+
+[[lessons]]
+name = "Produce sulfur"
+criteria = "produced.sulfur >= 10"
+description = "Create sulfur from petroleum gas"
+hint = "Chemical plant with petroleum gas and water"
+max_attempts = 60
+
+[[lessons]]
+name = "Produce red circuits"
+criteria = "produced.advanced-circuit >= 10"
+description = "Create advanced circuits"
+hint = "Assembler with electronic circuits, plastic, and copper cable"
+max_attempts = 80
+
+[[lessons]]
+name = "Produce chemical science"
+criteria = "produced.chemical-science-pack >= 10"
+description = "Create chemical science packs"
+hint = "Assembler with sulfur, advanced circuits, and engine units"
+max_attempts = 100

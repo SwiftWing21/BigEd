@@ -56,6 +56,16 @@ class CurriculumManager:
         log.info("Loaded phase %d: %s (%d lessons)", phase, self._meta.get("name", "?"), len(self._lessons))
         return True
 
+    @property
+    def checkpoint(self) -> int:
+        """Map phase number (1-8) to checkpoint index (0-7)."""
+        return self._phase - 1
+
+    @property
+    def checkpoint_bonus(self) -> float:
+        """Scaling completion bonus: checkpoint 0→+10, 1→+20, ... 7→+80."""
+        return (self.checkpoint + 1) * 10.0
+
     def current_lesson_index(self) -> int:
         """Return the index of the current lesson (0-based)."""
         if not self._tracker:
