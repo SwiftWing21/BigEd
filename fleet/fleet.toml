@@ -85,13 +85,13 @@ low_value = 15                   # 15 low tasks triggers swap
 # Central API access control. Safe by default: gate OFF, $0 budget, local-only.
 # Enable via: lead_client.py api enable --budget 2.00 --providers claude
 [api_gate]
-enabled = false                # Master switch -- default OFF (local-only)
-default_budget = 0.00          # Session budget in USD ($0 = must specify on enable)
+enabled = true                 # Enabled for autoresearch loop (Claude-driven experiment proposals)
+default_budget = 2.00          # Session budget in USD — ~100 cycles at ~$0.02/cycle
 drain_mode = "graceful"        # "graceful" = finish in-flight | "hard" = immediate stop
 fallback_chain = ["local"]     # Default fallback: local only (no paid cascade)
 
 [api_gate.providers.claude]
-enabled = false
+enabled = true
 fallback = ["local"]
 
 [api_gate.providers.gemini]
@@ -437,7 +437,7 @@ verify_integrity = true
 
 # v0.051.07b: FileSystem Access Guard — SOC 2 compliant file access control
 [filesystem]
-enforce = false              # true = validate all file access (forced true on enterprise)
+enforce = true               # true = validate all file access (forced true on enterprise)
 deny_by_default = false      # true = reject access to paths not in zones
 log_all_access = false       # true = SOC 2 audit trail for file operations
 
@@ -835,7 +835,7 @@ host_fleet_id = ""
 bridge_port = 27016
 rcon_host = "localhost"
 rcon_port = 27015
-rcon_password = "5X8BgWAAs1vCBVbXL22PnA"
+rcon_password = "vvxo-vHlC7jXUuA-0VbQSw"
 server_mode = "headless"
 factorio_path = ""
 headless_path = ""
@@ -866,7 +866,7 @@ analyze_interval_ticks = 50
 mode = "ml"
 game_speed = 2  # 10x disconnects, 4x stutters — 2x smooth for spectating
 ml_tick_delay_ms = 0  # 0 = max throughput (~30-50 actions/sec), >0 = ms between ticks
-num_agents = 4  # standalone agent characters in same world (shared policy)
+num_agents = 1  # standalone agent characters in same world (shared policy)
 ollama_model = "qwen3:8b"  # GPU model for teacher — better plan quality
 
 [factorio.experiments]

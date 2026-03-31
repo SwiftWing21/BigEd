@@ -45,6 +45,11 @@ class FileSystemGuard:
         self._overrides = self._fs_cfg.get("overrides", {})
         self._log_path = Path(__file__).parent / "logs" / "fs_access.log"
 
+        if self._enforce:
+            logger.info("FileSystemGuard: ENFORCING access control (deny_by_default=%s)", self._deny_by_default)
+        else:
+            logger.warning("FileSystemGuard: NOT enforcing — set [filesystem] enforce = true in fleet.toml for SOC 2 compliance")
+
     # -- public API --
 
     def check_access(
