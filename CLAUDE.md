@@ -55,7 +55,7 @@ End every roadmap with an Audit Coverage Check section.
 - `fleet/filesystem_guard.py` — SOC 2 file access control
 
 ## Fleet Status
-- Skills: 124 | Dashboard: 228+ endpoints (across dashboard.py + 6 blueprints) | Smoke: 51/51
+- Skills: 125 | Dashboard: 228+ endpoints (across dashboard.py + 10 blueprints) | Smoke: 51/51
 - Dynamic agent scaling: 4 core + demand-based | Dr. Ders: event-driven wake-up timer
 - Security: P0-P2 hardened (XSS, SQL injection, thread safety, zombie cleanup)
 - Backup: auto-save every 20min, configurable depth/location
