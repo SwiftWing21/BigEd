@@ -60,8 +60,6 @@ else:
     _DIST_DIR = Path(__file__).parent / "dist"
 
 # Developer mode — show advanced features (default ON during alpha)
-# Set to False for production builds, or use env var BIGED_PRODUCTION=1
-DEV_MODE = os.environ.get("BIGED_PRODUCTION", "").lower() not in ("1", "true")
 # Production mode: frozen exe with _production_marker OR BIGED_PRODUCTION env var
 _PRODUCTION_MARKER = _DIST_DIR / "_production_marker" if getattr(sys, 'frozen', False) else None
 DEV_MODE = not (_PRODUCTION_MARKER and _PRODUCTION_MARKER.exists()) and \
