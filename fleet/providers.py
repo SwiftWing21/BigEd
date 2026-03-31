@@ -976,7 +976,6 @@ def get_agent_affinity(agent_name, skill_name, config):
             "AND created_at > datetime('now', '-24 hours')",
             (agent_name, skill_name)
         ).fetchone()
-        conn.close()
         if row and row['total'] >= 5 and row['success'] / row['total'] > 0.8:
             return True  # Agent has affinity for this skill
     except Exception:
