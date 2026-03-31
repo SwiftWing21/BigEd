@@ -108,3 +108,51 @@ def _is_recent(timestamp_str: str, seconds: int = 120) -> bool:
 
 def safe_error(e):
     return _safe_error(e)
+
+
+# ── SSE state (shared across blueprints) ────────────────────────────────────
+
+_alerts = []
+_alert_lock = threading.Lock()
+_sse_clients = []  # list[{"queue": Queue, "last_active": float}]
+_sse_lock = threading.Lock()
+
+
+def _add_alert(level: str, message: str, source: str = "system"):
+    """Add an alert (info/warning/critical) and broadcast via SSE. Deduplicates."""
+    with _alert_lock:
+        # Deduplicate: skip if same message already exists and isn't acknowledged
+        for existing in _alerts[-20:]:
+            if existing["message"] == message and not existing["acknowledged"]:
+                return
+        alert = {
+            "id": int(time.time() * 1000),
+            "level": level,
+            "message": message,
+            "source": source,
+            "time": datetime.utcnow().isoformat(),
+            "acknowledged": False,
+        }
+        _alerts.append(alert)
+        # Keep only last 100 alerts
+        if len(_alerts) > 100:
+            _alerts.pop(0)
+    _broadcast_sse({"type": "alert", "data": alert})
+
+
+def _broadcast_sse(data: dict):
+    """Send SSE event to all connected clients, reap stale ones."""
+    msg = f"data: {json.dumps(data)}\n\n"
+    now = time.time()
+    dead = []
+    with _sse_lock:
+        for client in _sse_clients:
+            try:
+                client["queue"].put_nowait(msg)
+                client["last_active"] = now
+            except Exception:
+                dead.append(client)
+        # Reap stale (>120s) and dead clients
+        for c in dead:
+            _sse_clients.remove(c)
+        _sse_clients[:] = [c for c in _sse_clients if now - c["last_active"] <= 120]

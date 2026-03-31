@@ -47,6 +47,8 @@ from dashboard_utils import (
     _load_config, get_conn, query,
     _get_request_role, _require_role,
     _check_rate_limit, _is_recent, safe_error,
+    _alerts, _alert_lock, _sse_clients, _sse_lock,
+    _add_alert, _broadcast_sse,
 )
 
 _start_time = time.time()  # dashboard boot timestamp for /api/health uptime
@@ -93,12 +95,9 @@ _register_security_hooks(app, lambda: _load_config())
 
 
 
-# Alert state — tracked in memory, broadcast via SSE
-_alerts = []
-_alert_lock = threading.Lock()
-_sse_clients = []  # list[{"queue": Queue, "last_active": float}]
-_sse_lock = threading.Lock()
-_monitor_start_time = time.time()
+# SSE/alert state now lives in dashboard_utils.py (Phase 3 extraction)
+# _alerts, _alert_lock, _sse_clients, _sse_lock imported above
+# _add_alert, _broadcast_sse imported above
 
 # Federation state — peer heartbeats tracked in memory
 _federation_peers = {}
@@ -467,148 +466,8 @@ def _get_modifier_states() -> dict:
     return result
 
 
-# ── Alerts ───────────────────────────────────────────────────────────────────
-
-def _add_alert(level: str, message: str, source: str = "system"):
-    """Add an alert (info/warning/critical) and broadcast via SSE. Deduplicates."""
-    with _alert_lock:
-        # Deduplicate: skip if same message already exists and isn't acknowledged
-        for existing in _alerts[-20:]:
-            if existing["message"] == message and not existing["acknowledged"]:
-                return
-        alert = {
-            "id": int(time.time() * 1000),
-            "level": level,
-            "message": message,
-            "source": source,
-            "time": datetime.utcnow().isoformat(),
-            "acknowledged": False,
-        }
-        _alerts.append(alert)
-        # Keep only last 100 alerts
-        if len(_alerts) > 100:
-            _alerts.pop(0)
-    _broadcast_sse({"type": "alert", "data": alert})
-
-
-def _broadcast_sse(data: dict):
-    """Send SSE event to all connected clients, reap stale ones."""
-    msg = f"data: {json.dumps(data)}\n\n"
-    now = time.time()
-    dead = []
-    with _sse_lock:
-        for client in _sse_clients:
-            try:
-                client["queue"].put_nowait(msg)
-                client["last_active"] = now
-            except Exception:
-                dead.append(client)
-        # Reap stale (>120s) and dead clients
-        for c in dead:
-            _sse_clients.remove(c)
-        _sse_clients[:] = [c for c in _sse_clients if now - c["last_active"] <= 120]
-
-
-# ── Alert monitoring thread ──────────────────────────────────────────────────
-
-def _alert_monitor():
-    """Background thread checking for alert-worthy conditions."""
-    while True:
-        try:
-            # Check thermal
-            if HW_STATE_JSON.exists():
-                hw = json.loads(HW_STATE_JSON.read_text())
-                gpu_temp = hw.get("gpu_temp_c", 0)
-                cfg = _load_config()
-                thermal = cfg.get("thermal", {})
-                sustained = thermal.get("gpu_max_sustained_c", 75)
-                burst = thermal.get("gpu_max_burst_c", 78)
-
-                if gpu_temp > burst:
-                    _add_alert("critical", f"GPU temp {gpu_temp}C exceeds burst limit {burst}C", "thermal")
-                elif gpu_temp > sustained:
-                    _add_alert("warning", f"GPU temp {gpu_temp}C above sustained limit {sustained}C", "thermal")
-
-            # Check for crashed workers (stale heartbeats)
-            # Skip disabled/quarantined agents and allow 5min grace after startup
-            cfg = _load_config()
-            disabled = set(cfg.get("fleet", {}).get("disabled_agents", []))
-            agents = query("""
-                SELECT name, last_heartbeat, status FROM agents
-                WHERE last_heartbeat < datetime('now', '-5 minutes')
-                AND status NOT IN ('OFFLINE', 'QUARANTINED', 'SLEEPING')
-            """)
-            stale = [a for a in agents if a["name"] not in disabled]
-            if stale and (time.time() - _monitor_start_time) > 300:
-                names = ", ".join(a["name"] for a in stale)
-                _add_alert("warning", f"{len(stale)} agent(s) stale: {names}", "fleet")
-
-            # Check disk space
-            import shutil
-            total, used, free = shutil.disk_usage(str(FLEET_DIR))
-            free_gb = free / (1024**3)
-            if free_gb < 5:
-                _add_alert("warning", f"Low disk space: {free_gb:.1f}GB free", "system")
-
-            # Check training lock timeout
-            locks = query("SELECT * FROM locks WHERE name='training'")
-            if locks:
-                acquired = locks[0].get("acquired_at", "")
-                if acquired:
-                    try:
-                        acq_time = datetime.fromisoformat(acquired)
-                        elapsed = (datetime.utcnow() - acq_time).total_seconds()
-                        cfg = _load_config()
-                        timeout = cfg.get("training", {}).get("lock_timeout_secs", 7200)
-                        if elapsed > timeout * 0.9:
-                            _add_alert("warning",
-                                       f"Training lock held for {elapsed/3600:.1f}h (timeout: {timeout/3600:.1f}h)",
-                                       "training")
-                    except Exception:
-                        pass
-
-            # Check for anomalous API spend (v0.170.04b: uses detect_cost_anomaly)
-            try:
-                from cost_tracking import detect_cost_anomaly
-                anomaly = detect_cost_anomaly()
-                if anomaly:
-                    throttle_active = (FLEET_DIR / ".cost_anomaly_throttle").exists()
-                    throttle_label = " [idle evolution paused]" if throttle_active else ""
-                    _add_alert("warning",
-                        f"Cost anomaly: ${anomaly['today_cost']:.2f} today "
-                        f"({anomaly['multiplier']}x avg ${anomaly['avg_cost']:.2f})"
-                        f"{throttle_label}", "cost")
-            except Exception:
-                pass
-
-            # Check for high-scoring skill drafts pending review
-            try:
-                drafts = query("""
-                    SELECT t.id, t.type, t.intelligence_score, t.assigned_to
-                    FROM tasks t
-                    WHERE t.type IN ('skill_evolve', 'evolution_coordinator')
-                    AND t.status = 'DONE'
-                    AND t.intelligence_score > 0.7
-                    AND t.created_at >= datetime('now', '-24 hours')
-                    AND t.id NOT IN (
-                        SELECT CAST(json_extract(body_json, '$.task_id') AS INTEGER)
-                        FROM messages WHERE json_extract(body_json, '$.type') = 'draft_reviewed'
-                    )
-                    LIMIT 3
-                """)
-                if drafts:
-                    _add_alert("info", f"{len(drafts)} high-quality skill draft(s) ready for review", "evolution")
-            except Exception:
-                pass
-
-        except Exception as e:
-            _alert_failure_count = getattr(_alert_monitor, '_failures', 0) + 1
-            _alert_monitor._failures = _alert_failure_count
-            if _alert_failure_count <= 3:
-                import logging
-                logging.warning(f"Alert monitor error: {e}")
-
-        time.sleep(30)  # Check every 30s
+# _add_alert, _broadcast_sse: now in dashboard_utils.py
+# _alert_monitor: now in alerts.py
 
 
 # ── Original API endpoints ───────────────────────────────────────────────────
@@ -1488,6 +1347,10 @@ from factorio_blueprint import (
     api_factorio_stop,
 )
 app.register_blueprint(factorio_bp)
+
+# ── SSE endpoint (extracted to sse_blueprint.py) ─────────────────────────────
+from sse_blueprint import sse_bp, _sse_broadcaster
+app.register_blueprint(sse_bp)
 
 
 # ── Mode Control API ─────────────────────────────────────────────────────────
@@ -2764,209 +2627,7 @@ def openai_chat_completions():
         return jsonify({"error": {"message": _safe_error(e), "type": "server_error"}}), 500
 
 
-# ── Server-Sent Events ──────────────────────────────────────────────────────
-
-@app.route("/api/stream")
-def api_stream():
-    """SSE endpoint for live updates (replaces 30s polling)."""
-    import queue
-
-    q = queue.Queue()
-    with _sse_lock:
-        _sse_clients.append({"queue": q, "last_active": time.time()})
-
-    def generate():
-        try:
-            # Send initial heartbeat
-            yield "data: {\"type\": \"connected\"}\n\n"
-            while True:
-                try:
-                    msg = q.get(timeout=15)
-                    yield msg
-                except queue.Empty:
-                    # Send keepalive
-                    yield ": keepalive\n\n"
-        except GeneratorExit:
-            pass
-        finally:
-            with _sse_lock:
-                _sse_clients[:] = [c for c in _sse_clients if c["queue"] is not q]
-
-    return Response(generate(), mimetype="text/event-stream",
-                    headers={"Cache-Control": "no-cache",
-                             "X-Accel-Buffering": "no"})
-
-
-# ── SSE broadcast thread ────────────────────────────────────────────────────
-
-def _sse_broadcaster():
-    """Adaptive-rate SSE push: fast (2s) when data changes, slows to 30s when stable."""
-    _SSE_MIN_INTERVAL = 2    # floor: busy fleet
-    _SSE_MAX_INTERVAL = 30   # ceiling: idle fleet
-    _SSE_STEP_UP = 1.5       # multiplier each stable cycle
-    interval = _SSE_MIN_INTERVAL
-    prev_snapshot = None
-
-    while True:
-        if _sse_clients:
-            try:
-                agents = query(
-                    "SELECT name, role, status, last_heartbeat FROM agents "
-                    "WHERE last_heartbeat > datetime('now', '-5 minutes') "
-                    "AND status != 'DISABLED' ORDER BY name"
-                )
-                counts = {}
-                for s in ("PENDING", "RUNNING", "DONE", "FAILED"):
-                    row = query("SELECT COUNT(*) as n FROM tasks WHERE status=? AND classification != 'synthetic_prefix'", (s,))
-                    counts[s] = row[0]["n"] if row else 0
-
-                # Thermal + system load (read hw_state.json + psutil — cheap)
-                thermal = {}
-                if HW_STATE_JSON.exists():
-                    try:
-                        hw = json.loads(HW_STATE_JSON.read_text())
-                        th = hw.get("thermal", {})
-                        thermal = {
-                            "gpu_temp_c": th.get("gpu_temp_c", 0),
-                            "cpu_temp_c": th.get("cpu_temp_c", 0),
-                            "gpu_vram_used_gb": round(th.get("vram_used_gb", 0), 2),
-                            "gpu_vram_total_gb": round(th.get("vram_total_gb", 0), 2),
-                        }
-                    except Exception:
-                        pass
-                system = {}
-                try:
-                    import psutil
-                    ram = psutil.virtual_memory()
-                    system = {
-                        "ram_pct": round(ram.percent, 1),
-                        "cpu_pct": round(_cpu_pct_cache, 1),
-                        "cpu_cores": psutil.cpu_count(logical=False) or psutil.cpu_count() or 0,
-                    }
-                except Exception:
-                    pass
-
-                # Live activity: running + recently completed tasks (for real-time feed)
-                live_items = []
-                try:
-                    live_rows = query("""
-                        SELECT t.id, t.type, t.status, t.assigned_to, t.classification,
-                               t.created_at, substr(t.error, 1, 80) as error,
-                               t.intelligence_score, t.priority, t.trace_id,
-                               u.model, u.eval_duration_ms, u.input_tokens, u.output_tokens,
-                               u.tokens_per_sec, u.cost_usd, u.provider
-                        FROM tasks t
-                        LEFT JOIN usage u ON u.task_id = t.id
-                        WHERE t.classification != 'synthetic_prefix'
-                          AND (t.status = 'RUNNING'
-                               OR (t.status IN ('DONE', 'FAILED') AND t.created_at >= datetime('now', '-2 minutes')))
-                        ORDER BY CASE t.status WHEN 'RUNNING' THEN 0 WHEN 'DONE' THEN 1 ELSE 2 END, t.id DESC
-                        LIMIT 20
-                    """)
-                    live_items = [{
-                        "id": r["id"], "type": r["type"], "status": r["status"],
-                        "agent": r["assigned_to"] or "unassigned",
-                        "classification": r["classification"],
-                        "created_at": r["created_at"],
-                        "error": r["error"] or "",
-                        "model": r["model"] or "",
-                        "duration_s": round(r["eval_duration_ms"] / 1000, 1) if r["eval_duration_ms"] else None,
-                        "in_tokens": r["input_tokens"] or 0,
-                        "out_tokens": r["output_tokens"] or 0,
-                        "tok_per_sec": round(r["tokens_per_sec"], 1) if r["tokens_per_sec"] else None,
-                        "cost_usd": round(r["cost_usd"], 4) if r["cost_usd"] else 0,
-                        "provider": r["provider"] or "",
-                        "iq_score": round(r["intelligence_score"], 2) if r["intelligence_score"] is not None else None,
-                        "priority": r["priority"] or 3,
-                        "trace_id": r["trace_id"] or "",
-                    } for r in live_rows]
-                except Exception:
-                    pass
-
-                # Legacy: recent tasks for neural pulse animation
-                recent_tasks = [
-                    {"agent": r["agent"], "skill": r["type"], "status": r["status"]}
-                    for r in live_items if r["agent"] != "unassigned"
-                ]
-
-                # Factorio bridge status (lightweight probe)
-                factorio_sse = None
-                try:
-                    import urllib.request as _ur2
-                    from config import load_config as _lc2
-                    _fp2 = _lc2().get("factorio", {}).get("bridge_port", 27016)
-                    _fr2 = _ur2.urlopen(f"http://127.0.0.1:{_fp2}/api/status", timeout=1)
-                    _fd2 = json.loads(_fr2.read())
-                    _components = _fd2.get("components", {})
-                    factorio_sse = {
-                        "running": _fd2.get("running", False),
-                        "tick": _fd2.get("tick", 0),
-                        "paused": _fd2.get("paused", False),
-                        "cadence": _fd2.get("cadence", "unknown"),
-                        "stale": _fd2.get("stale", False),
-                        "components": {
-                            "bridge": _components.get("bridge", False),
-                            "rcon": _components.get("rcon", False),
-                            "headless": _components.get("headless", False),
-                        },
-                    }
-                    if _fd2.get("running"):
-                        # Inject a factorio pulse so the neural canvas shows activity
-                        if not _fd2.get("paused"):
-                            recent_tasks.append({
-                                "agent": "Factorio", "skill": "bridge",
-                                "status": "RUNNING",
-                            })
-                except Exception:
-                    pass
-
-                # Mode control — active mode + modifier states for strip
-                mode_sse = None
-                try:
-                    _active_mode, _mode_state = _get_effective_mode()
-                    mode_sse = {
-                        "active": _active_mode,
-                        "state": _mode_state,
-                        "modifiers": _get_modifier_states(),
-                    }
-                except Exception:
-                    pass
-
-                payload = {
-                    "agents": agents,
-                    "tasks": counts,
-                    "thermal": thermal,
-                    "system": system,
-                    "recent": recent_tasks,
-                    "live": live_items,
-                    "factorio": factorio_sse,
-                    "mode": mode_sse,
-                }
-
-                # Adaptive rate: compare to previous snapshot
-                snapshot = (
-                    tuple((a["name"], a["status"]) for a in agents),
-                    tuple(sorted(counts.items())),
-                    thermal.get("gpu_temp_c", 0),
-                    thermal.get("cpu_temp_c", 0),
-                    system.get("ram_pct", 0),
-                )
-                if snapshot == prev_snapshot:
-                    # Stable — slow down (up to max)
-                    interval = min(interval * _SSE_STEP_UP, _SSE_MAX_INTERVAL)
-                else:
-                    # Changed — snap back to fast
-                    interval = _SSE_MIN_INTERVAL
-                prev_snapshot = snapshot
-
-                payload["_interval"] = round(interval, 1)
-                _broadcast_sse({"type": "status", "data": payload})
-            except Exception:
-                pass
-        else:
-            # No clients — idle at max rate
-            interval = _SSE_MAX_INTERVAL
-        time.sleep(interval)
+# /api/stream route + _sse_broadcaster: now in sse_blueprint.py (Phase 3)
 
 
 # ── Main page ────────────────────────────────────────────────────────────────
@@ -5174,7 +4835,8 @@ if __name__ == "__main__":
     _cors_origins.extend(cors_origins_cfg)
 
     # Start background threads
-    threading.Thread(target=_alert_monitor, daemon=True).start()
+    from alerts import start_alert_monitor
+    start_alert_monitor()
     threading.Thread(target=_sse_broadcaster, daemon=True).start()
 
     # Wire api_gate events into SSE stream
