@@ -297,6 +297,41 @@ class FactorioBridge:
         lesson = objective.get("lesson_name", "?")
         log.info("Teacher thinking about lesson '%s' — hint: %s", lesson, hint)
 
+        # --- Factory builder shortcut ---
+        # If the lesson objective involves placing infrastructure (drill/furnace chains),
+        # use deterministic factory builder instead of freeform RL placement.
+        try:
+            criteria = objective.get("criteria", "")
+            lesson_name = objective.get("lesson_name", "").lower()
+            # Trigger on infrastructure-related lessons
+            needs_iron_line = (
+                "furnace" in criteria.lower() and "drill" in criteria.lower()
+            ) or "iron_line" in lesson_name or "smelting" in lesson_name
+
+            if needs_iron_line:
+                from factorio.zone_manager import ZoneManager
+                from factorio.factory_builder import IronLinePlan
+                # Find nearest iron ore from spatial memory
+                agent_mem = self._agent_spatial.get(1, self._spatial_memory)
+                px = state.player_position.get("x", 0) if isinstance(state.player_position, dict) else 0
+                py = state.player_position.get("y", 0) if isinstance(state.player_position, dict) else 0
+                ore_pos = (px + 5, py + 5)  # default near player
+                if agent_mem:
+                    nearest = agent_mem.nearest_resource(px, py, "iron-ore")
+                    if nearest is not None:
+                        ore_pos = (int(nearest[0][0]), int(nearest[0][1]))
+                zm = ZoneManager()
+                plan = IronLinePlan(zone_manager=zm, ore_position=ore_pos)
+                entities = plan.compute()
+                if entities:
+                    commands = plan.to_rcon_commands()
+                    log.info("Factory builder: iron_line plan with %d entities at (%d, %d)",
+                             len(entities), ore_pos[0], ore_pos[1])
+                    return commands
+        except Exception:
+            log.warning("Factory builder shortcut failed — falling through",
+                        exc_info=True)
+
         # --- Dependency resolver shortcut ---
         try:
             from factorio.dependency_resolver import (
