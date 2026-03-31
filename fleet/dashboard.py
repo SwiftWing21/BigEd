@@ -70,6 +70,16 @@ KNOWLEDGE_DIR = FLEET_DIR / "knowledge"
 HW_STATE_JSON = FLEET_DIR / "hw_state.json"
 
 
+def _get_version() -> str:
+    """Read version from fleet.toml [meta] or fall back to hardcoded beta tag."""
+    try:
+        from config import load_config
+        cfg = load_config()
+        return cfg.get("meta", {}).get("version", "0.400.00b")
+    except Exception:
+        return "0.400.00b"
+
+
 def _is_recent(timestamp_str: str, seconds: int = 120) -> bool:
     """Return True if a DB timestamp string is within the last *seconds*."""
     try:
@@ -152,7 +162,6 @@ def _log_api_attribution(response):
         role = _get_request_role()
         # Legacy file-based audit
         try:
-            sys.path.insert(0, str(FLEET_DIR))
             from audit_log import log_event
             log_event(
                 event_type="api_call",
@@ -858,7 +867,7 @@ def api_health():
         "status": overall,
         "uptime_seconds": int(time.time() - _start_time),
         "subsystems": subsystems,
-        "version": "0.22.00",
+        "version": _get_version(),
     })
 
 
@@ -2262,7 +2271,6 @@ def api_alerts():
         mem_alerts = list(_alerts[-50:])
     # Persistent DB alerts (0.22.00)
     try:
-        sys.path.insert(0, str(FLEET_DIR))
         import db
         db_alerts = db.get_alerts(hours=hours, severity=severity)
     except Exception:
@@ -2314,7 +2322,6 @@ def api_resolutions():
 def api_usage():
     """CT-2: Token usage aggregates by skill/model/agent."""
     try:
-        sys.path.insert(0, str(FLEET_DIR))
         import db
         period = request.args.get("period", "week")
         group = request.args.get("group", "skill")
@@ -2327,7 +2334,6 @@ def api_usage():
 def api_usage_delta():
     """CT-2: Compare usage between two date ranges."""
     try:
-        sys.path.insert(0, str(FLEET_DIR))
         import db
         from_start = request.args.get("from_start", "")
         from_end = request.args.get("from_end", "")
@@ -2349,7 +2355,6 @@ def api_usage_budgets():
         if not budgets:
             return jsonify({"budgets": [], "message": "No budgets configured"})
 
-        sys.path.insert(0, str(FLEET_DIR))
         import db
         summary = db.get_usage_summary(period="day", group_by="skill")
         spent_map = {r["skill"]: r.get("total_cost", 0) or 0 for r in summary}
@@ -2462,7 +2467,6 @@ def api_usage_dashboard():
 def api_usage_regression():
     """CT-3: Flag skills with >20% token increase vs previous period."""
     try:
-        sys.path.insert(0, str(FLEET_DIR))
         import db
         from datetime import datetime, timedelta
 
@@ -2537,7 +2541,6 @@ def api_gate_ring():
 def api_billing_usage(tenant_id):
     """Per-tenant usage summary for a billing period."""
     try:
-        sys.path.insert(0, str(FLEET_DIR))
         from billing import get_tenant_usage
         period = request.args.get("period", "month")
         return jsonify(get_tenant_usage(tenant_id, period))
@@ -2549,7 +2552,6 @@ def api_billing_usage(tenant_id):
 def api_billing_invoice(tenant_id):
     """Itemized invoice for a tenant."""
     try:
-        sys.path.insert(0, str(FLEET_DIR))
         from billing import calculate_invoice, export_invoice_csv
         period = request.args.get("period", "month")
         fmt = request.args.get("format", "json")
@@ -2567,7 +2569,6 @@ def api_billing_invoice(tenant_id):
 def api_billing_quota(tenant_id):
     """Quota status — current usage vs limits."""
     try:
-        sys.path.insert(0, str(FLEET_DIR))
         from billing import get_quota_usage
         return jsonify(get_quota_usage(tenant_id))
     except Exception as e:
@@ -2582,7 +2583,6 @@ def api_billing_quota_update(tenant_id):
         data = request.get_json()
         if not data:
             return jsonify({"error": "JSON body required"}), 400
-        sys.path.insert(0, str(FLEET_DIR))
         from billing import set_quota, get_quota
         set_quota(tenant_id, data)
         return jsonify({"status": "updated", "quota": get_quota(tenant_id)})
@@ -2595,7 +2595,6 @@ def api_billing_quota_update(tenant_id):
 def api_billing_overview():
     """Admin view — usage across all tenants."""
     try:
-        sys.path.insert(0, str(FLEET_DIR))
         from billing import get_all_tenant_usage
         period = request.args.get("period", "month")
         return jsonify({"period": period, "tenants": get_all_tenant_usage(period)})
@@ -2607,7 +2606,6 @@ def api_billing_overview():
 def api_billing_pricing():
     """Current pricing tiers from config."""
     try:
-        sys.path.insert(0, str(FLEET_DIR))
         from billing import get_pricing
         return jsonify(get_pricing())
     except Exception as e:
@@ -2681,7 +2679,6 @@ def api_agent_cards():
 def api_dag(parent_id):
     """DAG visualization data for a task chain."""
     try:
-        sys.path.insert(0, str(FLEET_DIR))
         import db
         return jsonify(db.get_dag_graph(parent_id))
     except Exception as e:
@@ -2694,7 +2691,6 @@ def api_dag(parent_id):
 def api_dag_create():
     """Parse a natural-language description into a DAG preview (no submission)."""
     try:
-        sys.path.insert(0, str(FLEET_DIR))
         from dag_builder import build_dag_from_description
         data = request.get_json(silent=True) or {}
         description = data.get("description", "").strip()
@@ -2715,7 +2711,6 @@ def api_dag_submit():
     if deny:
         return deny
     try:
-        sys.path.insert(0, str(FLEET_DIR))
         from dag_builder import submit_dag, build_dag_from_description
         data = request.get_json(silent=True) or {}
 
@@ -2740,7 +2735,6 @@ def api_dag_submit():
 def api_dag_status(root_id):
     """DAG execution tree — task statuses and progress."""
     try:
-        sys.path.insert(0, str(FLEET_DIR))
         from dag_builder import get_dag_status
         return jsonify(get_dag_status(root_id))
     except Exception as e:
@@ -2751,7 +2745,6 @@ def api_dag_status(root_id):
 def api_dag_visualize(root_id):
     """DAG nodes + edges for dashboard rendering with levels."""
     try:
-        sys.path.insert(0, str(FLEET_DIR))
         from dag_builder import visualize_dag
         return jsonify(visualize_dag(root_id))
     except Exception as e:
@@ -2764,7 +2757,6 @@ def api_dag_visualize(root_id):
 def api_scaling_prediction():
     """Current ML prediction vs actual agent count."""
     try:
-        sys.path.insert(0, str(FLEET_DIR))
         from predictive_scaler import get_prediction_summary
         return jsonify(get_prediction_summary())
     except Exception as e:
@@ -2778,7 +2770,6 @@ def api_scaling_retrain():
     if deny:
         return deny
     try:
-        sys.path.insert(0, str(FLEET_DIR))
         from predictive_scaler import train_scaler_model
         result = train_scaler_model()
         return jsonify(result)
@@ -3114,7 +3105,6 @@ def api_gdpr_erasure():
         identifier = data.get("identifier")
         if not identifier:
             return jsonify({"error": "identifier required"}), 400
-        sys.path.insert(0, str(FLEET_DIR))
         import db
         result = db.delete_user_data(identifier, scope=data.get("scope", "agent"))
         # Log to both audit trails (legacy file + new DB)
@@ -3760,7 +3750,6 @@ def api_federation_discovered():
 def api_federation_capacity():
     """Aggregated cluster capacity — local + all reachable peers."""
     try:
-        sys.path.insert(0, str(FLEET_DIR))
         from federation_router import get_aggregated_capacity
         return jsonify(get_aggregated_capacity())
     except ImportError:
@@ -3773,7 +3762,6 @@ def api_federation_capacity():
 def api_federation_hitl():
     """Aggregated HITL tasks from local fleet and all federation peers."""
     try:
-        sys.path.insert(0, str(FLEET_DIR))
         from federation_hitl import get_all_hitl_tasks
         tasks = get_all_hitl_tasks()
         return jsonify(tasks)
@@ -3785,7 +3773,6 @@ def api_federation_hitl():
 def api_federation_routing_stats():
     """Routing statistics — how many tasks routed locally vs remotely."""
     try:
-        sys.path.insert(0, str(FLEET_DIR))
         from federation_router import get_routing_stats
         return jsonify(get_routing_stats())
     except ImportError:
@@ -3812,7 +3799,6 @@ def api_federation_route():
         if not peer_url or not task_type:
             return jsonify({"error": "peer_url and type are required"}), 400
 
-        sys.path.insert(0, str(FLEET_DIR))
         from federation_router import route_to_peer
 
         peer = {"url": peer_url}
@@ -3838,7 +3824,6 @@ def api_federation_route():
 def api_federation_cert_status():
     """Certificate health info for the dashboard."""
     try:
-        sys.path.insert(0, str(FLEET_DIR))
         from fleet_tls import get_cert_info
         return jsonify(get_cert_info())
     except ImportError:
@@ -3863,7 +3848,6 @@ def api_federation_hitl_respond():
         if not response_text:
             return jsonify({"error": "response is required"}), 400
 
-        sys.path.insert(0, str(FLEET_DIR))
 
         if peer_url == "local" or not peer_url:
             # Local response
@@ -3897,7 +3881,6 @@ def api_federation_exchange_cert():
     Response: {"ok": true, "cert_pem": "-----BEGIN CERTIFICATE..."}
     """
     try:
-        sys.path.insert(0, str(FLEET_DIR))
         from fleet_tls import store_trusted_cert, get_local_cert_pem, is_tls_enabled
         if not is_tls_enabled():
             return jsonify({"error": "Federation TLS not enabled"}), 400
@@ -4098,7 +4081,6 @@ def api_federation_hitl_notify():
 def api_cluster_agents():
     """All agents across all federated peers."""
     try:
-        sys.path.insert(0, str(FLEET_DIR))
         from federation_data import get_cluster_agents
         return jsonify(get_cluster_agents())
     except Exception as e:
@@ -4110,7 +4092,6 @@ def api_cluster_tasks():
     """All tasks across all federated peers, optionally filtered by status."""
     try:
         status_filter = request.args.get("status")
-        sys.path.insert(0, str(FLEET_DIR))
         from federation_data import get_cluster_tasks
         return jsonify(get_cluster_tasks(status=status_filter))
     except Exception as e:
@@ -4121,7 +4102,6 @@ def api_cluster_tasks():
 def api_cluster_metrics():
     """Aggregated metrics across all federated peers."""
     try:
-        sys.path.insert(0, str(FLEET_DIR))
         from federation_data import get_cluster_metrics
         return jsonify(get_cluster_metrics())
     except Exception as e:
@@ -4240,7 +4220,6 @@ def api_trigger():
         if data is None:
             return jsonify({"error": "Request body must be valid JSON"}), 400
 
-        sys.path.insert(0, str(FLEET_DIR))
         from event_triggers import handle_webhook
 
         result = handle_webhook(data)
@@ -4530,7 +4509,6 @@ def api_waiting_human():
     """
     try:
         include_remote = request.args.get("include_remote", "false").lower() == "true"
-        sys.path.insert(0, str(FLEET_DIR))
 
         if include_remote:
             from federation_hitl import get_all_hitl_tasks
@@ -4575,7 +4553,6 @@ def api_task_respond(task_id):
         if not response_text:
             return jsonify({"error": "response is required"}), 400
 
-        sys.path.insert(0, str(FLEET_DIR))
         import db
         db.respond_to_agent(task_id, response_text)
 
@@ -4747,7 +4724,6 @@ def api_task_requeue(task_id):
         if rows[0]["status"] != "FAILED":
             return jsonify({"error": "Only FAILED tasks can be requeued"}), 409
 
-        sys.path.insert(0, str(FLEET_DIR))
         import db
         db.requeue_task(task_id)
 
@@ -4800,7 +4776,6 @@ def api_task_dispatch():
 
         payload_json = json.dumps(payload) if isinstance(payload, dict) else str(payload)
 
-        sys.path.insert(0, str(FLEET_DIR))
         import db
         task_id = db.post_task(
             type_=skill,
@@ -4975,7 +4950,6 @@ def api_queue_reorder():
         # Scale across the range
         updated = []
 
-        sys.path.insert(0, str(FLEET_DIR))
         import db
 
         def _do():
