@@ -276,8 +276,8 @@ def check_quota(tenant_id):
             "exceeded": exceeded,
         }
     except Exception:
-        log.warning("billing: check_quota failed for %s", tenant_id, exc_info=True)
-        return {"tenant_id": tenant_id, "exceeded": False,
+        log.warning("billing: check_quota failing closed for %s", tenant_id, exc_info=True)
+        return {"tenant_id": tenant_id, "exceeded": True, "error": "quota_check_failed",
                 "quota": {}, "used": {}, "remaining": {}}
 
 
