@@ -619,6 +619,11 @@ class ActionSpace:
         if ActionType.PLACE_NEAR.value < len(mask):
             mask[ActionType.PLACE_NEAR.value] = mask[ActionType.PLACE.value]
 
+        # PACK/STAMP: disabled by default in action mask.
+        # Bridge enables them per-tick only when packs are actually available.
+        mask[ActionType.PACK.value] = 0
+        mask[ActionType.STAMP.value] = 0
+
         # Ensure the always-valid actions are set (defensive)
         mask[ActionType.WAIT.value] = 1
         mask[ActionType.MOVE.value] = 1

@@ -669,6 +669,14 @@ class FactorioBridge:
         current_lesson = self._curriculum.current_lesson_index()
         mask = self._action_space.get_action_type_mask(
             state.inventory, self.config.current_phase, current_lesson)
+        # Enable PACK/STAMP only when packs are actually available and affordable
+        from factorio.action_space import ActionType as _AT
+        pack_mask_list = self._pack_registry.get_pack_mask(
+            phase=self.config.current_phase, inventory=state.inventory)
+        has_any_pack = any(pack_mask_list)
+        if has_any_pack:
+            mask[_AT.PACK.value] = 1
+            mask[_AT.STAMP.value] = 1
         mask_t = torch.tensor([mask], dtype=torch.bool)
         action_type, log_prob, value, params = self._policy.act(grid_t, feat_t, mask_t, world_grid=world_t)
 
@@ -793,7 +801,10 @@ class FactorioBridge:
             else:
                 log.warning("Invalid pack_id %d (registry has %d items)",
                             pack_id, len(self._pack_registry._items))
-                # Fall through to normal execution
+                # Skip this tick — don't fall through with a "pack"/"stamp" action name
+                self._prev_state = state
+                self._tick_count += 1
+                return
 
         # 5. Execute via RCON (inject agent_id so exec_cmd uses the right character)
         action_dict["agent_id"] = agent_id
