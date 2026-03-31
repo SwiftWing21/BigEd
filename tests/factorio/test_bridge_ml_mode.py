@@ -14,12 +14,15 @@ async def test_ml_tick_calls_policy():
     """Verify the ML pipeline works end-to-end: encode -> policy -> decode."""
     from factorio.state_encoder import StateEncoder
     from factorio.ml_policy import FactorioPolicy
-    from factorio.action_space import ActionSpace
+    from factorio.action_space import ActionSpace, ActionType
 
     encoder = StateEncoder(phase=1)
     policy = FactorioPolicy(
-        grid_channels=4, grid_size=64, feature_dim=encoder.feature_dim,
-        num_action_types=8, num_entities=8, num_recipes=10, num_techs=20,
+        grid_channels=encoder.grid_channels, grid_size=64,
+        feature_dim=encoder.feature_dim,
+        num_action_types=len(ActionType),
+        num_entities=8, num_recipes=10, num_techs=20,
+        world_grid_channels=encoder.world_grid_channels,
     )
     action_space = ActionSpace(phase=1)
 
@@ -30,12 +33,15 @@ async def test_ml_tick_calls_policy():
         player_has_character=True, player_alive=True,
         inventory={"iron-plate": 10}, entities=[], resources=[],
     )
-    grid, features = encoder.encode(state)
+    grid, world_grid, features = encoder.encode(state)
 
     import torch
     grid_t = torch.tensor(grid).unsqueeze(0)
+    world_t = torch.tensor(world_grid).unsqueeze(0)
     feat_t = torch.tensor(features).unsqueeze(0)
-    action_type, log_prob, value, params = policy.act(grid_t, feat_t)
+    action_type, log_prob, value, params = policy.act(
+        grid_t, feat_t, world_grid=world_t,
+    )
 
     from factorio.action_space import EncodedAction
     encoded = EncodedAction(action_type=action_type.item())

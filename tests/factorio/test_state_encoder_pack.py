@@ -5,9 +5,9 @@ import pytest
 
 def test_feature_dim_includes_pack_progress():
     from factorio.state_encoder import StateEncoder, _BASE_FEATURE_DIM
-    assert _BASE_FEATURE_DIM == 69
+    assert _BASE_FEATURE_DIM == 73
     enc = StateEncoder(phase=1, grid_size=64)
-    assert enc.feature_dim >= 69
+    assert enc.feature_dim >= 73
 
 
 def test_pack_progress_default_zero():
@@ -23,7 +23,7 @@ def test_pack_progress_default_zero():
         entities=[],
     )
     _grid, _world, features = enc.encode(state)
-    assert features[68] == pytest.approx(0.0)
+    assert features[72] == pytest.approx(0.0)
 
 
 def test_pack_progress_encoded_at_index_68():
@@ -39,7 +39,7 @@ def test_pack_progress_encoded_at_index_68():
         entities=[],
     )
     _grid, _world, features = enc.encode(state, pack_progress=0.75)
-    assert features[68] == pytest.approx(0.75)
+    assert features[72] == pytest.approx(0.75)
 
 
 def test_pack_progress_clipped():
@@ -55,7 +55,7 @@ def test_pack_progress_clipped():
         entities=[],
     )
     _grid, _world, features = enc.encode(state, pack_progress=1.5)
-    assert features[68] == pytest.approx(1.0)
+    assert features[72] == pytest.approx(1.0)
 
     _grid, _world, features = enc.encode(state, pack_progress=-0.3)
-    assert features[68] == pytest.approx(0.0)
+    assert features[72] == pytest.approx(0.0)

@@ -9,17 +9,17 @@ Grid  (5 channels, grid_size x grid_size):
   ch 3 — resource amount   (amount / 5000, from resource_positions)
   ch 4 — terrain type  (water=1.0, grass~0.2, sand~0.4, concrete~0.7)
 
-Feature vector (69 base dims, 85 with spatial memory):
+Feature vector (73 base dims, 89 with spatial memory):
   [0:30]   inventory counts for TRACKED_ITEMS, normalized per item
   [30:50]  research tech one-hot (20 slots from TECH_REGISTRY)
   [50]     research progress 0-1
   [51:54]  power status: satisfaction, capacity_mw norm, entity count norm
   [54:56]  time: tick norm, episode step placeholder (0)
-  [56:60]  curriculum phase one-hot (4 phases)
-  [60]     lesson index normalized (/ 20)
-  [61:64]  strategy goal vector (zeros by default)
-  [64:68]  global resource counts (iron/copper/coal/stone, normalized)
-  [68]     active pack progress 0-1
+  [56:64]  curriculum phase one-hot (8 phases)
+  [64]     lesson index normalized (/ 20)
+  [65:68]  strategy goal vector (zeros by default)
+  [68:72]  global resource counts (iron/copper/coal/stone, normalized)
+  [72]     active pack progress 0-1
 """
 import logging
 import math
@@ -66,7 +66,7 @@ _ITEM_MAX: dict[str, float] = {
 
 _NUM_TECHS = 20            # fixed one-hot width (TECH_REGISTRY has 11 entries)
 _MAX_ENTITY_ID = max(ENTITY_REGISTRY.values()) if ENTITY_REGISTRY else 1
-_BASE_FEATURE_DIM = 69     # 30 + 20 + 1 + 3 + 2 + 4 + 1 + 3 + 4 (global resources) + 1 (pack progress)
+_BASE_FEATURE_DIM = 73     # 30 + 20 + 1 + 3 + 2 + 8 + 1 + 3 + 4 (global resources) + 1 (pack progress)
 _SPATIAL_FEATURE_DIM = 16  # bearing/distance to resources + counts + nearest entity
 _AGENT_FEATURE_DIM = 10    # 4 agent one-hot + 6 peer proximity (3 peers × 2: bearing, distance)
 _GRID_CHANNELS = 5         # entity type, direction, resource type, resource amount, terrain
@@ -105,7 +105,7 @@ class StateEncoder:
         spatial_memory=None,
         num_agents: int = 1,
     ) -> None:
-        self._phase = max(1, min(4, phase))
+        self._phase = max(1, min(8, phase))
         self._grid_size = grid_size
         self._lesson_index = lesson_index
         self._strategy_goal: list[float] = list(strategy_goal) if strategy_goal else [0.0, 0.0, 0.0]
@@ -118,7 +118,7 @@ class StateEncoder:
     # ------------------------------------------------------------------
 
     def set_phase(self, phase: int) -> None:
-        self._phase = max(1, min(4, phase))
+        self._phase = max(1, min(8, phase))
 
     def set_lesson_index(self, index: int) -> None:
         self._lesson_index = index
@@ -330,26 +330,26 @@ class StateEncoder:
         feats[54] = float(np.clip(state.tick / _TICK_NORM, 0.0, 1.0))
         feats[55] = 0.0  # episode step placeholder
 
-        # [56:60] curriculum phase one-hot
-        phase_idx = max(0, min(3, self._phase - 1))
+        # [56:64] curriculum phase one-hot (8 phases)
+        phase_idx = max(0, min(7, self._phase - 1))
         feats[56 + phase_idx] = 1.0
 
-        # [60] lesson index normalized
-        feats[60] = float(self._lesson_index) / 20.0
+        # [64] lesson index normalized
+        feats[64] = float(self._lesson_index) / 20.0
 
-        # [61:64] strategy goal
+        # [65:68] strategy goal
         goal = self._strategy_goal
         for j in range(min(3, len(goal))):
-            feats[61 + j] = float(goal[j])
+            feats[65 + j] = float(goal[j])
 
-        # [64:68] global resource counts (normalized, strategic awareness)
+        # [68:72] global resource counts (normalized, strategic awareness)
         _GLOBAL_NORM = 1e9  # 1 billion ore as cap
         _GLOBAL_RESOURCES = ["iron-ore", "copper-ore", "coal", "stone"]
         global_res = getattr(state, "global_resources", {})
         for i, rname in enumerate(_GLOBAL_RESOURCES):
-            feats[64 + i] = float(min(global_res.get(rname, 0) / _GLOBAL_NORM, 1.0))
+            feats[68 + i] = float(min(global_res.get(rname, 0) / _GLOBAL_NORM, 1.0))
 
-        # [68] active pack progress
-        feats[68] = float(np.clip(pack_progress, 0.0, 1.0))
+        # [72] active pack progress
+        feats[72] = float(np.clip(pack_progress, 0.0, 1.0))
 
         return feats
