@@ -624,9 +624,16 @@ class ActionSpace:
         mask[ActionType.PACK.value] = 0
         mask[ActionType.STAMP.value] = 0
 
+        # MOVE: disabled in Phase 1 lessons 0-4 — agent should PLACE/INSERT, not walk.
+        # PLACE_NEAR handles spatial targeting automatically.
+        # Phase 2+: MOVE allowed for factory expansion.
+        if phase == 1 and lesson_index <= 4:
+            mask[ActionType.MOVE.value] = 0
+        else:
+            mask[ActionType.MOVE.value] = 1
+
         # Ensure the always-valid actions are set (defensive)
         mask[ActionType.WAIT.value] = 1
-        mask[ActionType.MOVE.value] = 1
         mask[ActionType.MINE.value] = 1
 
         return mask

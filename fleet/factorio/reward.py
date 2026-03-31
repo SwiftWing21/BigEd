@@ -182,8 +182,8 @@ class RewardComputer:
 
         if not action_success:
             r += _FAILED_ACTION_PENALTY
-        else:
-            r += _SUCCESSFUL_ACTION_BONUS  # reward ANY successful action to break shuffle
+        elif action_type != _MOVE_ACTION_TYPE:
+            r += _SUCCESSFUL_ACTION_BONUS  # reward successful non-MOVE actions only
 
         if lesson_passed:
             r += _LESSON_PASS_BONUS

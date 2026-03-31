@@ -68,8 +68,11 @@ def test_invalid_action_mask():
     inventory = {}
     mask = space.get_action_type_mask(inventory, phase=1)
     assert mask[ActionType.WAIT.value] == 1  # wait always valid
-    assert mask[ActionType.MOVE.value] == 1  # move always valid
+    assert mask[ActionType.MOVE.value] == 0  # move disabled in Phase 1 early lessons
     assert len(mask) == len(ActionType)  # 12
+    # Move enabled in Phase 2+
+    mask2 = space.get_action_type_mask(inventory, phase=2)
+    assert mask2[ActionType.MOVE.value] == 1
 
 
 def test_phase_updates_available_entities():

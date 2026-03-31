@@ -706,12 +706,35 @@ class FactorioBridge:
             abs_x = action_dict["position"]["x"] + round(px)
             abs_y = action_dict["position"]["y"] + round(py)
 
-            # Leash: clamp to exploration radius around spawn (0,0)
-            # Phase 1: 30 tiles (ore field), Phase 2: 60, Phase 3+: 200
+            # Leash: FAIL moves outside radius instead of silently clamping.
+            # Clamping erased the failure signal — agent never learned boundaries.
             _LEASH = {1: 30, 2: 60, 3: 200, 4: 500}
             max_r = _LEASH.get(self.config.current_phase, 200)
-            abs_x = max(-max_r, min(max_r, abs_x))
-            abs_y = max(-max_r, min(max_r, abs_y))
+            if abs(abs_x) > max_r or abs(abs_y) > max_r:
+                if action_dict.get("action") == "move":
+                    # Reject the move — give the policy a clear failure signal
+                    from factorio.trainer import Transition
+                    agent_rw = self._agent_reward.get(agent_id, self._reward)
+                    fail_reward = agent_rw.compute(
+                        self._prev_state if self._prev_state else state,
+                        state, False, False, False, metrics=raw_metrics,
+                        action_type=action_type.item(),
+                        other_agent_positions=other_positions,
+                    ) if self._prev_state else -0.02
+                    self._trajectory_buf.add(Transition(
+                        grid=grid, features=features,
+                        action_type=action_type.item(),
+                        log_prob=log_prob.item(), value=value.item(),
+                        reward=fail_reward, done=False,
+                        world_grid=world_grid,
+                    ))
+                    self._prev_state = state
+                    self._tick_count += 1
+                    return
+                else:
+                    # Non-move actions: clamp position (placement near edge is OK)
+                    abs_x = max(-max_r, min(max_r, abs_x))
+                    abs_y = max(-max_r, min(max_r, abs_y))
 
             action_dict["position"]["x"] = abs_x
             action_dict["position"]["y"] = abs_y
