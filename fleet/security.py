@@ -46,12 +46,6 @@ def ensure_tls_cert(cert_dir=None):
 
 # ── RBAC role definitions ────────────────────────────────────────────────
 
-RBAC_ROLES = {
-    "admin": {"read", "write", "delete", "configure"},
-    "operator": {"read", "write"},
-    "viewer": {"read"},
-}
-
 # ── Granular RBAC permissions (0.135.00b — Enterprise & Multi-Tenant) ────
 
 PERMISSIONS = {
@@ -124,13 +118,14 @@ def get_request_role(config_loader, req=None):
 def require_role(role, config_loader):
     """Decorator to enforce minimum role for an endpoint.
 
-    Compares the request role's permissions against the required role's
-    permissions. Returns 403 if insufficient.
+    Uses the PERMISSIONS table as the single source of truth. A request is
+    allowed if the requesting role's permission set is a superset of the
+    required role's permission set. Roles not in PERMISSIONS are denied.
 
     Parameters
     ----------
     role : str
-        Minimum role name ("admin", "operator", "viewer").
+        Minimum role name (e.g. "admin", "operator", "developer", "viewer", "auditor").
     config_loader : callable
         Passed through to ``get_request_role``.
     """
@@ -138,10 +133,12 @@ def require_role(role, config_loader):
         @functools.wraps(f)
         def wrapper(*args, **kwargs):
             user_role = get_request_role(config_loader)
-            role_perms = RBAC_ROLES.get(user_role, set())
-            required_perms = RBAC_ROLES.get(role, set())
-            if not required_perms.issubset(role_perms):
-                return jsonify({"error": "insufficient permissions", "required_role": role}), 403
+            user_perms = PERMISSIONS.get(user_role, set())
+            required_perms = PERMISSIONS.get(role, set())
+            if not required_perms or not required_perms.issubset(user_perms):
+                return jsonify({"error": "insufficient permissions",
+                                "required_role": role,
+                                "your_role": user_role}), 403
             return f(*args, **kwargs)
         return wrapper
     return decorator

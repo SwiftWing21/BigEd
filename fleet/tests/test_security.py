@@ -13,7 +13,8 @@ FLEET_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if FLEET_DIR not in sys.path:
     sys.path.insert(0, FLEET_DIR)
 
-from dashboard import app, RBAC_ROLES
+from dashboard import app
+from security import PERMISSIONS
 
 
 class TestDashboardSecurity(unittest.TestCase):
@@ -113,21 +114,28 @@ class TestDashboardSecurity(unittest.TestCase):
                       "Rate limiting should trigger after 60 requests/minute")
 
     def test_rbac_role_hierarchy(self):
-        """Verify RBAC role permissions are properly nested."""
-        admin_perms = RBAC_ROLES["admin"]
-        operator_perms = RBAC_ROLES["operator"]
-        viewer_perms = RBAC_ROLES["viewer"]
+        """Verify RBAC role permissions are properly nested (uses PERMISSIONS)."""
+        admin_perms = PERMISSIONS["admin"]
+        operator_perms = PERMISSIONS["operator"]
+        developer_perms = PERMISSIONS["developer"]
+        viewer_perms = PERMISSIONS["viewer"]
+        auditor_perms = PERMISSIONS["auditor"]
         # Admin should have all operator perms
         self.assertTrue(operator_perms.issubset(admin_perms),
                         "Admin must have all operator permissions")
-        # Operator should have all viewer perms
-        self.assertTrue(viewer_perms.issubset(operator_perms),
-                        "Operator must have all viewer permissions")
+        # Operator should have all developer perms
+        self.assertTrue(developer_perms.issubset(operator_perms),
+                        "Operator must have all developer permissions")
         # Viewer should NOT have write
         self.assertNotIn("write", viewer_perms,
                          "Viewer must not have write permission")
         self.assertNotIn("delete", viewer_perms,
                          "Viewer must not have delete permission")
+        # Auditor should have read and audit but not write
+        self.assertIn("audit", auditor_perms,
+                      "Auditor must have audit permission")
+        self.assertNotIn("write", auditor_perms,
+                         "Auditor must not have write permission")
 
     def test_error_messages_sanitized(self):
         """Verify error responses don't leak file paths."""
