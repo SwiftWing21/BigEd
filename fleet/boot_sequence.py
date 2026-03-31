@@ -155,6 +155,26 @@ def boot(config=None):
         pass
     db.init_db()
     db.register_agent("supervisor", "supervisor", os.getpid())
+
+    # Sweep stale RUNNING tasks from previous sessions
+    try:
+        def _sweep_stale():
+            with db.get_conn() as conn:
+                n = conn.execute(
+                    "SELECT COUNT(*) FROM tasks WHERE status='RUNNING'"
+                ).fetchone()[0]
+                if n > 0:
+                    conn.execute(
+                        "UPDATE tasks SET status='FAILED', error='stale — cleared on boot' "
+                        "WHERE status='RUNNING'"
+                    )
+                return n
+        swept = db._retry_write(_sweep_stale)
+        if swept and swept > 0:
+            log.info("Boot sweep: reset %d stale RUNNING tasks to FAILED", swept)
+    except Exception as e:
+        log.warning("Boot sweep failed: %s", e)
+
     boot_status.update_stage("db", "done")
 
     # 4. DAG queue
