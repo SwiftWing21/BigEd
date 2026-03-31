@@ -1,6 +1,6 @@
 # BigEd CC — Big Edge Compute Command
 
-BigEd CC is a centralized AI agent orchestration platform for managing local and cloud LLMs from a single interface. It coordinates a fleet of 130+ specialized AI agents across code review, security auditing, research, ML training, and knowledge management — with enterprise-grade security, multi-tenant support, and hardware-aware scaling.
+A reference architecture demonstrating local-first LLM orchestration for SOC compliance workflows. Built on ~11GB VRAM edge hardware using Ollama, featuring a multi-agent coordination pattern with file-based handoffs, a two-lane integration model (human-initiated vs automated processing), and a HITL approval gate for resource-sensitive operations.
 
 Built through AI-assisted development, BigEd CC is both a functional platform and a case study in directing complex software architecture through iterative AI collaboration. The human role was architectural direction, quality control, debugging, and system design — the kind of work that doesn't show up in lines-of-code metrics but determines whether a system works.
 
