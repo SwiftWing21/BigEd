@@ -12,7 +12,7 @@ def test_translate_place():
     payload = json.loads(result.rcon_command.split(" ", 1)[1])
     assert payload["action"] == "place"
     assert payload["entity"] == "stone-furnace"
-    assert payload["direction"] == 4  # south = 4
+    assert payload["direction"] == 8  # south = 8 (Factorio 2.0 16-dir)
 
 
 def test_translate_craft():
@@ -27,9 +27,9 @@ def test_translate_craft():
 def test_translate_direction_names():
     from factorio.action_translator import _direction_to_int
     assert _direction_to_int("north") == 0
-    assert _direction_to_int("east") == 2
-    assert _direction_to_int("south") == 4
-    assert _direction_to_int("west") == 6
+    assert _direction_to_int("east") == 4
+    assert _direction_to_int("south") == 8
+    assert _direction_to_int("west") == 12
     assert _direction_to_int(4) == 4
     assert _direction_to_int(None) == 0
 

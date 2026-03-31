@@ -24,11 +24,13 @@ def test_evaluate_missing_key_returns_false():
 
 
 def test_load_curriculum():
+    from pathlib import Path
     from factorio.curriculum import load_curriculum
-    curriculum = load_curriculum("factorio_01_bootstrap", curriculum_dir="idle_curricula")
+    curricula_dir = Path(__file__).resolve().parent.parent / "fleet" / "factorio" / "curricula"
+    curriculum = load_curriculum("phase1_bootstrap", curriculum_dir=str(curricula_dir))
     assert curriculum is not None
-    assert len(curriculum["tasks"]) > 0
-    assert curriculum["tasks"][0]["type"] == "factorio"
+    assert len(curriculum["lessons"]) > 0
+    assert curriculum["meta"]["name"] is not None
 
 
 def test_lesson_tracker():
