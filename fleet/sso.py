@@ -464,6 +464,22 @@ def create_session(user_info: dict) -> str:
 
     log.info("SSO session created for user=%s role=%s",
              session_data.get("email", "unknown"), session_data.get("role"))
+
+    # Persist to DB for multi-worker/restart resilience
+    try:
+        import db
+        def _do():
+            conn = db.get_conn()
+            conn.execute(
+                "INSERT OR REPLACE INTO sso_sessions (session_id, user_data, created_at, expires_at) "
+                "VALUES (?, ?, ?, ?)",
+                (token, json.dumps(session_data), time.time(), session_data["exp"])
+            )
+            conn.commit()
+        db._retry_write(_do)
+    except Exception:
+        log.warning("Failed to persist SSO session to DB", exc_info=True)
+
     return token
 
 
@@ -473,6 +489,23 @@ def validate_session(token: str) -> dict | None:
         return None
     with _store_lock:
         session_data = _sessions.get(token)
+
+    # In-memory cache miss — try DB
+    if not session_data:
+        try:
+            import db
+            conn = db.get_conn()
+            row = conn.execute(
+                "SELECT user_data, expires_at FROM sso_sessions WHERE session_id = ?",
+                (token,)
+            ).fetchone()
+            if row and row["expires_at"] > time.time():
+                session_data = json.loads(row["user_data"])
+                with _store_lock:
+                    _sessions[token] = session_data  # refill cache
+        except Exception:
+            log.warning("SSO session DB lookup failed", exc_info=True)
+
     if not session_data:
         return None
     if time.time() > session_data.get("exp", 0):
@@ -486,7 +519,20 @@ def validate_session(token: str) -> dict | None:
 def revoke_session(token: str) -> bool:
     """Invalidate a session token. Returns True if the token was found."""
     with _store_lock:
-        return _sessions.pop(token, None) is not None
+        found = _sessions.pop(token, None) is not None
+
+    # Also delete from DB
+    try:
+        import db
+        def _do():
+            conn = db.get_conn()
+            conn.execute("DELETE FROM sso_sessions WHERE session_id = ?", (token,))
+            conn.commit()
+        db._retry_write(_do)
+    except Exception:
+        log.warning("Failed to delete SSO session from DB", exc_info=True)
+
+    return found
 
 
 def get_session_from_request(req=None) -> dict | None:

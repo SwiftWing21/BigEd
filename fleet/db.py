@@ -580,6 +580,28 @@ def init_db():
             )
         """)
         conn.execute("CREATE INDEX IF NOT EXISTS idx_snapshots_created ON module_snapshots(created_at DESC)")
+        # SSO session persistence — survives restarts and multi-worker
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS sso_sessions (
+                session_id TEXT PRIMARY KEY,
+                user_data TEXT NOT NULL,
+                created_at REAL NOT NULL,
+                expires_at REAL NOT NULL
+            )
+        """)
+        # Enterprise: tenant API key storage for control plane validation
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS tenant_api_keys (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                tenant_id TEXT NOT NULL,
+                key_hash TEXT NOT NULL UNIQUE,
+                label TEXT DEFAULT '',
+                created_at REAL NOT NULL,
+                last_used_at REAL
+            )
+        """)
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_tak_hash ON tenant_api_keys (key_hash)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_tak_tenant ON tenant_api_keys (tenant_id)")
 
 
 def update_intelligence_score(task_id, score):
