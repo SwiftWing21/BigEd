@@ -236,7 +236,13 @@ class ExperimentFramework:
             if not exp_cfg.get("auto_approve", False):
                 return False
             types = exp_cfg.get("auto_approve_types", {})
-            return bool(types.get(experiment_type, False))
+            if not bool(types.get(experiment_type, False)):
+                return False
+            # Time-gate: only auto-approve within configured windows
+            if not self._in_auto_window(exp_cfg):
+                log.info("Auto-approve blocked: outside configured time window")
+                return False
+            return True
         except Exception:
             log.warning("Failed to read experiment config", exc_info=True)
             return False
