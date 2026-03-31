@@ -1026,8 +1026,12 @@ local function fn_biged_blueprint(json_str)
             local ent_y = (bp_entity.position.y or 0) + anchor_y
             local direction = bp_entity.direction or 0
 
-            -- Check agent has the item
+            -- Creative mode: auto-insert item if not in inventory
             local item_count = inv.get_item_count(ent_name)
+            if item_count < 1 then
+                pcall(function() inv.insert{name = ent_name, count = 50} end)
+                item_count = inv.get_item_count(ent_name)
+            end
             if item_count < 1 then
                 table.insert(failed, {name = ent_name, position = {x = ent_x, y = ent_y}, reason = "no item"})
             else
