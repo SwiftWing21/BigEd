@@ -15,6 +15,7 @@ from factorio.world_model import WorldModel
 from factorio.cadence import CadenceController
 from factorio.bridge_api import create_api, update_status, store_result, update_training_status, update_player_position
 from factorio.agent_brain import AgentBrain
+from factorio.reward import _PACK_COMPLETE_BONUS, _PACK_ABORT_PENALTY
 
 log = logging.getLogger("biged.factorio.bridge")
 
@@ -597,9 +598,9 @@ class FactorioBridge:
                 pack_aborted = _executor.abort_reason is not None
                 cum_reward = _executor.cumulative_reward
                 if pack_completed:
-                    cum_reward += 1.0   # _PACK_COMPLETE_BONUS
+                    cum_reward += _PACK_COMPLETE_BONUS
                 elif pack_aborted:
-                    cum_reward += -0.5  # _PACK_ABORT_PENALTY
+                    cum_reward += _PACK_ABORT_PENALTY
                 saved = self._pack_pending_transition.pop(agent_id, None)
                 if saved:
                     from factorio.trainer import Transition
