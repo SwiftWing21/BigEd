@@ -178,7 +178,14 @@ def get_conn(db_path=None):
 
     Pass db_path to get a non-pooled connection for a specific database
     (e.g. tenant DBs). Only the default DB_PATH is pooled.
+
+    Honors FLEET_TEST_DB env var -- set to a file path or ":memory:" for test
+    isolation. When set, bypasses the pool (each call creates a fresh connection).
     """
+    # Honor FLEET_TEST_DB env var for test isolation
+    if db_path is None:
+        db_path = os.environ.get("FLEET_TEST_DB") or None
+
     # Non-default paths bypass the pool (tenant DBs, one-off connections)
     if db_path is not None:
         return _create_connection(db_path)
@@ -324,8 +331,15 @@ from comms import post_message, get_messages, broadcast_message, post_note, get_
 VALID_TASK_STATUSES = {"PENDING", "RUNNING", "DONE", "FAILED", "WAITING", "REVIEW", "WAITING_HUMAN", "FORWARDED"}
 
 
-def init_db():
-    with get_conn() as conn:
+def init_db(path: str | None = None):
+    """Initialize the database schema.
+
+    Args:
+        path: Optional DB path override. Defaults to DB_PATH (or FLEET_TEST_DB env var).
+              Pass ":memory:" in tests for a clean isolated database.
+    """
+    db_path = path or os.environ.get("FLEET_TEST_DB") or None
+    with get_conn(db_path) as conn:
         conn.executescript(SCHEMA)
         # Migrate: add columns if missing (safe for existing DBs)
         cols = {r[1] for r in conn.execute("PRAGMA table_info(tasks)").fetchall()}

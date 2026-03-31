@@ -40,3 +40,47 @@ fleet = [
 pythonpath = ["fleet"]
 testpaths = ["tests"]
 asyncio_mode = "auto"
+
+[tool.ruff]
+target-version = "py311"
+line-length = 120
+exclude = [
+    ".venv",
+    "node_modules",
+    "fleet/skills/",
+    "fleet/factorio/",
+    "tests/factorio/",
+    "autoresearch/",
+    "deploy/",
+]
+
+[tool.ruff.lint]
+select = [
+    "E",   # pycodestyle errors
+    "F",   # pyflakes (undefined names, unused imports)
+    "W",   # pycodestyle warnings
+    "I",   # isort
+]
+ignore = [
+    "E501",   # line too long
+    "E402",   # module-level import not at top -- fleet uses lazy imports by design
+    "F401",   # unused import -- many intentional re-exports
+]
+
+[tool.ruff.lint.isort]
+known-first-party = ["db", "config", "providers", "comms", "health_monitor"]
+
+[tool.coverage.run]
+source = ["fleet"]
+omit = [
+    "fleet/skills/*",
+    "fleet/factorio/*",
+    "fleet/tenants/*",
+    "fleet/knowledge/*",
+    "tests/*",
+]
+branch = true
+
+[tool.coverage.report]
+show_missing = true
+skip_covered = false
