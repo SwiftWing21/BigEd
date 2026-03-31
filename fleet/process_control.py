@@ -10,66 +10,16 @@ from datetime import datetime, timezone
 from pathlib import Path
 from flask import Blueprint, jsonify, request
 
-from security import require_role as _require_role_raw, safe_error as _safe_error
+from security import safe_error as _safe_error
 
-FLEET_DIR = Path(__file__).parent
-DB_PATH = FLEET_DIR / "fleet.db"
-HW_STATE_JSON = FLEET_DIR / "hw_state.json"
+from dashboard_utils import (
+    FLEET_DIR, DB_PATH, HW_STATE_JSON, VALID_AGENT,
+    _load_config, get_conn, query, _require_role, _check_rate_limit,
+)
 
 fleet_bp = Blueprint('fleet', __name__)
 
 log = logging.getLogger("process_control")
-
-# ── Config loader (local, avoids circular import with dashboard) ──────────────
-
-def _load_config():
-    try:
-        import tomllib
-    except ImportError:
-        try:
-            import tomli as tomllib
-        except ImportError:
-            return {}
-    toml_path = FLEET_DIR / "fleet.toml"
-    if not toml_path.exists():
-        return {}
-    return tomllib.loads(toml_path.read_text(encoding="utf-8"))
-
-
-def _require_role(role):
-    return _require_role_raw(role, _load_config)
-
-
-# ── DB helpers (duplicated from dashboard — trivial, avoids circular import) ─
-
-def _get_conn():
-    import db
-    return db.get_conn()
-
-
-def query(sql, params=()):
-    with _get_conn() as conn:
-        return [dict(r) for r in conn.execute(sql, params).fetchall()]
-
-
-VALID_AGENT = re.compile(r'^[a-zA-Z0-9_-]{1,64}$')
-
-# ── In-memory rate limiter ────────────────────────────────────────────────────
-_rate_limits = {}
-
-def _check_rate_limit(endpoint, max_per_min=10):
-    now = time.time()
-    if endpoint not in _rate_limits:
-        _rate_limits[endpoint] = (now, 1)
-        return True
-    last, count = _rate_limits[endpoint]
-    if now - last > 60:
-        _rate_limits[endpoint] = (now, 1)
-        return True
-    if count >= max_per_min:
-        return False
-    _rate_limits[endpoint] = (last, count + 1)
-    return True
 
 
 # ── Process Control API (extracted from dashboard.py, TECH_DEBT 4.3) ────────
@@ -147,7 +97,7 @@ def api_fleet_stop():
 
         # Phase 2: Mark all agents as OFFLINE in DB
         try:
-            with _get_conn() as conn:
+            with get_conn() as conn:
                 conn.execute("UPDATE agents SET status='OFFLINE', pid=NULL")
         except Exception:
             pass
@@ -227,7 +177,7 @@ def api_fleet_restart():
 
         # Mark agents offline
         try:
-            with _get_conn() as conn:
+            with get_conn() as conn:
                 conn.execute("UPDATE agents SET status='OFFLINE', pid=NULL")
         except Exception:
             pass
@@ -333,7 +283,7 @@ def api_fleet_worker_restart(name):
             except (OSError, ProcessLookupError):
                 pass
         # Mark agent as needing restart — supervisor will respawn on next cycle
-        with _get_conn() as conn:
+        with get_conn() as conn:
             conn.execute("UPDATE agents SET status='IDLE', pid=NULL WHERE name=?", (name,))
         log.info("Agent restart requested via API: %s", name)
         return jsonify({"status": "restarting", "name": name})
@@ -523,7 +473,7 @@ def api_agent_restart(name):
                 os.kill(pid, signal.SIGTERM)
             except (OSError, ProcessLookupError):
                 pass
-        with _get_conn() as conn:
+        with get_conn() as conn:
             conn.execute("UPDATE agents SET status='IDLE', pid=NULL WHERE name=?", (name,))
         log.info("Agent '%s' restart requested via API", name)
         return jsonify({"status": "restarting", "agent": name})

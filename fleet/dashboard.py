@@ -42,7 +42,13 @@ from security import (
     register_hooks as _register_security_hooks,
 )
 
-FLEET_DIR = Path(__file__).parent
+from dashboard_utils import (
+    FLEET_DIR, DB_PATH, KNOWLEDGE_DIR, HW_STATE_JSON, VALID_AGENT,
+    _load_config, get_conn, query,
+    _get_request_role, _require_role,
+    _check_rate_limit, _is_recent, safe_error,
+)
+
 _start_time = time.time()  # dashboard boot timestamp for /api/health uptime
 
 # Background CPU sampler — psutil.cpu_percent(interval=0) returns 0 on first call.
@@ -65,9 +71,6 @@ try:
     _cpu_sampler_thread.start()
 except Exception:
     pass
-DB_PATH = FLEET_DIR / "fleet.db"
-KNOWLEDGE_DIR = FLEET_DIR / "knowledge"
-HW_STATE_JSON = FLEET_DIR / "hw_state.json"
 
 
 def _get_version() -> str:
@@ -80,14 +83,6 @@ def _get_version() -> str:
         return "0.400.00b"
 
 
-def _is_recent(timestamp_str: str, seconds: int = 120) -> bool:
-    """Return True if a DB timestamp string is within the last *seconds*."""
-    try:
-        ts = datetime.fromisoformat(timestamp_str)
-        return (datetime.utcnow() - ts).total_seconds() < seconds
-    except Exception:
-        return False
-
 app = Flask(__name__)
 
 # ── Security hooks (CORS, auth, rate-limit, CSRF) ────────────────────────
@@ -96,15 +91,6 @@ app = Flask(__name__)
 # request time, not import time.
 _register_security_hooks(app, lambda: _load_config())
 
-
-def _get_request_role(req=None):
-    """Convenience wrapper — delegates to security.get_request_role."""
-    return get_request_role(_load_config, req)
-
-
-def _require_role(role):
-    """Convenience wrapper — delegates to security.require_role."""
-    return _require_role_raw(role, _load_config)
 
 
 # Alert state — tracked in memory, broadcast via SSE
@@ -119,30 +105,6 @@ _federation_peers = {}
 
 # Mode control — serialise concurrent switch requests
 _mode_switch_lock = threading.Lock()
-
-# ── In-memory rate limiter for expensive endpoints ────────────────────────
-_rate_limits = {}  # endpoint -> (last_call_time, count)
-
-def _check_rate_limit(endpoint, max_per_min=10):
-    """Simple in-memory rate limit. Returns True if allowed."""
-    now = time.time()
-    # Evict stale entries when dict grows large
-    if len(_rate_limits) > 500:
-        stale = [k for k, v in _rate_limits.items() if now - v[0] >= 300]
-        for k in stale:
-            del _rate_limits[k]
-    if endpoint not in _rate_limits:
-        _rate_limits[endpoint] = (now, 1)
-        return True
-    last, count = _rate_limits[endpoint]
-    if now - last > 60:
-        _rate_limits[endpoint] = (now, 1)
-        return True
-    if count >= max_per_min:
-        return False
-    _rate_limits[endpoint] = (last, count + 1)
-    return True
-
 
 # ── API call attribution logging ──────────────────────────────────────────
 
@@ -216,36 +178,6 @@ def _add_security_headers(response):
         "connect-src 'self'"
     )
     return response
-
-
-# ── DB helpers ───────────────────────────────────────────────────────────────
-
-def get_conn():
-    """Get fleet.db connection via db module (WAL, retry, optional SQLCipher)."""
-    import db as _db
-    return _db.get_conn()
-
-
-def query(sql, params=()):
-    with get_conn() as conn:
-        return [dict(r) for r in conn.execute(sql, params).fetchall()]
-
-
-# ── Config loader ────────────────────────────────────────────────────────────
-
-def _load_config():
-    """Load fleet.toml for thermal/training/module config."""
-    try:
-        import tomllib
-    except ImportError:
-        try:
-            import tomli as tomllib
-        except ImportError:
-            return {}
-    toml_path = FLEET_DIR / "fleet.toml"
-    if not toml_path.exists():
-        return {}
-    return tomllib.loads(toml_path.read_text(encoding="utf-8"))
 
 
 # ── Mode Control helpers ─────────────────────────────────────────────────────
@@ -3462,8 +3394,6 @@ def api_settings_theme_set():
 
 
 # ── Agent Disable/Enable ──────────────────────────────────────────────────────
-
-VALID_AGENT = re.compile(r'^[a-zA-Z0-9_-]{1,64}$')
 
 @app.route("/api/fleet/worker/<name>/disable", methods=["POST"])
 def worker_disable(name):
