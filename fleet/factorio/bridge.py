@@ -473,20 +473,35 @@ class FactorioBridge:
                 self._tick_count += 1
                 return
 
-        # 0a. Periodic resupply — keep agents stocked so they focus on placement/smelting
-        if self._tick_count % 500 == 0 and self.config.current_phase <= 2:
+        # 0a. Periodic resupply — creative mode: stock agents with all building materials
+        if self._tick_count % 200 == 0:
             try:
                 resupply_lua = (
-                    f'/c local inv = storage.agent_inventories and storage.agent_inventories[{agent_id}]; '
-                    'if inv and inv.valid then '
-                    'local items = {["iron-ore"]=100,["copper-ore"]=100,["coal"]=100,["stone"]=50,'
-                    '["iron-plate"]=100,["copper-plate"]=50,["iron-gear-wheel"]=20,'
-                    '["stone-furnace"]=5,["burner-mining-drill"]=5,["burner-inserter"]=5,'
-                    '["inserter"]=5,["transport-belt"]=20,["wooden-chest"]=3,'
-                    '["small-electric-pole"]=5}; '
-                    'for name, count in pairs(items) do '
-                    'if inv.get_item_count(name) < count then '
-                    'inv.insert{name=name, count=count - inv.get_item_count(name)} end end end'
+                    f'/c local chars = game.surfaces[1].find_entities_filtered{{type="character"}}; '
+                    f'for _, c in pairs(chars) do '
+                    f'  local inv = c.get_inventory(defines.inventory.character_main); '
+                    f'  if inv then '
+                    f'    local items = {{["stone-furnace"]=50,["burner-mining-drill"]=50,'
+                    f'["electric-mining-drill"]=50,["assembling-machine-1"]=50,'
+                    f'["assembling-machine-2"]=20,["transport-belt"]=200,'
+                    f'["fast-transport-belt"]=100,["inserter"]=100,["fast-inserter"]=50,'
+                    f'["long-handed-inserter"]=50,["burner-inserter"]=50,'
+                    f'["small-electric-pole"]=100,["medium-electric-pole"]=50,'
+                    f'["substation"]=20,["pipe"]=100,["pipe-to-ground"]=50,'
+                    f'["offshore-pump"]=10,["boiler"]=20,["steam-engine"]=20,'
+                    f'["lab"]=10,["radar"]=10,["wooden-chest"]=50,["iron-chest"]=50,'
+                    f'["splitter"]=50,["underground-belt"]=50,'
+                    f'["coal"]=200,["iron-plate"]=200,["copper-plate"]=200,'
+                    f'["steel-plate"]=100,["iron-gear-wheel"]=100,["copper-cable"]=100,'
+                    f'["electronic-circuit"]=100,["solar-panel"]=50,["accumulator"]=50,'
+                    f'["solid-fuel"]=100}}; '
+                    f'    for name, count in pairs(items) do '
+                    f'      if inv.get_item_count(name) < count then '
+                    f'        inv.insert{{name=name, count=count - inv.get_item_count(name)}} '
+                    f'      end '
+                    f'    end '
+                    f'  end '
+                    f'end'
                 )
                 await self.rcon.command(resupply_lua)
             except Exception:
@@ -1066,6 +1081,17 @@ class FactorioBridge:
             log.info("Crash-site wreckage cleared")
         except Exception:
             log.warning("Failed to clear crash-site wreckage", exc_info=True)
+
+        # Enable creative/sandbox mode — research all, cheat mode, fast crafting
+        try:
+            await self.rcon.command(
+                '/c game.forces["player"].research_all_technologies(); '
+                'game.forces["player"].manual_crafting_speed_modifier = 1000; '
+                'game.forces["player"].manual_mining_speed_modifier = 1000'
+            )
+            log.info("Creative mode enabled: all tech researched, instant crafting")
+        except Exception:
+            log.warning("Failed to enable creative mode", exc_info=True)
 
         # Ensure all agent characters exist
         num_agents = getattr(self.config, 'num_agents', 1)

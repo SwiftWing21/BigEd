@@ -593,27 +593,22 @@ class ActionSpace:
         if phase <= 2:
             mask[ActionType.REMOVE.value] = 0
 
-        # Lesson-aware action restrictions for Phase 1
+        # Lesson-aware action restrictions for Phase 1 (sandbox building)
+        # In creative/sandbox mode, unlock building tools progressively:
+        #   Lessons 0-1: PLACE only (learn placement)
+        #   Lessons 2+:  PLACE + INSERT (learn feeding machines)
+        #   Lessons 4+:  All building actions (full factory design)
         if phase == 1:
             if lesson_index <= 1:
-                # Lessons 0-1: PLACE only — disable CRAFT, RESEARCH, SET_RECIPE, INSERT
-                # No entities placed yet, so INSERT is wasted. Focus on placement.
                 mask[ActionType.CRAFT.value] = 0
                 mask[ActionType.RESEARCH.value] = 0
                 mask[ActionType.SET_RECIPE.value] = 0
                 mask[ActionType.INSERT.value] = 0
-            elif lesson_index <= 2:
-                # Lesson 2: PLACE drill — still no INSERT needed (drill needs fuel later)
+            elif lesson_index <= 3:
+                # Lessons 2-3: PLACE + INSERT — learn assembling machines
                 mask[ActionType.CRAFT.value] = 0
                 mask[ActionType.RESEARCH.value] = 0
-                mask[ActionType.SET_RECIPE.value] = 0
-                mask[ActionType.INSERT.value] = 0
-            elif lesson_index <= 4:
-                # Lessons 3-4: INSERT + PLACE focused — teach feeding machines
-                mask[ActionType.CRAFT.value] = 0
-                mask[ActionType.RESEARCH.value] = 0
-                mask[ActionType.SET_RECIPE.value] = 0
-            # Lessons 5+: everything except REMOVE
+            # Lessons 4+: everything except REMOVE
 
         # PLACE_NEAR: same requirement as PLACE (need placeable entity in inventory)
         if ActionType.PLACE_NEAR.value < len(mask):
@@ -624,10 +619,8 @@ class ActionSpace:
         mask[ActionType.PACK.value] = 0
         mask[ActionType.STAMP.value] = 0
 
-        # MOVE: disabled in Phase 1 lessons 0-4 — agent should PLACE/INSERT, not walk.
-        # PLACE_NEAR handles spatial targeting automatically.
-        # Phase 2+: MOVE allowed for factory expansion.
-        if phase == 1 and lesson_index <= 4:
+        # MOVE: disabled in early lessons only — agents need mobility for factory expansion
+        if phase == 1 and lesson_index <= 2:
             mask[ActionType.MOVE.value] = 0
         else:
             mask[ActionType.MOVE.value] = 1
