@@ -846,6 +846,38 @@ def main():
                         }
                 except Exception:
                     pass  # marker injection must never block task processing
+                # Guardrails: check output for toxicity/PII if enabled (never blocks on error)
+                try:
+                    _gr_cfg = config.get("guardrails", {})
+                    if _gr_cfg.get("enabled", False):
+                        import guardrails as _guardrails_mod
+                        _gr_text = ""
+                        if isinstance(result, str):
+                            _gr_text = result
+                        elif isinstance(result, dict):
+                            _gr_text = result.get("response") or result.get("result") or json.dumps(result)
+                        if _gr_text:
+                            _gr_config = _guardrails_mod.GuardrailConfig(
+                                toxicity=_gr_cfg.get("toxicity", True),
+                                pii_detection=_gr_cfg.get("pii_detection", True),
+                                max_output_length=_gr_cfg.get("max_output_length", 0),
+                                topic_rails=_gr_cfg.get("blocked_topics", []),
+                            )
+                            _gr_result = _guardrails_mod.evaluate_output(_gr_text, _gr_config)
+                            if not _gr_result.passed:
+                                _high = [f for f in _gr_result.findings if f["severity"] == "high"]
+                                log.warning(
+                                    f"Task {task['id']} guardrail FAIL ({len(_high)} high-severity findings): "
+                                    + "; ".join(f["detail"] for f in _high[:3])
+                                )
+                                if _gr_cfg.get("block_on_fail", False):
+                                    db.fail_task(task['id'], "guardrail: high-severity content blocked")
+                                    continue
+                            elif _gr_result.findings:
+                                log.info(f"Task {task['id']} guardrail WARN: "
+                                         + "; ".join(f["detail"] for f in _gr_result.findings[:3]))
+                except Exception:
+                    log.warning("Guardrail check failed — continuing", exc_info=True)
                 if _should_review(task['type'], config, payload):
                     verdict = _run_review(task['type'], payload, result, config, log)
                     if verdict.get("verdict") == "FAIL":
@@ -938,6 +970,24 @@ def main():
                                     f"${budget_info['spent_usd']:.4f} / ${budget_info['budget_usd']:.4f}")
                 except Exception:
                     pass  # budget tracking must never break task execution
+                # CT-5: Billing metering — record usage per tenant if enabled
+                try:
+                    _billing_cfg = config.get("billing", {})
+                    if _billing_cfg.get("enabled", False):
+                        import billing as _billing
+                        _tenant_id = task.get("tenant_id") or config.get("platform", {}).get("default_tenant_id", "default")
+                        _skill_name = task.get("type", "unknown")
+                        _model_used = result.get("_model", "") if isinstance(result, dict) else ""
+                        _tokens_in = result.get("_tokens_in", 0) if isinstance(result, dict) else 0
+                        _tokens_out = result.get("_tokens_out", 0) if isinstance(result, dict) else 0
+                        _cost = result.get("_cost_usd", 0.0) if isinstance(result, dict) else 0.0
+                        _billing.record_usage(
+                            _tenant_id, _skill_name,
+                            _tokens_in, _tokens_out,
+                            _model_used, _cost,
+                        )
+                except Exception:
+                    pass  # billing must never block task execution
             except Exception as e:
                 err_str = str(e).lower()
                 # Auth / missing-key errors — fail immediately, never requeue
