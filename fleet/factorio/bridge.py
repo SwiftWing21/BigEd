@@ -1093,6 +1093,44 @@ class FactorioBridge:
         except Exception:
             log.warning("Failed to enable creative mode", exc_info=True)
 
+        # Place infinity chests at spawn with all building materials
+        try:
+            await self.rcon.command(
+                '/c local s = game.surfaces[1]; '
+                'local existing = s.find_entities_filtered{name="infinity-chest"}; '
+                'if #existing > 0 then rcon.print("infinity chests already placed: "..#existing); return end; '
+                'local items = {"stone-furnace","electric-furnace",'
+                '"burner-mining-drill","electric-mining-drill",'
+                '"assembling-machine-1","assembling-machine-2","assembling-machine-3",'
+                '"transport-belt","fast-transport-belt","express-transport-belt",'
+                '"inserter","fast-inserter","long-handed-inserter","burner-inserter",'
+                '"small-electric-pole","medium-electric-pole","big-electric-pole","substation",'
+                '"pipe","pipe-to-ground","offshore-pump","boiler","steam-engine",'
+                '"lab","radar","wooden-chest","iron-chest","steel-chest",'
+                '"splitter","underground-belt","fast-underground-belt",'
+                '"oil-refinery","chemical-plant","pumpjack","storage-tank",'
+                '"beacon","solar-panel","accumulator",'
+                '"roboport","logistic-chest-storage","logistic-chest-requester",'
+                '"coal","iron-plate","copper-plate","steel-plate",'
+                '"iron-gear-wheel","copper-cable","electronic-circuit",'
+                '"advanced-circuit","processing-unit","solid-fuel"}; '
+                'local placed = 0; '
+                'for i, name in pairs(items) do '
+                '  local cx = -15 + math.floor((i-1) / 10) * 2; '
+                '  local cy = -25 + ((i-1) % 10) * 2; '
+                '  local chest = s.create_entity{name="infinity-chest", position={cx, cy}, force="player"}; '
+                '  if chest then '
+                '    chest.infinity_container_filters = {{name=name, count=200, mode="exactly", index=1}}; '
+                '    chest.remove_unfiltered_items = true; '
+                '    placed = placed + 1 '
+                '  end '
+                'end; '
+                'rcon.print("placed "..placed.." infinity chests")'
+            )
+            log.info("Infinity supply chests placed at spawn")
+        except Exception:
+            log.warning("Failed to place infinity chests", exc_info=True)
+
         # Ensure all agent characters exist
         num_agents = getattr(self.config, 'num_agents', 1)
         for aid in range(1, num_agents + 1):
