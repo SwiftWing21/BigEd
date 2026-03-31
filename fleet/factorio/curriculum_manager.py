@@ -51,7 +51,8 @@ class CurriculumManager:
 
         self._meta = data.get("meta", {})
         self._lessons = data.get("lessons", [])
-        self._tracker = LessonTracker(total_lessons=len(self._lessons))
+        max_attempts = [lesson.get("max_attempts", 0) for lesson in self._lessons]
+        self._tracker = LessonTracker(total_lessons=len(self._lessons), max_attempts=max_attempts)
         self._phase = phase
         log.info("Loaded phase %d: %s (%d lessons)", phase, self._meta.get("name", "?"), len(self._lessons))
         return True

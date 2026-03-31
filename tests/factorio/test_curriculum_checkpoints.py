@@ -68,6 +68,30 @@ def test_phase8_loads():
     assert len(cm._lessons) == 5
 
 
+# --- max_attempts enforcement ---
+
+def test_max_attempts_auto_skip():
+    """LessonTracker should auto-pass lesson when max_attempts exceeded."""
+    from factorio.curriculum import LessonTracker
+
+    tracker = LessonTracker(total_lessons=3, max_attempts=[100, 100, 100])
+    # Simulate 101 attempts on lesson 0
+    for _ in range(101):
+        tracker.mark_attempt(0)
+    assert tracker._passed[0] is True, "Lesson should auto-pass after max_attempts"
+    assert tracker.current_index == 1, "Should advance to lesson 1"
+
+
+def test_max_attempts_zero_means_no_limit():
+    """max_attempts=0 means no auto-skip."""
+    from factorio.curriculum import LessonTracker
+
+    tracker = LessonTracker(total_lessons=2, max_attempts=[0, 0])
+    for _ in range(10000):
+        tracker.mark_attempt(0)
+    assert tracker._passed[0] is False, "Should never auto-pass with max_attempts=0"
+
+
 def test_full_curriculum_advance():
     """Verify we can advance through all 8 phases."""
     cm = CurriculumManager(current_phase=1, curricula_dir=CURRICULA_DIR)

@@ -88,9 +88,10 @@ def load_curriculum(name: str, curriculum_dir: str = "idle_curricula") -> dict |
 
 
 class LessonTracker:
-    def __init__(self, total_lessons: int):
+    def __init__(self, total_lessons: int, max_attempts: list[int] | None = None):
         self._passed = [False] * total_lessons
         self._attempts = [0] * total_lessons
+        self._max_attempts = max_attempts or [0] * total_lessons  # 0 = no limit
 
     @property
     def current_index(self) -> int:
@@ -110,6 +111,11 @@ class LessonTracker:
     def mark_attempt(self, index: int) -> None:
         if 0 <= index < len(self._attempts):
             self._attempts[index] += 1
+            # Auto-pass if max_attempts exceeded (0 = no limit)
+            limit = self._max_attempts[index] if index < len(self._max_attempts) else 0
+            if limit > 0 and self._attempts[index] > limit and not self._passed[index]:
+                self._passed[index] = True
+                log.info("Lesson %d auto-passed: exceeded max_attempts=%d", index, limit)
 
     def get_progress(self) -> dict:
         return {
