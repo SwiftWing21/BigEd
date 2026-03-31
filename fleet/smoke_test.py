@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Smoke test — validates the entire fleet startup chain. Run: uv run python smoke_test.py"""
+"""Smoke test — validates the entire fleet startup chain (51 fast / 54 full). Run: python smoke_test.py"""
 
 import argparse
 import importlib
