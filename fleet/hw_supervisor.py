@@ -537,7 +537,7 @@ class AmbientEstimator:
         if self._cooldown_start and (now - self._cooldown_start) > 120:
             # After 2 min of idle, current temp approximates ambient + idle dissipation
             # GPU idle offset is typically 8-15°C above ambient
-            idle_offset = 12  # reasonable estimate for RTX 3080 Ti in a case
+            idle_offset = 12  # reasonable estimate for gaming-class GPU in a case
             self._ambient_estimate = max(15, gpu_temp - idle_offset)
 
     @property

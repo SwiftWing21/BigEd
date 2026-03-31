@@ -15,7 +15,13 @@ _PROFILE_VRAM = {
     "stable": 8.4,
     "flat_out": 11.4,
 }
-_GPU_TOTAL_GB = 12.0  # RTX 3080 Ti
+def _get_gpu_total_gb() -> float:
+    """Return total GPU VRAM in GB from hardware_profiles (auto-detected)."""
+    try:
+        from hardware_profiles import get_detected_profile
+        return get_detected_profile().vram_total_gb or 12.0
+    except Exception:
+        return 12.0  # safe fallback
 
 
 def is_training_running():
@@ -100,7 +106,7 @@ def training_needs_eviction(config, profile=None):
         return True, f"{profile} needs {vram_needed:.1f}GB — evicting Ollama"
 
     ollama_vram, models = get_ollama_vram_usage(config)
-    available = _GPU_TOTAL_GB - ollama_vram
+    available = _get_gpu_total_gb() - ollama_vram
 
     if profile == "micro":
         # Micro only needs ~2GB — almost always fits alongside Ollama
