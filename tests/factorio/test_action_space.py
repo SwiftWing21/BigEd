@@ -176,3 +176,61 @@ def test_action_space_phase8_includes_all_entities():
     space = ActionSpace(phase=8)
     assert space.num_entity_types == len(ENTITY_REGISTRY)
     assert space.num_recipe_types == len(RECIPE_REGISTRY)
+
+
+# -------------------------------------------------------------------
+# Snapshot tests — verify dedup refactor preserves exact values
+# -------------------------------------------------------------------
+
+def test_phase_entities_exact_phase1():
+    assert PHASE_ENTITIES[1] == {
+        "stone-furnace", "burner-mining-drill", "wooden-chest",
+        "transport-belt", "inserter", "burner-inserter",
+        "small-electric-pole", "boiler",
+    }
+
+
+def test_phase_entities_exact_phase2():
+    assert "steam-engine" in PHASE_ENTITIES[2]
+    assert "assembling-machine-1" in PHASE_ENTITIES[2]
+    assert "lab" in PHASE_ENTITIES[2]
+    assert len(PHASE_ENTITIES[2]) == 15  # 8 + 7 new
+
+
+def test_phase_entities_exact_phase3():
+    assert "long-handed-inserter" in PHASE_ENTITIES[3]
+    assert "fast-inserter" in PHASE_ENTITIES[3]
+    assert "underground-belt" in PHASE_ENTITIES[3]
+    assert "splitter" in PHASE_ENTITIES[3]
+    assert len(PHASE_ENTITIES[3]) == 19  # 15 + 4 new
+
+
+def test_phase_entities_cumulative():
+    """Each phase is a superset of the previous phase."""
+    for phase in range(2, 9):
+        assert PHASE_ENTITIES[phase - 1].issubset(PHASE_ENTITIES[phase]), \
+            f"Phase {phase} is not a superset of phase {phase - 1}"
+
+
+def test_lesson_recipes_exact_values():
+    space = ActionSpace(phase=1)
+    # Lessons 0-3: same base set
+    assert space._LESSON_RECIPES[0] == space._LESSON_RECIPES[1]
+    assert space._LESSON_RECIPES[1] == space._LESSON_RECIPES[2]
+    assert space._LESSON_RECIPES[2] == space._LESSON_RECIPES[3]
+    assert len(space._LESSON_RECIPES[0]) == 6
+
+    # Lessons 4-5: add inserter + ores
+    assert "burner-inserter" in space._LESSON_RECIPES[4]
+    assert "iron-ore" in space._LESSON_RECIPES[4]
+    assert space._LESSON_RECIPES[4] == space._LESSON_RECIPES[5]
+    assert len(space._LESSON_RECIPES[4]) == 9
+
+    # Lessons 6-7: add belts + containers
+    assert "transport-belt" in space._LESSON_RECIPES[6]
+    assert "wooden-chest" in space._LESSON_RECIPES[6]
+    assert len(space._LESSON_RECIPES[6]) == 11
+
+    assert "inserter" in space._LESSON_RECIPES[7]
+    assert "small-electric-pole" in space._LESSON_RECIPES[7]
+    assert len(space._LESSON_RECIPES[7]) == 13

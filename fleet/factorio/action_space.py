@@ -225,48 +225,15 @@ PHASE_ENTITIES: dict[int, set[str]] = {
         "small-electric-pole",
         "boiler",
     },
-    2: {
-        # Phase 1 +
-        "stone-furnace",
-        "burner-mining-drill",
-        "wooden-chest",
-        "transport-belt",
-        "inserter",
-        "burner-inserter",
-        "small-electric-pole",
-        "boiler",
-        # New in phase 2
-        "steam-engine",
-        "offshore-pump",
-        "pipe",
-        "assembling-machine-1",
-        "lab",
-        "iron-chest",
-        "electric-mining-drill",
-    },
-    3: {
-        # Phase 2 +
-        "stone-furnace",
-        "burner-mining-drill",
-        "wooden-chest",
-        "transport-belt",
-        "inserter",
-        "burner-inserter",
-        "small-electric-pole",
-        "boiler",
-        "steam-engine",
-        "offshore-pump",
-        "pipe",
-        "assembling-machine-1",
-        "lab",
-        "iron-chest",
-        "electric-mining-drill",
-        # New in phase 3
-        "long-handed-inserter",
-        "fast-inserter",
-        "underground-belt",
-        "splitter",
-    },
+}
+PHASE_ENTITIES[2] = {
+    *PHASE_ENTITIES[1],
+    "steam-engine", "offshore-pump", "pipe",
+    "assembling-machine-1", "lab", "iron-chest", "electric-mining-drill",
+}
+PHASE_ENTITIES[3] = {
+    *PHASE_ENTITIES[2],
+    "long-handed-inserter", "fast-inserter", "underground-belt", "splitter",
 }
 PHASE_ENTITIES[4] = {
     *PHASE_ENTITIES[3],
@@ -550,28 +517,22 @@ class ActionSpace:
 
     # Lesson-gated recipe allowlists — only these recipes can be crafted at each lesson.
     # Agents start with generous inventory — focus on place/insert, not craft variety.
+    # Lesson-gated recipe sets — cumulative to avoid inline repetition.
+    _BASE_LESSON_RECIPES = {
+        "stone-furnace", "burner-mining-drill", "iron-gear-wheel",
+        "iron-plate", "copper-plate", "coal",
+    }
+    _LESSON_4_RECIPES = {*_BASE_LESSON_RECIPES, "burner-inserter", "iron-ore", "copper-ore"}
+    _LESSON_6_RECIPES = {*_LESSON_4_RECIPES, "transport-belt", "wooden-chest"}
     _LESSON_RECIPES: dict[int, set[str]] = {
-        # Lessons 0-3: place furnaces + drills (craft more if needed)
-        0: {"stone-furnace", "burner-mining-drill", "iron-gear-wheel", "iron-plate",
-            "copper-plate", "coal"},
-        1: {"stone-furnace", "burner-mining-drill", "iron-gear-wheel", "iron-plate",
-            "copper-plate", "coal"},
-        2: {"stone-furnace", "burner-mining-drill", "iron-gear-wheel", "iron-plate",
-            "copper-plate", "coal"},
-        3: {"stone-furnace", "burner-mining-drill", "iron-gear-wheel", "iron-plate",
-            "copper-plate", "coal"},
-        # Lessons 4-5: insert + smelt (add inserter for feeding)
-        4: {"stone-furnace", "burner-mining-drill", "iron-gear-wheel", "iron-plate",
-            "copper-plate", "coal", "burner-inserter", "iron-ore", "copper-ore"},
-        5: {"stone-furnace", "burner-mining-drill", "iron-gear-wheel", "iron-plate",
-            "copper-plate", "coal", "burner-inserter", "iron-ore", "copper-ore"},
-        # Lessons 6-7: belts + full automation
-        6: {"stone-furnace", "burner-mining-drill", "iron-gear-wheel", "iron-plate",
-            "copper-plate", "coal", "burner-inserter", "transport-belt", "iron-ore",
-            "copper-ore", "wooden-chest"},
-        7: {"stone-furnace", "burner-mining-drill", "iron-gear-wheel", "iron-plate",
-            "copper-plate", "coal", "burner-inserter", "transport-belt", "iron-ore",
-            "copper-ore", "wooden-chest", "inserter", "small-electric-pole"},
+        0: set(_BASE_LESSON_RECIPES),
+        1: set(_BASE_LESSON_RECIPES),
+        2: set(_BASE_LESSON_RECIPES),
+        3: set(_BASE_LESSON_RECIPES),
+        4: set(_LESSON_4_RECIPES),
+        5: set(_LESSON_4_RECIPES),
+        6: set(_LESSON_6_RECIPES),
+        7: {*_LESSON_6_RECIPES, "inserter", "small-electric-pole"},
     }
     # Phase 2+: all recipes unlocked
     _PHASE2_UNLOCK_ALL = True
