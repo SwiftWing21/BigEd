@@ -372,11 +372,10 @@ def validate_token(token: str) -> dict:
     except ImportError:
         log.warning("PyJWT not installed — JWT signature NOT verified. "
                     "Install with: pip install PyJWT cryptography")
+        return None
     except Exception:
-        log.warning("JWT signature verification failed — "
-                    "using unverified payload", exc_info=True)
-
-    return payload
+        log.warning("JWT signature verification failed — rejecting token", exc_info=True)
+        return None
 
 
 def get_user_roles(user_info: dict) -> list[str]:
@@ -758,9 +757,19 @@ def sso_auth_check():
         request.sso_user = session_data  # type: ignore[attr-defined]
         return None
 
-    # Fall through to existing token-based auth (dashboard_token still works)
-    # This allows API clients to use Bearer tokens alongside SSO
-    return None
+    # Check for Bearer token fallback (API clients)
+    auth_header = request.headers.get("Authorization", "")
+    if auth_header.startswith("Bearer "):
+        token = auth_header[7:]
+        from config import load_config
+        cfg = load_config()
+        dashboard_token = cfg.get("security", {}).get("dashboard_token", "")
+        if dashboard_token and token == dashboard_token:
+            return None  # Valid API token
+
+    # No valid SSO session or API token — block the request
+    from flask import jsonify
+    return jsonify({"error": "Authentication required", "sso_login": "/auth/login"}), 401
 
 
 def get_sso_role(req=None) -> str | None:
