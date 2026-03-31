@@ -24,6 +24,15 @@ TENANTS_DIR = FLEET_DIR / "tenants"
 
 log = logging.getLogger("marketplace")
 
+
+def _validate_skill_name(name: str) -> bool:
+    """Validate a skill name has no path traversal characters."""
+    if ".." in name or "/" in name or "\\" in name:
+        raise ValueError(f"Invalid skill name: '{name}' contains path traversal characters")
+    if not all(c.isalnum() or c in "_-" for c in name):
+        raise ValueError(f"Invalid skill name: '{name}' contains invalid characters")
+    return True
+
 marketplace_bp = Blueprint("marketplace", __name__)
 
 PAGE_SIZE = 20
@@ -554,6 +563,7 @@ def install_package(tenant_id: str, package_id: str) -> dict:
     tenant_skills_dir.mkdir(parents=True, exist_ok=True)
 
     for skill_name in skill_list:
+        _validate_skill_name(skill_name)
         src = FLEET_DIR / "skills" / f"{skill_name}.py"
         if src.exists():
             dst = tenant_skills_dir / f"{skill_name}.py"
@@ -719,6 +729,9 @@ def api_marketplace_reviews(package_id):
 def api_marketplace_submit_review(package_id):
     """Submit a review (1-5 stars + comment)."""
     try:
+        err = _require_role("operator")
+        if err:
+            return err
         data = request.get_json()
         if not data:
             return jsonify({"error": "JSON body required"}), 400
@@ -740,6 +753,9 @@ def api_marketplace_submit_review(package_id):
 def api_marketplace_install(package_id):
     """Install a package for a tenant."""
     try:
+        err = _require_role("operator")
+        if err:
+            return err
         data = request.get_json()
         if not data:
             return jsonify({"error": "JSON body required"}), 400
