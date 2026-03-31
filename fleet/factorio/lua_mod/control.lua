@@ -423,6 +423,503 @@ local function fn_get_metrics()
     return helpers.table_to_json(metrics)
 end
 
+-- ─── Per-action handler functions ───────────────────────────────────────────
+-- Each handler receives (parsed, ctx) and returns a JSON result string.
+-- ctx = { surface, force, inventory, character, has_character }
+
+local function handle_place(parsed, ctx)
+    local result = { action = "place", success = false }
+    local name = parsed.entity
+    local pos = parsed.position
+    local dir = parsed.direction or 0
+    local inv = ctx.inventory
+    local surface = ctx.surface
+    local force = ctx.force
+    if not name or not pos then
+        result.error = "place requires 'entity' and 'position'"
+        return helpers.table_to_json(result)
+    end
+    local has_item = false
+    if inv and name then
+        local ok_cnt, cnt_val = pcall(function() return inv.get_item_count(name) end)
+        has_item = ok_cnt and cnt_val >= 1
+    end
+    if not has_item then
+        result.error = "missing item: " .. (name or "nil")
+        return helpers.table_to_json(result)
+    end
+    -- Snap position to correct grid for entity size (2x2 entities need integer coords)
+    local ok_proto, proto = pcall(function() return prototypes.entity[name] end)
+    if ok_proto and proto then
+        local tw = proto.tile_width or 1
+        local th = proto.tile_height or 1
+        if tw % 2 == 0 then pos.x = math.floor(pos.x + 0.5) end
+        if th % 2 == 0 then pos.y = math.floor(pos.y + 0.5) end
+    end
+    -- Validate mining drills have resources underneath
+    local ok_proto2, proto2 = pcall(function() return prototypes.entity[name] end)
+    if ok_proto2 and proto2 and proto2.type == "mining-drill" then
+        local ok_cb, cb = pcall(function() return proto2.collision_box end)
+        if ok_cb and cb then
+            local drill_area = {
+                {pos.x + cb.left_top.x, pos.y + cb.left_top.y},
+                {pos.x + cb.right_bottom.x, pos.y + cb.right_bottom.y},
+            }
+            local res_under = surface.find_entities_filtered{area=drill_area, type="resource"}
+            if #res_under == 0 then
+                result.error = "no resources under drill at (" .. pos.x .. ", " .. pos.y .. ")"
+                return helpers.table_to_json(result)
+            end
+        end
+    end
+    local can_place = surface.can_place_entity({
+        name = name, position = pos, direction = dir, force = force,
+    })
+    if not can_place then
+        result.error = "cannot place " .. name .. " at (" .. pos.x .. ", " .. pos.y .. ")"
+        return helpers.table_to_json(result)
+    end
+    local entity = surface.create_entity({
+        name = name, position = pos, direction = dir, force = force,
+        move_stuck_players = true,
+    })
+    if entity then
+        inv.remove({ name = name, count = 1 })
+        result.success = true
+        result.unit_number = entity.unit_number
+        result.actual_position = entity.position
+    else
+        result.error = "create_entity returned nil"
+    end
+    return helpers.table_to_json(result)
+end
+
+local function handle_set_recipe(parsed, ctx)
+    local result = { action = "set_recipe", success = false }
+    local unit = parsed.unit_number
+    local recipe = parsed.recipe
+    local inv = ctx.inventory
+    local entities = ctx.surface.find_entities_filtered({
+        type = { "assembling-machine", "furnace" },
+    })
+    for _, ent in pairs(entities) do
+        if ent.unit_number == unit then
+            local items = ent.set_recipe(recipe)
+            result.success = true
+            if items and inv then
+                for item_name, count in pairs(items) do
+                    inv.insert({ name = item_name, count = count })
+                end
+            end
+            break
+        end
+    end
+    if not result.success then
+        result.error = "entity not found: " .. tostring(unit)
+    end
+    return helpers.table_to_json(result)
+end
+
+local function handle_remove(parsed, ctx)
+    local result = { action = "remove", success = false }
+    local unit = parsed.unit_number
+    local pos = parsed.position
+    local inv = ctx.inventory
+    local surface = ctx.surface
+    local force = ctx.force
+    local target = nil
+    if unit then
+        local all = surface.find_entities_filtered({ force = force })
+        for _, ent in pairs(all) do
+            if ent.unit_number == unit then target = ent; break end
+        end
+    elseif pos then
+        local hits = surface.find_entities_filtered({
+            position = pos, radius = 0.5, force = force, limit = 1,
+        })
+        target = hits[1]
+    end
+    if target and target.valid then
+        local products = target.prototype.mineable_properties
+        if products and products.products and inv then
+            for _, prod in pairs(products.products) do
+                inv.insert({ name = prod.name, count = prod.amount or 1 })
+            end
+        end
+        target.destroy()
+        result.success = true
+    else
+        result.error = "entity not found"
+    end
+    return helpers.table_to_json(result)
+end
+
+local function handle_craft(parsed, ctx)
+    local result = { action = "craft", success = false }
+    local inv = ctx.inventory
+    if not inv then
+        result.error = "no inventory available for crafting"
+        return helpers.table_to_json(result)
+    end
+    local recipe_name = parsed.recipe
+    local count = parsed.count or 1
+    local recipe = prototypes.recipe[recipe_name]
+    if not recipe then
+        result.error = "unknown recipe: " .. tostring(recipe_name)
+        return helpers.table_to_json(result)
+    end
+    local can_craft = count
+    for _, ingredient in pairs(recipe.ingredients) do
+        local have = inv.get_item_count(ingredient.name)
+        local max_from_this = math.floor(have / ingredient.amount)
+        can_craft = math.min(can_craft, max_from_this)
+    end
+    if can_craft <= 0 then
+        result.error = "insufficient ingredients for " .. recipe_name
+        local missing = {}
+        for _, ingredient in pairs(recipe.ingredients) do
+            local have = inv.get_item_count(ingredient.name)
+            local need = ingredient.amount * count
+            if have < need then
+                table.insert(missing, ingredient.name .. ": have=" .. have .. " need=" .. need)
+            end
+        end
+        result.missing = table.concat(missing, ", ")
+        return helpers.table_to_json(result)
+    end
+    for _, ingredient in pairs(recipe.ingredients) do
+        inv.remove({ name = ingredient.name, count = ingredient.amount * can_craft })
+    end
+    local crafted_items = {}
+    for _, product in pairs(recipe.products) do
+        local amt = math.floor((product.amount or 1) * can_craft)
+        if amt > 0 then
+            inv.insert({ name = product.name, count = amt })
+            crafted_items[product.name] = amt
+        end
+    end
+    result.success = true
+    result.crafted = can_craft
+    result.items = crafted_items
+    return helpers.table_to_json(result)
+end
+
+local function handle_research(parsed, ctx)
+    local result = { action = "research", success = false }
+    local tech_name = parsed.technology
+    local force = ctx.force
+    if not tech_name or tech_name == "" then
+        result.error = "no technology specified"
+    else
+        local tech = force.technologies[tech_name]
+        if tech and not tech.researched then
+            force.add_research(tech_name)
+            result.success = true
+        else
+            result.error = tech and "already researched" or "unknown technology: " .. tostring(tech_name)
+        end
+    end
+    return helpers.table_to_json(result)
+end
+
+local function handle_move(parsed, ctx)
+    local result = { action = "move", success = false }
+    local char = ctx.character
+    local surface = ctx.surface
+    if not char or not char.valid then
+        result.error = "move requires a character"
+        return helpers.table_to_json(result)
+    end
+    local pos = parsed.position
+    if not pos or pos.x == nil or pos.y == nil then
+        result.error = "move requires position with x and y"
+    else
+        local tile = surface.get_tile(math.floor(pos.x), math.floor(pos.y))
+        if not tile or not tile.valid then
+            result.error = "move target out of bounds"
+        elseif tile.name == "water" or tile.name == "deepwater"
+               or tile.name == "water-green" or tile.name == "out-of-map" then
+            result.error = "move target is water/void at (" .. pos.x .. ", " .. pos.y .. ")"
+        else
+            local safe = surface.find_non_colliding_position("character", pos, 3, 0.5)
+            if safe then
+                char.teleport(safe, surface)
+                result.success = true
+                result.actual_position = char.position
+            else
+                result.error = "no safe position near (" .. pos.x .. ", " .. pos.y .. ")"
+            end
+        end
+    end
+    return helpers.table_to_json(result)
+end
+
+local function handle_connect(parsed, ctx)
+    local result = { action = "connect", success = false }
+    local entity_name = parsed.entity or "transport-belt"
+    local from = parsed.from
+    local to = parsed.to
+    local inv = ctx.inventory
+    local surface = ctx.surface
+    local force = ctx.force
+    if not from or not to then
+        result.error = "connect requires 'from' and 'to' positions"
+        return helpers.table_to_json(result)
+    end
+    if not inv then
+        result.error = "no inventory for connection items"
+        return helpers.table_to_json(result)
+    end
+    local placed = 0
+    local dx = to.x > from.x and 1 or (to.x < from.x and -1 or 0)
+    local dy = to.y > from.y and 1 or (to.y < from.y and -1 or 0)
+    local dir = 0
+    if dx == 1 then dir = 4
+    elseif dx == -1 then dir = 12
+    elseif dy == 1 then dir = 8
+    end
+    local cx, cy = from.x, from.y
+    local max_steps = math.abs(to.x - from.x) + math.abs(to.y - from.y) + 1
+    for step = 1, max_steps do
+        local ok_cnt, cnt_val = pcall(function() return inv.get_item_count(entity_name) end)
+        if not ok_cnt or cnt_val < 1 then
+            result.error = "ran out of " .. entity_name .. " after " .. placed
+            break
+        end
+        local can = surface.can_place_entity({
+            name = entity_name, position = { cx, cy },
+            direction = dir, force = force,
+        })
+        if can then
+            local ent = surface.create_entity({
+                name = entity_name, position = { cx, cy },
+                direction = dir, force = force,
+            })
+            if ent then
+                inv.remove({ name = entity_name, count = 1 })
+                placed = placed + 1
+            end
+        end
+        if dx ~= 0 and cx ~= to.x then
+            cx = cx + dx
+        elseif dy ~= 0 and cy ~= to.y then
+            cy = cy + dy
+            dir = dy == 1 and 4 or 0
+        else
+            break
+        end
+    end
+    result.success = placed > 0
+    result.placed = placed
+    return helpers.table_to_json(result)
+end
+
+local function handle_mine(parsed, ctx)
+    local result = { action = "mine", success = false }
+    local pos = parsed.position or {x = 0, y = 0}
+    local inv = ctx.inventory
+    local surface = ctx.surface
+    if not inv then
+        result.error = "no inventory available for mining"
+        return helpers.table_to_json(result)
+    end
+    local area = {{pos.x - 0.5, pos.y - 0.5}, {pos.x + 0.5, pos.y + 0.5}}
+    local resources = surface.find_entities_filtered{
+        area = area, type = "resource", limit = 1
+    }
+    if #resources > 0 then
+        local resource = resources[1]
+        local mine_amount = math.min(resource.amount, 10)
+        resource.amount = resource.amount - mine_amount
+        inv.insert{name = resource.name, count = mine_amount}
+        if resource.amount <= 0 then
+            resource.destroy()
+        end
+        result.success = true
+        result.mined = resource.name
+        result.amount = mine_amount
+        result.position = pos
+    else
+        local naturals = surface.find_entities_filtered{
+            area = area, type = {"tree", "simple-entity"}, limit = 1
+        }
+        if #naturals > 0 then
+            local entity = naturals[1]
+            if entity.minable then
+                local products = entity.prototype.mineable_properties
+                if products and products.products then
+                    for _, product in pairs(products.products) do
+                        if product.type == "item" then
+                            inv.insert{name = product.name, count = product.amount or 1}
+                        end
+                    end
+                end
+                local mined_name = entity.name
+                entity.destroy()
+                result.success = true
+                result.mined = mined_name
+                result.position = pos
+            else
+                result.error = "entity not minable"
+            end
+        else
+            result.error = "no resource or tree at position"
+        end
+    end
+    return helpers.table_to_json(result)
+end
+
+local function handle_insert(parsed, ctx)
+    local result = { action = "insert", success = false }
+    local pos = parsed.position or {x = 0, y = 0}
+    local item_name = parsed.item
+    local count = parsed.count or 1
+    local inv = ctx.inventory
+    local surface = ctx.surface
+    local force = ctx.force
+    if not item_name then
+        result.error = "insert requires 'item' field"
+    elseif not inv then
+        result.error = "no inventory available"
+    else
+        local have = inv.get_item_count(item_name)
+        if have < 1 then
+            result.error = "no " .. item_name .. " in inventory"
+        else
+            local area = {{pos.x - 1, pos.y - 1}, {pos.x + 1, pos.y + 1}}
+            local targets = surface.find_entities_filtered{
+                area = area, force = force, limit = 1,
+                type = {"furnace", "assembling-machine", "lab", "boiler",
+                        "mining-drill", "container", "car", "cargo-wagon"},
+            }
+            if #targets == 0 then
+                result.error = "no insertable entity near (" .. pos.x .. ", " .. pos.y .. ")"
+            else
+                local target = targets[1]
+                local inserted = 0
+                local fuel_inv = target.get_fuel_inventory()
+                if fuel_inv and fuel_inv.valid then
+                    local to_insert = math.min(count, have)
+                    inserted = fuel_inv.insert{name = item_name, count = to_insert}
+                end
+                if inserted == 0 then
+                    local src_inv = target.get_inventory(defines.inventory.furnace_source)
+                                 or target.get_inventory(defines.inventory.assembling_machine_input)
+                                 or target.get_inventory(defines.inventory.lab_input)
+                                 or target.get_inventory(defines.inventory.chest)
+                    if src_inv and src_inv.valid then
+                        local to_insert = math.min(count, have)
+                        inserted = src_inv.insert{name = item_name, count = to_insert}
+                    end
+                end
+                if inserted > 0 then
+                    inv.remove{name = item_name, count = inserted}
+                    result.success = true
+                    result.inserted = inserted
+                    result.target = target.name
+                    result.target_position = target.position
+                else
+                    result.error = "could not insert " .. item_name .. " into " .. target.name
+                end
+            end
+        end
+    end
+    return helpers.table_to_json(result)
+end
+
+local function handle_place_near_resource(parsed, ctx)
+    local result = { action = "place_near_resource", success = false }
+    local name = parsed.entity
+    local resource_type = parsed.resource_type or "iron-ore"
+    local search_radius = parsed.search_radius or 20
+    local inv = ctx.inventory
+    local surface = ctx.surface
+    local force = ctx.force
+    if not name then
+        result.error = "place_near_resource requires 'entity'"
+        return helpers.table_to_json(result)
+    end
+    local has_item = false
+    if inv and name then
+        local ok_cnt, cnt_val = pcall(function() return inv.get_item_count(name) end)
+        has_item = ok_cnt and cnt_val >= 1
+    end
+    if not has_item then
+        result.error = "missing item: " .. (name or "nil")
+        return helpers.table_to_json(result)
+    end
+    local char = ctx.character
+    if not char or not char.valid then
+        result.error = "no character for placement"
+        return helpers.table_to_json(result)
+    end
+    local agent_pos = char.position
+    local search_area = {
+        {agent_pos.x - search_radius, agent_pos.y - search_radius},
+        {agent_pos.x + search_radius, agent_pos.y + search_radius}
+    }
+    local resources = surface.find_entities_filtered{
+        area = search_area, type = "resource", name = resource_type
+    }
+    if #resources == 0 then
+        result.error = "no " .. resource_type .. " within " .. search_radius .. " tiles"
+        return helpers.table_to_json(result)
+    end
+    table.sort(resources, function(a, b)
+        local da = (a.position.x - agent_pos.x)^2 + (a.position.y - agent_pos.y)^2
+        local db = (b.position.x - agent_pos.x)^2 + (b.position.y - agent_pos.y)^2
+        return da < db
+    end)
+    local proto = prototypes.entity[name]
+    local placed = false
+    for _, res in ipairs(resources) do
+        local px, py = res.position.x, res.position.y
+        if proto then
+            local tw = proto.tile_width or 1
+            local th = proto.tile_height or 1
+            if tw % 2 == 0 then px = math.floor(px + 0.5) end
+            if th % 2 == 0 then py = math.floor(py + 0.5) end
+        end
+        local can = surface.can_place_entity{
+            name = name, position = {px, py}, direction = 0, force = force
+        }
+        if can then
+            local entity = surface.create_entity{
+                name = name, position = {px, py}, direction = 0, force = force,
+                move_stuck_players = true,
+            }
+            if entity then
+                inv.remove{name = name, count = 1}
+                result.success = true
+                result.unit_number = entity.unit_number
+                result.actual_position = entity.position
+                result.resource = resource_type
+                placed = true
+                break
+            end
+        end
+    end
+    if not placed then
+        result.error = "could not find valid placement on " .. resource_type
+    end
+    return helpers.table_to_json(result)
+end
+
+-- ─── Command dispatcher ─────────────────────────────────────────────────────
+
+local ACTION_HANDLERS = {
+    place              = handle_place,
+    set_recipe         = handle_set_recipe,
+    remove             = handle_remove,
+    craft              = handle_craft,
+    research           = handle_research,
+    move               = handle_move,
+    connect            = handle_connect,
+    mine               = handle_mine,
+    insert             = handle_insert,
+    place_near_resource = handle_place_near_resource,
+}
+
 local function fn_exec_cmd(json_str)
     if not json_str then
         return '{"error": "no command provided"}'
@@ -433,474 +930,18 @@ local function fn_exec_cmd(json_str)
     end
     local agent_id = parsed.agent_id or 1
     local ctx = get_agent_context(agent_id)
-    local surface = ctx.surface
-    local force = ctx.force
-    local inv = ctx.inventory  -- script inventory for this agent
-    if not surface then
+    if not ctx.surface then
         return helpers.table_to_json({error = "no surface available"})
     end
 
-    local action = parsed.action
-    local result = { action = action, success = false }
-
-    if action == "place" then
-        local name = parsed.entity
-        local pos = parsed.position
-        local dir = parsed.direction or 0
-        if not name or not pos then
-            result.error = "place requires 'entity' and 'position'"
-            return helpers.table_to_json(result)
-        end
-        local has_item = false
-        if inv and name then
-            local ok_cnt, cnt_val = pcall(function() return inv.get_item_count(name) end)
-            has_item = ok_cnt and cnt_val >= 1
-        end
-        if not has_item then
-            result.error = "missing item: " .. (name or "nil")
-            return helpers.table_to_json(result)
-        end
-        -- Snap position to correct grid for entity size (2x2 entities need integer coords)
-        local ok_proto, proto = pcall(function() return prototypes.entity[name] end)
-        if ok_proto and proto then
-            local tw = proto.tile_width or 1
-            local th = proto.tile_height or 1
-            if tw % 2 == 0 then pos.x = math.floor(pos.x + 0.5) end
-            if th % 2 == 0 then pos.y = math.floor(pos.y + 0.5) end
-        end
-        -- Validate mining drills have resources underneath (safe — pcall in case API differs)
-        local ok_proto, proto = pcall(function() return prototypes.entity[name] end)
-        if ok_proto and proto and proto.type == "mining-drill" then
-            local ok_cb, cb = pcall(function() return proto.collision_box end)
-            if ok_cb and cb then
-                local drill_area = {
-                    {pos.x + cb.left_top.x, pos.y + cb.left_top.y},
-                    {pos.x + cb.right_bottom.x, pos.y + cb.right_bottom.y},
-                }
-                local res_under = surface.find_entities_filtered{area=drill_area, type="resource"}
-                if #res_under == 0 then
-                    result.error = "no resources under drill at (" .. pos.x .. ", " .. pos.y .. ")"
-                    return helpers.table_to_json(result)
-                end
-            end
-        end
-        local can_place = surface.can_place_entity({
-            name = name, position = pos, direction = dir, force = force,
-        })
-        if not can_place then
-            result.error = "cannot place " .. name .. " at (" .. pos.x .. ", " .. pos.y .. ")"
-            return helpers.table_to_json(result)
-        end
-        local entity = surface.create_entity({
-            name = name, position = pos, direction = dir, force = force,
-            move_stuck_players = true,
-        })
-        if entity then
-            inv.remove({ name = name, count = 1 })
-            result.success = true
-            result.unit_number = entity.unit_number
-            result.actual_position = entity.position
-        else
-            result.error = "create_entity returned nil"
-        end
-
-    elseif action == "set_recipe" then
-        local unit = parsed.unit_number
-        local recipe = parsed.recipe
-        local entities = surface.find_entities_filtered({
-            type = { "assembling-machine", "furnace" },
-        })
-        for _, ent in pairs(entities) do
-            if ent.unit_number == unit then
-                local items = ent.set_recipe(recipe)
-                result.success = true
-                if items and inv then
-                    for item_name, count in pairs(items) do
-                        inv.insert({ name = item_name, count = count })
-                    end
-                end
-                break
-            end
-        end
-        if not result.success then
-            result.error = "entity not found: " .. tostring(unit)
-        end
-
-    elseif action == "remove" then
-        local unit = parsed.unit_number
-        local pos = parsed.position
-        local target = nil
-        if unit then
-            local all = surface.find_entities_filtered({ force = force })
-            for _, ent in pairs(all) do
-                if ent.unit_number == unit then target = ent; break end
-            end
-        elseif pos then
-            local hits = surface.find_entities_filtered({
-                position = pos, radius = 0.5, force = force, limit = 1,
-            })
-            target = hits[1]
-        end
-        if target and target.valid then
-            local products = target.prototype.mineable_properties
-            if products and products.products and inv then
-                for _, prod in pairs(products.products) do
-                    inv.insert({ name = prod.name, count = prod.amount or 1 })
-                end
-            end
-            target.destroy()
-            result.success = true
-        else
-            result.error = "entity not found"
-        end
-
-    elseif action == "craft" then
-        -- Manual craft: read recipe prototype, consume inputs, produce outputs.
-        -- Works with both player inventory and script inventory.
-        if not inv then
-            result.error = "no inventory available for crafting"
-            return helpers.table_to_json(result)
-        end
-        local recipe_name = parsed.recipe
-        local count = parsed.count or 1
-        local recipe = prototypes.recipe[recipe_name]
-        if not recipe then
-            result.error = "unknown recipe: " .. tostring(recipe_name)
-            return helpers.table_to_json(result)
-        end
-        -- Check how many we can craft
-        local can_craft = count
-        for _, ingredient in pairs(recipe.ingredients) do
-            local have = inv.get_item_count(ingredient.name)
-            local max_from_this = math.floor(have / ingredient.amount)
-            can_craft = math.min(can_craft, max_from_this)
-        end
-        if can_craft <= 0 then
-            result.error = "insufficient ingredients for " .. recipe_name
-            local missing = {}
-            for _, ingredient in pairs(recipe.ingredients) do
-                local have = inv.get_item_count(ingredient.name)
-                local need = ingredient.amount * count
-                if have < need then
-                    table.insert(missing, ingredient.name .. ": have=" .. have .. " need=" .. need)
-                end
-            end
-            result.missing = table.concat(missing, ", ")
-            return helpers.table_to_json(result)
-        end
-        -- Consume inputs
-        for _, ingredient in pairs(recipe.ingredients) do
-            inv.remove({ name = ingredient.name, count = ingredient.amount * can_craft })
-        end
-        -- Produce outputs
-        local crafted_items = {}
-        for _, product in pairs(recipe.products) do
-            local amt = math.floor((product.amount or 1) * can_craft)
-            if amt > 0 then
-                inv.insert({ name = product.name, count = amt })
-                crafted_items[product.name] = amt
-            end
-        end
-        result.success = true
-        result.crafted = can_craft
-        result.items = crafted_items
-
-    elseif action == "research" then
-        local tech_name = parsed.technology
-        if not tech_name or tech_name == "" then
-            result.error = "no technology specified"
-        else
-            local tech = force.technologies[tech_name]
-            if tech and not tech.researched then
-                force.add_research(tech_name)
-                result.success = true
-            else
-                result.error = tech and "already researched" or "unknown technology: " .. tostring(tech_name)
-            end
-        end
-
-    elseif action == "move" then
-        -- Move the agent character (teleport). Validates destination is safe.
-        local char = ctx.character
-        if not char or not char.valid then
-            result.error = "move requires a character"
-            return helpers.table_to_json(result)
-        end
-        local pos = parsed.position
-        if not pos or pos.x == nil or pos.y == nil then
-            result.error = "move requires position with x and y"
-        else
-            -- Check destination tile is walkable (not water/out-of-map)
-            local tile = surface.get_tile(math.floor(pos.x), math.floor(pos.y))
-            if not tile or not tile.valid then
-                result.error = "move target out of bounds"
-            elseif tile.name == "water" or tile.name == "deepwater"
-                   or tile.name == "water-green" or tile.name == "out-of-map" then
-                result.error = "move target is water/void at (" .. pos.x .. ", " .. pos.y .. ")"
-            else
-                -- Use find_non_colliding_position for safety
-                local safe = surface.find_non_colliding_position("character", pos, 3, 0.5)
-                if safe then
-                    char.teleport(safe, surface)
-                    result.success = true
-                    result.actual_position = char.position
-                else
-                    result.error = "no safe position near (" .. pos.x .. ", " .. pos.y .. ")"
-                end
-            end
-        end
-
-    elseif action == "connect" then
-        local entity_name = parsed.entity or "transport-belt"
-        local from = parsed.from
-        local to = parsed.to
-        if not from or not to then
-            result.error = "connect requires 'from' and 'to' positions"
-            return helpers.table_to_json(result)
-        end
-        if not inv then
-            result.error = "no inventory for connection items"
-            return helpers.table_to_json(result)
-        end
-        local placed = 0
-        local dx = to.x > from.x and 1 or (to.x < from.x and -1 or 0)
-        local dy = to.y > from.y and 1 or (to.y < from.y and -1 or 0)
-        local dir = 0  -- north
-        if dx == 1 then dir = 4       -- east (Factorio 2.0)
-        elseif dx == -1 then dir = 12 -- west
-        elseif dy == 1 then dir = 8   -- south
-        end
-        local cx, cy = from.x, from.y
-        local max_steps = math.abs(to.x - from.x) + math.abs(to.y - from.y) + 1
-        for step = 1, max_steps do
-            local ok_cnt, cnt_val = pcall(function() return inv.get_item_count(entity_name) end)
-            if not ok_cnt or cnt_val < 1 then
-                result.error = "ran out of " .. entity_name .. " after " .. placed
-                break
-            end
-            local can = surface.can_place_entity({
-                name = entity_name, position = { cx, cy },
-                direction = dir, force = force,
-            })
-            if can then
-                local ent = surface.create_entity({
-                    name = entity_name, position = { cx, cy },
-                    direction = dir, force = force,
-                })
-                if ent then
-                    inv.remove({ name = entity_name, count = 1 })
-                    placed = placed + 1
-                end
-            end
-            if dx ~= 0 and cx ~= to.x then
-                cx = cx + dx
-            elseif dy ~= 0 and cy ~= to.y then
-                cy = cy + dy
-                dir = dy == 1 and 4 or 0
-            else
-                break
-            end
-        end
-        result.success = placed > 0
-        result.placed = placed
-
-    elseif action == "mine" then
-        -- FLE-style: ALWAYS check resource entities (ore) first, then fallback to
-        -- regular entities (trees/rocks). Prevents accidentally mining furnaces/drills.
-        local pos = parsed.position or {x = 0, y = 0}
-        if not inv then
-            result.error = "no inventory available for mining"
-            return helpers.table_to_json(result)
-        end
-        local area = {{pos.x - 0.5, pos.y - 0.5}, {pos.x + 0.5, pos.y + 0.5}}
-
-        -- Priority 1: Resource entities (ore patches) — the main thing we want to mine
-        local resources = surface.find_entities_filtered{
-            area = area, type = "resource", limit = 1
-        }
-        if #resources > 0 then
-            local resource = resources[1]
-            local mine_amount = math.min(resource.amount, 10)  -- 10 per action (was 5)
-            resource.amount = resource.amount - mine_amount
-            inv.insert{name = resource.name, count = mine_amount}
-            if resource.amount <= 0 then
-                resource.destroy()
-            end
-                result.success = true
-                result.mined = resource.name
-                result.amount = mine_amount
-                result.position = pos
-        else
-            -- Priority 2: Natural entities only (trees, rocks) — never mine buildings
-            local naturals = surface.find_entities_filtered{
-                area = area, type = {"tree", "simple-entity"}, limit = 1
-            }
-            if #naturals > 0 then
-                local entity = naturals[1]
-                if entity.minable then
-                    local products = entity.prototype.mineable_properties
-                    if products and products.products then
-                        for _, product in pairs(products.products) do
-                            if product.type == "item" then
-                                inv.insert{name = product.name, count = product.amount or 1}
-                            end
-                        end
-                    end
-                    local mined_name = entity.name
-                    entity.destroy()
-                    result.success = true
-                    result.mined = mined_name
-                    result.position = pos
-                else
-                    result.error = "entity not minable"
-                end
-            else
-                result.error = "no resource or tree at position"
-            end
-        end
-
-    elseif action == "insert" then
-        -- Insert items from agent inventory into a nearby entity (furnace, machine, etc.)
-        local pos = parsed.position or {x = 0, y = 0}
-        local item_name = parsed.item
-        local count = parsed.count or 1
-        if not item_name then
-            result.error = "insert requires 'item' field"
-        elseif not inv then
-            result.error = "no inventory available"
-        else
-            -- Check agent has the item
-            local have = inv.get_item_count(item_name)
-            if have < 1 then
-                result.error = "no " .. item_name .. " in inventory"
-            else
-                -- Find nearest entity at position that can accept items
-                local area = {{pos.x - 1, pos.y - 1}, {pos.x + 1, pos.y + 1}}
-                local targets = surface.find_entities_filtered{
-                    area = area, force = force, limit = 1,
-                    type = {"furnace", "assembling-machine", "lab", "boiler",
-                            "mining-drill", "container", "car", "cargo-wagon"},
-                }
-                if #targets == 0 then
-                    result.error = "no insertable entity near (" .. pos.x .. ", " .. pos.y .. ")"
-                else
-                    local target = targets[1]
-                    -- Try fuel inventory first (for coal into furnaces/drills/boilers)
-                    local inserted = 0
-                    local fuel_inv = target.get_fuel_inventory()
-                    if fuel_inv and fuel_inv.valid then
-                        local to_insert = math.min(count, have)
-                        inserted = fuel_inv.insert{name = item_name, count = to_insert}
-                    end
-                    -- If not fuel, try input/source inventory (ore into furnace, items into assembler)
-                    if inserted == 0 then
-                        local src_inv = target.get_inventory(defines.inventory.furnace_source)
-                                     or target.get_inventory(defines.inventory.assembling_machine_input)
-                                     or target.get_inventory(defines.inventory.lab_input)
-                                     or target.get_inventory(defines.inventory.chest)
-                        if src_inv and src_inv.valid then
-                            local to_insert = math.min(count, have)
-                            inserted = src_inv.insert{name = item_name, count = to_insert}
-                        end
-                    end
-                    if inserted > 0 then
-                        inv.remove{name = item_name, count = inserted}
-                        result.success = true
-                        result.inserted = inserted
-                        result.target = target.name
-                        result.target_position = target.position
-                    else
-                        result.error = "could not insert " .. item_name .. " into " .. target.name
-                    end
-                end
-            end
-        end
-
-    elseif action == "place_near_resource" then
-        -- High-level: find nearest resource and place entity on it
-        -- Required: entity (name), optional: resource_type (default "iron-ore"), search_radius (default 20)
-        local name = parsed.entity
-        local resource_type = parsed.resource_type or "iron-ore"
-        local search_radius = parsed.search_radius or 20
-        if not name then
-            result.error = "place_near_resource requires 'entity'"
-            return helpers.table_to_json(result)
-        end
-        -- Check inventory
-        local has_item = false
-        if inv and name then
-            local ok_cnt, cnt_val = pcall(function() return inv.get_item_count(name) end)
-            has_item = ok_cnt and cnt_val >= 1
-        end
-        if not has_item then
-            result.error = "missing item: " .. (name or "nil")
-            return helpers.table_to_json(result)
-        end
-        -- Get agent position
-        local char = ctx.character
-        if not char or not char.valid then
-            result.error = "no character for placement"
-            return helpers.table_to_json(result)
-        end
-        local agent_pos = char.position
-        -- Find resource patches nearby
-        local search_area = {
-            {agent_pos.x - search_radius, agent_pos.y - search_radius},
-            {agent_pos.x + search_radius, agent_pos.y + search_radius}
-        }
-        local resources = surface.find_entities_filtered{
-            area = search_area, type = "resource", name = resource_type
-        }
-        if #resources == 0 then
-            result.error = "no " .. resource_type .. " within " .. search_radius .. " tiles"
-            return helpers.table_to_json(result)
-        end
-        -- Sort by distance to agent
-        table.sort(resources, function(a, b)
-            local da = (a.position.x - agent_pos.x)^2 + (a.position.y - agent_pos.y)^2
-            local db = (b.position.x - agent_pos.x)^2 + (b.position.y - agent_pos.y)^2
-            return da < db
-        end)
-        -- Try placing at resource positions (snap to appropriate grid)
-        local proto = prototypes.entity[name]
-        local placed = false
-        for _, res in ipairs(resources) do
-            -- Snap position based on entity size (2x2 = integer, 1x1 = half)
-            local px, py = res.position.x, res.position.y
-            if proto then
-                local tw = proto.tile_width or 1
-                local th = proto.tile_height or 1
-                if tw % 2 == 0 then px = math.floor(px + 0.5) end
-                if th % 2 == 0 then py = math.floor(py + 0.5) end
-            end
-            local can = surface.can_place_entity{
-                name = name, position = {px, py}, direction = 0, force = force
-            }
-            if can then
-                local entity = surface.create_entity{
-                    name = name, position = {px, py}, direction = 0, force = force,
-                    move_stuck_players = true,
-                }
-                if entity then
-                    inv.remove{name = name, count = 1}
-                    result.success = true
-                    result.unit_number = entity.unit_number
-                    result.actual_position = entity.position
-                    result.resource = resource_type
-                    placed = true
-                    break
-                end
-            end
-        end
-        if not placed then
-            result.error = "could not find valid placement on " .. resource_type
-        end
-
-    else
-        result.error = "unknown action: " .. tostring(action)
+    local handler = ACTION_HANDLERS[parsed.action]
+    if handler then
+        return handler(parsed, ctx)
     end
-
-    return helpers.table_to_json(result)
+    return helpers.table_to_json({
+        action = parsed.action, success = false,
+        error = "unknown action: " .. tostring(parsed.action)
+    })
 end
 
 local function fn_observe(x, y, radius)
