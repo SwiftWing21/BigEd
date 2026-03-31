@@ -22,6 +22,7 @@ Feature vector (69 base dims, 85 with spatial memory):
   [68]     active pack progress 0-1
 """
 import logging
+import math
 import numpy as np
 from factorio.state_parser import GameState, GameMetrics
 from factorio.action_space import ENTITY_REGISTRY, TECH_REGISTRY, PHASE_ENTITIES
@@ -208,7 +209,6 @@ class StateEncoder:
         feats[idx] = 1.0
         # [4:10] peer proximity: 3 slots × (bearing_norm, distance_norm)
         _DIST_NORM = 60.0  # normalize distance over ~60 tiles
-        import math
         for i, (ox, oy) in enumerate(other_positions[:3]):
             dx = ox - px
             dy = oy - py

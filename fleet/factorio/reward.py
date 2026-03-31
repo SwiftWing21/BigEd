@@ -1,8 +1,10 @@
 # fleet/factorio/reward.py
 """Phase-gated per-step reward function for Factorio RL agent."""
 import logging
+import math
 import numpy as np
 
+from factorio.action_space import ActionType
 from factorio.state_parser import GameState
 
 log = logging.getLogger(__name__)
@@ -27,7 +29,6 @@ _ECONOMIC_SCALE = 0.05           # was 0.01 — 5x boost
 _ECONOMIC_INVENTORY_SCALE = 0.005  # was 0.001 — inventory value matters more
 # Consecutive-move penalty — walking repeatedly without doing anything useful
 _CONSECUTIVE_MOVE_PENALTY = -0.01  # per consecutive MOVE beyond 2
-_MOVE_ACTION_TYPE = 3              # ActionType.MOVE value
 # Agent clustering penalty — repel agents from each other
 _CLUSTER_PENALTY_SCALE = -0.01     # penalty when agents are within threshold
 _CLUSTER_DISTANCE_THRESHOLD = 8.0  # tiles — agents closer than this get penalized
@@ -178,7 +179,7 @@ class RewardComputer:
         r += _TIME_PENALTY
 
         # Consecutive-move penalty — stop aimless walking
-        if action_type == _MOVE_ACTION_TYPE:
+        if action_type == ActionType.MOVE.value:
             self._consecutive_moves += 1
             if self._consecutive_moves > 2:
                 r += _CONSECUTIVE_MOVE_PENALTY * (self._consecutive_moves - 2)
@@ -190,7 +191,7 @@ class RewardComputer:
 
         if not action_success:
             r += _FAILED_ACTION_PENALTY
-        elif action_type != _MOVE_ACTION_TYPE:
+        elif action_type != ActionType.MOVE.value:
             r += _SUCCESSFUL_ACTION_BONUS  # reward successful non-MOVE actions only
 
         if lesson_passed:
@@ -221,7 +222,7 @@ class RewardComputer:
 
         # Pack / stamp completion bonuses
         if pack_completed:
-            if action_type == 10:  # STAMP
+            if action_type == ActionType.STAMP.value:
                 r += _STAMP_COMPLETE_BONUS
             else:
                 r += _PACK_COMPLETE_BONUS
@@ -241,7 +242,6 @@ class RewardComputer:
         """Penalize being too close to other agents — prevents convergence."""
         if not other_positions:
             return 0.0
-        import math
         px = curr.player_position.get("x", 0)
         py = curr.player_position.get("y", 0)
         penalty = 0.0

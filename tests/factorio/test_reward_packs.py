@@ -1,5 +1,6 @@
 """Tests for pack/stamp completion bonuses in the reward function."""
 import pytest
+from factorio.action_space import ActionType
 from factorio.state_parser import GameState
 from factorio.reward import RewardComputer
 
@@ -27,15 +28,15 @@ def test_pack_completion_bonus():
 
 
 def test_stamp_completion_bonus():
-    """Pack completion with STAMP action (10) yields +2.0 bonus (higher than pack)."""
+    """Pack completion with STAMP action (11) yields +2.0 bonus (higher than pack)."""
     rc = RewardComputer(phase=1)
     s1 = _make_state()
     s2 = _make_state()
     baseline = rc.compute(s1, s2, action_success=True, lesson_passed=False,
-                          phase_complete=False, action_type=10)
+                          phase_complete=False, action_type=ActionType.STAMP.value)
     rc2 = RewardComputer(phase=1)
     reward = rc2.compute(s1, s2, action_success=True, lesson_passed=False,
-                         phase_complete=False, action_type=10, pack_completed=True)
+                         phase_complete=False, action_type=ActionType.STAMP.value, pack_completed=True)
     assert reward > baseline
     assert reward - baseline == pytest.approx(2.0, abs=0.01)
     # Stamp bonus should be higher than pack bonus
