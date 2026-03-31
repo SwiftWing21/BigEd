@@ -1,7 +1,15 @@
 {
   "name": "basic_power_station",
-  "blueprint_string": "PLACEHOLDER_EXPORT_FROM_FACTORIO",
-  "footprint": [5, 3],
+  "blueprint_string": "0eNqNzksKwjAQBuCrhKyt2JpW6tITCC5FJNVRB5oHSeqD0rs7sS4KVnQTJv9MvkzLq7oB61AHvmQtxwCKikE6YbyWFdQxXUmPB7Y2N3BsE2RAo2MfdMCA4Glk2/a3x143qgJHUUoTWiqIgDmd/MU4SGyjbHxqjccXEz+/0zmb5hQ/+qrrJuwTzAagRQujTvrbmQ+cymBN4Zg0fzspIfyIDg7vthhVxT/bid/b5QPHB5AqAX1GPe4V33fcUXIF5/t7XmSlKMtczBZFsci67glF45vT",
+  "footprint": [
+    7,
+    3
+  ],
   "phase_required": 1,
-  "required_items": {"boiler": 1, "steam-engine": 1, "offshore-pump": 1}
+  "required_items": {
+    "boiler": 1,
+    "steam-engine": 1,
+    "offshore-pump": 1,
+    "pipe": 2
+  }
 }

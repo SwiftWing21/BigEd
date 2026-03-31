@@ -17,7 +17,7 @@ def test_blueprint_stamps_load():
     reg = PackRegistry()
     packs_dir = Path(__file__).parent.parent.parent / "fleet" / "factorio" / "packs"
     count = reg.load_stamps(packs_dir / "blueprints")
-    assert count >= 2, f"Expected >= 2 stamps, got {count}"
+    assert count >= 5, f"Expected >= 5 stamps, got {count}"
 
 
 def test_loaded_packs_have_valid_actions():
@@ -101,3 +101,30 @@ def test_late_game_packs_exist():
     assert 5 in phases, "No phase-5 (yellow science) packs found"
     assert 6 in phases, "No phase-6 (rocket) packs found"
     assert 7 in phases, "No phase-7 (space science) packs found"
+
+
+def test_blueprint_strings_are_valid():
+    """Verify blueprint strings can be decoded (not placeholders)."""
+    import base64
+    import json
+    import zlib
+
+    bp_dir = Path(__file__).parent.parent.parent / "fleet" / "factorio" / "packs" / "blueprints"
+    count = 0
+    for bp_file in sorted(bp_dir.glob("*.json")):
+        data = json.loads(bp_file.read_text())
+        bp_str = data["blueprint_string"]
+        assert bp_str != "PLACEHOLDER_EXPORT_FROM_FACTORIO", (
+            f"{bp_file.name} still has placeholder"
+        )
+        assert bp_str.startswith("0"), f"{bp_file.name} doesn't start with '0'"
+        # Decode and verify structure
+        decoded = base64.b64decode(bp_str[1:])
+        decompressed = zlib.decompress(decoded)
+        bp_data = json.loads(decompressed)
+        assert "blueprint" in bp_data, f"{bp_file.name} missing 'blueprint' key"
+        assert len(bp_data["blueprint"]["entities"]) > 0, (
+            f"{bp_file.name} has no entities"
+        )
+        count += 1
+    assert count >= 5, f"Expected >= 5 blueprint files, got {count}"

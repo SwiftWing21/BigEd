@@ -1,0 +1,15 @@
+{
+  "name": "oil_processing_block",
+  "blueprint_string": "0eNqd0sFqhDAQBuBXEc9rMdFE3WNfoL2XUlSmbWhMJLqlIr5747oswjqssxdNhsmXkd8xrPQJWqdMHx6DMVQ9NH6xqh6CUJcV6Ln6onTw6mwNXafMV/Csbf0zN4DpVa+g8z1v47IbPsypqcD5EvMdpmxgFqzSkYNPZcAN88nWdv6kNefL//wz8cVhfk/TIbi1+Mqqv6FRdamjVpfLoDdacdH4tpY8psltLV1pXVNqHYGGuneqjlqrYZOMn8QF9attVjzAMnbflSu3Ve02JK8Ox5yM5kjMyfc42f15CpqDzsPiPZC4QgyFGA1Cv4xxGpSgUEKDUhRKaZBAIUGD8NQkDcpQaNd/ne+IP6dBePwFDULj5zENQuPnjAah8XNOg9D4eUKDzvG/+80vuG5pEZIXaVGINM6kzPg0/QNjTR9S",
+  "footprint": [
+    12,
+    8
+  ],
+  "phase_required": 3,
+  "required_items": {
+    "oil-refinery": 1,
+    "chemical-plant": 2,
+    "pipe": 20,
+    "small-electric-pole": 2
+  }
+}
