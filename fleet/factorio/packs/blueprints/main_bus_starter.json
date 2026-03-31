@@ -1,0 +1,7 @@
+{
+  "name": "main_bus_starter",
+  "blueprint_string": "PLACEHOLDER_EXPORT_FROM_FACTORIO",
+  "footprint": [8, 4],
+  "phase_required": 2,
+  "required_items": {"transport-belt": 32}
+}

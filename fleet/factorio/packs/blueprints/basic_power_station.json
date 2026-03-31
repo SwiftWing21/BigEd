@@ -1,0 +1,7 @@
+{
+  "name": "basic_power_station",
+  "blueprint_string": "PLACEHOLDER_EXPORT_FROM_FACTORIO",
+  "footprint": [5, 3],
+  "phase_required": 1,
+  "required_items": {"boiler": 1, "steam-engine": 1, "offshore-pump": 1}
+}

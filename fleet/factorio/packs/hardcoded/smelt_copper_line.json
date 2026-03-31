@@ -1,0 +1,17 @@
+{
+  "name": "smelt_copper_line",
+  "phase_required": 0,
+  "origin": "hardcoded",
+  "required_items": {"stone-furnace": 3, "coal": 15, "copper-ore": 30},
+  "actions": [
+    {"action": "place", "entity": "stone-furnace", "position": {"x": 0, "y": 0}},
+    {"action": "insert", "entity": "stone-furnace", "item": "coal", "count": 5, "position": {"x": 0, "y": 0}},
+    {"action": "insert", "entity": "stone-furnace", "item": "copper-ore", "count": 10, "position": {"x": 0, "y": 0}},
+    {"action": "place", "entity": "stone-furnace", "position": {"x": 2, "y": 0}},
+    {"action": "insert", "entity": "stone-furnace", "item": "coal", "count": 5, "position": {"x": 2, "y": 0}},
+    {"action": "insert", "entity": "stone-furnace", "item": "copper-ore", "count": 10, "position": {"x": 2, "y": 0}},
+    {"action": "place", "entity": "stone-furnace", "position": {"x": 4, "y": 0}},
+    {"action": "insert", "entity": "stone-furnace", "item": "coal", "count": 5, "position": {"x": 4, "y": 0}},
+    {"action": "insert", "entity": "stone-furnace", "item": "copper-ore", "count": 10, "position": {"x": 4, "y": 0}}
+  ]
+}

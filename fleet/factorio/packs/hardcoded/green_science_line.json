@@ -1,0 +1,13 @@
+{
+  "name": "green_science_line",
+  "phase_required": 2,
+  "origin": "hardcoded",
+  "required_items": {"assembling-machine-1": 1, "inserter": 3},
+  "actions": [
+    {"action": "place", "entity": "assembling-machine-1", "position": {"x": 0, "y": 0}},
+    {"action": "set_recipe", "entity": "assembling-machine-1", "recipe": "logistic-science-pack", "position": {"x": 0, "y": 0}},
+    {"action": "place", "entity": "inserter", "position": {"x": -2, "y": 0}, "direction": "east"},
+    {"action": "place", "entity": "inserter", "position": {"x": -2, "y": 1}, "direction": "east"},
+    {"action": "place", "entity": "inserter", "position": {"x": 2, "y": 0}, "direction": "east"}
+  ]
+}
