@@ -3,7 +3,7 @@
 ## Quick Start
 ```bash
 python fleet/dependency_check.py          # pre-flight check (11 deps)
-python fleet/smoke_test.py --fast         # 33/33 smoke tests
+python fleet/smoke_test.py --fast         # 51/51 smoke tests
 python BigEd/launcher/launcher.py         # launch GUI (boots fleet automatically)
 python fleet/lead_client.py status        # CLI fleet status
 python fleet/lead_client.py task "your instruction here"  # dispatch a task
@@ -55,7 +55,7 @@ End every roadmap with an Audit Coverage Check section.
 - `fleet/filesystem_guard.py` — SOC 2 file access control
 
 ## Fleet Status
-- Skills: 130+ | Dashboard: 190+ endpoints (across dashboard.py + 10 blueprints) | Smoke: 33/33
+- Skills: 124 | Dashboard: 228+ endpoints (across dashboard.py + 6 blueprints) | Smoke: 51/51
 - Dynamic agent scaling: 4 core + demand-based | Dr. Ders: event-driven wake-up timer
 - Security: P0-P2 hardened (XSS, SQL injection, thread safety, zombie cleanup)
 - Backup: auto-save every 20min, configurable depth/location
@@ -216,7 +216,7 @@ RAM ceiling: 95% by default (`ram_ceiling_pct` in fleet.toml). Scale-up blocked 
 4. `fleet.db` + `rag.db` auto-created on first use
 
 ### Data layer
-- **FleetDB** (`fleet/data_access.py`): unified DAL — agent counts, tasks, token speeds, HITL
+- **FleetDB** (`BigEd/launcher/data_access.py`): unified DAL — agent counts, tasks, token speeds, HITL
 - **RAG** (`fleet/rag.py` + `rag.db`): BM25/FTS5 + optional vector search — `search()`, `hybrid_search()`, `rerank()`
 - **Config** (`fleet/config.py`): TOML loader — `load_config()`, `is_offline()`, `is_air_gap()`
 - **MCP** (`fleet/mcp_manager.py`): server registry — `.mcp.json`, probes, skill routing

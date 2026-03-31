@@ -23,10 +23,10 @@
 ## Quick Reference
 - Status: `python lead_client.py status`
 - Start: `python supervisor.py` (native Windows) or `nohup uv run python supervisor.py >> logs/supervisor.log 2>&1 &` (Linux/WSL)
-- Smoke: `python smoke_test.py --fast` (27/27)
+- Smoke: `python smoke_test.py --fast` (51/51)
 - Deps: `python dependency_check.py` (11 checks)
 - Export: `python lead_client.py export` | Import: `python lead_client.py import <file>`
-- Skills: 97+ registered | Dashboard: 190+ endpoints (across dashboard.py + 10 blueprints)
+- Skills: 124 registered | Dashboard: 228+ endpoints (across dashboard.py + 6 blueprints)
 - Security advisories: `knowledge/security/pending/advisory_<id>.md`
 - Process control: REST API (`/api/fleet/*`)
 
@@ -54,7 +54,7 @@ Drafts are **never auto-deployed** — review before copying to `skills/`.
 |--------|------------|--------|
 | Discord (`discord_bot.py`) | `discord_bot_enabled` | Active — routes `biged-fleetchat` to fleet |
 | OpenClaw gateway | `openclaw_enabled` | Installed, disabled by default |
-| FleetBridge (`fleet_bridge.py`) | `fleet_bridge_enabled` | SSE reactive comms |
+| DispatchBridge (`dispatch_bridge.py`) | `fleet_bridge_enabled` | SSE reactive comms |
 
 ## Dual Supervisor Architecture
 - `supervisor.py` — Process lifecycle (Ollama adopt/start, worker respawn, disabled agents, training detection, Discord/OpenClaw, idle evolution)
@@ -66,7 +66,7 @@ Drafts are **never auto-deployed** — review before copying to `skills/`.
 - `mcp_manager.py` — MCP server registry, probes, skill routing (reads `.mcp.json`)
 - `system_info.py` — Unified RAM/CPU/GPU detection, worker limits, `generate_user_md()`
 - `dependency_check.py` — Pre-flight checker (core/hardware/data/optional/mcp)
-- `data_access.py` — FleetDB DAL (all DB queries go through here)
+- `../BigEd/launcher/data_access.py` — FleetDB DAL for launcher (launcher-side queries)
 - `providers.py` — Multi-backend ABC (Ollama, llama.cpp, llamafile) + HuggingFace search
 - `idle_evolution.py` — Weighted random skill selection, per-agent cooldown, cross-worker dedup
 - `experiment.py` — ML experiment framework (propose/run/eval/deploy/rollback, autonomy dial)
