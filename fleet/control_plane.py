@@ -130,6 +130,9 @@ def provision_fleet(tenant_id: str | None, config: dict | None = None) -> dict:
     # Generate API key for this fleet
     api_key = f"fleet_{secrets.token_urlsafe(32)}"
 
+    # Persist key hash to DB so validate_api_key() can verify it later
+    store_api_key(tenant_id, api_key, label="provisioned")
+
     # Store API key in tenant config
     tenant_admin.update_tenant(tenant_id, {
         "config": {
@@ -521,6 +524,73 @@ def _hash_key(key: str) -> str:
     return hashlib.sha256(key.encode("utf-8")).hexdigest()
 
 
+def store_api_key(tenant_id: str, api_key: str, label: str = "") -> None:
+    """Persist a hashed API key for a tenant."""
+    key_hash = _hash_key(api_key)
+    now = time.time()
+
+    def _do():
+        conn = _get_conn()
+        try:
+            conn.execute(
+                """INSERT OR REPLACE INTO tenant_api_keys
+                   (tenant_id, key_hash, label, created_at)
+                   VALUES (?, ?, ?, ?)""",
+                (tenant_id, key_hash, label, now),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
+    try:
+        _retry_write(_do)
+    except Exception:
+        log.warning("store_api_key failed for tenant=%s", tenant_id, exc_info=True)
+
+
+def validate_api_key(api_key: str) -> str | None:
+    """Validate an API key and return the tenant_id, or None if invalid.
+
+    Also updates last_used_at on success.
+    """
+    if not api_key or not api_key.startswith("fleet_"):
+        return None
+    key_hash = _hash_key(api_key)
+    try:
+        conn = _get_conn()
+        row = conn.execute(
+            "SELECT tenant_id FROM tenant_api_keys WHERE key_hash = ?",
+            (key_hash,),
+        ).fetchone()
+        conn.close()
+    except Exception:
+        log.warning("validate_api_key DB lookup failed", exc_info=True)
+        return None
+
+    if row is None:
+        return None
+
+    tenant_id = row["tenant_id"] if hasattr(row, "keys") else row[0]
+
+    # Update last_used_at (fire-and-forget)
+    def _touch():
+        c = _get_conn()
+        try:
+            c.execute(
+                "UPDATE tenant_api_keys SET last_used_at = ? WHERE key_hash = ?",
+                (time.time(), key_hash),
+            )
+            c.commit()
+        finally:
+            c.close()
+    try:
+        _retry_write(_touch)
+    except Exception:
+        pass  # last_used_at update is non-critical
+
+    return tenant_id
+
+
 def _compute_fleet_health(tenant: dict, quota_usage: dict) -> dict:
     """Compute a health summary for a single fleet."""
     status = tenant.get("status", "unknown")
@@ -655,3 +725,29 @@ def api_platform_metrics():
     except Exception as e:
         log.warning("get_platform_metrics failed: %s", e, exc_info=True)
         return jsonify({"error": _safe_error(e)}), 500
+
+
+# ── API Key Middleware ──────────────────────────────────────────────────────
+
+@platform_bp.before_request
+def _check_platform_api_key():
+    """Validate X-Fleet-Key header for /api/platform/* calls if key is present."""
+    fleet_key = request.headers.get("X-Fleet-Key", "")
+    if fleet_key:
+        tenant_id = validate_api_key(fleet_key)
+        if tenant_id is None:
+            return jsonify({"error": "invalid or unknown API key"}), 401
+        request.fleet_tenant_id = tenant_id  # type: ignore[attr-defined]
+
+
+@platform_bp.route("/api/platform/validate-key", methods=["POST"])
+def api_validate_key():
+    """POST /api/platform/validate-key — verify an API key, returns tenant_id."""
+    data = request.get_json(silent=True) or {}
+    key = data.get("api_key", "")
+    if not key:
+        return jsonify({"error": "api_key required"}), 400
+    tenant_id = validate_api_key(key)
+    if tenant_id is None:
+        return jsonify({"valid": False}), 401
+    return jsonify({"valid": True, "tenant_id": tenant_id})
