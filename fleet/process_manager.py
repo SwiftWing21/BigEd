@@ -180,7 +180,9 @@ class ProcessManager:
             return configured
         if configured in available:
             return configured
-        preference = ["qwen3:8b", "qwen3:4b", "qwen3:1.7b", "qwen3:0.6b"]
+        model_tiers = config.get("models", {}).get("tiers", {})
+        _DEFAULT_MODELS = ["qwen3:8b", "qwen3:4b", "qwen3:1.7b", "qwen3:0.6b"]
+        preference = list(model_tiers.values()) if model_tiers else _DEFAULT_MODELS
         for m in preference:
             if m in available:
                 log.warning(f"Configured model '{configured}' not available, using fallback '{m}'")
