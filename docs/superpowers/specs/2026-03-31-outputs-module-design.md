@@ -19,11 +19,13 @@ Both pages share a common REST backend via `fleet/outputs_blueprint.py`.
 
 ## Backend: `fleet/outputs_blueprint.py`
 
+Place file at `fleet/outputs_blueprint.py`. Import shared helpers from `dashboard_utils` (`_require_role`, `_check_rate_limit`, `_load_config`, `FLEET_DIR`, `get_conn`, `query`).
+
 Flask blueprint registered as `outputs_bp`, prefix `/api/outputs`.
 
 ### Categories
 
-The 14 knowledge subdirectories from the original module:
+Knowledge subdirectories that contain reviewable agent outputs:
 
 ```python
 CATEGORIES = {
@@ -34,15 +36,21 @@ CATEGORIES = {
     "Drafts": "code_drafts",
     "Reports": "reports",
     "Evaluations": "evaluations",
-    "Stability": "stability",
     "Summaries": "summaries",
-    "Refactors": "refactors",
     "FMA Reviews": "fma_reviews",
-    "DITL": "ditl",
     "Evolution": "evolution",
-    "Chains": "chains",
 }
 ```
+
+**Excluded intentionally:** `code_discussion`, `discussion`, `code_writes`, `ingests`, `leads`, `plans`, `ingest_cache`, `marathon`, `prompt_optimization` — these are internal artifacts or raw data, not reviewable outputs.
+
+**Missing dirs:** Categories whose subdirectory doesn't exist on disk return `count: 0` — no crash. Skills may create these dirs in the future.
+
+### Path contract
+
+- **API responses** use paths relative to `knowledge/` (e.g. `"security/reviews/file.md"`)
+- **DB storage** uses absolute paths (what `db.submit_feedback()` stores)
+- **Conversion:** the blueprint resolves relative → absolute for DB calls, and strips the `knowledge/` prefix for API responses. The DB is the source of truth for feedback lookups.
 
 ### Endpoints
 
@@ -81,7 +89,7 @@ Returns file list sorted by mtime descending, with feedback badge status.
 }
 ```
 
-Implementation: glob `knowledge/<subdir>/**/*.md`, stat each, join with `db.get_feedback_bulk()` for verdicts. Path returned is relative to `knowledge/` — never expose absolute paths.
+Implementation: glob `knowledge/<subdir>/**/*.md`, stat each, join with `db.get_feedback_bulk()` using absolute paths for lookup. Path returned in response is relative to `knowledge/` — never expose absolute paths.
 
 #### `GET /api/outputs/file?path=security/reviews/security_review_2026-03-30.md`
 
@@ -109,7 +117,7 @@ Submit approve/reject with optional notes.
 
 Response: `{"ok": true}`
 
-Implementation: validate verdict is `"approved"` or `"rejected"`, call `db.submit_feedback(abs_path, verdict, feedback_text=notes)`. Requires `operator` role minimum.
+Implementation: validate verdict is one of `("approved", "rejected", "neutral")` to match `db.submit_feedback()`. Convert relative path to absolute before calling `db.submit_feedback(abs_path, verdict, feedback_text=notes)`. Requires `operator` role minimum.
 
 #### `GET /api/outputs/unreviewed?limit=20`
 
