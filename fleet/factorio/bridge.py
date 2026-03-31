@@ -611,74 +611,19 @@ class FactorioBridge:
                 log.warning("Metrics fetch failed in ml_tick, skipping")
         self.world_model.update(state, raw_metrics)
 
-        # If pack is in-flight, execute next step (skip policy)
-        if _executor.is_active:
-            prev_result = self._pack_prev_results.get(agent_id, {"success": True})
-            next_action = _executor.next_step(prev_result)
-            if next_action is None:
-                # Pack finished — compute cumulative reward and store PPO transition
-                pack_completed = _executor.completed
-                pack_aborted = _executor.abort_reason is not None
-                cum_reward = _executor.cumulative_reward
-                if pack_completed:
-                    cum_reward += _PACK_COMPLETE_BONUS
-                elif pack_aborted:
-                    cum_reward += _PACK_ABORT_PENALTY
-                saved = self._pack_pending_transition.pop(agent_id, None)
-                if saved:
-                    from factorio.trainer import Transition
-                    self._trajectory_buf.add(Transition(
-                        grid=saved["grid"], features=saved["features"],
-                        action_type=saved["action_type"],
-                        log_prob=saved["log_prob"],
-                        value=saved["value"],
-                        reward=cum_reward, done=False,
-                        world_grid=saved.get("world_grid"),
-                        action_mask=saved.get("action_mask"),
-                    ))
-                self._prev_state = state
-                self._tick_count += 1
-                return
-            else:
-                # Execute primitive action from pack
-                next_action["agent_id"] = agent_id
-                from factorio.action_translator import translate_action as _translate
-                translated = _translate(next_action)
-                exec_result = {"success": False}
-                if translated.rcon_command:
-                    try:
-                        cmd = translated.rcon_command
-                        if cmd.startswith("/biged-cmd "):
-                            cmd = cmd[len("/biged-cmd "):]
-                        resp = await self.rcon.remote_call("exec_cmd", cmd)
-                        resp_str = str(resp).lower()
-                        exec_result = {"success": "error" not in resp_str}
-                    except Exception:
-                        log.warning("Pack step failed", exc_info=True)
-                self._pack_prev_results[agent_id] = exec_result
-                # Accumulate step reward (not stored in PPO buffer)
-                other_positions = [
-                    pos for aid, pos in self._agent_positions.items() if aid != agent_id
-                ]
-                agent_rw = self._agent_reward.get(agent_id, self._reward)
-                if self._prev_state is not None:
-                    raw_metrics_for_pack = None
-                    step_reward = agent_rw.compute(
-                        self._prev_state, state, exec_result["success"],
-                        False, False, metrics=raw_metrics_for_pack,
-                        action_type=next_action.get("action_type_int", 0),
-                        other_agent_positions=other_positions,
-                    )
-                    _executor.accumulate_reward(step_reward)
-                self._prev_state = state
-                self._tick_count += 1
-                return
-
-        # 2. Encode state (local grid + world minimap + features)
-        #    Use per-agent spatial memory and inject agent identity + peer positions
+        # Peer positions for proximity features / clustering penalty
         other_positions = [
             pos for aid, pos in self._agent_positions.items() if aid != agent_id
         ]
+
+        # If pack is in-flight, execute next step (skip policy)
+        if _executor.is_active:
+            handled = await self._handle_pack_in_flight(
+                agent_id, state, _executor, raw_metrics, other_positions)
+            if handled:
+                return
+
+        # 2. Encode state (local grid + world minimap + features)
         pack_progress = _executor.progress if _executor.is_active else 0.0
         grid, world_grid, features = self._encoder.encode(
             state, raw_metrics,
@@ -858,21 +803,97 @@ class FactorioBridge:
                 self._tick_count += 1
                 return
 
-        # 5. Execute via RCON (inject agent_id so exec_cmd uses the right character)
+        # 5. Execute via RCON
+        result = await self._execute_rcon_action(action_dict, agent_id, raw_metrics)
+
+        # 6-10. Curriculum check, reward, store transition, PPO update, episode end
+        await self._post_step(
+            state, raw_metrics, agent_id, action_type.item(), result,
+            grid, features, world_grid, mask, log_prob, value,
+            other_positions, agent_mem, _executor, current_lesson,
+        )
+
+    # ------------------------------------------------------------------
+    # Extracted methods from _ml_tick_agent
+    # ------------------------------------------------------------------
+
+    async def _handle_pack_in_flight(
+        self, agent_id: int, state, _executor, raw_metrics, other_positions: list,
+    ) -> bool:
+        """Handle in-flight pack execution. Returns True if tick was consumed."""
+        prev_result = self._pack_prev_results.get(agent_id, {"success": True})
+        next_action = _executor.next_step(prev_result)
+        if next_action is None:
+            # Pack finished — compute cumulative reward and store PPO transition
+            pack_completed = _executor.completed
+            pack_aborted = _executor.abort_reason is not None
+            cum_reward = _executor.cumulative_reward
+            if pack_completed:
+                cum_reward += _PACK_COMPLETE_BONUS
+            elif pack_aborted:
+                cum_reward += _PACK_ABORT_PENALTY
+            saved = self._pack_pending_transition.pop(agent_id, None)
+            if saved:
+                from factorio.trainer import Transition
+                self._trajectory_buf.add(Transition(
+                    grid=saved["grid"], features=saved["features"],
+                    action_type=saved["action_type"],
+                    log_prob=saved["log_prob"],
+                    value=saved["value"],
+                    reward=cum_reward, done=False,
+                    world_grid=saved.get("world_grid"),
+                    action_mask=saved.get("action_mask"),
+                ))
+            self._prev_state = state
+            self._tick_count += 1
+            return True
+        else:
+            # Execute primitive action from pack
+            next_action["agent_id"] = agent_id
+            from factorio.action_translator import translate_action as _translate
+            translated = _translate(next_action)
+            exec_result = {"success": False}
+            if translated.rcon_command:
+                try:
+                    cmd = translated.rcon_command
+                    if cmd.startswith("/biged-cmd "):
+                        cmd = cmd[len("/biged-cmd "):]
+                    resp = await self.rcon.remote_call("exec_cmd", cmd)
+                    resp_str = str(resp).lower()
+                    exec_result = {"success": "error" not in resp_str}
+                except Exception:
+                    log.warning("Pack step failed", exc_info=True)
+            self._pack_prev_results[agent_id] = exec_result
+            # Accumulate step reward (not stored in PPO buffer)
+            agent_rw = self._agent_reward.get(agent_id, self._reward)
+            if self._prev_state is not None:
+                step_reward = agent_rw.compute(
+                    self._prev_state, state, exec_result["success"],
+                    False, False, metrics=None,
+                    action_type=next_action.get("action_type_int", 0),
+                    other_agent_positions=other_positions,
+                )
+                _executor.accumulate_reward(step_reward)
+            self._prev_state = state
+            self._tick_count += 1
+            return True
+
+    async def _execute_rcon_action(
+        self, action_dict: dict, agent_id: int, raw_metrics,
+    ) -> dict:
+        """Execute action via RCON, record for pack discovery, track inserts."""
         action_dict["agent_id"] = agent_id
         from factorio.action_translator import translate_action
         translated = translate_action(action_dict)
         result = {"success": False}
         if translated.rcon_command:
             try:
-                # Strip /biged-cmd prefix — exec_cmd expects raw JSON
                 cmd = translated.rcon_command
                 if cmd.startswith("/biged-cmd "):
                     cmd = cmd[len("/biged-cmd "):]
                 resp = await self.rcon.remote_call("exec_cmd", cmd)
                 resp_str = str(resp).lower()
                 result = {"success": "error" not in resp_str}
-                # Always log place/craft failures for debugging
                 if not result["success"] and translated.action_type in ("place", "craft"):
                     log.warning("ML step %d FAILED %s: %s",
                                 self._tick_count, translated.description, resp_str[:200])
@@ -883,20 +904,19 @@ class FactorioBridge:
             except Exception:
                 log.warning("Action execution failed", exc_info=True)
 
-        # 5b. Record primitive actions for learned pack discovery
+        # Record primitive actions for learned pack discovery
         if result.get("success") and action_dict.get("action") in (
             "place", "craft", "insert", "mine", "set_recipe", "remove"
         ):
             self._pack_recorder.record(action_dict)
 
-        # 5c. Track successful inserts for curriculum
+        # Track successful inserts for curriculum
         if result.get("success") and action_dict.get("action") == "insert":
             self._insert_count += 1
-        # Track production from metrics
         if raw_metrics and hasattr(raw_metrics, 'total_produced'):
             self._production_snapshot = dict(raw_metrics.total_produced)
 
-        # 5d. Auto-save before checkpoint attempt for learned pack replay
+        # Auto-save before checkpoint attempt
         checkpoint_id = self._curriculum.checkpoint
         if checkpoint_id != self._last_checkpoint_save:
             try:
@@ -907,7 +927,15 @@ class FactorioBridge:
             except Exception:
                 log.warning("Checkpoint auto-save failed", exc_info=True)
 
-        # 6. Check curriculum progress (always — even first tick for body check lesson)
+        return result
+
+    async def _post_step(
+        self, state, raw_metrics, agent_id: int, action_type_val: int,
+        result: dict, grid, features, world_grid, mask, log_prob, value,
+        other_positions: list, agent_mem, _executor, current_lesson: int,
+    ) -> None:
+        """Curriculum check, reward compute, store transition, PPO update, episode end."""
+        # 6. Check curriculum progress
         resource_totals = {}
         for r in state.resources:
             resource_totals[r.get("name", "")] = r.get("total_amount", 0)
@@ -922,22 +950,21 @@ class FactorioBridge:
                 "has_character": 1 if state.player_has_character else 0,
             },
             "resources": resource_totals,
-            # Extra tracking for curriculum criteria
             "inserts": self._insert_count,
             "produced": self._production_snapshot,
         }
-        # Count entities by name
         for e in state.entities:
             flat_state["entities"][e.name] = flat_state["entities"].get(e.name, 0) + 1
         progress = self._curriculum.check_progress(flat_state)
         lesson_passed = progress.get("lesson_passed", False)
         phase_complete = progress.get("phase_complete", False)
 
-        # 7. Compute reward (per-agent reward computer + proximity penalty)
+        # 7. Compute reward
+        px = state.player_position.get("x", 0.0) if isinstance(state.player_position, dict) else 0.0
+        py = state.player_position.get("y", 0.0) if isinstance(state.player_position, dict) else 0.0
         agent_rw = self._agent_reward.get(agent_id, self._reward)
         reward = 0.0
         if self._prev_state is not None:
-            # Check if agent is near ore (for lesson 2 shaped reward)
             near_ore = False
             if current_lesson == 2 and agent_mem:
                 for rtype in ("iron-ore", "copper-ore", "coal", "stone"):
@@ -952,7 +979,7 @@ class FactorioBridge:
                 self._prev_state, state, result["success"],
                 lesson_passed, phase_complete,
                 metrics=raw_metrics,
-                action_type=action_type.item(),
+                action_type=action_type_val,
                 other_agent_positions=other_positions,
                 lesson_index=current_lesson,
                 near_ore=near_ore,
@@ -963,7 +990,7 @@ class FactorioBridge:
         done = phase_complete or self._episode_mgr.is_episode_done()
         self._trajectory_buf.add(Transition(
             grid=grid, features=features,
-            action_type=action_type.item(),
+            action_type=action_type_val,
             log_prob=log_prob.item(),
             value=value.item(),
             reward=reward, done=done,
@@ -1014,9 +1041,7 @@ class FactorioBridge:
                 except Exception:
                     log.warning("Checkpoint save failed", exc_info=True)
 
-            # Phase advancement
             if phase_complete:
-                # Try to extract a learned pack from recent actions
                 candidate = self._pack_recorder.on_checkpoint_complete(self._curriculum.checkpoint)
                 if candidate:
                     slot = self._pack_registry.promote_learned(candidate)
@@ -1034,14 +1059,13 @@ class FactorioBridge:
                     self._action_space = ActionSpace(phase=new_phase)
                     self._reward.set_phase(new_phase)
                     self._reward.reset_normalizer()
-                    for agent_rw in self._agent_reward.values():
-                        agent_rw.set_phase(new_phase)
-                        agent_rw.reset_normalizer()
+                    for arw in self._agent_reward.values():
+                        arw.set_phase(new_phase)
+                        arw.reset_normalizer()
                     self._episode_mgr.set_phase(new_phase)
 
             await self._episode_mgr.reset()
 
-            # Survey wide area for spatial memory after reset
             try:
                 survey_lua = (
                     '/c local s=game.get_surface("nauvis"); local out={}; '

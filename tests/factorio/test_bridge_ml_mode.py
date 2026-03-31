@@ -47,3 +47,14 @@ async def test_ml_tick_calls_policy():
     encoded = EncodedAction(action_type=action_type.item())
     action_dict = action_space.decode_action(encoded)
     assert "action" in action_dict
+
+
+def test_ml_tick_agent_method_extraction():
+    """Verify extracted methods exist and are callable on FactorioBridge."""
+    from factorio.bridge import FactorioBridge
+    assert hasattr(FactorioBridge, '_handle_pack_in_flight')
+    assert hasattr(FactorioBridge, '_execute_rcon_action')
+    assert hasattr(FactorioBridge, '_post_step')
+    assert callable(getattr(FactorioBridge, '_handle_pack_in_flight'))
+    assert callable(getattr(FactorioBridge, '_execute_rcon_action'))
+    assert callable(getattr(FactorioBridge, '_post_step'))
