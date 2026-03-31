@@ -14,7 +14,7 @@ jobs:
     strategy:
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
-        python-version: ['3.11', '3.12']
+        python-version: ['3.11', '3.12', '3.13']
       fail-fast: false
 
     runs-on: ${{ matrix.os }}
@@ -105,3 +105,8 @@ jobs:
               sys.exit(1)
           print(f'All .py files pass syntax check')
           "
+      - name: Lint with ruff
+        run: |
+          pip install ruff
+          ruff check fleet/ --select E,W,F
+        continue-on-error: true
