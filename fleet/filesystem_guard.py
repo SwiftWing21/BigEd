@@ -113,7 +113,7 @@ class FileSystemGuard:
             with open(self._log_path, "a", encoding="utf-8") as f:
                 f.write(entry + "\n")
         except OSError:
-            logger.debug("Could not write filesystem audit log to %s", self._log_path)
+            logger.warning("SOC 2 compliance: could not write filesystem audit log to %s", self._log_path, exc_info=True)
 
     def get_zones(self) -> dict:
         """Return configured zones as {name: {path, access}}."""
