@@ -242,7 +242,7 @@ class StateEncoder:
                 if entity_id == 0:
                     continue
                 grid[0, gy, gx] = entity_id / _MAX_ENTITY_ID
-                grid[1, gy, gx] = entity.direction / 7.0
+                grid[1, gy, gx] = entity.direction / 15.0  # 16-direction encoding (0-15)
             except Exception:
                 log.warning("Failed to encode entity %r", entity.name, exc_info=True)
 

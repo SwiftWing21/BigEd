@@ -350,7 +350,7 @@ class PPOTrainer:
     def load_checkpoint(self, path: str) -> int:
         """Load trainer state from *path*. Returns the episode number."""
         try:
-            ckpt = torch.load(path, map_location=self._device, weights_only=False)
+            ckpt = torch.load(path, map_location=self._device, weights_only=True)
             self.policy.load_state_dict(ckpt["policy_state"])
             self.optimizer.load_state_dict(ckpt["optimizer_state"])
             self.total_updates = ckpt.get("total_updates", 0)

@@ -136,6 +136,10 @@ class FactorioBridge:
 
             self._pack_executors: dict[int, PackExecutor] = {}
             self._pack_pending_transition: dict[int, dict] = {}
+            self._pack_prev_results: dict[int, dict] = {}
+            self._insert_count: int = 0
+            self._production_snapshot: dict = {}
+            self._last_checkpoint_save: int = 0
 
     async def connect_with_retry(self) -> bool:
         """Connect to RCON with exponential backoff."""
@@ -632,8 +636,6 @@ class FactorioBridge:
                         exec_result = {"success": "error" not in resp_str}
                     except Exception:
                         log.warning("Pack step failed", exc_info=True)
-                if not hasattr(self, '_pack_prev_results'):
-                    self._pack_prev_results = {}
                 self._pack_prev_results[agent_id] = exec_result
                 # Accumulate step reward (not stored in PPO buffer)
                 other_positions = [
@@ -666,9 +668,9 @@ class FactorioBridge:
             other_agent_positions=other_positions,
             pack_progress=pack_progress,
         )
-        grid_t = torch.tensor(grid).unsqueeze(0)
-        world_t = torch.tensor(world_grid).unsqueeze(0)
-        feat_t = torch.tensor(features).unsqueeze(0)
+        grid_t = torch.from_numpy(grid).unsqueeze(0).float()
+        world_t = torch.from_numpy(world_grid).unsqueeze(0).float()
+        feat_t = torch.from_numpy(features).unsqueeze(0).float()
 
         # 3. Get action from policy (with lesson-aware masking)
         current_lesson = self._curriculum.current_lesson_index()
@@ -823,8 +825,6 @@ class FactorioBridge:
                             exec_result = {"success": "error" not in resp_str}
                         except Exception:
                             log.warning("Pack first step failed", exc_info=True)
-                    if not hasattr(self, '_pack_prev_results'):
-                        self._pack_prev_results = {}
                     self._pack_prev_results[agent_id] = exec_result
                     self._prev_state = state
                     self._tick_count += 1
@@ -869,9 +869,6 @@ class FactorioBridge:
             self._pack_recorder.record(action_dict)
 
         # 5c. Track successful inserts for curriculum
-        if not hasattr(self, '_insert_count'):
-            self._insert_count = 0
-            self._production_snapshot = {}
         if result.get("success") and action_dict.get("action") == "insert":
             self._insert_count += 1
         # Track production from metrics
@@ -880,8 +877,6 @@ class FactorioBridge:
 
         # 5d. Auto-save before checkpoint attempt for learned pack replay
         checkpoint_id = self._curriculum.checkpoint
-        if not hasattr(self, '_last_checkpoint_save'):
-            self._last_checkpoint_save = -1
         if checkpoint_id != self._last_checkpoint_save:
             try:
                 save_name = f"checkpoint_{checkpoint_id}_pre"
@@ -1018,6 +1013,9 @@ class FactorioBridge:
                     self._action_space = ActionSpace(phase=new_phase)
                     self._reward.set_phase(new_phase)
                     self._reward.reset_normalizer()
+                    for agent_rw in self._agent_reward.values():
+                        agent_rw.set_phase(new_phase)
+                        agent_rw.reset_normalizer()
                     self._episode_mgr.set_phase(new_phase)
 
             await self._episode_mgr.reset()
