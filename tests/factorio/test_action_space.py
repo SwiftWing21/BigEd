@@ -97,6 +97,24 @@ def test_action_type_mask_length_matches_enum():
     assert len(mask) == 12
 
 
+def test_place_near_enabled_with_drill():
+    """In lesson 2, PLACE_NEAR must be enabled if burner-mining-drill is in inventory."""
+    space = ActionSpace(phase=1)
+    inventory = {"burner-mining-drill": 3}
+    mask = space.get_action_type_mask(inventory, phase=1, lesson_index=2)
+    assert mask[ActionType.PLACE.value] == 1, "PLACE should be enabled with drill"
+    assert mask[ActionType.PLACE_NEAR.value] == 1, "PLACE_NEAR should be enabled with drill"
+
+
+def test_place_disabled_no_placeable():
+    """PLACE/PLACE_NEAR disabled if inventory has no placeable entities."""
+    space = ActionSpace(phase=1)
+    inventory = {"coal": 50, "iron-ore": 100}
+    mask = space.get_action_type_mask(inventory, phase=1, lesson_index=2)
+    assert mask[ActionType.PLACE.value] == 0
+    assert mask[ActionType.PLACE_NEAR.value] == 0
+
+
 def test_entity_registry_has_late_game_entities():
     for name in ("oil-refinery", "chemical-plant", "pumpjack", "storage-tank",
                  "electric-furnace", "rail", "train-stop",
