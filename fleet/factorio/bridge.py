@@ -497,6 +497,9 @@ class FactorioBridge:
         for agent_id in range(1, num_agents + 1):
             await self._ml_tick_agent(agent_id)
 
+        # Increment tick counter once per full tick (not once per agent)
+        self._tick_count += 1
+
     async def _ml_tick_agent(self, agent_id: int = 1) -> None:
         """Single ML-mode perception -> action cycle for one agent."""
         import torch
@@ -515,11 +518,9 @@ class FactorioBridge:
                 state = parse_state(raw_state)
                 if not state.player_alive:
                     log.error("Agent %d still has no body — skipping", agent_id)
-                    self._tick_count += 1
                     return
             except Exception:
                 log.warning("ensure_agent(%d) failed — skipping", agent_id, exc_info=True)
-                self._tick_count += 1
                 return
 
         # 0a. Periodic resupply — creative mode: stock agent inventories
@@ -743,7 +744,6 @@ class FactorioBridge:
                         action_mask=mask,
                     ))
                     self._prev_state = state
-                    self._tick_count += 1
                     return
                 else:
                     # Non-move actions: clamp position (placement near edge is OK)
@@ -804,7 +804,6 @@ class FactorioBridge:
                         action_mask=mask,
                     ))
                     self._prev_state = state
-                    self._tick_count += 1
                     return
                 else:
                     # PACK: start multi-tick execution
@@ -836,14 +835,12 @@ class FactorioBridge:
                             log.warning("Pack first step failed", exc_info=True)
                     self._pack_prev_results[agent_id] = exec_result
                     self._prev_state = state
-                    self._tick_count += 1
                     return
             else:
                 log.warning("Invalid pack_id %d (registry has %d items)",
                             pack_id, len(self._pack_registry._items))
                 # Skip this tick — don't fall through with a "pack"/"stamp" action name
                 self._prev_state = state
-                self._tick_count += 1
                 return
 
         # 5. Execute via RCON
@@ -888,7 +885,6 @@ class FactorioBridge:
                     action_mask=saved.get("action_mask"),
                 ))
             self._prev_state = state
-            self._tick_count += 1
             return True
         else:
             # Execute primitive action from pack
@@ -918,7 +914,6 @@ class FactorioBridge:
                 )
                 _executor.accumulate_reward(step_reward)
             self._prev_state = state
-            self._tick_count += 1
             return True
 
     async def _execute_rcon_action(
@@ -1043,7 +1038,6 @@ class FactorioBridge:
         self._episode_mgr.record_step()
         self._prev_state = state
         self._ml_step_count += 1
-        self._tick_count += 1
 
         # 9. PPO update if enough steps
         self._last_reward = reward
