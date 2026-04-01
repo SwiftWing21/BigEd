@@ -46,7 +46,6 @@ def _pyinstaller_cmd() -> list:
     """Build the PyInstaller command for a macOS .app bundle.
 
     Mirrors build.py conventions:
-      - --collect-all customtkinter
       - --add-data for assets and fleet/
       - --hidden-import psutil (skip pynvml — no NVIDIA on macOS)
       - --windowed produces a .app bundle on macOS
@@ -56,7 +55,6 @@ def _pyinstaller_cmd() -> list:
         "--name", APP_NAME,
         "--windowed",
         "--osx-bundle-identifier", BUNDLE_ID,
-        "--collect-all", "customtkinter",
     ]
 
     # Icon — .icns for macOS (fallback to .ico if .icns not generated)
