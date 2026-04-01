@@ -1,6 +1,5 @@
 """PHI De-identification — Safe Harbor method (18 identifiers) + retention."""
 import re
-import sqlite3
 from pathlib import Path
 
 FLEET_DIR = Path(__file__).parent
@@ -63,23 +62,24 @@ def contains_phi(text: str) -> bool:
 
 def purge_expired_phi(retention_days: int = 2555, log=None) -> dict:
     """Secure deletion of PHI beyond retention period."""
-    db_path = FLEET_DIR / "fleet.db"
-    conn = sqlite3.connect(str(db_path), timeout=10)
+    import db as _db
 
     # Count expired
-    expired = conn.execute(
-        "SELECT COUNT(*) FROM phi_audit WHERE created_at < datetime('now', ?)",
-        (f'-{retention_days} days',)
-    ).fetchone()[0]
+    with _db.get_conn() as conn:
+        expired = conn.execute(
+            "SELECT COUNT(*) FROM phi_audit WHERE created_at < datetime('now', ?)",
+            (f'-{retention_days} days',)
+        ).fetchone()[0]
 
     if expired > 0:
-        conn.execute(
-            "DELETE FROM phi_audit WHERE created_at < datetime('now', ?)",
-            (f'-{retention_days} days',)
-        )
-        conn.commit()
+        def _do_purge():
+            with _db.get_conn() as conn:
+                conn.execute(
+                    "DELETE FROM phi_audit WHERE created_at < datetime('now', ?)",
+                    (f'-{retention_days} days',)
+                )
+        _db._retry_write(_do_purge)
         if log:
             log.info(f"PHI purge: {expired} records beyond {retention_days}-day retention")
 
-    conn.close()
     return {"purged": expired, "retention_days": retention_days}

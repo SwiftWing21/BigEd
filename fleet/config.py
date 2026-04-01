@@ -1,5 +1,6 @@
 import os
 import sys
+import time
 import tomllib
 from pathlib import Path
 
@@ -16,13 +17,39 @@ AIR_GAP_SKILLS = {
     "model_suite", "skill_lifecycle_suite",
 }
 
+_config_cache: dict = {"data": None, "ts": 0.0, "mtime": 0.0, "path": None}
+_CONFIG_TTL = 5  # seconds
 
-def load_config():
-    with open(CONFIG_PATH, "rb") as f:
+
+def load_config() -> dict:
+    cfg_path = CONFIG_PATH  # snapshot — allows test patching to work correctly
+    now = time.time()
+    # Bust cache if CONFIG_PATH itself changed (e.g. during tests)
+    if _config_cache["path"] != str(cfg_path):
+        _config_cache["data"] = None
+        _config_cache["ts"] = 0.0
+        _config_cache["mtime"] = 0.0
+        _config_cache["path"] = str(cfg_path)
+    # Fast path: cache still fresh
+    if _config_cache["data"] is not None and now - _config_cache["ts"] < _CONFIG_TTL:
+        return _config_cache["data"]
+    # Check mtime to detect file changes
+    try:
+        mtime = cfg_path.stat().st_mtime
+    except Exception:
+        return _config_cache["data"] or {}
+    if mtime == _config_cache["mtime"] and _config_cache["data"] is not None:
+        _config_cache["ts"] = now
+        return _config_cache["data"]
+    # Re-read and parse (let parse errors propagate — callers expect exceptions)
+    with open(cfg_path, "rb") as f:
         cfg = tomllib.load(f)
     # air_gap_mode implies offline_mode
     if cfg.get("fleet", {}).get("air_gap_mode", False):
         cfg.setdefault("fleet", {})["offline_mode"] = True
+    _config_cache["data"] = cfg
+    _config_cache["ts"] = now
+    _config_cache["mtime"] = mtime
     return cfg
 
 
@@ -36,9 +63,11 @@ def _get_cfg():
     return _cfg
 
 def reload_config():
-    """Force re-read of fleet.toml on next access."""
+    """Force cache invalidation — next load_config() call re-reads fleet.toml."""
     global _cfg
     _cfg = None
+    _config_cache["data"] = None
+    _config_cache["ts"] = 0.0
 
 def get_github_owner():
     return _get_cfg().get("github", {}).get("owner", "SwiftWing21")
@@ -53,6 +82,11 @@ def __getattr__(name):
     if name == "GITHUB_REPO":
         return get_github_repo()
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
+
+def get_ollama_host() -> str:
+    """Return the Ollama base URL from fleet.toml [models] ollama_host."""
+    return _get_cfg().get("models", {}).get("ollama_host", "http://localhost:11434")
 
 
 def is_offline(config: dict) -> bool:
