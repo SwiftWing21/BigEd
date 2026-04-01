@@ -1422,10 +1422,12 @@ DASHBOARD_HTML = _TEMPLATE_PATH.read_text(encoding="utf-8") if _TEMPLATE_PATH.ex
 
 @app.route("/")
 def index():
-    template = FLEET_DIR / "templates" / "dashboard.html"
-    if template.exists():
-        return Response(template.read_text(encoding="utf-8"), mimetype="text/html")
-    return Response(DASHBOARD_HTML, mimetype="text/html")  # fallback to cached
+    from flask import render_template
+    try:
+        return render_template("dashboard.html")
+    except Exception:
+        log.warning("Failed to render dashboard template", exc_info=True)
+        return Response("<h1>Dashboard template error</h1>", mimetype="text/html")
 
 
 # ── Agent Disable/Enable ──────────────────────────────────────────────────────
