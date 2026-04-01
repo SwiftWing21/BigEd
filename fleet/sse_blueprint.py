@@ -61,6 +61,7 @@ def _sse_broadcaster():
     _SSE_STEP_UP = 1.5       # multiplier each stable cycle
     interval = _SSE_MIN_INTERVAL
     prev_snapshot = None
+    prev_service_status = None  # HP2: track service health for change detection
 
     # Import cpu cache from dashboard at runtime to avoid circular import
     def _get_cpu_pct():
@@ -225,6 +226,19 @@ def _sse_broadcaster():
 
                 payload["_interval"] = round(interval, 1)
                 _broadcast_sse({"type": "status", "data": payload})
+
+                # HP2: detect service health changes and push service_status event
+                try:
+                    import dashboard
+                    svc = dashboard.api_fleet_services().get_json()
+                    svc_snap = tuple(
+                        (k, v.get("status")) for k, v in sorted(svc.items())
+                    )
+                    if prev_service_status is not None and svc_snap != prev_service_status:
+                        _broadcast_sse({"type": "service_status", "data": svc})
+                    prev_service_status = svc_snap
+                except Exception:
+                    pass
             except Exception:
                 pass
         else:
