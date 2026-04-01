@@ -401,6 +401,56 @@ def check_cpu_temp() -> dict:
         }
 
 
+def check_semgrep() -> dict:
+    """semgrep — static analysis for weekly audit tier (optional)."""
+    try:
+        result = subprocess.run(
+            ["semgrep", "--version"],
+            capture_output=True, text=True, timeout=10,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+        )
+        if result.returncode == 0:
+            version = result.stdout.strip()
+            return {
+                "name": "semgrep",
+                "category": "optional",
+                "required": False,
+                "found": True,
+                "ok": True,
+                "version": version,
+                "detail": f"semgrep {version}",
+            }
+        return {
+            "name": "semgrep",
+            "category": "optional",
+            "required": False,
+            "found": False,
+            "ok": False,
+            "version": None,
+            "detail": "semgrep not functional",
+        }
+    except FileNotFoundError:
+        return {
+            "name": "semgrep",
+            "category": "optional",
+            "required": False,
+            "found": False,
+            "ok": False,
+            "version": None,
+            "detail": "semgrep not installed (pip install semgrep) — optional for weekly audit",
+        }
+    except Exception as e:
+        return {
+            "name": "semgrep",
+            "category": "optional",
+            "required": False,
+            "found": False,
+            "ok": False,
+            "version": None,
+            "detail": f"semgrep check failed: {e}",
+        }
+
+
 def check_fastmcp() -> dict:
     """FastMCP — MCP server framework for Dispatch bridge."""
     try:
@@ -444,6 +494,7 @@ ALL_CHECKS = [
     check_node,
     check_playwright_mcp,
     check_fastmcp,
+    check_semgrep,
 ]
 
 CATEGORIES = {

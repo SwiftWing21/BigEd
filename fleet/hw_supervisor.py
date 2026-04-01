@@ -1301,6 +1301,42 @@ def main():
 
                 write_state("ready", current_model, thermal, models_loaded, conductor_status, mem_stats, gpu_config)
 
+                # ── Audit Scheduling ────────────────────────────────────────────────
+                if poll_count % 720 == 0:  # Check every ~60 minutes
+                    try:
+                        from datetime import datetime
+                        now = datetime.now()
+                        hour, minute, weekday = now.hour, now.minute, now.weekday()
+                        # Daily at 3:00 AM (within 5-min window)
+                        if hour == 3 and minute < 5:
+                            log.info("Audit: triggering daily tier")
+                            try:
+                                import audit_scorer
+                                result = audit_scorer.run_and_store("daily")
+                                log.info("Audit daily: %d dims, %d divergences",
+                                         result["dimensions_scored"], result["divergences"])
+                                if result["divergences"] > 0 and _HAS_DB:
+                                    _db.post_note("sup", "dr_ders", json.dumps({
+                                        "type": "audit_divergence",
+                                        "title": f"Audit: {result['divergences']} divergence(s)",
+                                        "content": "Run /api/audit/divergences for details",
+                                        "tags": ["audit"],
+                                    }))
+                            except Exception as e:
+                                log.warning("Audit daily failed: %s", e)
+                        # Weekly on Sunday at 3:30 AM
+                        if weekday == 6 and hour == 3 and 30 <= minute < 35:
+                            log.info("Audit: triggering weekly tier")
+                            try:
+                                import audit_scorer
+                                result = audit_scorer.run_and_store("weekly")
+                                log.info("Audit weekly: %d dims, %d divergences",
+                                         result["dimensions_scored"], result["divergences"])
+                            except Exception as e:
+                                log.warning("Audit weekly failed: %s", e)
+                    except Exception:
+                        log.warning("Audit scheduling check failed", exc_info=True)
+
                 # ── Supervisor watchdog ────────────────────────────
                 # Check supervisor heartbeat every ~60s
                 if poll_count % _supervisor_check_interval == 0:
