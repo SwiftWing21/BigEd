@@ -182,6 +182,13 @@ def route_to_peer(peer: dict, task_dict: dict) -> dict:
     routing_timeout = int(fed_cfg.get("routing_timeout", 10))
 
     url = peer["url"]
+
+    from security import validate_peer_url
+    ok, reason = validate_peer_url(url)
+    if not ok:
+        log.warning("federation_router: blocked unsafe peer URL %s: %s", url, reason)
+        return {"ok": False, "error": f"Unsafe peer URL: {reason}", "peer": url}
+
     body = json.dumps({
         "type": task_dict.get("type", ""),
         "payload": task_dict.get("payload", {}),

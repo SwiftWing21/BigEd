@@ -11,6 +11,7 @@ from flask import Blueprint, jsonify, request
 from dashboard_utils import (
     _require_role, _get_request_role, _broadcast_sse, _safe_error,
 )
+from security import validate_peer_url
 
 log = logging.getLogger("dashboard.federation")
 
@@ -74,7 +75,7 @@ def api_federation_discovered():
                         "fleet_id": "", "error": "discovery module not available"})
     except Exception as e:
         return jsonify({"discovered": [], "all_peers": [], "discovery_running": False,
-                        "fleet_id": "", "error": str(e)})
+                        "fleet_id": "", "error": _safe_error(e)})
 
 
 # ── Routing ────────────────────────────────────────────────────────────────
@@ -121,6 +122,10 @@ def api_federation_route():
         task_type = data.get("type")
         if not peer_url or not task_type:
             return jsonify({"error": "peer_url and type are required"}), 400
+
+        ok, reason = validate_peer_url(peer_url)
+        if not ok:
+            return jsonify({"error": f"Invalid peer_url: {reason}"}), 400
 
         from federation_router import route_to_peer
 
@@ -266,6 +271,6 @@ def api_federation_exchange_cert():
         local_cert = get_local_cert_pem()
         return jsonify({"ok": True, "cert_pem": local_cert})
     except FileNotFoundError as e:
-        return jsonify({"error": str(e)}), 404
+        return jsonify({"error": _safe_error(e)}), 404
     except Exception as e:
         return jsonify({"error": _safe_error(e)}), 500

@@ -177,6 +177,10 @@ def _get_peer_list() -> list:
 def _probe_peer(peer_url: str, timeout: int = 5) -> dict:
     """Health-check a peer fleet via its A2A agent card."""
     import urllib.request
+    from security import validate_peer_url
+    ok, reason = validate_peer_url(peer_url)
+    if not ok:
+        return {"url": peer_url, "status": "blocked", "error": f"Unsafe URL: {reason}"}
     try:
         url = f"{peer_url.rstrip('/')}/.well-known/agent.json"
         req = urllib.request.Request(url, headers={"Accept": "application/json"})
@@ -200,6 +204,10 @@ def _probe_peer(peer_url: str, timeout: int = 5) -> dict:
 def forward_to_peer(peer_url: str, skill: str, payload: dict, priority: int = 5) -> dict:
     """Forward a task to a peer fleet via A2A task/send."""
     import urllib.request
+    from security import validate_peer_url
+    ok, reason = validate_peer_url(peer_url)
+    if not ok:
+        return {"error": f"Unsafe peer URL: {reason}", "peer": peer_url}
     try:
         url = f"{peer_url.rstrip('/')}/a2a/task/send"
         body = json.dumps({

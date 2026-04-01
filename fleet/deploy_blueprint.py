@@ -7,9 +7,12 @@ import logging
 
 from flask import Blueprint, jsonify, request
 
+from pathlib import Path
+
 from dashboard_utils import (
     FLEET_DIR, _load_config, _require_role, _safe_error,
 )
+from security import validate_peer_url
 
 log = logging.getLogger("dashboard.deploy")
 
@@ -33,7 +36,7 @@ def api_deploy_prepare():
         size_mb = pkg_path.stat().st_size / (1024 * 1024)
         return jsonify({"ok": True, "package": str(pkg_path), "size_mb": round(size_mb, 2)})
     except Exception as e:
-        return jsonify({"ok": False, "error": str(e)}), 500
+        return jsonify({"ok": False, "error": _safe_error(e)}), 500
 
 
 @deploy_bp.route("/api/deploy/push", methods=["POST"])
@@ -49,10 +52,23 @@ def api_deploy_push():
         package_path = data.get("package")
         if not peer_url or not package_path:
             return jsonify({"ok": False, "error": "peer_url and package required"}), 400
+
+        ok, reason = validate_peer_url(peer_url)
+        if not ok:
+            return jsonify({"ok": False, "error": f"Invalid peer_url: {reason}"}), 400
+
+        # Validate package path is within the fleet deploy directory
+        pkg = Path(package_path).resolve()
+        deploy_dir = (FLEET_DIR / "deploy_packages").resolve()
+        try:
+            pkg.relative_to(deploy_dir)
+        except ValueError:
+            return jsonify({"ok": False, "error": "package path outside allowed directory"}), 400
+
         result = push_to_peer(peer_url, package_path, timeout=data.get("timeout", 60))
         return jsonify(result)
     except Exception as e:
-        return jsonify({"ok": False, "error": str(e)}), 500
+        return jsonify({"ok": False, "error": _safe_error(e)}), 500
 
 
 @deploy_bp.route("/api/deploy/status/<deploy_id>")
@@ -61,13 +77,16 @@ def api_deploy_status(deploy_id):
     try:
         peer_url = request.args.get("peer_url")
         if peer_url:
+            ok, reason = validate_peer_url(peer_url)
+            if not ok:
+                return jsonify({"ok": False, "error": f"Invalid peer_url: {reason}"}), 400
             from remote_deploy import deploy_status
             return jsonify(deploy_status(peer_url, deploy_id))
         else:
             from remote_deploy import get_local_deploy_status
             return jsonify(get_local_deploy_status(deploy_id))
     except Exception as e:
-        return jsonify({"ok": False, "error": str(e)}), 500
+        return jsonify({"ok": False, "error": _safe_error(e)}), 500
 
 
 @deploy_bp.route("/api/deploy/rollback/<deploy_id>", methods=["POST"])
@@ -80,6 +99,9 @@ def api_deploy_rollback(deploy_id):
         data = request.get_json(silent=True) or {}
         peer_url = data.get("peer_url")
         if peer_url:
+            ok, reason = validate_peer_url(peer_url)
+            if not ok:
+                return jsonify({"ok": False, "error": f"Invalid peer_url: {reason}"}), 400
             from remote_deploy import rollback_peer
             return jsonify(rollback_peer(peer_url, deploy_id))
         else:
@@ -94,7 +116,7 @@ def api_deploy_rollback(deploy_id):
             return jsonify({"ok": True, "backup_id": pre_deploy[0]["id"],
                            "note": "Use backup --restore to apply"})
     except Exception as e:
-        return jsonify({"ok": False, "error": str(e)}), 500
+        return jsonify({"ok": False, "error": _safe_error(e)}), 500
 
 
 @deploy_bp.route("/api/deploy/history")
@@ -105,7 +127,7 @@ def api_deploy_history():
         limit = request.args.get("limit", 20, type=int)
         return jsonify({"deployments": get_deployment_history(limit)})
     except Exception as e:
-        return jsonify({"ok": False, "error": str(e)}), 500
+        return jsonify({"ok": False, "error": _safe_error(e)}), 500
 
 
 # ── Receiving side (peer receives a deployment push) ──────────────────────
@@ -123,7 +145,7 @@ def api_deploy_receive():
         status_code = 200 if result.get("ok") else 400
         return jsonify(result), status_code
     except Exception as e:
-        return jsonify({"ok": False, "error": str(e)}), 500
+        return jsonify({"ok": False, "error": _safe_error(e)}), 500
 
 
 @deploy_bp.route("/api/deploy/pending")
@@ -133,7 +155,7 @@ def api_deploy_pending():
         from remote_deploy import get_pending_deployments
         return jsonify({"pending": get_pending_deployments()})
     except Exception as e:
-        return jsonify({"ok": False, "error": str(e)}), 500
+        return jsonify({"ok": False, "error": _safe_error(e)}), 500
 
 
 @deploy_bp.route("/api/deploy/approve/<deploy_id>", methods=["POST"])
@@ -148,7 +170,7 @@ def api_deploy_approve(deploy_id):
         status_code = 200 if result.get("ok") else 400
         return jsonify(result), status_code
     except Exception as e:
-        return jsonify({"ok": False, "error": str(e)}), 500
+        return jsonify({"ok": False, "error": _safe_error(e)}), 500
 
 
 @deploy_bp.route("/api/deploy/reject/<deploy_id>", methods=["POST"])
@@ -163,4 +185,4 @@ def api_deploy_reject(deploy_id):
         status_code = 200 if result.get("ok") else 400
         return jsonify(result), status_code
     except Exception as e:
-        return jsonify({"ok": False, "error": str(e)}), 500
+        return jsonify({"ok": False, "error": _safe_error(e)}), 500
