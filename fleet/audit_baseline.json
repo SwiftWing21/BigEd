@@ -1,0 +1,78 @@
+{
+  "version": "0.900.00b",
+  "dimensions": {
+    "architecture": {
+      "grade": "A",
+      "updated": "2026-04-01",
+      "source": "human",
+      "notes": "dashboard refactor 4/5 phases done"
+    },
+    "code_quality": {
+      "grade": "A-",
+      "updated": "2026-04-01",
+      "source": "human",
+      "notes": "1 raw sqlite3 in account_review.py; sys.path.insert calls cleaned"
+    },
+    "testing": {
+      "grade": "A",
+      "updated": "2026-04-01",
+      "source": "human",
+      "notes": "465/477 pytest passing; 12 Factorio failures"
+    },
+    "security": {
+      "grade": "A",
+      "updated": "2026-04-01",
+      "source": "human",
+      "notes": "JWT bypass fixed, path traversal blocked, RBAC 5 roles"
+    },
+    "reliability": {
+      "grade": "A",
+      "updated": "2026-04-01",
+      "source": "human",
+      "notes": "Self-healing + circuit breakers active; 1 tick loop freeze pending"
+    },
+    "observability": {
+      "grade": "A",
+      "updated": "2026-04-01",
+      "source": "human",
+      "notes": "SSE broadcaster extracted; /api/health, JSON logging, alerts"
+    },
+    "usability_ux": {
+      "grade": "A",
+      "updated": "2026-04-01",
+      "source": "human",
+      "notes": "Factorio FPM spinbox, deterministic tools added"
+    },
+    "dynamic_abilities": {
+      "grade": "A+",
+      "updated": "2026-04-01",
+      "source": "human",
+      "notes": "ML router, experiment auto-window, guardrails, billing"
+    },
+    "module_plugin": {
+      "grade": "A",
+      "updated": "2026-04-01",
+      "source": "human",
+      "notes": "ModuleHub, marketplace auth, module snapshots, 29 DB tables"
+    },
+    "data_hitl": {
+      "grade": "S",
+      "updated": "2026-04-01",
+      "source": "human",
+      "notes": "18 HF ingest sources, HITL inline, distributed tracing, IQ scoring"
+    },
+    "performance": {
+      "grade": "A",
+      "updated": "2026-04-01",
+      "source": "human",
+      "notes": "Code-aware token estimation, model prefs, ActionType enum"
+    },
+    "documentation": {
+      "grade": "B+",
+      "updated": "2026-04-01",
+      "source": "human",
+      "notes": "doc_freshness reports 19 stale refs"
+    }
+  },
+  "ratchets": {}
+}
