@@ -163,6 +163,9 @@ fleet/data/
 .vscode/mcp.json
 
 # ── Junk / temp artifacts (should never be tracked anywhere) ───────────────
+*.bak
+*.tmp
+*.swp
 .clone/
 ziXHiPfz
 model-manager.plugin
