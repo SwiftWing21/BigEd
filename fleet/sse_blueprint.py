@@ -54,6 +54,35 @@ def api_stream():
 
 # ── SSE broadcast thread ────────────────────────────────────────────────────
 
+def _get_service_status() -> dict:
+    """Return service health for Cosmo Bot + Dr. Ders without Flask request context."""
+    import time
+    import psutil
+
+    def _find(script_name):
+        for proc in psutil.process_iter(["pid", "name", "cmdline", "create_time"]):
+            try:
+                cmdline = proc.info.get("cmdline") or []
+                if any(script_name in str(arg) for arg in cmdline):
+                    return proc
+            except Exception:
+                pass
+        return None
+
+    services = {}
+    for key, script in (("cosmo_bot", "supervisor.py"), ("dr_ders", "hw_supervisor.py")):
+        proc = _find(script)
+        if proc:
+            try:
+                uptime_s = int(time.time() - proc.create_time())
+                services[key] = {"status": "running", "pid": proc.pid, "uptime_s": uptime_s}
+            except Exception:
+                services[key] = {"status": "running", "pid": proc.pid, "uptime_s": 0}
+        else:
+            services[key] = {"status": "offline", "pid": None, "uptime_s": 0}
+    return services
+
+
 def _sse_broadcaster():
     """Adaptive-rate SSE push: fast (2s) when data changes, slows to 30s when stable."""
     _SSE_MIN_INTERVAL = 2    # floor: busy fleet
@@ -229,8 +258,7 @@ def _sse_broadcaster():
 
                 # HP2: detect service health changes and push service_status event
                 try:
-                    import dashboard
-                    svc = dashboard.api_fleet_services().get_json()
+                    svc = _get_service_status()
                     svc_snap = tuple(
                         (k, v.get("status")) for k, v in sorted(svc.items())
                     )
