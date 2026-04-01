@@ -33,6 +33,7 @@ jobs:
           pip install httpx anthropic
           pip install flask psutil
           pip install paho-mqtt playwright
+          pip install fastmcp tomli
 
       - name: Install uv
         uses: astral-sh/setup-uv@v4
