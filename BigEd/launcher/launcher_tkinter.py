@@ -948,6 +948,9 @@ class BigEdCC(TrayManagerMixin, BootManagerMixin, CommTabMixin, OllamaManagerMix
 
         # Check if close-to-tray is enabled
         close_behavior = self._get_close_behavior()
+        if close_behavior == "quit":
+            self._do_stop_and_close()
+            return
         if close_behavior == "tray" and _tray_available() and self._tray_icon is not None:
             self._minimize_to_tray()
             return
