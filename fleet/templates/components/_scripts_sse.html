@@ -38,10 +38,14 @@ function handleSSE(msg) {
         }
         /* ── Agents ── */
         if (data.agents) {
-          var count = data.agents.length;
-          document.getElementById('badge-agents').textContent = count + ' Agent' + (count !== 1 ? 's' : '');
-          document.getElementById('metric-active-units').textContent = String(count);
+          var active = data.agents.filter(function(a) { return a.status === 'IDLE' || a.status === 'BUSY'; });
           var busy = data.agents.filter(function(a) { return a.status === 'BUSY'; }).length;
+          document.getElementById('badge-agents').textContent = active.length + ' Agent' + (active.length !== 1 ? 's' : '');
+          var unitsEl = document.getElementById('metric-active-units');
+          unitsEl.textContent = String(active.length);
+          var roles = {};
+          active.forEach(function(a) { roles[a.role] = (roles[a.role] || 0) + 1; });
+          unitsEl.title = Object.keys(roles).sort().map(function(r) { return roles[r] + ' ' + r; }).join(', ') || 'No active agents';
           var trendEl = document.getElementById('metric-active-trend');
           trendEl.textContent = busy + ' busy';
           trendEl.className = 'card-trend ' + (busy > 0 ? 'up' : 'neutral');

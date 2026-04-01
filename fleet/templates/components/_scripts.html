@@ -674,10 +674,18 @@ function loadDashStatus() {
   }).catch(function() {});
 
   apiFetch('/api/status').then(function(d) {
-    var agentCount = d.agents ? d.agents.length : 0;
-    document.getElementById('badge-agents').textContent = agentCount + ' Agent' + (agentCount !== 1 ? 's' : '');
-    document.getElementById('metric-active-units').textContent = String(agentCount);
-    var busy = d.agents ? d.agents.filter(function(a) { return a.status === 'BUSY'; }).length : 0;
+    var allAgents = d.agents || [];
+    var enabled = allAgents.filter(function(a) { return a.status !== 'DISABLED'; });
+    var active = enabled.filter(function(a) { return a.status === 'IDLE' || a.status === 'BUSY'; });
+    var busy = allAgents.filter(function(a) { return a.status === 'BUSY'; }).length;
+    document.getElementById('badge-agents').textContent = active.length + ' Agent' + (active.length !== 1 ? 's' : '');
+    var unitsEl = document.getElementById('metric-active-units');
+    unitsEl.textContent = String(active.length);
+    /* Tooltip: breakdown by role */
+    var roles = {};
+    active.forEach(function(a) { roles[a.role] = (roles[a.role] || 0) + 1; });
+    var tip = Object.keys(roles).sort().map(function(r) { return roles[r] + ' ' + r; }).join(', ');
+    unitsEl.title = tip || 'No active agents';
     var trendEl = document.getElementById('metric-active-trend');
     trendEl.textContent = busy + ' busy';
     trendEl.className = 'card-trend ' + (busy > 0 ? 'up' : 'neutral');
