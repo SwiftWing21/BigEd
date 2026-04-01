@@ -1079,7 +1079,6 @@ function toggleModifier(name) {
 
 (function init() {
   _loaded['dashboard'] = true;
-  checkAuth();
   loadDashboard();
   connectSSE();
   loadModeStatus();
@@ -1635,6 +1634,9 @@ function submitAddSource() {
           setTimeout(function() {
             overlay.style.display = 'none';
             bootHidden = true;
+            checkAuth();
+            var mw = document.querySelector('.main-wrapper');
+            if (mw) mw.classList.add('ready');
           }, 600);
         }, 800);
         return;
@@ -1650,6 +1652,9 @@ function submitAddSource() {
         setTimeout(function() { overlay.style.display = 'none'; }, 400);
       }
       bootHidden = true;
+      checkAuth();
+      var mw = document.querySelector('.main-wrapper');
+      if (mw) mw.classList.add('ready');
       clearInterval(bootTimer);
     });
   }
@@ -1658,6 +1663,9 @@ function submitAddSource() {
   var style = document.createElement('style');
   style.textContent = '@keyframes pulse{0%,100%{opacity:1}50%{opacity:0.3}}';
   document.head.appendChild(style);
+
+  /* Pre-render stages as pending so list isn't empty before first API response */
+  renderBootStages({stages: {}});
 
   /* Start polling on load */
   checkBootStatus();
