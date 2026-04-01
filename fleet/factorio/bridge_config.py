@@ -85,9 +85,12 @@ class BridgeConfig:
 
 def load_factorio_config() -> BridgeConfig:
     try:
-        from config import load_config
+        from config import load_config, get_ollama_host
         cfg = load_config()
         section = cfg.get("factorio", {})
+        # Inherit ollama_url from [models] ollama_host unless explicitly set in [factorio]
+        if "ollama_url" not in section:
+            section = {**section, "ollama_url": get_ollama_host()}
         bc = BridgeConfig.from_dict(section)
     except Exception:
         log.warning("Could not load [factorio] from fleet.toml, using defaults")

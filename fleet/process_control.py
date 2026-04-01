@@ -215,10 +215,11 @@ def api_fleet_model_switch():
             return jsonify({"error": "Invalid model name"}), 400
 
         import urllib.request
+        from config import get_ollama_host as _goh
         # Send a keepalive ping to Ollama with the new model to load it
         payload = json.dumps({"model": model, "keep_alive": "10m"}).encode()
         req = urllib.request.Request(
-            "http://localhost:11434/api/generate",
+            f"{_goh()}/api/generate",
             data=payload,
             headers={"Content-Type": "application/json"},
             method="POST",
@@ -308,7 +309,8 @@ def api_fleet_health():
         ollama_models = []
         try:
             import urllib.request
-            req = urllib.request.Request("http://localhost:11434/api/tags")
+            from config import get_ollama_host as _goh
+            req = urllib.request.Request(f"{_goh()}/api/tags")
             with urllib.request.urlopen(req, timeout=3) as resp:
                 data = json.loads(resp.read())
                 ollama_ok = True

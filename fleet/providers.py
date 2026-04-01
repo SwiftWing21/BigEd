@@ -862,7 +862,8 @@ def probe_provider_health(provider: str) -> dict:
                 pass
         elif provider == "local":
             import urllib.request as _ur
-            with _ur.urlopen("http://localhost:11434/api/tags", timeout=3):
+            from config import get_ollama_host as _goh
+            with _ur.urlopen(f"{_goh()}/api/tags", timeout=3):
                 pass
 
         latency = (time.time() - start) * 1000
