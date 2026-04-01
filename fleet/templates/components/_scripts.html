@@ -2523,8 +2523,9 @@ function loadUnreviewedOutputs() {
       var card = document.createElement('div');
       card.className = 'glass-panel';
       card.id = 'output-card-' + f.path.replace(/[^a-z0-9]/gi, '_');
-      card.style.cssText = 'padding:12px;margin-bottom:8px';
+      card.style.cssText = 'padding:12px;margin-bottom:8px;cursor:pointer;transition:border-color 0.2s';
 
+      /* ── Header row (always visible) ── */
       var topRow = document.createElement('div');
       topRow.style.cssText = 'display:flex;align-items:center;gap:8px;margin-bottom:6px';
       var fname = document.createElement('span');
@@ -2535,17 +2536,56 @@ function loadUnreviewedOutputs() {
       catBadge.className = 'badge';
       catBadge.style.cssText = 'font-size:10px;padding:1px 6px;background:var(--accent)';
       catBadge.textContent = f.category;
+      var expandHint = document.createElement('span');
+      expandHint.style.cssText = 'font-size:11px;color:var(--muted-foreground)';
+      expandHint.textContent = '\u25BC';
+      expandHint.className = 'output-expand-hint';
       topRow.appendChild(fname);
       topRow.appendChild(catBadge);
+      topRow.appendChild(expandHint);
       card.appendChild(topRow);
 
+      /* ── Snippet (collapsed preview) ── */
       if (f.snippet) {
         var snippet = document.createElement('div');
         snippet.style.cssText = 'font-size:12px;color:var(--muted-foreground);margin-bottom:8px;white-space:pre-wrap;max-height:60px;overflow:hidden';
+        snippet.className = 'output-snippet';
         snippet.textContent = f.snippet;
         card.appendChild(snippet);
       }
 
+      /* ── Expanded content pane (hidden until click) ── */
+      var expandPane = document.createElement('div');
+      expandPane.className = 'output-expand-pane';
+      expandPane.style.cssText = 'display:none;max-height:400px;overflow-y:auto;background:var(--background);border:1px solid var(--border);border-radius:6px;padding:12px;margin-bottom:8px;font-family:monospace;font-size:12px;white-space:pre-wrap;color:var(--foreground);line-height:1.5';
+      expandPane.textContent = 'Loading...';
+      card.appendChild(expandPane);
+
+      /* ── Click header to toggle expand ── */
+      (function(filePath, pane, snippetEl, hint) {
+        topRow.addEventListener('click', function(e) {
+          e.stopPropagation();
+          var isOpen = pane.style.display !== 'none';
+          if (isOpen) {
+            pane.style.display = 'none';
+            if (snippetEl) snippetEl.style.display = '';
+            hint.textContent = '\u25BC';
+          } else {
+            pane.style.display = '';
+            if (snippetEl) snippetEl.style.display = 'none';
+            hint.textContent = '\u25B2';
+            if (pane.textContent === 'Loading...') {
+              apiFetch('/api/outputs/file?path=' + encodeURIComponent(filePath)).then(function(d) {
+                pane.textContent = d.content || '(empty file)';
+              }).catch(function() {
+                pane.textContent = '(failed to load content)';
+              });
+            }
+          }
+        });
+      })(f.path, expandPane, card.querySelector('.output-snippet'), expandHint);
+
+      /* ── Notes input ── */
       var notesInput = document.createElement('input');
       notesInput.type = 'text';
       notesInput.className = 'input';
@@ -2554,21 +2594,28 @@ function loadUnreviewedOutputs() {
       notesInput.id = 'output-notes-' + f.path.replace(/[^a-z0-9]/gi, '_');
       card.appendChild(notesInput);
 
+      /* ── Action buttons: Approve / Neutral / Reject ── */
       var btns = document.createElement('div');
       btns.style.cssText = 'display:flex;gap:8px';
       var approveBtn = document.createElement('button');
       approveBtn.className = 'btn btn-success btn-sm';
       approveBtn.textContent = '\u2713 Approve';
+      var neutralBtn = document.createElement('button');
+      neutralBtn.className = 'btn btn-sm';
+      neutralBtn.style.cssText = 'background:var(--muted);color:var(--foreground);border:1px solid var(--border)';
+      neutralBtn.textContent = '\u2014 Neutral';
       var rejectBtn = document.createElement('button');
       rejectBtn.className = 'btn btn-danger btn-sm';
       rejectBtn.textContent = '\u2717 Reject';
 
       (function(filePath, cardEl, notesId) {
-        approveBtn.addEventListener('click', function() { submitOutputFeedback(filePath, 'approved', cardEl, notesId); });
-        rejectBtn.addEventListener('click', function() { submitOutputFeedback(filePath, 'rejected', cardEl, notesId); });
+        approveBtn.addEventListener('click', function(e) { e.stopPropagation(); submitOutputFeedback(filePath, 'approved', cardEl, notesId); });
+        neutralBtn.addEventListener('click', function(e) { e.stopPropagation(); submitOutputFeedback(filePath, 'neutral', cardEl, notesId); });
+        rejectBtn.addEventListener('click', function(e) { e.stopPropagation(); submitOutputFeedback(filePath, 'rejected', cardEl, notesId); });
       })(f.path, card, notesInput.id);
 
       btns.appendChild(approveBtn);
+      btns.appendChild(neutralBtn);
       btns.appendChild(rejectBtn);
       card.appendChild(btns);
 
@@ -2586,7 +2633,8 @@ function submitOutputFeedback(path, verdict, cardEl, notesId) {
     method: 'POST',
     body: { path: path, verdict: verdict, notes: notes }
   }).then(function() {
-    showToast('Output ' + verdict, 'success');
+    var labels = { approved: 'Approved', rejected: 'Rejected', neutral: 'Acknowledged' };
+    showToast('Output ' + (labels[verdict] || verdict), 'success');
     cardEl.style.transition = 'opacity 0.3s';
     cardEl.style.opacity = '0';
     setTimeout(function() { cardEl.remove(); }, 300);
