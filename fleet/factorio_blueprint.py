@@ -13,7 +13,7 @@ from pathlib import Path
 
 from flask import Blueprint, jsonify, request
 
-from dashboard_utils import _load_config, FLEET_DIR
+from dashboard_utils import _load_config, FLEET_DIR, _safe_error
 
 log = logging.getLogger("dashboard.factorio")
 
@@ -169,7 +169,7 @@ def api_factorio_spectator():
         return jsonify({"success": True})
     except Exception as e:
         log.warning("Factorio spectator launch failed: %s", e)
-        return jsonify({"success": False, "error": str(e)})
+        return jsonify({"success": False, "error": _safe_error(e)})
 
 
 @factorio_bp.route("/api/factorio/fpm", methods=["POST"])
@@ -187,7 +187,7 @@ def api_factorio_fpm():
         return jsonify({"success": True})
     except Exception as e:
         log.warning("FPM launch failed: %s", e)
-        return jsonify({"success": False, "error": str(e)})
+        return jsonify({"success": False, "error": _safe_error(e)})
 
 
 @factorio_bp.route("/api/factorio/start", methods=["POST"])
@@ -221,7 +221,7 @@ def api_factorio_start():
         return jsonify({"success": True, "launcher_exit": proc.returncode})
     except Exception as e:
         log.warning("Factorio start failed: %s", e)
-        return jsonify({"success": False, "error": str(e)}), 500
+        return jsonify({"success": False, "error": _safe_error(e)}), 500
 
 
 @factorio_bp.route("/api/factorio/stop", methods=["POST"])

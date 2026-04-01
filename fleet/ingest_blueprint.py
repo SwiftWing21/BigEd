@@ -10,7 +10,7 @@ v0.900.00b
 from flask import Blueprint, jsonify, request
 import logging
 
-from dashboard_utils import _require_role
+from dashboard_utils import _require_role, _safe_error
 
 log = logging.getLogger(__name__)
 
@@ -34,7 +34,7 @@ def api_ingest_sources():
         return jsonify({"sources": sources, "count": len(sources)})
     except Exception as e:
         log.warning("GET /api/ingest/sources failed", exc_info=True)
-        return jsonify({"error": str(e)}), 500
+        return jsonify({"error": _safe_error(e)}), 500
 
 
 @ingest_bp.route("/api/ingest/sources", methods=["POST"])
@@ -61,7 +61,7 @@ def api_ingest_add_source():
         return jsonify({"ok": True, "id": sid})
     except Exception as e:
         log.warning("POST /api/ingest/sources failed", exc_info=True)
-        return jsonify({"error": str(e)}), 500
+        return jsonify({"error": _safe_error(e)}), 500
 
 
 @ingest_bp.route("/api/ingest/sources/<id>", methods=["DELETE"])
@@ -76,7 +76,7 @@ def api_ingest_remove_source(id):
         return jsonify({"ok": True, "id": id})
     except Exception as e:
         log.warning("DELETE /api/ingest/sources/%s failed", id, exc_info=True)
-        return jsonify({"error": str(e)}), 500
+        return jsonify({"error": _safe_error(e)}), 500
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -105,7 +105,7 @@ def api_ingest_schema(id):
         return jsonify(result)
     except Exception as e:
         log.warning("GET /api/ingest/sources/%s/schema failed", id, exc_info=True)
-        return jsonify({"error": str(e)}), 500
+        return jsonify({"error": _safe_error(e)}), 500
 
 
 @ingest_bp.route("/api/ingest/sources/<id>/rows")
@@ -138,7 +138,7 @@ def api_ingest_rows(id):
         return jsonify(result)
     except Exception as e:
         log.warning("GET /api/ingest/sources/%s/rows failed", id, exc_info=True)
-        return jsonify({"error": str(e)}), 500
+        return jsonify({"error": _safe_error(e)}), 500
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -160,7 +160,7 @@ def api_ingest_stage():
         return jsonify({"ok": True, "ids": ids})
     except Exception as e:
         log.warning("POST /api/ingest/stage failed", exc_info=True)
-        return jsonify({"error": str(e)}), 500
+        return jsonify({"error": _safe_error(e)}), 500
 
 
 @ingest_bp.route("/api/ingest/staging")
@@ -175,7 +175,7 @@ def api_ingest_staging():
         return jsonify(items)
     except Exception as e:
         log.warning("GET /api/ingest/staging failed", exc_info=True)
-        return jsonify({"error": str(e)}), 500
+        return jsonify({"error": _safe_error(e)}), 500
 
 
 @ingest_bp.route("/api/ingest/staging/<int:id>", methods=["DELETE"])
@@ -190,7 +190,7 @@ def api_ingest_remove_staged(id):
         return jsonify({"ok": True, "id": id})
     except Exception as e:
         log.warning("DELETE /api/ingest/staging/%s failed", id, exc_info=True)
-        return jsonify({"error": str(e)}), 500
+        return jsonify({"error": _safe_error(e)}), 500
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -212,7 +212,7 @@ def api_ingest_dispatch():
         return jsonify(result)
     except Exception as e:
         log.warning("POST /api/ingest/dispatch failed", exc_info=True)
-        return jsonify({"error": str(e)}), 500
+        return jsonify({"error": _safe_error(e)}), 500
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -231,7 +231,7 @@ def api_ingest_cache_stats():
         return jsonify(ingest_manager.cache_stats())
     except Exception as e:
         log.warning("GET /api/ingest/cache/stats failed", exc_info=True)
-        return jsonify({"error": str(e)}), 500
+        return jsonify({"error": _safe_error(e)}), 500
 
 
 @ingest_bp.route("/api/ingest/cache/evict", methods=["POST"])
@@ -248,7 +248,7 @@ def api_ingest_cache_evict():
         return jsonify(stats)
     except Exception as e:
         log.warning("POST /api/ingest/cache/evict failed", exc_info=True)
-        return jsonify({"error": str(e)}), 500
+        return jsonify({"error": _safe_error(e)}), 500
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -297,7 +297,7 @@ def api_ingest_upload():
         })
     except Exception as e:
         log.warning("POST /api/ingest/upload failed", exc_info=True)
-        return jsonify({"error": str(e)}), 500
+        return jsonify({"error": _safe_error(e)}), 500
 
 
 # ── API Key Management ────────────────────────────────────────────────────────
@@ -368,7 +368,7 @@ def api_keys_status():
         return jsonify({"keys": keys, "count": len(keys)})
     except Exception as e:
         log.warning("GET /api/keys/status failed", exc_info=True)
-        return jsonify({"error": str(e)}), 500
+        return jsonify({"error": _safe_error(e)}), 500
 
 
 @ingest_bp.route("/api/keys/set", methods=["POST"])
@@ -424,4 +424,4 @@ def api_keys_set():
         return jsonify({"status": "ok", "key": key_name, "note": "Saved to ~/.secrets and loaded into current process"})
     except Exception as e:
         log.warning("POST /api/keys/set failed", exc_info=True)
-        return jsonify({"error": str(e)}), 500
+        return jsonify({"error": _safe_error(e)}), 500
