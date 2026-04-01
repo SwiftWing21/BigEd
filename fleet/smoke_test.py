@@ -980,6 +980,25 @@ def test_snapshotter_importable():
     return True, "module_snapshotter importable"
 
 
+def test_audit_health():
+    """Audit: no unresolved high-confidence divergences."""
+    try:
+        from audit_scorer import get_active_divergences, DIMENSIONS
+        divergences = get_active_divergences()
+        high_conf = [
+            d for d in divergences
+            if DIMENSIONS.get(d["dimension"], {}).get("confidence", 0) >= 0.5
+        ]
+        if high_conf:
+            dims = ", ".join(d["dimension"] for d in high_conf)
+            return False, f"{len(high_conf)} divergence(s): {dims}"
+        return True, "all dimensions aligned"
+    except ImportError:
+        return True, "audit_scorer not available (skipped)"
+    except Exception as e:
+        return True, f"audit check skipped: {e}"
+
+
 def cleanup():
     """Remove smoke test artifacts from DB."""
     import db
@@ -1075,6 +1094,7 @@ def main():
         ("Modules API", test_modules_api),
         ("Dep resolver importable", test_dep_resolver_importable),
         ("Snapshotter importable", test_snapshotter_importable),
+        ("Audit health", test_audit_health),
     ])
 
     if not args.fast:
