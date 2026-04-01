@@ -1638,9 +1638,12 @@ function submitAddSource() {
           setTimeout(function() {
             overlay.style.display = 'none';
             bootHidden = true;
-            checkAuth();
+            /* Show login overlay BEFORE revealing main-wrapper to prevent flash */
+            var _lo = document.getElementById('login-overlay');
+            if (_lo) _lo.classList.add('active');
             var mw = document.querySelector('.main-wrapper');
             if (mw) mw.classList.add('ready');
+            checkAuth();
           }, 600);
         }, 800);
         return;
@@ -1667,6 +1670,8 @@ function submitAddSource() {
   setTimeout(function() {
     var mw = document.querySelector('.main-wrapper');
     if (mw && !mw.classList.contains('ready')) {
+      var _lo = document.getElementById('login-overlay');
+      if (_lo) _lo.classList.add('active');
       mw.classList.add('ready');
       if (!bootHidden) { bootHidden = true; checkAuth(); }
     }
