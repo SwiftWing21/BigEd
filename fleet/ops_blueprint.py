@@ -244,7 +244,7 @@ def api_gdpr_erasure():
             pass
         return jsonify({"status": "erased", "deleted": result})
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        return jsonify({"error": _safe_error(e)}), 500
 
 
 # ── Filesystem Audit ────────────────────────────────────────────────────────

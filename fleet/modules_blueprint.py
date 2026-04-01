@@ -10,6 +10,8 @@ import sys
 from pathlib import Path
 from flask import Blueprint, jsonify, request
 
+from dashboard_utils import _safe_error
+
 log = logging.getLogger("modules_api")
 modules_bp = Blueprint("modules", __name__)
 
@@ -193,7 +195,7 @@ def api_modules_installed():
         return jsonify({"modules": installed})
     except Exception as e:
         log.warning("modules installed failed: %s", e)
-        return jsonify({"modules": [], "error": str(e)}), 500
+        return jsonify({"modules": [], "error": _safe_error(e)}), 500
 
 
 @modules_bp.route("/api/modules/available")
@@ -207,7 +209,7 @@ def api_modules_available():
         return jsonify({"modules": available})
     except Exception as e:
         log.warning("modules available failed: %s", e)
-        return jsonify({"modules": [], "error": str(e)}), 500
+        return jsonify({"modules": [], "error": _safe_error(e)}), 500
 
 
 @modules_bp.route("/api/modules/updates")
@@ -218,7 +220,7 @@ def api_modules_updates():
         return jsonify({"updates": updates})
     except Exception as e:
         log.warning("modules updates failed: %s", e)
-        return jsonify({"updates": [], "error": str(e)}), 500
+        return jsonify({"updates": [], "error": _safe_error(e)}), 500
 
 
 @modules_bp.route("/api/modules/install", methods=["POST"])
@@ -235,7 +237,7 @@ def api_modules_install():
         return jsonify(result)
     except Exception as e:
         log.warning("module install failed: %s", e)
-        return jsonify({"error": str(e)}), 500
+        return jsonify({"error": _safe_error(e)}), 500
 
 
 @modules_bp.route("/api/modules/<name>/enable", methods=["POST"])
@@ -248,7 +250,7 @@ def api_modules_enable(name):
         return jsonify(result)
     except Exception as e:
         log.warning("module enable failed: %s", e)
-        return jsonify({"error": str(e)}), 500
+        return jsonify({"error": _safe_error(e)}), 500
 
 
 @modules_bp.route("/api/modules/<name>/disable", methods=["POST"])
@@ -261,7 +263,7 @@ def api_modules_disable(name):
         return jsonify(result)
     except Exception as e:
         log.warning("module disable failed: %s", e)
-        return jsonify({"error": str(e)}), 500
+        return jsonify({"error": _safe_error(e)}), 500
 
 
 @modules_bp.route("/api/modules/<name>/uninstall", methods=["DELETE"])
@@ -274,7 +276,7 @@ def api_modules_uninstall(name):
         return jsonify(result)
     except Exception as e:
         log.warning("module uninstall failed: %s", e)
-        return jsonify({"error": str(e)}), 500
+        return jsonify({"error": _safe_error(e)}), 500
 
 
 @modules_bp.route("/api/modules/suggestions")
@@ -304,7 +306,7 @@ def api_modules_dismiss_suggestion(sid):
         return jsonify({"ok": True})
     except Exception as e:
         log.warning("dismiss suggestion failed: %s", e)
-        return jsonify({"error": str(e)}), 500
+        return jsonify({"error": _safe_error(e)}), 500
 
 
 # ---------------------------------------------------------------------------
@@ -360,7 +362,7 @@ def api_modules_preview_change():
         })
     except Exception as e:
         log.warning("preview-change failed: %s", e, exc_info=True)
-        return jsonify({"error": str(e)}), 500
+        return jsonify({"error": _safe_error(e)}), 500
 
 
 @modules_bp.route("/api/modules/apply-change", methods=["POST"])
@@ -429,7 +431,7 @@ def api_modules_apply_change():
         })
     except Exception as e:
         log.warning("apply-change failed: %s", e, exc_info=True)
-        return jsonify({"error": str(e)}), 500
+        return jsonify({"error": _safe_error(e)}), 500
 
 
 # ---------------------------------------------------------------------------
@@ -447,7 +449,7 @@ def api_modules_snapshots():
         return jsonify({"snapshots": snaps, "count": len(snaps)})
     except Exception as e:
         log.warning("snapshots list failed: %s", e, exc_info=True)
-        return jsonify({"snapshots": [], "error": str(e)}), 500
+        return jsonify({"snapshots": [], "error": _safe_error(e)}), 500
 
 
 @modules_bp.route("/api/modules/snapshots/<int:snapshot_id>")
@@ -461,7 +463,7 @@ def api_modules_snapshot_detail(snapshot_id):
         return jsonify(snap)
     except Exception as e:
         log.warning("snapshot detail failed for id=%s: %s", snapshot_id, e, exc_info=True)
-        return jsonify({"error": str(e)}), 500
+        return jsonify({"error": _safe_error(e)}), 500
 
 
 @modules_bp.route("/api/modules/snapshots/<int:snapshot_id>/diff")
@@ -475,7 +477,7 @@ def api_modules_snapshot_diff(snapshot_id):
         return jsonify(diff)
     except Exception as e:
         log.warning("snapshot diff failed for id=%s: %s", snapshot_id, e, exc_info=True)
-        return jsonify({"error": str(e)}), 500
+        return jsonify({"error": _safe_error(e)}), 500
 
 
 # ---------------------------------------------------------------------------
@@ -494,7 +496,7 @@ def api_modules_rollback_preview(snapshot_id):
         return jsonify(changeset)
     except Exception as e:
         log.warning("rollback preview failed for id=%s: %s", snapshot_id, e, exc_info=True)
-        return jsonify({"error": str(e)}), 500
+        return jsonify({"error": _safe_error(e)}), 500
 
 
 @modules_bp.route("/api/modules/rollback/<int:snapshot_id>/apply", methods=["POST"])
@@ -542,7 +544,7 @@ def api_modules_rollback_apply(snapshot_id):
         })
     except Exception as e:
         log.warning("rollback apply failed for id=%s: %s", snapshot_id, e, exc_info=True)
-        return jsonify({"error": str(e)}), 500
+        return jsonify({"error": _safe_error(e)}), 500
 
 
 # ---------------------------------------------------------------------------
@@ -576,7 +578,7 @@ def api_modules_registry():
         return jsonify({"registry": entries, "count": len(entries)})
     except Exception as e:
         log.warning("registry get failed: %s", e, exc_info=True)
-        return jsonify({"registry": [], "error": str(e)}), 500
+        return jsonify({"registry": [], "error": _safe_error(e)}), 500
 
 
 @modules_bp.route("/api/modules/registry/rebuild", methods=["POST"])
@@ -589,7 +591,7 @@ def api_modules_registry_rebuild():
         return jsonify({"ok": True, "entries_written": count})
     except Exception as e:
         log.warning("registry rebuild failed: %s", e, exc_info=True)
-        return jsonify({"error": str(e)}), 500
+        return jsonify({"error": _safe_error(e)}), 500
 
 
 # ---------------------------------------------------------------------------
@@ -625,4 +627,4 @@ def api_modules_manifest(name):
         return jsonify(data)
     except Exception as e:
         log.warning("manifest get failed for %s: %s", name, e, exc_info=True)
-        return jsonify({"error": str(e)}), 500
+        return jsonify({"error": _safe_error(e)}), 500

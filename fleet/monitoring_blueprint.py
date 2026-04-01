@@ -399,4 +399,4 @@ def api_sla():
             },
         })
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        return jsonify({"error": _safe_error(e)}), 500
