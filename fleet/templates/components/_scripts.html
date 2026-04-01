@@ -4242,7 +4242,12 @@ function showSetupScreen() {
 
   /* Header */
   var header = createEl('div', { className: 'login-header' });
-  var logo = createEl('div', { className: 'login-logo' }, 'B');
+  var logo = createEl('div', { className: 'login-logo' });
+  var logoImg = document.createElement('img');
+  logoImg.src = '/static/icon.png';
+  logoImg.alt = 'B';
+  logoImg.style.cssText = 'width:100%;height:100%;border-radius:14px;object-fit:cover;';
+  logo.appendChild(logoImg);
   header.appendChild(logo);
   var h1 = createEl('h1', {}, 'Welcome to BigEd CC');
   header.appendChild(h1);
@@ -4334,7 +4339,12 @@ function showLoginScreen(profiles) {
 
   /* Header */
   var header = createEl('div', { className: 'login-header' });
-  var logo = createEl('div', { className: 'login-logo' }, 'B');
+  var logo = createEl('div', { className: 'login-logo' });
+  var logoImg = document.createElement('img');
+  logoImg.src = '/static/icon.png';
+  logoImg.alt = 'B';
+  logoImg.style.cssText = 'width:100%;height:100%;border-radius:14px;object-fit:cover;';
+  logo.appendChild(logoImg);
   header.appendChild(logo);
   var h1 = createEl('h1', {}, 'Welcome Back');
   header.appendChild(h1);
