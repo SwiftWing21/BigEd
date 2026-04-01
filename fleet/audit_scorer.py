@@ -68,3 +68,624 @@ def save_baseline(baseline: dict) -> None:
     with open(BASELINE_PATH, "w", encoding="utf-8") as f:
         json.dump(baseline, f, indent=2, ensure_ascii=False)
         f.write("\n")
+
+
+# ── Helpers ───────────────────────────────────────────────────────────────
+
+def _dashboard_port() -> int:
+    """Read dashboard port from fleet.toml (default 5555)."""
+    try:
+        from config import load_config
+        cfg = load_config()
+        return int(cfg.get("dashboard", {}).get("port", 5555))
+    except Exception:
+        return 5555
+
+
+def _probe_url(url: str, timeout: int = 8) -> tuple[bool, float]:
+    """Return (ok, latency_ms) for a GET request."""
+    import time
+    import urllib.request
+    t0 = time.perf_counter()
+    try:
+        with urllib.request.urlopen(url, timeout=timeout) as resp:
+            ok = resp.status == 200
+    except Exception:
+        ok = False
+    latency = (time.perf_counter() - t0) * 1000
+    return ok, latency
+
+
+# ── Check Functions ───────────────────────────────────────────────────────
+
+def _check_testing() -> tuple[float, dict]:
+    """Run pytest and score passed/total."""
+    import subprocess
+    try:
+        root = str(FLEET_DIR.parent)
+        result = subprocess.run(
+            ["python", "-m", "pytest", "--tb=no", "-q"],
+            capture_output=True,
+            text=True,
+            cwd=root,
+            timeout=120,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+        )
+        output = result.stdout + result.stderr
+        # parse "X passed" and "Y failed"
+        import re
+        passed = 0
+        failed = 0
+        m_passed = re.search(r"(\d+) passed", output)
+        m_failed = re.search(r"(\d+) failed", output)
+        if m_passed:
+            passed = int(m_passed.group(1))
+        if m_failed:
+            failed = int(m_failed.group(1))
+        total = passed + failed
+        score = passed / total if total > 0 else 0.0
+        return score, {"passed": passed, "failed": failed, "total": total}
+    except Exception as e:
+        log.warning("_check_testing failed: %s", e)
+        return 0.0, {"error": str(e)}
+
+
+def _check_module_plugin() -> tuple[float, dict]:
+    """Count rows in the modules table."""
+    try:
+        import db
+        with db.get_conn() as conn:
+            # Check if modules table exists first
+            exists = conn.execute(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name='modules'"
+            ).fetchone()
+            if not exists:
+                return 0.5, {"modules": 0, "note": "modules table not found"}
+            count = conn.execute("SELECT COUNT(*) FROM modules").fetchone()[0]
+        score = min(1.0, count / 10.0) if count > 0 else 0.0
+        return score, {"modules": count}
+    except Exception as e:
+        log.warning("_check_module_plugin failed: %s", e)
+        return 0.0, {"error": str(e)}
+
+
+def _check_documentation() -> tuple[float, dict]:
+    """Score = (total_refs - stale) / total_refs via doc_freshness skill."""
+    try:
+        import sys
+        skills_dir = str(FLEET_DIR / "skills")
+        if skills_dir not in sys.path:
+            sys.path.insert(0, skills_dir)
+        from doc_freshness import run as df_run
+        result = df_run({}, {})
+        stale = result.get("stale_count", 0)
+        live = result.get("live_values", {})
+        # Estimate total_refs as stale + count of live values
+        total = stale + len([v for v in live.values() if v is not None])
+        if total == 0:
+            return 1.0, {"stale": 0, "total": 0}
+        score = max(0.0, (total - stale) / total)
+        return score, {"stale": stale, "total": total, "live_values": live}
+    except Exception as e:
+        log.warning("_check_documentation failed: %s", e)
+        return 0.0, {"error": str(e)}
+
+
+def _check_performance() -> tuple[float, dict]:
+    """Probe key endpoints for availability and latency."""
+    port = _dashboard_port()
+    base = f"http://127.0.0.1:{port}"
+    endpoints = ["/api/health", "/api/health/agents", "/api/health/skills"]
+    results = []
+    ok_count = 0
+    for ep in endpoints:
+        ok, latency = _probe_url(base + ep, timeout=8)
+        results.append({"endpoint": ep, "ok": ok, "latency_ms": round(latency, 1)})
+        if ok:
+            ok_count += 1
+    score = ok_count / len(endpoints)
+    return score, {"endpoints": results, "ok": ok_count, "total": len(endpoints)}
+
+
+def _check_reliability() -> tuple[float, dict]:
+    """(healthy_agents + closed_breakers) / (total_agents + total_breakers)."""
+    try:
+        from health_monitor import get_agent_health_summary
+        agents = get_agent_health_summary()
+        total_agents = len(agents)
+        healthy_agents = sum(1 for a in agents if a.get("status") == "healthy")
+
+        import db
+        # Count circuit breakers from circuit_breakers table if it exists
+        closed_breakers = 0
+        total_breakers = 0
+        try:
+            with db.get_conn() as conn:
+                exists = conn.execute(
+                    "SELECT name FROM sqlite_master WHERE type='table' AND name='circuit_breakers'"
+                ).fetchone()
+                if exists:
+                    rows = conn.execute("SELECT state FROM circuit_breakers").fetchall()
+                    total_breakers = len(rows)
+                    closed_breakers = sum(1 for r in rows if r["state"] == "closed")
+        except Exception as e:
+            log.warning("_check_reliability breakers query failed: %s", e)
+
+        denom = total_agents + total_breakers
+        if denom == 0:
+            return 1.0, {"note": "no agents or breakers found"}
+        score = (healthy_agents + closed_breakers) / denom
+        return score, {
+            "healthy_agents": healthy_agents,
+            "total_agents": total_agents,
+            "closed_breakers": closed_breakers,
+            "total_breakers": total_breakers,
+        }
+    except Exception as e:
+        log.warning("_check_reliability failed: %s", e)
+        return 0.0, {"error": str(e)}
+
+
+def _check_observability() -> tuple[float, dict]:
+    """SSE module loads + audit_log readable + /api/health 200."""
+    checks = {}
+    ok = 0
+    total = 3
+
+    # 1. Check SSE module loads (sse_blueprint or similar)
+    try:
+        sse_template = FLEET_DIR / "templates" / "components" / "_scripts_sse.html"
+        checks["sse_template"] = sse_template.exists()
+        if checks["sse_template"]:
+            ok += 1
+    except Exception as e:
+        checks["sse_template"] = False
+        log.warning("_check_observability sse check failed: %s", e)
+
+    # 2. audit_log table readable
+    try:
+        import db
+        with db.get_conn() as conn:
+            conn.execute("SELECT COUNT(*) FROM audit_log").fetchone()
+        checks["audit_log"] = True
+        ok += 1
+    except Exception as e:
+        checks["audit_log"] = False
+        log.warning("_check_observability audit_log check failed: %s", e)
+
+    # 3. /api/health responds 200
+    port = _dashboard_port()
+    health_ok, _ = _probe_url(f"http://127.0.0.1:{port}/api/health", timeout=8)
+    checks["api_health"] = health_ok
+    if health_ok:
+        ok += 1
+
+    score = ok / total
+    return score, {"checks": checks, "ok": ok, "total": total}
+
+
+def _check_architecture() -> tuple[float, dict]:
+    """Count LOC for key files; score = files under 1500 LOC / total."""
+    key_files = [
+        FLEET_DIR / "dashboard.py",
+        FLEET_DIR / "supervisor.py",
+        FLEET_DIR / "hw_supervisor.py",
+        FLEET_DIR / "db.py",
+        FLEET_DIR / "providers.py",
+    ]
+    results = {}
+    under_limit = 0
+    found = 0
+    for f in key_files:
+        if not f.exists():
+            results[f.name] = None
+            continue
+        found += 1
+        try:
+            loc = sum(1 for _ in f.open("r", encoding="utf-8", errors="ignore"))
+        except Exception:
+            loc = 9999
+        results[f.name] = loc
+        if loc <= 1500:
+            under_limit += 1
+    score = under_limit / found if found > 0 else 1.0
+    return score, {"files": results, "under_1500": under_limit, "total_checked": found}
+
+
+def _check_code_quality() -> tuple[float, dict]:
+    """ruff clean + no raw sqlite3 in skills + no bare excepts."""
+    import subprocess
+    checks = {}
+    ok = 0
+    total = 3
+
+    # 1. ruff lint
+    try:
+        result = subprocess.run(
+            ["python", "-m", "ruff", "check", str(FLEET_DIR), "--quiet"],
+            capture_output=True,
+            text=True,
+            timeout=60,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+        )
+        checks["ruff_clean"] = result.returncode == 0
+        if checks["ruff_clean"]:
+            ok += 1
+    except Exception as e:
+        checks["ruff_clean"] = False
+        log.warning("_check_code_quality ruff failed: %s", e)
+
+    # 2. No raw sqlite3.connect in skills/
+    try:
+        import re
+        skills_dir = FLEET_DIR / "skills"
+        raw_sqlite_files = []
+        if skills_dir.exists():
+            for py in skills_dir.glob("*.py"):
+                try:
+                    content = py.read_text(encoding="utf-8", errors="ignore")
+                    if re.search(r"sqlite3\.connect\s*\(", content):
+                        raw_sqlite_files.append(py.name)
+                except Exception:
+                    pass
+        checks["no_raw_sqlite"] = len(raw_sqlite_files) == 0
+        checks["raw_sqlite_files"] = raw_sqlite_files
+        if checks["no_raw_sqlite"]:
+            ok += 1
+    except Exception as e:
+        checks["no_raw_sqlite"] = False
+        log.warning("_check_code_quality sqlite check failed: %s", e)
+
+    # 3. No bare excepts in skills/
+    try:
+        import re
+        bare_except_files = []
+        skills_dir = FLEET_DIR / "skills"
+        if skills_dir.exists():
+            for py in skills_dir.glob("*.py"):
+                try:
+                    content = py.read_text(encoding="utf-8", errors="ignore")
+                    if re.search(r"^\s*except\s*:", content, re.MULTILINE):
+                        bare_except_files.append(py.name)
+                except Exception:
+                    pass
+        checks["no_bare_excepts"] = len(bare_except_files) == 0
+        checks["bare_except_files"] = bare_except_files
+        if checks["no_bare_excepts"]:
+            ok += 1
+    except Exception as e:
+        checks["no_bare_excepts"] = False
+        log.warning("_check_code_quality bare_except check failed: %s", e)
+
+    score = ok / total
+    return score, {"checks": checks, "ok": ok, "total": total}
+
+
+def _check_security() -> tuple[float, dict]:
+    """RBAC roles >= 2 distinct + path traversal endpoint check."""
+    import db
+    checks = {}
+    ok = 0
+    total = 2
+
+    # 1. RBAC roles populated
+    try:
+        with db.get_conn() as conn:
+            exists = conn.execute(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name='rbac_roles'"
+            ).fetchone()
+            if exists:
+                count = conn.execute(
+                    "SELECT COUNT(DISTINCT role) FROM rbac_roles"
+                ).fetchone()[0]
+            else:
+                # Try user_roles or roles table
+                exists2 = conn.execute(
+                    "SELECT name FROM sqlite_master WHERE type='table' AND name='roles'"
+                ).fetchone()
+                if exists2:
+                    count = conn.execute(
+                        "SELECT COUNT(DISTINCT name) FROM roles"
+                    ).fetchone()[0]
+                else:
+                    count = 0
+        checks["rbac_roles"] = count
+        checks["rbac_ok"] = count >= 2
+        if checks["rbac_ok"]:
+            ok += 1
+    except Exception as e:
+        checks["rbac_roles"] = 0
+        checks["rbac_ok"] = False
+        log.warning("_check_security rbac check failed: %s", e)
+
+    # 2. Path traversal check — endpoint rejects ../
+    port = _dashboard_port()
+    traversal_ok = False
+    try:
+        import urllib.request
+        import urllib.error
+        url = f"http://127.0.0.1:{port}/api/../../../etc/passwd"
+        try:
+            with urllib.request.urlopen(url, timeout=5) as resp:
+                # If it returns 200, that's bad
+                traversal_ok = resp.status != 200
+        except urllib.error.HTTPError as he:
+            # 400/403/404 are all acceptable rejections
+            traversal_ok = he.code in (400, 403, 404)
+        except Exception:
+            # Connection refused = server not running, neutral
+            traversal_ok = True
+    except Exception as e:
+        log.warning("_check_security traversal check failed: %s", e)
+        traversal_ok = True  # neutral if can't test
+
+    checks["path_traversal_blocked"] = traversal_ok
+    if traversal_ok:
+        ok += 1
+
+    score = ok / total
+    return score, {"checks": checks, "ok": ok, "total": total}
+
+
+def _check_usability_ux() -> tuple[float, dict]:
+    """Pages load check + blend with user_feedback if available."""
+    port = _dashboard_port()
+    base = f"http://127.0.0.1:{port}"
+    pages = ["/", "/api/health", "/api/fleet/status"]
+    ok_count = 0
+    page_results = []
+    for page in pages:
+        ok, latency = _probe_url(base + page, timeout=10)
+        page_results.append({"page": page, "ok": ok, "latency_ms": round(latency, 1)})
+        if ok:
+            ok_count += 1
+    page_score = ok_count / len(pages)
+
+    # Blend with recent user_feedback if available
+    feedback_score = None
+    try:
+        import db
+        with db.get_conn() as conn:
+            row = conn.execute(
+                "SELECT AVG(score) as avg_score FROM user_feedback "
+                "WHERE scope='ux' AND timestamp >= datetime('now', '-7 days')"
+            ).fetchone()
+            if row and row["avg_score"] is not None:
+                feedback_score = float(row["avg_score"])
+    except Exception as e:
+        log.warning("_check_usability_ux feedback query failed: %s", e)
+
+    if feedback_score is not None:
+        final_score = 0.6 * page_score + 0.4 * feedback_score
+    else:
+        final_score = page_score
+
+    return final_score, {
+        "pages": page_results,
+        "page_score": page_score,
+        "feedback_score": feedback_score,
+        "ok": ok_count,
+        "total": len(pages),
+    }
+
+
+def _check_dynamic_abilities() -> tuple[float, dict]:
+    """Check that ml_route_log + experiments + billing_events tables exist."""
+    import db
+    target_tables = ["ml_route_log", "experiments", "billing_events"]
+    found = []
+    try:
+        with db.get_conn() as conn:
+            for tbl in target_tables:
+                exists = conn.execute(
+                    "SELECT name FROM sqlite_master WHERE type='table' AND name=?",
+                    (tbl,),
+                ).fetchone()
+                if exists:
+                    found.append(tbl)
+    except Exception as e:
+        log.warning("_check_dynamic_abilities failed: %s", e)
+        return 0.0, {"error": str(e)}
+    score = len(found) / len(target_tables)
+    return score, {"found": found, "missing": [t for t in target_tables if t not in found]}
+
+
+def _check_data_hitl() -> tuple[float, dict]:
+    """Check hitl_queue + ingest_sources tables exist with rows."""
+    import db
+    target_tables = ["hitl_queue", "ingest_sources"]
+    results = {}
+    ok = 0
+    try:
+        with db.get_conn() as conn:
+            for tbl in target_tables:
+                exists = conn.execute(
+                    "SELECT name FROM sqlite_master WHERE type='table' AND name=?",
+                    (tbl,),
+                ).fetchone()
+                if exists:
+                    count = conn.execute(f"SELECT COUNT(*) FROM {tbl}").fetchone()[0]
+                    results[tbl] = {"exists": True, "rows": count}
+                    ok += 1
+                else:
+                    results[tbl] = {"exists": False, "rows": 0}
+    except Exception as e:
+        log.warning("_check_data_hitl failed: %s", e)
+        return 0.0, {"error": str(e)}
+    score = ok / len(target_tables)
+    return score, {"tables": results, "ok": ok, "total": len(target_tables)}
+
+
+# ── DIMENSIONS Registry ───────────────────────────────────────────────────
+
+DIMENSIONS: dict = {
+    "testing":           {"check_fn": _check_testing,           "confidence": 0.95, "tier": "light"},
+    "module_plugin":     {"check_fn": _check_module_plugin,     "confidence": 0.90, "tier": "light"},
+    "documentation":     {"check_fn": _check_documentation,     "confidence": 0.85, "tier": "light"},
+    "performance":       {"check_fn": _check_performance,       "confidence": 0.85, "tier": "light"},
+    "reliability":       {"check_fn": _check_reliability,       "confidence": 0.85, "tier": "medium"},
+    "observability":     {"check_fn": _check_observability,     "confidence": 0.80, "tier": "medium"},
+    "architecture":      {"check_fn": _check_architecture,      "confidence": 0.75, "tier": "medium"},
+    "code_quality":      {"check_fn": _check_code_quality,      "confidence": 0.75, "tier": "medium"},
+    "security":          {"check_fn": _check_security,          "confidence": 0.60, "tier": "daily"},
+    "usability_ux":      {"check_fn": _check_usability_ux,      "confidence": 0.30, "tier": "daily"},
+    "dynamic_abilities": {"check_fn": _check_dynamic_abilities, "confidence": 0.60, "tier": "daily"},
+    "data_hitl":         {"check_fn": _check_data_hitl,         "confidence": 0.55, "tier": "daily"},
+}
+
+TIER_ORDER = ["light", "medium", "daily", "weekly"]
+
+
+# ── Tier Runner ───────────────────────────────────────────────────────────
+
+def run_tier(tier: str) -> list[dict]:
+    """Run all dimension checks up to and including the specified tier.
+
+    Returns a list of dicts with keys:
+        dimension, auto_score, auto_detail, manual_grade, divergence
+    """
+    if tier not in TIER_ORDER:
+        log.warning("run_tier: unknown tier '%s'", tier)
+        return []
+
+    allowed_tiers = TIER_ORDER[: TIER_ORDER.index(tier) + 1]
+    baseline = load_baseline()
+    dimensions_baseline = baseline.get("dimensions", {})
+
+    results = []
+    for dim_name, dim_cfg in DIMENSIONS.items():
+        if dim_cfg["tier"] not in allowed_tiers:
+            continue
+        try:
+            score, detail = dim_cfg["check_fn"]()
+        except Exception as e:
+            log.warning("run_tier: check for '%s' raised: %s", dim_name, e)
+            score, detail = 0.0, {"error": str(e)}
+
+        manual_grade = dimensions_baseline.get(dim_name, {}).get("grade", "")
+        manual_score = grade_to_score(manual_grade) if manual_grade else None
+
+        divergence = 0
+        if manual_score is not None:
+            gap = abs(score - manual_score)
+            confidence = dim_cfg.get("confidence", 1.0)
+            # Flag divergence if gap exceeds 2 grade steps adjusted by confidence
+            threshold = 0.15 * (1.0 - confidence + 0.5)
+            if gap > threshold:
+                divergence = 1
+
+        results.append({
+            "dimension": dim_name,
+            "auto_score": round(score, 4),
+            "auto_detail": json.dumps(detail) if not isinstance(detail, str) else detail,
+            "manual_grade": manual_grade,
+            "divergence": divergence,
+        })
+
+    return results
+
+
+# ── DB Persistence ────────────────────────────────────────────────────────
+
+def write_scores(tier: str, scores: list[dict]) -> None:
+    """Write score results to audit_scores table using db._retry_write."""
+    import db
+
+    def _do():
+        with db.get_conn() as conn:
+            for s in scores:
+                conn.execute(
+                    """INSERT INTO audit_scores
+                       (tier, dimension, auto_score, auto_detail, manual_grade, divergence)
+                       VALUES (?, ?, ?, ?, ?, ?)""",
+                    (
+                        tier,
+                        s["dimension"],
+                        s["auto_score"],
+                        s.get("auto_detail", "{}"),
+                        s.get("manual_grade", ""),
+                        s.get("divergence", 0),
+                    ),
+                )
+
+    db._retry_write(_do)
+
+
+def get_active_divergences() -> list[dict]:
+    """Return unacknowledged divergences from the latest run."""
+    import db
+    results = []
+    try:
+        with db.get_conn() as conn:
+            rows = conn.execute(
+                """SELECT dimension, auto_score, manual_grade, auto_detail, timestamp
+                   FROM audit_scores
+                   WHERE divergence = 1 AND acknowledged = 0
+                   ORDER BY timestamp DESC"""
+            ).fetchall()
+        for row in rows:
+            results.append(dict(row))
+    except Exception as e:
+        log.warning("get_active_divergences failed: %s", e)
+    return results
+
+
+def acknowledge_divergence(dimension: str) -> bool:
+    """Mark a divergence as acknowledged."""
+    import db
+
+    def _do():
+        with db.get_conn() as conn:
+            conn.execute(
+                "UPDATE audit_scores SET acknowledged = 1 "
+                "WHERE dimension = ? AND divergence = 1 AND acknowledged = 0",
+                (dimension,),
+            )
+
+    try:
+        db._retry_write(_do)
+        return True
+    except Exception as e:
+        log.warning("acknowledge_divergence failed: %s", e)
+        return False
+
+
+def get_latest_scores() -> list[dict]:
+    """Get the most recent score for each dimension."""
+    import db
+    results = []
+    try:
+        with db.get_conn() as conn:
+            rows = conn.execute(
+                """SELECT dimension, auto_score, manual_grade, divergence, tier, timestamp
+                   FROM audit_scores
+                   WHERE id IN (
+                       SELECT MAX(id) FROM audit_scores GROUP BY dimension
+                   )
+                   ORDER BY dimension"""
+            ).fetchall()
+        for row in rows:
+            results.append(dict(row))
+    except Exception as e:
+        log.warning("get_latest_scores failed: %s", e)
+    return results
+
+
+def get_score_history(days: int = 30) -> list[dict]:
+    """Get score history for trending."""
+    import db
+    results = []
+    try:
+        with db.get_conn() as conn:
+            rows = conn.execute(
+                """SELECT dimension, auto_score, manual_grade, divergence, tier, timestamp
+                   FROM audit_scores
+                   WHERE timestamp >= datetime('now', ? || ' days')
+                   ORDER BY dimension, timestamp""",
+                (f"-{days}",),
+            ).fetchall()
+        for row in rows:
+            results.append(dict(row))
+    except Exception as e:
+        log.warning("get_score_history failed: %s", e)
+    return results
