@@ -139,8 +139,8 @@ def api_outputs_files():
         return jsonify({"error": "Rate limit exceeded"}), 429
 
     category = request.args.get("category", "All")
-    limit = min(int(request.args.get("limit", 50)), 200)
-    offset = int(request.args.get("offset", 0))
+    limit = min(request.args.get("limit", 50, type=int), 200)
+    offset = max(request.args.get("offset", 0, type=int), 0)
 
     if category != "All" and category not in CATEGORIES:
         return jsonify({"error": "Unknown category"}), 400
@@ -258,7 +258,7 @@ def api_outputs_unreviewed():
     if not _check_rate_limit("outputs_unreviewed", max_per_min=30):
         return jsonify({"error": "Rate limit exceeded"}), 429
 
-    limit = min(int(request.args.get("limit", 20)), 100)
+    limit = min(request.args.get("limit", 20, type=int), 100)
     all_files = _glob_md_files(None)
 
     file_infos = []
