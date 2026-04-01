@@ -127,7 +127,7 @@ def api_auth_setup():
     conn = get_conn()
     count = conn.execute("SELECT COUNT(*) as c FROM user_profiles").fetchone()["c"]
     if count > 0:
-        return jsonify({"error": "Setup already completed — profiles exist"}), 400
+        return jsonify({"error": "A profile already exists. Use the login screen to sign in.", "code": "ALREADY_SETUP"}), 400
 
     data = request.get_json(silent=True) or {}
     username = (data.get("username") or "").strip()
@@ -135,7 +135,7 @@ def api_auth_setup():
     password = data.get("password", "")
 
     if not username or not display_name:
-        return jsonify({"error": "username and display_name are required"}), 400
+        return jsonify({"error": "Please enter both a username and display name."}), 400
 
     password_hash = _hash_password(password) if password else None
 
@@ -182,12 +182,12 @@ def api_auth_login():
     ).fetchone()
 
     if not row:
-        return jsonify({"error": "User not found"}), 404
+        return jsonify({"error": "No account found with that username."}), 404
 
     # Verify password if one is set
     if row["password_hash"]:
         if not password or not _verify_password(password, row["password_hash"]):
-            return jsonify({"error": "Invalid password"}), 401
+            return jsonify({"error": "Incorrect password. Please try again."}), 401
     # If no password set, allow login without one
 
     token = _create_session(row["id"], ip_address=request.remote_addr or "")
@@ -277,7 +277,7 @@ def api_auth_create_profile():
         _db._retry_write(_do)
     except Exception as exc:
         if "UNIQUE" in str(exc):
-            return jsonify({"error": "Username already exists"}), 409
+            return jsonify({"error": "That username is already taken. Please choose another."}), 409
         log.warning("Failed to create profile", exc_info=True)
         return jsonify({"error": "Failed to create profile"}), 500
 

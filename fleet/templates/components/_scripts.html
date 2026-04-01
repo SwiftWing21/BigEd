@@ -4150,7 +4150,7 @@ function checkAuth() {
   apiFetch('/api/auth/me').then(function(d) {
     if (d.guest) {
       apiFetch('/api/auth/profiles').then(function(pd) {
-        var profiles = pd.profiles || [];
+        var profiles = Array.isArray(pd) ? pd : (pd.profiles || []);
         if (profiles.length === 0) {
           showSetupScreen();
         } else {
@@ -4242,7 +4242,15 @@ function showSetupScreen() {
       hideLoginOverlay();
       showCurrentUser(_currentUser);
     }).catch(function(e) {
-      errEl.textContent = 'Setup failed: ' + e.message;
+      /* If profile already exists, switch to login screen */
+      if (e.message && e.message.indexOf('already') !== -1) {
+        apiFetch('/api/auth/profiles').then(function(pd) {
+          var profiles = Array.isArray(pd) ? pd : (pd.profiles || []);
+          showLoginScreen(profiles);
+        });
+        return;
+      }
+      errEl.textContent = e.message || 'Setup failed';
       submitBtn.disabled = false;
       submitBtn.textContent = 'Create Profile';
     });
