@@ -26,6 +26,9 @@ _federation_peers = {}
 @federation_bp.route("/api/federation/heartbeat", methods=["POST"])
 def api_federation_heartbeat():
     """Receive heartbeat from peer fleet."""
+    deny = _require_role("operator")
+    if deny:
+        return deny
     data = request.get_json(silent=True) or {}
     fleet_id = data.get("fleet_id") or "unknown"
     _federation_peers[fleet_id] = {
@@ -204,6 +207,9 @@ def api_federation_hitl_notify():
     Broadcasts an SSE event so connected dashboards update live.
     Body: task_info dict with _source_fleet field.
     """
+    deny = _require_role("operator")
+    if deny:
+        return deny
     try:
         data = request.get_json(silent=True) or {}
         source_fleet = data.get("_source_fleet", "unknown")
@@ -242,6 +248,9 @@ def api_federation_exchange_cert():
     Request body: {"peer_id": "...", "cert_pem": "-----BEGIN CERTIFICATE..."}
     Response: {"ok": true, "cert_pem": "-----BEGIN CERTIFICATE..."}
     """
+    deny = _require_role("operator")
+    if deny:
+        return deny
     try:
         from fleet_tls import store_trusted_cert, get_local_cert_pem, is_tls_enabled
         if not is_tls_enabled():
