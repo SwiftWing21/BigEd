@@ -1812,6 +1812,12 @@ textarea.input {
   <div id="hitl-list">
     <div class="spinner"></div>
   </div>
+
+  <!-- Unreviewed Outputs (from outputs module) -->
+  <div id="hitl-outputs" style="margin-top:1rem">
+    <h3>Unreviewed Outputs <span id="hitl-outputs-count" class="badge" style="background:#666;padding:2px 8px;border-radius:10px;font-size:0.8rem"></span></h3>
+    <div id="hitl-outputs-list"></div>
+  </div>
 </div>
 
 <!-- ═══════════════════════════════════════════════════════════════════════
@@ -2001,6 +2007,22 @@ textarea.input {
 
   <!-- Doc content area -->
   <div id="docs-content" class="glass-panel" style="margin-top:16px"></div>
+
+  <!-- Knowledge Browser (Outputs module) -->
+  <div id="outputs-browser" style="margin-top:1rem">
+    <h3 style="margin-bottom:0.5rem">Knowledge Browser</h3>
+    <div style="display:flex;gap:0.5rem;align-items:center;margin-bottom:0.5rem">
+      <label>Category:</label>
+      <select id="outputs-category" class="input" onchange="loadOutputsFiles()" style="width:180px">
+        <option>All</option>
+      </select>
+      <span id="outputs-count" style="color:var(--muted-foreground);font-size:0.85rem"></span>
+    </div>
+    <div style="display:flex;gap:0.5rem;height:400px">
+      <div id="outputs-list" style="flex:1;overflow-y:auto;background:var(--bg2,#1e1e2e);border-radius:4px;padding:0.5rem"></div>
+      <div id="outputs-preview" style="flex:2;overflow-y:auto;background:var(--bg2,#1e1e2e);border-radius:4px;padding:0.75rem;white-space:pre-wrap;font-family:monospace;font-size:0.85rem;color:#ccc">Select a file to preview</div>
+    </div>
+  </div>
 </div>
 
 <!-- ═══════════════════════════════════════════════════════════════════════
@@ -2361,10 +2383,10 @@ function loadSectionData(name) {
     case 'dashboard': loadDashboard(); break;
     case 'fleet': loadFleet(); loadServiceStatus(); break;
     case 'tasks': loadTasks(); break;
-    case 'hitl': loadHITL(); break;
+    case 'hitl': loadHITL(); loadUnreviewedOutputs(); break;
     case 'queue': loadQueue(); break;
     case 'analytics': loadAnalytics(); break;
-    case 'docs': if (!_currentDocSlug) loadDoc('roadmap'); break;
+    case 'docs': if (!_currentDocSlug) loadDoc('roadmap'); loadOutputsCategories(); break;
     case 'settings': loadSettings(); break;
     case 'views': loadViews(); break;
     case 'ingest': loadIngest(); break;
@@ -4664,6 +4686,213 @@ function rejectHITL(id) {
 }
 
 /* ══════════════════════════════════════════════════════════════════════════
+   5b. OUTPUTS (Knowledge Browser + Unreviewed Queue)
+   ══════════════════════════════════════════════════════════════════════ */
+
+function _emptyMsg(parent, text) {
+  parent.textContent = '';
+  var d = document.createElement('div');
+  d.style.cssText = 'color:var(--muted-foreground);padding:16px;text-align:center;font-size:13px';
+  d.textContent = text;
+  parent.appendChild(d);
+}
+
+function _errorMsg(parent, text) {
+  parent.textContent = '';
+  var d = document.createElement('div');
+  d.style.cssText = 'color:var(--danger);padding:16px;text-align:center';
+  d.textContent = text;
+  parent.appendChild(d);
+}
+
+function loadOutputsCategories() {
+  apiFetch('/api/outputs/categories').then(function(cats) {
+    var sel = document.getElementById('outputs-category');
+    sel.textContent = '';
+    cats.forEach(function(c) {
+      var opt = document.createElement('option');
+      opt.value = c.name;
+      opt.textContent = c.name + ' (' + c.count + ')';
+      sel.appendChild(opt);
+    });
+    loadOutputsFiles();
+  }).catch(function() {
+    showToast('Failed to load output categories', 'error');
+  });
+}
+
+function loadOutputsFiles() {
+  var category = document.getElementById('outputs-category').value;
+  apiFetch('/api/outputs/files?category=' + encodeURIComponent(category) + '&limit=50').then(function(data) {
+    var el = document.getElementById('outputs-list');
+    var countEl = document.getElementById('outputs-count');
+    el.textContent = '';
+    countEl.textContent = data.total + ' files';
+
+    if (data.files.length === 0) {
+      _emptyMsg(el, 'No files found');
+      return;
+    }
+
+    data.files.forEach(function(f) {
+      var item = document.createElement('div');
+      item.style.cssText = 'padding:6px 8px;border-radius:4px;cursor:pointer;font-size:13px;display:flex;align-items:center;gap:6px';
+      item.addEventListener('mouseenter', function() { item.style.background = 'var(--border)'; });
+      item.addEventListener('mouseleave', function() { item.style.background = 'none'; });
+      (function(path) {
+        item.addEventListener('click', function() { loadOutputsFile(path); });
+      })(f.path);
+
+      if (f.verdict === 'approved') {
+        var badge = document.createElement('span');
+        badge.style.cssText = 'color:#10b981;font-size:12px;flex-shrink:0';
+        badge.textContent = '\u2713';
+        item.appendChild(badge);
+      } else if (f.verdict === 'rejected') {
+        var badge = document.createElement('span');
+        badge.style.cssText = 'color:#ef4444;font-size:12px;flex-shrink:0';
+        badge.textContent = '\u2717';
+        item.appendChild(badge);
+      }
+
+      var name = document.createElement('span');
+      name.style.cssText = 'overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1';
+      name.textContent = f.name;
+      name.title = f.path;
+      item.appendChild(name);
+
+      var cat = document.createElement('span');
+      cat.className = 'badge';
+      cat.style.cssText = 'font-size:10px;padding:1px 5px;background:var(--border);flex-shrink:0';
+      cat.textContent = f.category;
+      item.appendChild(cat);
+
+      el.appendChild(item);
+    });
+  }).catch(function() {
+    _errorMsg(document.getElementById('outputs-list'), 'Failed to load files');
+  });
+}
+
+function loadOutputsFile(path) {
+  var preview = document.getElementById('outputs-preview');
+  preview.textContent = 'Loading...';
+  apiFetch('/api/outputs/file?path=' + encodeURIComponent(path)).then(function(data) {
+    preview.textContent = '';
+
+    var header = document.createElement('div');
+    header.style.cssText = 'margin-bottom:8px;padding-bottom:8px;border-bottom:1px solid var(--border);font-size:12px;color:var(--muted-foreground)';
+    header.textContent = data.path;
+    if (data.verdict) {
+      var vb = document.createElement('span');
+      vb.className = 'badge';
+      vb.style.cssText = 'margin-left:8px;font-size:10px;padding:1px 6px;' + (data.verdict === 'approved' ? 'background:#10b981' : data.verdict === 'rejected' ? 'background:#ef4444' : 'background:#666');
+      vb.textContent = data.verdict;
+      header.appendChild(vb);
+    }
+    preview.appendChild(header);
+
+    var content = document.createElement('div');
+    content.textContent = data.content;
+    preview.appendChild(content);
+  }).catch(function() {
+    preview.textContent = 'Failed to load file';
+    preview.style.color = 'var(--danger)';
+  });
+}
+
+function loadUnreviewedOutputs() {
+  apiFetch('/api/outputs/unreviewed?limit=20').then(function(data) {
+    var countEl = document.getElementById('hitl-outputs-count');
+    var listEl = document.getElementById('hitl-outputs-list');
+    countEl.textContent = String(data.total);
+    listEl.textContent = '';
+
+    if (data.files.length === 0) {
+      _emptyMsg(listEl, 'No unreviewed outputs');
+      return;
+    }
+
+    data.files.forEach(function(f) {
+      var card = document.createElement('div');
+      card.className = 'glass-panel';
+      card.id = 'output-card-' + f.path.replace(/[^a-z0-9]/gi, '_');
+      card.style.cssText = 'padding:12px;margin-bottom:8px';
+
+      var topRow = document.createElement('div');
+      topRow.style.cssText = 'display:flex;align-items:center;gap:8px;margin-bottom:6px';
+      var fname = document.createElement('span');
+      fname.style.cssText = 'font-weight:600;font-size:13px;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap';
+      fname.textContent = f.name;
+      fname.title = f.path;
+      var catBadge = document.createElement('span');
+      catBadge.className = 'badge';
+      catBadge.style.cssText = 'font-size:10px;padding:1px 6px;background:var(--accent)';
+      catBadge.textContent = f.category;
+      topRow.appendChild(fname);
+      topRow.appendChild(catBadge);
+      card.appendChild(topRow);
+
+      if (f.snippet) {
+        var snippet = document.createElement('div');
+        snippet.style.cssText = 'font-size:12px;color:var(--muted-foreground);margin-bottom:8px;white-space:pre-wrap;max-height:60px;overflow:hidden';
+        snippet.textContent = f.snippet;
+        card.appendChild(snippet);
+      }
+
+      var notesInput = document.createElement('input');
+      notesInput.type = 'text';
+      notesInput.className = 'input';
+      notesInput.placeholder = 'Notes (optional)';
+      notesInput.style.cssText = 'width:100%;margin-bottom:8px;font-size:12px';
+      notesInput.id = 'output-notes-' + f.path.replace(/[^a-z0-9]/gi, '_');
+      card.appendChild(notesInput);
+
+      var btns = document.createElement('div');
+      btns.style.cssText = 'display:flex;gap:8px';
+      var approveBtn = document.createElement('button');
+      approveBtn.className = 'btn btn-success btn-sm';
+      approveBtn.textContent = '\u2713 Approve';
+      var rejectBtn = document.createElement('button');
+      rejectBtn.className = 'btn btn-danger btn-sm';
+      rejectBtn.textContent = '\u2717 Reject';
+
+      (function(filePath, cardEl, notesId) {
+        approveBtn.addEventListener('click', function() { submitOutputFeedback(filePath, 'approved', cardEl, notesId); });
+        rejectBtn.addEventListener('click', function() { submitOutputFeedback(filePath, 'rejected', cardEl, notesId); });
+      })(f.path, card, notesInput.id);
+
+      btns.appendChild(approveBtn);
+      btns.appendChild(rejectBtn);
+      card.appendChild(btns);
+
+      listEl.appendChild(card);
+    });
+  }).catch(function() {
+    _errorMsg(document.getElementById('hitl-outputs-list'), 'Failed to load unreviewed outputs');
+  });
+}
+
+function submitOutputFeedback(path, verdict, cardEl, notesId) {
+  var notesEl = document.getElementById(notesId);
+  var notes = notesEl ? notesEl.value.trim() : '';
+  apiFetch('/api/outputs/feedback', {
+    method: 'POST',
+    body: { path: path, verdict: verdict, notes: notes }
+  }).then(function() {
+    showToast('Output ' + verdict, 'success');
+    cardEl.style.transition = 'opacity 0.3s';
+    cardEl.style.opacity = '0';
+    setTimeout(function() { cardEl.remove(); }, 300);
+    var countEl = document.getElementById('hitl-outputs-count');
+    var cur = parseInt(countEl.textContent) || 0;
+    if (cur > 0) countEl.textContent = String(cur - 1);
+  }).catch(function(e) {
+    showToast('Failed: ' + e.message, 'error');
+  });
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
    6. QUEUE
    ══════════════════════════════════════════════════════════════════════ */
 function loadQueue() {
@@ -6304,7 +6533,7 @@ function handleSSE(msg) {
       if (document.getElementById('section-queue').classList.contains('active')) loadQueueList();
       break;
     case 'hitl_response':
-      if (document.getElementById('section-hitl').classList.contains('active')) loadHITL();
+      if (document.getElementById('section-hitl').classList.contains('active')) { loadHITL(); loadUnreviewedOutputs(); }
       break;
     case 'queue_paused':
       _queuePaused = true;
