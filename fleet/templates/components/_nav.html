@@ -1,0 +1,58 @@
+<!-- ══════════════════════════════════════════════════════════════════════════
+     SIDEBAR
+     ══════════════════════════════════════════════════════════════════════ -->
+<aside class="sidebar" id="sidebar">
+  <div class="sidebar-header">
+    <div class="sidebar-logo">
+      <div class="logo-icon">B</div>
+      <span class="logo-text">FLEET DASHBOARD v2</span>
+    </div>
+    <div class="sidebar-subtitle">BigEd Command Center</div>
+  </div>
+  <nav class="sidebar-nav">
+    <button class="nav-item active" data-section="dashboard" onclick="showSection('dashboard')">
+      <span class="nav-icon">&#9632;</span> Dashboard
+    </button>
+    <button class="nav-item" data-section="fleet" onclick="showSection('fleet')">
+      <span class="nav-icon">&#9881;</span> Fleet
+    </button>
+    <button class="nav-item" data-section="ingest" onclick="showSection('ingest')">
+      <span class="nav-icon">&#128229;</span> Ingest
+    </button>
+    <button class="nav-item" data-section="tasks" onclick="showSection('tasks')">
+      <span class="nav-icon">&#9889;</span> Tasks
+    </button>
+    <button class="nav-item" data-section="hitl" onclick="showSection('hitl')">
+      <span class="nav-icon">&#9997;</span> HITL
+      <span class="nav-badge hidden" id="hitl-badge">0</span>
+    </button>
+    <button class="nav-item" data-section="queue" onclick="showSection('queue')">
+      <span class="nav-icon">&#9776;</span> Queue
+    </button>
+    <button class="nav-item" data-section="analytics" onclick="showSection('analytics')">
+      <span class="nav-icon">&#9733;</span> Analytics
+    </button>
+    <button class="nav-item" data-section="docs" onclick="showSection('docs')">
+      <span class="nav-icon">&#128214;</span> Docs
+    </button>
+    <button class="nav-item" data-section="views" onclick="showSection('views')">
+      <span class="nav-icon">&#9673;</span> Views
+    </button>
+    <button class="nav-item" data-section="modules" onclick="showSection('modules')">
+      <span class="nav-icon">&#128230;</span> Modules
+    </button>
+    <button class="nav-item" data-section="factorio" onclick="showSection('factorio')" id="nav-factorio" style="display:none">
+      <span class="nav-icon">&#127981;</span> Factorio
+    </button>
+    <button class="nav-item" data-section="settings" onclick="showSection('settings')">
+      <span class="nav-icon">&#9881;</span> Settings
+    </button>
+  </nav>
+  <div class="sidebar-footer">
+    <div class="theme-toggle">
+      <button class="theme-btn active" data-theme="light" onclick="setTheme('light')">Light</button>
+      <button class="theme-btn" data-theme="dark" onclick="setTheme('dark')">Dark</button>
+      <button class="theme-btn" data-theme="system" onclick="setTheme('system')">System</button>
+    </div>
+  </div>
+</aside>

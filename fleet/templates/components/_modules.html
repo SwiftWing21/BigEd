@@ -1,0 +1,33 @@
+<!-- ═══════════════════════════════════════════════════════════════════════
+     MODULES
+     ═══════════════════════════════════════════════════════════════════ -->
+<div id="section-modules" class="section">
+  <div class="section-header">
+    <div class="section-title">Modules</div>
+    <div class="section-desc">Browse, install, and manage BigEd modules</div>
+    <div style="margin-left:auto;display:flex;gap:8px;">
+      <button class="btn btn-sm btn-outline" id="module-view-toggle" onclick="toggleModuleView()" title="Switch view">&#9638;</button>
+      <button class="btn btn-sm btn-outline" onclick="loadModules()">&#8635; Refresh</button>
+    </div>
+  </div>
+  <div id="module-suggestions" style="margin-bottom:12px;"></div>
+  <div id="module-split-view" class="glass-panel" style="display:flex;min-height:400px;">
+    <div id="module-list-panel" style="width:30%;border-right:1px solid var(--border);overflow-y:auto;max-height:500px;">
+      <div style="padding:8px;border-bottom:1px solid var(--border);">
+        <input type="text" id="module-search" placeholder="Search modules..." oninput="filterModules()" style="width:100%;padding:6px 10px;border-radius:6px;border:1px solid var(--border);background:var(--card);color:var(--foreground);font-size:12px;">
+      </div>
+      <div id="module-list" style="padding:4px;">
+        <div class="spinner"></div>
+      </div>
+    </div>
+    <div id="module-detail-panel" style="flex:1;padding:20px;overflow-y:auto;max-height:500px;">
+      <div style="color:var(--muted-foreground);text-align:center;padding:40px;font-size:13px;">Select a module to view details</div>
+    </div>
+  </div>
+  <div id="module-card-view" class="glass-panel" style="display:none;">
+    <div id="module-cards" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:12px;padding:16px;">
+      <div class="spinner"></div>
+    </div>
+  </div>
+</div>
+

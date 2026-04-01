@@ -1,0 +1,30 @@
+<!-- ═══════════════════════════════════════════════════════════════════════
+     6. QUEUE
+     ═══════════════════════════════════════════════════════════════════ -->
+<div id="section-queue" class="section">
+  <div class="section-header">
+    <div class="section-title">Task Queue</div>
+    <div class="section-desc">Manage pending and running tasks</div>
+  </div>
+
+  <div class="card mb-16">
+    <div class="card-header">
+      <span class="card-title">Queue Controls</span>
+      <div style="display:flex;gap:8px;align-items:center">
+        <span class="badge" id="queue-status-badge">--</span>
+        <button class="btn btn-warning btn-sm" id="queue-pause-btn" onclick="toggleQueuePause()">&#9208; Pause</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-header">
+      <span class="card-title">Tasks <span id="queue-total-count" style="font-weight:400;color:var(--muted-foreground)">(0)</span></span>
+      <button class="btn btn-ghost btn-sm" onclick="loadQueue()">&#8635; Refresh</button>
+    </div>
+    <div id="queue-list" style="max-height:600px;overflow-y:auto">
+      <div class="spinner"></div>
+    </div>
+  </div>
+</div>
+

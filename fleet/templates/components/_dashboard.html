@@ -1,0 +1,164 @@
+<!-- ═══════════════════════════════════════════════════════════════════════
+     0. BOOT PROGRESS OVERLAY
+     ═══════════════════════════════════════════════════════════════════ -->
+<div id="boot-overlay" style="position:fixed;inset:0;z-index:9999;background:var(--bg,#0e1117);display:flex;align-items:center;justify-content:center;">
+  <div style="max-width:420px;width:100%;padding:2rem;">
+    <h2 style="color:var(--text,#e6e8eb);margin:0 0 0.5rem;font-family:inherit;font-size:1.3rem;">Fleet Boot Sequence</h2>
+    <p id="boot-subtitle" style="color:var(--muted,#8b949e);margin:0 0 1.5rem;font-size:0.85rem;">Starting subsystems...</p>
+    <div id="boot-stage-list"></div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════════════
+     1. DASHBOARD
+     ═══════════════════════════════════════════════════════════════════ -->
+<div id="section-dashboard" class="section active">
+  <div class="section-header">
+    <div class="section-title">Overview</div>
+    <div class="section-desc">Real-time fleet health, metrics, and quick actions</div>
+  </div>
+
+  <!-- Omnibox -->
+  <div class="omnibox" style="position:relative;">
+    <span class="search-icon">&#128269;</span>
+    <input type="text" id="omnibox-input" placeholder="Search agents, tasks, skills, settings..."
+           oninput="omniboxSuggest(this.value)" onkeydown="omniboxKeydown(event)">
+    <div id="omnibox-dropdown" style="display:none;position:absolute;top:100%;left:0;right:0;background:var(--card);border:1px solid var(--border);border-radius:0 0 8px 8px;z-index:100;max-height:240px;overflow-y:auto;"></div>
+  </div>
+
+  <!-- Status Badges -->
+  <div class="badges-row" id="dash-badges">
+    <span class="badge badge-success"><span class="live-dot" style="width:6px;height:6px;display:inline-block;margin-right:4px"></span> Fleet Online</span>
+    <span class="badge badge-info" id="badge-agents">0 Agents</span>
+    <span class="badge badge-muted" id="badge-ollama">Ollama: --</span>
+    <span class="badge badge-muted" id="badge-db">DB: --</span>
+  </div>
+
+  <!-- Metric Cards -->
+  <div class="grid-3 mb-24" id="dash-metrics">
+    <div class="card">
+      <div class="card-header">
+        <div>
+          <div class="card-title">Active Units</div>
+          <div class="card-value" id="metric-active-units">--</div>
+          <div class="card-trend neutral" id="metric-active-trend">--</div>
+        </div>
+        <div class="card-icon blue">&#9881;</div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-header">
+        <div>
+          <div class="card-title">TASKS</div>
+          <div class="card-value" id="metric-total-requests">--</div>
+          <div class="card-trend neutral" id="metric-requests-trend">--</div>
+        </div>
+        <div class="card-icon green">&#9889;</div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-header">
+        <div>
+          <div class="card-title">System Load</div>
+          <div class="card-value" id="metric-system-load">--</div>
+          <div class="card-trend neutral" id="metric-load-trend">--</div>
+        </div>
+        <div class="card-icon amber">&#9650;</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Neural Lane Graph + Thermal Row -->
+  <div class="grid-2 mb-24">
+    <div class="card">
+      <div class="card-header">
+        <span class="card-title">Neural Activity</span>
+        <button class="btn btn-ghost btn-sm" onclick="loadNeuralLanes()">&#8635; Refresh</button>
+      </div>
+      <div class="neural-lane-wrap">
+        <canvas id="neural-lane-canvas"></canvas>
+      </div>
+      <div class="chart-legend">
+        <span class="chart-legend-item"><span class="chart-legend-dot" style="background:#10b981"></span> Agents</span>
+        <span class="chart-legend-item"><span class="chart-legend-dot" style="background:#a78bfa"></span> Models</span>
+        <span class="chart-legend-item"><span class="chart-legend-dot" style="background:#f59e0b"></span> Skills</span>
+        <span class="chart-legend-item"><span class="chart-legend-dot" style="background:#06b6d4"></span> Knowledge</span>
+        <span class="chart-legend-item" id="factorio-legend" style="display:none"><span class="chart-legend-dot" style="background:#f97316"></span> Factorio</span>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-header">
+        <span class="card-title">Thermal Gauges</span>
+      </div>
+      <div class="thermal-row" id="dash-thermal">
+        <div class="thermal-gauge">
+          <div class="thermal-icon">&#128293;</div>
+          <div class="thermal-value cool" id="thermal-cpu">--</div>
+          <div class="thermal-label">CPU Temp</div>
+          <div class="thermal-bar"><div class="thermal-bar-fill" id="thermal-cpu-bar" style="width:0%;background:var(--success)"></div></div>
+        </div>
+        <div class="thermal-gauge">
+          <div class="thermal-icon">&#128187;</div>
+          <div class="thermal-value cool" id="thermal-gpu">--</div>
+          <div class="thermal-label">GPU Temp</div>
+          <div class="thermal-bar"><div class="thermal-bar-fill" id="thermal-gpu-bar" style="width:0%;background:var(--success)"></div></div>
+        </div>
+        <div class="thermal-gauge">
+          <div class="thermal-icon">&#128190;</div>
+          <div class="thermal-value cool" id="thermal-memory">--</div>
+          <div class="thermal-label">Memory</div>
+          <div class="thermal-bar"><div class="thermal-bar-fill" id="thermal-mem-bar" style="width:0%;background:var(--success)"></div></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Live Activity Feed -->
+  <div class="card-container" style="margin-bottom:16px;">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+      <h3 style="margin:0;font-size:14px;font-weight:600;">LIVE ACTIVITY</h3>
+      <div style="display:flex;gap:4px;align-items:center;">
+        <button id="activity-view-list" class="btn btn-sm btn-primary" onclick="toggleActivityView('list')" title="List view">List</button>
+        <button id="activity-view-graph" class="btn btn-sm btn-outline" onclick="toggleActivityView('graph')" title="Graph view">Graph</button>
+        <button class="btn btn-sm btn-outline" onclick="refreshActivityView()" style="margin-left:4px;">Refresh</button>
+      </div>
+    </div>
+    <div id="live-activity-feed" style="max-height:280px;overflow-y:auto;font-size:12px;">
+      <div class="spinner"></div>
+    </div>
+    <div id="live-activity-graph" style="height:300px;display:none;border:1px solid var(--border);border-radius:var(--radius);overflow:hidden;"></div>
+  </div>
+
+  <!-- Quick Actions -->
+  <div class="card-title mb-16" style="padding-left:4px">Quick Actions</div>
+  <div class="grid-3 mb-24">
+    <div class="quick-action" onclick="showSection('tasks')">
+      <div class="qa-icon" style="background:rgba(59,130,246,0.1);color:var(--primary)">&#9889;</div>
+      <div>
+        <div class="qa-text">Dispatch Task</div>
+        <div class="qa-desc">Submit a new task to the fleet</div>
+      </div>
+    </div>
+    <div class="quick-action" onclick="showSection('hitl')">
+      <div class="qa-icon" style="background:rgba(245,158,11,0.1);color:var(--warning)">&#9997;</div>
+      <div>
+        <div class="qa-text">Review HITL</div>
+        <div class="qa-desc">Approve or reject pending tasks</div>
+      </div>
+    </div>
+    <div class="quick-action" onclick="showSection('settings')">
+      <div class="qa-icon" style="background:rgba(16,185,129,0.1);color:var(--success)">&#9881;</div>
+      <div>
+        <div class="qa-text">Fleet Settings</div>
+        <div class="qa-desc">Configure fleet behavior</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Settings Glass Panel -->
+  <div class="glass-panel mb-24" id="dash-settings-panel">
+    <div class="card-title mb-16">Fleet Configuration Snapshot</div>
+    <div id="dash-settings-list" style="font-size:13px;color:var(--muted-foreground);">Loading...</div>
+  </div>
+</div>
+

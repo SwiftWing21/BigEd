@@ -1,0 +1,24 @@
+<div id="section-ingest" class="section">
+  <h1>Ingestion Hub</h1>
+  <p class="section-subtitle">Feed real datasets to fleet agents</p>
+  <div id="ingest-source-pills" style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px;"></div>
+  <div id="ingest-expanded-panel" style="display:none;"></div>
+  <div class="card-container" style="margin-top:16px;">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+      <h3 style="margin:0;">Staging</h3>
+      <div style="display:flex;gap:8px;">
+        <button class="btn btn-sm" onclick="ingestDispatchAll()">Ingest Selected</button>
+        <button class="btn btn-sm btn-outline" onclick="ingestClearStaging()">Clear</button>
+      </div>
+    </div>
+    <div id="ingest-staging-list" style="min-height:60px;"></div>
+  </div>
+  <div style="display:flex;align-items:center;gap:8px;margin-top:12px;padding:8px 0;">
+    <span style="font-size:12px;color:var(--muted-foreground);">Cache:</span>
+    <div style="flex:1;height:6px;background:var(--card);border-radius:3px;overflow:hidden;">
+      <div id="ingest-cache-bar" style="height:100%;background:var(--success);border-radius:3px;width:0%;transition:width 0.3s;"></div>
+    </div>
+    <span id="ingest-cache-label" style="font-size:12px;color:var(--muted-foreground);">0 / 0 MB</span>
+  </div>
+</div>
+

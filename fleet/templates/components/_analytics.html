@@ -1,0 +1,121 @@
+<!-- ═══════════════════════════════════════════════════════════════════════
+     7. ANALYTICS
+     ═══════════════════════════════════════════════════════════════════ -->
+<div id="section-analytics" class="section">
+  <div class="section-header">
+    <div class="section-title">Analytics</div>
+    <div class="section-desc">Task flow, agent activity, performance metrics, and knowledge graph</div>
+  </div>
+
+  <!-- Task Flow -->
+  <div class="card" style="margin-bottom:16px;">
+    <div class="card-header"><span class="card-title">Task Flow</span></div>
+    <div class="lane-graph" id="lane-graph-container">
+      <div class="spinner"></div>
+    </div>
+  </div>
+
+  <!-- Swimlane / Agent Timeline -->
+  <div class="card" style="margin-bottom:16px;">
+    <div class="card-header"><span class="card-title">Agent Timeline</span></div>
+    <div class="swimlane" id="swimlane-container">
+      <div class="spinner"></div>
+    </div>
+  </div>
+
+  <div class="grid-2 mb-24">
+    <div class="card">
+      <div class="card-header">
+        <span class="card-title">Token Usage (7 Days)</span>
+        <button class="btn btn-ghost btn-sm" onclick="loadAnalytics()">&#8635; Refresh</button>
+      </div>
+      <div class="chart-wrap"><canvas id="chart-token-usage"></canvas></div>
+    </div>
+    <div class="card">
+      <div class="card-header">
+        <span class="card-title">Tasks Over Time</span>
+      </div>
+      <div class="chart-wrap"><canvas id="chart-tasks-time"></canvas></div>
+    </div>
+  </div>
+
+  <div class="grid-2 mb-24">
+    <div class="card">
+      <div class="card-header">
+        <span class="card-title">Cost by Provider</span>
+      </div>
+      <div class="chart-wrap"><canvas id="chart-cost-provider"></canvas></div>
+    </div>
+    <div class="card">
+      <div class="card-header">
+        <span class="card-title">Agent Performance</span>
+      </div>
+      <div class="chart-wrap"><canvas id="chart-agent-perf"></canvas></div>
+    </div>
+  </div>
+
+  <!-- Neural Activity (full-width, from universe lane data) -->
+  <div class="card mb-24">
+    <div class="card-header">
+      <span class="card-title">Neural Activity Map</span>
+      <button class="btn btn-ghost btn-sm" onclick="loadAnalyticsLanes()">&#8635; Refresh</button>
+    </div>
+    <div class="neural-lane-wrap" style="height:320px">
+      <canvas id="analytics-neural-canvas"></canvas>
+    </div>
+    <div class="chart-legend">
+      <span class="chart-legend-item"><span class="chart-legend-dot" style="background:#10b981"></span> Agents</span>
+      <span class="chart-legend-item"><span class="chart-legend-dot" style="background:#a78bfa"></span> Models</span>
+      <span class="chart-legend-item"><span class="chart-legend-dot" style="background:#f59e0b"></span> Skills</span>
+      <span class="chart-legend-item"><span class="chart-legend-dot" style="background:#06b6d4"></span> Knowledge</span>
+    </div>
+  </div>
+
+  <!-- Skill Distribution + Model Utilization -->
+  <div class="grid-2 mb-24">
+    <div class="card">
+      <div class="card-header">
+        <span class="card-title">Top Skills (24h)</span>
+      </div>
+      <div class="chart-wrap"><canvas id="chart-skill-dist"></canvas></div>
+    </div>
+    <div class="card">
+      <div class="card-header">
+        <span class="card-title">Model Utilization</span>
+      </div>
+      <div class="chart-wrap"><canvas id="chart-model-util"></canvas></div>
+    </div>
+  </div>
+
+  <!-- Knowledge / Neural Graph -->
+  <div class="card">
+    <div class="card-header">
+      <span class="card-title">Knowledge Graph</span>
+      <select id="graph-layout-select" class="btn btn-ghost btn-sm" style="appearance:auto;padding:2px 6px;font-size:12px;cursor:pointer" onchange="switchGraphLayout(this.value)">
+        <option value="fractal-brain" selected>Fractal Brain</option>
+        <option value="fcose">fCoSE</option>
+        <option value="concentric">Concentric</option>
+      </select>
+      <button class="btn btn-ghost btn-sm" onclick="loadNeuralGraph()">&#8635; Refresh</button>
+    </div>
+    <div id="cytoscape-container"></div>
+    <div id="neural-graph-legend" class="chart-legend" style="padding:8px 0 0">
+      <span class="chart-legend-item"><span class="chart-legend-dot" style="background:#10b981"></span> Agent</span>
+      <span class="chart-legend-item"><span class="chart-legend-dot" style="background:#f59e0b"></span> Skill</span>
+      <span class="chart-legend-item"><span class="chart-legend-dot" style="background:#3b82f6"></span> Task</span>
+      <span class="chart-legend-item"><span class="chart-legend-dot" style="background:#a78bfa"></span> Model</span>
+      <span class="chart-legend-item"><span class="chart-legend-dot" style="background:#4fc3f7"></span> Folder</span>
+      <span class="chart-legend-item"><span class="chart-legend-dot" style="background:#ec4899"></span> Channel</span>
+      <span class="chart-legend-item"><span class="chart-legend-dot" style="background:#64748b"></span> Config</span>
+    </div>
+  </div>
+
+  <!-- Kanban -->
+  <div class="card" style="margin-top:16px;">
+    <div class="card-header"><span class="card-title">Kanban</span></div>
+    <div class="kanban" id="kanban-container" style="flex-wrap:nowrap;overflow-x:auto;">
+      <div class="spinner"></div>
+    </div>
+  </div>
+</div>
+

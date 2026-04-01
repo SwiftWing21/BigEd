@@ -1,0 +1,49 @@
+<!-- ═══════════════════════════════════════════════════════════════════════
+     4. TASKS
+     ═══════════════════════════════════════════════════════════════════ -->
+<div id="section-tasks" class="section">
+  <div class="section-header">
+    <div class="section-title">Task Dispatch</div>
+    <div class="section-desc">Submit tasks to the fleet and view recent history</div>
+  </div>
+
+  <div class="grid-2 mb-24">
+    <!-- Dispatch Form -->
+    <div class="card">
+      <div class="card-header"><span class="card-title">New Task</span></div>
+      <form onsubmit="dispatchTask(event)">
+        <div class="mb-16">
+          <label class="input-label">Skill</label>
+          <select class="input" id="task-skill" required>
+            <option value="">Loading skills...</option>
+          </select>
+        </div>
+        <div class="mb-16">
+          <label class="input-label">Payload (JSON)</label>
+          <textarea class="input" id="task-payload" placeholder='{"instruction": "..."}'>{}</textarea>
+        </div>
+        <div class="mb-16">
+          <label class="input-label">Priority: <span id="task-priority-label">5</span></label>
+          <input type="range" class="priority-slider" id="task-priority" min="1" max="10" value="5" oninput="document.getElementById('task-priority-label').textContent=this.value">
+        </div>
+        <div class="mb-16">
+          <label class="input-label">Assign To (optional)</label>
+          <input type="text" class="input" id="task-assign" placeholder="Agent name or leave blank">
+        </div>
+        <button type="submit" class="btn btn-primary" style="width:100%">&#9889; Dispatch Task</button>
+      </form>
+    </div>
+
+    <!-- Recent Tasks -->
+    <div class="card">
+      <div class="card-header">
+        <span class="card-title">Recent Tasks</span>
+        <button class="btn btn-ghost btn-sm" onclick="loadRecentTasks()">&#8635; Refresh</button>
+      </div>
+      <div id="recent-tasks-list" style="max-height:400px;overflow-y:auto">
+        <div class="spinner"></div>
+      </div>
+    </div>
+  </div>
+</div>
+

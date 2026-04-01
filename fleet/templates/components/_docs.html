@@ -1,0 +1,54 @@
+<!-- ═══════════════════════════════════════════════════════════════════════
+     8. DOCS
+     ═══════════════════════════════════════════════════════════════════ -->
+<div id="section-docs" class="section">
+  <div class="section-header">
+    <div class="section-title">Docs</div>
+    <div class="section-desc">Program documentation — browse, search, and filter</div>
+  </div>
+
+  <!-- Sub-tab navigation -->
+  <div class="docs-tabs" id="docs-tabs">
+    <button class="docs-tab active" onclick="loadDoc('roadmap')" data-slug="roadmap">Roadmap</button>
+    <button class="docs-tab" onclick="loadDoc('blueprint')" data-slug="blueprint">Blueprint</button>
+    <button class="docs-tab" onclick="loadDoc('audit')" data-slug="audit">Audit</button>
+    <button class="docs-tab" onclick="loadDoc('operations')" data-slug="operations">Operations</button>
+    <button class="docs-tab" onclick="loadDoc('cross-platform')" data-slug="cross-platform">Cross-Platform</button>
+    <button class="docs-tab" onclick="loadDoc('setup')" data-slug="setup">Setup</button>
+  </div>
+
+  <!-- Search + Filter bar -->
+  <div class="docs-toolbar">
+    <input type="text" class="input" id="docs-search" placeholder="Search sections..." style="flex:1;max-width:300px" oninput="filterDocSections()">
+    <select class="input" id="docs-status-filter" onchange="filterDocSections()" style="width:140px">
+      <option value="">All statuses</option>
+      <option value="done">Done</option>
+      <option value="in_progress">In Progress</option>
+      <option value="not_started">Not Started</option>
+    </select>
+    <select class="input" id="docs-version-filter" onchange="filterDocSections()" style="width:140px">
+      <option value="">All versions</option>
+    </select>
+    <span class="text-muted" id="docs-count" style="font-size:12px;margin-left:8px"></span>
+  </div>
+
+  <!-- Doc content area -->
+  <div id="docs-content" class="glass-panel" style="margin-top:16px"></div>
+
+  <!-- Knowledge Browser (Outputs module) -->
+  <div id="outputs-browser" style="margin-top:1rem">
+    <h3 style="margin-bottom:0.5rem">Knowledge Browser</h3>
+    <div style="display:flex;gap:0.5rem;align-items:center;margin-bottom:0.5rem">
+      <label>Category:</label>
+      <select id="outputs-category" class="input" onchange="loadOutputsFiles()" style="width:180px">
+        <option>All</option>
+      </select>
+      <span id="outputs-count" style="color:var(--muted-foreground);font-size:0.85rem"></span>
+    </div>
+    <div style="display:flex;gap:0.5rem;height:400px">
+      <div id="outputs-list" style="flex:1;overflow-y:auto;background:var(--bg2,#1e1e2e);border-radius:4px;padding:0.5rem"></div>
+      <div id="outputs-preview" style="flex:2;overflow-y:auto;background:var(--bg2,#1e1e2e);border-radius:4px;padding:0.75rem;white-space:pre-wrap;font-family:monospace;font-size:0.85rem;color:#ccc">Select a file to preview</div>
+    </div>
+  </div>
+</div>
+

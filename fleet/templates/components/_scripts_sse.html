@@ -1,0 +1,2923 @@
+function connectSSE() {
+  if (_sseSource) { try { _sseSource.close(); } catch(e) {} }
+  _sseSource = new EventSource('/api/stream');
+
+  _sseSource.onopen = function() {
+    _sseConnected = true;
+    document.getElementById('sse-status').textContent = 'Connected';
+    document.getElementById('live-dot').style.background = 'var(--success)';
+  };
+
+  _sseSource.onerror = function() {
+    _sseConnected = false;
+    document.getElementById('sse-status').textContent = 'Reconnecting...';
+    document.getElementById('live-dot').style.background = 'var(--warning)';
+  };
+
+  _sseSource.onmessage = function(e) {
+    try {
+      var msg = JSON.parse(e.data);
+      handleSSE(msg);
+    } catch(ex) {}
+  };
+}
+
+function handleSSE(msg) {
+  switch (msg.type) {
+    case 'status':
+      /* Header controls update (always visible, not section-gated) */
+      if (msg.data) updateHeaderControls(msg.data);
+      /* Factorio SSE indicator (always update, not section-gated) */
+      _updateFactorioSSEIndicator(msg.data ? msg.data.factorio : null);
+      if (document.getElementById('section-dashboard').classList.contains('active')) {
+        var data = msg.data || {};
+        /* Show adaptive push rate in connection indicator */
+        if (data._interval) {
+          var label = data._interval < 3 ? 'Live' : data._interval < 10 ? 'Connected' : 'Idle';
+          document.getElementById('sse-status').textContent = label + ' (' + data._interval + 's)';
+        }
+        /* ── Agents ── */
+        if (data.agents) {
+          var count = data.agents.length;
+          document.getElementById('badge-agents').textContent = count + ' Agent' + (count !== 1 ? 's' : '');
+          document.getElementById('metric-active-units').textContent = String(count);
+          var busy = data.agents.filter(function(a) { return a.status === 'BUSY'; }).length;
+          var trendEl = document.getElementById('metric-active-trend');
+          trendEl.textContent = busy + ' busy';
+          trendEl.className = 'card-trend ' + (busy > 0 ? 'up' : 'neutral');
+        }
+        /* ── Tasks ── */
+        if (data.tasks) {
+          var pending = data.tasks.PENDING || 0;
+          var running = data.tasks.RUNNING || 0;
+          var done = data.tasks.DONE || 0;
+          var failed = data.tasks.FAILED || 0;
+          document.getElementById('metric-total-requests').textContent = done.toLocaleString();
+          var reqTrend = document.getElementById('metric-requests-trend');
+          reqTrend.textContent = pending + ' queued \u00B7 ' + running + ' running \u00B7 ' + failed + ' failed';
+          reqTrend.className = 'card-trend ' + (running > 0 ? 'up' : pending > 0 ? 'neutral' : 'neutral');
+        }
+        /* ── Live Activity (real-time from SSE — no polling needed) ── */
+        if (data.live && data.live.length > 0) {
+          _renderLiveItems(data.live);
+          /* Drive knowledge graph pulses from real task events */
+          if (typeof _graphOnActivity === 'function') _graphOnActivity(data.live);
+        }
+        /* ── Thermal (pushed from server every 5s) ── */
+        if (data.thermal) {
+          var cpuV = data.thermal.cpu_temp_c;
+          var cpuEl = document.getElementById('thermal-cpu');
+          if (cpuEl) {
+            if (cpuV != null && cpuV > 0) {
+              cpuEl.textContent = cpuV + '\u00B0C';
+              cpuEl.className = 'thermal-value ' + thermalColor(cpuV, 80);
+            } else {
+              cpuEl.textContent = 'N/A';
+              cpuEl.className = 'thermal-value cool';
+            }
+            var cpuBar = document.getElementById('thermal-cpu-bar');
+            if (cpuBar) { cpuBar.style.width = (cpuV > 0 ? Math.min(100, Math.round(cpuV)) : 0) + '%'; }
+          }
+          var gpuV = data.thermal.gpu_temp_c || 0;
+          var gpuEl = document.getElementById('thermal-gpu');
+          if (gpuEl) {
+            gpuEl.textContent = gpuV + '\u00B0C';
+            var gpuBar = document.getElementById('thermal-gpu-bar');
+            if (gpuBar) { gpuBar.style.width = Math.min(100, Math.round(gpuV)) + '%'; }
+          }
+        }
+        /* ── Real-time neural pulses from task completions ── */
+        if (data.recent && data.recent.length > 0 && window._neuralPulses !== undefined) {
+          data.recent.forEach(function(t) {
+            _neuralPulses.push({
+              agent: t.agent, skill: t.skill, status: t.status,
+              x: 0.0,  // start at left edge of bar area (not negative — prevents off-canvas render)
+              alpha: 0.7 + Math.random() * 0.3,
+              speed: 0.003 + Math.random() * 0.003, size: 4 + Math.random() * 3
+            });
+          });
+          // Cap pulse count to prevent memory bloat
+          if (_neuralPulses.length > 80) _neuralPulses.splice(0, _neuralPulses.length - 60);
+          // Kick animation loop if not running; do NOT re-fetch lane data on every SSE tick
+          if (!_neuralAnim && _neuralData) {
+            _neuralAnim = requestAnimationFrame(renderNeuralFrame);
+          }
+        }
+        /* ── Model pulse: highlight model lane when inference is active ── */
+        if (data.agents && window._neuralPulses !== undefined && window._neuralData) {
+          var runningModels = {};
+          (data.agents || []).forEach(function(a) {
+            if (a.status === 'BUSY' && a.model) runningModels[a.model] = true;
+          });
+          window._neuralActiveModels = runningModels;
+        }
+        /* ── System load ── */
+        if (data.system) {
+          var loadEl = document.getElementById('metric-system-load');
+          if (loadEl) loadEl.textContent = data.system.cpu_pct + '%';
+          var loadTrend = document.getElementById('metric-load-trend');
+          if (loadTrend) loadTrend.textContent = (data.system.cpu_cores || 0) + ' cores';
+          var memEl = document.getElementById('thermal-memory');
+          if (memEl) memEl.textContent = data.system.ram_pct + '%';
+          var memBar = document.getElementById('thermal-memory-bar');
+          if (memBar) { memBar.style.width = Math.min(100, Math.round(data.system.ram_pct)) + '%'; }
+        }
+        /* ── Mode strip real-time update ── */
+        if (data.mode) {
+          _updateModeFromSSE(data.mode);
+        }
+        /* ── Fleet agent table (SSE-driven, no full fetch) ── */
+        if (data.agents && document.getElementById('section-fleet').classList.contains('active')) {
+          _renderFleetFromSSE(data.agents);
+        }
+      } else {
+        /* Non-dashboard sections: still update mode strip (QW2 — ungated) */
+        var data2 = msg.data || {};
+        if (data2.mode) {
+          _updateModeFromSSE(data2.mode);
+        }
+        /* Fleet agent table on fleet page */
+        if (data2.agents && document.getElementById('section-fleet').classList.contains('active')) {
+          _renderFleetFromSSE(data2.agents);
+        }
+      }
+      break;
+    case 'alert':
+      if (msg.data) showToast('[' + (msg.data.level || 'info') + '] ' + (msg.data.message || ''), msg.data.level === 'critical' ? 'error' : 'info');
+      break;
+    case 'task_dispatched':
+      if (document.getElementById('section-tasks').classList.contains('active')) loadRecentTasks();
+      if (document.getElementById('section-queue').classList.contains('active')) loadQueueList();
+      break;
+    case 'hitl_response':
+      if (document.getElementById('section-hitl').classList.contains('active')) { loadHITL(); loadUnreviewedOutputs(); }
+      break;
+    case 'queue_paused':
+      _queuePaused = true;
+      loadQueueStatus();
+      break;
+    case 'queue_resumed':
+      _queuePaused = false;
+      loadQueueStatus();
+      break;
+    case 'queue_reordered':
+    case 'queue_removed':
+      if (document.getElementById('section-queue').classList.contains('active')) loadQueueList();
+      break;
+    case 'gate_enabled':
+      showToast('API Gate enabled: ' + (msg.data || ''), 'success');
+      apiFetch('/api/gate/status').then(function(d) { if (typeof updateGateUI === 'function') updateGateUI(d); }).catch(function(){});
+      break;
+    case 'gate_disabled':
+      showToast('API Gate disabled', 'info');
+      apiFetch('/api/gate/status').then(function(d) { if (typeof updateGateUI === 'function') updateGateUI(d); }).catch(function(){});
+      break;
+    case 'budget_warning':
+      showToast('Budget warning: ' + (msg.data || ''), 'warning');
+      break;
+    case 'budget_hit':
+      showToast('Budget limit reached — draining API calls', 'error');
+      apiFetch('/api/gate/status').then(function(d) { if (typeof updateGateUI === 'function') updateGateUI(d); }).catch(function(){});
+      break;
+    case 'fallback':
+      showToast('Provider fallback: ' + (msg.data || ''), 'warning');
+      break;
+    case 'federation_hitl_notify':
+      showToast('Federation HITL request received', 'info');
+      break;
+    case 'audit':
+      showToast('Audit event: ' + (msg.data && msg.data.action || 'recorded'), 'info');
+      break;
+    case 'trigger':
+      showToast('Trigger fired: ' + (msg.data && msg.data.name || 'unknown'), 'info');
+      break;
+    case 'hitl_new':
+      if (document.getElementById('section-hitl').classList.contains('active')) loadHITL();
+      apiFetch('/api/tasks/waiting-human').then(function(data) {
+        var badge = document.getElementById('hitl-badge');
+        if (data.length > 0) {
+          badge.textContent = String(data.length);
+          badge.classList.remove('hidden');
+        } else {
+          badge.classList.add('hidden');
+        }
+      }).catch(function() {});
+      break;
+    case 'service_status':
+      if (document.getElementById('section-fleet').classList.contains('active')) loadServiceStatus();
+      break;
+    case 'factorio_spatial':
+      _pollSpatialMap();
+      break;
+    case 'factorio_reward':
+      _pollRewardChart();
+      break;
+  }
+}
+
+/* ── SSE helper: update mode strip (runs on ALL pages, not section-gated) ── */
+function _updateModeFromSSE(modeUpdate) {
+  var iconEl2 = document.getElementById('mode-icon');
+  var labelEl2 = document.getElementById('mode-label');
+  var btn2 = document.getElementById('mode-selector');
+  if (iconEl2 && labelEl2) {
+    if (_modeStatus && _modeStatus.available_modes) {
+      var activeM = _modeStatus.available_modes.find(function(m) { return m.id === modeUpdate.active; });
+      if (activeM) {
+        iconEl2.textContent = _modeIcons[activeM.icon] || '';
+        labelEl2.textContent = activeM.name;
+      }
+    }
+  }
+  if (btn2 && btn2.disabled && modeUpdate.state !== 'starting') {
+    btn2.disabled = false;
+    if (window._modeReenableTimer) { clearTimeout(window._modeReenableTimer); window._modeReenableTimer = null; }
+  }
+  if (_modeStatus) {
+    _modeStatus.active = modeUpdate.active;
+    _modeStatus.state = modeUpdate.state;
+    if (modeUpdate.modifiers) _modeStatus.modifiers = modeUpdate.modifiers;
+    _applyModeStatus(_modeStatus);
+  }
+}
+
+/* ── SSE helper: render fleet agent table from SSE data (QW1 — no full fetch) ── */
+function _renderFleetFromSSE(agents) {
+  var tbody = document.getElementById('fleet-tbody');
+  if (!tbody) return;
+  tbody.textContent = '';
+  if (!agents || agents.length === 0) {
+    var tr = document.createElement('tr');
+    var td = document.createElement('td');
+    td.colSpan = 7;
+    var empty = document.createElement('div');
+    empty.className = 'empty-state';
+    var icon = document.createElement('div');
+    icon.className = 'empty-icon';
+    icon.textContent = '\u2699';
+    var title = document.createElement('div');
+    title.className = 'empty-title';
+    title.textContent = 'No Active Agents';
+    var desc = document.createElement('div');
+    desc.className = 'empty-desc';
+    desc.textContent = 'Fleet is offline or all agents are disabled';
+    empty.appendChild(icon);
+    empty.appendChild(title);
+    empty.appendChild(desc);
+    td.appendChild(empty);
+    tr.appendChild(td);
+    tbody.appendChild(tr);
+    return;
+  }
+  agents.forEach(function(a, i) {
+    var ds = a.display_status || a.status;
+    var isDimmed = ds === 'DISABLED' || ds === 'OFFLINE';
+    var tr = document.createElement('tr');
+    if (isDimmed) tr.style.opacity = '0.45';
+
+    var tdId = document.createElement('td');
+    tdId.style.cssText = 'font-family:monospace;font-size:12px;color:var(--muted-foreground)';
+    tdId.textContent = '#' + (i + 1);
+
+    var tdName = document.createElement('td');
+    tdName.style.fontWeight = '600';
+    tdName.textContent = a.name || '--';
+
+    var tdRole = document.createElement('td');
+    tdRole.textContent = a.role || '--';
+
+    var tdStatus = document.createElement('td');
+    tdStatus.appendChild(buildStatusBadge(ds));
+
+    var tdTask = document.createElement('td');
+    tdTask.style.fontSize = '12px';
+    tdTask.textContent = a.current_task || '--';
+
+    var tdTime = document.createElement('td');
+    tdTime.style.cssText = 'font-size:12px;color:var(--muted-foreground)';
+    tdTime.textContent = timeAgo(a.last_heartbeat);
+
+    var tdAction = document.createElement('td');
+    var label = document.createElement('label');
+    label.className = 'toggle';
+    label.title = 'Enable/Disable agent';
+    var checkbox = document.createElement('input');
+    checkbox.type = 'checkbox';
+    checkbox.checked = ds !== 'DISABLED';
+    (function(agentName) {
+      checkbox.addEventListener('change', function() { toggleAgent(agentName, this.checked); });
+    })(a.name);
+    var slider = document.createElement('span');
+    slider.className = 'toggle-slider';
+    label.appendChild(checkbox);
+    label.appendChild(slider);
+    tdAction.appendChild(label);
+
+    tr.appendChild(tdId);
+    tr.appendChild(tdName);
+    tr.appendChild(tdRole);
+    tr.appendChild(tdStatus);
+    tr.appendChild(tdTask);
+    tr.appendChild(tdTime);
+    tr.appendChild(tdAction);
+    tbody.appendChild(tr);
+  });
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   9. DOCS
+   ══════════════════════════════════════════════════════════════════════ */
+var _docsCache = {};
+var _currentDocSlug = '';
+
+function loadDoc(slug) {
+  _currentDocSlug = slug;
+  // Update active tab
+  document.querySelectorAll('.docs-tab').forEach(function(t) {
+    t.classList.toggle('active', t.dataset.slug === slug);
+  });
+
+  // Check cache
+  if (_docsCache[slug]) {
+    renderDoc(_docsCache[slug]);
+    return;
+  }
+
+  var el = document.getElementById('docs-content');
+  el.textContent = 'Loading...';
+
+  apiFetch('/api/docs/' + encodeURIComponent(slug)).then(function(data) {
+    _docsCache[slug] = data;
+    renderDoc(data);
+  }).catch(function(err) {
+    el.textContent = 'Failed to load: ' + (err.message || err);
+  });
+}
+
+function renderDoc(data) {
+  var el = document.getElementById('docs-content');
+  // Clear
+  while (el.firstChild) el.removeChild(el.firstChild);
+
+  // Populate version filter
+  var versionFilter = document.getElementById('docs-version-filter');
+  while (versionFilter.options.length > 1) versionFilter.remove(1);
+  (data.filters && data.filters.versions || []).forEach(function(v) {
+    var opt = document.createElement('option');
+    opt.value = v;
+    opt.textContent = 'v' + v;
+    versionFilter.appendChild(opt);
+  });
+
+  // Render sections
+  var sections = data.sections || [];
+  sections.forEach(function(sec) {
+    var div = document.createElement('div');
+    div.className = 'doc-section';
+    div.dataset.status = sec.status || '';
+    div.dataset.version = sec.version || '';
+    div.dataset.searchText = (sec.title + ' ' + (sec.body || '')).toLowerCase();
+
+    // Header
+    var header = document.createElement('div');
+    header.className = 'doc-section-header';
+    header.addEventListener('click', function() {
+      div.classList.toggle('open');
+      if (div.classList.contains('open')) initFlowchartsIn(div);
+    });
+
+    var chevron = document.createElement('span');
+    chevron.className = 'doc-section-chevron';
+    chevron.textContent = '\u25B6';
+
+    var title = document.createElement('span');
+    title.className = 'doc-section-title';
+    title.textContent = sec.title;
+
+    header.appendChild(chevron);
+    header.appendChild(title);
+
+    if (sec.status) {
+      var badge = document.createElement('span');
+      badge.className = 'doc-section-badge ' + sec.status;
+      badge.textContent = sec.status.replace('_', ' ');
+      header.appendChild(badge);
+    }
+    if (sec.version) {
+      var verBadge = document.createElement('span');
+      verBadge.className = 'doc-section-badge';
+      verBadge.style.cssText = 'background:rgba(59,130,246,0.15);color:#3b82f6';
+      verBadge.textContent = 'v' + sec.version;
+      header.appendChild(verBadge);
+    }
+
+    div.appendChild(header);
+
+    // Body
+    var body = document.createElement('div');
+    body.className = 'doc-section-body';
+
+    if (sec.body) {
+      renderDocBody(body, sec.body);
+    }
+
+    // Children (h3 subsections)
+    if (sec.children && sec.children.length > 0) {
+      sec.children.forEach(function(child) {
+        var childDiv = document.createElement('div');
+        childDiv.className = 'doc-child';
+        childDiv.dataset.status = child.status || '';
+        childDiv.dataset.version = child.version || '';
+        childDiv.dataset.searchText = (child.title + ' ' + (child.body || '')).toLowerCase();
+
+        var childTitle = document.createElement('div');
+        childTitle.className = 'doc-child-title';
+        childTitle.textContent = child.title;
+        if (child.status) {
+          var childBadge = document.createElement('span');
+          childBadge.className = 'doc-section-badge ' + child.status;
+          childBadge.style.marginLeft = '8px';
+          childBadge.textContent = child.status.replace('_', ' ');
+          childTitle.appendChild(childBadge);
+        }
+        childTitle.addEventListener('click', function() {
+          childDiv.classList.toggle('open');
+          if (childDiv.classList.contains('open')) initFlowchartsIn(childDiv);
+        });
+
+        var childBody = document.createElement('div');
+        childBody.className = 'doc-child-body';
+        renderDocBody(childBody, child.body || '');
+
+        childDiv.appendChild(childTitle);
+        childDiv.appendChild(childBody);
+        body.appendChild(childDiv);
+      });
+    }
+
+    div.appendChild(body);
+    el.appendChild(div);
+  });
+
+  // Update count
+  document.getElementById('docs-count').textContent = sections.length + ' sections';
+  filterDocSections();
+}
+
+function filterDocSections() {
+  var query = (document.getElementById('docs-search').value || '').toLowerCase();
+  var statusFilter = document.getElementById('docs-status-filter').value;
+  var versionFilter = document.getElementById('docs-version-filter').value;
+
+  var sections = document.querySelectorAll('#docs-content .doc-section');
+  var visible = 0;
+
+  sections.forEach(function(sec) {
+    var matchSearch = !query || (sec.dataset.searchText || '').indexOf(query) >= 0;
+    var matchStatus = !statusFilter || sec.dataset.status === statusFilter;
+    var matchVersion = !versionFilter || sec.dataset.version === versionFilter;
+
+    // Also check children
+    var childMatch = false;
+    sec.querySelectorAll('.doc-child').forEach(function(child) {
+      var cm = (!query || (child.dataset.searchText || '').indexOf(query) >= 0) &&
+               (!statusFilter || child.dataset.status === statusFilter) &&
+               (!versionFilter || child.dataset.version === versionFilter);
+      child.style.display = cm ? '' : 'none';
+      if (cm) childMatch = true;
+    });
+
+    var show = (matchSearch || childMatch) && matchStatus && matchVersion;
+    sec.style.display = show ? '' : 'none';
+    if (show) visible++;
+  });
+
+  document.getElementById('docs-count').textContent = visible + '/' + sections.length + ' sections';
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   9b. DOCS — FLOWCHART RENDERER (Cytoscape.js + dagre)
+   ══════════════════════════════════════════════════════════════════════ */
+var _flowchartCounter = 0;
+
+/**
+ * Parse simple flowchart syntax into Cytoscape elements.
+ *
+ * Supported syntax (one statement per line):
+ *   A --> B          edge from A to B
+ *   A --> B --> C    chained edges
+ *   A[My Label]      define label for node A
+ *   A(Round Label)   define label for node A (round style treated same)
+ *
+ * Returns { nodes: [{data:{id,label}}], edges: [{data:{source,target}}] }
+ */
+function parseFlowchart(src) {
+  var nodeLabels = {};
+  var edgeSet = {};
+  var nodeIds = {};
+  var lines = src.split('\n');
+
+  for (var i = 0; i < lines.length; i++) {
+    var line = lines[i].trim();
+    if (!line || line.indexOf('```') === 0) continue;
+
+    // Detect node label definitions: A[Label text] or A(Label text)
+    var labelMatch = line.match(/^([A-Za-z0-9_]+)\s*[\[\(](.+?)[\]\)]\s*$/);
+    if (labelMatch && line.indexOf('-->') < 0) {
+      nodeLabels[labelMatch[1]] = labelMatch[2];
+      nodeIds[labelMatch[1]] = true;
+      continue;
+    }
+
+    // Detect inline labels in edge chains: A[Label] --> B[Label]
+    var inlinePattern = /([A-Za-z0-9_]+)\s*[\[\(]([^\]\)]+)[\]\)]/g;
+    var inlineMatch;
+    while ((inlineMatch = inlinePattern.exec(line)) !== null) {
+      nodeLabels[inlineMatch[1]] = inlineMatch[2];
+    }
+
+    // Strip inline labels for edge parsing
+    var cleanLine = line.replace(/\s*[\[\(][^\]\)]+[\]\)]/g, '');
+
+    // Detect edges: A --> B (possibly chained: A --> B --> C)
+    if (cleanLine.indexOf('-->') >= 0) {
+      var parts = cleanLine.split(/\s*-->\s*/);
+      for (var j = 0; j < parts.length; j++) {
+        var nodeId = parts[j].trim();
+        if (nodeId) nodeIds[nodeId] = true;
+        if (j > 0) {
+          var prevId = parts[j - 1].trim();
+          var curId = parts[j].trim();
+          if (prevId && curId) {
+            edgeSet[prevId + '|' + curId] = { source: prevId, target: curId };
+          }
+        }
+      }
+    }
+  }
+
+  var nodes = [];
+  var ids = Object.keys(nodeIds);
+  for (var k = 0; k < ids.length; k++) {
+    nodes.push({ data: { id: ids[k], label: nodeLabels[ids[k]] || ids[k] } });
+  }
+
+  var edges = [];
+  var edgeKeys = Object.keys(edgeSet);
+  for (var m = 0; m < edgeKeys.length; m++) {
+    edges.push({ data: edgeSet[edgeKeys[m]] });
+  }
+
+  return { nodes: nodes, edges: edges };
+}
+
+/**
+ * Render a flowchart into a container using Cytoscape + dagre layout.
+ */
+function renderFlowchartInto(container, flowchartSrc) {
+  if (typeof cytoscape === 'undefined') {
+    container.textContent = 'Cytoscape.js not loaded';
+    return;
+  }
+
+  var parsed = parseFlowchart(flowchartSrc);
+  if (parsed.nodes.length === 0) {
+    container.textContent = '(empty flowchart)';
+    return;
+  }
+
+  var elements = parsed.nodes.concat(parsed.edges);
+
+  // dagre if available, otherwise cose
+  var layoutName = 'cose';
+  try {
+    if (typeof cytoscapeDagre !== 'undefined' || typeof dagre !== 'undefined') {
+      layoutName = 'dagre';
+    }
+  } catch (e) { /* ignore */ }
+
+  var cy = cytoscape({
+    container: container,
+    elements: elements,
+    layout: {
+      name: layoutName,
+      rankDir: 'TB',
+      nodeSep: 50,
+      rankSep: 60,
+      padding: 20
+    },
+    style: [
+      {
+        selector: 'node',
+        style: {
+          'label': 'data(label)',
+          'text-valign': 'center',
+          'text-halign': 'center',
+          'background-color': '#3b82f6',
+          'color': '#fff',
+          'font-size': '12px',
+          'width': 'label',
+          'height': 'label',
+          'padding': '12px',
+          'shape': 'round-rectangle',
+          'text-wrap': 'wrap',
+          'text-max-width': '120px',
+          'border-width': 1,
+          'border-color': '#2563eb'
+        }
+      },
+      {
+        selector: 'edge',
+        style: {
+          'width': 2,
+          'line-color': '#94a3b8',
+          'target-arrow-color': '#64748b',
+          'target-arrow-shape': 'triangle',
+          'curve-style': 'bezier',
+          'arrow-scale': 1.2
+        }
+      }
+    ],
+    userZoomingEnabled: true,
+    userPanningEnabled: true,
+    boxSelectionEnabled: false
+  });
+
+  cy.on('layoutstop', function() {
+    cy.fit(undefined, 20);
+  });
+}
+
+/**
+ * Render body text for a doc section, detecting flowchart/mermaid fenced blocks
+ * and preparing them for deferred Cytoscape rendering on section open.
+ */
+function renderDocBody(parentEl, bodyText) {
+  if (!bodyText) return;
+
+  // Split on fenced flowchart/mermaid blocks
+  var parts = bodyText.split(/(```(?:flowchart|mermaid)\n[\s\S]*?```)/);
+
+  for (var i = 0; i < parts.length; i++) {
+    var part = parts[i];
+    if (!part) continue;
+
+    var fcMatch = part.match(/^```(?:flowchart|mermaid)\n([\s\S]*?)```$/);
+    if (fcMatch) {
+      _flowchartCounter++;
+      var containerId = 'doc-flowchart-' + _flowchartCounter;
+
+      var wrapper = document.createElement('div');
+      wrapper.style.position = 'relative';
+
+      var label = document.createElement('div');
+      label.className = 'doc-flowchart-label';
+      label.textContent = 'flowchart';
+
+      var graphDiv = document.createElement('div');
+      graphDiv.className = 'doc-flowchart';
+      graphDiv.id = containerId;
+      graphDiv.dataset.flowchartSrc = fcMatch[1];
+      graphDiv.dataset.rendered = 'false';
+
+      wrapper.appendChild(label);
+      wrapper.appendChild(graphDiv);
+      parentEl.appendChild(wrapper);
+    } else {
+      var textDiv = document.createElement('div');
+      textDiv.textContent = part;
+      parentEl.appendChild(textDiv);
+    }
+  }
+}
+
+/**
+ * Find unrendered flowchart containers inside a parent element and render them.
+ * Called when a doc section is expanded (becomes visible).
+ */
+function initFlowchartsIn(parentEl) {
+  var charts = parentEl.querySelectorAll('.doc-flowchart[data-rendered="false"]');
+  for (var i = 0; i < charts.length; i++) {
+    var el = charts[i];
+    el.dataset.rendered = 'true';
+    renderFlowchartInto(el, el.dataset.flowchartSrc || '');
+  }
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   10. VIEWS (ViewPort)
+   ══════════════════════════════════════════════════════════════════════ */
+function loadViews() {
+  Promise.all([
+    apiFetch('/api/views/configs'),
+    apiFetch('/api/views/sources')
+  ]).then(function(results) {
+    var configs = (results[0] && results[0].configs) || [];
+    var sources = (results[1] && results[1].sources) || [];
+
+    // Render saved view configs
+    var cfgEl = document.getElementById('views-configs-list');
+    cfgEl.textContent = '';
+    if (configs.length === 0) {
+      var empty = document.createElement('div');
+      empty.className = 'text-muted';
+      empty.textContent = 'No saved views yet. Use the View Builder to create one.';
+      cfgEl.appendChild(empty);
+    } else {
+      configs.forEach(function(cfg) {
+        var row = document.createElement('div');
+        row.style.cssText = 'display:flex;align-items:center;gap:12px;padding:8px 0;border-bottom:1px solid var(--border)';
+        var link = document.createElement('a');
+        link.href = '/view/graph/' + encodeURIComponent(cfg.name);
+        link.target = '_blank';
+        link.style.cssText = 'font-weight:600;font-size:13px';
+        link.textContent = cfg.name;
+        var desc = document.createElement('span');
+        desc.className = 'text-muted';
+        desc.style.fontSize = '12px';
+        desc.textContent = cfg.description || '';
+        var layout = document.createElement('span');
+        layout.className = 'badge badge-muted';
+        layout.style.cssText = 'margin-left:auto;font-size:10px';
+        layout.textContent = cfg.layout || 'cluster';
+        row.appendChild(link);
+        row.appendChild(desc);
+        row.appendChild(layout);
+        cfgEl.appendChild(row);
+      });
+    }
+
+    // Render data sources
+    var srcEl = document.getElementById('views-sources-list');
+    srcEl.textContent = '';
+    if (sources.length === 0) {
+      var noSrc = document.createElement('div');
+      noSrc.className = 'text-muted';
+      noSrc.textContent = 'No data sources registered.';
+      srcEl.appendChild(noSrc);
+    } else {
+      sources.forEach(function(src) {
+        var row = document.createElement('div');
+        row.style.cssText = 'display:flex;align-items:center;gap:12px;padding:8px 0;border-bottom:1px solid var(--border)';
+        var name = document.createElement('a');
+        name.href = '/view/graph/' + encodeURIComponent(src.name);
+        name.target = '_blank';
+        name.style.cssText = 'font-weight:600;font-size:13px';
+        name.textContent = src.name;
+        var cat = document.createElement('span');
+        cat.className = 'badge badge-muted';
+        cat.style.cssText = 'font-size:10px';
+        cat.textContent = src.category || 'data';
+        var types = document.createElement('span');
+        types.className = 'text-muted';
+        types.style.fontSize = '12px';
+        types.textContent = (src.node_types || []).join(', ');
+        row.appendChild(name);
+        row.appendChild(cat);
+        row.appendChild(types);
+        srcEl.appendChild(row);
+      });
+    }
+  }).catch(function(err) {
+    console.error('loadViews error:', err);
+    var cfgEl = document.getElementById('views-configs-list');
+    cfgEl.textContent = 'Failed to load views.';
+    var srcEl = document.getElementById('views-sources-list');
+    srcEl.textContent = '';
+  });
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   INIT
+   ══════════════════════════════════════════════════════════════════════ */
+/* ══════════════════════════════════════════════════════════════════════════
+   MODE CONTROL STRIP
+   ══════════════════════════════════════════════════════════════════════ */
+var _modeIcons = {
+  lightning: '\u26A1',
+  factory: '\uD83C\uDFED',
+  brain: '\uD83E\uDDE0',
+  microscope: '\uD83D\uDD2C'
+};
+var _modeStatus = null; // last fetched status cache
+
+function _clearChildren(el) {
+  while (el.firstChild) el.removeChild(el.firstChild);
+}
+
+function loadModeStatus() {
+  apiFetch('/api/mode/status').then(function(data) {
+    _modeStatus = data;
+    _applyModeStatus(data);
+  }).catch(function() {});
+}
+
+function _applyModeStatus(data) {
+  if (!data) return;
+
+  // Update pill icon + label
+  var iconEl = document.getElementById('mode-icon');
+  var labelEl = document.getElementById('mode-label');
+  if (iconEl && labelEl) {
+    var modes = data.available_modes || [];
+    var activeMode = modes.find(function(m) { return m.id === data.active; });
+    var iconName = activeMode ? activeMode.icon : 'lightning';
+    iconEl.textContent = _modeIcons[iconName] || '';
+    labelEl.textContent = activeMode ? activeMode.name : 'Normal Fleet';
+  }
+
+  // Build dropdown items
+  var dd = document.getElementById('mode-dropdown');
+  if (dd) {
+    _clearChildren(dd);
+    (data.available_modes || []).forEach(function(m) {
+      var item = document.createElement('div');
+      item.className = 'mode-dropdown-item' + (m.id === data.active ? ' active' : '');
+
+      var nameEl = document.createElement('div');
+      nameEl.className = 'mode-item-name';
+      nameEl.textContent = (_modeIcons[m.icon] || '') + ' ' + m.name;
+
+      var descEl = document.createElement('div');
+      descEl.className = 'mode-item-desc';
+      descEl.textContent = m.description || '';
+
+      var stateEl = document.createElement('div');
+      var stateVal = m.id === data.active ? (data.state || 'running') : (m.state || 'available');
+      stateEl.className = 'mode-item-state ' + stateVal;
+      stateEl.textContent = stateVal;
+
+      item.appendChild(nameEl);
+      item.appendChild(descEl);
+      item.appendChild(stateEl);
+      item.onclick = function() { selectMode(m.id); };
+      dd.appendChild(item);
+    });
+  }
+
+  // Build modifier chips (only enabled ones)
+  var chipsEl = document.getElementById('mode-chips');
+  if (chipsEl) {
+    _clearChildren(chipsEl);
+    var mods = data.modifiers || {};
+    if (mods.queue_paused) {
+      var c = document.createElement('span');
+      c.className = 'mode-chip';
+      c.textContent = 'Queue Paused';
+      chipsEl.appendChild(c);
+    }
+    if (mods.api_gate && mods.api_gate.enabled) {
+      var c2 = document.createElement('span');
+      c2.className = 'mode-chip';
+      c2.textContent = 'API Gate $' + (mods.api_gate.spent || 0).toFixed(2) + '/$' + (mods.api_gate.budget || 0).toFixed(2);
+      chipsEl.appendChild(c2);
+    }
+    if (mods.eco_mode) {
+      var c3 = document.createElement('span');
+      c3.className = 'mode-chip';
+      c3.textContent = 'Eco Mode';
+      chipsEl.appendChild(c3);
+    }
+    if (mods.offline_mode) {
+      var c4 = document.createElement('span');
+      c4.className = 'mode-chip';
+      c4.textContent = 'Offline';
+      chipsEl.appendChild(c4);
+    }
+    if (mods.hitl_evolution) {
+      var c5 = document.createElement('span');
+      c5.className = 'mode-chip';
+      c5.textContent = 'HITL Evo';
+      chipsEl.appendChild(c5);
+    }
+  }
+
+  // Build modifier drawer toggles
+  var drawer = document.getElementById('modifier-drawer');
+  if (drawer) {
+    _clearChildren(drawer);
+    var mods2 = data.modifiers || {};
+    var modDefs = [
+      { name: 'queue_paused', label: 'Queue Pause', value: !!mods2.queue_paused },
+      { name: 'api_gate', label: 'API Gate', value: !!(mods2.api_gate && mods2.api_gate.enabled) },
+      { name: 'eco_mode', label: 'Eco Mode', value: !!mods2.eco_mode },
+      { name: 'offline_mode', label: 'Offline Mode', value: !!mods2.offline_mode },
+      { name: 'hitl_evolution', label: 'HITL Evolution', value: !!mods2.hitl_evolution }
+    ];
+    modDefs.forEach(function(def) {
+      var item = document.createElement('div');
+      item.className = 'modifier-item';
+
+      var lbl = document.createElement('span');
+      lbl.className = 'modifier-label';
+      lbl.textContent = def.label;
+
+      var toggleWrap = document.createElement('label');
+      toggleWrap.className = 'modifier-toggle';
+
+      var inp = document.createElement('input');
+      inp.type = 'checkbox';
+      inp.checked = def.value;
+      inp.onchange = (function(n) { return function() { toggleModifier(n); }; })(def.name);
+
+      var slider = document.createElement('span');
+      slider.className = 'modifier-slider';
+
+      toggleWrap.appendChild(inp);
+      toggleWrap.appendChild(slider);
+      item.appendChild(lbl);
+      item.appendChild(toggleWrap);
+
+      // Inline budget info for api_gate when enabled
+      if (def.name === 'api_gate' && mods2.api_gate && mods2.api_gate.enabled) {
+        var budget = document.createElement('span');
+        budget.style.cssText = 'font-size:11px;color:var(--muted-foreground);';
+        budget.textContent = '$' + (mods2.api_gate.spent || 0).toFixed(2) + ' / $' + (mods2.api_gate.budget || 0).toFixed(2);
+        item.appendChild(budget);
+      }
+
+      drawer.appendChild(item);
+    });
+  }
+}
+
+function toggleModeDropdown() {
+  var dd = document.getElementById('mode-dropdown');
+  if (!dd) return;
+  var isOpen = dd.style.display !== 'none';
+  if (isOpen) {
+    dd.style.display = 'none';
+  } else {
+    dd.style.display = 'block';
+    setTimeout(function() {
+      document.addEventListener('click', function _closeDd(e) {
+        if (!dd.contains(e.target) && e.target.id !== 'mode-selector') {
+          dd.style.display = 'none';
+          document.removeEventListener('click', _closeDd);
+        }
+      });
+    }, 0);
+  }
+}
+
+function selectMode(modeId) {
+  var dd = document.getElementById('mode-dropdown');
+  if (dd) dd.style.display = 'none';
+  if (_modeStatus && _modeStatus.active === modeId) return;
+
+  apiFetch('/api/mode/switch', { method: 'POST', body: { mode: modeId, force: false } }).then(function(resp) {
+    if (resp.conflict) {
+      _showModeConfirm(resp.message || ('Stop current mode and switch to ' + modeId + '?'), function() {
+        var expectedCurrent = resp.current;
+        var btn = document.getElementById('mode-selector');
+        if (btn) btn.disabled = true;
+        var _reenableTimer = setTimeout(function() { if (btn) btn.disabled = false; }, 10000);
+        window._modeReenableTimer = _reenableTimer;
+
+        apiFetch('/api/mode/switch', { method: 'POST', body: { mode: modeId, force: true, expected_current: expectedCurrent } })
+          .then(function(r) {
+            if (r.error === 'stale') {
+              clearTimeout(_reenableTimer);
+              if (btn) btn.disabled = false;
+              loadModeStatus();
+              showToast('Mode changed while dialog was open — status refreshed', 'warning');
+            } else if (r.fallback) {
+              clearTimeout(_reenableTimer);
+              if (btn) btn.disabled = false;
+              showToast('Mode switch failed: ' + (r.error || 'unknown'), 'error');
+              loadModeStatus();
+            }
+            // SSE will confirm and re-enable button on success
+          })
+          .catch(function(e) {
+            clearTimeout(_reenableTimer);
+            if (btn) btn.disabled = false;
+            showToast('Mode switch error: ' + e, 'error');
+          });
+      });
+    } else if (resp.success) {
+      loadModeStatus();
+    }
+  }).catch(function(e) {
+    showToast('Mode switch error: ' + e, 'error');
+  });
+}
+
+function _showModeConfirm(message, onConfirm) {
+  var overlay = document.createElement('div');
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:200;display:flex;align-items:center;justify-content:center;';
+
+  var card = document.createElement('div');
+  card.style.cssText = 'background:var(--card);border:1px solid var(--border);border-radius:12px;padding:24px;max-width:400px;width:100%;';
+
+  var msg = document.createElement('p');
+  msg.style.marginBottom = '16px';
+  msg.textContent = message;
+
+  var actions = document.createElement('div');
+  actions.style.cssText = 'display:flex;gap:8px;justify-content:flex-end;';
+
+  var cancelBtn = document.createElement('button');
+  cancelBtn.className = 'btn btn-sm btn-outline';
+  cancelBtn.textContent = 'Cancel';
+  cancelBtn.onclick = function() { document.body.removeChild(overlay); };
+
+  var switchBtn = document.createElement('button');
+  switchBtn.className = 'btn btn-sm';
+  switchBtn.style.cssText = 'background:var(--destructive);color:#fff;';
+  switchBtn.textContent = 'Switch';
+  switchBtn.onclick = function() { document.body.removeChild(overlay); onConfirm(); };
+
+  actions.appendChild(cancelBtn);
+  actions.appendChild(switchBtn);
+  card.appendChild(msg);
+  card.appendChild(actions);
+  overlay.appendChild(card);
+  document.body.appendChild(overlay);
+}
+
+function toggleModifierDrawer() {
+  var drawer = document.getElementById('modifier-drawer');
+  if (!drawer) return;
+  drawer.style.display = drawer.style.display === 'none' ? 'grid' : 'none';
+}
+
+function toggleModifier(name) {
+  if (!_modeStatus) return;
+  var mods = _modeStatus.modifiers || {};
+
+  var url;
+  if (name === 'queue_paused') {
+    url = mods.queue_paused ? '/api/queue/resume' : '/api/queue/pause';
+    apiFetch(url, { method: 'POST', body: {} })
+      .then(function() { loadModeStatus(); })
+      .catch(function(e) { console.error('toggleModifier queue_paused failed:', e); loadModeStatus(); });
+  } else if (name === 'api_gate') {
+    var gateEnabled = mods.api_gate && mods.api_gate.enabled;
+    url = gateEnabled ? '/api/gate/disable' : '/api/gate/enable';
+    apiFetch(url, { method: 'POST', body: {} })
+      .then(function() { loadModeStatus(); })
+      .catch(function(e) { console.error('toggleModifier api_gate failed:', e); loadModeStatus(); });
+  } else if (name === 'eco_mode') {
+    apiFetch('/api/settings/fleet', { method: 'PUT', body: { eco_mode: !mods.eco_mode } })
+      .then(function() { loadModeStatus(); })
+      .catch(function(e) { console.error('toggleModifier eco_mode failed:', e); loadModeStatus(); });
+  } else if (name === 'offline_mode') {
+    apiFetch('/api/settings/fleet', { method: 'PUT', body: { offline_mode: !mods.offline_mode } })
+      .then(function() { loadModeStatus(); })
+      .catch(function(e) { console.error('toggleModifier offline_mode failed:', e); loadModeStatus(); });
+  } else if (name === 'hitl_evolution') {
+    apiFetch('/api/settings/fleet', { method: 'PUT', body: { hitl_evolution: !mods.hitl_evolution } })
+      .then(function() { loadModeStatus(); })
+      .catch(function(e) { console.error('toggleModifier hitl_evolution failed:', e); loadModeStatus(); });
+  }
+}
+
+(function init() {
+  _loaded['dashboard'] = true;
+  loadDashboard();
+  connectSSE();
+  loadModeStatus();
+
+  /* ── Adaptive polling — 2s active, 60s hidden, SSE stays connected ───── */
+  var _POLL_ACTIVE = 2000, _POLL_HIDDEN = 60000;
+  var _pollTimers = {};
+
+  function _schedulePoll(name, fn) {
+    clearTimeout(_pollTimers[name]);
+    var delay = document.hidden ? _POLL_HIDDEN : _POLL_ACTIVE;
+    _pollTimers[name] = setTimeout(function _tick() {
+      fn();
+      _pollTimers[name] = setTimeout(_tick, document.hidden ? _POLL_HIDDEN : _POLL_ACTIVE);
+    }, delay);
+  }
+
+  /* On tab focus change, reschedule all polls at new rate */
+  document.addEventListener('visibilitychange', function() {
+    Object.keys(_pollTimers).forEach(function(name) { /* timers auto-adjust on next tick */ });
+  });
+
+  /* HITL badge: SSE hitl_new handles real-time, this is 60s fallback only */
+  setInterval(function() {
+    apiFetch('/api/tasks/waiting-human').then(function(data) {
+      var badge = document.getElementById('hitl-badge');
+      if (data.length > 0) {
+        badge.textContent = String(data.length);
+        badge.classList.remove('hidden');
+      } else {
+        badge.classList.add('hidden');
+      }
+    }).catch(function() {});
+  }, 60000);
+
+  /* ── SSE handles status + thermal via server push.
+     Activity chart polls adaptively (2s active / 60s hidden). ── */
+  _schedulePoll('activity', function() {
+    if (!_sseConnected && document.getElementById('section-dashboard').classList.contains('active')) {
+      loadActivityChart();
+    }
+  });
+
+  /* ── API Gate Controls ─────────────────────────────────────────────────── */
+  buildGateCard();
+  /* Gate poll removed (QW3) — gate_enabled/gate_disabled SSE events handle updates */
+
+  /* ── Dev: right-click to refresh ─────────────────────────────────────── */
+  document.addEventListener('contextmenu', function(e) {
+    e.preventDefault();
+    if (e.shiftKey) {
+      // Shift+right-click: hard reload (dev feature)
+      location.reload();
+    } else {
+      // Right-click: soft refresh current section
+      var activeNav = document.querySelector('.nav-item.active');
+      var section = activeNav ? activeNav.dataset.section : 'dashboard';
+      loadSectionData(section);
+    }
+  });
+
+  /* ── PyWebView bridge: minimize to tray on close ──────────────────────── */
+  if (window.pywebview && window.pywebview.api) {
+    window.addEventListener('beforeunload', function(e) {
+      window.pywebview.api.minimize_to_tray();
+    });
+  }
+})();
+
+/* ── Ingest Hub ──────────────────────────────────────────────────────────── */
+var _ingestSources = [];
+var _ingestExpanded = null;
+var _sourceColors = { coder: '#f59e0b', researcher: '#3b82f6', security: '#ef4444', archivist: '#8b5cf6', analyst: '#06b6d4' };
+
+function loadIngest() {
+  apiFetch('/api/ingest/sources').then(function(d) {
+    _ingestSources = d.sources || d || [];
+    renderSourcePills();
+    loadIngestStaging();
+    loadIngestCache();
+  }).catch(function(e) {
+    console.warn('loadIngest failed', e);
+  });
+}
+
+function renderSourcePills() {
+  var wrap = document.getElementById('ingest-source-pills');
+  if (!wrap) return;
+  wrap.textContent = '';
+  _ingestSources.forEach(function(s) {
+    var btn = document.createElement('button');
+    btn.className = 'btn btn-sm';
+    var color = _sourceColors[s.agent_role] || '#6b7280';
+    btn.style.cssText = 'border:1px solid ' + color + ';color:' + color + ';background:transparent;cursor:pointer;';
+    if (_ingestExpanded === s.id) {
+      btn.style.boxShadow = '0 0 0 2px ' + color;
+    }
+    btn.textContent = s.dataset_id || s.name || 'Source ' + s.id;
+    btn.setAttribute('onclick', 'toggleSourcePanel(' + JSON.stringify(s.id) + ')');
+    wrap.appendChild(btn);
+  });
+  // Local Files button
+  var fileBtn = document.createElement('button');
+  fileBtn.className = 'btn btn-sm';
+  fileBtn.style.cssText = 'border:1px solid #6b7280;color:#6b7280;background:transparent;cursor:pointer;';
+  fileBtn.textContent = '\uD83D\uDCC1 Local Files';
+  fileBtn.setAttribute('onclick', 'document.getElementById("ingest-file-input").click()');
+  wrap.appendChild(fileBtn);
+  // + Add Source button
+  var addBtn = document.createElement('button');
+  addBtn.className = 'btn btn-sm';
+  addBtn.style.cssText = 'border:1px dashed #6b7280;color:#6b7280;background:transparent;cursor:pointer;';
+  addBtn.textContent = '+ Add Source';
+  addBtn.setAttribute('onclick', 'showAddSourceModal()');
+  wrap.appendChild(addBtn);
+  // Hidden file input
+  if (!document.getElementById('ingest-file-input')) {
+    var inp = document.createElement('input');
+    inp.type = 'file';
+    inp.multiple = true;
+    inp.id = 'ingest-file-input';
+    inp.style.display = 'none';
+    inp.setAttribute('onchange', 'handleLocalFileUpload()');
+    wrap.appendChild(inp);
+  }
+}
+
+function toggleSourcePanel(sourceId) {
+  var panel = document.getElementById('ingest-expanded-panel');
+  if (!panel) return;
+  if (_ingestExpanded === sourceId) {
+    _ingestExpanded = null;
+    panel.style.display = 'none';
+    panel.textContent = '';
+    renderSourcePills();
+    return;
+  }
+  _ingestExpanded = sourceId;
+  renderSourcePills();
+  panel.style.display = 'block';
+  panel.textContent = '';
+  var src = null;
+  for (var i = 0; i < _ingestSources.length; i++) {
+    if (_ingestSources[i].id === sourceId) { src = _ingestSources[i]; break; }
+  }
+  if (!src) return;
+  // Header
+  var header = document.createElement('div');
+  header.style.cssText = 'display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;';
+  var titleDiv = document.createElement('div');
+  var h3 = document.createElement('h3');
+  h3.style.margin = '0';
+  h3.textContent = src.dataset_id || src.name || 'Source';
+  titleDiv.appendChild(h3);
+  var meta = document.createElement('span');
+  meta.style.cssText = 'font-size:12px;color:var(--muted-foreground);';
+  meta.textContent = (src.skill || '') + ' \u00B7 ' + (src.agent_role || '');
+  titleDiv.appendChild(meta);
+  header.appendChild(titleDiv);
+  // Destination select
+  var selectWrap = document.createElement('div');
+  selectWrap.style.cssText = 'display:flex;align-items:center;gap:8px;';
+  var lbl = document.createElement('label');
+  lbl.textContent = 'Destination:';
+  lbl.style.cssText = 'font-size:12px;color:var(--muted-foreground);';
+  var sel = document.createElement('select');
+  sel.id = 'ingest-dest-select';
+  sel.className = 'form-control';
+  sel.style.cssText = 'width:auto;padding:4px 8px;font-size:12px;';
+  var optTasks = document.createElement('option');
+  optTasks.value = 'tasks';
+  optTasks.textContent = 'Tasks';
+  sel.appendChild(optTasks);
+  var optRag = document.createElement('option');
+  optRag.value = 'rag';
+  optRag.textContent = 'RAG';
+  sel.appendChild(optRag);
+  selectWrap.appendChild(lbl);
+  selectWrap.appendChild(sel);
+  // Fetch button
+  var fetchBtn = document.createElement('button');
+  fetchBtn.className = 'btn btn-sm btn-primary';
+  fetchBtn.textContent = 'Fetch Rows';
+  fetchBtn.setAttribute('onclick', 'fetchSourceRows(' + JSON.stringify(sourceId) + ', 0)');
+  selectWrap.appendChild(fetchBtn);
+  header.appendChild(selectWrap);
+  panel.appendChild(header);
+  // Row preview area
+  var preview = document.createElement('div');
+  preview.id = 'ingest-row-preview';
+  preview.style.cssText = 'min-height:40px;';
+  panel.appendChild(preview);
+}
+
+function fetchSourceRows(sourceId, offset) {
+  var container = document.getElementById('ingest-row-preview');
+  if (!container) return;
+  container.textContent = 'Loading\u2026';
+  apiFetch('/api/ingest/sources/' + encodeURIComponent(sourceId) + '/rows?offset=' + (offset || 0) + '&limit=10').then(function(d) {
+    container.textContent = '';
+    var rows = d.rows || d || [];
+    if (rows.length === 0) {
+      var empty = document.createElement('p');
+      empty.style.cssText = 'color:var(--muted-foreground);font-size:13px;';
+      empty.textContent = 'No rows found.';
+      container.appendChild(empty);
+      return;
+    }
+    rows.forEach(function(row, idx) {
+      var item = document.createElement('div');
+      item.style.cssText = 'display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--border);';
+      var cb = document.createElement('input');
+      cb.type = 'checkbox';
+      cb.className = 'ingest-row-cb';
+      cb.dataset.rowId = row.id || idx;
+      cb.dataset.sourceId = sourceId;
+      item.appendChild(cb);
+      var text = document.createElement('span');
+      text.style.cssText = 'flex:1;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;';
+      var content = row.content || row.text || JSON.stringify(row);
+      text.textContent = content.length > 80 ? content.substring(0, 80) + '\u2026' : content;
+      item.appendChild(text);
+      var tokens = document.createElement('span');
+      tokens.style.cssText = 'font-size:11px;color:var(--muted-foreground);white-space:nowrap;';
+      tokens.textContent = (row.tokens || 0) + ' tok';
+      item.appendChild(tokens);
+      container.appendChild(item);
+    });
+    // Navigation buttons
+    var nav = document.createElement('div');
+    nav.style.cssText = 'display:flex;gap:8px;margin-top:8px;';
+    if ((offset || 0) > 0) {
+      var prevBtn = document.createElement('button');
+      prevBtn.className = 'btn btn-sm btn-outline';
+      prevBtn.textContent = '\u2190 Prev';
+      prevBtn.setAttribute('onclick', 'fetchSourceRows(' + JSON.stringify(sourceId) + ',' + Math.max(0, (offset || 0) - 10) + ')');
+      nav.appendChild(prevBtn);
+    }
+    if (rows.length >= 10) {
+      var nextBtn = document.createElement('button');
+      nextBtn.className = 'btn btn-sm btn-outline';
+      nextBtn.textContent = 'Next \u2192';
+      nextBtn.setAttribute('onclick', 'fetchSourceRows(' + JSON.stringify(sourceId) + ',' + ((offset || 0) + 10) + ')');
+      nav.appendChild(nextBtn);
+    }
+    var selectAllLabel = document.createElement('label');
+    selectAllLabel.style.cssText = 'display:flex;align-items:center;gap:4px;font-size:12px;color:var(--muted-foreground);cursor:pointer;margin-left:auto;';
+    var selectAllCb = document.createElement('input');
+    selectAllCb.type = 'checkbox';
+    selectAllCb.addEventListener('change', function() {
+      document.querySelectorAll('.ingest-row-cb').forEach(function(cb) { cb.checked = selectAllCb.checked; });
+    });
+    selectAllLabel.appendChild(selectAllCb);
+    selectAllLabel.appendChild(document.createTextNode('Select All'));
+    nav.appendChild(selectAllLabel);
+    var stageBtn = document.createElement('button');
+    stageBtn.className = 'btn btn-sm btn-primary';
+    stageBtn.textContent = 'Stage Selected';
+    stageBtn.setAttribute('onclick', 'stageSelectedRows()');
+    nav.appendChild(stageBtn);
+    container.appendChild(nav);
+  }).catch(function(e) {
+    container.textContent = '';
+    var err = document.createElement('p');
+    err.style.color = 'var(--destructive)';
+    err.textContent = 'Failed to fetch rows: ' + (e.message || e);
+    container.appendChild(err);
+  });
+}
+
+function stageSelectedRows() {
+  var cbs = document.querySelectorAll('.ingest-row-cb:checked');
+  if (cbs.length === 0) return;
+  var dest = 'tasks';
+  var destSel = document.getElementById('ingest-dest-select');
+  if (destSel) dest = destSel.value;
+  var items = [];
+  cbs.forEach(function(cb) {
+    items.push({ row_id: cb.dataset.rowId, source_id: cb.dataset.sourceId, destination: dest });
+  });
+  apiFetch('/api/ingest/stage', { method: 'POST', body: { items: items } }).then(function() {
+    loadIngestStaging();
+  }).catch(function(e) {
+    console.warn('stageSelectedRows failed', e);
+  });
+}
+
+function loadIngestStaging() {
+  var list = document.getElementById('ingest-staging-list');
+  if (!list) return;
+  apiFetch('/api/ingest/staging').then(function(d) {
+    list.textContent = '';
+    var items = d.items || d || [];
+    if (items.length === 0) {
+      var empty = document.createElement('p');
+      empty.style.cssText = 'color:var(--muted-foreground);font-size:13px;text-align:center;padding:16px 0;';
+      empty.textContent = 'No staged items';
+      list.appendChild(empty);
+      return;
+    }
+    items.forEach(function(item) {
+      var row = document.createElement('div');
+      row.style.cssText = 'display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--border);';
+      var cb = document.createElement('input');
+      cb.type = 'checkbox';
+      cb.className = 'ingest-staged-cb';
+      cb.dataset.id = item.id;
+      cb.checked = true;
+      row.appendChild(cb);
+      var dot = document.createElement('span');
+      dot.textContent = '\u25CF';
+      dot.style.color = _sourceColors[item.agent_role] || '#6b7280';
+      row.appendChild(dot);
+      var title = document.createElement('span');
+      title.style.cssText = 'flex:1;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;';
+      title.textContent = item.title || item.content || 'Item ' + item.id;
+      row.appendChild(title);
+      var tokens = document.createElement('span');
+      tokens.style.cssText = 'font-size:11px;color:var(--muted-foreground);white-space:nowrap;';
+      tokens.textContent = (item.tokens || 0) + ' tok';
+      row.appendChild(tokens);
+      var badge = document.createElement('span');
+      badge.style.cssText = 'font-size:10px;padding:2px 6px;border-radius:4px;background:var(--card);color:var(--muted-foreground);';
+      badge.textContent = item.destination || 'tasks';
+      row.appendChild(badge);
+      var rmBtn = document.createElement('button');
+      rmBtn.style.cssText = 'background:none;border:none;color:var(--muted-foreground);cursor:pointer;font-size:14px;padding:2px 4px;';
+      rmBtn.textContent = '\u2715';
+      rmBtn.setAttribute('onclick', 'unstageItem(' + JSON.stringify(item.id) + ')');
+      row.appendChild(rmBtn);
+      list.appendChild(row);
+    });
+  }).catch(function(e) {
+    console.warn('loadIngestStaging failed', e);
+  });
+}
+
+function ingestDispatchAll() {
+  var cbs = document.querySelectorAll('.ingest-staged-cb:checked');
+  if (cbs.length === 0) return;
+  var ids = [];
+  cbs.forEach(function(cb) { ids.push(cb.dataset.id); });
+  apiFetch('/api/ingest/dispatch', { method: 'POST', body: { ids: ids } }).then(function() {
+    loadIngestStaging();
+  }).catch(function(e) {
+    console.warn('ingestDispatchAll failed', e);
+  });
+}
+
+function ingestClearStaging() {
+  apiFetch('/api/ingest/staging').then(function(d) {
+    var items = d.items || d || [];
+    var promises = items.map(function(item) {
+      return apiFetch('/api/ingest/staging/' + encodeURIComponent(item.id), { method: 'DELETE' });
+    });
+    return Promise.all(promises);
+  }).then(function() {
+    loadIngestStaging();
+  }).catch(function(e) {
+    console.warn('ingestClearStaging failed', e);
+  });
+}
+
+function unstageItem(id) {
+  apiFetch('/api/ingest/staging/' + encodeURIComponent(id), { method: 'DELETE' }).then(function() {
+    loadIngestStaging();
+  }).catch(function(e) {
+    console.warn('unstageItem failed', e);
+  });
+}
+
+function loadIngestCache() {
+  apiFetch('/api/ingest/cache/stats').then(function(d) {
+    var bar = document.getElementById('ingest-cache-bar');
+    var label = document.getElementById('ingest-cache-label');
+    if (!bar || !label) return;
+    var pct = d.percent || 0;
+    bar.style.width = pct + '%';
+    if (pct < 60) bar.style.background = 'var(--success)';
+    else if (pct < 85) bar.style.background = '#f59e0b';
+    else bar.style.background = 'var(--destructive)';
+    var used = d.used_mb || 0;
+    var total = d.total_mb || 0;
+    label.textContent = used + ' / ' + total + ' MB';
+  }).catch(function(e) {
+    console.warn('loadIngestCache failed', e);
+  });
+}
+
+function handleLocalFileUpload() {
+  var inp = document.getElementById('ingest-file-input');
+  if (!inp || !inp.files) return;
+  var files = inp.files;
+  var uploads = [];
+  for (var i = 0; i < files.length; i++) {
+    (function(file) {
+      var fd = new FormData();
+      fd.append('file', file);
+      uploads.push(
+        fetch('/api/ingest/upload', { method: 'POST', body: fd }).then(function(r) { return r.json(); }).then(function(d) {
+          var item = d.item || d;
+          if (item && item.row_id) {
+            return apiFetch('/api/ingest/stage', { method: 'POST', body: { items: [{ row_id: item.row_id, source_id: item.source_id || 'local', destination: 'tasks' }] } });
+          }
+        })
+      );
+    })(files[i]);
+  }
+  Promise.all(uploads).then(function() {
+    loadIngestStaging();
+    inp.value = '';
+  }).catch(function(e) {
+    console.warn('handleLocalFileUpload failed', e);
+  });
+}
+
+function showAddSourceModal() {
+  // Remove existing modal if any
+  var existing = document.getElementById('ingest-add-source-modal');
+  if (existing) existing.remove();
+  var overlay = document.createElement('div');
+  overlay.id = 'ingest-add-source-modal';
+  overlay.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);display:flex;align-items:center;justify-content:center;z-index:9999;';
+  var modal = document.createElement('div');
+  modal.style.cssText = 'background:var(--card);border:1px solid var(--border);border-radius:8px;padding:24px;width:400px;max-width:90vw;';
+  var title = document.createElement('h3');
+  title.style.cssText = 'margin:0 0 16px 0;';
+  title.textContent = 'Add Ingest Source';
+  modal.appendChild(title);
+  var fields = [
+    { id: 'ingest-new-dataset', label: 'Dataset ID', placeholder: 'e.g. arxiv-cs-2026' },
+    { id: 'ingest-new-skill', label: 'Skill', placeholder: 'e.g. research_ingest' },
+    { id: 'ingest-new-role', label: 'Agent Role', placeholder: 'e.g. researcher' },
+    { id: 'ingest-new-column', label: 'Content Column', placeholder: 'e.g. abstract' }
+  ];
+  fields.forEach(function(f) {
+    var lbl = document.createElement('label');
+    lbl.style.cssText = 'display:block;font-size:12px;color:var(--muted-foreground);margin-bottom:4px;margin-top:12px;';
+    lbl.textContent = f.label;
+    modal.appendChild(lbl);
+    var inp = document.createElement('input');
+    inp.type = 'text';
+    inp.id = f.id;
+    inp.className = 'form-control';
+    inp.placeholder = f.placeholder;
+    inp.style.cssText = 'width:100%;padding:6px 8px;font-size:13px;';
+    modal.appendChild(inp);
+  });
+  var btnWrap = document.createElement('div');
+  btnWrap.style.cssText = 'display:flex;gap:8px;justify-content:flex-end;margin-top:20px;';
+  var cancelBtn = document.createElement('button');
+  cancelBtn.className = 'btn btn-sm btn-outline';
+  cancelBtn.textContent = 'Cancel';
+  cancelBtn.setAttribute('onclick', 'document.getElementById("ingest-add-source-modal").remove()');
+  btnWrap.appendChild(cancelBtn);
+  var addBtn = document.createElement('button');
+  addBtn.className = 'btn btn-sm btn-primary';
+  addBtn.textContent = 'Add';
+  addBtn.setAttribute('onclick', 'submitAddSource()');
+  btnWrap.appendChild(addBtn);
+  modal.appendChild(btnWrap);
+  overlay.appendChild(modal);
+  // Close on overlay click
+  overlay.addEventListener('click', function(e) {
+    if (e.target === overlay) overlay.remove();
+  });
+  document.body.appendChild(overlay);
+}
+
+function submitAddSource() {
+  var datasetId = (document.getElementById('ingest-new-dataset') || {}).value || '';
+  var skill = (document.getElementById('ingest-new-skill') || {}).value || '';
+  var role = (document.getElementById('ingest-new-role') || {}).value || '';
+  var column = (document.getElementById('ingest-new-column') || {}).value || '';
+  if (!datasetId) return;
+  apiFetch('/api/ingest/sources', {
+    method: 'POST',
+    body: { dataset_id: datasetId, skill: skill, agent_role: role, content_column: column }
+  }).then(function() {
+    var modal = document.getElementById('ingest-add-source-modal');
+    if (modal) modal.remove();
+    loadIngest();
+  }).catch(function(e) {
+    console.warn('submitAddSource failed', e);
+  });
+}
+
+/* ── Boot Progress Overlay ─────────────────────────────────────────────── */
+(function() {
+  var BOOT_STAGES = ['pid', 'db', 'ollama', 'dashboard', 'dr_ders', 'workers', 'ready'];
+  var STAGE_LABELS = {pid:'PID Lock', db:'Database', ollama:'Ollama', dashboard:'Dashboard', dr_ders:'Dr. Ders', workers:'Workers', ready:'Ready'};
+  var STATUS_COLORS = {pending:'#555', starting:'#f0ad4e', done:'#28a745', failed:'#dc3545'};
+  var bootTimer = null;
+  var bootHidden = false;
+
+  function renderBootStages(data) {
+    var list = document.getElementById('boot-stage-list');
+    if (!list) return;
+    list.innerHTML = '';
+    BOOT_STAGES.forEach(function(key) {
+      var info = (data.stages && data.stages[key]) || {status:'pending', elapsed:0};
+      var row = document.createElement('div');
+      row.style.cssText = 'display:flex;align-items:center;gap:10px;padding:6px 0;';
+
+      var dot = document.createElement('span');
+      dot.style.cssText = 'width:10px;height:10px;border-radius:50%;flex-shrink:0;background:' + (STATUS_COLORS[info.status] || '#555') + ';';
+      if (info.status === 'starting') dot.style.animation = 'pulse 1s infinite';
+
+      var label = document.createElement('span');
+      label.style.cssText = 'color:var(--text,#e6e8eb);font-size:0.9rem;flex:1;';
+      label.textContent = STAGE_LABELS[key] || key;
+
+      var elapsed = document.createElement('span');
+      elapsed.style.cssText = 'color:var(--muted,#8b949e);font-size:0.8rem;min-width:50px;text-align:right;';
+      elapsed.textContent = info.elapsed > 0 ? info.elapsed.toFixed(1) + 's' : '';
+
+      row.appendChild(dot);
+      row.appendChild(label);
+      row.appendChild(elapsed);
+      list.appendChild(row);
+    });
+  }
+
+  function checkBootStatus() {
+    if (bootHidden) return;
+    fetch('/api/boot/status').then(function(r) { return r.json(); }).then(function(data) {
+      var overlay = document.getElementById('boot-overlay');
+      if (!overlay) { clearInterval(bootTimer); return; }
+      if (!data.stage || data.stage === 'ready' || data.stage === 'unknown' || data.error) {
+        overlay.style.display = 'none';
+        bootHidden = true;
+        clearInterval(bootTimer);
+        var sub = document.getElementById('boot-subtitle');
+        if (sub) sub.textContent = 'Fleet ready.';
+        return;
+      }
+      overlay.style.display = 'flex';
+      renderBootStages(data);
+    }).catch(function() {
+      /* Dashboard not up yet or boot_status file gone -- hide overlay */
+      var overlay = document.getElementById('boot-overlay');
+      if (overlay) overlay.style.display = 'none';
+      bootHidden = true;
+      clearInterval(bootTimer);
+    });
+  }
+
+  /* Add pulse animation for "starting" dots */
+  var style = document.createElement('style');
+  style.textContent = '@keyframes pulse{0%,100%{opacity:1}50%{opacity:0.3}}';
+  document.head.appendChild(style);
+
+  /* Start polling on load */
+  checkBootStatus();
+  bootTimer = setInterval(checkBootStatus, 500);
+})();
+
+/* ── Header Controls: Model Switch + Fleet Start/Stop ─────────────────────── */
+
+function switchModel(model, mode) {
+  if (!model) return;
+  var sel = document.getElementById('header-model-select');
+  if (!sel) return;
+  sel.disabled = true;
+  apiFetch('/api/fleet/model-switch', { method: 'POST', body: { model: model } })
+    .then(function() {
+      showToast('Model switched to ' + model, 'info');
+    })
+    .catch(function(e) {
+      showToast('Model switch failed: ' + e.message, 'error');
+    })
+    .finally(function() { if (sel) sel.disabled = false; });
+}
+
+function fleetStart() {
+  var btn = document.getElementById('btn-fleet-start');
+  btn.disabled = true;
+  btn.textContent = 'Starting...';
+  apiFetch('/api/fleet/start', { method: 'POST' })
+    .then(function() { showToast('Fleet starting...', 'info'); })
+    .catch(function(e) { showToast('Fleet start failed: ' + e.message, 'error'); })
+    .finally(function() { btn.disabled = false; btn.textContent = 'Start Fleet'; });
+}
+
+function fleetStop() {
+  var btn = document.getElementById('btn-fleet-stop');
+  btn.disabled = true;
+  btn.textContent = 'Stopping...';
+  apiFetch('/api/fleet/stop', { method: 'POST' })
+    .then(function() { showToast('Fleet stopped', 'info'); })
+    .catch(function(e) { showToast('Fleet stop failed: ' + e.message, 'error'); })
+    .finally(function() { btn.disabled = false; btn.textContent = 'Stop Fleet'; });
+}
+
+function updateHeaderControls(data) {
+  var startBtn = document.getElementById('btn-fleet-start');
+  var stopBtn = document.getElementById('btn-fleet-stop');
+  var agents = data.agents || [];
+  var activeCount = agents.filter(function(a) { return a.status === 'BUSY' || a.status === 'IDLE'; }).length;
+  if (activeCount > 0) {
+    startBtn.style.display = 'none';
+    stopBtn.style.display = '';
+  } else {
+    startBtn.style.display = '';
+    stopBtn.style.display = 'none';
+  }
+  if (data.thermal && data.thermal.loaded_model) {
+    var sel = document.getElementById('header-model-select');
+    if (sel && sel.value !== data.thermal.loaded_model) sel.value = data.thermal.loaded_model;
+    var gpuSel = document.getElementById('header-model-gpu');
+    if (gpuSel && gpuSel.value !== data.thermal.loaded_model) gpuSel.value = data.thermal.loaded_model;
+  }
+}
+
+function _populateModelDropdown() {
+  Promise.all([
+    apiFetch('/api/health'),
+    fetch('/api/ollama/ps').then(function(r) { return r.ok ? r.json() : {models:[]}; }).catch(function() { return {models:[]}; })
+  ]).then(function(results) {
+    var h = results[0];
+    var ps = results[1];
+    var gpuSel = document.getElementById('header-model-gpu');
+    var cpuSel = document.getElementById('header-model-cpu');
+    if (!gpuSel || !cpuSel) return;
+    var allModels = (h.subsystems && h.subsystems.ollama && h.subsystems.ollama.available_models) || [];
+
+    /* Determine loaded models from Ollama ps */
+    var loadedModels = (ps.models || []);
+    var gpuModel = '';
+    var cpuModel = '';
+    loadedModels.forEach(function(m) {
+      var name = m.name || '';
+      var vram = m.size_vram || 0;
+      var total = m.size || 0;
+      /* GPU model = majority in VRAM; CPU model = majority in RAM */
+      if (vram > total * 0.5) {
+        if (!gpuModel) gpuModel = name;
+      } else {
+        if (!cpuModel) cpuModel = name;
+      }
+    });
+    /* Fallback: if only one loaded, check health current_model */
+    if (!gpuModel) {
+      gpuModel = (h.subsystems && h.subsystems.ollama && h.subsystems.ollama.current_model) || '';
+    }
+    /* Fallback: conductor_model from config */
+    if (!cpuModel) {
+      try {
+        var cfg = h.subsystems && h.subsystems.config;
+        if (cfg && cfg.conductor_model) cpuModel = cfg.conductor_model;
+      } catch(e) {}
+    }
+
+    function _fill(sel, activeModel) {
+      while (sel.firstChild) sel.removeChild(sel.firstChild);
+      if (allModels.length === 0) {
+        var opt = document.createElement('option');
+        opt.value = ''; opt.textContent = 'offline';
+        sel.appendChild(opt);
+        return;
+      }
+      allModels.forEach(function(m) {
+        var opt = document.createElement('option');
+        opt.value = m; opt.textContent = m;
+        if (m === activeModel) opt.selected = true;
+        sel.appendChild(opt);
+      });
+    }
+    _fill(gpuSel, gpuModel);
+    _fill(cpuSel, cpuModel);
+  }).catch(function() {
+    ['header-model-gpu', 'header-model-cpu'].forEach(function(id) {
+      var sel = document.getElementById(id);
+      if (!sel) return;
+      while (sel.firstChild) sel.removeChild(sel.firstChild);
+      var opt = document.createElement('option');
+      opt.value = ''; opt.textContent = 'offline';
+      sel.appendChild(opt);
+    });
+  });
+}
+
+/* ── First-Run Walkthrough ────────────────────────────────────────────────── */
+
+function _showWalkthrough() {
+  var overlay = document.createElement('div');
+  overlay.id = 'walkthrough-overlay';
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:10000;display:flex;align-items:center;justify-content:center;';
+
+  var modal = document.createElement('div');
+  modal.style.cssText = 'background:var(--card);border:1px solid var(--border);border-radius:12px;padding:32px;max-width:520px;width:90%;max-height:80vh;overflow-y:auto;box-shadow:0 8px 32px rgba(0,0,0,0.3);';
+
+  var _step = 0;
+  var _sysInfo = null;
+  var _models = [];
+  var _selectedModel = '';
+
+  var title = document.createElement('h2');
+  title.style.cssText = 'margin:0 0 8px;font-size:20px;color:var(--foreground);';
+  title.textContent = 'Welcome to BigEd CC';
+  modal.appendChild(title);
+
+  var subtitle = document.createElement('p');
+  subtitle.style.cssText = 'margin:0 0 20px;font-size:13px;color:var(--muted-foreground);';
+  subtitle.textContent = 'Quick setup wizard — 3 steps';
+  modal.appendChild(subtitle);
+
+  var stepRow = document.createElement('div');
+  stepRow.style.cssText = 'display:flex;gap:8px;margin-bottom:20px;';
+  var stepLabels = ['System Detection', 'Model Selection', 'Launch'];
+  var stepDots = [];
+  stepLabels.forEach(function(label, i) {
+    var dot = document.createElement('div');
+    dot.style.cssText = 'flex:1;text-align:center;padding:6px;border-radius:6px;font-size:11px;font-weight:600;' +
+      (i === 0 ? 'background:var(--primary);color:#fff;' : 'background:var(--muted);color:var(--muted-foreground);');
+    dot.textContent = (i + 1) + '. ' + label;
+    stepDots.push(dot);
+    stepRow.appendChild(dot);
+  });
+  modal.appendChild(stepRow);
+
+  var content = document.createElement('div');
+  content.id = 'walkthrough-content';
+  content.style.cssText = 'min-height:120px;';
+  modal.appendChild(content);
+
+  var btnRow = document.createElement('div');
+  btnRow.style.cssText = 'display:flex;gap:8px;justify-content:flex-end;margin-top:20px;';
+
+  var skipBtn = document.createElement('button');
+  skipBtn.className = 'btn btn-sm btn-outline';
+  skipBtn.textContent = 'Skip';
+  skipBtn.addEventListener('click', function() { _completeWalkthrough(); });
+  btnRow.appendChild(skipBtn);
+
+  var nextBtn = document.createElement('button');
+  nextBtn.className = 'btn btn-sm btn-primary';
+  nextBtn.textContent = 'Next';
+  nextBtn.addEventListener('click', function() { _nextStep(); });
+  btnRow.appendChild(nextBtn);
+  modal.appendChild(btnRow);
+
+  overlay.appendChild(modal);
+  document.body.appendChild(overlay);
+
+  function _updateStepDots() {
+    stepDots.forEach(function(d, i) {
+      d.style.background = i === _step ? 'var(--primary)' : i < _step ? 'var(--success)' : 'var(--muted)';
+      d.style.color = i <= _step ? '#fff' : 'var(--muted-foreground)';
+    });
+  }
+
+  function _renderStep() {
+    while (content.firstChild) content.removeChild(content.firstChild);
+    _updateStepDots();
+
+    if (_step === 0) {
+      var loading = document.createElement('p');
+      loading.textContent = 'Detecting system...';
+      loading.style.color = 'var(--muted-foreground)';
+      content.appendChild(loading);
+      apiFetch('/api/fleet/health').then(function(h) {
+        _sysInfo = h;
+        while (content.firstChild) content.removeChild(content.firstChild);
+        var sys = h.system || {};
+        var info = [
+          ['RAM', (sys.ram_total_gb || '?') + ' GB'],
+          ['CPU Cores', sys.cpu_cores || '?'],
+          ['CPU Usage', (sys.cpu_pct || 0) + '%'],
+          ['Ollama', h.ollama && h.ollama.online ? 'Online' : 'Offline'],
+          ['Workers', (h.workers || {}).total || 0],
+        ];
+        info.forEach(function(row) {
+          var p = document.createElement('div');
+          p.style.cssText = 'display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--border);font-size:13px;';
+          var label = document.createElement('span');
+          label.style.color = 'var(--muted-foreground)';
+          label.textContent = row[0];
+          var val = document.createElement('span');
+          val.style.cssText = 'font-weight:600;color:var(--foreground);';
+          val.textContent = row[1];
+          p.appendChild(label);
+          p.appendChild(val);
+          content.appendChild(p);
+        });
+        _models = (h.ollama && h.ollama.models) || [];
+      }).catch(function() {
+        while (content.firstChild) content.removeChild(content.firstChild);
+        var err = document.createElement('p');
+        err.textContent = 'Could not detect system. Fleet may not be running.';
+        err.style.color = 'var(--destructive)';
+        content.appendChild(err);
+      });
+
+    } else if (_step === 1) {
+      var desc = document.createElement('p');
+      desc.style.cssText = 'font-size:13px;color:var(--muted-foreground);margin:0 0 12px;';
+      desc.textContent = 'Select the default model for fleet workers:';
+      content.appendChild(desc);
+      if (_models.length === 0) {
+        var noModels = document.createElement('p');
+        noModels.textContent = 'No Ollama models found. Pull a model first: ollama pull qwen3:8b';
+        noModels.style.cssText = 'font-size:12px;color:var(--warning);';
+        content.appendChild(noModels);
+      } else {
+        _models.forEach(function(m) {
+          var row = document.createElement('label');
+          row.style.cssText = 'display:flex;align-items:center;gap:8px;padding:8px;border:1px solid var(--border);border-radius:6px;margin-bottom:6px;cursor:pointer;font-size:13px;';
+          var radio = document.createElement('input');
+          radio.type = 'radio';
+          radio.name = 'walkthrough-model';
+          radio.value = m;
+          if (m === _selectedModel || (!_selectedModel && m.indexOf('8b') > -1)) {
+            radio.checked = true;
+            _selectedModel = m;
+          }
+          radio.addEventListener('change', function() { _selectedModel = m; });
+          row.appendChild(radio);
+          var span = document.createElement('span');
+          span.textContent = m;
+          row.appendChild(span);
+          content.appendChild(row);
+        });
+      }
+
+    } else if (_step === 2) {
+      nextBtn.textContent = 'Launch Fleet';
+      skipBtn.style.display = 'none';
+      var summary = document.createElement('div');
+      summary.style.cssText = 'font-size:13px;color:var(--foreground);';
+      var lines = [
+        'Model: ' + (_selectedModel || 'default'),
+        'Workers: ' + ((_sysInfo && _sysInfo.workers) ? _sysInfo.workers.total : 'auto'),
+        'Ollama: ' + ((_sysInfo && _sysInfo.ollama && _sysInfo.ollama.online) ? 'Online' : 'Offline'),
+      ];
+      lines.forEach(function(line) {
+        var p = document.createElement('div');
+        p.style.cssText = 'padding:6px 0;border-bottom:1px solid var(--border);';
+        p.textContent = line;
+        summary.appendChild(p);
+      });
+      var ready = document.createElement('p');
+      ready.style.cssText = 'margin-top:16px;font-weight:600;color:var(--success);';
+      ready.textContent = 'Ready to go!';
+      summary.appendChild(ready);
+      content.appendChild(summary);
+    }
+  }
+
+  function _nextStep() {
+    if (_step < 2) {
+      _step++;
+      _renderStep();
+    } else {
+      _completeWalkthrough();
+      if (_selectedModel) switchModel(_selectedModel);
+    }
+  }
+
+  function _completeWalkthrough() {
+    apiFetch('/api/walkthrough/complete', { method: 'POST' }).catch(function() {});
+    var ov = document.getElementById('walkthrough-overlay');
+    if (ov) ov.remove();
+  }
+
+  _renderStep();
+}
+
+function _checkWalkthrough() {
+  apiFetch('/api/walkthrough/needed').then(function(r) {
+    if (r && r.needed) _showWalkthrough();
+  }).catch(function() {});
+}
+
+/* ── Module Manager ──────────────────────────────────────────────────────── */
+var _moduleData = { installed: [], available: [], selected: null };
+var _moduleView = localStorage.getItem('biged_module_view') || 'split';
+
+function loadModules() {
+  Promise.all([
+    apiFetch('/api/modules').catch(function() { return {modules: []}; }),
+    apiFetch('/api/modules/available').catch(function() { return {modules: []}; }),
+    apiFetch('/api/modules/suggestions').catch(function() { return {suggestions: []}; })
+  ]).then(function(results) {
+    _moduleData.installed = results[0].modules || [];
+    _moduleData.available = results[1].modules || [];
+    var suggestions = results[2].suggestions || [];
+    _renderModuleSuggestions(suggestions);
+    _renderModuleList();
+    _renderModuleCards();
+    if (_moduleView === 'cards') {
+      document.getElementById('module-split-view').style.display = 'none';
+      document.getElementById('module-card-view').style.display = 'block';
+    } else {
+      document.getElementById('module-split-view').style.display = 'flex';
+      document.getElementById('module-card-view').style.display = 'none';
+    }
+  });
+}
+
+function toggleModuleView() {
+  _moduleView = _moduleView === 'split' ? 'cards' : 'split';
+  localStorage.setItem('biged_module_view', _moduleView);
+  loadModules();
+}
+
+function filterModules() {
+  var q = (document.getElementById('module-search').value || '').toLowerCase();
+  document.querySelectorAll('.module-list-item').forEach(function(el) {
+    el.style.display = el.dataset.name.indexOf(q) >= 0 ? '' : 'none';
+  });
+}
+
+function _renderModuleSuggestions(suggestions) {
+  var wrap = document.getElementById('module-suggestions');
+  if (!wrap) return;
+  wrap.textContent = '';
+  if (!suggestions.length) return;
+  suggestions.forEach(function(s) {
+    var card = document.createElement('div');
+    card.style.cssText = 'display:flex;align-items:center;gap:12px;padding:10px 16px;border-radius:8px;border:1px solid #3b82f644;background:#3b82f60a;margin-bottom:6px;';
+    var text = document.createElement('div');
+    text.style.flex = '1';
+    var title = document.createElement('div');
+    title.style.cssText = 'font-size:13px;font-weight:600;color:var(--foreground);';
+    title.textContent = 'Recommended: ' + s.module_name;
+    text.appendChild(title);
+    var reason = document.createElement('div');
+    reason.style.cssText = 'font-size:11px;color:var(--muted-foreground);';
+    reason.textContent = s.reason;
+    text.appendChild(reason);
+    card.appendChild(text);
+    var installBtn = document.createElement('button');
+    installBtn.className = 'btn btn-sm btn-primary';
+    installBtn.textContent = 'Install';
+    installBtn.onclick = function() { _installModule(s.module_name); };
+    card.appendChild(installBtn);
+    var dismissBtn = document.createElement('button');
+    dismissBtn.className = 'btn btn-sm btn-outline';
+    dismissBtn.textContent = '\u2715';
+    dismissBtn.onclick = function() {
+      apiFetch('/api/modules/suggestions/' + s.id + '/dismiss', { method: 'POST' }).then(function() { card.remove(); });
+    };
+    card.appendChild(dismissBtn);
+    wrap.appendChild(card);
+  });
+}
+
+var _statusDots = { enabled: '#10b981', disabled: '#64748b', available: '#3b82f6' };
+
+function _renderModuleList() {
+  var list = document.getElementById('module-list');
+  if (!list) return;
+  list.textContent = '';
+  var installedNames = {};
+  _moduleData.installed.forEach(function(m) { installedNames[m.name] = true; });
+  _moduleData.installed.forEach(function(m) {
+    var enabled = m.enabled !== false;
+    _addModuleRow(list, m.name, m.version || '?', enabled ? 'enabled' : 'disabled', m);
+  });
+  _moduleData.available.forEach(function(m) {
+    if (installedNames[m.name]) return;
+    _addModuleRow(list, m.name, m.version || '?', 'available', m);
+  });
+}
+
+function _addModuleRow(container, name, version, status, data) {
+  var row = document.createElement('div');
+  row.className = 'module-list-item';
+  row.dataset.name = name.toLowerCase();
+  row.style.cssText = 'display:flex;align-items:center;gap:8px;padding:8px 10px;cursor:pointer;border-radius:6px;transition:background 0.15s;';
+  row.onmouseenter = function() { row.style.background = 'var(--glass-hover, #333)'; };
+  row.onmouseleave = function() { row.style.background = ''; };
+  row.onclick = function() { _selectModule(name, status, data); };
+  var dot = document.createElement('span');
+  dot.style.cssText = 'width:8px;height:8px;border-radius:50%;flex-shrink:0;background:' + (_statusDots[status] || '#666') + ';';
+  row.appendChild(dot);
+  var label = document.createElement('span');
+  label.textContent = data.label || name;
+  label.style.cssText = 'flex:1;font-size:12px;color:var(--foreground);';
+  row.appendChild(label);
+  var ver = document.createElement('span');
+  ver.textContent = 'v' + version;
+  ver.style.cssText = 'font-size:10px;color:var(--muted-foreground);font-family:monospace;';
+  row.appendChild(ver);
+  container.appendChild(row);
+}
+
+function _selectModule(name, status, data) {
+  _moduleData.selected = { name: name, status: status, data: data };
+  var panel = document.getElementById('module-detail-panel');
+  if (!panel) return;
+  panel.textContent = '';
+  var h = document.createElement('h3');
+  h.textContent = data.label || data.name || name;
+  h.style.cssText = 'font-size:18px;font-weight:700;color:var(--foreground);margin-bottom:4px;';
+  panel.appendChild(h);
+  var badges = document.createElement('div');
+  badges.style.cssText = 'display:flex;gap:8px;align-items:center;margin-bottom:16px;';
+  var badge = document.createElement('span');
+  badge.textContent = status.charAt(0).toUpperCase() + status.slice(1);
+  badge.style.cssText = 'font-size:10px;padding:2px 8px;border-radius:10px;background:' + (_statusDots[status] || '#666') + '22;color:' + (_statusDots[status] || '#666') + ';font-weight:600;';
+  badges.appendChild(badge);
+  if (data.version) {
+    var v = document.createElement('span');
+    v.textContent = 'v' + data.version;
+    v.style.cssText = 'font-size:11px;color:var(--muted-foreground);';
+    badges.appendChild(v);
+  }
+  panel.appendChild(badges);
+  var desc = document.createElement('p');
+  desc.textContent = data.description || 'No description available.';
+  desc.style.cssText = 'font-size:13px;color:var(--muted-foreground);line-height:1.6;margin-bottom:16px;';
+  panel.appendChild(desc);
+  var meta = document.createElement('div');
+  meta.style.cssText = 'display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:20px;font-size:11px;';
+  [['Author', data.author || 'Unknown'], ['License', data.license || 'N/A'],
+   ['File', data.file || 'mod_' + name + '.py'], ['Dependencies', (data.depends_on || data.dependencies || []).join(', ') || 'None']
+  ].forEach(function(f) {
+    var item = document.createElement('div');
+    var lbl = document.createElement('div');
+    lbl.textContent = f[0];
+    lbl.style.cssText = 'color:var(--muted-foreground);font-size:10px;text-transform:uppercase;letter-spacing:0.5px;';
+    item.appendChild(lbl);
+    var val = document.createElement('div');
+    val.textContent = f[1];
+    val.style.color = 'var(--foreground)';
+    item.appendChild(val);
+    meta.appendChild(item);
+  });
+  panel.appendChild(meta);
+  var actions = document.createElement('div');
+  actions.style.cssText = 'display:flex;gap:8px;flex-wrap:wrap;';
+  if (status === 'available') {
+    var ib = document.createElement('button');
+    ib.className = 'btn btn-sm btn-primary';
+    ib.textContent = 'Install';
+    ib.onclick = function() { _installModule(name); };
+    actions.appendChild(ib);
+  } else if (status === 'enabled') {
+    var db2 = document.createElement('button');
+    db2.className = 'btn btn-sm btn-outline';
+    db2.textContent = 'Disable';
+    db2.onclick = function() { _toggleModule(name, 'disable'); };
+    actions.appendChild(db2);
+    var ub = document.createElement('button');
+    ub.className = 'btn btn-sm';
+    ub.textContent = 'Uninstall';
+    ub.style.color = 'var(--destructive, #ef4444)';
+    ub.onclick = function() { _uninstallModule(name); };
+    actions.appendChild(ub);
+  } else if (status === 'disabled') {
+    var eb = document.createElement('button');
+    eb.className = 'btn btn-sm btn-primary';
+    eb.textContent = 'Enable';
+    eb.onclick = function() { _toggleModule(name, 'enable'); };
+    actions.appendChild(eb);
+    var ub2 = document.createElement('button');
+    ub2.className = 'btn btn-sm';
+    ub2.textContent = 'Uninstall';
+    ub2.style.color = 'var(--destructive, #ef4444)';
+    ub2.onclick = function() { _uninstallModule(name); };
+    actions.appendChild(ub2);
+  }
+  panel.appendChild(actions);
+}
+
+function _installModule(name) {
+  apiFetch('/api/modules/install', { method: 'POST', body: { name: name } }).then(function(r) {
+    if (r.error) { alert('Install failed: ' + r.error); return; }
+    loadModules();
+  }).catch(function(e) { alert('Install error: ' + e.message); });
+}
+
+function _toggleModule(name, action) {
+  apiFetch('/api/modules/' + name + '/' + action, { method: 'POST' }).then(function(r) {
+    if (r.error) { console.warn('_toggleModule: ' + action + ' failed for ' + name + ':', r.error); alert(action + ' failed: ' + r.error); return; }
+    loadModules();
+  }).catch(function(e) { console.warn('_toggleModule: ' + action + ' error for ' + name + ':', e); alert(action + ' error: ' + e.message); });
+}
+
+function _uninstallModule(name) {
+  apiFetch('/api/modules/' + name + '/uninstall', { method: 'DELETE' }).then(function(r) {
+    if (r.error) { alert('Uninstall failed: ' + r.error); return; }
+    loadModules();
+  }).catch(function(e) { alert('Uninstall error: ' + e.message); });
+}
+
+function _renderModuleCards() {
+  var container = document.getElementById('module-cards');
+  if (!container) return;
+  container.textContent = '';
+  var installedNames = {};
+  _moduleData.installed.forEach(function(m) { installedNames[m.name] = true; });
+  var all = _moduleData.installed.map(function(m) { return { data: m, status: m.enabled !== false ? 'enabled' : 'disabled' }; });
+  _moduleData.available.forEach(function(m) {
+    if (!installedNames[m.name]) all.push({ data: m, status: 'available' });
+  });
+  all.forEach(function(item) {
+    var card = document.createElement('div');
+    card.style.cssText = 'border:1px ' + (item.status === 'available' ? 'dashed' : 'solid') + ' var(--border);border-radius:10px;padding:16px;cursor:pointer;transition:background 0.15s;';
+    card.onmouseenter = function() { card.style.background = 'var(--glass-hover, #333)'; };
+    card.onmouseleave = function() { card.style.background = ''; };
+    card.onclick = function() {
+      _moduleView = 'split';
+      localStorage.setItem('biged_module_view', 'split');
+      loadModules();
+      setTimeout(function() { _selectModule(item.data.name, item.status, item.data); }, 200);
+    };
+    var top = document.createElement('div');
+    top.style.cssText = 'display:flex;align-items:center;gap:8px;margin-bottom:8px;';
+    var dot = document.createElement('span');
+    dot.style.cssText = 'width:10px;height:10px;border-radius:50%;background:' + (_statusDots[item.status] || '#666') + ';';
+    top.appendChild(dot);
+    var nm = document.createElement('span');
+    nm.textContent = item.data.label || item.data.name;
+    nm.style.cssText = 'font-weight:600;font-size:13px;color:var(--foreground);flex:1;';
+    top.appendChild(nm);
+    var vr = document.createElement('span');
+    vr.textContent = 'v' + (item.data.version || '?');
+    vr.style.cssText = 'font-size:10px;background:' + (_statusDots[item.status] || '#666') + '22;color:' + (_statusDots[item.status] || '#666') + ';padding:2px 6px;border-radius:10px;';
+    top.appendChild(vr);
+    card.appendChild(top);
+    var d = document.createElement('div');
+    var full = item.data.description || '';
+    d.textContent = full.length > 80 ? full.substring(0, 80) + '...' : full;
+    d.style.cssText = 'font-size:11px;color:var(--muted-foreground);line-height:1.4;';
+    card.appendChild(d);
+    container.appendChild(card);
+  });
+}
+
+/* ── Factorio Sandbox ─────────────────────────────────────────────────────── */
+
+function _checkFactorioEnabled() {
+  var nav = document.getElementById('nav-factorio');
+  if (!nav) return;
+  // Strategy: check modules API first, then probe bridge directly as fallback
+  apiFetch('/api/modules').then(function(r) {
+    var mods = r.modules || [];
+    var fm = mods.find(function(m) { return m.name === 'factorio'; });
+    if (!fm) return;
+    // If enabled field is set (dashboard restarted), use it
+    if (fm.enabled === true || fm.enabled === false) {
+      nav.style.display = fm.enabled ? '' : 'none';
+      return;
+    }
+    // Fallback: module exists but enabled is null (stale Flask cache)
+    // Show the tab if factorio module is in the manifest at all — user can
+    // always navigate there to see bridge status
+    nav.style.display = '';
+  }).catch(function() {
+    // Modules API failed — probe bridge via dashboard proxy
+    apiFetch('/api/factorio/bridge-status')
+      .then(function(d) { if (d.running) nav.style.display = ''; })
+      .catch(function() {});
+  });
+}
+
+function loadFactorio() {
+  // Use dashboard proxy endpoints (avoids CORS from browser → bridge)
+  apiFetch('/api/factorio/bridge-status')
+    .then(function(d) {
+      var statusEl = document.getElementById('factorio-bridge-status');
+      var detailEl = document.getElementById('factorio-bridge-detail');
+      var tickEl = document.getElementById('factorio-tick');
+      var tickDetailEl = document.getElementById('factorio-tick-detail');
+      if (!_factorioTransition && Date.now() > _factorioStopCooldown)
+        _factorioRunning = !!d.running;
+      var comp = d.components || {};
+      if (d.running) {
+        statusEl.textContent = 'Running';
+        statusEl.style.color = 'var(--success)';
+        detailEl.textContent = 'Bridge \u2713  RCON ' + (comp.rcon ? '\u2713' : '\u2717') + '  Headless ' + (comp.headless ? '\u2713' : '\u2717');
+        tickEl.textContent = d.tick.toLocaleString();
+        tickEl.style.color = 'var(--foreground)';
+        tickDetailEl.textContent = 'Cadence: ' + (d.cadence || 'adaptive');
+        var sel = document.getElementById('factorio-cadence');
+        if (sel) sel.value = d.cadence || 'adaptive';
+      } else {
+        statusEl.textContent = comp.bridge ? 'Connecting' : 'Stopped';
+        statusEl.style.color = comp.bridge ? 'var(--warning)' : 'var(--destructive)';
+        detailEl.textContent = 'Bridge ' + (comp.bridge ? '\u2713' : '\u2717') + '  RCON ' + (comp.rcon ? '\u2713' : '\u2717') + '  Headless ' + (comp.headless ? '\u2713' : '\u2717');
+      }
+      return apiFetch('/api/factorio/bridge-state');
+    })
+    .then(function(state) {
+      if (state.error) {
+        document.getElementById('factorio-state').textContent = 'Error: ' + state.error;
+        return;
+      }
+      var lines = [];
+      lines.push('Tick: ' + (state.tick || 0));
+      lines.push('Entities: ' + (state.entity_count || 0));
+      lines.push('Has Player: ' + (state.has_player || false));
+      if (state.research_name) {
+        lines.push('Research: ' + state.research_name + ' (' + Math.round((state.research_progress || 0) * 100) + '%)');
+      }
+      if (state.inventory && Object.keys(state.inventory).length > 0) {
+        lines.push('');
+        lines.push('Inventory:');
+        Object.keys(state.inventory).sort().forEach(function(k) {
+          lines.push('  ' + k + ': ' + state.inventory[k]);
+        });
+      }
+      document.getElementById('factorio-state').textContent = lines.join('\n');
+      // Resources
+      var resEl = document.getElementById('factorio-resources');
+      resEl.textContent = '';
+      var resources = state.resources || [];
+      if (resources.length === 0) {
+        resEl.textContent = 'No resources in view';
+      } else {
+        resources.forEach(function(r) {
+          var row = document.createElement('div');
+          row.style.cssText = 'display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid var(--border);font-size:12px;';
+          var name = document.createElement('span');
+          name.textContent = r.name;
+          name.style.fontWeight = '600';
+          var amt = document.createElement('span');
+          amt.textContent = r.total_amount.toLocaleString() + ' (' + r.patches + ' patches)';
+          amt.style.color = 'var(--muted)';
+          row.appendChild(name);
+          row.appendChild(amt);
+          resEl.appendChild(row);
+        });
+      }
+    })
+    .catch(function() {
+      if (!_factorioTransition) {
+        _factorioRunning = false;
+        _updateFactorioButtons();
+      }
+      document.getElementById('factorio-bridge-status').textContent = 'Offline';
+      document.getElementById('factorio-bridge-status').style.color = 'var(--muted)';
+      document.getElementById('factorio-bridge-detail').textContent = 'Bridge not reachable';
+      document.getElementById('factorio-state').textContent = 'Not running — click Start above';
+    });
+  _loadFactorioDirectives();
+  _loadFactorioPresets();
+  updateFactorioActionFields();
+  _factorioApi('GET', '/api/plan').then(function(d) {
+    _factorioPaused = d.paused || false;
+    _updateFactorioButtons();
+    var brainEl = document.getElementById('factorio-brain-status');
+    if (_factorioPaused) brainEl.textContent = 'Paused';
+    else if (d.plan && d.plan.length > 0) brainEl.textContent = 'Step ' + d.plan_index + '/' + d.plan.length;
+    else brainEl.textContent = 'Idle';
+  }).catch(function() {});
+}
+
+function setFactorioCadence(mode) {
+  console.warn('Cadence change to', mode, '— requires bridge API endpoint (TODO)');
+}
+
+function setFactorioPhase(phase) {
+  console.warn('Phase change to', phase, '— requires bridge API endpoint (TODO)');
+}
+
+function launchFactorioSpectator() {
+  var statusEl = document.getElementById('factorio-spectator-status');
+  statusEl.textContent = 'Launching Factorio client...';
+  apiFetch('/api/factorio/spectator', { method: 'POST', body: {} })
+    .then(function(r) {
+      if (r.success) {
+        statusEl.textContent = 'Spectator launched! Connect to the game window.';
+        statusEl.style.color = 'var(--success)';
+      } else {
+        statusEl.textContent = 'Error: ' + (r.error || 'unknown');
+        statusEl.style.color = 'var(--destructive)';
+      }
+    })
+    .catch(function() {
+      statusEl.textContent = 'Failed — launch manually: factorio.exe --mp-connect localhost:27015';
+      statusEl.style.color = 'var(--destructive)';
+    });
+}
+
+function launchFactorioFPM() {
+  var statusEl = document.getElementById('factorio-spectator-status');
+  statusEl.textContent = 'Launching Process Manager...';
+  apiFetch('/api/factorio/fpm', { method: 'POST', body: {} })
+    .then(function(r) {
+      if (r.success) {
+        statusEl.textContent = 'Process Manager launched.';
+        statusEl.style.color = 'var(--success)';
+      } else {
+        statusEl.textContent = 'Error: ' + (r.error || 'unknown');
+        statusEl.style.color = 'var(--destructive)';
+      }
+    })
+    .catch(function() {
+      statusEl.textContent = 'Failed to launch FPM';
+      statusEl.style.color = 'var(--destructive)';
+    });
+}
+
+/* ── Spatial Map + Reward Chart ──────────────────────────────────────────── */
+
+var _spatialMapTimer = null;
+var _rewardChartTimer = null;
+
+function _startSpatialMapPolling() {
+  if (_spatialMapTimer) return;
+  _pollSpatialMap();
+  _spatialMapTimer = setInterval(_pollSpatialMap, 10000);  /* 10s fallback — SSE factorio_spatial drives real-time */
+  _pollRewardChart();
+  _rewardChartTimer = setInterval(_pollRewardChart, 15000); /* 15s fallback — SSE factorio_reward drives real-time */
+}
+
+function _stopSpatialMapPolling() {
+  if (_spatialMapTimer) { clearInterval(_spatialMapTimer); _spatialMapTimer = null; }
+  if (_rewardChartTimer) { clearInterval(_rewardChartTimer); _rewardChartTimer = null; }
+}
+
+function _pollSpatialMap() {
+  apiFetch('/api/factorio/spatial-map').then(function(d) {
+    if (d.error) return;
+    _renderSpatialMap(d);
+  }).catch(function() {});
+}
+
+function _renderSpatialMap(data) {
+  var canvas = document.getElementById('spatial-map-canvas');
+  if (!canvas) return;
+  var ctx = canvas.getContext('2d');
+  var w = canvas.width, h = canvas.height;
+  ctx.fillStyle = '#0a0a0a';
+  ctx.fillRect(0, 0, w, h);
+
+  var resources = data.resources || [];
+  var entities = data.entities || [];
+  var player = data.player || {x: 0, y: 0};
+
+  // Auto-fit: find bounding box of all points
+  var allX = [player.x], allY = [player.y];
+  resources.forEach(function(r) { allX.push(r.x); allY.push(r.y); });
+  entities.forEach(function(e) { allX.push(e.x); allY.push(e.y); });
+
+  var minX = Math.min.apply(null, allX), maxX = Math.max.apply(null, allX);
+  var minY = Math.min.apply(null, allY), maxY = Math.max.apply(null, allY);
+  var rangeX = Math.max(maxX - minX, 50), rangeY = Math.max(maxY - minY, 50);
+  var range = Math.max(rangeX, rangeY) * 1.15; // 15% padding
+  var centerX = (minX + maxX) / 2, centerY = (minY + maxY) / 2;
+
+  function toScreen(wx, wy) {
+    return {
+      x: ((wx - centerX) / range + 0.5) * w,
+      y: ((wy - centerY) / range + 0.5) * h
+    };
+  }
+
+  // Draw grid lines through origin
+  var origin = toScreen(0, 0);
+  ctx.strokeStyle = '#1a1a1a';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(origin.x, 0); ctx.lineTo(origin.x, h);
+  ctx.moveTo(0, origin.y); ctx.lineTo(w, origin.y);
+  ctx.stroke();
+
+  // Resource colors
+  var resColors = {'iron-ore': '#4af', 'copper-ore': '#f84', 'coal': '#555', 'stone': '#aaa'};
+
+  // Draw resources as small dots
+  resources.forEach(function(r) {
+    var p = toScreen(r.x, r.y);
+    var color = resColors[r.name] || '#666';
+    var alpha = Math.min(r.amount / 5000, 1.0) * 0.6 + 0.2;
+    ctx.globalAlpha = alpha;
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, 2.5, 0, Math.PI * 2);
+    ctx.fill();
+  });
+  ctx.globalAlpha = 1.0;
+
+  // Entity colors
+  var entColors = {
+    'stone-furnace': '#fa0', 'burner-mining-drill': '#0f0', 'electric-mining-drill': '#0f0',
+    'assembling-machine-1': '#0af', 'transport-belt': '#888', 'inserter': '#a8f',
+    'burner-inserter': '#a8f', 'lab': '#f0f', 'small-electric-pole': '#ff0',
+    'boiler': '#f44', 'steam-engine': '#f88'
+  };
+
+  // Draw entities as small squares
+  entities.forEach(function(e) {
+    var p = toScreen(e.x, e.y);
+    var color = entColors[e.name] || '#666';
+    ctx.fillStyle = color;
+    ctx.fillRect(p.x - 2, p.y - 2, 4, 4);
+  });
+
+  // Draw player as white diamond
+  var pp = toScreen(player.x, player.y);
+  ctx.fillStyle = '#fff';
+  ctx.beginPath();
+  ctx.moveTo(pp.x, pp.y - 5);
+  ctx.lineTo(pp.x + 4, pp.y);
+  ctx.lineTo(pp.x, pp.y + 5);
+  ctx.lineTo(pp.x - 4, pp.y);
+  ctx.closePath();
+  ctx.fill();
+
+  // Scale indicator
+  var scaleLen = 50;
+  var worldDist = Math.round(range * scaleLen / w);
+  ctx.fillStyle = '#666';
+  ctx.font = '10px monospace';
+  ctx.fillText(worldDist + ' tiles', 8, h - 12);
+  ctx.strokeStyle = '#666';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(8, h - 8); ctx.lineTo(8 + scaleLen, h - 8);
+  ctx.stroke();
+
+  // Stats
+  var stats = document.getElementById('spatial-map-stats');
+  if (stats && data.summary) {
+    var rs = data.summary.resources || {};
+    var es = data.summary.entities || {};
+    var rCount = Object.values(rs).reduce(function(a, b) { return a + b; }, 0);
+    var eCount = Object.values(es).reduce(function(a, b) { return a + b; }, 0);
+    stats.textContent = rCount + ' patches \u00B7 ' + eCount + ' buildings';
+  }
+}
+
+function _pollRewardChart() {
+  apiFetch('/api/factorio/reward-history').then(function(d) {
+    if (d.error) return;
+    _renderRewardChart(d.rewards || []);
+  }).catch(function() {});
+}
+
+function _renderRewardChart(rewards) {
+  var canvas = document.getElementById('reward-chart-canvas');
+  if (!canvas || rewards.length < 2) return;
+  var ctx = canvas.getContext('2d');
+  var w = canvas.width, h = canvas.height;
+  var pad = {top: 10, right: 10, bottom: 20, left: 40};
+  var plotW = w - pad.left - pad.right;
+  var plotH = h - pad.top - pad.bottom;
+
+  ctx.fillStyle = '#0a0a0a';
+  ctx.fillRect(0, 0, w, h);
+
+  var vals = rewards.map(function(r) { return r.reward; });
+  var minR = Math.min.apply(null, vals);
+  var maxR = Math.max.apply(null, vals);
+  if (maxR === minR) { maxR = minR + 1; }
+
+  // Y-axis labels
+  ctx.fillStyle = '#555';
+  ctx.font = '10px monospace';
+  ctx.textAlign = 'right';
+  ctx.fillText(maxR.toFixed(2), pad.left - 4, pad.top + 10);
+  ctx.fillText(minR.toFixed(2), pad.left - 4, pad.top + plotH);
+  ctx.fillText('0.00', pad.left - 4, pad.top + plotH * (1 - (0 - minR) / (maxR - minR)));
+
+  // Zero line
+  var zeroY = pad.top + plotH * (1 - (0 - minR) / (maxR - minR));
+  ctx.strokeStyle = '#333';
+  ctx.lineWidth = 1;
+  ctx.setLineDash([3, 3]);
+  ctx.beginPath();
+  ctx.moveTo(pad.left, zeroY);
+  ctx.lineTo(pad.left + plotW, zeroY);
+  ctx.stroke();
+  ctx.setLineDash([]);
+
+  // Reward line
+  ctx.strokeStyle = '#4af';
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  for (var i = 0; i < rewards.length; i++) {
+    var x = pad.left + (i / (rewards.length - 1)) * plotW;
+    var y = pad.top + plotH * (1 - (vals[i] - minR) / (maxR - minR));
+    if (i === 0) ctx.moveTo(x, y);
+    else ctx.lineTo(x, y);
+  }
+  ctx.stroke();
+
+  // Moving average (20-step)
+  if (rewards.length > 20) {
+    ctx.strokeStyle = '#fa0';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    var started = false;
+    for (var j = 19; j < rewards.length; j++) {
+      var sum = 0;
+      for (var k = j - 19; k <= j; k++) sum += vals[k];
+      var avg = sum / 20;
+      var ax = pad.left + (j / (rewards.length - 1)) * plotW;
+      var ay = pad.top + plotH * (1 - (avg - minR) / (maxR - minR));
+      if (!started) { ctx.moveTo(ax, ay); started = true; }
+      else ctx.lineTo(ax, ay);
+    }
+    ctx.stroke();
+  }
+
+  // X-axis label
+  ctx.fillStyle = '#555';
+  ctx.font = '10px monospace';
+  ctx.textAlign = 'center';
+  ctx.fillText('Step ' + rewards[0].step + ' \u2192 ' + rewards[rewards.length - 1].step, w / 2, h - 4);
+
+  // Stats
+  var statsEl = document.getElementById('reward-chart-stats');
+  if (statsEl) {
+    var sum = 0; for (var m = 0; m < vals.length; m++) sum += vals[m];
+    var mean = sum / vals.length;
+    var last = vals[vals.length - 1];
+    statsEl.textContent = 'Mean: ' + mean.toFixed(3) + ' \u00B7 Last: ' + last.toFixed(3) + ' \u00B7 ' + vals.length + ' steps';
+  }
+}
+
+/* ── Factorio Takeover Controls ───────────────────────────────────────────── */
+
+var _factorioPaused = false;
+var _factorioBridgePort = 27016;
+
+function _factorioApi(method, path, body) {
+  var opts = { method: method };
+  if (body) {
+    opts.headers = {'Content-Type': 'application/json'};
+    opts.body = JSON.stringify(body);
+  }
+  return fetch('http://127.0.0.1:' + _factorioBridgePort + path, opts)
+    .then(function(r) { return r.json(); });
+}
+
+var _factorioRunning = false;
+var _factorioTransition = null; // "stopping" | "starting" | null
+var _factorioStopCooldown = 0;  // timestamp — ignore running=true polls until this expires
+
+function _updateFactorioSSEIndicator(fdata) {
+  var dotB = document.getElementById('factorio-dot-bridge');
+  var dotR = document.getElementById('factorio-dot-rcon');
+  var dotH = document.getElementById('factorio-dot-headless');
+  var label = document.getElementById('factorio-sse-label');
+  if (!label) return;
+
+  var c = (fdata && fdata.components) || {};
+  var green = 'var(--success)', red = 'var(--danger)', grey = 'var(--muted)', yellow = 'var(--warning)';
+
+  if (dotB) dotB.style.background = c.bridge ? green : (fdata ? red : grey);
+  if (dotR) dotR.style.background = c.rcon ? green : (fdata ? red : grey);
+  if (dotH) dotH.style.background = c.headless ? green : (fdata ? red : grey);
+
+  if (fdata && fdata.running) {
+    label.textContent = fdata.paused ? 'Paused' : 'Tick ' + (fdata.tick || 0).toLocaleString();
+    label.style.color = 'var(--foreground)';
+  } else if (fdata && fdata.stale) {
+    label.textContent = 'Stale';
+    label.style.color = yellow;
+  } else if (fdata && (c.bridge || c.rcon)) {
+    label.textContent = 'Connecting';
+    label.style.color = yellow;
+  } else {
+    label.textContent = 'Offline';
+    label.style.color = grey;
+  }
+}
+
+function toggleFactorioServer() {
+  if (_factorioTransition) return; // already in transition, ignore clicks
+  var btn = document.getElementById('factorio-start-btn');
+  var text = document.getElementById('factorio-start-text');
+  var icon = document.getElementById('factorio-start-icon');
+
+  if (_factorioRunning) {
+    // Stop flow: switch mode back to normal (stops bridge + unpauses queue)
+    _factorioTransition = 'stopping';
+    text.textContent = 'Stopping\u2026'; btn.disabled = true;
+    btn.style.background = 'var(--warning)'; btn.style.color = '#000';
+    apiFetch('/api/mode/switch', { method: 'POST', body: { mode: 'normal', force: true, expected_current: 'factorio' } }).then(function() {
+      var polls = 0;
+      var pollTimer = setInterval(function() {
+        polls++;
+        apiFetch('/api/factorio/bridge-status').then(function(s) {
+          if (!s.running || polls > 10) {
+            clearInterval(pollTimer);
+            _factorioRunning = false;
+            _factorioStopCooldown = Date.now() + 5000;
+            text.textContent = 'Stopped';
+            btn.style.background = 'var(--muted)'; btn.style.color = 'var(--foreground)';
+            icon.textContent = '\u25CF';
+            setTimeout(function() {
+              _factorioTransition = null;
+              _updateFactorioButtons();
+            }, 2000);
+          }
+        }).catch(function() {
+          clearInterval(pollTimer);
+          _factorioRunning = false;
+          _factorioStopCooldown = Date.now() + 5000;
+          text.textContent = 'Stopped';
+          btn.style.background = 'var(--muted)'; btn.style.color = 'var(--foreground)';
+          icon.textContent = '\u25CF';
+          setTimeout(function() {
+            _factorioTransition = null;
+            _updateFactorioButtons();
+          }, 2000);
+        });
+      }, 1000);
+    }).catch(function() {
+      _factorioTransition = null;
+      btn.disabled = false;
+      _updateFactorioButtons();
+    });
+  } else {
+    // Start flow: switch mode to factorio (pauses queue + starts bridge + headless)
+    _factorioTransition = 'starting';
+    text.textContent = 'Starting\u2026'; btn.disabled = true;
+    btn.style.background = 'var(--warning)'; btn.style.color = '#000';
+    apiFetch('/api/mode/switch', { method: 'POST', body: { mode: 'factorio', force: true } }).then(function(d) {
+      if (d.success) {
+        var polls = 0;
+        var pollTimer = setInterval(function() {
+          polls++;
+          apiFetch('/api/factorio/bridge-status').then(function(s) {
+            if (s.running) {
+              clearInterval(pollTimer);
+              _factorioRunning = true;
+              _factorioTransition = null;
+              _updateFactorioButtons();
+              loadFactorio();
+            }
+          });
+          if (polls > 30) {
+            clearInterval(pollTimer);
+            _factorioTransition = null;
+            _updateFactorioButtons();
+          }
+        }, 2000);
+      } else {
+        _factorioTransition = null;
+        _updateFactorioButtons();
+        if (d.error) showToast('Factorio start failed: ' + d.error, 'error');
+      }
+    }).catch(function() {
+      _factorioTransition = null;
+      btn.disabled = false;
+      _updateFactorioButtons();
+    });
+  }
+}
+
+function toggleFactorioPause() {
+  var endpoint = _factorioPaused ? '/api/resume' : '/api/pause';
+  _factorioApi('POST', endpoint).then(function(d) {
+    _factorioPaused = d.paused;
+    _updateFactorioButtons();
+  }).catch(function(e) { console.error('Pause toggle failed:', e); });
+}
+
+function _updateFactorioButtons() {
+  var startBtn = document.getElementById('factorio-start-btn');
+  var startIcon = document.getElementById('factorio-start-icon');
+  var startText = document.getElementById('factorio-start-text');
+  var pauseBtn = document.getElementById('factorio-pause-btn');
+  var pauseIcon = document.getElementById('factorio-pause-icon');
+  var pauseText = document.getElementById('factorio-pause-text');
+  startBtn.disabled = false;
+
+  if (_factorioRunning) {
+    // Show Stop button + Pause button
+    startBtn.style.background = 'var(--destructive)'; startBtn.style.color = '#fff';
+    startIcon.textContent = '\u25A0'; startText.textContent = 'Stop';
+    pauseBtn.style.display = '';
+    if (_factorioPaused) {
+      pauseBtn.style.background = 'var(--warning)'; pauseBtn.style.color = '#000';
+      pauseIcon.textContent = '\u25B6'; pauseText.textContent = 'Resume';
+    } else {
+      pauseBtn.style.background = ''; pauseBtn.style.color = '';
+      pauseIcon.textContent = '\u23F8'; pauseText.textContent = 'Pause';
+    }
+  } else {
+    // Show Start button, hide Pause
+    startBtn.style.background = ''; startBtn.style.color = '';
+    startIcon.textContent = '\u25B6'; startText.textContent = 'Start';
+    pauseBtn.style.display = 'none';
+  }
+}
+
+function sendFactorioDirectiveFromInput() {
+  var input = document.getElementById('factorio-directive-input');
+  var mode = document.getElementById('factorio-directive-mode').value;
+  var text = input.value.trim();
+  if (!text) return;
+  var sticky = mode === 'sticky';
+  var plans = sticky ? 1 : parseInt(mode);
+  _factorioApi('POST', '/api/directive', {text: text, sticky: sticky, plans: plans})
+    .then(function() { input.value = ''; _loadFactorioDirectives(); });
+}
+
+function sendFactorioDirective(text, sticky, plans) {
+  _factorioApi('POST', '/api/directive', {text: text, sticky: sticky, plans: plans})
+    .then(function() { _loadFactorioDirectives(); });
+}
+
+function removeFactorioDirective(id) {
+  _factorioApi('DELETE', '/api/directive/' + id)
+    .then(function() { _loadFactorioDirectives(); });
+}
+
+function _loadFactorioDirectives() {
+  _factorioApi('GET', '/api/directives').then(function(directives) {
+    var el = document.getElementById('factorio-active-directives');
+    var badge = document.getElementById('factorio-directive-badge');
+    el.textContent = '';
+    if (!directives || !directives.length) {
+      var empty = document.createElement('div');
+      empty.style.cssText = 'font-size:12px;color:var(--muted);';
+      empty.textContent = 'No active directives';
+      el.appendChild(empty);
+      badge.style.display = 'none';
+      return;
+    }
+    badge.style.display = 'inline';
+    badge.textContent = '(' + directives.length + ' directives)';
+    directives.forEach(function(d) {
+      var row = document.createElement('div');
+      row.style.cssText = 'display:flex;align-items:center;gap:8px;padding:4px 0;font-size:12px;';
+      var tag = document.createElement('span');
+      tag.style.color = 'var(--accent)';
+      tag.textContent = '[' + (d.sticky ? 'sticky' : d.plans_remaining + ' plans') + ']';
+      var txt = document.createElement('span');
+      txt.textContent = d.text;
+      var btn = document.createElement('button');
+      btn.className = 'btn btn-sm';
+      btn.style.cssText = 'padding:0 4px;font-size:10px;';
+      btn.textContent = '\u2715';
+      btn.onclick = function() { removeFactorioDirective(d.id); };
+      row.appendChild(tag);
+      row.appendChild(txt);
+      row.appendChild(btn);
+      el.appendChild(row);
+    });
+  }).catch(function() {});
+}
+
+function _loadFactorioPresets() {
+  _factorioApi('GET', '/api/presets').then(function(presets) {
+    var el = document.getElementById('factorio-presets');
+    el.textContent = '';
+    presets.forEach(function(p) {
+      var btn = document.createElement('button');
+      btn.className = 'btn btn-sm btn-outline';
+      btn.textContent = p.label;
+      btn.onclick = function() { sendFactorioDirective(p.text, p.sticky, p.plans); };
+      el.appendChild(btn);
+    });
+  }).catch(function() {});
+}
+
+function updateFactorioActionFields() {
+  var type = document.getElementById('factorio-action-type').value;
+  var el = document.getElementById('factorio-action-fields');
+  el.textContent = '';
+
+  function addField(id, label, fieldType, defaultVal, width) {
+    if (label) {
+      var lbl = document.createElement('span');
+      lbl.style.fontSize = '12px';
+      lbl.textContent = label;
+      el.appendChild(lbl);
+    }
+    var inp = document.createElement('input');
+    inp.className = 'input';
+    inp.id = id;
+    inp.type = fieldType || 'text';
+    if (defaultVal !== undefined) inp.value = defaultVal;
+    inp.style.width = width || '80px';
+    el.appendChild(inp);
+  }
+
+  function addSelect(id, options, width) {
+    var sel = document.createElement('select');
+    sel.className = 'input';
+    sel.id = id;
+    sel.style.width = width || 'auto';
+    options.forEach(function(o) {
+      var opt = document.createElement('option');
+      opt.value = o; opt.textContent = o;
+      sel.appendChild(opt);
+    });
+    el.appendChild(sel);
+  }
+
+  if (type === 'place') {
+    addField('fa-entity', '', 'text', '', '140px');
+    document.getElementById('fa-entity').placeholder = 'Entity name';
+    addField('fa-x', 'X:', 'number', 0, '60px');
+    addField('fa-y', 'Y:', 'number', 0, '60px');
+    addSelect('fa-dir', ['north', 'east', 'south', 'west']);
+  } else if (type === 'craft') {
+    addField('fa-recipe', '', 'text', '', '140px');
+    document.getElementById('fa-recipe').placeholder = 'Recipe';
+    addField('fa-count', 'Count:', 'number', 1, '60px');
+  } else if (type === 'research') {
+    addField('fa-tech', '', 'text', '', '180px');
+    document.getElementById('fa-tech').placeholder = 'Technology';
+  } else if (type === 'move') {
+    addField('fa-x', 'X:', 'number', 0, '60px');
+    addField('fa-y', 'Y:', 'number', 0, '60px');
+  } else if (type === 'remove') {
+    addField('fa-unit', 'Unit#:', 'number', '', '80px');
+  } else if (type === 'set_recipe') {
+    addField('fa-unit', 'Unit#:', 'number', '', '80px');
+    addField('fa-recipe', 'Recipe:', 'text', '', '140px');
+  } else if (type === 'connect') {
+    addField('fa-entity', '', 'text', 'transport-belt', '120px');
+    addField('fa-fx', 'From X:', 'number', 0, '50px');
+    addField('fa-fy', 'Y:', 'number', 0, '50px');
+    addField('fa-tx', 'To X:', 'number', 0, '50px');
+    addField('fa-ty', 'Y:', 'number', 0, '50px');
+  }
+}
+
+function sendFactorioAction() {
+  var type = document.getElementById('factorio-action-type').value;
+  var action = {action: type};
+  function v(id) { var e = document.getElementById(id); return e ? e.value : ''; }
+  function n(id) { var e = document.getElementById(id); return e ? (parseInt(e.value) || 0) : 0; }
+
+  if (type === 'place') { action.entity = v('fa-entity'); action.position = {x: n('fa-x'), y: n('fa-y')}; action.direction = v('fa-dir'); }
+  else if (type === 'craft') { action.recipe = v('fa-recipe'); action.count = n('fa-count'); }
+  else if (type === 'research') { action.technology = v('fa-tech'); }
+  else if (type === 'move') { action.position = {x: n('fa-x'), y: n('fa-y')}; }
+  else if (type === 'remove') { action.unit_number = n('fa-unit'); }
+  else if (type === 'set_recipe') { action.unit_number = n('fa-unit'); action.recipe = v('fa-recipe'); }
+  else if (type === 'connect') { action.entity = v('fa-entity'); action.from = {x: n('fa-fx'), y: n('fa-fy')}; action.to = {x: n('fa-tx'), y: n('fa-ty')}; }
+
+  var resultEl = document.getElementById('factorio-action-result');
+  resultEl.textContent = 'Sending...';
+  _factorioApi('POST', '/api/command', {actions: [action]})
+    .then(function(d) { resultEl.textContent = 'Queued: ' + (d.command_id || 'ok'); })
+    .catch(function(e) { resultEl.textContent = 'Error: ' + e; });
+}
+
+/* ── Init: populate header dropdown + check walkthrough on load ───────────── */
+_populateModelDropdown();
+_checkWalkthrough();
+_checkFactorioEnabled();
+</script>

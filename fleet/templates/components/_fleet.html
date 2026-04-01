@@ -1,0 +1,72 @@
+<!-- ═══════════════════════════════════════════════════════════════════════
+     2. FLEET
+     ═══════════════════════════════════════════════════════════════════ -->
+<div id="section-fleet" class="section">
+  <div class="section-header">
+    <div class="section-title">Fleet Status</div>
+    <div class="section-desc">Monitor and manage individual agents</div>
+  </div>
+
+  <!-- Service Controls: Cosmo Bot + Dr. Ders -->
+  <div style="display:flex;gap:16px;margin-bottom:16px;flex-wrap:wrap">
+    <div class="card" style="flex:1;min-width:260px;margin:0">
+      <div class="card-header" style="padding:12px 16px">
+        <div style="display:flex;align-items:center;gap:8px">
+          <span style="font-size:18px">🤖</span>
+          <div>
+            <span class="card-title" style="font-size:14px">Cosmo Bot</span>
+            <div style="font-size:11px;color:var(--muted-foreground)">Supervisor</div>
+          </div>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px">
+          <span id="cosmo-status" class="badge badge-muted" style="font-size:11px">--</span>
+          <span id="cosmo-uptime" style="font-size:11px;color:var(--muted-foreground)"></span>
+          <button class="btn btn-ghost btn-sm" onclick="restartService('cosmo_bot')" title="Restart Cosmo Bot" style="padding:4px 8px;font-size:12px">&#8635; Restart</button>
+        </div>
+      </div>
+    </div>
+    <div class="card" style="flex:1;min-width:260px;margin:0">
+      <div class="card-header" style="padding:12px 16px">
+        <div style="display:flex;align-items:center;gap:8px">
+          <span style="font-size:18px">🩺</span>
+          <div>
+            <span class="card-title" style="font-size:14px">Dr. Ders</span>
+            <div style="font-size:11px;color:var(--muted-foreground)">Hardware Supervisor</div>
+          </div>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px">
+          <span id="ders-status" class="badge badge-muted" style="font-size:11px">--</span>
+          <span id="ders-uptime" style="font-size:11px;color:var(--muted-foreground)"></span>
+          <button class="btn btn-ghost btn-sm" onclick="restartService('dr_ders')" title="Restart Dr. Ders" style="padding:4px 8px;font-size:12px">&#8635; Restart</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-header">
+      <span class="card-title">Agent Roster</span>
+      <button class="btn btn-ghost btn-sm" onclick="loadFleet()">&#8635; Refresh</button>
+    </div>
+    <div style="overflow-x:auto">
+      <table class="data-table" id="fleet-table">
+        <thead>
+          <tr>
+            <th>ID</th>
+            <th>Name</th>
+            <th>Role</th>
+            <th>Status</th>
+            <th>Current Task</th>
+            <th>Last Update</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody id="fleet-tbody">
+          <tr><td colspan="7" style="text-align:center;padding:24px"><div class="spinner"></div></td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+
