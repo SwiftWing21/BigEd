@@ -1,0 +1,34 @@
+<div id="section-update" class="section">
+  <h1>Update</h1>
+  <p class="section-subtitle">Keep BigEd CC up to date</p>
+
+  <!-- Status banner -->
+  <div id="update-banner" class="card-container" style="margin-bottom:16px;"></div>
+
+  <!-- Actions -->
+  <div style="display:flex;gap:8px;margin-bottom:16px;">
+    <button class="btn btn-sm" onclick="checkUpdateNow()">Check Now</button>
+    <button class="btn btn-sm btn-primary" id="update-apply-btn" onclick="applyUpdate()" disabled>Apply Update</button>
+    <button class="btn btn-sm btn-outline" id="update-changelog-btn" onclick="showChangelog()" style="display:none">View Changelog</button>
+    <button class="btn btn-sm btn-outline" id="update-cancel-btn" onclick="cancelUpdate()" style="display:none">Cancel</button>
+  </div>
+
+  <!-- Progress -->
+  <div id="update-progress" class="card-container" style="display:none;">
+    <h3 style="margin:0 0 8px;">Progress</h3>
+    <div id="update-steps"></div>
+    <div style="display:flex;align-items:center;gap:8px;margin-top:12px;">
+      <div style="flex:1;height:6px;background:var(--card);border-radius:3px;overflow:hidden;">
+        <div id="update-progress-bar" style="height:100%;background:var(--success);border-radius:3px;width:0%;transition:width 0.3s;"></div>
+      </div>
+      <span id="update-progress-pct" style="font-size:12px;color:var(--muted-foreground);min-width:36px;text-align:right;">0%</span>
+      <span id="update-timer" style="font-size:12px;color:var(--muted-foreground);min-width:48px;text-align:right;">00:00</span>
+    </div>
+  </div>
+
+  <!-- History -->
+  <div class="card-container" style="margin-top:16px;">
+    <h3 style="margin:0 0 8px;">History</h3>
+    <div id="update-history" style="min-height:40px;"></div>
+  </div>
+</div>
