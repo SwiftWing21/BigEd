@@ -1,6 +1,13 @@
 <div id="section-ingest" class="section">
   <h1>Ingestion Hub</h1>
   <p class="section-subtitle">Feed real datasets to fleet agents</p>
+  <div id="ingest-offline-banner" style="display:none;background:rgba(234,179,8,0.1);border:1px solid rgba(234,179,8,0.3);border-radius:8px;padding:12px 16px;margin-bottom:16px;display:flex;align-items:center;gap:10px;">
+    <span style="font-size:18px;">&#9888;</span>
+    <div>
+      <span style="font-weight:600;color:var(--foreground);">Fleet is offline</span>
+      <span style="color:var(--muted-foreground);font-size:13px;margin-left:8px;">Start the fleet to load sources and ingest data</span>
+    </div>
+  </div>
   <div id="ingest-source-pills" style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px;"></div>
   <div id="ingest-expanded-panel" style="display:none;"></div>
   <div class="card-container" style="margin-top:16px;">

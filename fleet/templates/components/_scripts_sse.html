@@ -1174,13 +1174,16 @@ var _ingestExpanded = null;
 var _sourceColors = { coder: '#f59e0b', researcher: '#3b82f6', security: '#ef4444', archivist: '#8b5cf6', analyst: '#06b6d4', sandbox: '#10b981' };
 
 function loadIngest() {
+  var banner = document.getElementById('ingest-offline-banner');
   apiFetch('/api/ingest/sources').then(function(d) {
+    if (banner) banner.style.display = 'none';
     _ingestSources = d.sources || d || [];
     renderSourcePills();
     loadIngestStaging();
     loadIngestCache();
   }).catch(function(e) {
     console.warn('loadIngest failed', e);
+    if (banner) banner.style.display = 'flex';
     _ingestSources = [];
     renderSourcePills();
     loadIngestCache();
