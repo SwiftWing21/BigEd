@@ -29,7 +29,12 @@ from pathlib import Path
 
 FLEET_DIR = Path(__file__).parent
 DB_PATH = FLEET_DIR / "fleet.db"
-DEFAULT_HOST = "http://localhost:11434"
+_OLLAMA_HOST_FALLBACK = "http://localhost:11434"
+try:
+    from config import get_ollama_host as _get_ollama_host
+    DEFAULT_HOST = _get_ollama_host()
+except Exception:
+    DEFAULT_HOST = _OLLAMA_HOST_FALLBACK
 
 # Models are considered "idle keepalive blockers" if their expires_at is
 # more than this many hours in the future (implies keep_alive:"24h" park).
@@ -134,10 +139,15 @@ def get_active_task_count(db_path: Path | None = None) -> int:
         return 0
     try:
         placeholders = ",".join(f"'{s}'" for s in _ACTIVE_TASK_STATUSES)
-        conn = sqlite3.connect(str(db), timeout=5, check_same_thread=False)
+        if db_path is None:
+            import db as _db
+            conn = _db.get_conn()
+        else:
+            conn = sqlite3.connect(str(db), timeout=5, check_same_thread=False)
         cur = conn.execute(f"SELECT COUNT(*) FROM tasks WHERE status IN ({placeholders})")
         count = cur.fetchone()[0]
-        conn.close()
+        if db_path is not None:
+            conn.close()
         return count
     except Exception:
         return 0
@@ -154,12 +164,17 @@ def get_active_task_models(db_path: Path | None = None) -> set[str]:
         return set()
     try:
         placeholders = ",".join(f"'{s}'" for s in _ACTIVE_TASK_STATUSES)
-        conn = sqlite3.connect(str(db), timeout=5, check_same_thread=False)
+        if db_path is None:
+            import db as _db
+            conn = _db.get_conn()
+        else:
+            conn = sqlite3.connect(str(db), timeout=5, check_same_thread=False)
         cur = conn.execute(
             f"SELECT payload_json FROM tasks WHERE status IN ({placeholders})"
         )
         rows = cur.fetchall()
-        conn.close()
+        if db_path is not None:
+            conn.close()
         active = set()
         for (payload_json,) in rows:
             if not payload_json:

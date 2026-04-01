@@ -117,17 +117,21 @@ class BackupManager:
             db_path = FLEET_DIR / db_name
             if db_path.exists():
                 try:
-                    conn = sqlite3.connect(str(db_path), timeout=5)
-                    conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
-                    conn.close()
+                    if db_name == "fleet.db":
+                        import db as _db
+                        _db.get_conn().execute("PRAGMA wal_checkpoint(TRUNCATE)")
+                    else:
+                        # rag.db has no DAL — intentional raw sqlite3 for WAL checkpoint
+                        with sqlite3.connect(str(db_path), timeout=5) as conn:
+                            conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
                 except Exception:
                     pass
 
     def _verify_db(self, db_path: Path) -> bool:
         try:
-            conn = sqlite3.connect(str(db_path), timeout=10)
-            result = conn.execute("PRAGMA integrity_check").fetchone()
-            conn.close()
+            # Integrity check must use raw sqlite3 — bypasses any DAL/cipher layer
+            with sqlite3.connect(str(db_path), timeout=10) as conn:
+                result = conn.execute("PRAGMA integrity_check").fetchone()
             return result[0] == "ok"
         except Exception:
             return False

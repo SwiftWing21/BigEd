@@ -124,16 +124,16 @@ def api_rag():
     if not rag_db.exists():
         return jsonify({"files": 0, "chunks": 0, "sources": []})
     try:
-        conn = sqlite3.connect(rag_db, timeout=5)
-        conn.row_factory = sqlite3.Row
-        files = conn.execute("SELECT COUNT(*) FROM files").fetchone()[0]
-        chunks = conn.execute("SELECT COUNT(*) FROM chunks_meta").fetchone()[0]
-        sources = [
-            dict(r) for r in conn.execute(
-                "SELECT path, chunks, indexed FROM files ORDER BY indexed DESC LIMIT 30"
-            ).fetchall()
-        ]
-        conn.close()
+        # rag.db has no DAL get_conn() — intentional raw sqlite3 for read-only access
+        with sqlite3.connect(str(rag_db), timeout=5) as conn:
+            conn.row_factory = sqlite3.Row
+            files = conn.execute("SELECT COUNT(*) FROM files").fetchone()[0]
+            chunks = conn.execute("SELECT COUNT(*) FROM chunks_meta").fetchone()[0]
+            sources = [
+                dict(r) for r in conn.execute(
+                    "SELECT path, chunks, indexed FROM files ORDER BY indexed DESC LIMIT 30"
+                ).fetchall()
+            ]
         return jsonify({"files": files, "chunks": chunks, "sources": sources})
     except Exception as e:
         return jsonify({"error": _safe_error(e), "files": 0, "chunks": 0, "sources": []})

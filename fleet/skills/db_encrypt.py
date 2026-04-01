@@ -39,12 +39,11 @@ def _check_status():
     if not DB_PATH.exists():
         return {"status": "no_db", "path": str(DB_PATH)}
 
-    # Try opening with standard sqlite3 — if it works, it's plaintext
+    # Intentional raw sqlite3 — must bypass DAL/SQLCipher to detect encryption status
     import sqlite3
     try:
-        conn = sqlite3.connect(str(DB_PATH))
-        conn.execute("SELECT count(*) FROM sqlite_master")
-        conn.close()
+        with sqlite3.connect(str(DB_PATH)) as conn:
+            conn.execute("SELECT count(*) FROM sqlite_master")
         size_mb = round(DB_PATH.stat().st_size / 1e6, 2)
         return {"status": "ok", "encrypted": False, "size_mb": size_mb, "path": str(DB_PATH)}
     except sqlite3.DatabaseError:

@@ -127,10 +127,9 @@ def boot(config=None):
     if wal_path.exists() and wal_path.stat().st_size > 0:
         log.info("Stale WAL detected (%d bytes) — running recovery checkpoint", wal_path.stat().st_size)
         try:
-            import sqlite3 as _sqlite3
-            _rc = _sqlite3.connect(str(FLEET_DIR / "fleet.db"), timeout=10)
+            import db as _db
+            _rc = _db.get_conn()
             _rc.execute("PRAGMA wal_checkpoint(TRUNCATE)")
-            _rc.close()
             log.info("WAL recovery checkpoint complete")
         except Exception as e:
             log.warning("WAL recovery failed (will retry on next boot): %s", e)

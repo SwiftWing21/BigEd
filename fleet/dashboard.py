@@ -291,7 +291,8 @@ def api_health():
     # 2. Ollama status + available models + current loaded model
     try:
         import urllib.request
-        req = urllib.request.Request("http://localhost:11434/api/tags")
+        from config import get_ollama_host
+        req = urllib.request.Request(f"{get_ollama_host()}/api/tags")
         with urllib.request.urlopen(req, timeout=2) as resp:
             data = json.loads(resp.read())
             available_models = [m.get("name", "") for m in data.get("models", [])]
@@ -356,10 +357,10 @@ def api_health():
     rag_db = FLEET_DIR / "rag.db"
     try:
         if rag_db.exists():
-            conn = sqlite3.connect(str(rag_db), timeout=2)
-            conn.row_factory = sqlite3.Row
-            chunks = conn.execute("SELECT COUNT(*) FROM chunks_meta").fetchone()[0]
-            conn.close()
+            # rag.db has no DAL get_conn() — intentional raw sqlite3 for read-only probe
+            with sqlite3.connect(str(rag_db), timeout=2) as conn:
+                conn.row_factory = sqlite3.Row
+                chunks = conn.execute("SELECT COUNT(*) FROM chunks_meta").fetchone()[0]
             subsystems["rag_db"] = {"status": "ok", "chunks": chunks}
         else:
             subsystems["rag_db"] = {"status": "missing", "chunks": 0}
@@ -383,7 +384,8 @@ def api_ollama_ps():
     """Proxy to Ollama /api/ps — returns currently loaded models."""
     try:
         import urllib.request
-        req = urllib.request.Request("http://localhost:11434/api/ps")
+        from config import get_ollama_host
+        req = urllib.request.Request(f"{get_ollama_host()}/api/ps")
         with urllib.request.urlopen(req, timeout=5) as resp:
             data = json.loads(resp.read().decode())
             return jsonify(data)
@@ -928,17 +930,17 @@ def api_data_stats():
     tools_db = Path(__file__).parent.parent / "BigEd" / "launcher" / "data" / "tools.db"
     if tools_db.exists():
         try:
-            conn = sqlite3.connect(str(tools_db), timeout=5)
-            conn.row_factory = sqlite3.Row
-            for table in ["crm", "accounts", "onboarding", "customers", "agents"]:
-                if table not in ALLOWED_TOOLS_TABLES:
-                    continue
-                try:
-                    count = conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
-                    stats[f"tools.{table}"] = {"count": count}
-                except Exception:
-                    pass
-            conn.close()
+            # tools.db is the launcher DB — no DAL exists for it; intentional raw sqlite3
+            with sqlite3.connect(str(tools_db), timeout=5) as conn:
+                conn.row_factory = sqlite3.Row
+                for table in ["crm", "accounts", "onboarding", "customers", "agents"]:
+                    if table not in ALLOWED_TOOLS_TABLES:
+                        continue
+                    try:
+                        count = conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
+                        stats[f"tools.{table}"] = {"count": count}
+                    except Exception:
+                        pass
         except Exception:
             pass
 

@@ -323,14 +323,15 @@ def _graph_rag(db) -> tuple:
         rag_db = _P(__file__).resolve().parent / "rag.db"
         if rag_db.exists():
             import sqlite3
-            conn = sqlite3.connect(str(rag_db), timeout=5)
-            conn.row_factory = sqlite3.Row
-            row = conn.execute("SELECT COUNT(*) as n FROM chunks_meta").fetchone()
-            chunk_count = row["n"] if row else 0
-            sources = conn.execute(
-                "SELECT source, COUNT(*) as n FROM chunks_meta GROUP BY source ORDER BY n DESC LIMIT 10"
-            ).fetchall()
-            conn.close()
+            # rag.db has no DAL get_conn() — intentional raw sqlite3 for read-only access
+            with sqlite3.connect(str(rag_db), timeout=5) as conn:
+                conn.row_factory = sqlite3.Row
+                row = conn.execute("SELECT COUNT(*) as n FROM chunks_meta").fetchone()
+                chunk_count = row["n"] if row else 0
+                sources = conn.execute(
+                    "SELECT source, COUNT(*) as n FROM chunks_meta GROUP BY source ORDER BY n DESC LIMIT 10"
+                ).fetchall()
+                sources = list(sources)  # consume cursor before context manager closes
 
             nodes.append({
                 "id": "rag:index", "type": "index", "source": "rag",

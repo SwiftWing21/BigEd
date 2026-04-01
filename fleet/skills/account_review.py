@@ -49,15 +49,13 @@ def _read_accounts():
         return []
     try:
         import sqlite3
-        con = sqlite3.connect(str(LAUNCHER_DB), timeout=10)
-        try:
+        # tools.db (launcher DB) has no DAL — intentional raw sqlite3 for read-only access
+        with sqlite3.connect(str(LAUNCHER_DB), timeout=10) as con:
             con.row_factory = sqlite3.Row
             rows = con.execute(
                 "SELECT * FROM accounts ORDER BY upgrade_priority DESC, category, service"
             ).fetchall()
             return [dict(r) for r in rows]
-        finally:
-            con.close()
     except Exception as e:
         return [{"error": str(e)}]
 
