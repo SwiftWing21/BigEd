@@ -238,3 +238,9 @@ def test_weekly_merge_score():
     assert abs(result - 0.88) < 0.01
     result = merged_score(daily=0.80, weekly=1.0, weekly_age_days=6)
     assert abs(result - 0.82) < 0.01
+
+
+def test_audit_blueprint_imports():
+    """audit_blueprint module imports and exposes audit_bp."""
+    from audit_blueprint import audit_bp
+    assert audit_bp.name == "audit"

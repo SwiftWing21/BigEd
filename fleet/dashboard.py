@@ -121,6 +121,7 @@ _BLUEPRINTS = [
     ("control_plane",         "platform_bp",       False),
     ("self_service",          "self_service_bp",   False),
     ("ingest_blueprint",      "ingest_bp",         False),
+    ("audit_blueprint",       "audit_bp",          True),
 ]
 
 
