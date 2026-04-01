@@ -216,6 +216,16 @@ function handleSSE(msg) {
     case 'factorio_reward':
       _pollRewardChart();
       break;
+    case 'update_progress':
+      _handleUpdateProgress(msg.data);
+      break;
+    case 'update_complete':
+      _handleUpdateComplete(msg.data);
+      break;
+    case 'update_available':
+      _updateAvailable = true;
+      _toggleUpdateBadge(true);
+      break;
   }
 }
 
@@ -1160,7 +1170,7 @@ function toggleModifier(name) {
 /* ── Ingest Hub ──────────────────────────────────────────────────────────── */
 var _ingestSources = [];
 var _ingestExpanded = null;
-var _sourceColors = { coder: '#f59e0b', researcher: '#3b82f6', security: '#ef4444', archivist: '#8b5cf6', analyst: '#06b6d4' };
+var _sourceColors = { coder: '#f59e0b', researcher: '#3b82f6', security: '#ef4444', archivist: '#8b5cf6', analyst: '#06b6d4', sandbox: '#10b981' };
 
 function loadIngest() {
   apiFetch('/api/ingest/sources').then(function(d) {
@@ -1170,6 +1180,9 @@ function loadIngest() {
     loadIngestCache();
   }).catch(function(e) {
     console.warn('loadIngest failed', e);
+    _ingestSources = [];
+    renderSourcePills();
+    loadIngestCache();
   });
 }
 
@@ -1185,7 +1198,7 @@ function renderSourcePills() {
     if (_ingestExpanded === s.id) {
       btn.style.boxShadow = '0 0 0 2px ' + color;
     }
-    btn.textContent = s.dataset_id || s.name || 'Source ' + s.id;
+    btn.textContent = s.dataset || s.id;
     btn.setAttribute('onclick', 'toggleSourcePanel(' + JSON.stringify(s.id) + ')');
     wrap.appendChild(btn);
   });
@@ -1194,7 +1207,7 @@ function renderSourcePills() {
   fileBtn.className = 'btn btn-sm';
   fileBtn.style.cssText = 'border:1px solid var(--muted-foreground);color:var(--muted-foreground);background:transparent;cursor:pointer;';
   fileBtn.textContent = '\uD83D\uDCC1 Local Files';
-  fileBtn.setAttribute('onclick', 'document.getElementById("ingest-file-input").click()');
+  fileBtn.setAttribute('onclick', 'openIngestFileDialog()');
   wrap.appendChild(fileBtn);
   // + Add Source button
   var addBtn = document.createElement('button');
@@ -1240,7 +1253,7 @@ function toggleSourcePanel(sourceId) {
   var titleDiv = document.createElement('div');
   var h3 = document.createElement('h3');
   h3.style.margin = '0';
-  h3.textContent = src.dataset_id || src.name || 'Source';
+  h3.textContent = src.dataset || src.id;
   titleDiv.appendChild(h3);
   var meta = document.createElement('span');
   meta.style.cssText = 'font-size:12px;color:var(--muted-foreground);';
@@ -1407,7 +1420,7 @@ function loadIngestStaging() {
       row.appendChild(title);
       var tokens = document.createElement('span');
       tokens.style.cssText = 'font-size:11px;color:var(--muted-foreground);white-space:nowrap;';
-      tokens.textContent = (item.tokens || 0) + ' tok';
+      tokens.textContent = (item.token_estimate || 0) + ' tok';
       row.appendChild(tokens);
       var badge = document.createElement('span');
       badge.style.cssText = 'font-size:10px;padding:2px 6px;border-radius:4px;background:var(--card);color:var(--muted-foreground);';
@@ -1477,6 +1490,30 @@ function loadIngestCache() {
   });
 }
 
+function openIngestFileDialog() {
+  // Use native PyWebView dialog (starts in user home) if available
+  if (window.pywebview && window.pywebview.api && window.pywebview.api.open_file_dialog) {
+    window.pywebview.api.open_file_dialog().then(function(paths) {
+      if (!paths || paths.length === 0) return;
+      var uploads = [];
+      paths.forEach(function(filePath) {
+        var fd = new FormData();
+        // Create a fetch to read the file server-side by path
+        uploads.push(
+          apiFetch('/api/ingest/upload/path', { method: 'POST', body: { path: filePath } }).then(function(d) {
+            if (d.error) { console.warn('upload error', d.error); return; }
+            return apiFetch('/api/ingest/stage', { method: 'POST', body: { items: [{ title: d.filename, content_preview: d.preview || '', source_id: 'local', destination: 'tasks', file_path: d.path, token_estimate: d.token_estimate || 0 }] } });
+          })
+        );
+      });
+      Promise.all(uploads).then(function() { loadIngestStaging(); });
+    });
+    return;
+  }
+  // Fallback: HTML file input for browser mode
+  document.getElementById('ingest-file-input').click();
+}
+
 function handleLocalFileUpload() {
   var inp = document.getElementById('ingest-file-input');
   if (!inp || !inp.files) return;
@@ -1488,10 +1525,9 @@ function handleLocalFileUpload() {
       fd.append('file', file);
       uploads.push(
         fetch('/api/ingest/upload', { method: 'POST', body: fd }).then(function(r) { return r.json(); }).then(function(d) {
-          var item = d.item || d;
-          if (item && item.row_id) {
-            return apiFetch('/api/ingest/stage', { method: 'POST', body: { items: [{ row_id: item.row_id, source_id: item.source_id || 'local', destination: 'tasks' }] } });
-          }
+          if (d.error) { console.warn('upload error', d.error); return; }
+          // Auto-stage the uploaded file
+          return apiFetch('/api/ingest/stage', { method: 'POST', body: { items: [{ title: d.filename, content_preview: d.preview || '', source_id: 'local', destination: 'tasks', file_path: d.path, token_estimate: d.token_estimate || 0 }] } });
         })
       );
     })(files[i]);
@@ -3037,6 +3073,403 @@ function sendFactorioAction() {
   _factorioApi('POST', '/api/command', {actions: [action]})
     .then(function(d) { resultEl.textContent = 'Queued: ' + (d.command_id || 'ok'); })
     .catch(function(e) { resultEl.textContent = 'Error: ' + e; });
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   UPDATE PANEL
+   ══════════════════════════════════════════════════════════════════════ */
+
+var _updateAvailable = false;
+var _updateTimerInterval = null;
+var _updateTimerStart = 0;
+
+function _clearEl(el) { while (el.firstChild) el.removeChild(el.firstChild); }
+
+function loadUpdate() {
+  apiFetch('/api/update/status').then(function(d) {
+    var banner = document.getElementById('update-banner');
+    if (!banner) return;
+    _clearEl(banner);
+
+    // Version row
+    var verRow = document.createElement('div');
+    verRow.style.cssText = 'display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;';
+    var verLabel = document.createElement('span');
+    verLabel.style.cssText = 'font-size:13px;color:var(--muted-foreground);';
+    verLabel.textContent = 'Current Version';
+    var verVal = document.createElement('span');
+    verVal.style.cssText = 'font-weight:600;font-size:14px;';
+    verVal.textContent = d.version || 'unknown';
+    verRow.appendChild(verLabel);
+    verRow.appendChild(verVal);
+    banner.appendChild(verRow);
+
+    // Mode row
+    var modeRow = document.createElement('div');
+    modeRow.style.cssText = 'display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;';
+    var modeLabel = document.createElement('span');
+    modeLabel.style.cssText = 'font-size:13px;color:var(--muted-foreground);';
+    modeLabel.textContent = 'Update Mode';
+    var modeVal = document.createElement('span');
+    modeVal.style.cssText = 'font-size:13px;';
+    modeVal.textContent = (d.mode || 'unknown').toUpperCase();
+    modeRow.appendChild(modeLabel);
+    modeRow.appendChild(modeVal);
+    banner.appendChild(modeRow);
+
+    // Last check row
+    var checkRow = document.createElement('div');
+    checkRow.style.cssText = 'display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;';
+    var checkLabel = document.createElement('span');
+    checkLabel.style.cssText = 'font-size:13px;color:var(--muted-foreground);';
+    checkLabel.textContent = 'Last Check';
+    var checkVal = document.createElement('span');
+    checkVal.style.cssText = 'font-size:13px;';
+    checkVal.textContent = d.last_check ? new Date(d.last_check).toLocaleString() : 'Never';
+    checkRow.appendChild(checkLabel);
+    checkRow.appendChild(checkVal);
+    banner.appendChild(checkRow);
+
+    // Availability
+    var availRow = document.createElement('div');
+    availRow.style.cssText = 'display:flex;justify-content:space-between;align-items:center;padding-top:8px;border-top:1px solid var(--border);';
+    var availLabel = document.createElement('span');
+    availLabel.style.cssText = 'font-size:13px;font-weight:600;';
+    if (d.available) {
+      availLabel.textContent = 'Update available';
+      availLabel.style.color = 'var(--success)';
+      if (d.mode === 'git' && d.behind_count) {
+        availLabel.textContent += ' (' + d.behind_count + ' commit' + (d.behind_count !== 1 ? 's' : '') + ' behind)';
+      } else if (d.tag) {
+        availLabel.textContent += ' \u2014 ' + d.tag;
+      }
+    } else {
+      availLabel.textContent = 'Up to date';
+      availLabel.style.color = 'var(--muted-foreground)';
+    }
+    availRow.appendChild(availLabel);
+    banner.appendChild(availRow);
+
+    // Button states
+    var applyBtn = document.getElementById('update-apply-btn');
+    var changelogBtn = document.getElementById('update-changelog-btn');
+    if (applyBtn) applyBtn.disabled = !d.available;
+    if (changelogBtn) changelogBtn.style.display = d.available ? '' : 'none';
+
+    _updateAvailable = !!d.available;
+    _toggleUpdateBadge(d.available);
+
+    if (d.error) {
+      var errDiv = document.createElement('div');
+      errDiv.style.cssText = 'margin-top:8px;font-size:12px;color:var(--destructive);';
+      errDiv.textContent = 'Error: ' + d.error;
+      banner.appendChild(errDiv);
+    }
+  }).catch(function(e) {
+    var banner = document.getElementById('update-banner');
+    if (banner) {
+      _clearEl(banner);
+      var errSpan = document.createElement('span');
+      errSpan.style.color = 'var(--destructive)';
+      errSpan.textContent = 'Failed to load update status';
+      banner.appendChild(errSpan);
+    }
+  });
+
+  loadUpdateHistory();
+}
+
+function checkUpdateNow() {
+  showToast('Checking for updates...', 'info');
+  apiFetch('/api/update/check', { method: 'POST' }).then(function(d) {
+    if (d.available) {
+      showToast('Update available!', 'success');
+      _toggleUpdateBadge(true);
+    } else {
+      showToast('Already up to date', 'info');
+    }
+    loadUpdate();
+  }).catch(function(e) {
+    showToast('Update check failed', 'error');
+  });
+}
+
+function applyUpdate() {
+  if (!confirm('Apply update now? The fleet will restart after completion.')) return;
+
+  var progressDiv = document.getElementById('update-progress');
+  var stepsDiv = document.getElementById('update-steps');
+  var cancelBtn = document.getElementById('update-cancel-btn');
+  var applyBtn = document.getElementById('update-apply-btn');
+
+  if (progressDiv) progressDiv.style.display = '';
+  if (stepsDiv) _clearEl(stepsDiv);
+  if (cancelBtn) cancelBtn.style.display = '';
+  if (applyBtn) applyBtn.disabled = true;
+
+  // Reset progress bar
+  var bar = document.getElementById('update-progress-bar');
+  var pct = document.getElementById('update-progress-pct');
+  if (bar) bar.style.width = '0%';
+  if (pct) pct.textContent = '0%';
+
+  // Start elapsed timer
+  _updateTimerStart = Date.now();
+  if (_updateTimerInterval) clearInterval(_updateTimerInterval);
+  _updateTimerInterval = setInterval(function() {
+    var elapsed = Math.floor((Date.now() - _updateTimerStart) / 1000);
+    var mins = String(Math.floor(elapsed / 60)).padStart(2, '0');
+    var secs = String(elapsed % 60).padStart(2, '0');
+    var timerEl = document.getElementById('update-timer');
+    if (timerEl) timerEl.textContent = mins + ':' + secs;
+  }, 1000);
+
+  apiFetch('/api/update/apply', { method: 'POST' }).then(function(d) {
+    showToast('Update started', 'info');
+  }).catch(function(e) {
+    showToast('Failed to start update: ' + e.message, 'error');
+    if (_updateTimerInterval) { clearInterval(_updateTimerInterval); _updateTimerInterval = null; }
+    if (cancelBtn) cancelBtn.style.display = 'none';
+    if (applyBtn) applyBtn.disabled = false;
+  });
+}
+
+function cancelUpdate() {
+  apiFetch('/api/update/cancel', { method: 'POST' }).then(function() {
+    showToast('Update cancelled', 'warning');
+    if (_updateTimerInterval) { clearInterval(_updateTimerInterval); _updateTimerInterval = null; }
+    var cancelBtn = document.getElementById('update-cancel-btn');
+    if (cancelBtn) cancelBtn.style.display = 'none';
+    loadUpdate();
+  }).catch(function(e) {
+    showToast('Failed to cancel: ' + e.message, 'error');
+  });
+}
+
+function _handleUpdateProgress(d) {
+  if (!d) return;
+  var stepsDiv = document.getElementById('update-steps');
+  if (!stepsDiv) return;
+
+  // Find or create step row
+  var stepId = 'update-step-' + (d.step || '').replace(/[^a-zA-Z0-9_]/g, '_');
+  var row = document.getElementById(stepId);
+  if (!row) {
+    row = document.createElement('div');
+    row.id = stepId;
+    row.style.cssText = 'display:flex;align-items:center;gap:8px;padding:4px 0;font-size:13px;';
+    stepsDiv.appendChild(row);
+  }
+
+  _clearEl(row);
+
+  // Status icon
+  var icon = document.createElement('span');
+  icon.style.cssText = 'width:16px;text-align:center;flex-shrink:0;';
+  var status = d.status || 'in_progress';
+  if (status === 'complete') {
+    icon.textContent = '\u2713';
+    icon.style.color = 'var(--success)';
+  } else if (status === 'error') {
+    icon.textContent = '\u2717';
+    icon.style.color = 'var(--destructive)';
+  } else {
+    icon.textContent = '\u25CB';
+    icon.style.color = 'var(--muted-foreground)';
+  }
+  row.appendChild(icon);
+
+  // Step label
+  var label = document.createElement('span');
+  label.style.flex = '1';
+  label.textContent = d.detail || d.step || '';
+  row.appendChild(label);
+
+  // Update progress bar
+  var percent = d.percent || 0;
+  var bar = document.getElementById('update-progress-bar');
+  var pctEl = document.getElementById('update-progress-pct');
+  if (bar) bar.style.width = percent + '%';
+  if (pctEl) pctEl.textContent = Math.round(percent) + '%';
+}
+
+function _handleUpdateComplete(d) {
+  if (_updateTimerInterval) { clearInterval(_updateTimerInterval); _updateTimerInterval = null; }
+
+  var cancelBtn = document.getElementById('update-cancel-btn');
+  if (cancelBtn) cancelBtn.style.display = 'none';
+
+  // Set progress to 100%
+  var bar = document.getElementById('update-progress-bar');
+  var pctEl = document.getElementById('update-progress-pct');
+  if (bar) bar.style.width = '100%';
+  if (pctEl) pctEl.textContent = '100%';
+
+  if (d && d.success) {
+    showToast('Update complete!', 'success');
+    if (d.restart_required) {
+      var stepsDiv = document.getElementById('update-steps');
+      if (stepsDiv) {
+        var restartRow = document.createElement('div');
+        restartRow.style.cssText = 'margin-top:12px;display:flex;align-items:center;gap:8px;';
+        var restartLabel = document.createElement('span');
+        restartLabel.style.cssText = 'font-size:13px;color:var(--warning);font-weight:600;';
+        restartLabel.textContent = 'Restart required to complete update';
+        var restartBtn = document.createElement('button');
+        restartBtn.className = 'btn btn-sm btn-primary';
+        restartBtn.textContent = 'Restart Fleet';
+        restartBtn.onclick = function() {
+          apiFetch('/api/fleet/restart', { method: 'POST' }).then(function() {
+            showToast('Fleet restarting...', 'info');
+          }).catch(function(e) {
+            showToast('Restart failed: ' + e.message, 'error');
+          });
+        };
+        restartRow.appendChild(restartLabel);
+        restartRow.appendChild(restartBtn);
+        stepsDiv.appendChild(restartRow);
+      }
+    }
+  } else {
+    var errMsg = (d && d.error) ? d.error : 'Unknown error';
+    showToast('Update failed: ' + errMsg, 'error');
+  }
+
+  _toggleUpdateBadge(false);
+  loadUpdateHistory();
+}
+
+function showChangelog() {
+  apiFetch('/api/update/status').then(function(d) {
+    if (d.mode === 'git' && d.commits && d.commits.length) {
+      var list = document.createElement('div');
+      list.style.cssText = 'max-height:400px;overflow-y:auto;font-size:13px;';
+      d.commits.forEach(function(c) {
+        var row = document.createElement('div');
+        row.style.cssText = 'padding:4px 0;border-bottom:1px solid var(--border);';
+        var hash = document.createElement('code');
+        hash.style.cssText = 'color:var(--muted-foreground);margin-right:8px;font-size:11px;';
+        hash.textContent = (typeof c === 'string') ? '' : (c.hash || '').substring(0, 7);
+        var msg = document.createElement('span');
+        msg.textContent = (typeof c === 'string') ? c : (c.message || c.subject || '');
+        row.appendChild(hash);
+        row.appendChild(msg);
+        list.appendChild(row);
+      });
+      _showUpdateModal('Changelog (' + d.commits.length + ' commits)', list);
+    } else if (d.body) {
+      var bodyDiv = document.createElement('div');
+      bodyDiv.style.cssText = 'max-height:400px;overflow-y:auto;font-size:13px;white-space:pre-wrap;';
+      bodyDiv.textContent = d.body;
+      _showUpdateModal('Release Notes \u2014 ' + (d.tag || ''), bodyDiv);
+    } else {
+      showToast('No changelog available', 'info');
+    }
+  }).catch(function() {
+    showToast('Failed to load changelog', 'error');
+  });
+}
+
+function _showUpdateModal(title, contentEl) {
+  var existing = document.getElementById('update-modal-overlay');
+  if (existing) existing.remove();
+
+  var overlay = document.createElement('div');
+  overlay.id = 'update-modal-overlay';
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:9999;display:flex;align-items:center;justify-content:center;';
+  overlay.onclick = function(e) { if (e.target === overlay) overlay.remove(); };
+
+  var modal = document.createElement('div');
+  modal.style.cssText = 'background:var(--background);border:1px solid var(--border);border-radius:12px;padding:24px;max-width:600px;width:90%;max-height:80vh;overflow:hidden;display:flex;flex-direction:column;';
+
+  var header = document.createElement('div');
+  header.style.cssText = 'display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;';
+  var titleEl = document.createElement('h3');
+  titleEl.style.margin = '0';
+  titleEl.textContent = title;
+  var closeBtn = document.createElement('button');
+  closeBtn.style.cssText = 'background:none;border:none;font-size:18px;cursor:pointer;color:var(--foreground);padding:4px 8px;';
+  closeBtn.textContent = '\u2715';
+  closeBtn.onclick = function() { overlay.remove(); };
+  header.appendChild(titleEl);
+  header.appendChild(closeBtn);
+
+  modal.appendChild(header);
+  modal.appendChild(contentEl);
+  overlay.appendChild(modal);
+  document.body.appendChild(overlay);
+}
+
+function loadUpdateHistory() {
+  var container = document.getElementById('update-history');
+  if (!container) return;
+
+  apiFetch('/api/update/history').then(function(d) {
+    _clearEl(container);
+    var history = d.history || [];
+
+    if (!history.length) {
+      var empty = document.createElement('span');
+      empty.style.cssText = 'font-size:13px;color:var(--muted-foreground);';
+      empty.textContent = 'No update history';
+      container.appendChild(empty);
+      return;
+    }
+
+    var table = document.createElement('table');
+    table.style.cssText = 'width:100%;font-size:13px;border-collapse:collapse;';
+
+    var thead = document.createElement('thead');
+    var headRow = document.createElement('tr');
+    ['Date', 'Mode', 'Tag'].forEach(function(h) {
+      var th = document.createElement('th');
+      th.style.cssText = 'text-align:left;padding:4px 8px;border-bottom:1px solid var(--border);color:var(--muted-foreground);font-weight:500;font-size:11px;text-transform:uppercase;';
+      th.textContent = h;
+      headRow.appendChild(th);
+    });
+    thead.appendChild(headRow);
+    table.appendChild(thead);
+
+    var tbody = document.createElement('tbody');
+    history.slice().reverse().forEach(function(entry) {
+      var tr = document.createElement('tr');
+
+      var tdDate = document.createElement('td');
+      tdDate.style.cssText = 'padding:4px 8px;';
+      tdDate.textContent = entry.timestamp ? new Date(entry.timestamp).toLocaleString() : '\u2014';
+
+      var tdMode = document.createElement('td');
+      tdMode.style.cssText = 'padding:4px 8px;';
+      tdMode.textContent = (entry.mode || '').toUpperCase();
+
+      var tdTag = document.createElement('td');
+      tdTag.style.cssText = 'padding:4px 8px;';
+      tdTag.textContent = entry.tag || '\u2014';
+
+      tr.appendChild(tdDate);
+      tr.appendChild(tdMode);
+      tr.appendChild(tdTag);
+      tbody.appendChild(tr);
+    });
+    table.appendChild(tbody);
+    container.appendChild(table);
+  }).catch(function() {
+    _clearEl(container);
+    var errSpan = document.createElement('span');
+    errSpan.style.cssText = 'font-size:13px;color:var(--destructive);';
+    errSpan.textContent = 'Failed to load history';
+    container.appendChild(errSpan);
+  });
+}
+
+function _toggleUpdateBadge(show) {
+  var badge = document.getElementById('update-badge');
+  if (!badge) return;
+  if (show) {
+    badge.classList.remove('hidden');
+  } else {
+    badge.classList.add('hidden');
+  }
 }
 
 /* ── Init: populate header dropdown + check walkthrough on load ───────────── */
