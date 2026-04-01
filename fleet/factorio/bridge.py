@@ -170,6 +170,14 @@ class FactorioBridge:
         """Run a single perception -> action tick."""
         self._tick_count += 1
 
+        # SSE: push spatial map update every 60 ticks
+        if self._tick_count % 60 == 0:
+            try:
+                from dashboard_utils import _broadcast_sse
+                _broadcast_sse({"type": "factorio_spatial"})
+            except Exception:
+                pass
+
         # 1. Get state via remote interface
         try:
             state_raw = await self.rcon.remote_call("get_state")
@@ -1070,6 +1078,12 @@ class FactorioBridge:
         # 10. Episode end check
         if done:
             self._trainer.total_episodes += 1
+            # SSE: push reward chart update on episode end
+            try:
+                from dashboard_utils import _broadcast_sse
+                _broadcast_sse({"type": "factorio_reward"})
+            except Exception:
+                pass
             if self._trainer.total_episodes % self.config.ml_checkpoint_every == 0:
                 try:
                     self._trainer.save_checkpoint(self._trainer.total_episodes)
