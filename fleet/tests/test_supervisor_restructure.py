@@ -85,9 +85,9 @@ def test_health_monitor_recovery_log_empty():
 
 # ── Backward Compatibility Shims ────────────────────────────────────
 
-def test_self_healing_shim_imports():
-    """self_healing.py re-exports all functions from health_monitor."""
-    from self_healing import (
+def test_health_monitor_imports():
+    """health_monitor.py exports all self-healing functions directly."""
+    from health_monitor import (
         check_agent_health,
         recover_agent,
         retry_failed_task,
@@ -118,11 +118,10 @@ def test_diagnostics_shim_imports():
     assert callable(get_stuck_reviews)
 
 
-def test_self_healing_shim_same_objects():
-    """self_healing and health_monitor export the same function objects."""
-    from self_healing import check_agent_health as sh_fn
-    from health_monitor import check_agent_health as hm_fn
-    assert sh_fn is hm_fn
+def test_health_monitor_direct_import():
+    """health_monitor functions are directly importable (shim removed)."""
+    from health_monitor import check_agent_health
+    assert callable(check_agent_health)
 
 
 def test_diagnostics_shim_same_objects():

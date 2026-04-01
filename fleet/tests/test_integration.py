@@ -113,7 +113,7 @@ def test_discovery_peers():
 def test_self_healing():
     """Import self_healing, verify run_health_sweep is callable."""
     try:
-        from self_healing import run_health_sweep
+        from health_monitor import run_health_sweep
         if not callable(run_health_sweep):
             record("Self-healing", False, "run_health_sweep is not callable")
             return

@@ -12,7 +12,6 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "fleet"))
 import unittest.mock as mock
 import pytest
 
-import self_healing as sh
 import health_monitor as hm
 
 
@@ -30,7 +29,7 @@ def _reset_breakers():
 # ── 1. Public API exports ────────────────────────────────────────────────────
 
 def test_public_api_present():
-    """All expected symbols must be importable from self_healing."""
+    """All expected symbols must be importable from health_monitor."""
     expected = [
         "check_agent_health",
         "recover_agent",
@@ -47,7 +46,7 @@ def test_public_api_present():
         "get_recovery_log",
     ]
     for name in expected:
-        assert hasattr(sh, name), f"self_healing missing: {name}"
+        assert hasattr(hm, name), f"health_monitor missing: {name}"
 
 
 # ── 2. Circuit breaker trips (via shim) ──────────────────────────────────────
@@ -58,14 +57,14 @@ def test_circuit_breaker_trips():
         "circuit_breaker_threshold": 3,
         "circuit_breaker_window": 300,
     }.get(k, fb)):
-        assert not sh.circuit_breaker_is_open("shim_skill")
+        assert not hm.circuit_breaker_is_open("shim_skill")
 
-        sh.circuit_breaker_record_failure("shim_skill", "err1")
-        sh.circuit_breaker_record_failure("shim_skill", "err2")
-        assert not sh.circuit_breaker_is_open("shim_skill")
+        hm.circuit_breaker_record_failure("shim_skill", "err1")
+        hm.circuit_breaker_record_failure("shim_skill", "err2")
+        assert not hm.circuit_breaker_is_open("shim_skill")
 
-        sh.circuit_breaker_record_failure("shim_skill", "err3")
-        assert sh.circuit_breaker_is_open("shim_skill")
+        hm.circuit_breaker_record_failure("shim_skill", "err3")
+        assert hm.circuit_breaker_is_open("shim_skill")
 
 
 # ── 3. Circuit breaker resets after window ────────────────────────────────────
@@ -76,15 +75,15 @@ def test_circuit_breaker_resets_after_window():
         "circuit_breaker_threshold": 2,
         "circuit_breaker_window": 10,
     }.get(k, fb)):
-        sh.circuit_breaker_record_failure("cooldown_skill", "e1")
-        sh.circuit_breaker_record_failure("cooldown_skill", "e2")
-        assert sh.circuit_breaker_is_open("cooldown_skill")
+        hm.circuit_breaker_record_failure("cooldown_skill", "e1")
+        hm.circuit_breaker_record_failure("cooldown_skill", "e2")
+        assert hm.circuit_breaker_is_open("cooldown_skill")
 
         # Simulate window expiry
         with hm._breaker_lock:
             hm._breakers["cooldown_skill"]["tripped_at"] = time.time() - 11
 
-        assert not sh.circuit_breaker_is_open("cooldown_skill")
+        assert not hm.circuit_breaker_is_open("cooldown_skill")
 
 
 # ── 4. get_circuit_breaker_status returns proper structure ────────────────────
@@ -95,11 +94,11 @@ def test_circuit_breaker_status_structure():
         "circuit_breaker_threshold": 2,
         "circuit_breaker_window": 300,
     }.get(k, fb)):
-        sh.circuit_breaker_record_failure("status_skill", "boom")
-        sh.circuit_breaker_record_failure("status_skill", "bang")
-        sh.circuit_breaker_is_open("status_skill")  # trigger trip evaluation
+        hm.circuit_breaker_record_failure("status_skill", "boom")
+        hm.circuit_breaker_record_failure("status_skill", "bang")
+        hm.circuit_breaker_is_open("status_skill")  # trigger trip evaluation
 
-        statuses = sh.get_circuit_breaker_status()
+        statuses = hm.get_circuit_breaker_status()
         assert len(statuses) >= 1
         s = next(x for x in statuses if x["skill"] == "status_skill")
         assert s["tripped"] is True
@@ -110,7 +109,7 @@ def test_circuit_breaker_status_structure():
 
 def test_check_agent_health_unknown(tmp_db):
     """Unknown agent returns healthy=False."""
-    result = sh.check_agent_health("nonexistent_999")
+    result = hm.check_agent_health("nonexistent_999")
     assert result["healthy"] is False
     assert "agent_not_found" in result["issues"]
 
@@ -133,7 +132,7 @@ def test_check_agent_health_active(tmp_db):
             )
     db._retry_write(_seed)
 
-    result = sh.check_agent_health("shim_worker")
+    result = hm.check_agent_health("shim_worker")
     assert result["healthy"] is True
 
 
@@ -141,7 +140,7 @@ def test_check_agent_health_active(tmp_db):
 
 def test_get_agent_health_summary(tmp_db):
     """get_agent_health_summary returns a list (possibly empty but not None)."""
-    result = sh.get_agent_health_summary()
+    result = hm.get_agent_health_summary()
     assert isinstance(result, list)
 
 
@@ -149,7 +148,7 @@ def test_get_agent_health_summary(tmp_db):
 
 def test_get_skill_health_summary():
     """get_skill_health_summary returns a list."""
-    result = sh.get_skill_health_summary()
+    result = hm.get_skill_health_summary()
     assert isinstance(result, list)
 
 
@@ -157,5 +156,5 @@ def test_get_skill_health_summary():
 
 def test_get_recovery_log(tmp_db):
     """get_recovery_log returns a list (may be empty)."""
-    result = sh.get_recovery_log()
+    result = hm.get_recovery_log()
     assert isinstance(result, list)
