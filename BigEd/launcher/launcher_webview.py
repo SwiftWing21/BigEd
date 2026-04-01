@@ -24,6 +24,26 @@ log = logging.getLogger("biged.launcher")
 LOCK_PORT = 19876
 DASHBOARD_URL = "http://localhost:5555"
 HEALTH_URL = f"{DASHBOARD_URL}/api/health"
+
+SPLASH_HTML = """<!DOCTYPE html>
+<html><head><meta charset="utf-8">
+<style>
+  body { margin:0; background:#0a0e1a; display:flex; align-items:center; justify-content:center; height:100vh; font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif; }
+  .splash { text-align:center; }
+  .logo { width:64px; height:64px; background:#3b82f6; border-radius:14px; display:flex; align-items:center; justify-content:center; margin:0 auto 24px; font-size:28px; font-weight:700; color:#fff; }
+  h1 { color:#e2e8f0; font-size:20px; margin:0 0 8px; }
+  p { color:#94a3b8; font-size:14px; margin:0 0 24px; }
+  .spinner { width:32px; height:32px; border:3px solid #1e293b; border-top-color:#3b82f6; border-radius:50%; animation:spin 0.8s linear infinite; margin:0 auto; }
+  @keyframes spin { to { transform:rotate(360deg); } }
+</style>
+</head><body>
+<div class="splash">
+  <div class="logo">B</div>
+  <h1>BigEd CC</h1>
+  <p>Starting fleet...</p>
+  <div class="spinner"></div>
+</div>
+</body></html>"""
 FLEET_DIR = Path(__file__).resolve().parent.parent.parent / "fleet"
 DATA_DIR = Path(__file__).resolve().parent / "data"
 ICON_PATH = Path(__file__).resolve().parent / "icon_1024.png"
@@ -439,7 +459,23 @@ def main():
     if not _acquire_instance_lock():
         log.info("Another instance is already running (port %s held)", LOCK_PORT)
         try:
-            webview.create_window("BigEd", html="<h2>BigEd is already running.</h2><p>Check your system tray.</p>")
+            _ALREADY_RUNNING_HTML = """<!DOCTYPE html>
+<html><head><meta charset="utf-8">
+<style>
+  body { margin:0; background:#0a0e1a; display:flex; align-items:center; justify-content:center; height:100vh; font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif; }
+  .card { text-align:center; max-width:400px; padding:40px; }
+  .logo { width:64px; height:64px; background:#3b82f6; border-radius:14px; display:flex; align-items:center; justify-content:center; margin:0 auto 24px; font-size:28px; font-weight:700; color:#fff; }
+  h1 { color:#e2e8f0; font-size:20px; margin:0 0 12px; }
+  p { color:#94a3b8; font-size:14px; margin:0; line-height:1.6; }
+</style>
+</head><body>
+<div class="card">
+  <div class="logo">B</div>
+  <h1>BigEd is Already Running</h1>
+  <p>Check your system tray for the BigEd icon.<br>Click it to restore the window.</p>
+</div>
+</body></html>"""
+            webview.create_window("BigEd", html=_ALREADY_RUNNING_HTML)
             webview.start()
         except Exception:
             pass
@@ -467,21 +503,10 @@ def main():
         pause_file.write_text("paused_by_launcher", encoding="utf-8")
         log.info("auto_start=false — fleet will open idle (queue paused)")
 
-    _start_supervisor()  # always start — dashboard is the UI
-
-    if not _wait_for_dashboard():
-        log.error("Dashboard did not start within 30 seconds")
-        webview.create_window(
-            "BigEd -- Error",
-            html="<h2>Fleet failed to start</h2><p>Dashboard did not respond at localhost:5555 within 30 seconds.</p>",
-        )
-        webview.start()
-        _release_instance_lock()
-        return
-
+    # Show splash window immediately — no waiting
     _window = webview.create_window(
         "BigEd CC",
-        url=DASHBOARD_URL,
+        html=SPLASH_HTML,
         width=1280,
         height=860,
         min_size=(800, 600),
@@ -503,10 +528,42 @@ def main():
         except Exception as e:
             log.debug("Could not set window icon: %s", e)
 
+    def _after_start():
+        """Runs after webview window is shown — start fleet and navigate."""
+        _set_icon()
+        _start_supervisor()
+        if _wait_for_dashboard():
+            log.info("Dashboard ready — navigating from splash")
+            time.sleep(0.3)  # brief pause so splash is visible
+            if _window:
+                _window.load_url(DASHBOARD_URL)
+        else:
+            log.error("Dashboard did not start within 30 seconds")
+            if _window:
+                _FAILED_HTML = """<!DOCTYPE html>
+<html><head><meta charset="utf-8">
+<style>
+  body { margin:0; background:#0a0e1a; display:flex; align-items:center; justify-content:center; height:100vh; font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif; }
+  .card { text-align:center; max-width:450px; padding:40px; }
+  .logo { width:64px; height:64px; background:#ef4444; border-radius:14px; display:flex; align-items:center; justify-content:center; margin:0 auto 24px; font-size:28px; font-weight:700; color:#fff; }
+  h1 { color:#e2e8f0; font-size:20px; margin:0 0 12px; }
+  p { color:#94a3b8; font-size:14px; margin:0 0 24px; line-height:1.6; }
+  .hint { color:#64748b; font-size:12px; margin-top:16px; }
+</style>
+</head><body>
+<div class="card">
+  <div class="logo">!</div>
+  <h1>Fleet Failed to Start</h1>
+  <p>The dashboard did not respond within 30 seconds.<br>This usually means Ollama is not installed or the supervisor crashed.</p>
+  <p class="hint">Check fleet/logs/supervisor.log for details.<br>Try: python fleet/supervisor.py</p>
+</div>
+</body></html>"""
+                _window.load_html(_FAILED_HTML)
+
     # Tray icon created on-demand when user minimizes to tray (not on startup)
 
-    log.info("Starting PyWebView window")
-    webview.start(func=_set_icon)
+    log.info("Starting PyWebView window (splash visible)")
+    webview.start(func=_after_start)
 
     # If webview.start() returns (all windows destroyed), shut down
     _shutdown()
