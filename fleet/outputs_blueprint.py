@@ -226,7 +226,7 @@ def api_outputs_file():
 
 
 @outputs_bp.route("/api/outputs/feedback", methods=["POST"])
-@_require_role("operator")
+@_require_role("viewer")
 def api_outputs_feedback():
     if not _check_rate_limit("outputs_feedback", max_per_min=10):
         return jsonify({"error": "Rate limit exceeded"}), 429
