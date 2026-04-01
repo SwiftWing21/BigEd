@@ -318,6 +318,7 @@ function _renderFleetFromSSE(agents) {
     var checkbox = document.createElement('input');
     checkbox.type = 'checkbox';
     checkbox.checked = ds !== 'DISABLED';
+    checkbox.dataset.agent = a.name;
     (function(agentName) {
       checkbox.addEventListener('change', function() { toggleAgent(agentName, this.checked); });
     })(a.name);

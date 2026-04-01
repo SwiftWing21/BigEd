@@ -1252,6 +1252,7 @@ function loadFleet() {
       var checkbox = document.createElement('input');
       checkbox.type = 'checkbox';
       checkbox.checked = ds !== 'DISABLED';
+      checkbox.dataset.agent = a.name;
       (function(agentName) {
         checkbox.addEventListener('change', function() { toggleAgent(agentName, this.checked); });
       })(a.name);
@@ -1284,10 +1285,29 @@ function loadFleet() {
 }
 
 function toggleAgent(name, enabled) {
+  // Optimistic UI — flip immediately, show spinner, revert on error
+  var toggle = document.querySelector('input[type="checkbox"][data-agent="' + name + '"]');
+  if (!toggle) {
+    // Fallback: find by traversing fleet table rows
+    var rows = document.querySelectorAll('#fleet-tbody tr');
+    rows.forEach(function(tr) {
+      var nameCell = tr.querySelector('td:nth-child(2)');
+      if (nameCell && nameCell.textContent.trim() === name) {
+        toggle = tr.querySelector('.toggle input[type="checkbox"]');
+      }
+    });
+  }
+  var toggleLabel = toggle ? toggle.closest('.toggle') : null;
+  if (toggleLabel) toggleLabel.classList.add('loading');
+
   var url = '/api/fleet/worker/' + encodeURIComponent(name) + (enabled ? '/enable' : '/disable');
   apiFetch(url, { method: 'POST' }).then(function() {
+    if (toggleLabel) toggleLabel.classList.remove('loading');
     showToast('Agent ' + name + (enabled ? ' enabled' : ' disabled'), 'success');
   }).catch(function(e) {
+    // Revert on failure
+    if (toggle) toggle.checked = !enabled;
+    if (toggleLabel) toggleLabel.classList.remove('loading');
     showToast('Failed: ' + e.message, 'error');
   });
 }
