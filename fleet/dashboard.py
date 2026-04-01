@@ -215,6 +215,16 @@ def _post_registration_setup(flask_app):
     except Exception as e:
         log.warning("Failed to start update checker: %s", e)
 
+    # Mark disabled agents in DB so they don't count as active
+    try:
+        from config import load_config
+        from db_agents import mark_disabled_agents
+        disabled = load_config().get("fleet", {}).get("disabled_agents", [])
+        if disabled:
+            mark_disabled_agents(disabled)
+    except Exception as e:
+        log.warning("Failed to mark disabled agents: %s", e)
+
 
 _register_blueprints(app)
 _post_registration_setup(app)

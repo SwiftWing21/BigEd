@@ -672,7 +672,7 @@ from db_tasks import (  # noqa: E402,F401
 
 # ── Re-exports: Agents (db_agents.py) ────────────────────────────────────────
 from db_agents import (  # noqa: E402,F401
-    register_agent, heartbeat, acquire_lock, release_lock, check_lock,
+    register_agent, heartbeat, mark_disabled_agents, acquire_lock, release_lock, check_lock,
     delete_user_data,
 )
 

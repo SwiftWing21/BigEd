@@ -21,6 +21,24 @@ def register_agent(name, role, pid):
     _retry_write(_do)
 
 
+def mark_disabled_agents(disabled_names):
+    """Set status='DISABLED' for agents in the disabled list, restore others to IDLE."""
+    if not disabled_names:
+        return
+    from db import get_conn, _retry_write
+
+    disabled_set = set(disabled_names)
+
+    def _do():
+        with get_conn() as conn:
+            for name in disabled_set:
+                conn.execute(
+                    "UPDATE agents SET status='DISABLED' WHERE name=? AND status != 'BUSY'",
+                    (name,),
+                )
+    _retry_write(_do)
+
+
 def heartbeat(name, status='IDLE', current_task_id=None):
     from db import get_conn, _retry_write
 
