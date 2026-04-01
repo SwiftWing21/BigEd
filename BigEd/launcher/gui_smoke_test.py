@@ -8,13 +8,12 @@ Checks:
 2. Module discovery finds all mod_*.py files
 3. Module manifest loads and validates
 4. Fleet dir detection resolves correctly
-5. All UI extraction modules import (consoles, settings, boot, omnibox)
+5. launcher_webview.py parses without syntax errors
 6. DataAccess layer CRUD works
-7. SSE client imports and initializes
+7. tray.py exists and parses cleanly
 8. Config detection (detect_cli) works
 """
 import ast
-import importlib
 import json
 import sys
 import tempfile
@@ -74,18 +73,12 @@ def test_fleet_dir():
     return fleet_toml.exists(), f"fleet.toml at {FLEET_DIR}"
 
 
-def test_ui_imports():
-    """5. All UI extraction modules import cleanly."""
-    sys.path.insert(0, str(HERE))
-    failures = []
-    for mod_name in ["ui.consoles", "ui.settings", "ui.boot", "ui.omnibox", "ui.sse_client"]:
-        try:
-            importlib.import_module(mod_name)
-        except Exception as e:
-            failures.append(f"{mod_name}: {e}")
-    if failures:
-        return False, "; ".join(failures)
-    return True, "5 UI modules imported"
+def test_webview_launcher_syntax():
+    """5. launcher_webview.py parses without syntax errors."""
+    source = (HERE / "launcher_webview.py").read_text(encoding="utf-8")
+    ast.parse(source)
+    lines = len(source.splitlines())
+    return True, f"{lines} lines, syntax OK"
 
 
 def test_data_access():
@@ -109,14 +102,14 @@ def test_data_access():
         raise
 
 
-def test_sse_client():
-    """7. SSE client initializes without connecting."""
-    sys.path.insert(0, str(HERE))
-    from ui.sse_client import SSEClient
-    client = SSEClient("http://localhost:99999")  # bogus port, won't connect
-    client.on("test", lambda d: None)
-    assert not client.connected
-    return True, "SSEClient created, not connected (expected)"
+def test_tray_module():
+    """7. tray.py exists and parses cleanly."""
+    tray_path = HERE / "tray.py"
+    if not tray_path.exists():
+        return False, "tray.py not found"
+    source = tray_path.read_text(encoding="utf-8")
+    ast.parse(source)
+    return True, f"tray.py syntax OK ({len(source.splitlines())} lines)"
 
 
 def test_detect_cli():
@@ -135,9 +128,9 @@ def main():
     check("Module discovery", test_module_discovery)
     check("Module manifest", test_module_manifest)
     check("Fleet dir", test_fleet_dir)
-    check("UI module imports", test_ui_imports)
+    check("Webview launcher syntax", test_webview_launcher_syntax)
     check("DataAccess CRUD", test_data_access)
-    check("SSE client init", test_sse_client)
+    check("Tray module", test_tray_module)
     check("CLI detection", test_detect_cli)
 
     print("=" * 45)

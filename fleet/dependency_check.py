@@ -258,7 +258,7 @@ def check_python_packages() -> dict:
     packages = {
         "flask": "fleet dashboard + web launcher",
         "psutil": "process management + memory monitoring",
-        "customtkinter": "launcher GUI",
+        "customtkinter": "standalone tools only (USB media creator)",
         "tomlkit": "config read/write",
         "anthropic": "Claude API client",
     }

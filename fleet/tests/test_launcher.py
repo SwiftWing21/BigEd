@@ -58,13 +58,6 @@ def test_bridge_api_class():
     assert method_count >= 3, f"BridgeAPI should have 3+ methods, found {method_count}"
 
 
-def test_tkinter_fallback_exists():
-    """Old tkinter launcher preserved as fallback."""
-    fallback = Path(LAUNCHER_DIR) / "launcher_tkinter.py"
-    assert fallback.exists(), "launcher_tkinter.py fallback missing"
-    assert fallback.stat().st_size > 1000, "launcher_tkinter.py is too small"
-
-
 def test_fractal_layout_exists():
     """Fractal brain layout JS file exists."""
     layout_path = Path(FLEET_DIR) / "static" / "layout_fractal.js"

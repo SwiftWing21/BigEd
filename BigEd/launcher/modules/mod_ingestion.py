@@ -71,16 +71,27 @@ class Module:
     def _init_theme(self):
         global BG, BG2, BG3, ACCENT, ACCENT_H, GOLD, TEXT, DIM, GREEN, ORANGE, RED
         global FONT_SM, FONT_STAT, FONT_BOLD, FONT_XS, FLEET_DIR
-        from ui.theme import (BG as _BG, BG2 as _BG2, BG3 as _BG3,
-                              ACCENT as _ACC, ACCENT_H as _AH, GOLD as _GOLD,
-                              TEXT as _TEXT, DIM as _DIM, GREEN as _GR, ORANGE as _OR, RED as _RED,
-                              FONT_SM as _FSM, FONT_STAT as _FST, FONT_BOLD as _FB, FONT_XS as _FXS)
-        BG = _BG; BG2 = _BG2; BG3 = _BG3
-        ACCENT = _ACC; ACCENT_H = _AH; GOLD = _GOLD
-        TEXT = _TEXT; DIM = _DIM; GREEN = _GR; ORANGE = _OR; RED = _RED
-        FONT_SM = _FSM; FONT_STAT = _FST; FONT_BOLD = _FB; FONT_XS = _FXS
-        import launcher
-        FLEET_DIR = launcher.FLEET_DIR
+        try:
+            from ui.theme import (BG as _BG, BG2 as _BG2, BG3 as _BG3,
+                                  ACCENT as _ACC, ACCENT_H as _AH, GOLD as _GOLD,
+                                  TEXT as _TEXT, DIM as _DIM, GREEN as _GR, ORANGE as _OR, RED as _RED,
+                                  FONT_SM as _FSM, FONT_STAT as _FST, FONT_BOLD as _FB, FONT_XS as _FXS)
+            BG = _BG; BG2 = _BG2; BG3 = _BG3
+            ACCENT = _ACC; ACCENT_H = _AH; GOLD = _GOLD
+            TEXT = _TEXT; DIM = _DIM; GREEN = _GR; ORANGE = _OR; RED = _RED
+            FONT_SM = _FSM; FONT_STAT = _FST; FONT_BOLD = _FB; FONT_XS = _FXS
+        except Exception:
+            BG = "#1a1a1a"; BG2 = "#242424"; BG3 = "#2d2d2d"
+            ACCENT = "#b22222"; ACCENT_H = "#8b0000"; GOLD = "#c8a84b"
+            TEXT = "#e2e2e2"; DIM = "#888888"; GREEN = "#4caf50"
+            ORANGE = "#ff9800"; RED = "#f44336"
+            FONT_SM = ("Segoe UI", 10); FONT_STAT = ("Consolas", 10)
+            FONT_BOLD = ("Segoe UI", 11, "bold"); FONT_XS = ("Consolas", 8)
+        try:
+            import launcher
+            FLEET_DIR = launcher.FLEET_DIR
+        except Exception:
+            FLEET_DIR = Path(__file__).resolve().parent.parent.parent.parent / "fleet"
 
     def build_tab(self, parent):
         self._parent = parent

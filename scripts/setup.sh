@@ -48,7 +48,6 @@ fail()  { echo -e "${RED}[FAIL]${RESET}  $*"; }
 SUMMARY_OS=""
 SUMMARY_GIT=""
 SUMMARY_PYTHON=""
-SUMMARY_TKINTER=""
 SUMMARY_OLLAMA=""
 SUMMARY_MODEL=""
 SUMMARY_DEPS=""
@@ -270,57 +269,7 @@ install_python() {
     esac
 }
 
-# ── 4. Check tkinter ─────────────────────────────────────────────────────────
-check_tkinter() {
-    info "Checking tkinter..."
-
-    if python3 -c "import tkinter" &>/dev/null; then
-        SUMMARY_TKINTER="available"
-        ok "tkinter is available"
-        return 0
-    fi
-
-    warn "tkinter not found. Attempting to install..."
-    install_tkinter
-
-    if python3 -c "import tkinter" &>/dev/null; then
-        SUMMARY_TKINTER="available"
-        ok "tkinter installed"
-    else
-        SUMMARY_TKINTER="MISSING"
-        fail "Could not install tkinter. Please install it manually:"
-        case "$PKG_MGR" in
-            apt)    fail "  sudo apt install python3-tk" ;;
-            pacman) fail "  sudo pacman -S tk" ;;
-            dnf)    fail "  sudo dnf install python3-tkinter" ;;
-            brew)   fail "  brew install python-tk@3.12" ;;
-        esac
-        exit 1
-    fi
-}
-
-install_tkinter() {
-    case "$PKG_MGR" in
-        apt)
-            run_sudo apt install -y python3-tk
-            ;;
-        pacman)
-            run_sudo pacman -S --noconfirm tk
-            ;;
-        dnf)
-            run_sudo dnf install -y python3-tkinter
-            ;;
-        brew)
-            brew install python-tk@3.12
-            ;;
-        *)
-            fail "Unknown package manager ($PKG_MGR). Please install tkinter manually."
-            exit 1
-            ;;
-    esac
-}
-
-# ── 4b. Check thermal sensors (Linux: lm-sensors, macOS: built-in) ───────────
+# ── 4. Check thermal sensors (Linux: lm-sensors, macOS: built-in) ────────────
 check_thermal() {
     info "Checking thermal sensor access..."
     if [[ "$OSTYPE" == "linux-gnu"* ]]; then
@@ -542,7 +491,6 @@ print_summary() {
     echo " OS:      $SUMMARY_OS"
     echo " Git:     ${SUMMARY_GIT:-unknown}  [${SUMMARY_GIT:+OK}${SUMMARY_GIT:-WARN}]"
     echo " Python:  ${SUMMARY_PYTHON:-unknown}  [${SUMMARY_PYTHON:+OK}${SUMMARY_PYTHON:-FAIL}]"
-    echo " tkinter: ${SUMMARY_TKINTER:-unknown} [${SUMMARY_TKINTER:+OK}${SUMMARY_TKINTER:-FAIL}]"
     echo " Rust:    ${SUMMARY_RUST:-unknown}  [${SUMMARY_RUST:+OK}${SUMMARY_RUST:-FAIL}]"
     echo " wasm-pack: ${SUMMARY_WASM_PACK:-unknown} [${SUMMARY_WASM_PACK:+OK}${SUMMARY_WASM_PACK:-n/a}]"
     echo " Ollama:  ${SUMMARY_OLLAMA:-unknown}  [${SUMMARY_OLLAMA:+OK}${SUMMARY_OLLAMA:-FAIL}]"
@@ -570,7 +518,6 @@ main() {
     steamos_checks
     check_git
     check_python
-    check_tkinter
     install_deps
     check_rust
     check_ollama
