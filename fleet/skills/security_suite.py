@@ -477,6 +477,16 @@ def _code_scan_file(path: Path) -> list:
 
 def _run_code_scan(payload: dict, config: dict) -> dict:
     """Code-scan sub-action: static security analysis of Python skill files."""
+    # Cooldown: skip if a review was produced in the last 4 hours (prevents flood)
+    if not payload.get("target"):  # only for full scans, not targeted
+        existing = sorted(REVIEWS_DIR.glob("security_review_*.md"),
+                          key=lambda f: f.stat().st_mtime, reverse=True) if REVIEWS_DIR.exists() else []
+        if existing:
+            import time
+            age_hours = (time.time() - existing[0].stat().st_mtime) / 3600
+            if age_hours < 4:
+                return {"status": "skipped", "reason": f"Last review {age_hours:.1f}h ago (cooldown: 4h)"}
+
     sys.path.insert(0, str(FLEET_DIR))
 
     target = payload.get("target", "")

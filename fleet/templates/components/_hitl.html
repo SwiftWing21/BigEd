@@ -12,7 +12,13 @@
 
   <!-- Unreviewed Outputs (from outputs module) -->
   <div id="hitl-outputs" style="margin-top:1rem">
-    <h3>Unreviewed Outputs <span id="hitl-outputs-count" class="badge" style="background:#666;padding:2px 8px;border-radius:10px;font-size:0.8rem"></span></h3>
+    <div style="display:flex;align-items:center;gap:12px;margin-bottom:8px;flex-wrap:wrap">
+      <h3 style="margin:0">Unreviewed Outputs <span id="hitl-outputs-count" class="badge" style="background:#666;padding:2px 8px;border-radius:10px;font-size:0.8rem"></span></h3>
+      <select id="hitl-outputs-filter" onchange="loadUnreviewedOutputs()" style="background:var(--card);color:var(--foreground);border:1px solid var(--border);border-radius:6px;padding:3px 8px;font-size:12px;cursor:pointer;">
+        <option value="">All Categories</option>
+      </select>
+      <button class="btn btn-sm btn-outline" onclick="bulkApproveOutputs('neutral')" style="font-size:11px" title="Mark all visible as neutral (acknowledged)">Bulk Neutral</button>
+    </div>
     <div id="hitl-outputs-list"></div>
   </div>
 </div>

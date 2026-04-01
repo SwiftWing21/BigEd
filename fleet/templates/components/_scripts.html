@@ -2521,14 +2521,38 @@ function loadOutputsFile(path) {
 }
 
 function loadUnreviewedOutputs() {
-  apiFetch('/api/outputs/unreviewed?limit=20').then(function(data) {
+  var filterEl = document.getElementById('hitl-outputs-filter');
+  var filterCat = filterEl ? filterEl.value : '';
+
+  /* Populate filter dropdown on first load */
+  if (filterEl && filterEl.options.length <= 1) {
+    apiFetch('/api/outputs/categories').then(function(cats) {
+      var list = Array.isArray(cats) ? cats : (cats.categories || []);
+      list.forEach(function(c) {
+        if (c.name === 'All') return;
+        var opt = document.createElement('option');
+        opt.value = c.name;
+        opt.textContent = c.name + ' (' + c.count + ')';
+        filterEl.appendChild(opt);
+      });
+    }).catch(function() {});
+  }
+
+  apiFetch('/api/outputs/unreviewed?limit=50').then(function(data) {
     var countEl = document.getElementById('hitl-outputs-count');
     var listEl = document.getElementById('hitl-outputs-list');
-    countEl.textContent = String(data.total);
+
+    /* Client-side category filter */
+    var files = data.files;
+    if (filterCat) {
+      files = files.filter(function(f) { return f.category === filterCat; });
+    }
+
+    countEl.textContent = String(filterCat ? files.length : data.total);
     listEl.textContent = '';
 
-    if (data.files.length === 0) {
-      _emptyMsg(listEl, 'No unreviewed outputs');
+    if (files.length === 0) {
+      _emptyMsg(listEl, filterCat ? 'No unreviewed ' + filterCat + ' outputs' : 'All outputs reviewed');
       return;
     }
 
@@ -2536,6 +2560,7 @@ function loadUnreviewedOutputs() {
       var card = document.createElement('div');
       card.className = 'glass-panel';
       card.id = 'output-card-' + f.path.replace(/[^a-z0-9]/gi, '_');
+      card.dataset.filePath = f.path;
       card.style.cssText = 'padding:12px;margin-bottom:8px;cursor:pointer;transition:border-color 0.2s';
 
       /* ── Header row (always visible) ── */
@@ -2656,6 +2681,32 @@ function submitOutputFeedback(path, verdict, cardEl, notesId) {
     if (cur > 0) countEl.textContent = String(cur - 1);
   }).catch(function(e) {
     showToast('Failed: ' + e.message, 'error');
+  });
+}
+
+function bulkApproveOutputs(verdict) {
+  var cards = document.querySelectorAll('#hitl-outputs-list .glass-panel');
+  if (cards.length === 0) { showToast('No outputs to review', 'info'); return; }
+  var count = cards.length;
+  var done = 0;
+  showToast('Bulk ' + verdict + ' on ' + count + ' outputs...', 'info');
+  cards.forEach(function(card) {
+    var pathAttr = card.dataset.filePath;
+    if (!pathAttr) return;
+    apiFetch('/api/outputs/feedback', {
+      method: 'POST',
+      body: { path: pathAttr, verdict: verdict, notes: 'Bulk ' + verdict }
+    }).then(function() {
+      done++;
+      card.style.transition = 'opacity 0.2s';
+      card.style.opacity = '0';
+      setTimeout(function() { card.remove(); }, 200);
+      if (done === count) {
+        showToast('Bulk ' + verdict + ': ' + done + ' outputs', 'success');
+        var countEl = document.getElementById('hitl-outputs-count');
+        countEl.textContent = '0';
+      }
+    }).catch(function() { done++; });
   });
 }
 
