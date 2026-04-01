@@ -300,7 +300,7 @@ def _kill_fleet_processes():
         log.warning("psutil not available — skipping process cleanup")
         return
 
-    fleet_scripts = {"worker.py", "supervisor.py", "hw_supervisor.py"}
+    fleet_scripts = {"worker.py", "supervisor.py", "hw_supervisor.py", "web_app.py"}
     fleet_dir_str = str(FLEET_DIR).lower()
     killed = []
 
@@ -333,13 +333,14 @@ def _kill_fleet_processes():
 
 
 def _sweep_zombies():
-    """Check for any remaining orphan fleet-related processes."""
+    """Kill any remaining orphan fleet-related processes."""
     try:
         import psutil
     except ImportError:
         return
 
     fleet_dir_str = str(FLEET_DIR).lower()
+    swept = 0
     for proc in psutil.process_iter(["pid", "cmdline", "status"]):
         try:
             cmdline = proc.info.get("cmdline") or []
@@ -348,11 +349,14 @@ def _sweep_zombies():
                 continue
             if proc.pid == os.getpid():
                 continue
-            if proc.info.get("status") == psutil.STATUS_ZOMBIE:
-                proc.kill()
-                log.info("Killed zombie process PID=%d", proc.pid)
+            # Kill any remaining fleet process (zombie or alive)
+            proc.kill()
+            swept += 1
+            log.info("Swept orphan PID=%d cmd=%s", proc.pid, " ".join(cmdline[:3]))
         except (psutil.NoSuchProcess, psutil.AccessDenied):
             pass
+    if swept:
+        log.info("Swept %d orphan processes", swept)
 
 
 def _close_db():
@@ -376,15 +380,26 @@ def _shutdown():
 
     log.info("Shutdown: step 2/5 — unloading Ollama models")
     try:
-        req = urllib.request.Request(
-            "http://localhost:11434/api/generate",
-            data=json.dumps({"model": "", "keep_alive": 0}).encode(),
-            headers={"Content-Type": "application/json"},
-            method="POST",
-        )
-        urllib.request.urlopen(req, timeout=5)
+        # Get list of loaded models
+        resp = urllib.request.urlopen("http://localhost:11434/api/ps", timeout=5)
+        loaded = json.loads(resp.read()).get("models", [])
+        for m in loaded:
+            model_name = m.get("name", "")
+            if not model_name:
+                continue
+            try:
+                req = urllib.request.Request(
+                    "http://localhost:11434/api/generate",
+                    data=json.dumps({"model": model_name, "keep_alive": 0}).encode(),
+                    headers={"Content-Type": "application/json"},
+                    method="POST",
+                )
+                urllib.request.urlopen(req, timeout=5)
+                log.info("Unloaded model: %s", model_name)
+            except Exception:
+                pass
     except Exception:
-        pass
+        pass  # Ollama not running or not responding
 
     log.info("Shutdown: step 3/5 — killing fleet processes")
     _kill_fleet_processes()
