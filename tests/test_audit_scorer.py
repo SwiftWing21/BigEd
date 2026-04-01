@@ -244,3 +244,31 @@ def test_audit_blueprint_imports():
     """audit_blueprint module imports and exposes audit_bp."""
     from audit_blueprint import audit_bp
     assert audit_bp.name == "audit"
+
+
+# ── Task 14: End-to-End Integration Tests ─────────────────────────────────
+
+def test_full_run_and_store_cycle():
+    """End-to-end: run tier, reconcile, store, retrieve."""
+    import db
+    db.init_db()
+    from audit_scorer import run_and_store, get_latest_scores, get_active_divergences
+    result = run_and_store("light")
+    assert result["tier"] == "light"
+    assert result["dimensions_scored"] >= 1
+    scores = get_latest_scores()
+    assert len(scores) >= 1
+    divs = get_active_divergences()
+    assert isinstance(divs, list)
+
+
+def test_feedback_to_ux_confidence_pipeline():
+    """Feedback volume affects UX confidence calculation."""
+    import db
+    db.init_db()
+    from audit_scorer import record_feedback, get_ux_confidence
+    for i in range(50):
+        record_feedback(score=0.7, scope="overall")
+    conf = get_ux_confidence(50)
+    assert conf > 0.30
+    assert conf < 0.75
