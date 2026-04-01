@@ -143,6 +143,32 @@ CREATE TABLE IF NOT EXISTS deployments (
     applied_at      REAL,
     size_mb         REAL DEFAULT 0.0
 );
+
+CREATE TABLE IF NOT EXISTS audit_scores (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    timestamp    TEXT    NOT NULL DEFAULT (datetime('now')),
+    tier         TEXT    NOT NULL,
+    dimension    TEXT    NOT NULL,
+    auto_score   REAL,
+    auto_detail  TEXT,
+    manual_grade TEXT,
+    divergence   INTEGER DEFAULT 0,
+    acknowledged INTEGER DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS idx_audit_ts ON audit_scores(timestamp);
+CREATE INDEX IF NOT EXISTS idx_audit_dim ON audit_scores(dimension);
+
+CREATE TABLE IF NOT EXISTS user_feedback (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    timestamp  TEXT    NOT NULL DEFAULT (datetime('now')),
+    score      REAL    NOT NULL,
+    scope      TEXT    NOT NULL,
+    session_id TEXT,
+    text       TEXT,
+    inferred   TEXT,
+    actor      TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_feedback_scope_ts ON user_feedback(scope, timestamp);
 """
 
 
