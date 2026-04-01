@@ -6,8 +6,6 @@ v0.27: New endpoints (/api/thermal, /api/training, /api/modules, /api/data_stats
        Server-Sent Events for live updates, alert system.
 CT-2:  Cost intelligence endpoints (/api/usage, /api/usage/delta).
 
-31 endpoints total (25 data + 6 process control).
-
 Usage:
     python dashboard.py                # http://localhost:5555
     python dashboard.py --port 8080    # custom port
@@ -93,6 +91,137 @@ app = Flask(__name__)
 _register_security_hooks(app, lambda: _load_config())
 
 
+# ── Blueprint Registry ──────────────────────────────────────────────────────
+# Each tuple: (module_name, blueprint_var, required)
+# required=True → ImportError raises and halts startup
+# required=False → logged at DEBUG and skipped gracefully
+_BLUEPRINTS = [
+    ("mode_blueprint",        "mode_bp",          True),
+    ("factorio_blueprint",    "factorio_bp",       True),
+    ("sse_blueprint",         "sse_bp",            True),
+    ("process_control",       "fleet_bp",          True),
+    ("health_api",            "health_bp",         True),
+    ("geo_api",               "geo_bp",            True),
+    ("a2a",                   "a2a_bp",            True),
+    ("tenant_crypto_api",     "tenant_crypto_bp",  True),
+    ("tenant_admin",          "tenant_bp",         True),
+    ("modules_blueprint",     "modules_bp",        True),
+    ("outputs_blueprint",     "outputs_bp",        True),
+    ("ollama_blueprint",      "ollama_bp",         True),
+    ("settings_blueprint",    "settings_bp",       True),
+    ("federation_blueprint",  "federation_bp",     True),
+    ("deploy_blueprint",      "deploy_bp",         True),
+    ("tasks_blueprint",       "tasks_bp",          True),
+    ("monitoring_blueprint",  "monitoring_bp",     True),
+    ("metering_blueprint",    "metering_bp",       True),
+    ("ops_blueprint",         "ops_bp",            True),
+    ("knowledge_blueprint",   "knowledge_bp",      True),
+    ("marketplace",           "marketplace_bp",    False),
+    ("control_plane",         "platform_bp",       False),
+    ("self_service",          "self_service_bp",   False),
+    ("ingest_blueprint",      "ingest_bp",         False),
+]
+
+
+def _register_blueprints(flask_app):
+    """Register all blueprints with consistent error handling."""
+    registered = 0
+    for module_name, bp_var, required in _BLUEPRINTS:
+        try:
+            mod = importlib.import_module(module_name)
+            bp = getattr(mod, bp_var)
+            flask_app.register_blueprint(bp)
+            registered += 1
+        except ImportError as exc:
+            if required:
+                log.error("Required blueprint '%s' failed to import: %s", module_name, exc)
+                raise
+            log.debug("Optional blueprint '%s' not available: %s", module_name, exc)
+        except Exception as exc:
+            log.error("Failed to register blueprint '%s': %s", module_name, exc)
+            if required:
+                raise
+    log.info("Registered %d/%d blueprints", registered, len(_BLUEPRINTS))
+
+
+def _post_registration_setup(flask_app):
+    """One-time setup that must run after specific blueprints are registered."""
+    # monitoring_blueprint: share CPU cache dict reference
+    try:
+        from monitoring_blueprint import set_cpu_cache_ref
+        set_cpu_cache_ref(_cpu_pct_cache)
+    except Exception as exc:
+        log.warning("monitoring_blueprint post-setup failed: %s", exc)
+
+    # SSO — uses register_sso(app) rather than a Blueprint object
+    try:
+        from sso import register_sso as _register_sso
+        _register_sso(flask_app)
+    except Exception as exc:
+        log.debug("SSO module not loaded: %s", exc)
+
+    # compliance — factory pattern: create_compliance_blueprint(_require_role)
+    try:
+        from compliance import create_compliance_blueprint
+        _compliance_bp = create_compliance_blueprint(_require_role)
+        flask_app.register_blueprint(_compliance_bp)
+    except ImportError:
+        pass
+
+    # payments — uses register_payment_routes(app) rather than a Blueprint object
+    try:
+        from payments import register_payment_routes
+        register_payment_routes(flask_app)
+    except ImportError:
+        pass
+
+    # views_blueprint — requires view_registry discover + source registration after blueprint load
+    try:
+        from views_blueprint import views_bp
+        flask_app.register_blueprint(views_bp)
+        import view_registry
+        view_registry.discover_and_register()
+        view_registry.register_source(
+            name="knowledge",
+            category="knowledge",
+            node_types=["skill", "folder", "agent"],
+            edge_types=["reads", "writes", "produces"],
+            data_endpoint="/api/views/graph/knowledge-graph",
+            icon="book",
+            layout_hint="tree",
+            metrics=["file_count", "total_size_mb"],
+        )
+        view_registry.register_source(
+            name="universe",
+            category="fleet",
+            node_types=["agent", "skill", "task", "folder", "model", "config", "message"],
+            edge_types=["runs", "writes", "reads", "assigned", "uses_model", "communicates", "costs"],
+            data_endpoint="/api/views/graph/universe",
+            icon="globe",
+            color="#7c3aed",
+            layout_hint="cluster",
+            metrics=["node_count", "edge_count"],
+        )
+    except ImportError:
+        pass
+
+
+_register_blueprints(app)
+_post_registration_setup(app)
+
+# Extra symbols needed from blueprints for inline route handlers below
+from mode_blueprint import (
+    restore_mode as _restore_mode,
+    _get_effective_mode, _get_modifier_states,
+)
+from factorio_blueprint import (
+    _factorio_kill_all,
+    api_factorio_start,
+    api_factorio_stop,
+)
+from monitoring_blueprint import api_thermal, api_alerts
+from knowledge_blueprint import api_discussions as _api_discussions
+
 
 # SSE/alert state now lives in dashboard_utils.py (Phase 3 extraction)
 # _alerts, _alert_lock, _sse_clients, _sse_lock imported above
@@ -170,14 +299,6 @@ def _add_security_headers(response):
         "connect-src 'self'"
     )
     return response
-
-
-# ── Mode Control (extracted to mode_blueprint.py) ────────────────────────────
-from mode_blueprint import (
-    mode_bp, restore_mode as _restore_mode,
-    _get_effective_mode, _get_modifier_states,
-)
-app.register_blueprint(mode_bp)
 
 
 # _add_alert, _broadcast_sse: now in dashboard_utils.py
@@ -815,11 +936,6 @@ def api_training():
     return jsonify(result)
 
 
-# Import extracted route handlers for batch/aggregate endpoints
-from monitoring_blueprint import api_thermal, api_alerts
-from knowledge_blueprint import api_discussions as _api_discussions
-
-
 @app.route("/api/dashboard/batch")
 def api_dashboard_batch():
     """Combined endpoint -- returns status, thermal, and training in one call.
@@ -861,18 +977,8 @@ def api_dashboard_aggregate():
     })
 
 
-# ── Factorio endpoints (extracted to factorio_blueprint.py) ─────────────────
-from factorio_blueprint import (
-    factorio_bp,
-    _factorio_kill_all,
-    api_factorio_start,
-    api_factorio_stop,
-)
-app.register_blueprint(factorio_bp)
-
-# ── SSE endpoint (extracted to sse_blueprint.py) ─────────────────────────────
-from sse_blueprint import sse_bp, _sse_broadcaster
-app.register_blueprint(sse_bp)
+# ── SSE broadcaster (needed for SSE background thread below) ─────────────────
+from sse_blueprint import _sse_broadcaster
 
 
 @app.route("/api/modules/legacy")
@@ -1171,122 +1277,6 @@ def api_dag_visualize(root_id):
 # /api/scaling/*: now in metering_blueprint.py (Phase 5)
 
 
-# ── Process Control (extracted to process_control.py) ─────────────────────────
-from process_control import fleet_bp
-app.register_blueprint(fleet_bp)
-
-# ── Self-Healing Fleet Health API (v0.200.00b) ────────────────────────────────
-from health_api import health_bp
-app.register_blueprint(health_bp)
-
-# ── Geo-Distributed Fleets (v0.400.00b) ───────────────────────────────────────
-from geo_api import geo_bp
-app.register_blueprint(geo_bp)
-
-# ── A2A Protocol (Agent-to-Agent interoperability) ────────────────────────────
-from a2a import a2a_bp
-app.register_blueprint(a2a_bp)
-
-# ── Tenant Key Management (v0.300.00b — Enterprise Encryption) ────────────────
-from tenant_crypto_api import tenant_crypto_bp
-app.register_blueprint(tenant_crypto_bp)
-
-
-# ── Tenant Admin (v0.300.00b) ─────────────────────────────────────────────────
-from tenant_admin import tenant_bp
-app.register_blueprint(tenant_bp)
-
-# ── SSO / OIDC / SAML Authentication (v0.300.00b) ────────────────────────────
-try:
-    from sso import register_sso as _register_sso
-    _register_sso(app)
-except Exception as _sso_exc:
-    import logging as _sso_logging
-    _sso_logging.getLogger("dashboard").debug("SSO module not loaded: %s", _sso_exc)
-
-# ── Compliance Reporting (v0.300.00b) ─────────────────────────────────────────
-try:
-    from compliance import create_compliance_blueprint
-    _compliance_bp = create_compliance_blueprint(_require_role)
-    app.register_blueprint(_compliance_bp)
-except ImportError:
-    pass  # compliance module optional
-
-# ── Marketplace with Reviews (v0.400.00b) ─────────────────────────────────────
-try:
-    from marketplace import marketplace_bp
-    app.register_blueprint(marketplace_bp)
-except ImportError:
-    pass  # marketplace module optional
-
-try:
-    from control_plane import platform_bp
-    app.register_blueprint(platform_bp)
-except ImportError:
-    pass  # control_plane module optional
-
-try:
-    from self_service import self_service_bp
-    app.register_blueprint(self_service_bp)
-except ImportError:
-    pass  # self_service module optional
-
-try:
-    from payments import register_payment_routes
-    register_payment_routes(app)
-except ImportError:
-    pass  # payments module optional
-
-# ── Hybrid ViewPort — Views API (Phase 2) ────────────────────────────────────
-try:
-    from views_blueprint import views_bp
-    app.register_blueprint(views_bp)
-    # Auto-discover and register view data sources at startup
-    import view_registry
-    view_registry.discover_and_register()
-    # Register knowledge graph source (scans skills for I/O folder mappings)
-    view_registry.register_source(
-        name="knowledge",
-        category="knowledge",
-        node_types=["skill", "folder", "agent"],
-        edge_types=["reads", "writes", "produces"],
-        data_endpoint="/api/views/graph/knowledge-graph",
-        icon="book",
-        layout_hint="tree",
-        metrics=["file_count", "total_size_mb"],
-    )
-    view_registry.register_source(
-        name="universe",
-        category="fleet",
-        node_types=["agent", "skill", "task", "folder", "model", "config", "message"],
-        edge_types=["runs", "writes", "reads", "assigned", "uses_model", "communicates", "costs"],
-        data_endpoint="/api/views/graph/universe",
-        icon="globe",
-        color="#7c3aed",
-        layout_hint="cluster",
-        metrics=["node_count", "edge_count"],
-    )
-except ImportError:
-    pass  # views module optional
-
-# ── Module Manager API (v1.0) ──────────────────────────────────────────────
-from modules_blueprint import modules_bp
-app.register_blueprint(modules_bp)
-
-# ── Outputs Module (knowledge browser + HITL feedback) ─────────────────
-from outputs_blueprint import outputs_bp
-app.register_blueprint(outputs_bp)
-
-# ── Ollama Management API ──────────────────────────────────────────────
-from ollama_blueprint import ollama_bp
-app.register_blueprint(ollama_bp)
-
-# ── Ingestion Hub (v0.900.00b) ─────────────────────────────────────────
-try:
-    from ingest_blueprint import ingest_bp
-    app.register_blueprint(ingest_bp)
-except ImportError:
-    pass  # ingest module optional
 
 
 # ── MCP Server Status (v0.31.00) ─────────────────────────────────────────────
@@ -1436,11 +1426,6 @@ def index():
     if template.exists():
         return Response(template.read_text(encoding="utf-8"), mimetype="text/html")
     return Response(DASHBOARD_HTML, mimetype="text/html")  # fallback to cached
-
-
-# ── Settings (extracted to settings_blueprint.py) ─────────────────────────
-from settings_blueprint import settings_bp
-app.register_blueprint(settings_bp)
 
 
 # ── Agent Disable/Enable ──────────────────────────────────────────────────────
@@ -1672,16 +1657,6 @@ def _update_fleet_toml_disabled(disabled_list):
     toml_path.write_text(new_content, encoding="utf-8")
 
 
-# ── Federation (extracted to federation_blueprint.py) ─────────────────────
-from federation_blueprint import federation_bp
-app.register_blueprint(federation_bp)
-
-
-# ── Deploy (extracted to deploy_blueprint.py) ─────────────────────────────
-from deploy_blueprint import deploy_bp
-app.register_blueprint(deploy_bp)
-
-
 # ── Cluster Data (0.100.00b — Unified Dashboard Hooks) ──────────────────────
 
 
@@ -1711,25 +1686,6 @@ def api_cluster_tasks():
 
 
 # /api/feedback: now in knowledge_blueprint.py (Phase 5)
-
-
-# ── Tasks & Queue (extracted to tasks_blueprint.py) ───────────────────────
-from tasks_blueprint import tasks_bp
-app.register_blueprint(tasks_bp)
-
-# ── Phase 5 blueprints ─────────────────────────────────────────────────────
-from monitoring_blueprint import monitoring_bp, set_cpu_cache_ref
-app.register_blueprint(monitoring_bp)
-set_cpu_cache_ref(_cpu_pct_cache)  # share CPU cache dict reference
-
-from metering_blueprint import metering_bp
-app.register_blueprint(metering_bp)
-
-from ops_blueprint import ops_bp
-app.register_blueprint(ops_bp)
-
-from knowledge_blueprint import knowledge_bp
-app.register_blueprint(knowledge_bp)
 
 
 @app.route("/api/skills/available")
