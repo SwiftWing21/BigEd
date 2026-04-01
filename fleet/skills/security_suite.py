@@ -544,34 +544,36 @@ def _run_code_scan(payload: dict, config: dict) -> dict:
             )
             fixes_queued += 1
 
+    # ── Delta comparison — only write report if findings changed ──
+    from _delta_review import DeltaReviewer
     REVIEWS_DIR.mkdir(parents=True, exist_ok=True)
-    date_str = datetime.now().strftime("%Y%m%d_%H%M")
-    report_path = REVIEWS_DIR / f"security_review_{date_str}.md"
+    dr = DeltaReviewer("security", REVIEWS_DIR)
+    delta = dr.compare(filtered)
 
+    if not delta["changed"] and not target:
+        # Nothing changed since last scan — skip report
+        return {
+            "status": "no_change",
+            "files_scanned": len(files),
+            "total_findings": len(filtered),
+            "unchanged_since": delta["previous_timestamp"],
+            "message": f"No new findings (unchanged: {delta['unchanged_count']})",
+        }
+
+    # Write delta report (or full report on first scan / targeted scan)
     header_extra = [
         f"**Files scanned:** {len(files)}",
         f"**Findings:** {len(filtered)} (min severity: {min_severity})",
         f"**Auto-fix tasks queued:** {fixes_queued}",
     ]
-    report_lines, by_sev = _build_severity_report(
-        filtered,
-        f"# Security Review -- {datetime.now().strftime('%Y-%m-%d %H:%M')}",
-        extra_header_lines=header_extra,
-    )
-    report_lines.append("## Findings")
-    for f in filtered:
-        line_ref = f"line {f['line']}" if f.get("line") else "file-level"
-        report_lines.append(
-            f"- **[{f['severity']}]** `{f['file']}` ({line_ref}) -- {f['category']}: {f['detail']}"
-        )
-    report_lines.append("")
-    report_path.write_text("\n".join(report_lines), encoding="utf-8")
+    report_path = dr.write_report(delta, "Security Review", header_extra=header_extra)
 
     return {
         "files_scanned": len(files),
         "findings": filtered[:30],
         "total_findings": len(filtered),
-        "by_severity": by_sev,
+        "new_findings": len(delta["new_findings"]),
+        "resolved": len(delta["resolved_finding_keys"]),
         "auto_fixes_queued": fixes_queued,
         "saved_to": str(report_path),
     }

@@ -476,50 +476,42 @@ def _quality(payload: dict, config: dict) -> dict:
             )
             fixes_queued += 1
 
+    # ── Delta comparison — only write report if findings changed ──
+    from _delta_review import DeltaReviewer
     _QUALITY_REVIEWS_DIR.mkdir(parents=True, exist_ok=True)
-    date_str = datetime.now().strftime("%Y%m%d_%H%M")
-    report   = _QUALITY_REVIEWS_DIR / f"quality_review_{date_str}.md"
+    dr = DeltaReviewer("quality", _QUALITY_REVIEWS_DIR)
+    delta = dr.compare(filtered)
+
+    if not delta["changed"] and not target:
+        return {
+            "status": "no_change",
+            "files_scanned": len(files),
+            "total_findings": len(filtered),
+            "unchanged_since": delta["previous_timestamp"],
+            "message": f"No new findings (unchanged: {delta['unchanged_count']})",
+        }
+
+    header_extra = [
+        f"**Files scanned:** {len(files)}",
+        f"**Findings:** {len(filtered)} (min severity: {min_severity})",
+        f"**Auto-fix tasks queued:** {fixes_queued}",
+    ]
+    report_path = dr.write_report(delta, "Code Quality Review", header_extra=header_extra)
 
     by_sev: dict[str, int] = {}
     for f in filtered:
         by_sev[f["severity"]] = by_sev.get(f["severity"], 0) + 1
 
-    report_lines = [
-        f"# Code Quality Review — {datetime.now().strftime('%Y-%m-%d %H:%M')}",
-        f"**Files scanned:** {len(files)}",
-        f"**Findings:** {len(filtered)} (min severity: {min_severity})",
-        f"**Auto-fix tasks queued:** {fixes_queued}",
-        "",
-        "## Summary",
-        "| Severity | Count |",
-        "|----------|-------|",
-    ]
-    for sev in ["HIGH", "MEDIUM", "LOW", "INFO"]:
-        if sev in by_sev:
-            report_lines.append(f"| {sev} | {by_sev[sev]} |")
-    report_lines.append("")
-
-    by_cat: dict[str, list] = {}
-    for f in filtered:
-        by_cat.setdefault(f["category"], []).append(f)
-
-    report_lines.append("## Findings by Category")
-    for cat, items in sorted(by_cat.items()):
-        report_lines.append(f"\n### {cat} ({len(items)})")
-        for f in items:
-            line_ref = f"line {f['line']}" if f["line"] else "file-level"
-            report_lines.append(f"- **[{f['severity']}]** `{f['file']}` ({line_ref}) — {f['detail']}")
-    report_lines.append("")
-    report.write_text("\n".join(report_lines), encoding="utf-8")
-
     return {
         "files_scanned":    len(files),
         "findings":         filtered[:30],
         "total_findings":   len(filtered),
+        "new_findings":     len(delta["new_findings"]),
+        "resolved":         len(delta["resolved_finding_keys"]),
         "by_severity":      by_sev,
-        "by_category":      {k: len(v) for k, v in by_cat.items()},
+        "by_category":      {k: len(v) for k, v in {cat: [f for f in filtered if f["category"] == cat] for cat in {f["category"] for f in filtered}}.items()},
         "auto_fixes_queued": fixes_queued,
-        "saved_to":         str(report),
+        "saved_to":         str(report_path),
     }
 
 
