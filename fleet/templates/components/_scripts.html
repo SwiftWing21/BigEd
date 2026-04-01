@@ -4211,6 +4211,10 @@ function _buildAvatar(color, name, className) {
 }
 
 function checkAuth() {
+  /* Show login overlay immediately to prevent dashboard flash during async check */
+  var overlay = document.getElementById('login-overlay');
+  if (overlay) overlay.classList.add('active');
+
   apiFetch('/api/auth/me').then(function(d) {
     if (d.guest) {
       apiFetch('/api/auth/profiles').then(function(pd) {
