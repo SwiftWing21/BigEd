@@ -1659,6 +1659,15 @@ function submitAddSource() {
     });
   }
 
+  /* Safety: always show main-wrapper after 15s max, even if boot/auth flow breaks */
+  setTimeout(function() {
+    var mw = document.querySelector('.main-wrapper');
+    if (mw && !mw.classList.contains('ready')) {
+      mw.classList.add('ready');
+      if (!bootHidden) { bootHidden = true; checkAuth(); }
+    }
+  }, 15000);
+
   /* Add pulse animation for "starting" dots */
   var style = document.createElement('style');
   style.textContent = '@keyframes pulse{0%,100%{opacity:1}50%{opacity:0.3}}';

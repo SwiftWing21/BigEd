@@ -4439,6 +4439,9 @@ function hideLoginOverlay() {
     overlay.style.opacity = '';
     overlay.style.transition = '';
   }, 300);
+  /* Ensure main-wrapper is visible after login completes */
+  var mw = document.querySelector('.main-wrapper');
+  if (mw) mw.classList.add('ready');
 }
 
 function showCurrentUser(user) {
