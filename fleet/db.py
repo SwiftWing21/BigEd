@@ -184,12 +184,25 @@ def get_conn(db_path=None):
     (e.g. tenant DBs). Only the default DB_PATH is pooled.
 
     Honors FLEET_TEST_DB env var -- set to a file path or ":memory:" for test
-    isolation. When set, bypasses the pool (each call creates a fresh connection).
+    isolation. For :memory: DBs, the connection is cached so the same in-memory
+    DB is reused across calls (otherwise each call gets a fresh empty DB).
     """
     if db_path is None:
         db_path = os.environ.get("FLEET_TEST_DB") or None
 
     if db_path is not None:
+        # Cache :memory: connections so tables persist across calls
+        if db_path == ":memory:":
+            mem_conn = getattr(_local, '_mem_conn', None)
+            if mem_conn is not None:
+                try:
+                    mem_conn.execute("SELECT 1")
+                    return mem_conn
+                except Exception:
+                    pass
+            mem_conn = _create_connection(db_path)
+            _local._mem_conn = mem_conn
+            return mem_conn
         return _create_connection(db_path)
 
     conn = getattr(_local, 'conn', None)

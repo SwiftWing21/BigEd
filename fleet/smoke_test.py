@@ -570,7 +570,7 @@ def test_new_module_imports():
     """New module imports: all v0.100-v0.400 modules import cleanly."""
     new_modules = [
         "discovery", "federation_router", "fleet_tls", "remote_deploy",
-        "federation_hitl", "federation_data", "ml_router", "self_healing",
+        "federation_hitl", "federation_data", "ml_router", "health_monitor",
         "health_api", "skill_recommender", "ab_testing", "dag_builder",
         "predictive_scaler", "mcp_server", "dispatch_bridge", "intent",
         "sso", "tenant_crypto", "tenant_crypto_api", "billing", "compliance",
