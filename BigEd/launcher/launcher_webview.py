@@ -3,6 +3,7 @@ BigEd CC -- PyWebView launcher.
 Native window wrapping the Flask dashboard at localhost:5555.
 Single-instance lock, pythonw relaunch, pystray system tray.
 """
+import json
 import logging
 import os
 import socket
@@ -24,12 +25,42 @@ LOCK_PORT = 19876
 DASHBOARD_URL = "http://localhost:5555"
 HEALTH_URL = f"{DASHBOARD_URL}/api/health"
 FLEET_DIR = Path(__file__).resolve().parent.parent.parent / "fleet"
+DATA_DIR = Path(__file__).resolve().parent / "data"
 ICON_PATH = Path(__file__).resolve().parent / "icon_1024.png"
 
 _lock_sock: socket.socket | None = None
 _supervisor_proc: subprocess.Popen | None = None
 _window: webview.Window | None = None
 _tray_icon = None
+
+
+# -- Secrets loading -----------------------------------------------------------
+
+def _load_secrets_to_env():
+    """Load all key=value pairs from ~/.secrets into os.environ.
+
+    Called once at launcher startup so fleet workers and chat functions
+    can access API keys via os.environ without knowing about ~/.secrets.
+    """
+    for secrets_path in (Path.home() / ".secrets", DATA_DIR / ".secrets"):
+        if not secrets_path.exists():
+            continue
+        try:
+            for line in secrets_path.read_text(errors="ignore").splitlines():
+                line = line.strip()
+                if not line or line.startswith("#"):
+                    continue
+                if line.startswith("export "):
+                    line = line[7:].strip()
+                if "=" not in line:
+                    continue
+                k, _, v = line.partition("=")
+                k = k.strip()
+                v = v.strip().strip('"').strip("'")
+                if k and v and v != "REPLACE_ME":
+                    os.environ.setdefault(k, v)
+        except Exception:
+            pass
 
 
 # -- Single-instance lock -----------------------------------------------------
@@ -187,10 +218,60 @@ def _setup_tray():
     threading.Thread(target=_tray_icon.run, daemon=True).start()
 
 
-# -- Window close → minimize ---------------------------------------------------
+# -- Close behavior preferences ------------------------------------------------
+
+def _get_close_behavior() -> str:
+    """Get configured close behavior: 'tray', 'quit', or 'ask'.
+
+    Checks launcher settings.json first, then fleet.toml [launcher] section.
+    Default is 'ask'.
+    """
+    # Check launcher settings.json
+    settings_file = DATA_DIR / "settings.json"
+    if settings_file.exists():
+        try:
+            behavior = json.loads(settings_file.read_text(encoding="utf-8")).get("close_behavior", "")
+            if behavior in ("tray", "quit", "ask"):
+                return behavior
+        except Exception:
+            pass
+    # Fall back to fleet.toml [launcher] section
+    toml_path = FLEET_DIR / "fleet.toml"
+    if toml_path.exists():
+        try:
+            import tomllib
+        except ImportError:
+            try:
+                import tomli as tomllib
+            except ImportError:
+                return "ask"
+        try:
+            data = tomllib.loads(toml_path.read_text(encoding="utf-8"))
+            behavior = data.get("launcher", {}).get("close_behavior", "ask")
+            if behavior in ("tray", "quit", "ask"):
+                return behavior
+        except Exception:
+            pass
+    return "ask"
+
+
+# -- Window close handler -----------------------------------------------------
 
 def _on_closing():
-    """Called when user clicks X -- show confirmation dialog before closing."""
+    """Called when user clicks X — respects close_behavior preference."""
+    close_behavior = _get_close_behavior()
+
+    if close_behavior == "quit":
+        _shutdown()
+        return True
+
+    if close_behavior == "tray" and _tray_icon is not None:
+        # Minimize to tray instead of closing
+        if _window:
+            _window.hide()
+        return False
+
+    # "ask" or no preference — show confirmation dialog
     if _window:
         try:
             result = _window.create_confirmation_dialog(
@@ -211,24 +292,117 @@ def _on_closing():
 
 # -- Shutdown ------------------------------------------------------------------
 
-def _shutdown():
-    global _tray_icon
-    _stop_supervisor()
-    if _tray_icon:
-        try:
-            _tray_icon.stop()
-        except Exception:
-            pass
-        _tray_icon = None
-    # Checkpoint WAL and close DB connections before exit
+def _kill_fleet_processes():
+    """Terminate fleet-related processes (workers, supervisors) via psutil."""
     try:
-        fleet_dir = str(Path(__file__).resolve().parent.parent.parent / "fleet")
+        import psutil
+    except ImportError:
+        log.warning("psutil not available — skipping process cleanup")
+        return
+
+    fleet_scripts = {"worker.py", "supervisor.py", "hw_supervisor.py"}
+    fleet_dir_str = str(FLEET_DIR).lower()
+    killed = []
+
+    for proc in psutil.process_iter(["pid", "name", "cmdline"]):
+        try:
+            cmdline = proc.info.get("cmdline") or []
+            cmd_str = " ".join(cmdline).lower()
+            # Match fleet processes by script name + fleet directory
+            if not any(s in cmd_str for s in fleet_scripts):
+                continue
+            if fleet_dir_str not in cmd_str:
+                continue
+            # Don't kill ourselves
+            if proc.pid == os.getpid():
+                continue
+            proc.terminate()
+            killed.append(proc)
+        except (psutil.NoSuchProcess, psutil.AccessDenied):
+            pass
+
+    # Wait up to 5s for graceful termination, then force-kill
+    if killed:
+        gone, alive = psutil.wait_procs(killed, timeout=5)
+        for proc in alive:
+            try:
+                proc.kill()
+            except (psutil.NoSuchProcess, psutil.AccessDenied):
+                pass
+        log.info("Killed %d fleet processes (%d forced)", len(killed), len(alive))
+
+
+def _sweep_zombies():
+    """Check for any remaining orphan fleet-related processes."""
+    try:
+        import psutil
+    except ImportError:
+        return
+
+    fleet_dir_str = str(FLEET_DIR).lower()
+    for proc in psutil.process_iter(["pid", "cmdline", "status"]):
+        try:
+            cmdline = proc.info.get("cmdline") or []
+            cmd_str = " ".join(cmdline).lower()
+            if fleet_dir_str not in cmd_str:
+                continue
+            if proc.pid == os.getpid():
+                continue
+            if proc.info.get("status") == psutil.STATUS_ZOMBIE:
+                proc.kill()
+                log.info("Killed zombie process PID=%d", proc.pid)
+        except (psutil.NoSuchProcess, psutil.AccessDenied):
+            pass
+
+
+def _close_db():
+    """Checkpoint WAL and close DB connections."""
+    try:
+        fleet_dir = str(FLEET_DIR)
         if fleet_dir not in sys.path:
             sys.path.insert(0, fleet_dir)
         import db
         db.shutdown()
     except Exception as e:
         log.warning("DB shutdown error: %s", e)
+
+
+def _shutdown():
+    """Graceful 5-step shutdown."""
+    global _tray_icon
+
+    log.info("Shutdown: step 1/5 — saving state")
+    _stop_supervisor()
+
+    log.info("Shutdown: step 2/5 — unloading Ollama models")
+    try:
+        req = urllib.request.Request(
+            "http://localhost:11434/api/generate",
+            data=json.dumps({"model": "", "keep_alive": 0}).encode(),
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        urllib.request.urlopen(req, timeout=5)
+    except Exception:
+        pass
+
+    log.info("Shutdown: step 3/5 — killing fleet processes")
+    _kill_fleet_processes()
+
+    log.info("Shutdown: step 4/5 — cleaning zombies")
+    _sweep_zombies()
+
+    log.info("Shutdown: step 5/5 — closing DB")
+    _close_db()
+
+    # Tray cleanup
+    if _tray_icon:
+        try:
+            _tray_icon.stop()
+        except Exception:
+            pass
+        _tray_icon = None
+
     _release_instance_lock()
     for w in webview.windows:
         try:
@@ -244,6 +418,8 @@ def main():
     global _window
 
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(message)s")
+
+    _load_secrets_to_env()
 
     if not _acquire_instance_lock():
         log.info("Another instance is already running (port %s held)", LOCK_PORT)
