@@ -283,6 +283,11 @@ sandbox_enabled = false          # true = sandbox code_write/skill_test/benchmar
 sandbox_skills = ["code_write", "skill_test", "benchmark"]  # skills that run in Docker when sandbox_enabled
 dependency_scan_enabled = true   # run pip-audit/pip-check during security_audit
 network_hardening_enabled = true # verify Ollama/dashboard bound to 127.0.0.1 during pen_test
+# Adaptive rate limiting — only triggers under abnormal load (DDoS protection)
+# Normal human use is never throttled. These are safety thresholds.
+rate_limit_window = 10           # sliding window in seconds
+rate_limit_burst = 500           # max requests per window per source before lockout
+rate_limit_lockout = 60          # seconds to lock out a flooding source
 
 # v0.300.00b: SSO / OIDC / SAML — Enterprise Identity Federation
 [sso]

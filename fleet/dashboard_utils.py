@@ -69,29 +69,82 @@ def _require_role(role):
     return _require_role_raw(role, _load_config)
 
 
-# ── Rate limiter ─────────────────────────────────────────────────────────────
+# ── Adaptive Rate Limiter ────────────────────────────────────────────────────
+#
+# Normal use: no limits. Only triggers under abnormal load (potential DDoS).
+# Tracks requests per source (IP) across a sliding window. If a single source
+# exceeds the burst threshold in a short window, that source gets throttled.
+# The threshold is configurable via fleet.toml [security] rate_limit_burst.
+# Default: 500 requests per 10-second window per source = ~50 req/s sustained.
+# This allows rapid human interaction while catching automated flooding.
 
-_rate_limits = {}
+_rate_windows = {}  # key: (source_ip, window_id) → count
+_rate_locked = {}   # key: source_ip → unlock_time (epoch)
+
+# Defaults — overridden by fleet.toml [security] if present
+_RATE_WINDOW_SEC = 10
+_RATE_BURST_THRESHOLD = 500  # requests per window before throttling
+_RATE_LOCKOUT_SEC = 60       # how long to lock out a flooding source
 
 
-def _check_rate_limit(endpoint, max_per_min=10):
-    """Simple in-memory rate limit. Returns True if allowed."""
+def _get_rate_config():
+    """Load adaptive rate limit config from fleet.toml (cached by load_config)."""
+    try:
+        cfg = _load_config()
+        sec = cfg.get("security", {})
+        return (
+            sec.get("rate_limit_window", _RATE_WINDOW_SEC),
+            sec.get("rate_limit_burst", _RATE_BURST_THRESHOLD),
+            sec.get("rate_limit_lockout", _RATE_LOCKOUT_SEC),
+        )
+    except Exception:
+        return _RATE_WINDOW_SEC, _RATE_BURST_THRESHOLD, _RATE_LOCKOUT_SEC
+
+
+def _check_rate_limit(endpoint=None, max_per_min=None):
+    """Adaptive rate limiter — only throttles under abnormal load.
+
+    For normal human use (dozens of clicks/min), always returns True.
+    Only triggers when a single source exceeds burst threshold (e.g. 500 req/10s).
+    The endpoint and max_per_min params are kept for backward compat but ignored
+    in favor of the adaptive per-source approach.
+    """
+    try:
+        from flask import request as _req
+        source = _req.remote_addr or "local"
+    except Exception:
+        return True  # outside request context — allow
+
     now = time.time()
-    # Evict stale entries when dict grows large
-    if len(_rate_limits) > 500:
-        stale = [k for k, v in _rate_limits.items() if now - v[0] >= 300]
+    window_sec, burst, lockout = _get_rate_config()
+
+    # Check if source is currently locked out
+    if source in _rate_locked:
+        if now < _rate_locked[source]:
+            return False
+        del _rate_locked[source]
+
+    # Sliding window: bucket by (source, window_id)
+    window_id = int(now / window_sec)
+    key = (source, window_id)
+
+    # Evict old windows periodically
+    if len(_rate_windows) > 2000:
+        cutoff = window_id - 3
+        stale = [k for k in _rate_windows if k[1] < cutoff]
         for k in stale:
-            del _rate_limits[k]
-    if endpoint not in _rate_limits:
-        _rate_limits[endpoint] = (now, 1)
-        return True
-    last, count = _rate_limits[endpoint]
-    if now - last > 60:
-        _rate_limits[endpoint] = (now, 1)
-        return True
-    if count >= max_per_min:
+            del _rate_windows[k]
+
+    count = _rate_windows.get(key, 0) + 1
+    _rate_windows[key] = count
+
+    if count > burst:
+        # Lock out this source
+        _rate_locked[source] = now + lockout
+        log.warning("Rate limit triggered: source=%s count=%d/%ds — locked for %ds",
+                     source, count, window_sec, lockout)
         return False
-    _rate_limits[endpoint] = (last, count + 1)
+
     return True
 
 
