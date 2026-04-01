@@ -1271,6 +1271,10 @@ except ImportError:
 from modules_blueprint import modules_bp
 app.register_blueprint(modules_bp)
 
+# ── Outputs Module (knowledge browser + HITL feedback) ─────────────────
+from outputs_blueprint import outputs_bp
+app.register_blueprint(outputs_bp)
+
 # ── Ingestion Hub (v0.900.00b) ─────────────────────────────────────────
 try:
     from ingest_blueprint import ingest_bp
