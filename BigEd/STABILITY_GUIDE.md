@@ -128,7 +128,7 @@ type: project
 | fleet/hw_supervisor.py | GPU/VRAM safety — if this breaks, OOM crashes | 2026-03-19 |
 | fleet/supervisor.py | Worker lifecycle — if this breaks, no task execution | 2026-03-19 |
 | fleet/worker.py | Skill dispatch — if this breaks, tasks pile up | 2026-03-19 |
-| BigEd/launcher/ui/boot.py | Startup sequence — if this breaks, app won't launch | 2026-03-19 |
+| BigEd/launcher/launcher_webview.py | Startup sequence — if this breaks, app won't launch | 2026-04-01 |
 
 ### Known Remaining Issues (from 12-agent audit)
 | Severity | Count | Category |

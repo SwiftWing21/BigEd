@@ -1,11 +1,10 @@
 """Hybrid ViewPort — Design Token Bridge.
 
-Syncs design-tokens.json (W3C DTCG) → CSS custom properties + theme.py marker.
+Syncs design-tokens.json (W3C DTCG) → CSS custom properties.
 
     design-tokens.json
            │
            ├──► fleet/static/tokens.css        (CSS custom properties)
-           ├──► BigEd/launcher/ui/theme.py      (generated-from-tokens marker)
            └──► figma-export/tokens-diff.json   (future: changelog for Figma re-import)
 
 Usage:

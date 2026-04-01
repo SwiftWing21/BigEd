@@ -5,7 +5,7 @@ Canonical module for all idle-model detection and VRAM management.
 Used by:
   - CLI:   python fleet/debug_models.py [--clean] [--target MODEL] [--json]
   - Skill: fleet/skills/model_manager.py  action="debug"
-  - Boot:  BigEd/launcher/ui/boot.py      _evict_idle_blockers()
+  - Boot:  BigEd/launcher/launcher_webview.py  (evict idle models at startup)
 
 Core logic lives here — consumers import, never duplicate.
 

@@ -1317,26 +1317,19 @@ def run_gui():
         print("Install with: pip install customtkinter")
         sys.exit(1)
 
-    # Theme colors — import from ui.theme if available, otherwise use defaults
-    try:
-        sys.path.insert(0, str(HERE))
-        from ui.theme import (
-            BG, BG2, BG3, ACCENT, ACCENT_H, GOLD, TEXT, DIM,
-            GREEN, ORANGE, RED, load_custom_fonts,
-        )
-    except ImportError:
-        BG = "#1a1a1a"
-        BG2 = "#242424"
-        BG3 = "#2d2d2d"
-        ACCENT = "#b22222"
-        ACCENT_H = "#8b0000"
-        GOLD = "#c8a84b"
-        TEXT = "#e2e2e2"
-        DIM = "#888888"
-        GREEN = "#4caf50"
-        ORANGE = "#ff9800"
-        RED = "#f44336"
-        load_custom_fonts = None
+    # Theme colors (previously imported from ui.theme, now inlined)
+    BG = "#1a1a1a"
+    BG2 = "#242424"
+    BG3 = "#2d2d2d"
+    ACCENT = "#b22222"
+    ACCENT_H = "#8b0000"
+    GOLD = "#c8a84b"
+    TEXT = "#e2e2e2"
+    DIM = "#888888"
+    GREEN = "#4caf50"
+    ORANGE = "#ff9800"
+    RED = "#f44336"
+    load_custom_fonts = None
 
     ctk.set_appearance_mode("dark")
     ctk.set_default_color_theme("dark-blue")
