@@ -25,25 +25,36 @@ LOCK_PORT = 19876
 DASHBOARD_URL = "http://localhost:5555"
 HEALTH_URL = f"{DASHBOARD_URL}/api/health"
 
-SPLASH_HTML = """<!DOCTYPE html>
+def _build_splash_html() -> str:
+    """Build splash HTML with embedded icon (base64 if icon file exists)."""
+    import base64
+    icon_path = Path(__file__).resolve().parent / "icon_1024.png"
+    if icon_path.exists():
+        b64 = base64.b64encode(icon_path.read_bytes()).decode()
+        logo = f'<img src="data:image/png;base64,{b64}" style="width:64px;height:64px;border-radius:14px;">'
+    else:
+        logo = '<div style="width:64px;height:64px;background:#3b82f6;border-radius:14px;display:flex;align-items:center;justify-content:center;font-size:28px;font-weight:700;color:#fff;">B</div>'
+    return f"""<!DOCTYPE html>
 <html><head><meta charset="utf-8">
 <style>
-  body { margin:0; background:#0a0e1a; display:flex; align-items:center; justify-content:center; height:100vh; font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif; }
-  .splash { text-align:center; }
-  .logo { width:64px; height:64px; background:#3b82f6; border-radius:14px; display:flex; align-items:center; justify-content:center; margin:0 auto 24px; font-size:28px; font-weight:700; color:#fff; }
-  h1 { color:#e2e8f0; font-size:20px; margin:0 0 8px; }
-  p { color:#94a3b8; font-size:14px; margin:0 0 24px; }
-  .spinner { width:32px; height:32px; border:3px solid #1e293b; border-top-color:#3b82f6; border-radius:50%; animation:spin 0.8s linear infinite; margin:0 auto; }
-  @keyframes spin { to { transform:rotate(360deg); } }
+  body {{ margin:0; background:#0a0e1a; display:flex; align-items:center; justify-content:center; height:100vh; font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif; }}
+  .splash {{ text-align:center; }}
+  .logo {{ margin:0 auto 24px; }}
+  h1 {{ color:#e2e8f0; font-size:20px; margin:0 0 8px; }}
+  p {{ color:#94a3b8; font-size:14px; margin:0 0 24px; }}
+  .spinner {{ width:32px; height:32px; border:3px solid #1e293b; border-top-color:#3b82f6; border-radius:50%; animation:spin 0.8s linear infinite; margin:0 auto; }}
+  @keyframes spin {{ to {{ transform:rotate(360deg); }} }}
 </style>
 </head><body>
 <div class="splash">
-  <div class="logo">B</div>
+  <div class="logo">{logo}</div>
   <h1>BigEd CC</h1>
   <p>Starting fleet...</p>
   <div class="spinner"></div>
 </div>
 </body></html>"""
+
+SPLASH_HTML = _build_splash_html()
 FLEET_DIR = Path(__file__).resolve().parent.parent.parent / "fleet"
 DATA_DIR = Path(__file__).resolve().parent / "data"
 ICON_PATH = Path(__file__).resolve().parent / "icon_1024.png"
