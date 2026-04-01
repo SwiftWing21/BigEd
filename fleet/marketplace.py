@@ -651,6 +651,9 @@ def get_installed(tenant_id: str) -> list:
 @marketplace_bp.route("/api/marketplace/packages")
 def api_marketplace_packages():
     """List packages — supports ?category=, ?search=, ?page= query params."""
+    err = _require_role("viewer")
+    if err:
+        return err
     try:
         category = request.args.get("category")
         search = request.args.get("search")
@@ -664,6 +667,9 @@ def api_marketplace_packages():
 @marketplace_bp.route("/api/marketplace/packages/<package_id>")
 def api_marketplace_package_detail(package_id):
     """Full package details with rating summary."""
+    err = _require_role("viewer")
+    if err:
+        return err
     try:
         pkg = get_package(package_id)
         if not pkg:
@@ -717,6 +723,9 @@ def api_marketplace_update(package_id):
 @marketplace_bp.route("/api/marketplace/packages/<package_id>/reviews")
 def api_marketplace_reviews(package_id):
     """Paginated reviews for a package."""
+    err = _require_role("viewer")
+    if err:
+        return err
     try:
         page = int(request.args.get("page", 1))
         return jsonify(get_reviews(package_id, page=page))
@@ -798,6 +807,9 @@ def api_marketplace_uninstall(package_id):
 @marketplace_bp.route("/api/marketplace/installed")
 def api_marketplace_installed():
     """List installed packages for a tenant. Requires ?tenant_id= query param."""
+    err = _require_role("viewer")
+    if err:
+        return err
     try:
         tenant_id = request.args.get("tenant_id")
         if not tenant_id:
@@ -834,6 +846,9 @@ def api_marketplace_register_publisher():
 @marketplace_bp.route("/api/marketplace/publishers/<publisher_id>")
 def api_marketplace_publisher_detail(publisher_id):
     """Publisher profile with packages."""
+    err = _require_role("viewer")
+    if err:
+        return err
     try:
         pub = get_publisher(publisher_id)
         if not pub:
