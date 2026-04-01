@@ -301,7 +301,8 @@ def _check_ollama() -> tuple:
     """Check if Ollama is reachable."""
     try:
         import urllib.request
-        urllib.request.urlopen("http://localhost:11434/api/tags", timeout=2)
+        from config import get_ollama_host
+        urllib.request.urlopen(f"{get_ollama_host()}/api/tags", timeout=2)
         return True, ""
     except Exception:
         return False, "is sleeping... (Ollama not running)"

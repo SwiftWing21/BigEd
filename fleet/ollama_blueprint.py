@@ -11,13 +11,17 @@ from pathlib import Path
 
 from flask import Blueprint, jsonify, request
 
-from dashboard_utils import _require_role, _check_rate_limit
+from dashboard_utils import _require_role, _check_rate_limit, _safe_error
 
 log = logging.getLogger("ollama_api")
 
 ollama_bp = Blueprint("ollama", __name__)
 
-OLLAMA_HOST = "http://localhost:11434"
+try:
+    from config import get_ollama_host as _get_ollama_host
+    OLLAMA_HOST = _get_ollama_host()
+except Exception:
+    OLLAMA_HOST = "http://localhost:11434"
 
 
 def _ollama_url(path: str) -> str:
@@ -145,7 +149,7 @@ def api_ollama_start():
         return jsonify({"ok": True, "pid": proc.pid})
     except Exception as e:
         log.warning("Failed to start Ollama: %s", e)
-        return jsonify({"error": str(e)}), 500
+        return jsonify({"error": _safe_error(e)}), 500
 
 
 # ── POST /api/ollama/stop ───────────────────────────────────────────────────
@@ -181,7 +185,7 @@ def api_ollama_stop():
             log.info("Ollama stopped (PID=%d)", pid)
         except Exception as e:
             log.warning("Failed to stop Ollama: %s", e)
-            return jsonify({"error": str(e)}), 500
+            return jsonify({"error": _safe_error(e)}), 500
 
     return jsonify({"ok": True})
 

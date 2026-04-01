@@ -389,7 +389,7 @@ def evict_models_for_training(host=None):
     Sends keep_alive=0 to Ollama to free VRAM for PyTorch."""
     try:
         if host is None:
-            host = "http://localhost:11434"
+            host = load_thermal_config().get("ollama_host", "http://localhost:11434").rstrip("/")
         # Get currently loaded models
         with urllib.request.urlopen(f"{host}/api/ps", timeout=3) as r:
             data = json.loads(r.read())

@@ -54,8 +54,9 @@ Output ONLY valid JSON in this exact format:
             "stream": False,
             "options": {"temperature": 0.0}
         }).encode()
+        from config import get_ollama_host
         req = urllib.request.Request(
-            "http://localhost:11434/api/generate",
+            f"{get_ollama_host()}/api/generate",
             data=body, headers={"Content-Type": "application/json"}
         )
         with urllib.request.urlopen(req, timeout=5) as r:

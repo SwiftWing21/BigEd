@@ -6,16 +6,45 @@ in a single, auditable module.  SOC 2 / OWASP alignment.
 """
 import functools
 import hmac
+import ipaddress
 import os
 import re
 import secrets
 import threading
 import time
 from pathlib import Path
+from urllib.parse import urlparse
 
 from flask import jsonify, request
 
 FLEET_DIR = Path(__file__).parent
+
+# ── SSRF peer URL validation ─────────────────────────────────────────────
+
+
+def validate_peer_url(url: str) -> tuple[bool, str]:
+    """Validate a peer URL is safe (no SSRF to internal networks).
+
+    Returns (True, "OK") on success or (False, reason) on failure.
+    Blocks loopback and RFC-1918 private addresses.
+    """
+    try:
+        parsed = urlparse(url)
+        if parsed.scheme not in ("http", "https"):
+            return False, "Only http/https allowed"
+        host = parsed.hostname
+        if not host:
+            return False, "No hostname"
+        try:
+            addr = ipaddress.ip_address(host)
+            if addr.is_loopback or addr.is_private or addr.is_link_local:
+                return False, "Internal addresses blocked"
+        except ValueError:
+            pass  # hostname, not a bare IP — DNS resolution to internal is accepted risk
+        return True, "OK"
+    except Exception:
+        return False, "Invalid URL"
+
 
 # ── TLS (auto-generate self-signed cert) ─────────────────────────────────
 
