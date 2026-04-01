@@ -1614,11 +1614,25 @@ function submitAddSource() {
       var overlay = document.getElementById('boot-overlay');
       if (!overlay) { clearInterval(bootTimer); return; }
       if (!data.stage || data.stage === 'ready' || data.stage === 'unknown' || data.error) {
-        overlay.style.display = 'none';
-        bootHidden = true;
         clearInterval(bootTimer);
+        /* Show all stages as done, then transition out */
+        if (data.stages) {
+          BOOT_STAGES.forEach(function(k) {
+            if (data.stages[k]) data.stages[k].status = 'done';
+          });
+          renderBootStages(data);
+        }
         var sub = document.getElementById('boot-subtitle');
-        if (sub) sub.textContent = 'Fleet ready.';
+        if (sub) sub.textContent = 'Fleet ready \u2014 loading dashboard...';
+        /* Brief pause showing all green, then fade out */
+        setTimeout(function() {
+          overlay.style.transition = 'opacity 0.6s ease';
+          overlay.style.opacity = '0';
+          setTimeout(function() {
+            overlay.style.display = 'none';
+            bootHidden = true;
+          }, 600);
+        }, 800);
         return;
       }
       overlay.style.display = 'flex';
@@ -1626,7 +1640,11 @@ function submitAddSource() {
     }).catch(function() {
       /* Dashboard not up yet or boot_status file gone -- hide overlay */
       var overlay = document.getElementById('boot-overlay');
-      if (overlay) overlay.style.display = 'none';
+      if (overlay) {
+        overlay.style.transition = 'opacity 0.4s ease';
+        overlay.style.opacity = '0';
+        setTimeout(function() { overlay.style.display = 'none'; }, 400);
+      }
       bootHidden = true;
       clearInterval(bootTimer);
     });
