@@ -142,8 +142,8 @@ type = "fma_review"
 [tasks.payload]
 agent_name = "coder_2"
 perspective = "code critic / reviewer"
-file = "updater.py"
-focus = "subprocess error handling, build failure recovery, self-update race conditions"
+file = "build.py"
+focus = "subprocess error handling, build failure recovery, cross-platform path handling"
 mode = "both"
 round = 2
 
@@ -203,7 +203,7 @@ type = "skill_draft"
 agent_name = "coder_2"
 perspective = "code critic / reviewer"
 skill_name = "summarize_fix"
-description = "Fix or replace frequently failing skill 'summarize' â€” 3128 failures. Sample error: stale â€” cleared on boot"
+description = "Fix or replace frequently failing skill 'summarize' â€” 4248 failures. Sample error: stale â€” cleared on boot"
 
 
 [[tasks]]

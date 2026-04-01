@@ -11,7 +11,7 @@ Replaces build.bat. Auto-detects platform for:
 Usage:
     python build.py              # build all (launcher, updater, setup)
     python build.py --launcher   # build launcher only
-    python build.py --updater    # build updater only
+    python build.py --updater    # build update helper only
     python build.py --setup      # build setup/installer only
 """
 import argparse
@@ -123,15 +123,17 @@ def build_launcher() -> float:
     )
 
 
-def build_updater() -> float:
-    """Build Updater executable."""
-    _kill_process("Updater")
+def build_update_helper() -> float:
+    """Build UpdateHelper executable (headless update applier)."""
+    _kill_process("UpdateHelper")
+    fleet_dir = HERE.parent.parent / "fleet"
     return _run(
         _pyinstaller_cmd(
-            "Updater", "updater.py",
-            add_data=["brick.ico"],
+            "UpdateHelper", str(fleet_dir / "update_helper.py"),
+            add_data=[],
+            windowed=False,
         ),
-        "Building Updater",
+        "Building UpdateHelper",
     )
 
 
@@ -196,7 +198,7 @@ def capture_ux_screenshots() -> float:
 def main():
     parser = argparse.ArgumentParser(description="BigEd CC Build System")
     parser.add_argument("--launcher", action="store_true", help="Build launcher only")
-    parser.add_argument("--updater", action="store_true", help="Build updater only")
+    parser.add_argument("--updater", action="store_true", help="Build update helper only")
     parser.add_argument("--setup", action="store_true", help="Build setup only")
     parser.add_argument("--usb", action="store_true", help="Build USB media creator only")
     parser.add_argument("--production", action="store_true",
@@ -258,7 +260,7 @@ def main():
     if build_all or args.launcher:
         step_times["BigEdCC"] = build_launcher()
     if build_all or args.updater:
-        step_times["Updater"] = build_updater()
+        step_times["UpdateHelper"] = build_update_helper()
     if build_all or args.setup:
         step_times["Setup"] = build_setup()
     if build_all or args.usb:

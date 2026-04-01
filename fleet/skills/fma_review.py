@@ -39,7 +39,7 @@ FMA_REVIEWS_DIR = KNOWLEDGE_DIR / "fma_reviews"
 FMA_DIR = FLEET_DIR.parent / "BigEd" / "launcher"
 FMA_FILES = [
     "launcher.py",
-    "updater.py",
+    "build.py",
     "installer.py",
     "uninstaller.py",
     "generate_icon.py",

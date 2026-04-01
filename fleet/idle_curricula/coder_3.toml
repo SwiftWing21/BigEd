@@ -142,8 +142,8 @@ type = "fma_review"
 [tasks.payload]
 agent_name = "coder_3"
 perspective = "performance optimizer"
-file = "updater.py"
-focus = "build step parallelization, manifest hash caching, subprocess overhead"
+file = "build.py"
+focus = "build step parallelization, artifact caching, subprocess overhead"
 mode = "both"
 round = 2
 
@@ -189,7 +189,7 @@ type = "skill_draft"
 agent_name = "coder_3"
 perspective = "performance optimizer"
 skill_name = "summarize_fix"
-description = "Fix or replace frequently failing skill 'summarize' â€” 3128 failures. Sample error: stale â€” cleared on boot"
+description = "Fix or replace frequently failing skill 'summarize' â€” 4248 failures. Sample error: stale â€” cleared on boot"
 
 
 [[tasks]]

@@ -60,7 +60,7 @@ def main():
     check("build.py", (LAUNCHER / "build.py").exists())
     check("launcher.py", (LAUNCHER / "launcher.py").exists())
     check("installer.py", (LAUNCHER / "installer.py").exists())
-    check("updater.py", (LAUNCHER / "updater.py").exists())
+    check("update_manager.py", (FLEET / "update_manager.py").exists())
     check("release.yml", (HERE / ".github" / "workflows" / "release.yml").exists())
 
     # 2. Python compilation
