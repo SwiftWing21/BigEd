@@ -689,3 +689,129 @@ def get_score_history(days: int = 30) -> list[dict]:
     except Exception as e:
         log.warning("get_score_history failed: %s", e)
     return results
+
+
+# ── Reconciliation Engine ─────────────────────────────────────────────────
+
+DIVERGENCE_THRESHOLD = 0.15
+CONFIDENCE_GATE = 0.5
+
+
+def reconcile(scores: list[dict]) -> list[dict]:
+    """Compare auto scores against manual grades, flag divergences.
+
+    Only flags when: gap > DIVERGENCE_THRESHOLD AND dimension confidence >= CONFIDENCE_GATE.
+    Mutates and returns the input scores list with updated divergence flags.
+    """
+    baseline = load_baseline()
+    for s in scores:
+        dim_name = s["dimension"]
+        dim_conf = DIMENSIONS.get(dim_name, {}).get("confidence", 0.0)
+        manual = baseline.get("dimensions", {}).get(dim_name, {})
+        manual_grade = manual.get("grade", s.get("manual_grade", ""))
+        s["manual_grade"] = manual_grade
+        if not manual_grade:
+            continue
+        manual_numeric = grade_to_score(manual_grade)
+        gap = abs(s["auto_score"] - manual_numeric)
+        if gap > DIVERGENCE_THRESHOLD and dim_conf >= CONFIDENCE_GATE:
+            s["divergence"] = 1
+        else:
+            s["divergence"] = 0
+    return scores
+
+
+def check_ratchets(scores: list[dict], ratchets: dict | None = None) -> list[dict]:
+    """Check if scores dropped below ratchet targets.
+
+    ratchets: {dimension: grade_string}. Loads from baseline if None.
+    Returns list of violation dicts.
+    """
+    if ratchets is None:
+        baseline = load_baseline()
+        ratchets = baseline.get("ratchets", {})
+    violations = []
+    for s in scores:
+        dim = s["dimension"]
+        if dim not in ratchets:
+            continue
+        ratchet_grade = ratchets[dim]
+        ratchet_score = grade_to_score(ratchet_grade)
+        if s["auto_score"] < ratchet_score:
+            violations.append({
+                "dimension": dim,
+                "auto_score": s["auto_score"],
+                "ratchet_grade": ratchet_grade,
+                "ratchet_score": ratchet_score,
+            })
+    return violations
+
+
+def run_and_store(tier: str) -> dict:
+    """Run a tier, reconcile, check ratchets, store to DB, return summary."""
+    scores = run_tier(tier)
+    scores = reconcile(scores)
+    baseline = load_baseline()
+    ratchet_violations = check_ratchets(scores, baseline.get("ratchets", {}))
+    write_scores(tier, scores)
+    divergences = [s for s in scores if s["divergence"] == 1]
+    return {
+        "tier": tier,
+        "dimensions_scored": len(scores),
+        "divergences": len(divergences),
+        "ratchet_violations": len(ratchet_violations),
+        "scores": scores,
+        "ratchet_details": ratchet_violations,
+    }
+
+
+# ── User Feedback ─────────────────────────────────────────────────────────
+
+def record_feedback(
+    score: float,
+    scope: str = "overall",
+    session_id: str | None = None,
+    text: str | None = None,
+    inferred: list | None = None,
+    actor: str | None = None,
+) -> int:
+    """Record user feedback. Returns the row ID."""
+    import db
+    row_id = None
+
+    def _do():
+        nonlocal row_id
+        with db.get_conn() as conn:
+            cur = conn.execute(
+                "INSERT INTO user_feedback (score, scope, session_id, text, inferred, actor) "
+                "VALUES (?, ?, ?, ?, ?, ?)",
+                (
+                    score,
+                    scope,
+                    session_id,
+                    text,
+                    json.dumps(inferred) if inferred else None,
+                    actor,
+                ),
+            )
+            row_id = cur.lastrowid
+
+    db._retry_write(_do)
+    return row_id
+
+
+def get_feedback_summary() -> dict:
+    """Aggregate feedback by scope."""
+    import db
+    with db.get_conn() as conn:
+        rows = conn.execute(
+            "SELECT scope, AVG(score) as avg_score, COUNT(*) as count, "
+            "MIN(score) as min_score, MAX(score) as max_score "
+            "FROM user_feedback GROUP BY scope"
+        ).fetchall()
+    return {r["scope"]: dict(r) for r in rows}
+
+
+def get_ux_confidence(feedback_count: int) -> float:
+    """UX confidence scales from 0.30 base to 0.75 at 100+ entries."""
+    return min(0.75, 0.30 + (feedback_count / 100) * 0.45)
