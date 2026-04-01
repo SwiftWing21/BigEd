@@ -1075,6 +1075,7 @@ function toggleModifier(name) {
 
 (function init() {
   _loaded['dashboard'] = true;
+  checkAuth();
   loadDashboard();
   connectSSE();
   loadModeStatus();

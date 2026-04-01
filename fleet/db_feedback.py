@@ -4,7 +4,7 @@ import logging
 log = logging.getLogger(__name__)
 
 
-def submit_feedback(output_path, verdict, feedback_text="", agent_name="", skill_type=""):
+def submit_feedback(output_path, verdict, feedback_text="", agent_name="", skill_type="", reviewer=""):
     """Store human feedback on an agent output.
 
     verdict must be 'approved', 'rejected', or 'neutral'.
@@ -19,9 +19,9 @@ def submit_feedback(output_path, verdict, feedback_text="", agent_name="", skill
             conn.execute("DELETE FROM output_feedback WHERE output_path = ?", (output_path,))
             conn.execute(
                 """INSERT INTO output_feedback
-                   (output_path, verdict, feedback_text, operator, agent_name, skill_type)
-                   VALUES (?, ?, ?, 'human', ?, ?)""",
-                (output_path, verdict, feedback_text, agent_name, skill_type),
+                   (output_path, verdict, feedback_text, operator, agent_name, skill_type, reviewer)
+                   VALUES (?, ?, ?, 'human', ?, ?, ?)""",
+                (output_path, verdict, feedback_text, agent_name, skill_type, reviewer),
             )
     _retry_write(_do)
 

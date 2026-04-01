@@ -14,6 +14,7 @@ from flask import Blueprint, jsonify, request
 from dashboard_utils import (
     _require_role,
     _check_rate_limit,
+    get_conn,
     FLEET_DIR,
     KNOWLEDGE_DIR,
 )
@@ -247,8 +248,25 @@ def api_outputs_feedback():
         return jsonify({"error": "File not found"}), 404
 
     import db as _db
+
+    # Get current user from session for audit trail
+    reviewer = ""
+    session_token = request.cookies.get("biged_session", "")
+    if session_token:
+        try:
+            conn = get_conn()
+            row = conn.execute(
+                "SELECT u.display_name FROM user_sessions s JOIN user_profiles u "
+                "ON s.user_id = u.id WHERE s.token = ?",
+                (session_token,),
+            ).fetchone()
+            if row:
+                reviewer = row["display_name"]
+        except Exception:
+            pass
+
     try:
-        _db.submit_feedback(str(abs_path), verdict, feedback_text=notes)
+        _db.submit_feedback(str(abs_path), verdict, feedback_text=notes, reviewer=reviewer)
     except Exception:
         log.warning("Failed to submit feedback for %s", abs_path, exc_info=True)
         return jsonify({"error": "Failed to save feedback"}), 500

@@ -3633,6 +3633,7 @@ var _settingsTabDefs = [
   { id: 'models',     label: 'Models',      sections: ['models','models.tiers','review','idle'] },
   { id: 'hardware',   label: 'Hardware',    sections: ['thermal','gpu','ollama','thermal.vram','workers','capacity'] },
   { id: 'apikeys',    label: 'API & Keys',  sections: ['api_gate','_api_keys'] },
+  { id: 'profiles',   label: 'User Profiles', sections: ['_profiles'] },
   { id: 'operations', label: 'Operations',  sections: ['backup','schedules','mcp','ingest','dispatch_bridge'] },
   { id: 'display',    label: 'Display',     sections: ['_live_columns'] },
   { id: 'advanced',   label: 'Advanced',    sections: ['federation','security','sso','billing','enterprise','compliance'] }
@@ -3745,6 +3746,12 @@ function loadSettingsTab(tabId) {
     if (_settingsTabDefs[i].id === tabId) { tabDef = _settingsTabDefs[i]; break; }
   }
   if (!tabDef) return;
+
+  /* Special case: User Profiles tab */
+  if (tabId === 'profiles') {
+    _loadProfilesSettings(content);
+    return;
+  }
 
   /* Special case: API & Keys tab has custom sub-sections */
   if (tabId === 'apikeys') {
@@ -4120,6 +4127,642 @@ function _saveSettingField(section, key, value, type) {
 /* Backward-compat alias */
 function updateSetting(section, key, value, type) {
   _saveSettingField(section, key, value, type);
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   AUTH — Login overlay, profile picker, setup, header badge
+   ══════════════════════════════════════════════════════════════════════ */
+var _currentUser = null;
+
+function _avatarInitial(name) {
+  return (name || '?').charAt(0).toUpperCase();
+}
+
+function _buildAvatar(color, name, className) {
+  var el = document.createElement('div');
+  el.className = className || 'profile-avatar';
+  el.style.background = color || '#3b82f6';
+  el.textContent = _avatarInitial(name);
+  return el;
+}
+
+function checkAuth() {
+  apiFetch('/api/auth/me').then(function(d) {
+    if (d.guest) {
+      apiFetch('/api/auth/profiles').then(function(pd) {
+        var profiles = pd.profiles || [];
+        if (profiles.length === 0) {
+          showSetupScreen();
+        } else {
+          showLoginScreen(profiles);
+        }
+      }).catch(function() {
+        showSetupScreen();
+      });
+    } else {
+      _currentUser = d;
+      hideLoginOverlay();
+      showCurrentUser(d);
+    }
+  }).catch(function() {
+    /* API not available yet — show setup as fallback */
+    showSetupScreen();
+  });
+}
+
+function showSetupScreen() {
+  var overlay = document.getElementById('login-overlay');
+  var container = document.getElementById('login-container');
+  overlay.classList.add('active');
+  container.textContent = '';
+
+  /* Header */
+  var header = createEl('div', { className: 'login-header' });
+  var logo = createEl('div', { className: 'login-logo' }, 'B');
+  header.appendChild(logo);
+  var h1 = createEl('h1', {}, 'Welcome to BigEd CC');
+  header.appendChild(h1);
+  var desc = createEl('p', {}, 'Create your admin profile to get started.');
+  header.appendChild(desc);
+  container.appendChild(header);
+
+  /* Form */
+  var form = createEl('div', { className: 'setup-form' });
+
+  /* Display Name */
+  var nameField = createEl('div', { className: 'setup-field' });
+  nameField.appendChild(createEl('label', {}, 'Display Name'));
+  var nameInput = createEl('input', { type: 'text', placeholder: 'e.g. Max', id: 'setup-display-name' });
+  nameField.appendChild(nameInput);
+  form.appendChild(nameField);
+
+  /* Username */
+  var userField = createEl('div', { className: 'setup-field' });
+  userField.appendChild(createEl('label', {}, 'Username'));
+  var userInput = createEl('input', { type: 'text', placeholder: 'e.g. max', id: 'setup-username' });
+  userField.appendChild(userInput);
+  var userHint = createEl('span', { className: 'field-hint' }, 'Used for login. Lowercase, no spaces.');
+  userField.appendChild(userHint);
+  form.appendChild(userField);
+
+  /* Password */
+  var passField = createEl('div', { className: 'setup-field' });
+  passField.appendChild(createEl('label', {}, 'Password (optional)'));
+  var passInput = createEl('input', { type: 'password', placeholder: 'Leave blank for no password', id: 'setup-password' });
+  passField.appendChild(passInput);
+  var passHint = createEl('span', { className: 'field-hint' }, 'Skip if you are the only user.');
+  passField.appendChild(passHint);
+  form.appendChild(passField);
+
+  /* Error area */
+  var errorEl = createEl('div', { className: 'login-error', id: 'setup-error' });
+  form.appendChild(errorEl);
+
+  /* Submit */
+  var submitBtn = createEl('button', { className: 'setup-submit', id: 'setup-submit-btn' }, 'Create Profile');
+  submitBtn.addEventListener('click', function() {
+    var displayName = document.getElementById('setup-display-name').value.trim();
+    var username = document.getElementById('setup-username').value.trim();
+    var password = document.getElementById('setup-password').value;
+    var errEl = document.getElementById('setup-error');
+
+    if (!displayName) { errEl.textContent = 'Display name is required.'; return; }
+    if (!username) { errEl.textContent = 'Username is required.'; return; }
+    if (/\s/.test(username)) { errEl.textContent = 'Username cannot contain spaces.'; return; }
+
+    submitBtn.disabled = true;
+    submitBtn.textContent = 'Creating...';
+    errEl.textContent = '';
+
+    apiFetch('/api/auth/setup', {
+      method: 'POST',
+      body: { display_name: displayName, username: username, password: password || undefined }
+    }).then(function(d) {
+      _currentUser = d.profile || d;
+      hideLoginOverlay();
+      showCurrentUser(_currentUser);
+    }).catch(function(e) {
+      errEl.textContent = 'Setup failed: ' + e.message;
+      submitBtn.disabled = false;
+      submitBtn.textContent = 'Create Profile';
+    });
+  });
+  form.appendChild(submitBtn);
+  container.appendChild(form);
+
+  /* Auto-focus */
+  nameInput.focus();
+}
+
+function showLoginScreen(profiles) {
+  var overlay = document.getElementById('login-overlay');
+  var container = document.getElementById('login-container');
+  overlay.classList.add('active');
+  container.textContent = '';
+
+  /* Header */
+  var header = createEl('div', { className: 'login-header' });
+  var logo = createEl('div', { className: 'login-logo' }, 'B');
+  header.appendChild(logo);
+  var h1 = createEl('h1', {}, 'Welcome Back');
+  header.appendChild(h1);
+  var desc = createEl('p', {}, 'Select your profile to continue.');
+  header.appendChild(desc);
+  container.appendChild(header);
+
+  /* Profile grid */
+  var grid = createEl('div', { className: 'profile-grid' });
+  var passwordArea = createEl('div', { id: 'login-password-area' });
+
+  profiles.forEach(function(profile) {
+    var card = createEl('div', { className: 'profile-card' });
+    card.setAttribute('data-username', profile.username);
+
+    var avatar = _buildAvatar(profile.avatar_color, profile.display_name);
+    card.appendChild(avatar);
+
+    var name = createEl('div', { className: 'profile-card-name' }, profile.display_name);
+    card.appendChild(name);
+
+    var role = createEl('div', { className: 'profile-card-role' }, profile.role);
+    card.appendChild(role);
+
+    card.addEventListener('click', function() {
+      /* Highlight selected card */
+      grid.querySelectorAll('.profile-card').forEach(function(c) {
+        c.classList.remove('selected');
+      });
+      card.classList.add('selected');
+
+      if (profile.has_password) {
+        _showPasswordInput(passwordArea, profile);
+      } else {
+        _loginWithProfile(profile.username, null, passwordArea);
+      }
+    });
+
+    grid.appendChild(card);
+  });
+
+  container.appendChild(grid);
+  container.appendChild(passwordArea);
+}
+
+function _showPasswordInput(container, profile) {
+  container.textContent = '';
+
+  var row = createEl('div', { className: 'login-password-row' });
+
+  var input = createEl('input', {
+    type: 'password',
+    placeholder: 'Enter password for ' + escH(profile.display_name)
+  });
+  input.addEventListener('keydown', function(e) {
+    if (e.key === 'Enter') submitBtn.click();
+  });
+  row.appendChild(input);
+
+  var submitBtn = createEl('button', {}, 'Login');
+  submitBtn.addEventListener('click', function() {
+    _loginWithProfile(profile.username, input.value, container);
+  });
+  row.appendChild(submitBtn);
+  container.appendChild(row);
+
+  var errorEl = createEl('div', { className: 'login-error', id: 'login-password-error' });
+  container.appendChild(errorEl);
+
+  input.focus();
+}
+
+function _loginWithProfile(username, password, errorContainer) {
+  var body = { username: username };
+  if (password) body.password = password;
+
+  apiFetch('/api/auth/login', {
+    method: 'POST',
+    body: body
+  }).then(function(d) {
+    _currentUser = d.profile || d;
+    hideLoginOverlay();
+    showCurrentUser(_currentUser);
+  }).catch(function(e) {
+    if (errorContainer) {
+      var errEl = errorContainer.querySelector('.login-error');
+      if (!errEl) {
+        errEl = createEl('div', { className: 'login-error' });
+        errorContainer.appendChild(errEl);
+      }
+      errEl.textContent = 'Login failed: ' + e.message;
+    }
+  });
+}
+
+function hideLoginOverlay() {
+  var overlay = document.getElementById('login-overlay');
+  overlay.style.transition = 'opacity 0.3s ease';
+  overlay.style.opacity = '0';
+  setTimeout(function() {
+    overlay.classList.remove('active');
+    overlay.style.opacity = '';
+    overlay.style.transition = '';
+  }, 300);
+}
+
+function showCurrentUser(user) {
+  if (!user || user.guest) return;
+  var badge = document.getElementById('user-badge');
+  var avatarEl = document.getElementById('user-badge-avatar');
+  var nameEl = document.getElementById('user-badge-name');
+
+  avatarEl.style.background = user.avatar_color || '#3b82f6';
+  avatarEl.textContent = _avatarInitial(user.display_name);
+  nameEl.textContent = user.display_name;
+  badge.style.display = 'flex';
+}
+
+function toggleUserMenu() {
+  var menu = document.getElementById('user-menu');
+  var isVisible = menu.style.display !== 'none';
+  menu.style.display = isVisible ? 'none' : 'block';
+
+  if (!isVisible) {
+    /* Close on outside click */
+    setTimeout(function() {
+      function _closeMenu(e) {
+        if (!menu.contains(e.target) && !document.getElementById('user-badge').contains(e.target)) {
+          menu.style.display = 'none';
+          document.removeEventListener('click', _closeMenu);
+        }
+      }
+      document.addEventListener('click', _closeMenu);
+    }, 0);
+  }
+}
+
+function switchProfile() {
+  document.getElementById('user-menu').style.display = 'none';
+  _currentUser = null;
+  document.getElementById('user-badge').style.display = 'none';
+  /* Re-check auth to show login screen */
+  apiFetch('/api/auth/profiles').then(function(pd) {
+    var profiles = pd.profiles || [];
+    if (profiles.length > 0) {
+      showLoginScreen(profiles);
+    } else {
+      showSetupScreen();
+    }
+  }).catch(function() {
+    showSetupScreen();
+  });
+}
+
+function logoutUser() {
+  document.getElementById('user-menu').style.display = 'none';
+  apiFetch('/api/auth/logout', { method: 'POST' }).then(function() {
+    _currentUser = null;
+    document.getElementById('user-badge').style.display = 'none';
+    checkAuth();
+  }).catch(function() {
+    _currentUser = null;
+    document.getElementById('user-badge').style.display = 'none';
+    checkAuth();
+  });
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   AUTH — Settings: User Profiles Management
+   ══════════════════════════════════════════════════════════════════════ */
+function _loadProfilesSettings(content) {
+  content.textContent = '';
+
+  var header = createEl('div', {
+    style: 'display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;'
+  });
+  var title = createEl('h3', {
+    style: 'margin:0;font-size:14px;font-weight:600;'
+  }, 'USER PROFILES');
+  header.appendChild(title);
+
+  var isAdmin = _currentUser && _currentUser.role === 'admin';
+
+  if (isAdmin) {
+    var addBtn = createEl('button', { className: 'btn btn-sm btn-primary' }, '+ Add Profile');
+    addBtn.addEventListener('click', function() {
+      _showAddProfileForm(content);
+    });
+    header.appendChild(addBtn);
+  }
+  content.appendChild(header);
+
+  var listEl = createEl('div', { id: 'profile-settings-list' });
+  var spinner = createEl('div', { className: 'spinner' });
+  listEl.appendChild(spinner);
+  content.appendChild(listEl);
+
+  apiFetch('/api/auth/profiles').then(function(d) {
+    var profiles = d.profiles || [];
+    listEl.textContent = '';
+
+    if (!profiles.length) {
+      listEl.appendChild(createEl('div', {
+        style: 'font-size:12px;color:var(--muted-foreground);padding:8px 0;'
+      }, 'No profiles found.'));
+      return;
+    }
+
+    profiles.forEach(function(p) {
+      var row = createEl('div', { className: 'profile-list-item' });
+
+      /* Avatar */
+      var avatar = _buildAvatar(p.avatar_color, p.display_name);
+      avatar.style.width = '36px';
+      avatar.style.height = '36px';
+      avatar.style.fontSize = '14px';
+      row.appendChild(avatar);
+
+      /* Info */
+      var info = createEl('div', { className: 'profile-list-info' });
+      info.appendChild(createEl('div', { className: 'profile-display-name' }, p.display_name));
+      info.appendChild(createEl('div', { className: 'profile-username' }, '@' + p.username));
+      row.appendChild(info);
+
+      /* Role badge */
+      var badge = createEl('span', {
+        className: 'profile-role-badge role-' + p.role
+      }, p.role);
+      row.appendChild(badge);
+
+      /* Actions */
+      var actions = createEl('div', { className: 'profile-actions' });
+      var isSelf = _currentUser && _currentUser.username === p.username;
+
+      if (isSelf) {
+        var editBtn = createEl('button', { className: 'btn btn-sm btn-outline' }, 'Edit');
+        editBtn.addEventListener('click', function() {
+          _showEditOwnProfile(content, p);
+        });
+        actions.appendChild(editBtn);
+      }
+
+      if (isAdmin && !isSelf) {
+        var adminEditBtn = createEl('button', { className: 'btn btn-sm btn-outline' }, 'Edit');
+        adminEditBtn.addEventListener('click', function() {
+          _showAdminEditProfile(content, p);
+        });
+        actions.appendChild(adminEditBtn);
+
+        var deactivateBtn = createEl('button', { className: 'btn btn-sm' });
+        deactivateBtn.textContent = p.is_active ? 'Deactivate' : 'Activate';
+        deactivateBtn.style.color = p.is_active ? 'var(--danger)' : 'var(--success)';
+        deactivateBtn.addEventListener('click', function() {
+          apiFetch('/api/auth/profiles/' + p.id, {
+            method: p.is_active ? 'DELETE' : 'PUT',
+            body: p.is_active ? undefined : { is_active: true }
+          }).then(function() {
+            _loadProfilesSettings(content);
+          }).catch(function(e) {
+            showToast('Failed: ' + e.message, 'error');
+          });
+        });
+        actions.appendChild(deactivateBtn);
+      }
+
+      row.appendChild(actions);
+      listEl.appendChild(row);
+    });
+  }).catch(function(e) {
+    listEl.textContent = '';
+    listEl.appendChild(createEl('div', {
+      style: 'font-size:12px;color:var(--danger);'
+    }, 'Failed to load profiles: ' + e.message));
+  });
+}
+
+function _showAddProfileForm(parentContent) {
+  var listEl = document.getElementById('profile-settings-list');
+  if (!listEl) return;
+
+  /* Check if form already shown */
+  if (document.getElementById('add-profile-form')) return;
+
+  var form = createEl('div', {
+    id: 'add-profile-form',
+    className: 'setup-form',
+    style: 'border:1px solid var(--border);border-radius:var(--radius);padding:16px;margin-bottom:16px;'
+  });
+
+  var formTitle = createEl('div', { style: 'font-size:13px;font-weight:600;margin-bottom:8px;' }, 'Add New Profile');
+  form.appendChild(formTitle);
+
+  /* Display Name */
+  var nameField = createEl('div', { className: 'setup-field' });
+  nameField.appendChild(createEl('label', {}, 'Display Name'));
+  var nameInput = createEl('input', { type: 'text', placeholder: 'e.g. Jane', id: 'add-profile-name' });
+  nameField.appendChild(nameInput);
+  form.appendChild(nameField);
+
+  /* Username */
+  var userField = createEl('div', { className: 'setup-field' });
+  userField.appendChild(createEl('label', {}, 'Username'));
+  var userInput = createEl('input', { type: 'text', placeholder: 'e.g. jane', id: 'add-profile-username' });
+  userField.appendChild(userInput);
+  form.appendChild(userField);
+
+  /* Role */
+  var roleField = createEl('div', { className: 'setup-field' });
+  roleField.appendChild(createEl('label', {}, 'Role'));
+  var roleSelect = createEl('select', { id: 'add-profile-role' });
+  ['operator', 'viewer', 'admin'].forEach(function(r) {
+    var opt = createEl('option', { value: r }, r);
+    roleSelect.appendChild(opt);
+  });
+  roleField.appendChild(roleSelect);
+  form.appendChild(roleField);
+
+  /* Password */
+  var passField = createEl('div', { className: 'setup-field' });
+  passField.appendChild(createEl('label', {}, 'Password (optional)'));
+  var passInput = createEl('input', { type: 'password', placeholder: 'Leave blank for no password', id: 'add-profile-password' });
+  passField.appendChild(passInput);
+  form.appendChild(passField);
+
+  /* Error */
+  var errorEl = createEl('div', { className: 'login-error', id: 'add-profile-error' });
+  form.appendChild(errorEl);
+
+  /* Buttons */
+  var btnRow = createEl('div', { style: 'display:flex;gap:8px;margin-top:8px;' });
+  var saveBtn = createEl('button', { className: 'btn btn-sm btn-primary' }, 'Create');
+  saveBtn.addEventListener('click', function() {
+    var displayName = document.getElementById('add-profile-name').value.trim();
+    var username = document.getElementById('add-profile-username').value.trim();
+    var role = document.getElementById('add-profile-role').value;
+    var password = document.getElementById('add-profile-password').value;
+    var errEl = document.getElementById('add-profile-error');
+
+    if (!displayName || !username) { errEl.textContent = 'Name and username required.'; return; }
+    errEl.textContent = '';
+    saveBtn.disabled = true;
+
+    apiFetch('/api/auth/profiles', {
+      method: 'POST',
+      body: { display_name: displayName, username: username, role: role, password: password || undefined }
+    }).then(function() {
+      showToast('Profile created', 'success');
+      _loadProfilesSettings(parentContent);
+    }).catch(function(e) {
+      errEl.textContent = 'Failed: ' + e.message;
+      saveBtn.disabled = false;
+    });
+  });
+  btnRow.appendChild(saveBtn);
+
+  var cancelBtn = createEl('button', { className: 'btn btn-sm btn-outline' }, 'Cancel');
+  cancelBtn.addEventListener('click', function() {
+    form.remove();
+  });
+  btnRow.appendChild(cancelBtn);
+  form.appendChild(btnRow);
+
+  listEl.parentNode.insertBefore(form, listEl);
+  nameInput.focus();
+}
+
+function _showEditOwnProfile(parentContent, profile) {
+  var listEl = document.getElementById('profile-settings-list');
+  if (!listEl) return;
+  if (document.getElementById('edit-profile-form')) document.getElementById('edit-profile-form').remove();
+
+  var form = createEl('div', {
+    id: 'edit-profile-form',
+    className: 'setup-form',
+    style: 'border:1px solid var(--border);border-radius:var(--radius);padding:16px;margin-bottom:16px;'
+  });
+
+  form.appendChild(createEl('div', { style: 'font-size:13px;font-weight:600;margin-bottom:8px;' }, 'Edit Your Profile'));
+
+  /* Display Name */
+  var nameField = createEl('div', { className: 'setup-field' });
+  nameField.appendChild(createEl('label', {}, 'Display Name'));
+  var nameInput = createEl('input', { type: 'text', id: 'edit-profile-name', value: profile.display_name });
+  nameField.appendChild(nameInput);
+  form.appendChild(nameField);
+
+  /* New Password */
+  var passField = createEl('div', { className: 'setup-field' });
+  passField.appendChild(createEl('label', {}, 'New Password'));
+  var passInput = createEl('input', { type: 'password', placeholder: 'Leave blank to keep current', id: 'edit-profile-password' });
+  passField.appendChild(passInput);
+  form.appendChild(passField);
+
+  var errorEl = createEl('div', { className: 'login-error', id: 'edit-profile-error' });
+  form.appendChild(errorEl);
+
+  var btnRow = createEl('div', { style: 'display:flex;gap:8px;margin-top:8px;' });
+  var saveBtn = createEl('button', { className: 'btn btn-sm btn-primary' }, 'Save');
+  saveBtn.addEventListener('click', function() {
+    var body = {};
+    var newName = document.getElementById('edit-profile-name').value.trim();
+    var newPass = document.getElementById('edit-profile-password').value;
+    if (newName && newName !== profile.display_name) body.display_name = newName;
+    if (newPass) body.password = newPass;
+
+    if (!Object.keys(body).length) { form.remove(); return; }
+
+    apiFetch('/api/auth/profiles/' + profile.id, { method: 'PUT', body: body }).then(function() {
+      showToast('Profile updated', 'success');
+      if (body.display_name) {
+        _currentUser.display_name = body.display_name;
+        showCurrentUser(_currentUser);
+      }
+      _loadProfilesSettings(parentContent);
+    }).catch(function(e) {
+      document.getElementById('edit-profile-error').textContent = 'Failed: ' + e.message;
+    });
+  });
+  btnRow.appendChild(saveBtn);
+
+  var cancelBtn = createEl('button', { className: 'btn btn-sm btn-outline' }, 'Cancel');
+  cancelBtn.addEventListener('click', function() { form.remove(); });
+  btnRow.appendChild(cancelBtn);
+  form.appendChild(btnRow);
+
+  listEl.parentNode.insertBefore(form, listEl);
+  nameInput.focus();
+}
+
+function _showAdminEditProfile(parentContent, profile) {
+  var listEl = document.getElementById('profile-settings-list');
+  if (!listEl) return;
+  if (document.getElementById('edit-profile-form')) document.getElementById('edit-profile-form').remove();
+
+  var form = createEl('div', {
+    id: 'edit-profile-form',
+    className: 'setup-form',
+    style: 'border:1px solid var(--border);border-radius:var(--radius);padding:16px;margin-bottom:16px;'
+  });
+
+  form.appendChild(createEl('div', { style: 'font-size:13px;font-weight:600;margin-bottom:8px;' }, 'Edit: ' + escH(profile.display_name)));
+
+  /* Display Name */
+  var nameField = createEl('div', { className: 'setup-field' });
+  nameField.appendChild(createEl('label', {}, 'Display Name'));
+  var nameInput = createEl('input', { type: 'text', id: 'edit-profile-name', value: profile.display_name });
+  nameField.appendChild(nameInput);
+  form.appendChild(nameField);
+
+  /* Role */
+  var roleField = createEl('div', { className: 'setup-field' });
+  roleField.appendChild(createEl('label', {}, 'Role'));
+  var roleSelect = createEl('select', { id: 'edit-profile-role' });
+  ['admin', 'operator', 'viewer'].forEach(function(r) {
+    var opt = createEl('option', { value: r }, r);
+    if (r === profile.role) opt.selected = true;
+    roleSelect.appendChild(opt);
+  });
+  roleField.appendChild(roleSelect);
+  form.appendChild(roleField);
+
+  /* Reset Password */
+  var passField = createEl('div', { className: 'setup-field' });
+  passField.appendChild(createEl('label', {}, 'Reset Password'));
+  var passInput = createEl('input', { type: 'password', placeholder: 'Leave blank to keep current', id: 'edit-profile-password' });
+  passField.appendChild(passInput);
+  form.appendChild(passField);
+
+  var errorEl = createEl('div', { className: 'login-error', id: 'edit-profile-error' });
+  form.appendChild(errorEl);
+
+  var btnRow = createEl('div', { style: 'display:flex;gap:8px;margin-top:8px;' });
+  var saveBtn = createEl('button', { className: 'btn btn-sm btn-primary' }, 'Save');
+  saveBtn.addEventListener('click', function() {
+    var body = {};
+    var newName = document.getElementById('edit-profile-name').value.trim();
+    var newRole = document.getElementById('edit-profile-role').value;
+    var newPass = document.getElementById('edit-profile-password').value;
+    if (newName && newName !== profile.display_name) body.display_name = newName;
+    if (newRole && newRole !== profile.role) body.role = newRole;
+    if (newPass) body.password = newPass;
+
+    if (!Object.keys(body).length) { form.remove(); return; }
+
+    apiFetch('/api/auth/profiles/' + profile.id, { method: 'PUT', body: body }).then(function() {
+      showToast('Profile updated', 'success');
+      _loadProfilesSettings(parentContent);
+    }).catch(function(e) {
+      document.getElementById('edit-profile-error').textContent = 'Failed: ' + e.message;
+    });
+  });
+  btnRow.appendChild(saveBtn);
+
+  var cancelBtn = createEl('button', { className: 'btn btn-sm btn-outline' }, 'Cancel');
+  cancelBtn.addEventListener('click', function() { form.remove(); });
+  btnRow.appendChild(cancelBtn);
+  form.appendChild(btnRow);
+
+  listEl.parentNode.insertBefore(form, listEl);
+  nameInput.focus();
 }
 
 /* ══════════════════════════════════════════════════════════════════════════

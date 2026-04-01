@@ -19,6 +19,13 @@
 <!-- ── Sidebar Overlay (mobile) ───────────────────────────────────────────── -->
 <div class="sidebar-overlay" id="sidebar-overlay" onclick="closeSidebar()"></div>
 
+<!-- ── Login Overlay ──────────────────────────────────────────────────── -->
+<div id="login-overlay" class="login-overlay">
+  <div id="login-container" class="login-container">
+    <!-- Populated by JS (checkAuth) -->
+  </div>
+</div>
+
 <div class="app-layout">
 {% include 'components/_nav.html' %}
 
@@ -44,6 +51,15 @@
         <span class="ignition-icon" id="ignition-icon">&#9211;</span>
         <span class="ignition-label" id="ignition-label">OFF</span>
       </button>
+    </div>
+    <!-- ── User Profile Badge ──────────────────────────────────────────── -->
+    <div id="user-badge" class="user-badge" style="display:none;" onclick="toggleUserMenu()">
+      <div id="user-badge-avatar" class="user-badge-avatar"></div>
+      <span id="user-badge-name" class="user-badge-name"></span>
+    </div>
+    <div id="user-menu" class="user-menu" style="display:none;">
+      <button class="user-menu-item" onclick="switchProfile()">Switch Profile</button>
+      <button class="user-menu-item" onclick="logoutUser()">Logout</button>
     </div>
     <div class="header-live">
       <div class="live-dot" id="live-dot"></div>

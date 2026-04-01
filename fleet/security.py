@@ -114,7 +114,23 @@ def get_request_role(config_loader, req=None):
     """
     req = req or request
 
-    # 1. Check SSO session first (if SSO module available and enabled)
+    # 1. Check biged_session cookie (local user profiles)
+    session_token = req.cookies.get('biged_session', '')
+    if session_token:
+        try:
+            import db as _db
+            conn = _db.get_conn()
+            row = conn.execute(
+                "SELECT u.role FROM user_sessions s JOIN user_profiles u ON s.user_id = u.id "
+                "WHERE s.token = ? AND s.expires_at > datetime('now') AND u.is_active = 1",
+                (session_token,)
+            ).fetchone()
+            if row:
+                return row['role']
+        except Exception:
+            pass
+
+    # 2. Check SSO session first (if SSO module available and enabled)
     try:
         from sso import get_sso_role
         sso_role = get_sso_role(req)
@@ -266,13 +282,28 @@ def register_hooks(app, config_loader):
 
     @app.before_request
     def _auth():
-        # Always allow SSO auth routes through
-        if request.path.startswith("/auth/"):
+        # Always allow auth routes through (SSO + local user profiles)
+        if request.path.startswith("/auth/") or request.path.startswith("/api/auth/"):
             return
         if (not request.path.startswith("/api/")
                 and not request.path.startswith("/a2a/")
                 and request.path != "/.well-known/agent.json"):
             return  # skip auth for HTML pages, static
+
+        # Check biged_session cookie (local user profiles)
+        session_token = request.cookies.get('biged_session', '')
+        if session_token:
+            try:
+                import db as _db
+                row = _db.get_conn().execute(
+                    "SELECT 1 FROM user_sessions s JOIN user_profiles u ON s.user_id = u.id "
+                    "WHERE s.token = ? AND s.expires_at > datetime('now') AND u.is_active = 1",
+                    (session_token,)
+                ).fetchone()
+                if row:
+                    return  # valid local session
+            except Exception:
+                pass
 
         # Check SSO session first (if SSO enabled)
         try:

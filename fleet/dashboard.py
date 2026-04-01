@@ -96,6 +96,7 @@ _register_security_hooks(app, lambda: _load_config())
 # required=True → ImportError raises and halts startup
 # required=False → logged at DEBUG and skipped gracefully
 _BLUEPRINTS = [
+    ("auth_blueprint",        "auth_bp",          True),
     ("mode_blueprint",        "mode_bp",          True),
     ("factorio_blueprint",    "factorio_bp",       True),
     ("sse_blueprint",         "sse_bp",            True),
