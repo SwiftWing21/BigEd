@@ -190,9 +190,23 @@ def _setup_tray():
 # -- Window close → minimize ---------------------------------------------------
 
 def _on_closing():
-    """Called when user clicks X -- close the app normally."""
+    """Called when user clicks X -- show confirmation dialog before closing."""
+    if _window:
+        try:
+            result = _window.create_confirmation_dialog(
+                "Close BigEd CC",
+                "Stop the fleet and exit?"
+            )
+            if result:
+                _shutdown()
+                return True
+            return False
+        except Exception as e:
+            log.warning("Close dialog error: %s", e)
+            _shutdown()
+            return True
     _shutdown()
-    return True  # allow close
+    return True
 
 
 # -- Shutdown ------------------------------------------------------------------
@@ -261,6 +275,7 @@ def main():
         min_size=(800, 600),
         js_api=BridgeAPI(),
     )
+    _window.events.closing += _on_closing
 
     # Set window icon via Qt backend (pywebview doesn't expose icon param)
     def _set_icon():
