@@ -122,6 +122,7 @@ _BLUEPRINTS = [
     ("self_service",          "self_service_bp",   False),
     ("ingest_blueprint",      "ingest_bp",         False),
     ("audit_blueprint",       "audit_bp",          True),
+    ("update_blueprint",      "update_bp",         False),
 ]
 
 
@@ -206,6 +207,13 @@ def _post_registration_setup(flask_app):
         )
     except ImportError:
         pass
+
+    # update_manager — start background update checker (24h interval)
+    try:
+        import update_manager
+        update_manager.start_background_checker(interval_hours=24, sse_broadcast=_broadcast_sse)
+    except Exception as e:
+        log.warning("Failed to start update checker: %s", e)
 
 
 _register_blueprints(app)
