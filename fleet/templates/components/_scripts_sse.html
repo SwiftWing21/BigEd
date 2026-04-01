@@ -1079,6 +1079,15 @@ function toggleModifier(name) {
   connectSSE();
   loadModeStatus();
 
+  /* ── Initialize ignition state from server ─────────────────────────────── */
+  apiFetch('/api/queue/status').then(function(data) {
+    if (data && data.paused) {
+      _setIgnitionUI('off');
+    } else {
+      _setIgnitionUI('on');
+    }
+  }).catch(function() { _setIgnitionUI('off'); });
+
   /* ── Adaptive polling — 2s active, 60s hidden, SSE stays connected ───── */
   var _POLL_ACTIVE = 2000, _POLL_HIDDEN = 60000;
   var _pollTimers = {};
@@ -1649,41 +1658,89 @@ function switchModel(model, mode) {
     .finally(function() { if (sel) sel.disabled = false; });
 }
 
-function fleetStart() {
-  var btn = document.getElementById('btn-fleet-start');
-  btn.disabled = true;
-  btn.textContent = 'Starting...';
-  apiFetch('/api/fleet/start', { method: 'POST' })
-    .then(function() { showToast('Fleet starting...', 'info'); })
-    .catch(function(e) { showToast('Fleet start failed: ' + e.message, 'error'); })
-    .finally(function() { btn.disabled = false; btn.textContent = 'Start Fleet'; });
+/* ── Master Ignition Control ─────────────────────────────────────────────── */
+var _ignitionState = 'off'; /* off | starting | on | stopping */
+var _IGNITION_POWER = '\u23FB';  /* power symbol */
+var _IGNITION_WAIT = '\u23F3';   /* hourglass */
+
+function _setIgnitionUI(state) {
+  _ignitionState = state;
+  var btn = document.getElementById('ignition-btn');
+  var icon = document.getElementById('ignition-icon');
+  var label = document.getElementById('ignition-label');
+  if (!btn) return;
+  btn.className = 'ignition-btn';
+  btn.disabled = false;
+  if (state === 'on') {
+    btn.classList.add('ignition-on');
+    icon.textContent = _IGNITION_POWER;
+    label.textContent = 'ON';
+  } else if (state === 'off') {
+    btn.classList.add('ignition-off');
+    icon.textContent = _IGNITION_POWER;
+    label.textContent = 'OFF';
+  } else if (state === 'starting' || state === 'stopping') {
+    btn.classList.add('ignition-starting');
+    icon.textContent = _IGNITION_WAIT;
+    label.textContent = '...';
+    btn.disabled = true;
+  }
 }
 
-function fleetStop() {
-  var btn = document.getElementById('btn-fleet-stop');
-  btn.disabled = true;
-  btn.textContent = 'Stopping...';
-  apiFetch('/api/fleet/stop', { method: 'POST' })
-    .then(function() { showToast('Fleet stopped', 'info'); })
-    .catch(function(e) { showToast('Fleet stop failed: ' + e.message, 'error'); })
-    .finally(function() { btn.disabled = false; btn.textContent = 'Stop Fleet'; });
+function toggleIgnition() {
+  if (_ignitionState === 'starting' || _ignitionState === 'stopping') return;
+  if (_ignitionState === 'off') {
+    _ignitionOn();
+  } else {
+    _ignitionOff();
+  }
 }
+
+function _ignitionOn() {
+  _setIgnitionUI('starting');
+  showToast('Starting fleet...', 'info');
+  Promise.all([
+    apiFetch('/api/queue/resume', { method: 'POST' }).catch(function() {}),
+    apiFetch('/api/fleet/start', { method: 'POST' }).catch(function() {})
+  ]).then(function() {
+    _setIgnitionUI('on');
+    showToast('Fleet running', 'success');
+  }).catch(function(e) {
+    _setIgnitionUI('off');
+    showToast('Fleet start failed: ' + (e.message || e), 'error');
+  });
+}
+
+function _ignitionOff() {
+  _setIgnitionUI('stopping');
+  showToast('Stopping fleet...', 'info');
+  apiFetch('/api/queue/pause', { method: 'POST' }).catch(function() {});
+  apiFetch('/api/ollama/stop', { method: 'POST' }).catch(function() {});
+  apiFetch('/api/fleet/stop', { method: 'POST' })
+    .then(function() {
+      _setIgnitionUI('off');
+      showToast('Fleet stopped', 'info');
+    }).catch(function(e) {
+      _setIgnitionUI('off');
+      showToast('Fleet stop: ' + (e.message || e), 'error');
+    });
+}
+
+function fleetStart() { _ignitionOn(); }
+function fleetStop() { _ignitionOff(); }
 
 function updateHeaderControls(data) {
-  var startBtn = document.getElementById('btn-fleet-start');
-  var stopBtn = document.getElementById('btn-fleet-stop');
   var agents = data.agents || [];
   var activeCount = agents.filter(function(a) { return a.status === 'BUSY' || a.status === 'IDLE'; }).length;
-  if (activeCount > 0) {
-    startBtn.style.display = 'none';
-    stopBtn.style.display = '';
-  } else {
-    startBtn.style.display = '';
-    stopBtn.style.display = 'none';
+  var queuePaused = data.queue_paused || false;
+  if (_ignitionState !== 'starting' && _ignitionState !== 'stopping') {
+    if (activeCount > 0 && !queuePaused) {
+      _setIgnitionUI('on');
+    } else {
+      _setIgnitionUI('off');
+    }
   }
   if (data.thermal && data.thermal.loaded_model) {
-    var sel = document.getElementById('header-model-select');
-    if (sel && sel.value !== data.thermal.loaded_model) sel.value = data.thermal.loaded_model;
     var gpuSel = document.getElementById('header-model-gpu');
     if (gpuSel && gpuSel.value !== data.thermal.loaded_model) gpuSel.value = data.thermal.loaded_model;
   }

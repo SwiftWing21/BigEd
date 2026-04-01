@@ -40,7 +40,7 @@ _DISCOVERABLE_MODULES: list[str] = [
     "reinforcement",
     "federation_router",
     "ml_router",
-    "self_healing",
+    "health_monitor",
     "billing",
     "marketplace",
     "geo_fleet",

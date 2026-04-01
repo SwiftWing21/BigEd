@@ -446,7 +446,28 @@ def main():
         return
 
     _relaunch_windowless()
-    _start_supervisor()  # webview launcher requires dashboard as its UI — always start
+
+    # Check auto_start setting — if false, pause queue so fleet opens idle
+    _auto_start = True
+    try:
+        toml_path = FLEET_DIR / "fleet.toml"
+        if toml_path.exists():
+            try:
+                import tomllib
+            except ImportError:
+                import tomli as tomllib
+            cfg = tomllib.loads(toml_path.read_text(encoding="utf-8"))
+            _auto_start = cfg.get("fleet", {}).get("auto_start", True)
+    except Exception:
+        pass
+
+    if not _auto_start:
+        # Create pause file so workers don't process tasks on boot
+        pause_file = FLEET_DIR / ".queue_paused"
+        pause_file.write_text("paused_by_launcher", encoding="utf-8")
+        log.info("auto_start=false — fleet will open idle (queue paused)")
+
+    _start_supervisor()  # always start — dashboard is the UI
 
     if not _wait_for_dashboard():
         log.error("Dashboard did not start within 30 seconds")

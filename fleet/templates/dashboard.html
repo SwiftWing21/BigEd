@@ -39,8 +39,11 @@
       <select id="header-model-cpu" style="background:var(--card);color:var(--foreground);border:1px solid var(--border);border-radius:6px;padding:3px 6px;font-size:11px;cursor:pointer;min-width:90px;" onchange="switchModel(this.value,'cpu')">
         <option value="">—</option>
       </select>
-      <button id="btn-fleet-start" class="btn btn-sm" style="background:var(--success);color:#fff;border:none;border-radius:6px;padding:4px 12px;font-size:12px;cursor:pointer;display:none;" onclick="fleetStart()">Start Fleet</button>
-      <button id="btn-fleet-stop" class="btn btn-sm" style="background:var(--destructive);color:#fff;border:none;border-radius:6px;padding:4px 12px;font-size:12px;cursor:pointer;display:none;" onclick="fleetStop()">Stop Fleet</button>
+      <!-- Master Ignition Toggle -->
+      <button id="ignition-btn" class="ignition-btn ignition-off" onclick="toggleIgnition()" title="Master fleet control — Start/Stop all processing">
+        <span class="ignition-icon" id="ignition-icon">&#9211;</span>
+        <span class="ignition-label" id="ignition-label">OFF</span>
+      </button>
     </div>
     <div class="header-live">
       <div class="live-dot" id="live-dot"></div>

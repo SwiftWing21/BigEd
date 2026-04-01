@@ -245,6 +245,55 @@ input, textarea, select { font-family: inherit; font-size: inherit; }
   font-weight: 700;
   color: var(--foreground);
 }
+
+/* ── Master Ignition Button ─────────────────────────────────────────────── */
+.ignition-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 16px;
+  border: 2px solid;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.25s ease;
+  letter-spacing: 0.5px;
+  min-width: 80px;
+  justify-content: center;
+  user-select: none;
+}
+.ignition-btn:active { transform: scale(0.96); }
+.ignition-btn.ignition-off {
+  background: rgba(239, 68, 68, 0.15);
+  border-color: #ef4444;
+  color: #ef4444;
+}
+.ignition-btn.ignition-off:hover {
+  background: rgba(239, 68, 68, 0.25);
+  box-shadow: 0 0 12px rgba(239, 68, 68, 0.3);
+}
+.ignition-btn.ignition-on {
+  background: rgba(34, 197, 94, 0.15);
+  border-color: #22c55e;
+  color: #22c55e;
+}
+.ignition-btn.ignition-on:hover {
+  background: rgba(34, 197, 94, 0.25);
+  box-shadow: 0 0 12px rgba(34, 197, 94, 0.3);
+}
+.ignition-btn.ignition-starting {
+  background: rgba(234, 179, 8, 0.15);
+  border-color: #eab308;
+  color: #eab308;
+  cursor: wait;
+}
+.ignition-icon { font-size: 16px; }
+.ignition-btn.ignition-on .ignition-icon { animation: ignition-pulse 2s ease-in-out infinite; }
+@keyframes ignition-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
 .header-live {
   display: flex;
   align-items: center;
