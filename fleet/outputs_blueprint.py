@@ -190,7 +190,7 @@ def api_outputs_files():
 @outputs_bp.route("/api/outputs/file")
 @_require_role("viewer")
 def api_outputs_file():
-    if not _check_rate_limit("outputs_file", max_per_min=30):
+    if not _check_rate_limit("outputs_file", max_per_min=120):
         return jsonify({"error": "Rate limit exceeded"}), 429
 
     rel = request.args.get("path", "")
@@ -229,7 +229,7 @@ def api_outputs_file():
 @outputs_bp.route("/api/outputs/feedback", methods=["POST"])
 @_require_role("viewer")
 def api_outputs_feedback():
-    if not _check_rate_limit("outputs_feedback", max_per_min=10):
+    if not _check_rate_limit("outputs_feedback", max_per_min=120):
         return jsonify({"error": "Rate limit exceeded"}), 429
 
     data = request.get_json(silent=True) or {}
