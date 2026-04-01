@@ -88,7 +88,7 @@ def test_setup_fails_when_profiles_exist(client):
         "display_name": "Admin 2",
     })
     assert resp.status_code == 400
-    assert "already completed" in resp.get_json()["error"]
+    assert "already exists" in resp.get_json()["error"]
 
 
 def test_setup_requires_fields(client):
