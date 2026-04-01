@@ -1275,6 +1275,10 @@ app.register_blueprint(modules_bp)
 from outputs_blueprint import outputs_bp
 app.register_blueprint(outputs_bp)
 
+# ── Ollama Management API ──────────────────────────────────────────────
+from ollama_blueprint import ollama_bp
+app.register_blueprint(ollama_bp)
+
 # ── Ingestion Hub (v0.900.00b) ─────────────────────────────────────────
 try:
     from ingest_blueprint import ingest_bp
