@@ -2561,10 +2561,10 @@ function loadUnreviewedOutputs() {
       expandPane.textContent = 'Loading...';
       card.appendChild(expandPane);
 
-      /* ── Click header to toggle expand ── */
+      /* ── Click anywhere on card to toggle expand ── */
       (function(filePath, pane, snippetEl, hint) {
-        topRow.addEventListener('click', function(e) {
-          e.stopPropagation();
+        card.addEventListener('click', function(e) {
+          if (e.target.closest('button') || e.target.closest('input') || e.target.closest('.output-expand-pane')) return;
           var isOpen = pane.style.display !== 'none';
           if (isOpen) {
             pane.style.display = 'none';
