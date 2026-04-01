@@ -5,6 +5,7 @@ Extracted from dashboard.py (TECH_DEBT 4.3) to keep security primitives
 in a single, auditable module.  SOC 2 / OWASP alignment.
 """
 import functools
+import hmac
 import os
 import re
 import secrets
@@ -104,13 +105,13 @@ def get_request_role(config_loader, req=None):
     security = config.get("security", {})
     admin_token = security.get("admin_token", "")
     operator_token = security.get("operator_token", "")
-    if admin_token and token == admin_token:
+    if admin_token and hmac.compare_digest(token, admin_token):
         return "admin"
-    if operator_token and token == operator_token:
+    if operator_token and hmac.compare_digest(token, operator_token):
         return "operator"
     # Default: if any token matches the existing dashboard_token, treat as operator
     dash_token = security.get("dashboard_token", "")
-    if dash_token and token == dash_token:
+    if dash_token and hmac.compare_digest(token, dash_token):
         return "operator"
     return "viewer"
 
@@ -261,16 +262,16 @@ def register_hooks(app, config_loader):
         if not token:
             return  # no token configured = open access (local dev mode)
         auth = request.headers.get("Authorization", "")
-        if auth == f"Bearer {token}":
+        bearer = auth.replace("Bearer ", "") if auth.startswith("Bearer ") else ""
+        if bearer and hmac.compare_digest(bearer, token):
             return  # valid
         # Check admin/operator tokens as well
         security = config.get("security", {})
         admin_token = security.get("admin_token", "")
         operator_token = security.get("operator_token", "")
-        bearer = auth.replace("Bearer ", "") if auth.startswith("Bearer ") else ""
-        if admin_token and bearer == admin_token:
+        if admin_token and bearer and hmac.compare_digest(bearer, admin_token):
             return  # valid admin
-        if operator_token and bearer == operator_token:
+        if operator_token and bearer and hmac.compare_digest(bearer, operator_token):
             return  # valid operator
         return jsonify({"error": "Unauthorized — set Authorization: Bearer <token>"}), 401
 
