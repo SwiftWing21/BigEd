@@ -27,6 +27,7 @@
   --input-bg: #ffffff;
   --input-border: #d1d5db;
   --destructive: #ef4444;
+  --accent: #6366f1;
 }
 .dark {
   --background: #0a0e1a;
@@ -54,6 +55,7 @@
   --input-bg: #1e2330;
   --input-border: #374151;
   --destructive: #ef4444;
+  --accent: #818cf8;
 }
 
 /* ── Reset & Base ─────────────────────────────────────────────────────────── */
@@ -217,6 +219,10 @@ input, textarea, select { font-family: inherit; font-size: inherit; }
   flex-direction: column;
   overflow: hidden;
   min-width: 0;
+  visibility: hidden;
+}
+.main-wrapper.ready {
+  visibility: visible;
 }
 .header-bar {
   display: flex;

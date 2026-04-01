@@ -1192,14 +1192,14 @@ function renderSourcePills() {
   // Local Files button
   var fileBtn = document.createElement('button');
   fileBtn.className = 'btn btn-sm';
-  fileBtn.style.cssText = 'border:1px solid #6b7280;color:#6b7280;background:transparent;cursor:pointer;';
+  fileBtn.style.cssText = 'border:1px solid var(--muted-foreground);color:var(--muted-foreground);background:transparent;cursor:pointer;';
   fileBtn.textContent = '\uD83D\uDCC1 Local Files';
   fileBtn.setAttribute('onclick', 'document.getElementById("ingest-file-input").click()');
   wrap.appendChild(fileBtn);
   // + Add Source button
   var addBtn = document.createElement('button');
   addBtn.className = 'btn btn-sm';
-  addBtn.style.cssText = 'border:1px dashed #6b7280;color:#6b7280;background:transparent;cursor:pointer;';
+  addBtn.style.cssText = 'border:1px dashed var(--muted-foreground);color:var(--muted-foreground);background:transparent;cursor:pointer;';
   addBtn.textContent = '+ Add Source';
   addBtn.setAttribute('onclick', 'showAddSourceModal()');
   wrap.appendChild(addBtn);
@@ -2384,7 +2384,7 @@ function loadFactorio() {
           name.style.fontWeight = '600';
           var amt = document.createElement('span');
           amt.textContent = r.total_amount.toLocaleString() + ' (' + r.patches + ' patches)';
-          amt.style.color = 'var(--muted)';
+          amt.style.color = 'var(--muted-foreground)';
           row.appendChild(name);
           row.appendChild(amt);
           resEl.appendChild(row);
@@ -2397,7 +2397,7 @@ function loadFactorio() {
         _updateFactorioButtons();
       }
       document.getElementById('factorio-bridge-status').textContent = 'Offline';
-      document.getElementById('factorio-bridge-status').style.color = 'var(--muted)';
+      document.getElementById('factorio-bridge-status').style.color = 'var(--muted-foreground)';
       document.getElementById('factorio-bridge-detail').textContent = 'Bridge not reachable';
       document.getElementById('factorio-state').textContent = 'Not running — click Start above';
     });
@@ -2876,7 +2876,7 @@ function _loadFactorioDirectives() {
     el.textContent = '';
     if (!directives || !directives.length) {
       var empty = document.createElement('div');
-      empty.style.cssText = 'font-size:12px;color:var(--muted);';
+      empty.style.cssText = 'font-size:12px;color:var(--muted-foreground);';
       empty.textContent = 'No active directives';
       el.appendChild(empty);
       badge.style.display = 'none';
