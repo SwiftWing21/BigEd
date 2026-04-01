@@ -8,6 +8,11 @@ var _charts = {};
 var _queuePaused = false;
 var _dragSrcIdx = null;
 
+/* ── Theme-aware canvas color helper ─────────────────────────────────────── */
+function _themeColor(varName) {
+  return getComputedStyle(document.documentElement).getPropertyValue(varName).trim() || '#94a3b8';
+}
+
 /* ── Escape HTML (XSS prevention) ─────────────────────────────────────────── */
 function escH(s) {
   if (s === null || s === undefined) return '';
@@ -968,7 +973,7 @@ function renderNeuralFrame() {
       ctx.globalAlpha = 0.7;
       ctx.fillRect(sideX + 70, sy - 2, skFill, 10);
       ctx.globalAlpha = 1;
-      ctx.fillStyle = '#64748b';
+      ctx.fillStyle = _themeColor('--muted-foreground');
       ctx.font = '8px system-ui, sans-serif';
       ctx.textAlign = 'right';
       ctx.fillText(sk.total + '', sideX + 70 + skBarW + 14, sy + 4);
@@ -976,11 +981,11 @@ function renderNeuralFrame() {
       sy += ih;
     } else if (it.type === 'folder') {
       var fo = it.folder;
-      ctx.fillStyle = '#94a3b8';
+      ctx.fillStyle = _themeColor('--foreground');
       ctx.font = '9px system-ui, sans-serif';
       ctx.textAlign = 'left';
       ctx.fillText(fo.name.length > 11 ? fo.name.slice(0, 10) + '\u2026' : fo.name, sideX, sy + 4);
-      ctx.fillStyle = '#64748b';
+      ctx.fillStyle = _themeColor('--muted-foreground');
       ctx.font = '8px system-ui, sans-serif';
       ctx.textAlign = 'right';
       ctx.fillText(fo.files + ' files', sideX + sideW - 8, sy + 4);
@@ -988,11 +993,11 @@ function renderNeuralFrame() {
       sy += ih;
     } else if (it.type === 'channel') {
       var ch = it.channel;
-      ctx.fillStyle = '#94a3b8';
+      ctx.fillStyle = _themeColor('--foreground');
       ctx.font = '9px system-ui, sans-serif';
       ctx.textAlign = 'left';
       ctx.fillText('#' + ch.channel, sideX, sy + 4);
-      ctx.fillStyle = '#64748b';
+      ctx.fillStyle = _themeColor('--muted-foreground');
       ctx.font = '8px system-ui, sans-serif';
       ctx.textAlign = 'right';
       ctx.fillText(ch.count + ' msgs', sideX + sideW - 8, sy + 4);
@@ -3048,11 +3053,11 @@ function renderAnalyticsNeuralFrame() {
       if(s.v<=0)return; var sw=Math.max(s.v*scale,2); ctx.globalAlpha=0.65; ctx.fillStyle=s.c;
       ctx.beginPath(); ctx.roundRect(cx,y+2,sw,laneH-4,2); ctx.fill(); ctx.globalAlpha=1; cx+=sw;
     });
-    ctx.fillStyle = lane.running > 0 ? '#e2e8f0' : '#94a3b8';
+    ctx.fillStyle = lane.running > 0 ? _themeColor('--foreground') : _themeColor('--muted-foreground');
     ctx.font = (lane.running > 0 ? 'bold ' : '') + '10px system-ui, sans-serif';
     ctx.textAlign = 'right'; ctx.textBaseline = 'middle';
     ctx.fillText(lane.agent.length > 12 ? lane.agent.slice(0, 11) + '\u2026' : lane.agent, labelW - 4, y + laneH / 2);
-    ctx.fillStyle = '#64748b'; ctx.font = '9px system-ui, sans-serif'; ctx.textAlign = 'left';
+    ctx.fillStyle = _themeColor('--muted-foreground'); ctx.font = '9px system-ui, sans-serif'; ctx.textAlign = 'left';
     ctx.fillText(lane.total + (lane.cost ? ' $' + lane.cost : ''), cx + 5, y + laneH / 2);
     lane._y = y; lane._laneH = laneH; laneMap[lane.agent] = i;
   }
@@ -3068,9 +3073,9 @@ function renderAnalyticsNeuralFrame() {
     ctx.fillStyle = '#f59e0b'; ctx.font = 'bold 9px system-ui, sans-serif'; ctx.textAlign = 'left';
     ctx.fillText('TOP SKILLS', sideX, sy + 4); sy += 12;
     skills.slice(0, 8).forEach(function(sk) { if (sy > sideBottom) return;
-      ctx.fillStyle = '#94a3b8'; ctx.font = '9px system-ui, sans-serif'; ctx.textAlign = 'left';
+      ctx.fillStyle = _themeColor('--foreground'); ctx.font = '9px system-ui, sans-serif'; ctx.textAlign = 'left';
       ctx.fillText(sk.skill.length > 14 ? sk.skill.slice(0, 13) + '\u2026' : sk.skill, sideX, sy + 4);
-      ctx.fillStyle = '#64748b'; ctx.font = '8px system-ui, sans-serif'; ctx.textAlign = 'right';
+      ctx.fillStyle = _themeColor('--muted-foreground'); ctx.font = '8px system-ui, sans-serif'; ctx.textAlign = 'right';
       ctx.fillText(sk.total + '', sideX + sideW - 8, sy + 4); ctx.textAlign = 'left'; sy += 13;
     });
   }
@@ -3078,9 +3083,9 @@ function renderAnalyticsNeuralFrame() {
     sy += 4; ctx.fillStyle = '#06b6d4'; ctx.font = 'bold 9px system-ui, sans-serif';
     ctx.fillText('KNOWLEDGE', sideX, sy + 4); sy += 12;
     folders.slice(0, 5).forEach(function(fo) { if (sy > sideBottom) return;
-      ctx.fillStyle = '#94a3b8'; ctx.font = '9px system-ui, sans-serif'; ctx.textAlign = 'left';
+      ctx.fillStyle = _themeColor('--foreground'); ctx.font = '9px system-ui, sans-serif'; ctx.textAlign = 'left';
       ctx.fillText(fo.name.length > 11 ? fo.name.slice(0, 10) + '\u2026' : fo.name, sideX, sy + 4);
-      ctx.fillStyle = '#64748b'; ctx.font = '8px system-ui, sans-serif'; ctx.textAlign = 'right';
+      ctx.fillStyle = _themeColor('--muted-foreground'); ctx.font = '8px system-ui, sans-serif'; ctx.textAlign = 'right';
       ctx.fillText(fo.files + '', sideX + sideW - 8, sy + 4); ctx.textAlign = 'left'; sy += 13;
     });
   }
