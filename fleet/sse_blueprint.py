@@ -23,24 +23,41 @@ sse_bp = Blueprint("sse", __name__)
 
 # ── SSE endpoint ────────────────────────────────────────────────────────────
 
+_SSE_MAX_CLIENTS = 50
+_SSE_CLIENT_TIMEOUT = 120  # seconds before a silent client is pruned
+
+
 @sse_bp.route("/api/stream")
 def api_stream():
     """SSE endpoint for live updates (replaces 30s polling)."""
-    q = queue.Queue()
     with _sse_lock:
+        if len(_sse_clients) >= _SSE_MAX_CLIENTS:
+            return Response("data: {\"error\": \"too many clients\"}\n\n",
+                            status=503, mimetype="text/event-stream")
+        q = queue.Queue()
         _sse_clients.append({"queue": q, "last_active": time.time()})
 
     def generate():
+        last_ping = time.time()
         try:
             # Send initial heartbeat
             yield "data: {\"type\": \"connected\"}\n\n"
             while True:
                 try:
                     msg = q.get(timeout=15)
+                    # Update last_active on successful receive
+                    with _sse_lock:
+                        for c in _sse_clients:
+                            if c["queue"] is q:
+                                c["last_active"] = time.time()
+                                break
                     yield msg
                 except queue.Empty:
-                    # Send keepalive
-                    yield ": keepalive\n\n"
+                    # Send SSE ping every 15s to keep connection alive
+                    now = time.time()
+                    if now - last_ping >= 15:
+                        yield ":ping\n\n"
+                        last_ping = now
         except GeneratorExit:
             pass
         finally:
@@ -101,6 +118,14 @@ def _sse_broadcaster():
             return 0.0
 
     while True:
+        # Prune dead clients that haven't been active for > 120s
+        now_prune = time.time()
+        with _sse_lock:
+            _sse_clients[:] = [
+                c for c in _sse_clients
+                if now_prune - c.get("last_active", now_prune) < _SSE_CLIENT_TIMEOUT
+            ]
+
         if _sse_clients:
             try:
                 agents = query(
@@ -268,7 +293,7 @@ def _sse_broadcaster():
                 except Exception:
                     pass
             except Exception:
-                pass
+                log.debug("SSE broadcast error", exc_info=True)
         else:
             # No clients -- idle at max rate
             interval = _SSE_MAX_INTERVAL
