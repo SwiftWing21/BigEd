@@ -90,21 +90,24 @@ def api_usage_dashboard():
         result = {"providers": {}, "today": {}, "week": {}, "month": {}, "projection": {}}
 
         # Per-provider totals (today)
+        _allowed_intervals = {"-1 day", "-7 days", "-30 days"}
         for period, label, interval in [
             ("today", "Today", "-1 day"),
             ("week", "7 days", "-7 days"),
             ("month", "30 days", "-30 days"),
         ]:
-            rows = conn.execute(f"""
+            if interval not in _allowed_intervals:
+                raise ValueError(f"Invalid interval: {interval!r}")
+            rows = conn.execute("""
                 SELECT provider,
                        COALESCE(SUM(input_tokens), 0) as input_tokens,
                        COALESCE(SUM(output_tokens), 0) as output_tokens,
                        COALESCE(SUM(cost_usd), 0) as cost_usd,
                        COUNT(*) as calls
                 FROM usage
-                WHERE created_at >= datetime('now', '{interval}')
+                WHERE created_at >= datetime('now', ?)
                 GROUP BY provider
-            """).fetchall()
+            """, (interval,)).fetchall()
             period_data = {}
             total_cost = 0
             total_tokens = 0
