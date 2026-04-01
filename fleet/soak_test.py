@@ -794,7 +794,7 @@ def test_owner_module_gate():
     # Remove key if set
     old = os.environ.pop("BIGED_OWNER_KEY", None)
     try:
-        from modules.mod_owner_core import _verify_owner_key
+        from modules.owner_gate import _verify_owner_key
         assert not _verify_owner_key(), "Should fail without key"
         os.environ["BIGED_OWNER_KEY"] = "a" * 32
         assert _verify_owner_key(), "Should pass with 32-char key"
