@@ -76,7 +76,6 @@ End every roadmap with an Audit Coverage Check section.
 - **HTTP timeouts**: every `urllib.request.urlopen()` and `httpx` call MUST have `timeout=` parameter (10-30s typical)
 - **Lazy imports in skills**: use `import db` inside functions, not at module level — prevents circular imports
 - **Icon system**: `icon_1024.png` is the master source, `brick.ico` is derived. Never regenerate icons during build — `generate_icon.py` was deleted
-- **Theme fonts**: use constants from `ui/theme.py` (FONT_SM, FONT_BOLD, FONT_XS) — never hardcode "RuneScape" or "Consolas"
 - **Cross-platform**: guard `import winreg` with `sys.platform == "win32"`, use `_open_path()` instead of `os.startfile()`
 
 ## Common Tasks — Do This, Not That

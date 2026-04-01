@@ -318,7 +318,7 @@ Python on Windows and macOS, but Linux sometimes needs it installed separately.
 - **Ubuntu / Mint / Debian:** `sudo apt install python3-tk`
 - **Arch / SteamOS:** `sudo pacman -S tk`
 
-### "No module named customtkinter" (or any other missing module)
+### "No module named pywebview" (or any other missing module)
 
 You need to install the project dependencies. Open a terminal, go to the
 BigEd CC folder, and run:

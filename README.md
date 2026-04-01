@@ -50,8 +50,7 @@ python BigEd/launcher/launcher.py         # launch GUI
 
 ```
 BigEd CC
-├── BigEd/launcher/     — GUI launcher (customtkinter)
-│   ├── ui/             — Settings, consoles, dialogs, boot sequence
+├── BigEd/launcher/     — GUI launcher (PyWebView + Flask dashboard)
 │   ├── modules/        — Pluggable modules (Intelligence, Ingestion, Outputs)
 │   └── fonts/          — Custom pixel fonts
 ├── fleet/              — 130+ skill AI worker fleet

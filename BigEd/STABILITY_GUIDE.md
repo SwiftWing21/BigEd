@@ -57,7 +57,7 @@ type: project
 | **anthropic** | 0.40+ | MEDIUM — API versioning | Pin to known-good. `resp.usage` fields could change. Monitor Anthropic changelog. |
 | **google-genai** | 0.3+ | MEDIUM — rapid iteration | Gemini SDK changes frequently. `usage_metadata` field names may shift. |
 | **flask** | 3.0+ | LOW — mature | Dashboard + web launcher. Stable API. |
-| **customtkinter** | 5.2+ | MEDIUM — single maintainer | GUI framework. No commercial support. Monitor GitHub for abandonment. Fallback: tkinter raw. |
+| **pywebview** | 5.0+ | LOW — active project | GUI framework (wraps native webview). Standalone tools (installer, USB creator) still use customtkinter. |
 | **tomlkit** | 0.14+ | LOW — stable | Config writes. Could fallback to regex if needed (but worse). |
 | **httpx** | 0.27+ | LOW — mature | HTTP client for skills. Could fallback to urllib. |
 

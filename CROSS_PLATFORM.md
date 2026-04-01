@@ -24,7 +24,7 @@ Component-by-component cross-platform support status:
 | **Workers** | via WSL | Native | Native | Skill dispatch, Ollama HTTP |
 | **Dashboard** | via WSL | Native | Native | Flask, SSE — standard HTTP |
 | **Skills** | via WSL | Native | Native | Python-only, provider routing via `_models.py` |
-| **Launcher GUI** | Native | Planned | Planned | `customtkinter` — cross-platform but untested |
+| **Launcher GUI** | Native | Planned | Planned | PyWebView + Flask dashboard — cross-platform |
 | **Installer** | Native (.exe) | Planned (AppImage) | Planned (.app/DMG) | Uses `winreg` — Windows-only |
 | **Uninstaller** | Native (.exe) | Planned | Planned | Uses `winreg` — Windows-only |
 | **Updater** | Native (.exe) | Planned | Planned | `.bat` trampoline — Windows-only |
@@ -334,4 +334,4 @@ These components require **zero changes** to run on Linux/macOS:
 | `fleet/soak_test.py` | Threading + SQLite — cross-platform |
 | `fleet.toml` | TOML — text format |
 | `~/.secrets` | `Path.home()` — cross-platform |
-| `customtkinter` (GUI framework) | Cross-platform (tkinter underneath) |
+| `pywebview` (GUI framework) | Cross-platform (wraps native webview) |

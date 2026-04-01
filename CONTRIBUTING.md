@@ -54,7 +54,7 @@ We welcome contributions to BigEd CC. This guide covers the workflow, standards,
 |-----------|---------|
 | `fleet/` | AI worker fleet -- supervisor, workers, skills, dashboard, config |
 | `fleet/skills/` | Individual skill modules (one Python file per skill) |
-| `BigEd/` | Desktop GUI launcher (customtkinter) and compliance docs |
+| `BigEd/` | Desktop GUI launcher (PyWebView) and compliance docs |
 | `autoresearch/` | ML training pipeline |
 
 ---
@@ -92,7 +92,7 @@ Follow existing skills in `fleet/skills/` as examples. Drafts should go to `know
 - Use `psutil` for process management. Do not use shell commands like `pkill` or `pgrep`.
 - Use `tomlkit` for TOML writes (it preserves comments and formatting).
 - Windows-native by default. Core features must not depend on WSL.
-- GUI theme constants live in `BigEd/launcher/ui/theme.py` -- use them instead of hardcoding colors or fonts.
+- GUI theming is handled by the dashboard's CSS (Flask + Jinja templates) -- do not hardcode colors or fonts in Python code.
 
 ---
 

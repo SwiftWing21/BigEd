@@ -102,7 +102,7 @@ Web UI at `localhost:5555` with:
 
 | Mode | How |
 |------|-----|
-| **Desktop** | `python BigEd/launcher/launcher.py` (customtkinter GUI) |
+| **Desktop** | `python BigEd/launcher/launcher.py` (PyWebView GUI) |
 | **CLI** | `python fleet/lead_client.py status/task/export` |
 | **Web** | `python fleet/web_app.py` (Flask, browser-based) |
 | **Docker** | `docker-compose up` (fleet + ollama + dashboard) |
