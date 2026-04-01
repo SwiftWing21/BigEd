@@ -463,6 +463,16 @@ def _shutdown():
 def main():
     global _window
 
+    # Hide console window immediately (before anything else renders)
+    if sys.platform == "win32":
+        try:
+            import ctypes
+            ctypes.windll.user32.ShowWindow(
+                ctypes.windll.kernel32.GetConsoleWindow(), 0  # SW_HIDE
+            )
+        except Exception:
+            pass
+
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(message)s")
 
     _load_secrets_to_env()
