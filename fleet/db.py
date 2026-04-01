@@ -586,6 +586,36 @@ def init_db(path: str | None = None):
         conn.execute("CREATE INDEX IF NOT EXISTS idx_idle_runs_agent ON idle_runs(agent)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_idle_runs_created ON idle_runs(created_at)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_messages_from ON messages(from_agent)")
+        # ── User profiles + sessions (local auth) ──────────────────────────
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS user_profiles (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                username TEXT UNIQUE NOT NULL,
+                display_name TEXT NOT NULL,
+                role TEXT NOT NULL DEFAULT 'operator',
+                password_hash TEXT,
+                avatar_color TEXT DEFAULT '#3b82f6',
+                created_at TEXT DEFAULT (datetime('now')),
+                last_login TEXT,
+                is_active INTEGER DEFAULT 1,
+                sso_user_id TEXT
+            )
+        """)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS user_sessions (
+                token TEXT PRIMARY KEY,
+                user_id INTEGER NOT NULL REFERENCES user_profiles(id),
+                created_at TEXT DEFAULT (datetime('now')),
+                expires_at TEXT NOT NULL,
+                ip_address TEXT
+            )
+        """)
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_sessions_user ON user_sessions(user_id)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_sessions_expires ON user_sessions(expires_at)")
+        # Add reviewer column to output_feedback if missing
+        fb_cols = {r[1] for r in conn.execute("PRAGMA table_info(output_feedback)").fetchall()}
+        if "reviewer" not in fb_cols:
+            conn.execute("ALTER TABLE output_feedback ADD COLUMN reviewer TEXT DEFAULT ''")
 
 
 # ── Channel Constants (extracted to comms.py) ─────────────────────────────────
