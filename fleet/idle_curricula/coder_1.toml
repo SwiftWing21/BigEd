@@ -7,8 +7,17 @@ type = "skill_draft"
 [tasks.payload]
 agent_name = "coder_1"
 perspective = "software architect"
+skill_name = "summarize_fix"
+description = "Fix or replace frequently failing skill 'summarize' â€” 3128 failures. Sample error: stale â€” cleared on boot"
+
+
+[[tasks]]
+type = "skill_draft"
+[tasks.payload]
+agent_name = "coder_1"
+perspective = "software architect"
 skill_name = "code_review_fix"
-description = "Fix or replace frequently failing skill 'code_review' â€” 634 failures. Sample error: HTTP Error 404: Not Found"
+description = "Fix or replace frequently failing skill 'code_review' â€” 636 failures. Sample error: stale â€” cleared on boot"
 
 
 [[tasks]]
@@ -18,15 +27,6 @@ agent_name = "coder_1"
 perspective = "software architect"
 skill_name = "security_review_fix"
 description = "Fix or replace frequently failing skill 'security_review' â€” 501 failures. Sample error: cancelled: stale WAITING task "
-
-
-[[tasks]]
-type = "skill_draft"
-[tasks.payload]
-agent_name = "coder_1"
-perspective = "software architect"
-skill_name = "fma_review_fix"
-description = "Fix or replace frequently failing skill 'fma_review' â€” 112 failures. Sample error: HTTP Error 404: Not Found"
 
 
 [[tasks]]

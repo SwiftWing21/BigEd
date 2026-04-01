@@ -829,8 +829,12 @@ class FactorioBridge:
                             if cmd.startswith("/biged-cmd "):
                                 cmd = cmd[len("/biged-cmd "):]
                             resp = await self.rcon.remote_call("exec_cmd", cmd)
-                            resp_str = str(resp).lower()
-                            exec_result = {"success": "error" not in resp_str}
+                            resp_str = str(resp) if resp else ""
+                            try:
+                                parsed_resp = json.loads(resp_str)
+                                exec_result = {"success": bool(parsed_resp.get("success", False))}
+                            except (json.JSONDecodeError, TypeError, ValueError):
+                                exec_result = {"success": "error" not in resp_str.lower()}
                         except Exception:
                             log.warning("Pack first step failed", exc_info=True)
                     self._pack_prev_results[agent_id] = exec_result
@@ -898,8 +902,12 @@ class FactorioBridge:
                     if cmd.startswith("/biged-cmd "):
                         cmd = cmd[len("/biged-cmd "):]
                     resp = await self.rcon.remote_call("exec_cmd", cmd)
-                    resp_str = str(resp).lower()
-                    exec_result = {"success": "error" not in resp_str}
+                    resp_str = str(resp) if resp else ""
+                    try:
+                        parsed_resp = json.loads(resp_str)
+                        exec_result = {"success": bool(parsed_resp.get("success", False))}
+                    except (json.JSONDecodeError, TypeError, ValueError):
+                        exec_result = {"success": "error" not in resp_str.lower()}
                 except Exception:
                     log.warning("Pack step failed", exc_info=True)
             self._pack_prev_results[agent_id] = exec_result
@@ -930,8 +938,15 @@ class FactorioBridge:
                 if cmd.startswith("/biged-cmd "):
                     cmd = cmd[len("/biged-cmd "):]
                 resp = await self.rcon.remote_call("exec_cmd", cmd)
-                resp_str = str(resp).lower()
-                result = {"success": "error" not in resp_str}
+                resp_str = str(resp) if resp else ""
+                # Parse actual JSON from Lua — fall back to string check
+                try:
+                    parsed_resp = json.loads(resp_str)
+                    result = {"success": bool(parsed_resp.get("success", False))}
+                    if parsed_resp.get("error"):
+                        result["error"] = parsed_resp["error"]
+                except (json.JSONDecodeError, TypeError, ValueError):
+                    result = {"success": "error" not in resp_str.lower()}
                 if not result["success"] and translated.action_type in ("place", "craft"):
                     log.warning("ML step %d FAILED %s: %s",
                                 self._tick_count, translated.description, resp_str[:200])
