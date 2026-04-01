@@ -6497,31 +6497,21 @@ function handleSSE(msg) {
         }
         /* ── Mode strip real-time update ── */
         if (data.mode) {
-          var modeUpdate = data.mode;
-          var iconEl2 = document.getElementById('mode-icon');
-          var labelEl2 = document.getElementById('mode-label');
-          var btn2 = document.getElementById('mode-selector');
-          if (iconEl2 && labelEl2) {
-            if (_modeStatus && _modeStatus.available_modes) {
-              var activeM = _modeStatus.available_modes.find(function(m) { return m.id === modeUpdate.active; });
-              if (activeM) {
-                iconEl2.textContent = _modeIcons[activeM.icon] || '';
-                labelEl2.textContent = activeM.name;
-              }
-            }
-          }
-          // Re-enable selector if it was disabled waiting for SSE confirm
-          if (btn2 && btn2.disabled && modeUpdate.state !== 'starting') {
-            btn2.disabled = false;
-            if (window._modeReenableTimer) { clearTimeout(window._modeReenableTimer); window._modeReenableTimer = null; }
-          }
-          // Merge into cache and refresh chips/drawer
-          if (_modeStatus) {
-            _modeStatus.active = modeUpdate.active;
-            _modeStatus.state = modeUpdate.state;
-            if (modeUpdate.modifiers) _modeStatus.modifiers = modeUpdate.modifiers;
-            _applyModeStatus(_modeStatus);
-          }
+          _updateModeFromSSE(data.mode);
+        }
+        /* ── Fleet agent table (SSE-driven, no full fetch) ── */
+        if (data.agents && document.getElementById('section-fleet').classList.contains('active')) {
+          _renderFleetFromSSE(data.agents);
+        }
+      } else {
+        /* Non-dashboard sections: still update mode strip (QW2 — ungated) */
+        var data2 = msg.data || {};
+        if (data2.mode) {
+          _updateModeFromSSE(data2.mode);
+        }
+        /* Fleet agent table on fleet page */
+        if (data2.agents && document.getElementById('section-fleet').classList.contains('active')) {
+          _renderFleetFromSSE(data2.agents);
         }
       }
       break;
@@ -6565,7 +6555,146 @@ function handleSSE(msg) {
     case 'fallback':
       showToast('Provider fallback: ' + (msg.data || ''), 'warning');
       break;
+    case 'federation_hitl_notify':
+      showToast('Federation HITL request received', 'info');
+      break;
+    case 'audit':
+      showToast('Audit event: ' + (msg.data && msg.data.action || 'recorded'), 'info');
+      break;
+    case 'trigger':
+      showToast('Trigger fired: ' + (msg.data && msg.data.name || 'unknown'), 'info');
+      break;
+    case 'hitl_new':
+      if (document.getElementById('section-hitl').classList.contains('active')) loadHITL();
+      apiFetch('/api/tasks/waiting-human').then(function(data) {
+        var badge = document.getElementById('hitl-badge');
+        if (data.length > 0) {
+          badge.textContent = String(data.length);
+          badge.classList.remove('hidden');
+        } else {
+          badge.classList.add('hidden');
+        }
+      }).catch(function() {});
+      break;
+    case 'service_status':
+      if (document.getElementById('section-fleet').classList.contains('active')) loadServiceStatus();
+      break;
+    case 'factorio_spatial':
+      _pollSpatialMap();
+      break;
+    case 'factorio_reward':
+      _pollRewardChart();
+      break;
   }
+}
+
+/* ── SSE helper: update mode strip (runs on ALL pages, not section-gated) ── */
+function _updateModeFromSSE(modeUpdate) {
+  var iconEl2 = document.getElementById('mode-icon');
+  var labelEl2 = document.getElementById('mode-label');
+  var btn2 = document.getElementById('mode-selector');
+  if (iconEl2 && labelEl2) {
+    if (_modeStatus && _modeStatus.available_modes) {
+      var activeM = _modeStatus.available_modes.find(function(m) { return m.id === modeUpdate.active; });
+      if (activeM) {
+        iconEl2.textContent = _modeIcons[activeM.icon] || '';
+        labelEl2.textContent = activeM.name;
+      }
+    }
+  }
+  if (btn2 && btn2.disabled && modeUpdate.state !== 'starting') {
+    btn2.disabled = false;
+    if (window._modeReenableTimer) { clearTimeout(window._modeReenableTimer); window._modeReenableTimer = null; }
+  }
+  if (_modeStatus) {
+    _modeStatus.active = modeUpdate.active;
+    _modeStatus.state = modeUpdate.state;
+    if (modeUpdate.modifiers) _modeStatus.modifiers = modeUpdate.modifiers;
+    _applyModeStatus(_modeStatus);
+  }
+}
+
+/* ── SSE helper: render fleet agent table from SSE data (QW1 — no full fetch) ── */
+function _renderFleetFromSSE(agents) {
+  var tbody = document.getElementById('fleet-tbody');
+  if (!tbody) return;
+  tbody.textContent = '';
+  if (!agents || agents.length === 0) {
+    var tr = document.createElement('tr');
+    var td = document.createElement('td');
+    td.colSpan = 7;
+    var empty = document.createElement('div');
+    empty.className = 'empty-state';
+    var icon = document.createElement('div');
+    icon.className = 'empty-icon';
+    icon.textContent = '\u2699';
+    var title = document.createElement('div');
+    title.className = 'empty-title';
+    title.textContent = 'No Active Agents';
+    var desc = document.createElement('div');
+    desc.className = 'empty-desc';
+    desc.textContent = 'Fleet is offline or all agents are disabled';
+    empty.appendChild(icon);
+    empty.appendChild(title);
+    empty.appendChild(desc);
+    td.appendChild(empty);
+    tr.appendChild(td);
+    tbody.appendChild(tr);
+    return;
+  }
+  agents.forEach(function(a, i) {
+    var ds = a.display_status || a.status;
+    var isDimmed = ds === 'DISABLED' || ds === 'OFFLINE';
+    var tr = document.createElement('tr');
+    if (isDimmed) tr.style.opacity = '0.45';
+
+    var tdId = document.createElement('td');
+    tdId.style.cssText = 'font-family:monospace;font-size:12px;color:var(--muted-foreground)';
+    tdId.textContent = '#' + (i + 1);
+
+    var tdName = document.createElement('td');
+    tdName.style.fontWeight = '600';
+    tdName.textContent = a.name || '--';
+
+    var tdRole = document.createElement('td');
+    tdRole.textContent = a.role || '--';
+
+    var tdStatus = document.createElement('td');
+    tdStatus.appendChild(buildStatusBadge(ds));
+
+    var tdTask = document.createElement('td');
+    tdTask.style.fontSize = '12px';
+    tdTask.textContent = a.current_task || '--';
+
+    var tdTime = document.createElement('td');
+    tdTime.style.cssText = 'font-size:12px;color:var(--muted-foreground)';
+    tdTime.textContent = timeAgo(a.last_heartbeat);
+
+    var tdAction = document.createElement('td');
+    var label = document.createElement('label');
+    label.className = 'toggle';
+    label.title = 'Enable/Disable agent';
+    var checkbox = document.createElement('input');
+    checkbox.type = 'checkbox';
+    checkbox.checked = ds !== 'DISABLED';
+    (function(agentName) {
+      checkbox.addEventListener('change', function() { toggleAgent(agentName, this.checked); });
+    })(a.name);
+    var slider = document.createElement('span');
+    slider.className = 'toggle-slider';
+    label.appendChild(checkbox);
+    label.appendChild(slider);
+    tdAction.appendChild(label);
+
+    tr.appendChild(tdId);
+    tr.appendChild(tdName);
+    tr.appendChild(tdRole);
+    tr.appendChild(tdStatus);
+    tr.appendChild(tdTask);
+    tr.appendChild(tdTime);
+    tr.appendChild(tdAction);
+    tbody.appendChild(tr);
+  });
 }
 
 /* ══════════════════════════════════════════════════════════════════════════
@@ -7341,7 +7470,8 @@ function toggleModifier(name) {
     Object.keys(_pollTimers).forEach(function(name) { /* timers auto-adjust on next tick */ });
   });
 
-  _schedulePoll('hitl', function() {
+  /* HITL badge: SSE hitl_new handles real-time, this is 60s fallback only */
+  setInterval(function() {
     apiFetch('/api/tasks/waiting-human').then(function(data) {
       var badge = document.getElementById('hitl-badge');
       if (data.length > 0) {
@@ -7351,7 +7481,7 @@ function toggleModifier(name) {
         badge.classList.add('hidden');
       }
     }).catch(function() {});
-  });
+  }, 60000);
 
   /* ── SSE handles status + thermal via server push.
      Activity chart polls adaptively (2s active / 60s hidden). ── */
@@ -7363,13 +7493,7 @@ function toggleModifier(name) {
 
   /* ── API Gate Controls ─────────────────────────────────────────────────── */
   buildGateCard();
-
-  _schedulePoll('gate', function() {
-    var section = document.getElementById('section-settings');
-    if (section && section.style.display !== 'none') {
-      apiFetch('/api/gate/status').then(updateGateUI).catch(function(){});
-    }
-  });
+  /* Gate poll removed (QW3) — gate_enabled/gate_disabled SSE events handle updates */
 
   /* ── Dev: right-click to refresh ─────────────────────────────────────── */
   document.addEventListener('contextmenu', function(e) {
@@ -8629,9 +8753,9 @@ var _rewardChartTimer = null;
 function _startSpatialMapPolling() {
   if (_spatialMapTimer) return;
   _pollSpatialMap();
-  _spatialMapTimer = setInterval(_pollSpatialMap, 3000);
+  _spatialMapTimer = setInterval(_pollSpatialMap, 10000);  /* 10s fallback — SSE factorio_spatial drives real-time */
   _pollRewardChart();
-  _rewardChartTimer = setInterval(_pollRewardChart, 5000);
+  _rewardChartTimer = setInterval(_pollRewardChart, 15000); /* 15s fallback — SSE factorio_reward drives real-time */
 }
 
 function _stopSpatialMapPolling() {
