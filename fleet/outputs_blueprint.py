@@ -105,6 +105,28 @@ def _glob_md_files(subdir: str | None) -> list[Path]:
     return results
 
 
+def _list_files(subdir: str | None) -> list[dict]:
+    """Glob .md files, stat them, and return sorted file_infos dicts (no feedback)."""
+    files = _glob_md_files(subdir)
+    file_infos = []
+    for fp in files:
+        try:
+            st = fp.stat()
+            resolved = fp.resolve()
+            file_infos.append({
+                "_abs": str(resolved),
+                "name": fp.name,
+                "path": _rel_path(resolved),
+                "category": _category_for_path(resolved),
+                "size": st.st_size,
+                "mtime": datetime.fromtimestamp(st.st_mtime).isoformat(),
+            })
+        except Exception:
+            continue
+    file_infos.sort(key=lambda x: x["mtime"], reverse=True)
+    return file_infos
+
+
 # ── Endpoints ───────────────────────────────────────────────────────────────
 
 @outputs_bp.route("/api/outputs/categories")
@@ -146,25 +168,7 @@ def api_outputs_files():
         return jsonify({"error": "Unknown category"}), 400
 
     subdir = CATEGORIES.get(category)
-    files = _glob_md_files(subdir)
-
-    file_infos = []
-    for fp in files:
-        try:
-            st = fp.stat()
-            resolved = fp.resolve()
-            file_infos.append({
-                "_abs": str(resolved),
-                "name": fp.name,
-                "path": _rel_path(resolved),
-                "category": _category_for_path(resolved),
-                "size": st.st_size,
-                "mtime": datetime.fromtimestamp(st.st_mtime).isoformat(),
-            })
-        except Exception:
-            continue
-
-    file_infos.sort(key=lambda x: x["mtime"], reverse=True)
+    file_infos = _list_files(subdir)
     total = len(file_infos)
     page = file_infos[offset:offset + limit]
 
@@ -259,25 +263,7 @@ def api_outputs_unreviewed():
         return jsonify({"error": "Rate limit exceeded"}), 429
 
     limit = min(request.args.get("limit", 20, type=int), 100)
-    all_files = _glob_md_files(None)
-
-    file_infos = []
-    for fp in all_files:
-        try:
-            st = fp.stat()
-            resolved = fp.resolve()
-            file_infos.append({
-                "_abs": str(resolved),
-                "name": fp.name,
-                "path": _rel_path(resolved),
-                "category": _category_for_path(resolved),
-                "size": st.st_size,
-                "mtime": datetime.fromtimestamp(st.st_mtime).isoformat(),
-            })
-        except Exception:
-            continue
-
-    file_infos.sort(key=lambda x: x["mtime"], reverse=True)
+    file_infos = _list_files(None)
 
     if file_infos:
         import db as _db
