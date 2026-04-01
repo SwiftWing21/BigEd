@@ -460,6 +460,12 @@ def _run_idle_evolution(agent_name, config):
             }), priority=1)
             with db.get_conn() as conn:
                 conn.execute("UPDATE tasks SET status='WAITING_HUMAN' WHERE id=?", (tid,))
+            # Broadcast SSE for immediate dashboard update
+            try:
+                from dashboard_utils import _broadcast_sse
+                _broadcast_sse({"type": "hitl_new", "task_id": tid})
+            except Exception:
+                pass
             log.info(f"HITL evolution proposal #{tid} for '{skill}' — awaiting operator")
         else:
             tid = db.post_task("skill_test", json.dumps({"skill": skill, "idle": True}),

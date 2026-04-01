@@ -1324,6 +1324,13 @@ def request_human_input(task_id, agent_name, question):
     except Exception:
         pass  # Federation notification is best-effort — never block HITL creation
 
+    # Broadcast SSE so dashboard updates HITL badge immediately
+    try:
+        from dashboard_utils import _broadcast_sse
+        _broadcast_sse({"type": "hitl_new", "task_id": task_id})
+    except Exception:
+        pass  # SSE broadcast is best-effort
+
 
 def respond_to_agent(task_id, response):
     """Operator responds to agent question. Resumes task to RUNNING."""
