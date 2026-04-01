@@ -207,3 +207,34 @@ def test_ux_confidence_scales_with_feedback():
     assert get_ux_confidence(50) > 0.30
     assert get_ux_confidence(100) == 0.75
     assert get_ux_confidence(200) == 0.75
+
+
+# ── Task 7: Weekly External Checks ────────────────────────────────────────
+
+def test_check_version_drift_returns_score():
+    from audit_scorer import _check_version_drift
+    score, detail = _check_version_drift()
+    assert isinstance(score, float)
+    assert 0.0 <= score <= 1.0
+
+
+def test_check_github_returns_score():
+    from audit_scorer import _check_github
+    score, detail = _check_github()
+    assert isinstance(score, float)
+    assert 0.0 <= score <= 1.0
+
+
+def test_check_semgrep_returns_score():
+    from audit_scorer import _check_semgrep
+    score, detail = _check_semgrep()
+    assert isinstance(score, float)
+    assert 0.0 <= score <= 1.0
+
+
+def test_weekly_merge_score():
+    from audit_scorer import merged_score
+    result = merged_score(daily=0.80, weekly=1.0, weekly_age_days=0)
+    assert abs(result - 0.88) < 0.01
+    result = merged_score(daily=0.80, weekly=1.0, weekly_age_days=6)
+    assert abs(result - 0.82) < 0.01

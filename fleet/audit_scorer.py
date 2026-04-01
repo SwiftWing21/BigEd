@@ -815,3 +815,233 @@ def get_feedback_summary() -> dict:
 def get_ux_confidence(feedback_count: int) -> float:
     """UX confidence scales from 0.30 base to 0.75 at 100+ entries."""
     return min(0.75, 0.30 + (feedback_count / 100) * 0.45)
+
+
+# ── Weekly External Checks ────────────────────────────────────────────────
+
+def _check_semgrep() -> tuple[float, dict]:
+    """Run semgrep SAST scan; score penalises errors and warnings."""
+    import subprocess
+    try:
+        result = subprocess.run(
+            [
+                "semgrep",
+                "--config", "p/python",
+                "--config", "p/owasp-top-ten",
+                "--json",
+                "--quiet",
+                str(FLEET_DIR),
+            ],
+            capture_output=True,
+            text=True,
+            timeout=120,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+        )
+        try:
+            data = json.loads(result.stdout or "{}")
+        except Exception:
+            data = {}
+        results_list = data.get("results", [])
+        errors = sum(1 for r in results_list if r.get("extra", {}).get("severity") == "ERROR")
+        warnings = sum(1 for r in results_list if r.get("extra", {}).get("severity") == "WARNING")
+        score = max(0.0, 1.0 - (errors * 0.15 + warnings * 0.05))
+        return score, {"errors": errors, "warnings": warnings, "total_findings": len(results_list)}
+    except FileNotFoundError:
+        return 1.0, {"skipped": "semgrep not installed"}
+    except Exception as e:
+        log.warning("_check_semgrep failed: %s", e)
+        return 1.0, {"skipped": str(e)}
+
+
+def _check_version_drift() -> tuple[float, dict]:
+    """Check tracked packages for version drift against PyPI latest."""
+    import urllib.request
+    import importlib.metadata
+
+    packages = ["flask", "psutil", "httpx", "scikit-learn"]
+    detail: dict = {}
+    scores: list[float] = []
+
+    for pkg in packages:
+        try:
+            installed = importlib.metadata.version(pkg)
+        except Exception:
+            detail[pkg] = {"skipped": "not installed"}
+            continue
+
+        try:
+            url = f"https://pypi.org/pypi/{pkg}/json"
+            with urllib.request.urlopen(url, timeout=10) as resp:
+                data = json.loads(resp.read().decode("utf-8"))
+            latest = data["info"]["version"]
+        except Exception as e:
+            log.warning("_check_version_drift: PyPI fetch failed for %s: %s", pkg, e)
+            detail[pkg] = {"installed": installed, "skipped": "network error"}
+            continue  # network failure — don't penalise
+
+        # Parse semver components
+        def _parts(v: str) -> tuple[int, int, int]:
+            parts = (v.split("+")[0]).split(".")
+            try:
+                major = int(parts[0]) if len(parts) > 0 else 0
+                minor = int(parts[1]) if len(parts) > 1 else 0
+                patch = int(parts[2]) if len(parts) > 2 else 0
+            except Exception:
+                major, minor, patch = 0, 0, 0
+            return major, minor, patch
+
+        inst_parts = _parts(installed)
+        latest_parts = _parts(latest)
+
+        if inst_parts[0] < latest_parts[0]:
+            pkg_score = 0.0
+            drift = "major"
+        elif inst_parts[1] < latest_parts[1]:
+            pkg_score = 0.5
+            drift = "minor"
+        else:
+            pkg_score = 1.0
+            drift = "current" if inst_parts == latest_parts else "patch"
+
+        detail[pkg] = {"installed": installed, "latest": latest, "drift": drift, "score": pkg_score}
+        scores.append(pkg_score)
+
+    avg = sum(scores) / len(scores) if scores else 1.0
+    return avg, detail
+
+
+def _check_github() -> tuple[float, dict]:
+    """Check CI status, open bugs, and stale PRs via GitHub API."""
+    import os as _os
+    token = _os.environ.get("GITHUB_TOKEN", "")
+    if not token:
+        return 1.0, {"skipped": "no GITHUB_TOKEN"}
+
+    owner = "SwiftWing21"
+    repo = "BigEd-private"
+
+    try:
+        from skills.git_suite import _github_api
+    except Exception as e:
+        log.warning("_check_github: could not import git_suite: %s", e)
+        return 1.0, {"skipped": f"git_suite import failed: {e}"}
+
+    detail: dict = {}
+    sub_scores: list[float] = []
+
+    # 1. CI status — latest workflow run
+    try:
+        data = _github_api("GET", f"/repos/{owner}/{repo}/actions/runs?per_page=5")
+        runs = data.get("workflow_runs", [])
+        if runs:
+            latest_conclusion = runs[0].get("conclusion")
+            ci_score = 1.0 if latest_conclusion == "success" else 0.0
+            detail["ci"] = {"conclusion": latest_conclusion, "score": ci_score}
+        else:
+            ci_score = 1.0
+            detail["ci"] = {"conclusion": None, "score": 1.0, "note": "no runs found"}
+        sub_scores.append(ci_score)
+    except Exception as e:
+        log.warning("_check_github CI check failed: %s", e)
+        detail["ci"] = {"error": str(e)}
+
+    # 2. Open bug count
+    try:
+        data = _github_api("GET", f"/repos/{owner}/{repo}/issues?labels=bug&state=open")
+        bug_count = len(data) if isinstance(data, list) else 0
+        bug_score = max(0.0, 1.0 - bug_count * 0.05)
+        detail["open_bugs"] = {"count": bug_count, "score": bug_score}
+        sub_scores.append(bug_score)
+    except Exception as e:
+        log.warning("_check_github open bugs check failed: %s", e)
+        detail["open_bugs"] = {"error": str(e)}
+
+    # 3. Stale open PRs (> 14 days)
+    try:
+        from datetime import datetime, timezone, timedelta
+        data = _github_api("GET", f"/repos/{owner}/{repo}/pulls?state=open")
+        prs = data if isinstance(data, list) else []
+        cutoff = datetime.now(timezone.utc) - timedelta(days=14)
+        stale_count = 0
+        for pr in prs:
+            created_at_str = pr.get("created_at", "")
+            try:
+                created_at = datetime.fromisoformat(created_at_str.replace("Z", "+00:00"))
+                if created_at < cutoff:
+                    stale_count += 1
+            except Exception:
+                pass
+        stale_score = max(0.0, 1.0 - stale_count * 0.1)
+        detail["stale_prs"] = {"stale_count": stale_count, "total_open": len(prs), "score": stale_score}
+        sub_scores.append(stale_score)
+    except Exception as e:
+        log.warning("_check_github stale PR check failed: %s", e)
+        detail["stale_prs"] = {"error": str(e)}
+
+    avg = sum(sub_scores) / len(sub_scores) if sub_scores else 1.0
+    return avg, detail
+
+
+def _check_federation_mcp() -> tuple[float, dict]:
+    """Probe federation peers and MCP servers for availability."""
+    import urllib.request
+
+    ok = 0
+    total = 0
+    detail: dict = {"peers": {}, "mcp": {}}
+
+    # Federation peers
+    try:
+        from config import load_config
+        cfg = load_config()
+        peers = cfg.get("federation", {}).get("peers", [])
+        for peer in peers:
+            total += 1
+            peer_url = peer if isinstance(peer, str) else peer.get("url", "")
+            probe_url = peer_url.rstrip("/") + "/api/federation/capacity"
+            try:
+                with urllib.request.urlopen(probe_url, timeout=10) as resp:
+                    peer_ok = resp.status == 200
+            except Exception:
+                peer_ok = False
+            detail["peers"][peer_url] = peer_ok
+            if peer_ok:
+                ok += 1
+    except Exception as e:
+        log.warning("_check_federation_mcp peers probe failed: %s", e)
+        detail["peers_error"] = str(e)
+
+    # MCP servers
+    try:
+        import sys as _sys
+        fleet_dir = str(FLEET_DIR)
+        if fleet_dir not in _sys.path:
+            _sys.path.insert(0, fleet_dir)
+        from mcp_manager import get_all_server_status
+        mcp_statuses = get_all_server_status()
+        for name, status in mcp_statuses.items():
+            total += 1
+            mcp_ok = status.get("ok", False) or status.get("status") == "ok"
+            detail["mcp"][name] = mcp_ok
+            if mcp_ok:
+                ok += 1
+    except Exception as e:
+        log.warning("_check_federation_mcp MCP probe failed: %s", e)
+        detail["mcp_error"] = str(e)
+
+    score = ok / total if total > 0 else 1.0
+    return score, {"ok": ok, "total": total, **detail}
+
+
+# ── Score Blending ────────────────────────────────────────────────────────
+
+def merged_score(daily: float, weekly: float | None, weekly_age_days: int) -> float:
+    """Blend daily and weekly scores; weekly weight decays with age.
+
+    Weight = max(0.1, 0.4 - age_days * 0.05).
+    If weekly is None, returns daily unchanged.
+    """
+    if weekly is None:
+        return daily
+    weight = max(0.1, 0.4 - weekly_age_days * 0.05)
+    return daily * (1.0 - weight) + weekly * weight
