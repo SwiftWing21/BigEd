@@ -10,6 +10,8 @@ v0.900.00b
 from flask import Blueprint, jsonify, request
 import logging
 
+from dashboard_utils import _require_role
+
 log = logging.getLogger(__name__)
 
 ingest_bp = Blueprint("ingest", __name__)
@@ -23,6 +25,9 @@ ingest_bp = Blueprint("ingest", __name__)
 @ingest_bp.route("/api/ingest/sources")
 def api_ingest_sources():
     """List all ingest sources (config + DB)."""
+    deny = _require_role("viewer")
+    if deny:
+        return deny
     try:
         import ingest_manager
         sources = ingest_manager.list_sources()
@@ -35,6 +40,9 @@ def api_ingest_sources():
 @ingest_bp.route("/api/ingest/sources", methods=["POST"])
 def api_ingest_add_source():
     """Add a new ingest source."""
+    deny = _require_role("operator")
+    if deny:
+        return deny
     try:
         import ingest_manager
         body = request.get_json(force=True)
@@ -59,6 +67,9 @@ def api_ingest_add_source():
 @ingest_bp.route("/api/ingest/sources/<id>", methods=["DELETE"])
 def api_ingest_remove_source(id):
     """Remove an ingest source by ID."""
+    deny = _require_role("operator")
+    if deny:
+        return deny
     try:
         import ingest_manager
         ingest_manager.remove_source(id)
@@ -76,6 +87,9 @@ def api_ingest_remove_source(id):
 @ingest_bp.route("/api/ingest/sources/<id>/schema")
 def api_ingest_schema(id):
     """Fetch HuggingFace dataset schema for a source."""
+    deny = _require_role("viewer")
+    if deny:
+        return deny
     try:
         import ingest_manager
         sources = ingest_manager.list_sources()
@@ -97,6 +111,9 @@ def api_ingest_schema(id):
 @ingest_bp.route("/api/ingest/sources/<id>/rows")
 def api_ingest_rows(id):
     """Fetch rows from HuggingFace and auto-cache the batch."""
+    deny = _require_role("viewer")
+    if deny:
+        return deny
     try:
         import ingest_manager
         sources = ingest_manager.list_sources()
@@ -132,6 +149,9 @@ def api_ingest_rows(id):
 @ingest_bp.route("/api/ingest/stage", methods=["POST"])
 def api_ingest_stage():
     """Stage items for review before dispatch."""
+    deny = _require_role("operator")
+    if deny:
+        return deny
     try:
         import ingest_manager
         body = request.get_json(force=True)
@@ -146,6 +166,9 @@ def api_ingest_stage():
 @ingest_bp.route("/api/ingest/staging")
 def api_ingest_staging():
     """List all staged items."""
+    deny = _require_role("viewer")
+    if deny:
+        return deny
     try:
         import ingest_manager
         items = ingest_manager.get_staging()
@@ -158,6 +181,9 @@ def api_ingest_staging():
 @ingest_bp.route("/api/ingest/staging/<int:id>", methods=["DELETE"])
 def api_ingest_remove_staged(id):
     """Remove a single staged item."""
+    deny = _require_role("operator")
+    if deny:
+        return deny
     try:
         import ingest_manager
         ingest_manager.remove_staged(id)
@@ -175,6 +201,9 @@ def api_ingest_remove_staged(id):
 @ingest_bp.route("/api/ingest/dispatch", methods=["POST"])
 def api_ingest_dispatch():
     """Dispatch staged items to tasks or RAG."""
+    deny = _require_role("operator")
+    if deny:
+        return deny
     try:
         import ingest_manager
         body = request.get_json(force=True, silent=True) or {}
@@ -194,6 +223,9 @@ def api_ingest_dispatch():
 @ingest_bp.route("/api/ingest/cache/stats")
 def api_ingest_cache_stats():
     """Return cache usage statistics."""
+    deny = _require_role("viewer")
+    if deny:
+        return deny
     try:
         import ingest_manager
         return jsonify(ingest_manager.cache_stats())
@@ -205,6 +237,9 @@ def api_ingest_cache_stats():
 @ingest_bp.route("/api/ingest/cache/evict", methods=["POST"])
 def api_ingest_cache_evict():
     """Evict processed cache batches and return stats."""
+    deny = _require_role("operator")
+    if deny:
+        return deny
     try:
         import ingest_manager
         evicted = ingest_manager.evict_processed()
@@ -224,6 +259,9 @@ def api_ingest_cache_evict():
 @ingest_bp.route("/api/ingest/upload", methods=["POST"])
 def api_ingest_upload():
     """Accept a multipart file upload, save to cache _uploads/ dir."""
+    deny = _require_role("operator")
+    if deny:
+        return deny
     try:
         import ingest_manager
 
@@ -267,6 +305,9 @@ def api_ingest_upload():
 @ingest_bp.route("/api/keys/status")
 def api_keys_status():
     """Return status of all registered API keys (set/missing, masked values)."""
+    deny = _require_role("viewer")
+    if deny:
+        return deny
     try:
         import os
         import tomllib
@@ -333,6 +374,9 @@ def api_keys_status():
 @ingest_bp.route("/api/keys/set", methods=["POST"])
 def api_keys_set():
     """Set an API key value. Writes to ~/.secrets and loads into os.environ."""
+    deny = _require_role("operator")
+    if deny:
+        return deny
     try:
         import os
         from pathlib import Path
