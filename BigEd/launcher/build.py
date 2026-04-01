@@ -86,7 +86,6 @@ def _pyinstaller_cmd(name: str, script: str, icon: str = "brick.ico",
         "--onefile",
         "--name", name,
         "--icon", icon,
-        "--collect-all", "customtkinter",
     ]
     if windowed:
         cmd.append("--windowed")
@@ -115,8 +114,8 @@ def build_launcher() -> float:
     return _run(
         _pyinstaller_cmd(
             "BigEdCC", "launcher.py",
-            add_data=["brick.ico", "icon_1024.png", "modules", "ui",
-                      "launcher_webview.py", "launcher_tkinter.py"],
+            add_data=["brick.ico", "icon_1024.png", "modules",
+                      "launcher_webview.py", "tray.py"],
             hidden_imports=["psutil", "pynvml", "webview", "qtpy",
                             "PyQt6", "PyQt6.QtWebEngineWidgets"],
         ),

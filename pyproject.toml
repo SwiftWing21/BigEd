@@ -19,7 +19,6 @@ dependencies = [
 
 [project.optional-dependencies]
 launcher = [
-    "customtkinter>=5.2.0",
     "pillow>=10.0.0",
     "pystray>=0.19",
     "pywebview>=5.0",
