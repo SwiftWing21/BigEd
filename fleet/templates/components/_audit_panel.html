@@ -1,0 +1,379 @@
+<!-- ═══════════════════════════════════════════════════════════════════════
+     SYSTEM AUDIT PANEL — Two-Brain Audit (Task 11)
+     ═══════════════════════════════════════════════════════════════════ -->
+<div id="section-audit" class="section">
+  <div class="section-header">
+    <div class="section-title">System Audit</div>
+    <div class="section-desc">Two-brain grading: automated scoring vs. human review across 12 dimensions</div>
+  </div>
+
+  <style>
+    #audit-body.collapsed { display: none; }
+    .audit-stars span { cursor: pointer; font-size: 18px; color: var(--muted-foreground); transition: color 0.15s; }
+    .audit-stars span.filled { color: #f5a623; }
+    .audit-conf-dots { letter-spacing: 1px; font-size: 12px; }
+    .audit-status-ok  { color: var(--success,  #22c55e); font-weight: 600; }
+    .audit-status-warn { color: var(--warning, #eab308); font-weight: 600; }
+    .audit-status-err  { color: var(--destructive, #ef4444); font-weight: 600; }
+    .audit-summary-row td { border-top: 2px solid var(--border); font-weight: 600; padding-top: 8px; }
+    #audit-feedback-widget { margin-top: 16px; display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-end; padding: 12px; background: var(--surface, var(--card)); border: 1px solid var(--border); border-radius: 8px; }
+    #audit-feedback-widget label { font-size: 11px; color: var(--muted-foreground); display: block; margin-bottom: 4px; }
+    .audit-action-row { margin-top: 12px; display: flex; flex-wrap: wrap; gap: 8px; }
+  </style>
+
+  <div class="card">
+    <!-- Card Header — click to collapse -->
+    <div class="card-header" style="cursor:pointer;user-select:none;" onclick="toggleAuditPanel()">
+      <span class="card-title">SYSTEM AUDIT</span>
+      <span id="audit-last-run" style="font-size:11px;color:var(--muted-foreground);margin-left:12px;">never run</span>
+      <span id="audit-collapse-icon" style="margin-left:auto;font-size:14px;color:var(--muted-foreground);">&#9660;</span>
+    </div>
+
+    <!-- Collapsible body -->
+    <div id="audit-body">
+      <!-- Score Table -->
+      <div style="overflow-x:auto;margin-top:8px;">
+        <table class="table" style="width:100%;min-width:560px;">
+          <thead>
+            <tr>
+              <th style="text-align:left;width:30%;">Dimension</th>
+              <th style="text-align:center;">Auto</th>
+              <th style="text-align:center;">Manual</th>
+              <th style="text-align:center;">Status</th>
+              <th style="text-align:center;">Confidence</th>
+            </tr>
+          </thead>
+          <tbody id="audit-tbody">
+            <tr>
+              <td colspan="5" style="text-align:center;color:var(--muted-foreground);padding:24px 0;">
+                No audit data yet. Click "Run Medium" to start.
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <!-- Summary row (outside table, updated by JS) -->
+      <div id="audit-summary" style="display:flex;gap:24px;padding:10px 4px;font-size:13px;color:var(--muted-foreground);flex-wrap:wrap;">
+        <span>Overall: <strong id="audit-overall">—</strong></span>
+        <span>Divergences: <strong id="audit-divergences">—</strong></span>
+        <span>Last scan: <strong id="audit-scan-age">—</strong></span>
+      </div>
+
+      <!-- Feedback Widget -->
+      <div id="audit-feedback-widget">
+        <!-- Stars -->
+        <div>
+          <label>Your Rating</label>
+          <div class="audit-stars" id="audit-stars">
+            <span data-n="1" onclick="setAuditStar(1)">&#9734;</span>
+            <span data-n="2" onclick="setAuditStar(2)">&#9734;</span>
+            <span data-n="3" onclick="setAuditStar(3)">&#9734;</span>
+            <span data-n="4" onclick="setAuditStar(4)">&#9734;</span>
+            <span data-n="5" onclick="setAuditStar(5)">&#9734;</span>
+          </div>
+        </div>
+        <!-- Slider -->
+        <div>
+          <label>Score (0–100)</label>
+          <input type="range" id="audit-score-slider" min="0" max="100" value="75"
+                 style="width:120px;vertical-align:middle;" oninput="document.getElementById('audit-score-val').textContent=this.value">
+          <span id="audit-score-val" style="font-size:12px;margin-left:4px;">75</span>
+        </div>
+        <!-- Scope -->
+        <div>
+          <label>Dimension</label>
+          <select id="audit-scope-select" style="background:var(--card);color:var(--foreground);border:1px solid var(--border);border-radius:6px;padding:4px 8px;font-size:12px;">
+            <option value="overall">Overall</option>
+            <option value="testing">Testing</option>
+            <option value="module_plugin">Module / Plugin</option>
+            <option value="documentation">Documentation</option>
+            <option value="performance">Performance</option>
+            <option value="reliability">Reliability</option>
+            <option value="observability">Observability</option>
+            <option value="architecture">Architecture</option>
+            <option value="code_quality">Code Quality</option>
+            <option value="security">Security</option>
+            <option value="dynamic_abilities">Dynamic Abilities</option>
+            <option value="data_hitl">Data / HITL</option>
+            <option value="usability_ux">Usability / UX</option>
+          </select>
+        </div>
+        <!-- Text -->
+        <div style="flex:1;min-width:160px;">
+          <label>Notes (optional)</label>
+          <input type="text" id="audit-feedback-text" placeholder="What changed or why…"
+                 style="width:100%;background:var(--card);color:var(--foreground);border:1px solid var(--border);border-radius:6px;padding:4px 8px;font-size:12px;box-sizing:border-box;">
+        </div>
+        <!-- Submit -->
+        <div>
+          <label style="visibility:hidden;">&#8203;</label>
+          <button class="btn btn-sm" onclick="submitAuditFeedback()">Submit</button>
+        </div>
+      </div>
+
+      <!-- Action Buttons -->
+      <div class="audit-action-row">
+        <button class="btn btn-sm btn-outline" onclick="triggerAuditTier('medium')">&#9654; Run Medium</button>
+        <button class="btn btn-sm btn-outline" onclick="triggerAuditTier('daily')">&#9654; Run Daily</button>
+        <button class="btn btn-sm btn-outline" onclick="acknowledgeAllDivergences()">&#10003; Acknowledge All</button>
+      </div>
+    </div><!-- /#audit-body -->
+  </div><!-- /.card -->
+</div><!-- /#section-audit -->
+
+<script>
+(function() {
+  // ── Grade / Confidence Maps ─────────────────────────────────────────────
+  var gradeMap = {S:1.0,'A+':0.95,A:0.90,'A-':0.85,'B+':0.80,B:0.75,'B-':0.70,'C+':0.65,C:0.60,D:0.50,F:0.30};
+  var confMap = {
+    testing: 0.95, module_plugin: 0.90, documentation: 0.85,
+    performance: 0.85, reliability: 0.85, observability: 0.80,
+    architecture: 0.75, code_quality: 0.75, security: 0.60,
+    dynamic_abilities: 0.60, data_hitl: 0.55, usability_ux: 0.30
+  };
+
+  // ── State ───────────────────────────────────────────────────────────────
+  var _auditStarValue = 0;
+  var _auditCollapsed = false;
+
+  // ── Panel Collapse ──────────────────────────────────────────────────────
+  window.toggleAuditPanel = function() {
+    _auditCollapsed = !_auditCollapsed;
+    var body = document.getElementById('audit-body');
+    var icon = document.getElementById('audit-collapse-icon');
+    if (_auditCollapsed) {
+      body.classList.add('collapsed');
+      if (icon) icon.textContent = '\u25B6'; // right-pointing
+    } else {
+      body.classList.remove('collapsed');
+      if (icon) icon.textContent = '\u25BC'; // down-pointing
+    }
+  };
+
+  // ── Stars ───────────────────────────────────────────────────────────────
+  window.setAuditStar = function(n) {
+    _auditStarValue = n;
+    // Sync slider
+    var slider = document.getElementById('audit-score-slider');
+    var val = document.getElementById('audit-score-val');
+    if (slider) { slider.value = n * 20; }
+    if (val)    { val.textContent = String(n * 20); }
+    // Update star display
+    var stars = document.querySelectorAll('#audit-stars span');
+    stars.forEach(function(s) {
+      var sn = parseInt(s.getAttribute('data-n'), 10);
+      if (sn <= n) {
+        s.textContent = '\u2605'; // filled star
+        s.classList.add('filled');
+      } else {
+        s.textContent = '\u2606'; // empty star
+        s.classList.remove('filled');
+      }
+    });
+  };
+
+  // ── Submit Feedback ─────────────────────────────────────────────────────
+  window.submitAuditFeedback = function() {
+    var slider = document.getElementById('audit-score-slider');
+    var scope  = document.getElementById('audit-scope-select');
+    var textEl = document.getElementById('audit-feedback-text');
+    var score  = slider ? (parseInt(slider.value, 10) / 100) : (_auditStarValue / 5);
+    var payload = {
+      score: score,
+      scope: scope ? scope.value : 'overall',
+      notes: textEl ? textEl.value : ''
+    };
+    fetch('/api/audit/feedback', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    }).then(function(r) {
+      if (r.ok) {
+        if (typeof showToast === 'function') showToast('Feedback submitted', 'success');
+        // Reset form
+        setAuditStar(0);
+        if (slider) { slider.value = 75; }
+        var valEl = document.getElementById('audit-score-val');
+        if (valEl) valEl.textContent = '75';
+        if (scope)  scope.value = 'overall';
+        if (textEl) textEl.value = '';
+        loadAuditScores();
+      } else {
+        if (typeof showToast === 'function') showToast('Feedback failed — check server logs', 'error');
+      }
+    }).catch(function() {
+      if (typeof showToast === 'function') showToast('Network error submitting feedback', 'error');
+    });
+  };
+
+  // ── Confidence dots ─────────────────────────────────────────────────────
+  function confDots(conf) {
+    var filled = Math.round(conf * 5);
+    var s = '';
+    for (var i = 0; i < 5; i++) {
+      s += (i < filled) ? '\u25CF' : '\u25CB';
+    }
+    return s;
+  }
+
+  // ── Status symbol ───────────────────────────────────────────────────────
+  function statusInfo(autoScore, divergence, conf) {
+    if (autoScore !== null && autoScore <= 0.50) {
+      return { symbol: '\u2717', cls: 'audit-status-err' };    // ✗ red
+    }
+    if (divergence && conf > 0.70) {
+      return { symbol: '\u26A0', cls: 'audit-status-warn' };   // ⚠ yellow
+    }
+    return { symbol: '\u2713', cls: 'audit-status-ok' };       // ✓ green
+  }
+
+  // ── Load Scores ─────────────────────────────────────────────────────────
+  window.loadAuditScores = function() {
+    fetch('/api/audit/scores').then(function(r) { return r.json(); }).then(function(data) {
+      var tbody = document.getElementById('audit-tbody');
+      if (!tbody) return;
+
+      // Clear existing rows
+      while (tbody.firstChild) { tbody.removeChild(tbody.firstChild); }
+
+      var scores = data.scores;
+      if (!scores || !scores.length) {
+        var tr = document.createElement('tr');
+        var td = document.createElement('td');
+        td.setAttribute('colspan', '5');
+        td.textContent = 'No audit data yet. Click "Run Medium" to start.';
+        td.style.textAlign = 'center';
+        td.style.padding = '24px 0';
+        td.style.color = 'var(--muted-foreground)';
+        tr.appendChild(td);
+        tbody.appendChild(tr);
+        return;
+      }
+
+      var totalAuto = 0;
+      var countAuto = 0;
+      var divergenceCount = 0;
+
+      scores.forEach(function(s) {
+        var tr = document.createElement('tr');
+
+        // Dimension name
+        var tdDim = document.createElement('td');
+        var label = (s.dimension || '').replace(/_/g, ' ');
+        tdDim.textContent = label.charAt(0).toUpperCase() + label.slice(1);
+        tr.appendChild(tdDim);
+
+        // Auto score
+        var tdAuto = document.createElement('td');
+        tdAuto.style.textAlign = 'center';
+        var autoVal = (s.auto_score !== null && s.auto_score !== undefined) ? s.auto_score : null;
+        tdAuto.textContent = (autoVal !== null) ? (autoVal * 100).toFixed(0) + '%' : '—';
+        tr.appendChild(tdAuto);
+
+        // Manual score
+        var tdMan = document.createElement('td');
+        tdMan.style.textAlign = 'center';
+        var manVal = (s.manual_score !== null && s.manual_score !== undefined) ? s.manual_score : null;
+        tdMan.textContent = (manVal !== null) ? (manVal * 100).toFixed(0) + '%' : '—';
+        tr.appendChild(tdMan);
+
+        // Status
+        var hasDivergence = !!(s.divergence);
+        var confVal = (s.confidence !== null && s.confidence !== undefined) ? s.confidence
+                      : (confMap[s.dimension] || 0.70);
+        var info = statusInfo(autoVal, hasDivergence, confVal);
+        if (hasDivergence) { divergenceCount++; }
+        var tdStatus = document.createElement('td');
+        tdStatus.style.textAlign = 'center';
+        var statusSpan = document.createElement('span');
+        statusSpan.textContent = info.symbol;
+        statusSpan.className = info.cls;
+        tdStatus.appendChild(statusSpan);
+        tr.appendChild(tdStatus);
+
+        // Confidence dots
+        var tdConf = document.createElement('td');
+        tdConf.style.textAlign = 'center';
+        var confSpan = document.createElement('span');
+        confSpan.className = 'audit-conf-dots';
+        confSpan.title = (confVal * 100).toFixed(0) + '% confidence';
+        confSpan.textContent = confDots(confVal);
+        tdConf.appendChild(confSpan);
+        tr.appendChild(tdConf);
+
+        tbody.appendChild(tr);
+
+        if (autoVal !== null) { totalAuto += autoVal; countAuto++; }
+      });
+
+      // Update summary
+      var overallEl = document.getElementById('audit-overall');
+      var divEl     = document.getElementById('audit-divergences');
+      var ageEl     = document.getElementById('audit-scan-age');
+      var lastRunEl = document.getElementById('audit-last-run');
+
+      if (overallEl) {
+        var avg = countAuto > 0 ? (totalAuto / countAuto * 100).toFixed(1) + '%' : '—';
+        overallEl.textContent = avg;
+      }
+      if (divEl)    { divEl.textContent = String(divergenceCount); }
+      if (data.scanned_at) {
+        var d = new Date(data.scanned_at);
+        var ts = isNaN(d.getTime()) ? data.scanned_at : d.toLocaleString();
+        if (ageEl)    { ageEl.textContent = ts; }
+        if (lastRunEl) { lastRunEl.textContent = 'Last run: ' + ts; }
+      }
+    }).catch(function() { /* network error — silently skip */ });
+  };
+
+  // ── Trigger Audit Tier ──────────────────────────────────────────────────
+  window.triggerAuditTier = function(tier) {
+    fetch('/api/audit/trigger/' + encodeURIComponent(tier), { method: 'POST' })
+      .then(function(r) {
+        if (r.ok) {
+          if (typeof showToast === 'function') showToast('Audit triggered: ' + tier, 'info');
+          setTimeout(loadAuditScores, 2000);
+        } else {
+          if (typeof showToast === 'function') showToast('Trigger failed (' + tier + ')', 'error');
+        }
+      }).catch(function() {
+        if (typeof showToast === 'function') showToast('Network error triggering audit', 'error');
+      });
+  };
+
+  // ── Acknowledge All Divergences ─────────────────────────────────────────
+  window.acknowledgeAllDivergences = function() {
+    fetch('/api/audit/divergences').then(function(r) { return r.json(); }).then(function(data) {
+      var items = data.divergences || [];
+      if (!items.length) {
+        if (typeof showToast === 'function') showToast('No divergences to acknowledge', 'info');
+        return;
+      }
+      var promises = items.map(function(d) {
+        return fetch('/api/audit/divergences/' + encodeURIComponent(d.id) + '/acknowledge', {
+          method: 'POST'
+        });
+      });
+      Promise.all(promises).then(function() {
+        if (typeof showToast === 'function') showToast('All divergences acknowledged', 'success');
+        loadAuditScores();
+      }).catch(function() {
+        if (typeof showToast === 'function') showToast('Some acknowledgements failed', 'error');
+      });
+    }).catch(function() {
+      if (typeof showToast === 'function') showToast('Could not load divergences', 'error');
+    });
+  };
+
+  // ── Auto-refresh every 60s ──────────────────────────────────────────────
+  setInterval(loadAuditScores, 60000);
+
+  // ── Load on DOMContentLoaded ────────────────────────────────────────────
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', loadAuditScores);
+  } else {
+    loadAuditScores();
+  }
+})();
+</script>
