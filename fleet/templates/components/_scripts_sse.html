@@ -1613,10 +1613,14 @@ function submitAddSource() {
 
   function checkBootStatus() {
     if (bootHidden) return;
+    _bootPollCount = (_bootPollCount || 0) + 1;
     fetch('/api/boot/status').then(function(r) { return r.json(); }).then(function(data) {
       var overlay = document.getElementById('boot-overlay');
       if (!overlay) { clearInterval(bootTimer); return; }
-      if (!data.stage || data.stage === 'ready' || data.stage === 'unknown' || data.error) {
+      /* Boot is done if: status says ready/unknown, OR we've been polling 10+ times
+         (5 seconds) and the dashboard is clearly serving (we got a valid JSON response) */
+      var bootDone = !data.stage || data.stage === 'ready' || data.stage === 'unknown' || data.error || _bootPollCount > 10;
+      if (bootDone) {
         clearInterval(bootTimer);
         /* Show all stages as done, then transition out */
         if (data.stages) {
