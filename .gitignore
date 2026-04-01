@@ -168,6 +168,34 @@ ziXHiPfz
 model-manager.plugin
 repo-descriptions.txt
 
+# ── Fleet — runtime state flags ──────────────────────────────────────────────
+fleet/.queue_paused
+fleet/.walkthrough_done
+
+# ── Fleet — learned packs (runtime RL output) ────────────────────────────────
+fleet/factorio/packs/learned/
+
+# ── Fleet — additional generated knowledge dirs ──────────────────────────────
+fleet/knowledge/digests/
+fleet/knowledge/flywheel/
+fleet/knowledge/freshness/
+fleet/knowledge/outcomes/
+fleet/knowledge/prompt_optimization/
+fleet/knowledge/sync/
+
+# ── Fleet — nested fleet/ dir (accidental) ───────────────────────────────────
+fleet/fleet/
+
+# ── Autoresearch — runtime logs ──────────────────────────────────────────────
+autoresearch/run.log
+
+# ── Draft posts / personal docs (not for public) ────────────────────────────
+reddit-*.md
+BigEd_Architecture_Report.docx
+
+# ── Screenshots (tracked via .gitignore in docs/screenshots/) ────────────────
+docs/screenshots/*.png
+
 # ── OS junk ───────────────────────────────────────────────────────────────────
 .DS_Store
 Thumbs.db

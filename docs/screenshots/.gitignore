@@ -1,0 +1,69 @@
+# Ignore all screenshots by default
+*.png
+
+# === APPROVED FOR DOCS ===
+# System & Hardware Monitoring
+!Screenshot 2026-03-17 013000.png
+!Screenshot 2026-03-20 112132.png
+
+# Fleet Dashboard & Agent Status
+!Screenshot 2026-03-20 084631.png
+!Screenshot 2026-03-20 084705.png
+!Screenshot 2026-03-20 084843.png
+!Screenshot 2026-03-20 032842.png
+!Screenshot 2026-03-21 122743.png
+!Screenshot 2026-03-21 122820.png
+!Screenshot 2026-03-21 191923.png
+!Screenshot 2026-03-24 001030.png
+!Screenshot 2026-03-24 001550.png
+
+# Command Center & Navigation
+!Screenshot 2026-03-21 220108.png
+!Screenshot 2026-03-22 001415.png
+
+# Pipeline & Neural Graph Visualizations
+!Screenshot 2026-03-24 000031.png
+!Screenshot 2026-03-24 001117.png
+!Screenshot 2026-03-24 011822.png
+!Screenshot 2026-03-25 100407.png
+!Screenshot 2026-03-25 100509.png
+!Screenshot 2026-03-25 100542.png
+!Screenshot 2026-03-25 153339.png
+
+# Task Queue & Dispatch
+!Screenshot 2026-03-21 215000.png
+!Screenshot 2026-03-21 215208.png
+!Screenshot 2026-03-25 100759.png
+!Screenshot 2026-03-25 100932.png
+
+# Analytics & Activity Dashboards
+!Screenshot 2026-03-23 213303.png
+!Screenshot 2026-03-23 223728.png
+!Screenshot 2026-03-23 235854.png
+!Screenshot 2026-03-24 001749.png
+
+# Chat / Manual Mode Interfaces
+!Screenshot 2026-03-21 124406.png
+!Screenshot 2026-03-24 002958.png
+
+# Built-in Documentation Pages
+!Screenshot 2026-03-24 001901.png
+!Screenshot 2026-03-24 001911.png
+!Screenshot 2026-03-24 001936.png
+!Screenshot 2026-03-24 001955.png
+
+# Settings & API Key Manager (keys masked, safe)
+!Screenshot 2026-03-24 004324.png
+!Screenshot 2026-03-24 005702.png
+!Screenshot 2026-03-24 005545.png
+!Screenshot 2026-03-22 033152.png
+
+# Security Advisory UI
+!Screenshot 2026-03-21 115411.png
+
+# Blurred (file paths obscured, safe for public)
+!Screenshot 2026-03-23 130625.png
+!Screenshot 2026-03-22 002541.png
+
+# Temperature Monitor
+!Screenshot 2026-03-25 101115.png
