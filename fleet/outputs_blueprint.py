@@ -13,7 +13,6 @@ from flask import Blueprint, jsonify, request
 
 from dashboard_utils import (
     _require_role,
-    _check_rate_limit,
     get_conn,
     FLEET_DIR,
     KNOWLEDGE_DIR,
@@ -133,8 +132,6 @@ def _list_files(subdir: str | None) -> list[dict]:
 @outputs_bp.route("/api/outputs/categories")
 @_require_role("viewer")
 def api_outputs_categories():
-    if not _check_rate_limit("outputs_categories", max_per_min=30):
-        return jsonify({"error": "Rate limit exceeded"}), 429
 
     now = time.time()
     if _cat_cache["data"] is not None and now - _cat_cache["ts"] < _CAT_CACHE_TTL:
@@ -158,8 +155,6 @@ def api_outputs_categories():
 @outputs_bp.route("/api/outputs/files")
 @_require_role("viewer")
 def api_outputs_files():
-    if not _check_rate_limit("outputs_files", max_per_min=30):
-        return jsonify({"error": "Rate limit exceeded"}), 429
 
     category = request.args.get("category", "All")
     limit = min(request.args.get("limit", 50, type=int), 200)
@@ -190,8 +185,6 @@ def api_outputs_files():
 @outputs_bp.route("/api/outputs/file")
 @_require_role("viewer")
 def api_outputs_file():
-    if not _check_rate_limit("outputs_file", max_per_min=120):
-        return jsonify({"error": "Rate limit exceeded"}), 429
 
     rel = request.args.get("path", "")
     abs_path = _resolve_safe(rel)
@@ -229,8 +222,6 @@ def api_outputs_file():
 @outputs_bp.route("/api/outputs/feedback", methods=["POST"])
 @_require_role("viewer")
 def api_outputs_feedback():
-    if not _check_rate_limit("outputs_feedback", max_per_min=120):
-        return jsonify({"error": "Rate limit exceeded"}), 429
 
     data = request.get_json(silent=True) or {}
     rel = data.get("path", "")
@@ -277,8 +268,6 @@ def api_outputs_feedback():
 @outputs_bp.route("/api/outputs/unreviewed")
 @_require_role("viewer")
 def api_outputs_unreviewed():
-    if not _check_rate_limit("outputs_unreviewed", max_per_min=30):
-        return jsonify({"error": "Rate limit exceeded"}), 429
 
     limit = min(request.args.get("limit", 20, type=int), 100)
     file_infos = _list_files(None)
