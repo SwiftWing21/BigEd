@@ -616,6 +616,13 @@ def init_db(path: str | None = None):
         """)
         conn.execute("CREATE INDEX IF NOT EXISTS idx_tak_hash ON tenant_api_keys (key_hash)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_tak_tenant ON tenant_api_keys (tenant_id)")
+        # TD-10/11/12: indexes for common filter patterns
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_agents_status ON agents(status)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_agents_role ON agents(role)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_tasks_created_at ON tasks(created_at)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_idle_runs_agent ON idle_runs(agent)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_idle_runs_created ON idle_runs(created_at)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_messages_from ON messages(from_agent)")
 
 
 def update_intelligence_score(task_id, score):
