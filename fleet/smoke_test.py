@@ -211,18 +211,17 @@ def test_usage_tracking():
     """Usage table round-trip: log + summarize."""
     import db
     db.init_db()
-    db.log_usage(
-        skill="smoke_usage_test", model="claude-sonnet-4-6",
-        input_tokens=1000, output_tokens=200,
-        cache_read_tokens=500, cache_create_tokens=0,
-        cost_usd=0.006, task_id=None, agent="smoke_agent",
-    )
-    # Flush async usage queue before checking
-    try:
-        from cost_tracking import flush_usage_queue
-        flush_usage_queue(timeout=3)
-    except Exception:
-        import time; time.sleep(1)
+    # Insert directly (async queue uses separate connection, breaks :memory: DBs)
+    def _insert():
+        with db.get_conn() as conn:
+            conn.execute(
+                """INSERT INTO usage (skill, model, input_tokens, output_tokens,
+                   cache_read_tokens, cache_create_tokens, cost_usd, agent,
+                   created_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))""",
+                ("smoke_usage_test", "claude-sonnet-4-6", 1000, 200, 500, 0, 0.006, "smoke_agent"),
+            )
+    db._retry_write(_insert)
     summary = db.get_usage_summary(period="day", group_by="skill")
     found = any(r["skill"] == "smoke_usage_test" for r in summary)
     if not found:
@@ -249,18 +248,16 @@ def test_budget_check():
     """Budget check returns correct exceeded status."""
     import db
     db.init_db()
-    # Log expensive usage
-    db.log_usage(
-        skill="smoke_budget_test", model="claude-sonnet-4-6",
-        input_tokens=100000, output_tokens=50000,
-        cost_usd=5.0, task_id=None, agent="smoke_agent",
-    )
-    # Flush async usage queue before checking
-    try:
-        from cost_tracking import flush_usage_queue
-        flush_usage_queue(timeout=3)
-    except Exception:
-        import time; time.sleep(1)
+    # Insert directly (async queue uses separate connection, breaks :memory: DBs)
+    def _insert():
+        with db.get_conn() as conn:
+            conn.execute(
+                """INSERT INTO usage (skill, model, input_tokens, output_tokens,
+                   cost_usd, agent, created_at)
+                   VALUES (?, ?, ?, ?, ?, ?, datetime('now'))""",
+                ("smoke_budget_test", "claude-sonnet-4-6", 100000, 50000, 5.0, "smoke_agent"),
+            )
+    db._retry_write(_insert)
     # Simulate budget check with $1.00 limit
     summary = db.get_usage_summary(period="day", group_by="skill")
     row = next((r for r in summary if r["skill"] == "smoke_budget_test"), None)
