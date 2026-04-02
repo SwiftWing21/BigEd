@@ -23,12 +23,13 @@ jobs:
           - os: windows-latest
             target: x86_64-pc-windows-msvc
             artifact: biged.exe
-          - os: macos-latest
-            target: x86_64-apple-darwin
-            artifact: biged
-          - os: macos-latest
-            target: aarch64-apple-darwin
-            artifact: biged
+          # macOS builds disabled — $0.062/min (10x Linux). Re-enable for stable releases.
+          # - os: macos-latest
+          #   target: x86_64-apple-darwin
+          #   artifact: biged
+          # - os: macos-latest
+          #   target: aarch64-apple-darwin
+          #   artifact: biged
 
     defaults:
       run:

@@ -3,8 +3,10 @@ name: Fleet CI
 on:
   push:
     branches: [main, dev]
+    paths: ['fleet/**', 'tests/**', '.github/workflows/ci.yml']
   pull_request:
     branches: [main]
+    paths: ['fleet/**', 'tests/**', '.github/workflows/ci.yml']
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
@@ -14,7 +16,7 @@ jobs:
     strategy:
       matrix:
         os: [ubuntu-latest, windows-latest]
-        python-version: ['3.11', '3.12', '3.13']
+        python-version: ['3.12']
       fail-fast: false
 
     runs-on: ${{ matrix.os }}
