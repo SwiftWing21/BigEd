@@ -11,11 +11,13 @@ v0.053.00b:
   - Enable/disable module support (updates manifest + fleet.toml)
 """
 import hashlib
+import io
 import json
 import logging
 import os
 import re
 import urllib.request
+import zipfile
 from pathlib import Path
 
 log = logging.getLogger("modules.hub")
@@ -146,6 +148,10 @@ class ModuleHub:
     def install_module(self, name: str) -> dict:
         """Download and install a module from the hub.
 
+        Supports both single-file modules (.py) and zip archives.
+        Zip archives are extracted to the repo root, preserving their
+        internal path structure (e.g. fleet/factorio/, tests/factorio/).
+
         v0.053.00b: Also registers the module in fleet.toml [launcher.tabs]
         and enforces enterprise-only gating.
         """
@@ -163,10 +169,14 @@ class ModuleHub:
         if module.get("enterprise_only", False) and not self.is_enterprise():
             return {"error": f"Module '{name}' requires enterprise hub — configure enterprise_hub_url in fleet.toml"}
 
-        # Download module file
+        # Resolve download URL — support both 'download_url' and 'archive' fields
+        download_path = module.get("download_url") or module.get("archive")
+        if not download_path:
+            return {"error": f"Module '{name}' has no download_url or archive in registry"}
+
         hub = self.enterprise_url or self.hub_url
         raw_base = hub.replace("github.com", "raw.githubusercontent.com") + "/main"
-        download_url = f"{raw_base}/{module['download_url']}"
+        download_url = f"{raw_base}/{download_path}"
 
         try:
             with urllib.request.urlopen(download_url, timeout=30) as r:
@@ -178,12 +188,34 @@ class ModuleHub:
         if self.verify_checksums and module.get("checksum_sha256"):
             actual = hashlib.sha256(content).hexdigest()
             expected = module["checksum_sha256"]
-            if not actual.startswith(expected) and not expected.startswith(actual):
-                return {"error": f"Checksum mismatch: expected {expected[:16]}, got {actual[:16]}"}
+            if actual != expected:
+                return {"error": f"Checksum mismatch: expected {expected[:16]}..., got {actual[:16]}..."}
 
-        # Write module file
-        dest = MODULES_DIR / module.get("file", f"mod_{name}.py")
-        dest.write_bytes(content)
+        # Determine if this is a zip archive or single file
+        filename = module.get("file", f"mod_{name}.py")
+        is_zip = filename.endswith(".zip")
+
+        if is_zip:
+            # Extract zip to repo root, preserving internal paths
+            # Repo root: BigEd/launcher/modules/../../.. = repo root
+            repo_root = MODULES_DIR.parent.parent.parent
+            try:
+                with zipfile.ZipFile(io.BytesIO(content)) as zf:
+                    # Safety: reject paths that escape the repo root
+                    for member in zf.namelist():
+                        resolved = (repo_root / member).resolve()
+                        if not str(resolved).startswith(str(repo_root.resolve())):
+                            return {"error": f"Zip contains unsafe path: {member}"}
+                    zf.extractall(repo_root)
+                    extracted_count = len(zf.namelist())
+                log.info("Extracted %d files from %s to %s", extracted_count, filename, repo_root)
+            except zipfile.BadZipFile:
+                return {"error": "Downloaded file is not a valid zip archive"}
+            dest = repo_root / module.get("install_path", f"fleet/{name}/")
+        else:
+            # Single file module
+            dest = MODULES_DIR / filename
+            dest.write_bytes(content)
 
         # Update local manifest
         self._update_local_manifest(module)
@@ -192,13 +224,19 @@ class ModuleHub:
         tab_enabled = module.get("default_enabled", False)
         self._register_in_fleet_toml(name, tab_enabled)
 
-        return {
+        result = {
             "name": name,
             "version": module.get("version", "unknown"),
-            "file": str(dest),
             "installed": True,
             "tab_registered": True,
         }
+        if is_zip:
+            result["install_path"] = str(dest)
+            result["extracted"] = extracted_count
+        else:
+            result["file"] = str(dest)
+
+        return result
 
     def _update_local_manifest(self, module: dict):
         """Add or update module in local manifest.json."""
