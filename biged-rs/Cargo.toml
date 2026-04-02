@@ -87,8 +87,8 @@ lto = "fat"
 
 [package.metadata.deb]
 name = "biged-cc"
-maintainer = "SwiftWing21"
-copyright = "2026 SwiftWing21"
+maintainer = "mbachaud"
+copyright = "2026 mbachaud"
 depends = "$auto"
 section = "devel"
 priority = "optional"

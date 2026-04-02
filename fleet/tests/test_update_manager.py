@@ -99,7 +99,7 @@ def test_get_repo_info_defaults():
     import update_manager
     with patch.object(update_manager, "_load_fleet_config", return_value={}):
         owner, repo = update_manager._get_repo_info()
-        assert owner == "SwiftWing21"
+        assert owner == "mbachaud"
         assert repo == "BigEd"
 
 

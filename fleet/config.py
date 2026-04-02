@@ -70,7 +70,7 @@ def reload_config():
     _config_cache["ts"] = 0.0
 
 def get_github_owner():
-    return _get_cfg().get("github", {}).get("owner", "SwiftWing21")
+    return _get_cfg().get("github", {}).get("owner", "mbachaud")
 
 def get_github_repo():
     return _get_cfg().get("github", {}).get("repo", "BigEds_Agents")

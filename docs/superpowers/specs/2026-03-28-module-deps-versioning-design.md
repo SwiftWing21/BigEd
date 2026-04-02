@@ -404,7 +404,7 @@ Initial manifests will have `version: "1.0.0"`, no dependencies (to be populated
 
 ```toml
 [modules]
-hub_url = "https://github.com/SwiftWing21/BigEd-ModuleHub"
+hub_url = "https://github.com/mbachaud/BigEd-ModuleHub"
 enterprise_hub_url = ""
 auto_update = false
 verify_checksums = true

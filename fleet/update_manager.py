@@ -226,10 +226,10 @@ def _release_check() -> dict:
 # 9. _get_repo_info
 # ---------------------------------------------------------------------------
 def _get_repo_info() -> tuple[str, str]:
-    """Read [github] owner/repo from fleet.toml; default SwiftWing21/BigEd."""
+    """Read [github] owner/repo from fleet.toml; default mbachaud/BigEd."""
     cfg = _load_fleet_config()
     gh = cfg.get("github", {})
-    return gh.get("owner", "SwiftWing21"), gh.get("repo", "BigEd")
+    return gh.get("owner", "mbachaud"), gh.get("repo", "BigEd")
 
 
 # ---------------------------------------------------------------------------

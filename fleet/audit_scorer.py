@@ -958,7 +958,7 @@ def _check_github() -> tuple[float, dict]:
     if not token:
         return 1.0, {"skipped": "no GITHUB_TOKEN"}
 
-    owner = "SwiftWing21"
+    owner = "mbachaud"
     repo = "BigEd-private"
 
     try:

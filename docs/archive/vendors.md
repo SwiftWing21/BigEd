@@ -4,7 +4,7 @@
 Links to authoritative ToS (never copied — always current at source). Review when integrating new features, rotating keys, or before a release.
 
 **Last full review:** 2026-03-21
-**Owner:** Max / SwiftWing21
+**Owner:** Max / mbachaud
 
 ---
 

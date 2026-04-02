@@ -697,7 +697,7 @@ Completed 2026-03-20.
 
 **Goal:** GitHub-based module repository with download/install UX + scrollable tab bar for unlimited modules.
 
-**Repo:** https://github.com/SwiftWing21/BigEd-ModuleHub (renamed from BigEds_Agents)
+**Repo:** https://github.com/mbachaud/BigEd-ModuleHub (renamed from BigEds_Agents)
 **Spec:** `docs/specs/module_hub_architecture.md`
 
 **Scrollable tab bar:**

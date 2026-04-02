@@ -118,7 +118,7 @@ def main():
 
     # Check gh CLI for Actions status
     try:
-        r = subprocess.run(["gh", "api", "repos/SwiftWing21/BigEd/actions/runs",
+        r = subprocess.run(["gh", "api", "repos/mbachaud/BigEd/actions/runs",
                            "--jq", ".workflow_runs[0].conclusion"],
                           capture_output=True, text=True, timeout=10)
         last = r.stdout.strip()

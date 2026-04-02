@@ -109,7 +109,7 @@ ollama pull qwen3:4b
 
 **Option A -- Download the installer (easiest):**
 
-1. Go to the [BigEd CC releases page](https://github.com/SwiftWing21/BigEd/releases).
+1. Go to the [BigEd CC releases page](https://github.com/mbachaud/BigEd/releases).
 2. Download the latest `.exe` file.
 3. Run it and follow the installer.
 
@@ -117,9 +117,9 @@ ollama pull qwen3:4b
 
 If you want to run from source or contribute:
 
-1. Go to [github.com/SwiftWing21/BigEd](https://github.com/SwiftWing21/BigEd).
+1. Go to [github.com/mbachaud/BigEd](https://github.com/mbachaud/BigEd).
 2. Click the green **Code** button, then click **Download ZIP** (or use
-   `git clone https://github.com/SwiftWing21/BigEd.git` if you have Git).
+   `git clone https://github.com/mbachaud/BigEd.git` if you have Git).
 3. Extract the ZIP file to a folder you will remember (for example, your
    Desktop or Documents folder).
 4. Open Terminal. Type the following commands one at a time, pressing Enter
@@ -187,7 +187,7 @@ If your computer has less than 16 GB of RAM, use `ollama pull qwen3:4b` instead.
 
 **Option A -- AppImage (easiest):**
 
-1. Go to the [BigEd CC releases page](https://github.com/SwiftWing21/BigEd/releases).
+1. Go to the [BigEd CC releases page](https://github.com/mbachaud/BigEd/releases).
 2. Download the `.AppImage` file.
 3. In the terminal, make it runnable:
    ```
@@ -202,7 +202,7 @@ If your computer has less than 16 GB of RAM, use `ollama pull qwen3:4b` instead.
 
 1. In the terminal, type these commands one at a time:
    ```
-   git clone https://github.com/SwiftWing21/BigEd.git
+   git clone https://github.com/mbachaud/BigEd.git
    cd BigEd
    pip3 install -r BigEd/launcher/requirements.txt
    pip3 install -r fleet/requirements.txt
@@ -279,7 +279,7 @@ If your Mac has 8 GB of RAM, use `ollama pull qwen3:4b` instead.
 
 **Option A -- DMG installer (easiest):**
 
-1. Go to the [BigEd CC releases page](https://github.com/SwiftWing21/BigEd/releases).
+1. Go to the [BigEd CC releases page](https://github.com/mbachaud/BigEd/releases).
 2. Download the `.dmg` file.
 3. Open it and drag BigEd CC to your Applications folder.
 
@@ -287,7 +287,7 @@ If your Mac has 8 GB of RAM, use `ollama pull qwen3:4b` instead.
 
 1. In the terminal, type these commands one at a time:
    ```
-   git clone https://github.com/SwiftWing21/BigEd.git
+   git clone https://github.com/mbachaud/BigEd.git
    cd BigEd
    pip3 install -r BigEd/launcher/requirements.txt
    pip3 install -r fleet/requirements.txt

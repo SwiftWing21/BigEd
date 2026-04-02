@@ -555,7 +555,7 @@ Downloads, verifies, and installs modules from the BigEd-ModuleHub GitHub repo.
 **Config** (`fleet.toml [modules]`):**
 ```toml
 [modules]
-hub_url              = "https://github.com/SwiftWing21/BigEd-ModuleHub"
+hub_url              = "https://github.com/mbachaud/BigEd-ModuleHub"
 enterprise_hub_url   = ""      # set for private org hub
 verify_checksums     = true    # SHA-256 on every download
 ```

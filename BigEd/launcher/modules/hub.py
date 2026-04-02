@@ -23,7 +23,7 @@ from pathlib import Path
 log = logging.getLogger("modules.hub")
 
 MODULES_DIR = Path(__file__).parent
-DEFAULT_HUB = "https://github.com/SwiftWing21/BigEd-ModuleHub-public"
+DEFAULT_HUB = "https://github.com/mbachaud/BigEd-ModuleHub-public"
 
 # fleet.toml lives at fleet/fleet.toml
 _FLEET_TOML = MODULES_DIR.parent.parent.parent / "fleet" / "fleet.toml"

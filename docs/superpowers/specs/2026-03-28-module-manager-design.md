@@ -118,12 +118,12 @@ max_suggestions = 3
 
 ### 5. Hub Repo Structure
 
-**Private (dev):** `SwiftWing21/BigEd-ModuleHub`
+**Private (dev):** `mbachaud/BigEd-ModuleHub`
 - All modules including experimental/untested
 - registry.json with full module list
 - fleet.toml `[modules] hub_url` points here
 
-**Public (upstream):** `SwiftWing21/BigEd-ModuleHub-public`
+**Public (upstream):** `mbachaud/BigEd-ModuleHub-public`
 - Curated, tested modules only
 - Separate registry.json
 - Manual git push to sync (cherry-pick what goes public)

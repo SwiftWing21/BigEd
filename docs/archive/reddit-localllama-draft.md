@@ -27,6 +27,6 @@ The thermal governor is the piece I'm most proud of — Dr. Ders in BigEd parks 
 - Multi-GPU users — is best-fit-by-free-VRAM the right default, or do you prefer round-robin / affinity-based?
 
 Plugin repo: [link]
-BigEd: https://github.com/SwiftWing21/BigEd
+BigEd: https://github.com/mbachaud/BigEd
 
 Happy to take it apart. Roast welcome.

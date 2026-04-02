@@ -29,7 +29,7 @@ Multi-perspective debate tool. Give it a decision ("should we use X or Y?"), it 
 - Most of my token usage isn't writing code — it's Claude reading my codebase to understand context before making changes. The more structured your CLAUDE.md and project docs are, the less you burn.
 - Building plugins from patterns you've already battle-tested in your own codebase is the move. Don't theorize — extract from working code.
 
-All of these are on my GitHub: https://github.com/SwiftWing21
+All of these are on my GitHub: https://github.com/mbachaud
 
 If anyone's interested in any of these I'm happy to share the .plugin files or walk through how they're structured. The model-manager especially — if you're running local models and fighting VRAM/thermal issues, it might save you some pain.
 

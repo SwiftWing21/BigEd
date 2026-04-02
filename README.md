@@ -39,7 +39,7 @@ Download Setup.exe from Releases → Run → Follow wizard
 
 ### From Source (All Platforms)
 ```bash
-git clone https://github.com/SwiftWing21/BigEd.git
+git clone https://github.com/mbachaud/BigEd.git
 cd BigEd
 python fleet/dependency_check.py          # pre-flight check
 python fleet/smoke_test.py --fast         # verify 33/33 tests
@@ -92,8 +92,8 @@ These work, but they haven't been battle-tested beyond my own machine. Take them
 
 | Repo | Purpose |
 |------|---------|
-| **[BigEd](https://github.com/SwiftWing21/BigEd)** | Core platform — launcher, fleet, dashboard, skills, ML pipeline |
-| **[BigEd-ModuleHub](https://github.com/SwiftWing21/BigEd-ModuleHub)** | Optional modules — UI extensions loaded at runtime |
+| **[BigEd](https://github.com/mbachaud/BigEd)** | Core platform — launcher, fleet, dashboard, skills, ML pipeline |
+| **[BigEd-ModuleHub](https://github.com/mbachaud/BigEd-ModuleHub)** | Optional modules — UI extensions loaded at runtime |
 
 ## MCP Server Config (VS Code)
 
@@ -130,4 +130,4 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines. This is a personal projec
 
 Apache 2.0 — see [LICENSE](LICENSE).
 
-Copyright 2025-2026 Michael Bachaud ([SwiftWing21](https://github.com/SwiftWing21)).
+Copyright 2025-2026 Michael Bachaud ([mbachaud](https://github.com/mbachaud)).
