@@ -19,42 +19,79 @@
     </div>
   </div>
 
-  <div class="grid-2 mb-24">
-    <!-- Dispatch Form -->
-    <div class="card">
-      <div class="card-header"><span class="card-title">New Task</span></div>
-      <form onsubmit="dispatchTask(event)">
-        <div class="mb-16">
-          <label class="input-label">Skill</label>
-          <select class="input" id="task-skill" required>
-            <option value="">Loading skills...</option>
+  <!-- New Task — Two-mode dispatch -->
+  <div class="card mb-24">
+    <div class="card-header">
+      <span class="card-title">New Task</span>
+      <div style="display:flex;gap:4px;">
+        <button class="btn btn-sm" id="task-mode-quick" onclick="_setTaskMode('quick')" style="font-size:11px">Quick</button>
+        <button class="btn btn-sm btn-ghost" id="task-mode-advanced" onclick="_setTaskMode('advanced')" style="font-size:11px">Advanced</button>
+      </div>
+    </div>
+
+    <!-- Quick Mode: natural instruction flow -->
+    <div id="task-quick-mode">
+      <div class="mb-16">
+        <label class="input-label">What do you want the fleet to do?</label>
+        <input type="text" class="input" id="task-instruction" placeholder="e.g. Research best practices for API rate limiting" style="font-size:14px;padding:12px 14px;">
+      </div>
+      <div style="display:flex;gap:12px;margin-bottom:16px;flex-wrap:wrap;">
+        <div style="flex:1;min-width:140px;">
+          <label class="input-label">Category</label>
+          <select class="input" id="task-category" onchange="_onCategoryChange()">
+            <option value="auto">Auto-route (recommended)</option>
+            <option value="research">Research</option>
+            <option value="code">Code</option>
+            <option value="review">Review</option>
+            <option value="analysis">Analysis</option>
+            <option value="security">Security</option>
+            <option value="writing">Writing</option>
           </select>
+        </div>
+        <div style="flex:1;min-width:140px;">
+          <label class="input-label">Priority: <span id="task-quick-priority-label">5</span></label>
+          <input type="range" class="priority-slider" id="task-quick-priority" min="1" max="10" value="5" oninput="document.getElementById('task-quick-priority-label').textContent=this.value">
+        </div>
+      </div>
+      <button class="btn btn-primary" style="width:100%" onclick="_dispatchQuick()">&#9889; Send to Fleet</button>
+    </div>
+
+    <!-- Advanced Mode: raw skill + JSON payload -->
+    <div id="task-advanced-mode" style="display:none;">
+      <form onsubmit="dispatchTask(event)">
+        <div style="display:flex;gap:12px;margin-bottom:16px;">
+          <div style="flex:2;">
+            <label class="input-label">Skill</label>
+            <select class="input" id="task-skill" required>
+              <option value="">Loading skills...</option>
+            </select>
+          </div>
+          <div style="flex:1;">
+            <label class="input-label">Assign To</label>
+            <input type="text" class="input" id="task-assign" placeholder="Auto">
+          </div>
         </div>
         <div class="mb-16">
           <label class="input-label">Payload (JSON)</label>
-          <textarea class="input" id="task-payload" placeholder='{"instruction": "..."}'>{}</textarea>
+          <textarea class="input" id="task-payload" rows="3" placeholder='{"instruction": "..."}'>{}</textarea>
         </div>
         <div class="mb-16">
           <label class="input-label">Priority: <span id="task-priority-label">5</span></label>
           <input type="range" class="priority-slider" id="task-priority" min="1" max="10" value="5" oninput="document.getElementById('task-priority-label').textContent=this.value">
         </div>
-        <div class="mb-16">
-          <label class="input-label">Assign To (optional)</label>
-          <input type="text" class="input" id="task-assign" placeholder="Agent name or leave blank">
-        </div>
         <button type="submit" class="btn btn-primary" style="width:100%">&#9889; Dispatch Task</button>
       </form>
     </div>
+  </div>
 
-    <!-- Recent Tasks -->
-    <div class="card">
-      <div class="card-header">
-        <span class="card-title">Recent Tasks</span>
-        <button class="btn btn-ghost btn-sm" onclick="loadRecentTasks()">&#8635; Refresh</button>
-      </div>
-      <div id="recent-tasks-list" style="max-height:400px;overflow-y:auto">
-        <div class="spinner"></div>
-      </div>
+  <!-- Recent Tasks -->
+  <div class="card mb-24">
+    <div class="card-header">
+      <span class="card-title">Recent Tasks</span>
+      <button class="btn btn-ghost btn-sm" onclick="loadRecentTasks()">&#8635; Refresh</button>
+    </div>
+    <div id="recent-tasks-list" style="max-height:400px;overflow-y:auto">
+      <div class="spinner"></div>
     </div>
   </div>
 

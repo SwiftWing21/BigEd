@@ -2292,6 +2292,49 @@ function loadRecentTasks() {
   });
 }
 
+var _taskMode = 'quick';
+var _categorySkillMap = {
+  research: 'web_search',
+  code: 'code_review',
+  review: 'code_review',
+  analysis: 'evaluate',
+  security: 'security_review',
+  writing: 'code_discuss'
+};
+
+function _setTaskMode(mode) {
+  _taskMode = mode;
+  document.getElementById('task-quick-mode').style.display = mode === 'quick' ? '' : 'none';
+  document.getElementById('task-advanced-mode').style.display = mode === 'advanced' ? '' : 'none';
+  document.getElementById('task-mode-quick').className = 'btn btn-sm' + (mode === 'quick' ? '' : ' btn-ghost');
+  document.getElementById('task-mode-advanced').className = 'btn btn-sm' + (mode === 'advanced' ? '' : ' btn-ghost');
+}
+
+function _onCategoryChange() {
+  /* Placeholder for future category-specific UI hints */
+}
+
+function _dispatchQuick() {
+  var instruction = (document.getElementById('task-instruction').value || '').trim();
+  if (!instruction) { showToast('Enter an instruction', 'error'); return; }
+  var category = document.getElementById('task-category').value;
+  var priority = parseInt(document.getElementById('task-quick-priority').value) || 5;
+  var skill = category === 'auto' ? 'planner' : (_categorySkillMap[category] || 'planner');
+  var payload = { instruction: instruction, source: 'dashboard_quick', category: category };
+
+  apiFetch('/api/tasks/dispatch', {
+    method: 'POST',
+    body: { skill: skill, payload: payload, priority: priority }
+  }).then(function(d) {
+    showToast('Task dispatched: #' + d.task_id, 'success');
+    document.getElementById('task-instruction').value = '';
+    loadRecentTasks();
+    loadQueueList();
+  }).catch(function(e) {
+    showToast('Dispatch failed: ' + e.message, 'error');
+  });
+}
+
 function dispatchTask(e) {
   e.preventDefault();
   var skill = document.getElementById('task-skill').value;
@@ -2308,6 +2351,7 @@ function dispatchTask(e) {
   }).then(function(d) {
     showToast('Task dispatched: #' + d.task_id, 'success');
     loadRecentTasks();
+    loadQueueList();
   }).catch(function(e) {
     showToast('Dispatch failed: ' + e.message, 'error');
   });
