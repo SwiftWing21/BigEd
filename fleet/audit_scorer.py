@@ -593,6 +593,26 @@ def run_tier(tier: str) -> list[dict]:
     baseline = load_baseline()
     dimensions_baseline = baseline.get("dimensions", {})
 
+    from tba_claim_schema import (
+        Claim, ClaimDimension, classify_divergence,
+        GapType, Severity,
+    )
+
+    _DIMENSION_TO_CLAIM = {
+        "testing": ClaimDimension.TEST_COVERAGE,
+        "security": ClaimDimension.SECURITY,
+        "performance": ClaimDimension.PERFORMANCE,
+        "reliability": ClaimDimension.CORRECTNESS,
+        "architecture": ClaimDimension.ARCHITECTURE,
+        "code_quality": ClaimDimension.MAINTAINABILITY,
+        "module_plugin": ClaimDimension.ARCHITECTURE,
+        "documentation": ClaimDimension.MAINTAINABILITY,
+        "observability": ClaimDimension.ERROR_HANDLING,
+        "usability_ux": ClaimDimension.MAINTAINABILITY,
+        "dynamic_abilities": ClaimDimension.CORRECTNESS,
+        "data_hitl": ClaimDimension.CORRECTNESS,
+    }
+
     results = []
     for dim_name, dim_cfg in DIMENSIONS.items():
         if dim_cfg["tier"] not in allowed_tiers:
@@ -615,13 +635,42 @@ def run_tier(tier: str) -> list[dict]:
             if gap > threshold:
                 divergence = 1
 
-        results.append({
+        # --- TBA Claim classification ---
+        claim_dim = _DIMENSION_TO_CLAIM.get(dim_name, ClaimDimension.CORRECTNESS)
+        auto_claim = Claim(
+            source="auto",
+            dimension=claim_dim,
+            statement=f"Auto check for {dim_name}",
+            confidence=score,
+            evidence=json.dumps(detail) if not isinstance(detail, str) else detail,
+        )
+        manual_claim = None
+        if manual_score is not None:
+            manual_claim = Claim(
+                source="manual",
+                dimension=claim_dim,
+                statement=f"Manual grade for {dim_name}: {manual_grade}",
+                confidence=manual_score,
+                evidence=f"Baseline grade {manual_grade}",
+            )
+        try:
+            div_obj = classify_divergence(auto_claim, manual_claim)
+        except Exception as e:
+            log.warning("classify_divergence failed for '%s': %s", dim_name, e)
+            div_obj = None
+
+        result = {
             "dimension": dim_name,
             "auto_score": round(score, 4),
             "auto_detail": json.dumps(detail) if not isinstance(detail, str) else detail,
             "manual_grade": manual_grade,
             "divergence": divergence,
-        })
+        }
+        if div_obj is not None:
+            result["gap_type"] = div_obj.gap_type.value
+            result["severity"] = div_obj.severity.value
+            result["divergence_explanation"] = div_obj.explanation
+        results.append(result)
 
     return results
 
@@ -745,7 +794,28 @@ def reconcile(scores: list[dict]) -> list[dict]:
 
     Only flags when: gap > DIVERGENCE_THRESHOLD AND dimension confidence >= CONFIDENCE_GATE.
     Mutates and returns the input scores list with updated divergence flags.
+    Also enriches each score dict with gap_type, severity, and
+    divergence_explanation from the TBA claim schema.
     """
+    from tba_claim_schema import (
+        Claim, ClaimDimension, classify_divergence,
+    )
+
+    _DIMENSION_TO_CLAIM = {
+        "testing": ClaimDimension.TEST_COVERAGE,
+        "security": ClaimDimension.SECURITY,
+        "performance": ClaimDimension.PERFORMANCE,
+        "reliability": ClaimDimension.CORRECTNESS,
+        "architecture": ClaimDimension.ARCHITECTURE,
+        "code_quality": ClaimDimension.MAINTAINABILITY,
+        "module_plugin": ClaimDimension.ARCHITECTURE,
+        "documentation": ClaimDimension.MAINTAINABILITY,
+        "observability": ClaimDimension.ERROR_HANDLING,
+        "usability_ux": ClaimDimension.MAINTAINABILITY,
+        "dynamic_abilities": ClaimDimension.CORRECTNESS,
+        "data_hitl": ClaimDimension.CORRECTNESS,
+    }
+
     baseline = load_baseline()
     for s in scores:
         dim_name = s["dimension"]
@@ -761,6 +831,30 @@ def reconcile(scores: list[dict]) -> list[dict]:
             s["divergence"] = 1
         else:
             s["divergence"] = 0
+
+        # --- TBA Claim classification ---
+        claim_dim = _DIMENSION_TO_CLAIM.get(dim_name, ClaimDimension.CORRECTNESS)
+        auto_claim = Claim(
+            source="auto",
+            dimension=claim_dim,
+            statement=f"Auto check for {dim_name}",
+            confidence=s["auto_score"],
+            evidence=s.get("auto_detail", ""),
+        )
+        manual_claim = Claim(
+            source="manual",
+            dimension=claim_dim,
+            statement=f"Manual grade for {dim_name}: {manual_grade}",
+            confidence=manual_numeric,
+            evidence=f"Baseline grade {manual_grade}",
+        )
+        try:
+            div_obj = classify_divergence(auto_claim, manual_claim)
+            s["gap_type"] = div_obj.gap_type.value
+            s["severity"] = div_obj.severity.value
+            s["divergence_explanation"] = div_obj.explanation
+        except Exception as e:
+            log.warning("reconcile: classify_divergence failed for '%s': %s", dim_name, e)
     return scores
 
 
@@ -798,6 +892,38 @@ def run_and_store(tier: str) -> dict:
     ratchet_violations = check_ratchets(scores, baseline.get("ratchets", {}))
     write_scores(tier, scores)
     divergences = [s for s in scores if s["divergence"] == 1]
+
+    # --- Build TBA tension report from enriched scores ---
+    report = ""
+    try:
+        from tba_claim_schema import (
+            Divergence as TBADivergence,
+            GapType, Severity, ClaimDimension,
+            tension_report,
+        )
+        div_objects = []
+        for s in scores:
+            if "gap_type" not in s:
+                continue
+            try:
+                div_objects.append(TBADivergence(
+                    gap_type=GapType(s["gap_type"]),
+                    severity=Severity(s["severity"]),
+                    dimension=ClaimDimension(
+                        s.get("_claim_dimension", "correctness")
+                    ) if "_claim_dimension" in s else ClaimDimension.CORRECTNESS,
+                    auto_claim=None,
+                    manual_claim=None,
+                    explanation=s.get("divergence_explanation", ""),
+                    actionable=s.get("divergence", 0) == 1,
+                ))
+            except Exception:
+                log.warning("run_and_store: skipping bad divergence for %s",
+                            s.get("dimension"), exc_info=True)
+        report = tension_report(div_objects)
+    except Exception:
+        log.warning("run_and_store: tension_report generation failed", exc_info=True)
+
     return {
         "tier": tier,
         "dimensions_scored": len(scores),
@@ -805,6 +931,7 @@ def run_and_store(tier: str) -> dict:
         "ratchet_violations": len(ratchet_violations),
         "scores": scores,
         "ratchet_details": ratchet_violations,
+        "tension_report": report,
     }
 
 

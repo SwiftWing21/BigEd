@@ -1,4 +1,6 @@
 """Two-Brain Audit REST API."""
+from __future__ import annotations
+
 import json
 import logging
 from flask import Blueprint, jsonify, request
@@ -185,5 +187,83 @@ def api_audit_snapshots():
         from audit_snapshot import list_snapshots
         entries = list_snapshots()
         return jsonify({"snapshots": entries, "count": len(entries)})
+    except Exception as e:
+        return jsonify({"error": _safe_error(e)}), 500
+
+
+# ── GET /api/audit/tension — TBA tension report ────────────────────────
+
+@audit_bp.route("/api/audit/tension")
+def api_audit_tension():
+    """Run classify_divergences on the latest scores and return a tension report.
+
+    Query params:
+        format: "markdown" (default) or "json"
+    """
+    try:
+        from audit_scorer import get_latest_scores, grade_to_score, DIMENSIONS
+        from tba_claim_schema import (
+            Claim, ClaimDimension, classify_divergences, tension_report,
+        )
+
+        _DIMENSION_TO_CLAIM = {
+            "testing": ClaimDimension.TEST_COVERAGE,
+            "security": ClaimDimension.SECURITY,
+            "performance": ClaimDimension.PERFORMANCE,
+            "reliability": ClaimDimension.CORRECTNESS,
+            "architecture": ClaimDimension.ARCHITECTURE,
+            "code_quality": ClaimDimension.MAINTAINABILITY,
+            "module_plugin": ClaimDimension.ARCHITECTURE,
+            "documentation": ClaimDimension.MAINTAINABILITY,
+            "observability": ClaimDimension.ERROR_HANDLING,
+            "usability_ux": ClaimDimension.MAINTAINABILITY,
+            "dynamic_abilities": ClaimDimension.CORRECTNESS,
+            "data_hitl": ClaimDimension.CORRECTNESS,
+        }
+
+        scores = get_latest_scores()
+        auto_claims: list[Claim] = []
+        manual_claims: list[Claim] = []
+
+        for s in scores:
+            dim_name = s.get("dimension", "")
+            claim_dim = _DIMENSION_TO_CLAIM.get(dim_name, ClaimDimension.CORRECTNESS)
+            auto_score = s.get("auto_score", 0.0)
+            auto_claims.append(Claim(
+                source="auto",
+                dimension=claim_dim,
+                statement=f"Auto check for {dim_name}",
+                confidence=auto_score,
+                evidence=s.get("auto_detail", ""),
+            ))
+            manual_grade = s.get("manual_grade", "")
+            if manual_grade:
+                manual_numeric = grade_to_score(manual_grade)
+                manual_claims.append(Claim(
+                    source="manual",
+                    dimension=claim_dim,
+                    statement=f"Manual grade for {dim_name}: {manual_grade}",
+                    confidence=manual_numeric,
+                    evidence=f"Baseline grade {manual_grade}",
+                ))
+
+        divergences = classify_divergences(auto_claims, manual_claims)
+
+        fmt = request.args.get("format", "markdown")
+        if fmt == "json":
+            items = []
+            for d in divergences:
+                items.append({
+                    "gap_type": d.gap_type.value,
+                    "severity": d.severity.value,
+                    "dimension": d.dimension.value,
+                    "explanation": d.explanation,
+                    "file_path": d.file_path,
+                    "actionable": d.actionable,
+                })
+            return jsonify({"divergences": items, "count": len(items)})
+
+        report = tension_report(divergences)
+        return report, 200, {"Content-Type": "text/markdown; charset=utf-8"}
     except Exception as e:
         return jsonify({"error": _safe_error(e)}), 500
