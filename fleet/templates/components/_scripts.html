@@ -828,7 +828,7 @@ function renderNeuralFrame() {
     ctx.globalAlpha = 1;
 
     // Lane track
-    ctx.fillStyle = 'rgba(255,255,255,0.03)';
+    ctx.fillStyle = isDark() ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.06)';
     ctx.beginPath();
     ctx.roundRect(barStart, y, barW, laneH, 3);
     ctx.fill();
@@ -853,7 +853,7 @@ function renderNeuralFrame() {
 
     // Label
     var isActive = lane.running > 0;
-    ctx.fillStyle = isActive ? '#e2e8f0' : '#94a3b8';
+    ctx.fillStyle = isDark() ? (isActive ? '#e2e8f0' : '#94a3b8') : (isActive ? '#1e293b' : '#64748b');
     ctx.font = (isActive ? 'bold ' : '') + '10px system-ui, sans-serif';
     ctx.textAlign = 'right';
     ctx.textBaseline = 'middle';
@@ -866,7 +866,7 @@ function renderNeuralFrame() {
     if (lane.cost) badge += '  $' + lane.cost;
     ctx.font = '9px system-ui, sans-serif';
     ctx.textAlign = 'right';
-    ctx.fillStyle = 'rgba(255,255,255,0.75)';
+    ctx.fillStyle = isDark() ? 'rgba(255,255,255,0.75)' : 'rgba(0,0,0,0.6)';
     ctx.fillText(badge, barStart + barW - 5, y + laneH / 2);
 
     lane._y = y;
