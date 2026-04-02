@@ -1147,6 +1147,28 @@ function toggleModifier(name) {
     }
   });
 
+  /* ── Active-tab auto-refresh: polls the visible section every 5s ────── */
+  /* SSE handles real-time events, but most tabs render once on load.
+     This ensures the active tab always shows fresh data without manual refresh. */
+  var _AUTO_REFRESH_ACTIVE = 5000;   // 5s when tab is visible
+  var _AUTO_REFRESH_HIDDEN = 120000; // 2min when browser tab is hidden
+  var _autoRefreshTimer = null;
+  var _autoRefreshSkip = { settings: true, docs: true, update: true }; // static tabs
+
+  function _autoRefreshTick() {
+    if (!document.hidden) {
+      var activeNav = document.querySelector('.nav-item.active');
+      if (activeNav) {
+        var section = activeNav.getAttribute('data-section');
+        if (section && !_autoRefreshSkip[section]) {
+          loadSectionData(section);
+        }
+      }
+    }
+    _autoRefreshTimer = setTimeout(_autoRefreshTick, document.hidden ? _AUTO_REFRESH_HIDDEN : _AUTO_REFRESH_ACTIVE);
+  }
+  _autoRefreshTimer = setTimeout(_autoRefreshTick, _AUTO_REFRESH_ACTIVE);
+
   /* ── API Gate Controls ─────────────────────────────────────────────────── */
   buildGateCard();
   /* Gate poll removed (QW3) — gate_enabled/gate_disabled SSE events handle updates */
