@@ -2068,20 +2068,24 @@ function loadNeuralGraph() {
     if (cyNodes.length > 0) {
       buildCyGraph(cyNodes, cyEdges);
     } else {
-      throw new Error('No nodes from fleet-overview');
+      throw new Error('empty');
     }
-  }).catch(function() {
+  }).catch(function(err) {
     var el = document.getElementById('cytoscape-container');
     el.textContent = '';
     var msg = document.createElement('div');
-    msg.className = 'empty-state';
+    msg.style.cssText = 'text-align:center;padding:60px 20px;';
+    var icon = document.createElement('div');
+    icon.style.cssText = 'font-size:32px;margin-bottom:12px;opacity:0.4;';
+    icon.textContent = '\uD83D\uDD78\uFE0F';
+    msg.appendChild(icon);
     var t = document.createElement('div');
-    t.className = 'empty-title';
-    t.textContent = 'Universe graph unavailable';
+    t.style.cssText = 'font-weight:600;color:var(--foreground);margin-bottom:4px;';
+    t.textContent = 'No graph data yet';
     msg.appendChild(t);
     var sub = document.createElement('div');
-    sub.style.cssText = 'color:var(--muted-foreground);font-size:12px;margin-top:4px';
-    sub.textContent = 'Check /api/views/graph/fleet-overview endpoint';
+    sub.style.cssText = 'color:var(--muted-foreground);font-size:13px;';
+    sub.textContent = 'Run some tasks to populate the knowledge graph';
     msg.appendChild(sub);
     el.appendChild(msg);
   });

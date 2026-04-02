@@ -258,14 +258,14 @@ def _graph_supervisor(db) -> tuple:
         "status": "ACTIVE",
     })
 
-    # Live agents from DB
+    # All registered agents from DB (not just live ones)
     with db.get_conn() as conn:
         agents = conn.execute("""
             SELECT a.name, a.role, a.status, a.current_task_id,
                    t.type as task_type, t.status as task_status
             FROM agents a
             LEFT JOIN tasks t ON a.current_task_id = t.id
-            WHERE a.last_heartbeat IS NOT NULL
+            WHERE a.status != 'DISABLED'
             ORDER BY a.name
         """).fetchall()
 
@@ -1049,12 +1049,12 @@ def _graph_universe(db) -> tuple:
     agents = []
 
     try:
-        # ── 1. AGENTS (live from DB) ────────────────────────────────────
+        # ── 1. AGENTS (all registered, excluding disabled) ──────────────
         with db.get_conn() as conn:
             agents = conn.execute("""
                 SELECT name, role, status, current_task_id
                 FROM agents
-                WHERE last_heartbeat IS NOT NULL
+                WHERE status != 'DISABLED'
                 ORDER BY name
             """).fetchall()
 
