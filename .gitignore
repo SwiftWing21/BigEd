@@ -17,6 +17,27 @@ venv/
 env/
 ENV/
 
+# ── Documentation — private by default, whitelist product files ──────────────
+*.md
+!README.md
+!CONTRIBUTING.md
+!SETUP.md
+!CLAUDE.md
+!ROADMAP.md
+!OPERATIONS.md
+!FRAMEWORK_BLUEPRINT.md
+!AUDIT_TRACKER.md
+!fleet/CLAUDE.md
+!BigEd/STABILITY_GUIDE.md
+!docs/WHAT_IS_BIGED.md
+!docs/superpowers/**/*.md
+!autoresearch/README.md
+!.github/PULL_REQUEST_TEMPLATE.md
+!docs/flowcharts/README.md
+!docs/screenshots/README.md
+!.claude/skills/**/*.md
+!fleet/templates/**/*.md
+
 # ── Fleet — runtime databases ─────────────────────────────────────────────────
 fleet/fleet.db
 fleet/fleet.db-shm
@@ -26,11 +47,9 @@ fleet/rag.db-shm
 fleet/rag.db-wal
 
 # ── Fleet — live status (regenerated on start) ────────────────────────────────
-fleet/STATUS.md
 fleet/.boot_status.json
-
 # ── Fleet — ephemeral HITL response files ─────────────────────────────────────
-fleet/hitl-responses/*.md
+fleet/hitl-responses/
 
 # ── Launcher — single-instance lock ───────────────────────────────────────────
 BigEd/launcher/data/biged.lock
@@ -40,9 +59,6 @@ fleet/launch.json
 fleet/tasks.json
 fleet/skills/launch.json
 fleet/skills/tasks.json
-
-# ── Scratch / temp docs ──────────────────────────────────────────────────────
-how_we_roll.md
 
 # ── Fleet — TLS certs (auto-generated, never commit) ─────────────────────────
 fleet/certs/
@@ -77,9 +93,6 @@ fleet/knowledge/code_index.jsonl
 fleet/knowledge/search_waterfall.jsonl
 fleet/knowledge/discard_tracker.json
 
-# ── Launcher — architecture research (local reference, not source) ────────────
-BigEd/launcher/ARCHITECTURE_RESEARCH.md
-
 # ── Launcher — build artifacts ────────────────────────────────────────────────
 BigEd/launcher/dist/
 BigEd/launcher/build/
@@ -104,8 +117,6 @@ push.sh
 fleet/.drders_heartbeat
 fleet/.supervisor_heartbeat
 fleet/.cost_anomaly_throttle
-fleet/audit-results.md
-fleet/task-briefing.md
 fleet/knowledge/screenshots/
 
 # ── Launcher — runtime data (boot timing, caches) ────────────────────────────
@@ -139,7 +150,6 @@ BigEd/research/
 fleet/factorio/replay_log.jsonl
 fleet/factorio/server_data/
 fleet/factorio/checkpoints/
-
 # ── Fleet runtime state ──────────────────────────────────────────────────
 fleet/hw_state.json
 fleet/tmp*.json
