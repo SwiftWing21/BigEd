@@ -30,7 +30,10 @@ class CommsTestBase(unittest.TestCase):
         except Exception:
             pass
         os.environ.pop("FLEET_TEST_DB", None)
-        os.unlink(self.tmp.name)
+        try:
+            os.unlink(self.tmp.name)
+        except PermissionError:
+            pass  # Windows: SQLite WAL may still hold the file
 
 
 class TestWrapMessage(CommsTestBase):
