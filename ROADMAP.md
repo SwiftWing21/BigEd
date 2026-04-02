@@ -1473,6 +1473,16 @@ Completed 2026-03-22. Three new skill systems:
 - [ ] Settings editor (fleet.toml sections via web form)
 - [ ] Log viewer (tail logs via SSE in browser)
 
+**First-Time User Walkthrough (Web Dashboard):**
+- [ ] Rebuild onboarding walkthrough for web dashboard (old tkinter walkthrough removed during migration)
+- [ ] Step 1: Hardware detection + fleet.toml auto-config (reuse system_info.py)
+- [ ] Step 2: API key setup (Claude/Gemini/HuggingFace — reuse Settings > API Keys panel)
+- [ ] Step 3: Queue & mode controls orientation (highlight mode dropdown, explain pause/resume)
+- [ ] Step 4: Module Hub introduction (show available modules, suggest relevant ones)
+- [ ] Step 5: First task submission (guided task → Queue → observe agent processing)
+- [ ] Mark walkthrough complete in user profile, never show again
+- [ ] "Restart Walkthrough" button in Settings for re-education
+
 **System Tray / Background Mode:**
 - [ ] System tray icon via pystray — BigEd runs when window closed
 - [ ] Tray menu: Open GUI, Open Dashboard, Fleet Status, Quit
