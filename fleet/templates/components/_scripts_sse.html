@@ -153,8 +153,10 @@ function handleSSE(msg) {
       if (msg.data) showToast('[' + (msg.data.level || 'info') + '] ' + (msg.data.message || ''), msg.data.level === 'critical' ? 'error' : 'info');
       break;
     case 'task_dispatched':
-      if (document.getElementById('section-tasks').classList.contains('active')) loadRecentTasks();
-      if (document.getElementById('section-queue').classList.contains('active')) loadQueueList();
+      if (document.getElementById('section-tasks').classList.contains('active')) {
+        loadRecentTasks();
+        loadQueueList();
+      }
       break;
     case 'hitl_response':
       if (document.getElementById('section-hitl').classList.contains('active')) { loadHITL(); loadUnreviewedOutputs(); }
@@ -169,7 +171,7 @@ function handleSSE(msg) {
       break;
     case 'queue_reordered':
     case 'queue_removed':
-      if (document.getElementById('section-queue').classList.contains('active')) loadQueueList();
+      if (document.getElementById('section-tasks').classList.contains('active')) loadQueueList();
       break;
     case 'gate_enabled':
       showToast('API Gate enabled: ' + (msg.data || ''), 'success');

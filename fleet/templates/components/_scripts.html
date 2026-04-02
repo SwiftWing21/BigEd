@@ -92,9 +92,9 @@ function loadSectionData(name) {
   switch (name) {
     case 'dashboard': loadDashboard(); break;
     case 'fleet': loadFleet(); loadServiceStatus(); break;
-    case 'tasks': loadTasks(); break;
+    case 'tasks': loadTasks(); loadQueue(); break;
     case 'hitl': loadHITL(); loadUnreviewedOutputs(); break;
-    case 'queue': loadQueue(); break;
+    case 'queue': showSection('tasks'); return;
     case 'analytics': loadAnalytics(); break;
     case 'docs': if (!_currentDocSlug) loadDoc('roadmap'); loadOutputsCategories(); break;
     case 'settings': loadSettings(); break;
@@ -144,7 +144,6 @@ var _omniboxItems = [
   {label: 'Ingest', section: 'ingest', icon: '📥'},
   {label: 'Tasks', section: 'tasks', icon: '⚡'},
   {label: 'HITL', section: 'hitl', icon: '✍'},
-  {label: 'Queue', section: 'queue', icon: '☰'},
   {label: 'Analytics', section: 'analytics', icon: '★'},
   {label: 'Docs', section: 'docs', icon: '📖'},
   {label: 'Views', section: 'views', icon: '◉'},

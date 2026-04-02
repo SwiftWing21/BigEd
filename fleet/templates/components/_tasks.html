@@ -1,10 +1,22 @@
 <!-- ═══════════════════════════════════════════════════════════════════════
-     4. TASKS
+     4. TASKS (merged with Queue)
      ═══════════════════════════════════════════════════════════════════ -->
 <div id="section-tasks" class="section">
   <div class="section-header">
-    <div class="section-title">Task Dispatch</div>
-    <div class="section-desc">Submit tasks to the fleet and view recent history</div>
+    <div class="section-title">Tasks</div>
+    <div class="section-desc">Dispatch, monitor, and manage fleet tasks</div>
+  </div>
+
+  <!-- Queue Controls -->
+  <div class="card mb-16">
+    <div class="card-header">
+      <span class="card-title">Queue</span>
+      <div style="display:flex;gap:8px;align-items:center">
+        <span class="badge" id="queue-status-badge">--</span>
+        <button class="btn btn-warning btn-sm" id="queue-pause-btn" onclick="toggleQueuePause()">&#9208; Pause</button>
+        <button class="btn btn-ghost btn-sm" onclick="loadQueue()">&#8635;</button>
+      </div>
+    </div>
   </div>
 
   <div class="grid-2 mb-24">
@@ -43,6 +55,16 @@
       <div id="recent-tasks-list" style="max-height:400px;overflow-y:auto">
         <div class="spinner"></div>
       </div>
+    </div>
+  </div>
+
+  <!-- Queue List -->
+  <div class="card">
+    <div class="card-header">
+      <span class="card-title">Task Queue <span id="queue-total-count" style="font-weight:400;color:var(--muted-foreground)">(0)</span></span>
+    </div>
+    <div id="queue-list" style="max-height:600px;overflow-y:auto">
+      <div class="spinner"></div>
     </div>
   </div>
 </div>
