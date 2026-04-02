@@ -859,9 +859,17 @@ def test_task_lifecycle_e2e():
 
 def test_backup_creates_valid_snapshot():
     """Backup should include fleet.db and fleet.toml at minimum."""
+    import os
     import tempfile
     import shutil
     from pathlib import Path
+
+    # Skip in CI when using in-memory DB (no fleet.db on disk to back up)
+    if os.environ.get("FLEET_TEST_DB") == ":memory:":
+        fleet_db = Path(__file__).parent / "fleet.db"
+        if not fleet_db.exists():
+            return True, "skip — FLEET_TEST_DB=:memory: and no fleet.db on disk"
+
     from backup_manager import BackupManager
 
     # Use a temp directory so we don't pollute the real backup location

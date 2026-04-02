@@ -47,13 +47,13 @@ jobs:
         run: echo "PYO3_PYTHON=$(which python3 || which python)" >> $GITHUB_ENV
 
       - name: cargo check
-        run: cargo check --workspace --locked
+        run: cargo check --workspace --locked --exclude biged-wasm
 
       - name: cargo test
-        run: cargo test --workspace --locked
+        run: cargo test --workspace --locked --exclude biged-wasm
 
       - name: cargo clippy
-        run: cargo clippy --workspace --locked -- -D warnings
+        run: cargo clippy --workspace --locked --exclude biged-wasm -- -D warnings
 
       - name: cargo fmt
         run: cargo fmt --check

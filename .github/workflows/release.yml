@@ -50,7 +50,7 @@ jobs:
       - name: Create release zip
         working-directory: BigEd/launcher/dist
         run: |
-          $files = @('BigEdCC.exe', 'Updater.exe', 'Setup.exe') + (Get-ChildItem -Name *.ico, *.png -ErrorAction SilentlyContinue)
+          $files = @('BigEdCC.exe', 'UpdateHelper.exe', 'Setup.exe') + (Get-ChildItem -Name *.ico, *.png -ErrorAction SilentlyContinue)
           Compress-Archive -Path $files -DestinationPath BigEdCC-Windows-${{ github.ref_name }}.zip
         shell: pwsh
 
@@ -64,7 +64,7 @@ jobs:
           name: windows-release
           path: |
             BigEd/launcher/dist/BigEdCC.exe
-            BigEd/launcher/dist/Updater.exe
+            BigEd/launcher/dist/UpdateHelper.exe
             BigEd/launcher/dist/Setup.exe
             BigEd/launcher/dist/BigEdCC-Windows-${{ github.ref_name }}.zip
             BigEd/launcher/dist/.bigedcc_version
@@ -101,4 +101,4 @@ jobs:
             release-assets/BigEd/launcher/dist/BigEdCC-Windows-${{ github.ref_name }}.zip
             release-assets/BigEd/launcher/dist/Setup.exe
             release-assets/BigEd/launcher/dist/BigEdCC.exe
-            release-assets/BigEd/launcher/dist/Updater.exe
+            release-assets/BigEd/launcher/dist/UpdateHelper.exe

@@ -676,7 +676,8 @@ def _load_code_context(topic: str, code_context_hint: str) -> str:
     for skill_file in sorted((_FLEET_DIR := FLEET_DIR / "skills").glob("*.py"))[:5]:
         name = skill_file.stem
         if name in topic.lower() or topic.lower() in name:
-            texts.append(f"# {skill_file.name}\n{skill_file.read_text(encoding="utf-8")[:1200]}")
+            content = skill_file.read_text(encoding="utf-8")[:1200]
+            texts.append(f"# {skill_file.name}\n{content}")
             break
     summaries_dir = KNOWLEDGE_DIR / "summaries"
     if summaries_dir.exists():
