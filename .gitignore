@@ -156,6 +156,22 @@ fleet/tests/factorio/
 tests/factorio/
 docs/superpowers/plans/*factorio*
 docs/superpowers/specs/*factorio*
+tests/test_action_translator.py
+tests/test_agent_brain.py
+tests/test_bridge_api.py
+tests/test_bridge_config.py
+tests/test_cadence.py
+tests/test_curriculum.py
+tests/test_curriculum_manager.py
+tests/test_experiment_runner.py
+tests/test_experiment_scorer.py
+tests/test_focus_toggle.py
+tests/test_lua_installer.py
+tests/test_plan_queue.py
+tests/test_prompt_loader.py
+tests/test_rcon_client.py
+tests/test_state_parser.py
+tests/test_world_model.py
 # ── Fleet runtime state ──────────────────────────────────────────────────
 fleet/hw_state.json
 fleet/tmp*.json

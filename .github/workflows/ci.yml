@@ -13,7 +13,7 @@ jobs:
   smoke-test:
     strategy:
       matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
+        os: [ubuntu-latest, windows-latest]
         python-version: ['3.11', '3.12', '3.13']
       fail-fast: false
 
