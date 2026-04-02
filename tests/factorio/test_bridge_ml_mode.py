@@ -1,6 +1,6 @@
 """Integration smoke tests for bridge ML mode (Task 9)."""
 import pytest
-import numpy as np
+np = pytest.importorskip("numpy")
 from factorio.bridge_config import BridgeConfig
 
 

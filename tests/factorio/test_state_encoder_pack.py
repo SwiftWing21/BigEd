@@ -1,6 +1,6 @@
 """Tests for pack_progress feature in StateEncoder."""
-import numpy as np
 import pytest
+np = pytest.importorskip("numpy")
 
 
 def test_feature_dim_includes_pack_progress():

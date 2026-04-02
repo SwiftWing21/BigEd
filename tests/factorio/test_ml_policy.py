@@ -1,6 +1,6 @@
-import numpy as np
-import torch
 import pytest
+np = pytest.importorskip("numpy")
+torch = pytest.importorskip("torch")
 from factorio.ml_policy import FactorioPolicy
 from factorio.action_space import ActionType
 

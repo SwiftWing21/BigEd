@@ -1,9 +1,9 @@
 """End-to-end smoke test: state -> encode -> policy -> action -> reward -> train.
 Uses mock data -- no Factorio server required.
 """
-import numpy as np
-import torch
 import pytest
+np = pytest.importorskip("numpy")
+torch = pytest.importorskip("torch")
 
 from factorio.state_parser import GameState, Entity
 from factorio.state_encoder import StateEncoder

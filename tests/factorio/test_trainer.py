@@ -1,8 +1,8 @@
 """Tests for PPOTrainer, TrajectoryBuffer, and Transition."""
 
-import numpy as np
 import pytest
-import torch
+np = pytest.importorskip("numpy")
+torch = pytest.importorskip("torch")
 
 from factorio.trainer import PPOTrainer, TrajectoryBuffer, Transition
 from factorio.ml_policy import FactorioPolicy

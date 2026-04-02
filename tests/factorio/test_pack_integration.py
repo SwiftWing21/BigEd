@@ -1,7 +1,7 @@
 # tests/factorio/test_pack_integration.py
 """Integration test: pack registry → executor → reward → policy pipeline."""
-import torch
 import pytest
+torch = pytest.importorskip("torch")
 
 
 def test_pack_roundtrip():

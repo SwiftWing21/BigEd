@@ -1,5 +1,5 @@
-import numpy as np
 import pytest
+np = pytest.importorskip("numpy")
 from factorio.state_parser import GameState, Entity
 from factorio.state_encoder import StateEncoder, _BASE_FEATURE_DIM
 

@@ -1,5 +1,5 @@
-import numpy as np
 import pytest
+np = pytest.importorskip("numpy")
 from factorio.state_parser import GameState
 from factorio.state_encoder import StateEncoder
 from factorio.spatial_memory import SpatialMemory
