@@ -48,8 +48,11 @@ jobs:
           python-version: '3.12'
 
       - name: Set PYO3_PYTHON
-        shell: bash
-        run: echo "PYO3_PYTHON=$(which python3 || which python)" >> $GITHUB_ENV
+        shell: python
+        run: |
+          import sys, os
+          with open(os.environ["GITHUB_ENV"], "a") as f:
+              f.write(f"PYO3_PYTHON={sys.executable}\n")
 
       - name: Cache cargo
         uses: actions/cache@v4
