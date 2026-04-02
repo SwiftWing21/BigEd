@@ -1472,9 +1472,10 @@ function loadSwimlane() {
     tasks.forEach(function(t) {
       t._ts = t.created_at ? new Date(t.created_at).getTime() : now;
     });
-    var minTs = Math.min.apply(null, tasks.map(function(t) { return t._ts; }));
+    var rawMinTs = Math.min.apply(null, tasks.map(function(t) { return t._ts; }));
     var maxTs = now; // anchor right edge to present so timeline always shows "now"
-    var range = Math.max(maxTs - minTs, 60000); // at least 1 minute range
+    var range = Math.max(maxTs - rawMinTs, 600000); // at least 10 minute window
+    var minTs = maxTs - range; // shift left edge to fill the window
     var trackWidth = 600; // pixels
 
     // Group tasks by agent
