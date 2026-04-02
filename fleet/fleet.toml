@@ -65,7 +65,7 @@ wake_word = ""                       # Empty = disabled. Set to "hey biged" etc.
 tts_enabled = false                  # Local text-to-speech responses
 
 [models]
-local = "qwen3:8b"
+local = "qwen3:0.6b"
 complex = "qwen3:8b"
 complex_provider = "local"    # DEPRECATED: superseded by [api_gate]. Kept for backwards compat.
 conductor_model = "qwen3:4b"  # CPU-pinned user chat model (num_gpu=0, ~2-3GB RAM, 0 VRAM)
@@ -354,8 +354,8 @@ owner = "SwiftWing21"
 repo = "BigEd"
 
 [modules]
-hub_url = "https://github.com/SwiftWing21/BigEd-ModuleHub"
-enterprise_hub_url = ""           # Private org repo (empty = use public hub)
+hub_url = "https://github.com/SwiftWing21/BigEd-ModuleHub-public"
+enterprise_hub_url = ""           # Private repo (requires GitHub API auth)
 auto_update = false               # Check for module updates on boot
 verify_checksums = true           # SHA-256 verification on download
 snapshot_retention = 20           # Max snapshots to keep
