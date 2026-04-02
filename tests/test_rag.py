@@ -235,7 +235,10 @@ class TestFileHash(unittest.TestCase):
             f.write(b"hello world")
             tmp = f.name
         result = _file_hash(Path(tmp))
-        os.unlink(tmp)
+        try:
+            os.unlink(tmp)
+        except PermissionError:
+            pass
         self.assertIsInstance(result, str)
         self.assertRegex(result, r"^[0-9a-f]+$")
 

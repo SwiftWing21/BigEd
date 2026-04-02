@@ -31,7 +31,10 @@ class TestLoadSecrets(unittest.TestCase):
             # (Only set if not already in env — clear first)
             os.environ.pop("TEST_SECRET_KEY", None)
         finally:
-            os.unlink(tmp)
+            try:
+                os.unlink(tmp)
+            except PermissionError:
+                pass
 
     def test_skips_comment_lines(self):
         from boot_sequence import _load_secrets

@@ -30,7 +30,10 @@ class TestGetLeastEvolvedSkill(unittest.TestCase):
         except Exception:
             pass
         os.environ.pop("FLEET_TEST_DB", None)
-        os.unlink(self.tmp.name)
+        try:
+            os.unlink(self.tmp.name)
+        except PermissionError:
+            pass
         import idle_evolution
         idle_evolution._staleness_cache.clear()
 
@@ -115,7 +118,10 @@ class TestLogIdleRun(unittest.TestCase):
         except Exception:
             pass
         os.environ.pop("FLEET_TEST_DB", None)
-        os.unlink(self.tmp.name)
+        try:
+            os.unlink(self.tmp.name)
+        except PermissionError:
+            pass
 
     def test_log_idle_run_inserts_row(self):
         from idle_evolution import log_idle_run
@@ -145,7 +151,10 @@ class TestGetIdleStats(unittest.TestCase):
         except Exception:
             pass
         os.environ.pop("FLEET_TEST_DB", None)
-        os.unlink(self.tmp.name)
+        try:
+            os.unlink(self.tmp.name)
+        except PermissionError:
+            pass
 
     def test_returns_list(self):
         from idle_evolution import get_idle_stats
