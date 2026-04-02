@@ -540,11 +540,14 @@ def main():
 
     _relaunch_windowless()
 
-    # Always start fleet idle — user profile's auto_start preference
-    # is checked after login in the dashboard frontend
+    # Queue starts active by default — user can pause via dashboard toggle.
+    # Remove stale pause flag from previous sessions.
     pause_file = FLEET_DIR / ".queue_paused"
-    pause_file.write_text("paused_by_launcher", encoding="utf-8")
-    log.info("Fleet will open idle (queue paused until after login)")
+    if pause_file.exists():
+        try:
+            pause_file.unlink()
+        except Exception:
+            pass
 
     # Show splash window immediately — no waiting
     _window = webview.create_window(
