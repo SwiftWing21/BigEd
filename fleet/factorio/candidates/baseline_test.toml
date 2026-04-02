@@ -1,6 +1,0 @@
-# Baseline candidate — runs with default prompt and parameters.
-# Drop new candidate TOMLs here to test different strategies.
-prompt = "baseline"
-
-[params]
-# All defaults — no overrides

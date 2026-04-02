@@ -146,10 +146,9 @@ BigEd/CONSOLE_UPGRADE_PLAN.md
 BigEd/SECURITY_COMPLIANCE_BLUEPRINT.md
 BigEd/research/
 
-# ── Factorio runtime data ─────────────────────────────────────────────────
-fleet/factorio/replay_log.jsonl
-fleet/factorio/server_data/
-fleet/factorio/checkpoints/
+# ── Factorio module (distributed via Module Hub, not in public repo) ──────
+fleet/factorio/
+tests/factorio/
 # ── Fleet runtime state ──────────────────────────────────────────────────
 fleet/hw_state.json
 fleet/tmp*.json
@@ -194,8 +193,6 @@ biged_audit.db
 biged_baseline.json
 .two-brain-audit.json
 
-# ── Fleet — learned packs (runtime RL output) ────────────────────────────────
-fleet/factorio/packs/learned/
 
 # ── Fleet — additional generated knowledge dirs ──────────────────────────────
 fleet/knowledge/digests/
