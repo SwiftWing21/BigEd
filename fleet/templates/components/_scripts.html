@@ -1183,34 +1183,71 @@ function restartService(name) {
   });
 }
 
-function loadFleet() {
-  apiFetch('/api/status').then(function(d) {
-    var tbody = document.getElementById('fleet-tbody');
-    tbody.textContent = '';
-    if (!d.agents || d.agents.length === 0) {
-      var tr = document.createElement('tr');
-      var td = document.createElement('td');
-      td.colSpan = 7;
-      var empty = document.createElement('div');
-      empty.className = 'empty-state';
-      var icon = document.createElement('div');
-      icon.className = 'empty-icon';
-      icon.textContent = '\u2699';
-      var title = document.createElement('div');
-      title.className = 'empty-title';
-      title.textContent = 'No Active Agents';
-      var desc = document.createElement('div');
-      desc.className = 'empty-desc';
-      desc.textContent = 'Fleet is offline or all agents are disabled';
-      empty.appendChild(icon);
-      empty.appendChild(title);
-      empty.appendChild(desc);
-      td.appendChild(empty);
-      tr.appendChild(td);
-      tbody.appendChild(tr);
-      return;
+var _fleetSortKey = 'status';
+var _fleetSortAsc = true;
+var _fleetAgents = [];
+
+function _sortFleet(key) {
+  if (_fleetSortKey === key) { _fleetSortAsc = !_fleetSortAsc; }
+  else { _fleetSortKey = key; _fleetSortAsc = true; }
+  _renderFleetTable(_fleetAgents);
+}
+
+function _statusPriority(s) {
+  if (s === 'BUSY') return 0;
+  if (s === 'IDLE') return 1;
+  if (s === 'WAITING_HUMAN') return 2;
+  if (s === 'OFFLINE') return 3;
+  if (s === 'DISABLED') return 4;
+  return 5;
+}
+
+function _renderFleetTable(agents) {
+  var tbody = document.getElementById('fleet-tbody');
+  tbody.textContent = '';
+  if (!agents || agents.length === 0) {
+    var tr = document.createElement('tr');
+    var td = document.createElement('td');
+    td.colSpan = 7;
+    var empty = document.createElement('div');
+    empty.className = 'empty-state';
+    var icon = document.createElement('div');
+    icon.className = 'empty-icon';
+    icon.textContent = '\u2699';
+    var title = document.createElement('div');
+    title.className = 'empty-title';
+    title.textContent = 'No Active Agents';
+    var desc = document.createElement('div');
+    desc.className = 'empty-desc';
+    desc.textContent = 'Fleet is offline or all agents are disabled';
+    empty.appendChild(icon);
+    empty.appendChild(title);
+    empty.appendChild(desc);
+    td.appendChild(empty);
+    tr.appendChild(td);
+    tbody.appendChild(tr);
+    return;
+  }
+  var sorted = agents.slice().sort(function(a, b) {
+    var va, vb;
+    var k = _fleetSortKey;
+    if (k === 'status') {
+      va = _statusPriority(a.display_status || a.status);
+      vb = _statusPriority(b.display_status || b.status);
+    } else if (k === 'name') {
+      va = (a.name || '').toLowerCase(); vb = (b.name || '').toLowerCase();
+    } else if (k === 'role') {
+      va = (a.role || '').toLowerCase(); vb = (b.role || '').toLowerCase();
+    } else if (k === 'heartbeat') {
+      va = a.last_heartbeat || ''; vb = b.last_heartbeat || '';
+    } else {
+      va = 0; vb = 0;
     }
-    d.agents.forEach(function(a, i) {
+    if (va < vb) return _fleetSortAsc ? -1 : 1;
+    if (va > vb) return _fleetSortAsc ? 1 : -1;
+    return 0;
+  });
+  sorted.forEach(function(a, i) {
       var ds = a.display_status || a.status;
       var isDimmed = ds === 'DISABLED' || ds === 'OFFLINE';
       var tr = document.createElement('tr');
@@ -1264,7 +1301,14 @@ function loadFleet() {
       tr.appendChild(tdAction);
       tbody.appendChild(tr);
     });
+}
+
+function loadFleet() {
+  apiFetch('/api/status').then(function(d) {
+    _fleetAgents = d.agents || [];
+    _renderFleetTable(_fleetAgents);
   }).catch(function() {
+    _fleetAgents = [];
     var tbody = document.getElementById('fleet-tbody');
     tbody.textContent = '';
     var tr = document.createElement('tr');
@@ -1450,7 +1494,7 @@ function loadSwimlane() {
     var tickCount = 6;
     for (var ti = 0; ti <= tickCount; ti++) {
       var tickTs = minTs + (range * ti / tickCount);
-      var tickAgo = Math.floor((now - tickTs) / 1000);
+      var tickAgo = Math.max(0, Math.floor((now - tickTs) / 1000));
       var tickLabel = '';
       if (tickAgo < 60) tickLabel = tickAgo + 's ago';
       else if (tickAgo < 3600) tickLabel = Math.floor(tickAgo / 60) + 'm ago';
@@ -1587,20 +1631,20 @@ function loadNeuralGraph() {
         fit: true,
         padding: 10,
         nodeRepulsion: function(node) {
-          return node.isParent() ? 6000 : 1500;
+          return node.isParent() ? 2000 : 500;
         },
         idealEdgeLength: function(edge) {
           var src = edge.source(), tgt = edge.target();
-          if (src.parent().length && tgt.parent().length && src.parent().id() === tgt.parent().id()) return 12;
-          return 50;
+          if (src.parent().length && tgt.parent().length && src.parent().id() === tgt.parent().id()) return 15;
+          return 40;
         },
-        edgeElasticity: 0.2,
-        gravity: 1.0,
-        gravityRange: 6.0,
-        nestingFactor: 0.05,
+        edgeElasticity: 0.3,
+        gravity: 1.5,
+        gravityRange: 4.0,
+        nestingFactor: 0.08,
         numIter: nodeCount > 200 ? 3000 : 6000,
         packComponents: true,
-        componentSpacing: 40,
+        componentSpacing: 25,
         nodeDimensionsIncludeLabels: false,
       };
     } else if (name === 'concentric') {
@@ -1614,9 +1658,9 @@ function loadNeuralGraph() {
     if (!_hasFcose) return { name: 'cose', animate: false, padding: 10 };
     return {
       name: 'fcose', animate: false, padding: 10,
-      nodeRepulsion: nodeCount > 200 ? 50000 : 30000,
-      idealEdgeLength: nodeCount > 200 ? 25 : 18,
-      edgeElasticity: 0.2, gravity: 1.2, gravityRange: 2.0,
+      nodeRepulsion: nodeCount > 200 ? 12000 : 6000,
+      idealEdgeLength: nodeCount > 200 ? 35 : 25,
+      edgeElasticity: 0.3, gravity: 1.5, gravityRange: 3.0,
       numIter: nodeCount > 500 ? 2500 : 5000,
       quality: nodeCount > 500 ? 'default' : 'proof',
       nodeDimensionsIncludeLabels: false, randomize: true,
@@ -4222,6 +4266,13 @@ function commsInit() {
   commsLoadCounts();
 }
 
+function _launchVSCode() {
+  apiFetch('/api/comms/launch-vscode', { method: 'POST' }).then(function(r) {
+    if (r.error) { showToast(r.error, 'error'); return; }
+    showToast('VS Code opened: ' + r.workspace, 'success');
+  }).catch(function(e) { showToast('Launch failed: ' + (e.message || 'unknown'), 'error'); });
+}
+
 function commsLoadCounts() {
   apiFetch('/api/comms').then(function(d) {
     var total = 0;
@@ -4401,8 +4452,11 @@ function commsSend() {
 
   if (_commsChannel === 'chat') {
     apiFetch('/api/comms/chat', { method: 'POST', body: { message: msg } })
-      .then(function() { commsLoadChat(); })
-      .catch(function() {});
+      .then(function(r) {
+        if (r.error) { showToast('Send failed: ' + r.error, 'error'); return; }
+        commsLoadChat();
+      })
+      .catch(function(e) { showToast('Send failed: ' + (e.message || 'fleet offline?'), 'error'); });
   } else {
     apiFetch('/api/comms/send', { method: 'POST', body: { channel: _commsChannel, body: msg } })
       .then(function() { commsLoadChannel(); })

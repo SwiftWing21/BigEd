@@ -52,12 +52,12 @@
       <table class="data-table" id="fleet-table">
         <thead>
           <tr>
-            <th>ID</th>
-            <th>Name</th>
-            <th>Role</th>
-            <th>Status</th>
+            <th style="cursor:pointer" onclick="_sortFleet('id')">#</th>
+            <th style="cursor:pointer" onclick="_sortFleet('name')">Name</th>
+            <th style="cursor:pointer" onclick="_sortFleet('role')">Role</th>
+            <th style="cursor:pointer" onclick="_sortFleet('status')">Status</th>
             <th>Current Task</th>
-            <th>Last Update</th>
+            <th style="cursor:pointer" onclick="_sortFleet('heartbeat')">Last Update</th>
             <th>Actions</th>
           </tr>
         </thead>

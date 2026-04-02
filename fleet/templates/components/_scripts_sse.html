@@ -142,6 +142,11 @@ function handleSSE(msg) {
         if (data2.agents && document.getElementById('section-fleet').classList.contains('active')) {
           _renderFleetFromSSE(data2.agents);
         }
+        /* Ingest offline banner — clear when fleet is online (SSE proves connectivity) */
+        var _ib = document.getElementById('ingest-offline-banner');
+        if (_ib && document.getElementById('section-ingest').classList.contains('active')) {
+          _ib.style.display = 'none';
+        }
       }
       break;
     case 'alert':

@@ -7,6 +7,13 @@
     <div class="section-desc">Fleet messages, agent notes, and chat</div>
   </div>
 
+  <!-- Quick Actions -->
+  <div style="display:flex;gap:8px;margin-bottom:12px;">
+    <button class="btn btn-sm btn-outline" onclick="_launchVSCode()" title="Open BigEd workspace in VS Code">
+      &#9998; Open in VS Code
+    </button>
+  </div>
+
   <!-- Channel Tabs -->
   <div id="comms-tabs" style="display:flex;gap:4px;margin-bottom:16px;flex-wrap:wrap;">
     <button class="btn btn-sm comms-tab active" data-channel="chat" onclick="commsSelectChannel('chat')">

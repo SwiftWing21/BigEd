@@ -1191,6 +1191,20 @@ def api_comms_chat():
         return jsonify({"error": _safe_error(e)}), 500
 
 
+@app.route("/api/comms/launch-vscode", methods=["POST"])
+def api_comms_launch_vscode():
+    """Launch VS Code in the BigEd workspace."""
+    try:
+        from manual_mode import launch_vscode
+        workspace = str(Path(__file__).resolve().parent.parent)
+        ok = launch_vscode(workspace)
+        if ok:
+            return jsonify({"ok": True, "workspace": workspace})
+        return jsonify({"error": "VS Code not found — install it or add 'code' to PATH"}), 404
+    except Exception as e:
+        return jsonify({"error": _safe_error(e)}), 500
+
+
 # /api/alerts, /api/alerts/ack: now in monitoring_blueprint.py (Phase 5)
 
 
