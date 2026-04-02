@@ -146,6 +146,20 @@ function handleSSE(msg) {
       /* Ingest offline banner — SSE data arriving proves fleet is online (ungated) */
       var _ib = document.getElementById('ingest-offline-banner');
       if (_ib) _ib.style.display = 'none';
+
+      /* SSE-driven active-tab refresh (throttled, skip dashboard+fleet — already handled above) */
+      var _sseNow = Date.now();
+      if (_sseNow - _lastSSERefresh > _SSE_REFRESH_THROTTLE && !document.hidden) {
+        var _activeNav = document.querySelector('.nav-item.active');
+        if (_activeNav) {
+          var _activeSec = _activeNav.getAttribute('data-section');
+          if (_activeSec && _activeSec !== 'dashboard' && _activeSec !== 'fleet' && !_sseRefreshSkip[_activeSec]) {
+            loadSectionData(_activeSec);
+            _lastSSERefresh = _sseNow;
+          }
+        }
+        _markOtherTabsDirty();
+      }
       break;
     case 'alert':
       if (msg.data) showToast('[' + (msg.data.level || 'info') + '] ' + (msg.data.message || ''), msg.data.level === 'critical' ? 'error' : 'info');
@@ -1147,27 +1161,43 @@ function toggleModifier(name) {
     }
   });
 
-  /* ── Active-tab auto-refresh: polls the visible section every 5s ────── */
-  /* SSE handles real-time events, but most tabs render once on load.
-     This ensures the active tab always shows fresh data without manual refresh. */
-  var _AUTO_REFRESH_ACTIVE = 5000;   // 5s when tab is visible
-  var _AUTO_REFRESH_HIDDEN = 120000; // 2min when browser tab is hidden
-  var _autoRefreshTimer = null;
-  var _autoRefreshSkip = { settings: true, docs: true, update: true }; // static tabs
+  /* ── SSE-driven live refresh + 30s fallback ─────────────────────────── */
+  /* Strategy:
+     - SSE `status` event (every 2-5s) refreshes the active tab's content
+     - Non-active tabs are marked dirty and refresh on switch (load-on-demand)
+     - 30s fallback poll catches missed events or reconnection gaps
+     - Static tabs (settings, docs, update) are never auto-refreshed
+     - Browser-hidden tabs pause entirely until focus returns */
+  var _sseRefreshSkip = { settings: true, docs: true, update: true };
+  var _dirtyTabs = {};  // tabs that need refresh when switched to
+  var _lastSSERefresh = 0;
+  var _SSE_REFRESH_THROTTLE = 3000; // min 3s between SSE-driven refreshes
 
-  function _autoRefreshTick() {
-    if (!document.hidden) {
+  /* Mark all non-active tabs dirty when SSE data arrives */
+  function _markOtherTabsDirty() {
+    document.querySelectorAll('.nav-item').forEach(function(n) {
+      var sec = n.getAttribute('data-section');
+      if (sec && !n.classList.contains('active') && !_sseRefreshSkip[sec]) {
+        _dirtyTabs[sec] = true;
+      }
+    });
+  }
+
+  /* 30s fallback poll — only if no SSE refresh happened recently */
+  var _fallbackTimer = setInterval(function() {
+    if (document.hidden) return;
+    var now = Date.now();
+    if (now - _lastSSERefresh > 15000) {
       var activeNav = document.querySelector('.nav-item.active');
       if (activeNav) {
         var section = activeNav.getAttribute('data-section');
-        if (section && !_autoRefreshSkip[section]) {
+        if (section && !_sseRefreshSkip[section]) {
           loadSectionData(section);
+          _lastSSERefresh = now;
         }
       }
     }
-    _autoRefreshTimer = setTimeout(_autoRefreshTick, document.hidden ? _AUTO_REFRESH_HIDDEN : _AUTO_REFRESH_ACTIVE);
-  }
-  _autoRefreshTimer = setTimeout(_autoRefreshTick, _AUTO_REFRESH_ACTIVE);
+  }, 30000);
 
   /* ── API Gate Controls ─────────────────────────────────────────────────── */
   buildGateCard();

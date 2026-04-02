@@ -85,6 +85,8 @@ function showSection(name) {
   if (!_loaded[name]) {
     _loaded[name] = true;
   }
+  /* Clear dirty flag — tab is being freshly loaded */
+  if (window._dirtyTabs) delete window._dirtyTabs[name];
   loadSectionData(name);
 }
 
