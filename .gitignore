@@ -216,6 +216,9 @@ biged_audit.db
 biged_baseline.json
 .two-brain-audit.json
 
+# ── Audit snapshots (exported runtime data, not source) ─────────────────────
+fleet/audit-snapshots/
+
 
 # ── Fleet — additional generated knowledge dirs ──────────────────────────────
 fleet/knowledge/digests/

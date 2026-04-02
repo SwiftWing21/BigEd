@@ -58,8 +58,8 @@ def api_audit_acknowledge(dimension):
     """Acknowledge a divergence for the given dimension."""
     try:
         from audit_scorer import acknowledge_divergence
-        result = acknowledge_divergence(dimension)
-        return jsonify(result)
+        ok = acknowledge_divergence(dimension)
+        return jsonify({"acknowledged": ok, "dimension": dimension})
     except Exception as e:
         return jsonify({"error": _safe_error(e)}), 500
 
@@ -116,10 +116,11 @@ def api_audit_feedback():
 
         scope = body.get("scope", "general")
         from audit_scorer import record_feedback
-        result = record_feedback(score=score, scope=scope, **{
-            k: v for k, v in body.items() if k not in ("score", "scope")
-        })
-        return jsonify(result)
+        _FEEDBACK_KEYS = {"session_id", "text", "inferred", "actor"}
+        extras = {k: v for k, v in body.items()
+                  if k in _FEEDBACK_KEYS}
+        row_id = record_feedback(score=score, scope=scope, **extras)
+        return jsonify({"ok": True, "row_id": row_id})
     except Exception as e:
         return jsonify({"error": _safe_error(e)}), 500
 
@@ -155,5 +156,34 @@ def api_audit_oauth_review(dimension):
             priority=3,
         )
         return jsonify({"queued": True, "dimension": dimension, "task_id": task_id})
+    except Exception as e:
+        return jsonify({"error": _safe_error(e)}), 500
+
+
+# ── GET /api/audit/snapshot — trigger a sanitized snapshot export ─────────
+
+@audit_bp.route("/api/audit/snapshot")
+def api_audit_snapshot():
+    """Export a sanitized audit snapshot and return the manifest entry."""
+    try:
+        sanitize = request.args.get("sanitize", "true").lower() != "false"
+        from audit_snapshot import export_snapshot, list_snapshots
+        export_snapshot(sanitize=sanitize)
+        entries = list_snapshots()
+        entry = entries[0] if entries else {}
+        return jsonify({"snapshot": entry})
+    except Exception as e:
+        return jsonify({"error": _safe_error(e)}), 500
+
+
+# ── GET /api/audit/snapshots — list all snapshot manifest entries ─────────
+
+@audit_bp.route("/api/audit/snapshots")
+def api_audit_snapshots():
+    """Return all snapshot manifest entries (newest first)."""
+    try:
+        from audit_snapshot import list_snapshots
+        entries = list_snapshots()
+        return jsonify({"snapshots": entries, "count": len(entries)})
     except Exception as e:
         return jsonify({"error": _safe_error(e)}), 500

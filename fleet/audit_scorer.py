@@ -698,7 +698,8 @@ def get_latest_scores() -> list[dict]:
     try:
         with db.get_conn() as conn:
             rows = conn.execute(
-                """SELECT dimension, auto_score, manual_grade, divergence, tier, timestamp
+                """SELECT dimension, auto_score, auto_detail, manual_grade,
+                          divergence, tier, timestamp
                    FROM audit_scores
                    WHERE id IN (
                        SELECT MAX(id) FROM audit_scores GROUP BY dimension
@@ -719,7 +720,8 @@ def get_score_history(days: int = 30) -> list[dict]:
     try:
         with db.get_conn() as conn:
             rows = conn.execute(
-                """SELECT dimension, auto_score, manual_grade, divergence, tier, timestamp
+                """SELECT dimension, auto_score, auto_detail, manual_grade,
+                          divergence, tier, timestamp
                    FROM audit_scores
                    WHERE timestamp >= datetime('now', ? || ' days')
                    ORDER BY dimension, timestamp""",

@@ -1,0 +1,116 @@
+{
+  "timestamp": "2026-04-02T21:49:18.816527+00:00",
+  "overall_score": 0.3188,
+  "overall_grade": "F",
+  "dimensions_count": 12,
+  "scores": [
+    {
+      "dimension": "architecture",
+      "auto_score": 0.8,
+      "auto_detail": "{\"files\": {\"dashboard.py\": 1997, \"supervisor.py\": 216, \"hw_supervisor.py\": 1423, \"db.py\": 697, \"providers.py\": 981}, \"under_1500\": 4, \"total_checked\": 5}",
+      "manual_grade": "A",
+      "divergence": 0,
+      "tier": "daily",
+      "timestamp": "2026-04-02 21:47:58"
+    },
+    {
+      "dimension": "code_quality",
+      "auto_score": 0.3333,
+      "auto_detail": "{\"checks\": {\"ruff_clean\": false, \"no_raw_sqlite\": false, \"raw_sqlite_files\": [\"account_review.py\", \"code_suite.py\", \"db_encrypt.py\"], \"no_bare_excepts\": true, \"bare_except_files\": []}, \"ok\": 1, \"total\": 3}",
+      "manual_grade": "A-",
+      "divergence": 1,
+      "tier": "daily",
+      "timestamp": "2026-04-02 21:47:58"
+    },
+    {
+      "dimension": "data_hitl",
+      "auto_score": 0.5,
+      "auto_detail": "{\"tables\": {\"hitl_queue\": {\"exists\": false, \"rows\": 0}, \"ingest_sources\": {\"exists\": true, \"rows\": 0}}, \"ok\": 1, \"total\": 2}",
+      "manual_grade": "S",
+      "divergence": 1,
+      "tier": "daily",
+      "timestamp": "2026-04-02 21:47:58"
+    },
+    {
+      "dimension": "documentation",
+      "auto_score": 0.1923,
+      "auto_detail": "{\"stale\": 21, \"total\": 26, \"live_values\": {\"skills\": 110, \"endpoints\": \"[REDACTED]\", \"db_tables\": 33, \"smoke_tests\": 55, \"version\": \"[REDACTED]\"}}",
+      "manual_grade": "B+",
+      "divergence": 1,
+      "tier": "daily",
+      "timestamp": "2026-04-02 21:47:58"
+    },
+    {
+      "dimension": "dynamic_abilities",
+      "auto_score": 0.3333,
+      "auto_detail": "{\"found\": [\"experiments\"], \"missing\": [\"ml_route_log\", \"billing_events\"]}",
+      "manual_grade": "A+",
+      "divergence": 1,
+      "tier": "daily",
+      "timestamp": "2026-04-02 21:47:58"
+    },
+    {
+      "dimension": "module_plugin",
+      "auto_score": 0.5,
+      "auto_detail": "{\"modules\": 0, \"note\": \"modules table not found\"}",
+      "manual_grade": "A",
+      "divergence": 1,
+      "tier": "daily",
+      "timestamp": "2026-04-02 21:47:58"
+    },
+    {
+      "dimension": "observability",
+      "auto_score": 0.6667,
+      "auto_detail": "{\"checks\": {\"sse_template\": true, \"audit_log\": true, \"api_health\": false}, \"ok\": 2, \"total\": 3}",
+      "manual_grade": "A",
+      "divergence": 1,
+      "tier": "daily",
+      "timestamp": "2026-04-02 21:47:58"
+    },
+    {
+      "dimension": "performance",
+      "auto_score": 0.0,
+      "auto_detail": "{\"endpoints\": \"[REDACTED]\", \"ok\": 0, \"total\": 3}",
+      "manual_grade": "A",
+      "divergence": 1,
+      "tier": "daily",
+      "timestamp": "2026-04-02 21:47:58"
+    },
+    {
+      "dimension": "reliability",
+      "auto_score": 0.0,
+      "auto_detail": "{\"healthy_agents\": 0, \"total_agents\": 17, \"closed_breakers\": 0, \"total_breakers\": 0}",
+      "manual_grade": "A",
+      "divergence": 1,
+      "tier": "daily",
+      "timestamp": "2026-04-02 21:47:58"
+    },
+    {
+      "dimension": "security",
+      "auto_score": 0.5,
+      "auto_detail": "{\"checks\": {\"rbac_roles\": 0, \"rbac_ok\": false, \"path_traversal_blocked\": true}, \"ok\": 1, \"total\": 2}",
+      "manual_grade": "A",
+      "divergence": 1,
+      "tier": "daily",
+      "timestamp": "2026-04-02 21:47:58"
+    },
+    {
+      "dimension": "testing",
+      "auto_score": 0.0,
+      "auto_detail": "{\"passed\": 0, \"failed\": 0, \"total\": 0}",
+      "manual_grade": "A",
+      "divergence": 1,
+      "tier": "daily",
+      "timestamp": "2026-04-02 21:47:58"
+    },
+    {
+      "dimension": "usability_ux",
+      "auto_score": 0.0,
+      "auto_detail": "{\"pages\": [{\"page\": \"/\", \"ok\": false, \"latency_ms\": 2039.1}, {\"page\": \"/api/health\", \"ok\": false, \"latency_ms\": 2036.5}, {\"page\": \"/api/fleet/status\", \"ok\": false, \"latency_ms\": 2037.5}], \"page_score\": 0.0, \"feedback_score\": null, \"ok\": 0, \"total\": 3}",
+      "manual_grade": "A",
+      "divergence": 1,
+      "tier": "daily",
+      "timestamp": "2026-04-02 21:47:58"
+    }
+  ]
+}
