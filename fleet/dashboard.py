@@ -98,7 +98,6 @@ _register_security_hooks(app, lambda: _load_config())
 _BLUEPRINTS = [
     ("auth_blueprint",        "auth_bp",          True),
     ("mode_blueprint",        "mode_bp",          True),
-    ("factorio_blueprint",    "factorio_bp",       True),
     ("sse_blueprint",         "sse_bp",            True),
     ("process_control",       "fleet_bp",          True),
     ("health_api",            "health_bp",         True),
@@ -233,11 +232,6 @@ _post_registration_setup(app)
 from mode_blueprint import (
     restore_mode as _restore_mode,
     _get_effective_mode, _get_modifier_states,
-)
-from factorio_blueprint import (
-    _factorio_kill_all,
-    api_factorio_start,
-    api_factorio_stop,
 )
 from monitoring_blueprint import api_thermal, api_alerts
 from knowledge_blueprint import api_discussions as _api_discussions
@@ -727,32 +721,6 @@ def api_activity_lanes():
                     count = 0
                 if count > 0:
                     folders.append({"name": entry.name, "files": count})
-
-    # ── 4b. FACTORIO LANE (live bridge probe) ────────────────────────
-    try:
-        import urllib.request as _ur
-        from config import load_config as _lc
-        _fport = _lc().get("factorio", {}).get("bridge_port", 27016)
-        _fresp = _ur.urlopen(f"http://127.0.0.1:{_fport}/api/status", timeout=2)
-        _fdata = json.loads(_fresp.read())
-        if _fdata.get("running"):
-            _ftick = _fdata.get("tick", 0)
-            _fpaused = _fdata.get("paused", False)
-            lanes["factorio:bridge"] = {
-                "agent": "Factorio",
-                "kind": "factorio",
-                "skills": {"bridge": 1},
-                "total": _ftick,
-                "done": _ftick if not _fpaused else 0,
-                "failed": 0,
-                "running": 0 if _fpaused else 1,
-                "last_active": None,
-                "tick": _ftick,
-                "paused": _fpaused,
-                "cadence": _fdata.get("cadence", "unknown"),
-            }
-    except Exception:
-        pass
 
     # ── 5. MESSAGE CHANNELS ─────────────────────────────────────────
     msg_rows = query("""

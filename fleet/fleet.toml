@@ -17,7 +17,7 @@ hitl_evolution = false           # true = evolution proposals go to WAITING_HUMA
 suite_routing_enabled = true   # set false to bypass suite routing (rollback)
 
 # Agent naming — themes and multi-device identity
-last_mode = "factorio"
+last_mode = "normal"
 [naming]
 theme = "default"                # default | education | space | forge | cul-de-sac | robots | custom
 device_name = ""                 # this device's identity in federation (empty = hostname)
@@ -230,7 +230,6 @@ outputs = true          # knowledge browser
 owner_core = false      # bolt-on: owner dashboard — enable via walkthrough
 intelligence = true     # system transparency, model controls, prompt queue, evaluation
 manual_mode = true      # operator-driven compliance audit with prompt queue
-factorio = true
 [launcher.profiles.minimal]
 modules = ["ingestion", "outputs"]
 
@@ -266,7 +265,6 @@ analyst = ["analyze_results", "benchmark", "synthesize", "evaluate", "billing_oc
 # security (legal_draft → removed), and analyst (account_review → evaluate).
 security = ["security_audit", "pen_test", "security_review", "security_apply", "secret_rotate", "db_encrypt", "db_migrate", "key_manager"]
 planner = ["plan_workload", "curriculum_update", "evolution_coordinator", "model_manager", "model_recommend", "oom_prevent", "memory_optimizer", "swarm_consensus", "hardware_profiler"]
-sandbox = ["factorio_observe", "factorio_plan", "factorio_act", "factorio_train"]
 
 [integrations]
 unifi_enabled = false            # UniFi controller API integration

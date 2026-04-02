@@ -99,16 +99,6 @@ def _detect_available_modes() -> list:
     try:
         cfg = _load_config()
 
-        # Factorio -- only if enabled in config AND bridge module is importable
-        if cfg.get("factorio", {}).get("enabled"):
-            if importlib.util.find_spec("factorio.bridge") is not None:
-                modes.append({
-                    "id": "factorio",
-                    "name": "Factorio Sandbox",
-                    "icon": "factory",
-                    "description": "Train AI agents in Factorio",
-                })
-
         # Fleet Training -- only if [training] section exists in fleet.toml
         if cfg.get("training"):
             modes.append({
@@ -136,16 +126,6 @@ def _detect_available_modes() -> list:
 
 def _get_active_mode() -> str:
     """Probe running state to determine the currently active mode id."""
-    # Factorio -- probe bridge HTTP (fast timeout to avoid blocking SSE cycle)
-    try:
-        cfg = _load_config()
-        port = cfg.get("factorio", {}).get("bridge_port", 27016)
-        resp = urllib.request.urlopen(f"http://127.0.0.1:{port}/api/status", timeout=1)
-        data = json.loads(resp.read())
-        if data.get("running"):
-            return "factorio"
-    except Exception:
-        pass
 
     # Training -- check exclusive lock in DB
     try:
@@ -171,19 +151,6 @@ def _get_mode_state(active_mode: str) -> str:
     """Return 'running', 'starting', or 'stopped' for the given mode."""
     if active_mode == "normal":
         return "running"
-    if active_mode == "factorio":
-        try:
-            cfg = _load_config()
-            port = cfg.get("factorio", {}).get("bridge_port", 27016)
-            resp = urllib.request.urlopen(f"http://127.0.0.1:{port}/api/status", timeout=1)
-            data = json.loads(resp.read())
-            if data.get("running"):
-                return "running"
-            if data.get("starting"):
-                return "starting"
-        except Exception:
-            pass
-        return "stopped"
     if active_mode == "training":
         try:
             from db import query as _db_query
@@ -204,21 +171,6 @@ def _get_mode_state(active_mode: str) -> str:
 
 def _get_mode_detail(active_mode: str) -> dict:
     """Return mode-specific detail dict (schema varies by mode)."""
-    if active_mode == "factorio":
-        try:
-            cfg = _load_config()
-            port = cfg.get("factorio", {}).get("bridge_port", 27016)
-            resp = urllib.request.urlopen(f"http://127.0.0.1:{port}/api/status", timeout=1)
-            data = json.loads(resp.read())
-            return {
-                "tick": data.get("tick", 0),
-                "paused": data.get("paused", False),
-                "cadence": data.get("cadence", "unknown"),
-            }
-        except Exception:
-            pass
-        return {"tick": 0, "paused": False, "cadence": "unknown"}
-
     if active_mode == "training":
         try:
             from db import query as _db_query
@@ -373,7 +325,6 @@ def api_mode_switch():
             # Conflict probe (force=False) -- tell frontend to confirm
             if not force and current != "normal" and current != target and current_state == "running":
                 mode_names = {
-                    "factorio": "Factorio Sandbox",
                     "training": "Fleet Training",
                     "research_marathon": "Research Marathon",
                     "normal": "Normal Fleet",
@@ -394,19 +345,7 @@ def api_mode_switch():
             # Tear down current mode (unless it's already normal or same as target)
             if current != "normal" and current != target:
                 try:
-                    if current == "factorio":
-                        from factorio_blueprint import api_factorio_stop
-                        from flask import current_app
-                        with current_app.test_request_context():
-                            api_factorio_stop()
-                        # Unpause queue so workers resume normal tasks
-                        try:
-                            _QUEUE_PAUSE_FILE.unlink(missing_ok=True)
-                            _broadcast_sse({"type": "queue_paused", "data": {"paused": False}})
-                            log.info("Queue unpaused (leaving Factorio mode)")
-                        except Exception:
-                            log.warning("Failed to unpause queue on Factorio exit", exc_info=True)
-                    elif current == "training":
+                    if current == "training":
                         try:
                             import db as _db
                             def _release():
@@ -435,26 +374,7 @@ def api_mode_switch():
                 return jsonify({"success": True, "mode": "normal", "state": "running"})
 
             try:
-                if target == "factorio":
-                    # Pause queue first -- free Ollama for Factorio's ML agent
-                    try:
-                        _QUEUE_PAUSE_FILE.write_text("paused_by_factorio", encoding="utf-8")
-                        _broadcast_sse({"type": "queue_paused", "data": {"paused": True}})
-                        log.info("Queue paused (entering Factorio mode)")
-                    except Exception:
-                        log.warning("Failed to pause queue on Factorio entry", exc_info=True)
-                    # Start headless server + bridge
-                    from factorio_blueprint import api_factorio_start
-                    from flask import current_app
-                    with current_app.test_request_context():
-                        resp = api_factorio_start()
-                    resp_data = resp.get_json() if hasattr(resp, "get_json") else {}
-                    if not resp_data.get("success") and not resp_data.get("already_running"):
-                        # Undo queue pause on failure
-                        _QUEUE_PAUSE_FILE.unlink(missing_ok=True)
-                        _broadcast_sse({"type": "queue_paused", "data": {"paused": False}})
-                        raise RuntimeError(resp_data.get("error", "Factorio start failed"))
-                elif target == "training":
+                if target == "training":
                     # Acquire training lock in DB
                     import db as _db
                     def _acquire():

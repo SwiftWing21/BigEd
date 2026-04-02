@@ -148,7 +148,14 @@ BigEd/research/
 
 # ── Factorio module (distributed via Module Hub, not in public repo) ──────
 fleet/factorio/
+fleet/factorio_blueprint.py
+fleet/skills/factorio_*.py
+fleet/idle_curricula/factorio_*.toml
+fleet/templates/components/_factorio.html
+fleet/tests/factorio/
 tests/factorio/
+docs/superpowers/plans/*factorio*
+docs/superpowers/specs/*factorio*
 # ── Fleet runtime state ──────────────────────────────────────────────────
 fleet/hw_state.json
 fleet/tmp*.json

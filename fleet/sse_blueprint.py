@@ -207,37 +207,6 @@ def _sse_broadcaster():
                     for r in live_items if r["agent"] != "unassigned"
                 ]
 
-                # Factorio bridge status (lightweight probe)
-                factorio_sse = None
-                try:
-                    import urllib.request as _ur2
-                    from config import load_config as _lc2
-                    _fp2 = _lc2().get("factorio", {}).get("bridge_port", 27016)
-                    _fr2 = _ur2.urlopen(f"http://127.0.0.1:{_fp2}/api/status", timeout=1)
-                    _fd2 = json.loads(_fr2.read())
-                    _components = _fd2.get("components", {})
-                    factorio_sse = {
-                        "running": _fd2.get("running", False),
-                        "tick": _fd2.get("tick", 0),
-                        "paused": _fd2.get("paused", False),
-                        "cadence": _fd2.get("cadence", "unknown"),
-                        "stale": _fd2.get("stale", False),
-                        "components": {
-                            "bridge": _components.get("bridge", False),
-                            "rcon": _components.get("rcon", False),
-                            "headless": _components.get("headless", False),
-                        },
-                    }
-                    if _fd2.get("running"):
-                        # Inject a factorio pulse so the neural canvas shows activity
-                        if not _fd2.get("paused"):
-                            recent_tasks.append({
-                                "agent": "Factorio", "skill": "bridge",
-                                "status": "RUNNING",
-                            })
-                except Exception:
-                    pass
-
                 # Mode control -- active mode + modifier states for strip
                 mode_sse = None
                 try:
@@ -258,7 +227,6 @@ def _sse_broadcaster():
                     "system": system,
                     "recent": recent_tasks,
                     "live": live_items,
-                    "factorio": factorio_sse,
                     "mode": mode_sse,
                 }
 

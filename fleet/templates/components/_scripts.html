@@ -81,8 +81,7 @@ function showSection(name) {
   document.getElementById('header-section-title').textContent =
     name.charAt(0).toUpperCase() + name.slice(1);
   closeSidebar();
-  // Stop spatial map polling when leaving factorio tab
-  if (name !== 'factorio') _stopSpatialMapPolling();
+  _stopSpatialMapPolling();
   if (!_loaded[name]) {
     _loaded[name] = true;
     loadSectionData(name);
@@ -103,7 +102,6 @@ function loadSectionData(name) {
     case 'ingest': loadIngest(); break;
     case 'modules': loadModules(); break;
     case 'update': loadUpdate(); break;
-    case 'factorio': loadFactorio(); _startSpatialMapPolling(); break;
     case 'comms': commsInit(); break;
   }
 }
@@ -755,12 +753,6 @@ function loadNeuralLanes() {
   apiFetch('/api/activity/lanes?hours=24').then(function(data) {
     _neuralData = data;
     _neuralPulses = [];
-    // Show Factorio legend dot when lane present
-    var fLeg = document.getElementById('factorio-legend');
-    if (fLeg) {
-      var hasF = (data.lanes || []).some(function(l) { return l.kind === 'factorio'; });
-      fLeg.style.display = hasF ? '' : 'none';
-    }
     // Seed initial pulses from timeline
     if (data.timeline) {
       data.timeline.forEach(function(t, i) {
@@ -818,7 +810,7 @@ function renderNeuralFrame() {
   var maxModelTotal = Math.max.apply(null, modelLanes.map(function(l) { return l.total; }).concat([1]));
 
   // Kind colors
-  var kindColor = { agent: '#10b981', model: '#a78bfa', factorio: '#f97316' };
+  var kindColor = { agent: '#10b981', model: '#a78bfa' };
   var statusColor = { done: '#10b981', failed: '#ef4444', running: '#3b82f6' };
 
   // ── DRAW LANES ──────────────────────────────────────────────────
@@ -3116,7 +3108,7 @@ function renderAnalyticsNeuralFrame() {
   var _modelLanes2 = lanes.filter(function(l) { return l.kind === 'model'; });
   var _maxAgent2 = Math.max.apply(null, _agentLanes2.map(function(l) { return l.total; }).concat([1]));
   var _maxModel2 = Math.max.apply(null, _modelLanes2.map(function(l) { return l.total; }).concat([1]));
-  var kindColor = { agent: '#10b981', model: '#a78bfa', factorio: '#f97316' };
+  var kindColor = { agent: '#10b981', model: '#a78bfa' };
   var statusColor = { done: '#10b981', failed: '#ef4444', running: '#3b82f6' };
   var laneMap = {};
   for (var i = 0; i < maxLanes; i++) {
