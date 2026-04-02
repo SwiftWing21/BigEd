@@ -55,9 +55,22 @@ def _build_splash_html() -> str:
 </body></html>"""
 
 SPLASH_HTML = _build_splash_html()
-FLEET_DIR = Path(__file__).resolve().parent.parent.parent / "fleet"
-DATA_DIR = Path(__file__).resolve().parent / "data"
-ICON_PATH = Path(__file__).resolve().parent / "icon_1024.png"
+
+# When frozen (PyInstaller --onefile), __file__ is inside a temp extraction dir.
+# Use the .exe's location as anchor instead.
+# Layout: BigEd/launcher/dist/BigEdCC.exe → project root is 3 levels up
+# Layout: BigEd/launcher/launcher_webview.py → project root is 3 levels up
+if getattr(sys, "frozen", False):
+    _EXE_DIR = Path(sys.executable).resolve().parent        # BigEd/launcher/dist/
+    _LAUNCHER_DIR = _EXE_DIR.parent                         # BigEd/launcher/
+    _PROJECT_ROOT = _LAUNCHER_DIR.parent.parent             # project root
+else:
+    _LAUNCHER_DIR = Path(__file__).resolve().parent         # BigEd/launcher/
+    _PROJECT_ROOT = _LAUNCHER_DIR.parent.parent             # project root
+
+FLEET_DIR = _PROJECT_ROOT / "fleet"
+DATA_DIR = _LAUNCHER_DIR / "data"
+ICON_PATH = _LAUNCHER_DIR / "icon_1024.png"
 
 _lock_sock: socket.socket | None = None
 _supervisor_proc: subprocess.Popen | None = None
@@ -145,17 +158,26 @@ def _relaunch_windowless():
 
 # -- Supervisor ----------------------------------------------------------------
 
+def _get_python() -> str:
+    """Return a real Python interpreter — sys.executable points to the .exe when frozen."""
+    if getattr(sys, "frozen", False):
+        import shutil
+        return shutil.which("python") or shutil.which("python3") or "python"
+    return sys.executable
+
+
 def _start_supervisor():
     global _supervisor_proc
     supervisor_py = str(FLEET_DIR / "supervisor.py")
+    python = _get_python()
     _supervisor_proc = subprocess.Popen(
-        [sys.executable, supervisor_py],
+        [python, supervisor_py],
         cwd=str(FLEET_DIR),
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
     )
-    log.info("Supervisor started (PID %s)", _supervisor_proc.pid)
+    log.info("Supervisor started (PID %s) via %s", _supervisor_proc.pid, python)
 
 
 def _stop_supervisor():
@@ -209,6 +231,17 @@ class BridgeAPI:
             return json.loads(resp.read())
         except Exception:
             return {"healthy": False}
+
+    def open_file_dialog(self):
+        """Open native file dialog starting in user's home directory."""
+        if not _window:
+            return []
+        result = _window.create_file_dialog(
+            webview.OPEN_DIALOG,
+            directory=str(Path.home()),
+            allow_multiple=True,
+        )
+        return list(result) if result else []
 
     def quit(self):
         _shutdown()
@@ -477,6 +510,9 @@ def main():
 
     _load_secrets_to_env()
 
+    # Sweep orphan fleet processes from prior sessions before anything else
+    _sweep_zombies()
+
     if not _acquire_instance_lock():
         log.info("Another instance is already running (port %s held)", LOCK_PORT)
         try:
@@ -504,25 +540,11 @@ def main():
 
     _relaunch_windowless()
 
-    # Check auto_start setting — if false, pause queue so fleet opens idle
-    _auto_start = True
-    try:
-        toml_path = FLEET_DIR / "fleet.toml"
-        if toml_path.exists():
-            try:
-                import tomllib
-            except ImportError:
-                import tomli as tomllib
-            cfg = tomllib.loads(toml_path.read_text(encoding="utf-8"))
-            _auto_start = cfg.get("fleet", {}).get("auto_start", True)
-    except Exception:
-        pass
-
-    if not _auto_start:
-        # Create pause file so workers don't process tasks on boot
-        pause_file = FLEET_DIR / ".queue_paused"
-        pause_file.write_text("paused_by_launcher", encoding="utf-8")
-        log.info("auto_start=false — fleet will open idle (queue paused)")
+    # Always start fleet idle — user profile's auto_start preference
+    # is checked after login in the dashboard frontend
+    pause_file = FLEET_DIR / ".queue_paused"
+    pause_file.write_text("paused_by_launcher", encoding="utf-8")
+    log.info("Fleet will open idle (queue paused until after login)")
 
     # Show splash window immediately — no waiting
     _window = webview.create_window(

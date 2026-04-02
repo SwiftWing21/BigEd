@@ -96,22 +96,63 @@ def _probe_url(url: str, timeout: int = 8) -> tuple[bool, float]:
     return ok, latency
 
 
+# ── Process Tree Cleanup ─────────────────────────────────────────────────
+
+def _kill_process_tree(proc: "subprocess.Popen") -> None:
+    """Kill a subprocess and all its children (recursive).
+
+    Uses psutil for reliable tree traversal. Falls back to proc.kill()
+    if psutil is unavailable.
+    """
+    try:
+        import psutil
+        parent = psutil.Process(proc.pid)
+        children = parent.children(recursive=True)
+        for child in children:
+            try:
+                child.kill()
+            except psutil.NoSuchProcess:
+                pass
+        parent.kill()
+        psutil.wait_procs(children + [parent], timeout=5)
+    except Exception:
+        try:
+            proc.kill()
+        except Exception:
+            pass
+
+
 # ── Check Functions ───────────────────────────────────────────────────────
 
 def _check_testing() -> tuple[float, dict]:
-    """Run pytest and score passed/total."""
+    """Run pytest and score passed/total.
+
+    Spawns pytest in a new process group so the entire tree (including any
+    parallel test workers) can be killed on timeout or parent death.
+    """
     import subprocess
+    import sys
     try:
         root = str(FLEET_DIR.parent)
-        result = subprocess.run(
+        # New process group so we can kill the entire tree on timeout
+        flags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+        if sys.platform == "win32":
+            flags |= subprocess.CREATE_NEW_PROCESS_GROUP
+        proc = subprocess.Popen(
             ["python", "-m", "pytest", "--tb=no", "-q"],
-            capture_output=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
             text=True,
             cwd=root,
-            timeout=120,
-            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+            creationflags=flags,
+            start_new_session=(sys.platform != "win32"),
         )
-        output = result.stdout + result.stderr
+        try:
+            stdout, stderr = proc.communicate(timeout=120)
+        except subprocess.TimeoutExpired:
+            _kill_process_tree(proc)
+            stdout, stderr = proc.communicate(timeout=5)
+        output = stdout + stderr
         # parse "X passed" and "Y failed"
         import re
         passed = 0

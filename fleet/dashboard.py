@@ -1121,6 +1121,108 @@ def api_comms():
     return jsonify(result)
 
 
+@app.route("/api/comms/history/<channel>")
+def api_comms_history(channel):
+    """Paginated message + note history for a channel."""
+    if channel not in ("sup", "agent", "fleet", "pool", "chat"):
+        return jsonify({"error": "invalid channel"}), 400
+    limit = min(int(request.args.get("limit", 50)), 200)
+    before = request.args.get("before", "")  # ISO datetime for pagination
+    try:
+        conn = get_conn()
+        # Messages
+        if before:
+            msgs = [dict(r) for r in conn.execute(
+                "SELECT id, from_agent, to_agent, body_json, created_at, read_at, channel "
+                "FROM messages WHERE channel=? AND created_at < ? ORDER BY created_at DESC LIMIT ?",
+                (channel, before, limit),
+            ).fetchall()]
+        else:
+            msgs = [dict(r) for r in conn.execute(
+                "SELECT id, from_agent, to_agent, body_json, created_at, read_at, channel "
+                "FROM messages WHERE channel=? ORDER BY created_at DESC LIMIT ?",
+                (channel, limit),
+            ).fetchall()]
+        # Notes
+        if before:
+            notes = [dict(r) for r in conn.execute(
+                "SELECT id, channel, from_agent, body_json, created_at "
+                "FROM notes WHERE channel=? AND created_at < ? ORDER BY created_at DESC LIMIT ?",
+                (channel, before, limit),
+            ).fetchall()]
+        else:
+            notes = [dict(r) for r in conn.execute(
+                "SELECT id, channel, from_agent, body_json, created_at "
+                "FROM notes WHERE channel=? ORDER BY created_at DESC LIMIT ?",
+                (channel, limit),
+            ).fetchall()]
+        return jsonify({"messages": msgs, "notes": notes})
+    except Exception as e:
+        return jsonify({"error": _safe_error(e), "messages": [], "notes": []}), 500
+
+
+@app.route("/api/comms/send", methods=["POST"])
+def api_comms_send():
+    """Send a message or note from the dashboard UI."""
+    data = request.get_json(silent=True) or {}
+    channel = data.get("channel", "fleet")
+    msg_type = data.get("type", "note")  # "message" or "note"
+    body = data.get("body", "")
+    from_agent = data.get("from", "dashboard")
+    to_agent = data.get("to", "")
+
+    if not body:
+        return jsonify({"error": "body is required"}), 400
+    if channel not in ("sup", "agent", "fleet", "pool", "chat"):
+        return jsonify({"error": "invalid channel"}), 400
+
+    try:
+        import comms
+        body_json = json.dumps({"text": body, "source": "dashboard"})
+        if msg_type == "message" and to_agent:
+            comms.post_message(from_agent, to_agent, body_json, channel=channel)
+        else:
+            comms.post_note(channel, from_agent, body_json)
+        # Broadcast via SSE so other clients see it immediately
+        _broadcast_sse({
+            "type": "comms_activity",
+            "channel": channel,
+            "from": from_agent,
+            "body": body,
+        })
+        return jsonify({"ok": True})
+    except Exception as e:
+        return jsonify({"error": _safe_error(e)}), 500
+
+
+@app.route("/api/comms/chat", methods=["POST"])
+def api_comms_chat():
+    """User chat — posts a task to the fleet and returns the task ID."""
+    data = request.get_json(silent=True) or {}
+    message = (data.get("message") or "").strip()
+    if not message:
+        return jsonify({"error": "message is required"}), 400
+    try:
+        import db as _db
+        task_id = _db.post_task(
+            skill="chat_response",
+            payload=json.dumps({"user_message": message, "source": "dashboard_chat"}),
+            priority=8,
+        )
+        # Also post as a note to the chat channel for history
+        import comms
+        comms.post_note("chat", "user", json.dumps({"text": message, "source": "dashboard_chat"}))
+        _broadcast_sse({
+            "type": "comms_activity",
+            "channel": "chat",
+            "from": "user",
+            "body": message,
+        })
+        return jsonify({"ok": True, "task_id": task_id})
+    except Exception as e:
+        return jsonify({"error": _safe_error(e)}), 500
+
+
 # /api/alerts, /api/alerts/ack: now in monitoring_blueprint.py (Phase 5)
 
 

@@ -1555,6 +1555,28 @@ Completed 2026-03-18. Linux AppImage (`package_linux.py`), macOS .app/DMG (`pack
 
 Completed 2026-03-18. GitHub Actions CI matrix (Win/Linux/macOS x Python 3.11/3.12), smoke test per platform, skill import verification, CLI command verification.
 
+#### PT-5: Build Size Optimization
+- **Goal:** Reduce BigEdCC.exe from 261MB (PyQt6-WebEngine bloat) to < 80MB
+- **Grading Alignment:** Performance → impact: +1 pt / weight: 10%; Usability → faster downloads
+- **Dependencies:** None (independent of feature work)
+- **Est. Tokens:** ~8k (M)
+- **Status:** [ ] Not started
+
+**Phase 1: Drop QtWebEngine** (biggest win — ~180MB of the 261MB)
+- [ ] Switch pywebview to Edge/WebView2 backend on Windows (`PYWEBVIEW_GUI=edgechromium`) — ships with Windows 10+, zero bundle cost
+- [ ] Remove PyQt6-WebEngine from requirements.txt (keep PyQt6 if needed for non-web UI, or drop entirely)
+- [ ] Fallback chain: edgechromium → qt → cef (build.py sets env var)
+
+**Phase 2: PyInstaller trimming** (~additional 20-30MB reduction)
+- [ ] `--exclude-module` for unused stdlib (tkinter, test, unittest, lib2to3)
+- [ ] Split `requirements.txt` — anthropic/google-genai are fleet-level, not needed in launcher .exe
+- [ ] UPX compression on final binary (typically 30-40% reduction)
+
+**Phase 3: GitHub Releases distribution**
+- [ ] GitHub Actions workflow: on tag push, `build.py --production`, upload artifacts to GitHub Release
+- [ ] Launcher auto-update checks GitHub Releases API for latest version
+- [ ] README download badges pointing to latest release
+
 ### CT — Cost Intelligence (Token Usage & Optimization)
 
 #### CT-1: Usage Capture [DONE]

@@ -1,0 +1,72 @@
+<!-- ═══════════════════════════════════════════════════════════════════════
+     COMMS — Fleet Communication + Chat
+     ═══════════════════════════════════════════════════════════════════ -->
+<div id="section-comms" class="section">
+  <div class="section-header">
+    <div class="section-title">Comms</div>
+    <div class="section-desc">Fleet messages, agent notes, and chat</div>
+  </div>
+
+  <!-- Channel Tabs -->
+  <div id="comms-tabs" style="display:flex;gap:4px;margin-bottom:16px;flex-wrap:wrap;">
+    <button class="btn btn-sm comms-tab active" data-channel="chat" onclick="commsSelectChannel('chat')">
+      &#128488; Chat
+    </button>
+    <button class="btn btn-sm comms-tab" data-channel="fleet" onclick="commsSelectChannel('fleet')">
+      &#9881; Fleet
+      <span class="comms-tab-badge" id="comms-count-fleet"></span>
+    </button>
+    <button class="btn btn-sm comms-tab" data-channel="agent" onclick="commsSelectChannel('agent')">
+      &#129302; Agent
+      <span class="comms-tab-badge" id="comms-count-agent"></span>
+    </button>
+    <button class="btn btn-sm comms-tab" data-channel="sup" onclick="commsSelectChannel('sup')">
+      &#128225; Supervisor
+      <span class="comms-tab-badge" id="comms-count-sup"></span>
+    </button>
+    <button class="btn btn-sm comms-tab" data-channel="pool" onclick="commsSelectChannel('pool')">
+      &#127760; Pool
+      <span class="comms-tab-badge" id="comms-count-pool"></span>
+    </button>
+  </div>
+
+  <!-- Chat Panel (default view) -->
+  <div id="comms-chat-panel">
+    <div id="comms-feed" style="
+      min-height:300px; max-height:60vh; overflow-y:auto;
+      background:var(--card); border:1px solid var(--border); border-radius:8px;
+      padding:12px; margin-bottom:12px;
+    ">
+      <div style="color:var(--muted-foreground);font-size:13px;text-align:center;padding:40px 0;">
+        No messages yet. Start a conversation below.
+      </div>
+    </div>
+
+    <!-- Input -->
+    <div style="display:flex;gap:8px;">
+      <input type="text" id="comms-input" placeholder="Type a message..."
+        style="flex:1;background:var(--card);color:var(--foreground);border:1px solid var(--border);border-radius:8px;padding:10px 14px;font-size:13px;outline:none;"
+        onkeydown="if(event.key==='Enter')commsSend()">
+      <button class="btn btn-primary" onclick="commsSend()" style="padding:10px 20px;border-radius:8px;">Send</button>
+    </div>
+  </div>
+
+  <!-- Fleet/Agent/Sup/Pool channel view -->
+  <div id="comms-channel-panel" style="display:none;">
+    <div style="display:flex;gap:8px;margin-bottom:12px;">
+      <select id="comms-filter-type" onchange="commsLoadChannel()" style="background:var(--card);color:var(--foreground);border:1px solid var(--border);border-radius:6px;padding:6px 10px;font-size:12px;">
+        <option value="all">All Activity</option>
+        <option value="messages">Messages Only</option>
+        <option value="notes">Notes Only</option>
+      </select>
+      <button class="btn btn-sm btn-outline" onclick="commsLoadChannel()">&#8635; Refresh</button>
+    </div>
+    <div id="comms-channel-feed" style="
+      min-height:300px; max-height:60vh; overflow-y:auto;
+      background:var(--card); border:1px solid var(--border); border-radius:8px;
+      padding:12px;
+    ">
+      <div class="spinner"></div>
+    </div>
+  </div>
+</div>

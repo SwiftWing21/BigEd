@@ -12,7 +12,7 @@ discord_bot_enabled = true   # lightweight Discord-only bridge to biged-fleetcha
 offline_mode = false         # true = no internet; external API skills gracefully degrade, local Ollama works
 air_gap_mode = false         # true = max isolation (implies offline_mode); no sockets, no secrets, skill whitelist
 api_keys_required = false    # DEPRECATED: superseded by [api_gate]. Kept for backwards compat.
-disabled_agents = ["sales", "onboarding", "implementation", "legal", "account_manager", "ds_rag", "ds_fleet", "ds_research", "security"]  # agents excluded from fleet boot
+disabled_agents = ["sales", "onboarding", "implementation", "legal", "account_manager", "ds_rag", "ds_fleet", "ds_research", "security", "planner"]  # agents excluded from fleet boot
 hitl_evolution = false           # true = evolution proposals go to WAITING_HUMAN for operator approval
 suite_routing_enabled = true   # set false to bypass suite routing (rollback)
 

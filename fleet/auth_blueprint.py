@@ -105,6 +105,7 @@ def _profile_dict(row) -> dict:
         "last_login": row["last_login"],
         "is_active": row["is_active"],
         "has_password": bool(row["password_hash"]),
+        "auto_start": bool(row["auto_start"]) if row["auto_start"] is not None else False,
     }
 
 
@@ -325,6 +326,10 @@ def api_auth_update_profile(profile_id):
     if "avatar_color" in data:
         updates.append("avatar_color = ?")
         params.append(data["avatar_color"])
+
+    if "auto_start" in data:
+        updates.append("auto_start = ?")
+        params.append(1 if data["auto_start"] else 0)
 
     if "password" in data:
         pw = data["password"]

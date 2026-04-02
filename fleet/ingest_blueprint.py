@@ -300,6 +300,46 @@ def api_ingest_upload():
         return jsonify({"error": _safe_error(e)}), 500
 
 
+@ingest_bp.route("/api/ingest/upload/path", methods=["POST"])
+def api_ingest_upload_path():
+    """Accept a local file path (from native file dialog), read and stage it."""
+    deny = _require_role("operator")
+    if deny:
+        return deny
+    try:
+        from pathlib import Path
+
+        body = request.get_json(force=True)
+        file_path = body.get("path", "").strip()
+        if not file_path:
+            return jsonify({"error": "Missing required field: path"}), 400
+
+        src = Path(file_path)
+        if not src.is_file():
+            return jsonify({"error": f"File not found: {file_path}"}), 404
+
+        # Read text for preview and token estimate
+        try:
+            text = src.read_text(encoding="utf-8")
+        except Exception:
+            text = ""
+
+        token_estimate = len(text) // 4
+        preview = text[:500] if text else ""
+        size_kb = round(src.stat().st_size / 1024, 2)
+
+        return jsonify({
+            "filename": src.name,
+            "path": str(src),
+            "token_estimate": token_estimate,
+            "preview": preview,
+            "size_kb": size_kb,
+        })
+    except Exception as e:
+        log.warning("POST /api/ingest/upload/path failed", exc_info=True)
+        return jsonify({"error": _safe_error(e)}), 500
+
+
 # ── API Key Management ────────────────────────────────────────────────────────
 
 @ingest_bp.route("/api/keys/status")

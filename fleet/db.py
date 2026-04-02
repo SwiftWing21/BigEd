@@ -624,7 +624,8 @@ def init_db(path: str | None = None):
                 created_at TEXT DEFAULT (datetime('now')),
                 last_login TEXT,
                 is_active INTEGER DEFAULT 1,
-                sso_user_id TEXT
+                sso_user_id TEXT,
+                auto_start INTEGER DEFAULT 0
             )
         """)
         conn.execute("""
@@ -642,6 +643,10 @@ def init_db(path: str | None = None):
         fb_cols = {r[1] for r in conn.execute("PRAGMA table_info(output_feedback)").fetchall()}
         if "reviewer" not in fb_cols:
             conn.execute("ALTER TABLE output_feedback ADD COLUMN reviewer TEXT DEFAULT ''")
+        # Add auto_start column to user_profiles if missing
+        up_cols = {r[1] for r in conn.execute("PRAGMA table_info(user_profiles)").fetchall()}
+        if "auto_start" not in up_cols:
+            conn.execute("ALTER TABLE user_profiles ADD COLUMN auto_start INTEGER DEFAULT 0")
 
 
 # ── Channel Constants (extracted to comms.py) ─────────────────────────────────

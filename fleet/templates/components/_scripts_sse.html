@@ -226,6 +226,14 @@ function handleSSE(msg) {
       _updateAvailable = true;
       _toggleUpdateBadge(true);
       break;
+    case 'comms_activity':
+      /* Live refresh comms tab if active */
+      if (document.getElementById('section-comms') && document.getElementById('section-comms').classList.contains('active')) {
+        if (_commsChannel === 'chat') commsLoadChat();
+        else if (_commsChannel === (msg.data && msg.data.channel)) commsLoadChannel();
+      }
+      commsLoadCounts();
+      break;
   }
 }
 
@@ -1722,28 +1730,36 @@ function submitAddSource() {
   style.textContent = '@keyframes pulse{0%,100%{opacity:1}50%{opacity:0.3}}';
   document.head.appendChild(style);
 
-  /* Check if fleet is intentionally idle (auto_start=false / ignition off).
-     If so, skip boot overlay entirely — go straight to auth. */
+  /* Fleet always starts paused — skip boot overlay, go straight to auth.
+     After login, hideLoginOverlay() triggers fleetStart() if user has auto_start. */
+  function _skipBootGoToAuth() {
+    var overlay = document.getElementById('boot-overlay');
+    if (overlay) overlay.style.display = 'none';
+    bootHidden = true;
+    checkAuth();
+  }
+
   fetch('/api/queue/status').then(function(r) { return r.json(); }).then(function(qs) {
     if (qs && qs.paused) {
-      /* Fleet is paused — skip boot, go to auth */
-      var overlay = document.getElementById('boot-overlay');
-      if (overlay) overlay.style.display = 'none';
-      bootHidden = true;
-      checkAuth();
+      _skipBootGoToAuth();
+    } else {
+      /* Fleet already running (e.g. page refresh mid-session) — skip boot, go to auth */
+      _skipBootGoToAuth();
       var mw = document.querySelector('.main-wrapper');
       if (mw) mw.classList.add('ready');
-    } else {
-      /* Fleet is active — show boot progress */
-      renderBootStages({stages: {}});
-      checkBootStatus();
-      bootTimer = setInterval(checkBootStatus, 500);
     }
   }).catch(function() {
-    /* API not available yet — show boot overlay and poll */
-    renderBootStages({stages: {}});
-    checkBootStatus();
-    bootTimer = setInterval(checkBootStatus, 500);
+    /* API not available yet — poll until dashboard is up, then go to auth */
+    var _waitTimer = setInterval(function() {
+      fetch('/api/health').then(function(r) {
+        if (r.ok) {
+          clearInterval(_waitTimer);
+          _skipBootGoToAuth();
+        }
+      }).catch(function() { /* still waiting */ });
+    }, 500);
+    /* Safety: give up after 30s and show auth anyway */
+    setTimeout(function() { clearInterval(_waitTimer); _skipBootGoToAuth(); }, 30000);
   });
 })();
 

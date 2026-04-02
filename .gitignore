@@ -174,6 +174,15 @@ repo-descriptions.txt
 # ── Fleet — runtime state flags ──────────────────────────────────────────────
 fleet/.queue_paused
 fleet/.walkthrough_done
+fleet/.port
+
+# ── Audit databases / baselines (runtime, not source) ───────────────────────
+*.audit.db
+audit.db
+audit_baseline.json
+biged_audit.db
+biged_baseline.json
+.two-brain-audit.json
 
 # ── Fleet — learned packs (runtime RL output) ────────────────────────────────
 fleet/factorio/packs/learned/

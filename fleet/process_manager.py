@@ -329,7 +329,7 @@ class ProcessManager:
             self._apply_resource_limits(self.worker_procs[role], memory_limit)
 
     def stop_worker(self, role: str) -> None:
-        """Gracefully stop a single worker process."""
+        """Gracefully stop a single worker and all its child processes."""
         proc = self.worker_procs.get(role)
         if proc and proc.poll() is None:
             log.info(f"Stopping worker: {role}")
@@ -337,9 +337,32 @@ class ProcessManager:
             try:
                 proc.wait(timeout=10)
             except subprocess.TimeoutExpired:
-                proc.kill()
+                self._kill_tree(proc)
         self.worker_procs.pop(role, None)
         self.last_busy.pop(role, None)
+
+    @staticmethod
+    def _kill_tree(proc: subprocess.Popen) -> None:
+        """Kill a process and all its children via psutil tree traversal.
+
+        Falls back to proc.kill() if psutil is unavailable.
+        """
+        try:
+            import psutil
+            parent = psutil.Process(proc.pid)
+            children = parent.children(recursive=True)
+            for child in children:
+                try:
+                    child.kill()
+                except psutil.NoSuchProcess:
+                    pass
+            parent.kill()
+            psutil.wait_procs(children + [parent], timeout=5)
+        except Exception:
+            try:
+                proc.kill()
+            except Exception:
+                pass
 
     def get_running_workers(self) -> set:
         """Get names of currently running worker processes."""
@@ -418,7 +441,7 @@ class ProcessManager:
         )
 
     def start_dashboard(self) -> None:
-        """Start the dashboard web server."""
+        """Start the dashboard web server with port fallback."""
         if not self.config.get("dashboard", {}).get("enabled", False):
             log.info("Dashboard disabled in fleet.toml")
             return
@@ -426,9 +449,26 @@ class ProcessManager:
             log.info("Dashboard already running — skipping launch")
             return
         dash_cfg = self.config.get("dashboard", {})
-        port = dash_cfg.get("port", 5555)
+        preferred_port = dash_cfg.get("port", 5555)
+        fallback_ports = dash_cfg.get("fallback_ports", [5556, 5557])
         host = dash_cfg.get("bind_address", "127.0.0.1")
         dash_script = "web_app.py" if (FLEET_DIR / "web_app.py").exists() else "dashboard.py"
+
+        # Try preferred port first, then fallbacks
+        port = preferred_port
+        for candidate in [preferred_port] + fallback_ports:
+            try:
+                import socket
+                with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                    s.bind((host, candidate))
+                port = candidate
+                break
+            except OSError:
+                log.warning("Port %d in use, trying next fallback", candidate)
+        else:
+            log.error("All dashboard ports in use (%s + %s)", preferred_port, fallback_ports)
+            return
+
         log.info(f"Starting dashboard ({dash_script}) on http://{host}:{port}")
         self.dashboard_proc = subprocess.Popen(
             [PYTHON, str(FLEET_DIR / dash_script), "--port", str(port), "--host", host],
@@ -437,6 +477,10 @@ class ProcessManager:
             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
             creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0),
         )
+        # Write .port file so MCP server and other tools can discover the active port
+        port_file = FLEET_DIR / ".port"
+        port_file.write_text(str(port), encoding="utf-8")
+        log.info("Wrote active port %d to %s", port, port_file)
 
     def stop_dashboard(self) -> None:
         """Stop the dashboard."""
@@ -599,7 +643,7 @@ class ProcessManager:
                 try:
                     proc.wait(timeout=5)
                 except subprocess.TimeoutExpired:
-                    proc.kill()
+                    self._kill_tree(proc)
         # Dr. Ders after workers, before Ollama
         if self.hw_supervisor_proc and self.hw_supervisor_proc.poll() is None:
             self.hw_supervisor_proc.terminate()

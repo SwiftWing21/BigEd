@@ -671,6 +671,11 @@ input, textarea, select { font-family: inherit; font-size: inherit; }
   color: var(--foreground);
 }
 .btn-ghost:hover { border-color: var(--primary); color: var(--primary); }
+/* Comms tab pills */
+.comms-tab { background: var(--muted,#1e293b); color: var(--muted-foreground); border: 1px solid var(--border); border-radius: 8px; padding: 6px 14px; font-size: 12px; cursor: pointer; transition: all 0.15s; }
+.comms-tab:hover { border-color: var(--primary); color: var(--foreground); }
+.comms-tab.active { background: var(--primary); color: var(--primary-foreground); border-color: var(--primary); }
+.comms-tab-badge { font-size: 10px; background: var(--danger); color: #fff; padding: 0 5px; border-radius: 8px; margin-left: 4px; font-weight: 700; }
 .btn-sm { padding: 4px 10px; font-size: 12px; min-height: 28px; }
 .btn-icon {
   width: 36px;

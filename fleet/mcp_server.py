@@ -27,16 +27,29 @@ mcp = FastMCP(
 )
 
 
+_PORT_FILE = _FLEET_DIR / ".port"
+_FALLBACK_PORTS = [5555, 5556, 5557]
+
+
+def _discover_port() -> int:
+    """Read active dashboard port from .port file, or probe fallbacks."""
+    if _PORT_FILE.exists():
+        try:
+            return int(_PORT_FILE.read_text(encoding="utf-8").strip())
+        except Exception:
+            pass
+    for port in _FALLBACK_PORTS:
+        try:
+            urllib.request.urlopen(f"http://127.0.0.1:{port}/api/health", timeout=2)
+            return port
+        except Exception:
+            continue
+    return _FALLBACK_PORTS[0]
+
+
 def _get_base_url() -> str:
-    """Dashboard base URL from config, default localhost:5555."""
-    try:
-        from config import load_config
-        cfg = load_config()
-        return cfg.get("dispatch_bridge", {}).get(
-            "dashboard_base_url", "http://127.0.0.1:5555"
-        )
-    except Exception:
-        return "http://127.0.0.1:5555"
+    """Dashboard base URL with port discovery."""
+    return f"http://127.0.0.1:{_discover_port()}"
 
 
 def _http_get(path: str) -> dict:
@@ -44,6 +57,16 @@ def _http_get(path: str) -> dict:
     url = f"{_get_base_url()}{path}"
     req = urllib.request.Request(url)
     with urllib.request.urlopen(req, timeout=10) as resp:
+        return json.loads(resp.read().decode())
+
+
+def _http_post(path: str, body: dict | None = None) -> dict:
+    """POST request to dashboard API. Returns parsed JSON."""
+    url = f"{_get_base_url()}{path}"
+    data = json.dumps(body).encode() if body else None
+    headers = {"Content-Type": "application/json"} if body else {}
+    req = urllib.request.Request(url, data=data, headers=headers, method="POST")
+    with urllib.request.urlopen(req, timeout=15) as resp:
         return json.loads(resp.read().decode())
 
 
@@ -214,6 +237,90 @@ def fleet_cancel(task_id: int) -> dict:
     except Exception as e:
         _log.warning("fleet_cancel failed", exc_info=True)
         return {"error": str(e)}
+
+
+@mcp.tool()
+def fleet_chat(message: str) -> dict:
+    """Send a chat message to the fleet. Creates a task for an agent to respond.
+
+    Args:
+        message: The message to send to the fleet agents.
+    """
+    try:
+        return _http_post("/api/comms/chat", {"message": message})
+    except Exception as e:
+        _log.warning("fleet_chat failed", exc_info=True)
+        return {"error": str(e)}
+
+
+@mcp.tool()
+def fleet_comms(channel: str = "fleet", limit: int = 20) -> str:
+    """Read recent messages and notes from a fleet communication channel.
+
+    Args:
+        channel: Channel to read — 'chat', 'fleet', 'agent', 'sup', or 'pool'.
+        limit: Number of recent items to return. Default 20.
+    """
+    try:
+        if channel not in ("chat", "fleet", "agent", "sup", "pool"):
+            return f"Invalid channel '{channel}'. Use: chat, fleet, agent, sup, pool"
+        data = _http_get(f"/api/comms/history/{channel}?limit={limit}")
+        items = []
+        for msg in data.get("messages", []):
+            body = msg.get("body_json", "")
+            try:
+                body = json.loads(body).get("text", body)
+            except Exception:
+                pass
+            items.append(f"[msg] {msg.get('from_agent', '?')} → {msg.get('to_agent', '*')}: {body} ({msg.get('created_at', '')})")
+        for note in data.get("notes", []):
+            body = note.get("body_json", "")
+            try:
+                body = json.loads(body).get("text", body)
+            except Exception:
+                pass
+            items.append(f"[note] {note.get('from_agent', '?')}: {body} ({note.get('created_at', '')})")
+        return "\n".join(items) if items else f"No activity in '{channel}' channel."
+    except Exception as e:
+        _log.warning("fleet_comms failed", exc_info=True)
+        return f"Error: {e}"
+
+
+@mcp.tool()
+def fleet_send(message: str, channel: str = "fleet") -> dict:
+    """Send a note to a fleet communication channel.
+
+    Args:
+        message: The message text to send.
+        channel: Target channel — 'fleet', 'agent', 'sup', or 'pool'. Default 'fleet'.
+    """
+    try:
+        return _http_post("/api/comms/send", {"channel": channel, "body": message})
+    except Exception as e:
+        _log.warning("fleet_send failed", exc_info=True)
+        return {"error": str(e)}
+
+
+@mcp.tool()
+def fleet_ignition(action: str) -> str:
+    """Start or stop the fleet.
+
+    Args:
+        action: 'start' to resume queue and start workers, 'stop' to pause and stop.
+    """
+    try:
+        if action == "start":
+            r1 = _http_post("/api/queue/resume")
+            r2 = _http_post("/api/fleet/start")
+            return "Fleet started — queue resumed, workers launching."
+        elif action == "stop":
+            r1 = _http_post("/api/queue/pause")
+            r2 = _http_post("/api/fleet/stop")
+            return "Fleet stopped — queue paused, workers shutting down."
+        return f"Invalid action '{action}'. Use 'start' or 'stop'."
+    except Exception as e:
+        _log.warning("fleet_ignition failed", exc_info=True)
+        return f"Error: {e}"
 
 
 # ── Resources ──────────────────────────────────────────────────────

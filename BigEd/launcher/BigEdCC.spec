@@ -1,16 +1,12 @@
 # -*- mode: python ; coding: utf-8 -*-
 
-datas = [('brick.ico', '.'), ('icon_1024.png', '.'), ('modules', 'modules'), ('tray.py', '.'), ('launcher_webview.py', '.')]
-binaries = []
-hiddenimports = ['psutil', 'pynvml', 'webview', 'qtpy', 'PyQt6', 'PyQt6.QtWebEngineWidgets']
-
 
 a = Analysis(
     ['launcher.py'],
     pathex=[],
-    binaries=binaries,
-    datas=datas,
-    hiddenimports=hiddenimports,
+    binaries=[],
+    datas=[('brick.ico', '.'), ('icon_1024.png', '.'), ('modules', 'modules'), ('launcher_webview.py', '.'), ('tray.py', '.')],
+    hiddenimports=['psutil', 'pynvml', 'webview', 'qtpy', 'PyQt6', 'PyQt6.QtWebEngineWidgets'],
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],

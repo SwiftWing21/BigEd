@@ -104,6 +104,7 @@ function loadSectionData(name) {
     case 'modules': loadModules(); break;
     case 'update': loadUpdate(); break;
     case 'factorio': loadFactorio(); _startSpatialMapPolling(); break;
+    case 'comms': commsInit(); break;
   }
 }
 
@@ -4219,6 +4220,205 @@ function updateSetting(section, key, value, type) {
 }
 
 /* ══════════════════════════════════════════════════════════════════════════
+   COMMS — Fleet Communication + Chat
+   ══════════════════════════════════════════════════════════════════════ */
+var _commsChannel = 'chat';
+var _commsScrollLock = false;
+
+function commsInit() {
+  commsSelectChannel('chat');
+  commsLoadCounts();
+}
+
+function commsLoadCounts() {
+  apiFetch('/api/comms').then(function(d) {
+    var total = 0;
+    ['fleet','agent','sup','pool'].forEach(function(ch) {
+      var badge = document.getElementById('comms-count-' + ch);
+      var n = (d[ch] && d[ch].unread) || 0;
+      total += n;
+      if (badge) {
+        badge.textContent = n > 0 ? n : '';
+        badge.style.display = n > 0 ? 'inline' : 'none';
+      }
+    });
+    var sidebarBadge = document.getElementById('comms-badge');
+    if (sidebarBadge) {
+      sidebarBadge.textContent = total > 0 ? total : '';
+      if (total > 0) sidebarBadge.classList.remove('hidden');
+      else sidebarBadge.classList.add('hidden');
+    }
+  }).catch(function() {});
+}
+
+function commsSelectChannel(ch) {
+  _commsChannel = ch;
+  document.querySelectorAll('.comms-tab').forEach(function(t) {
+    t.classList.toggle('active', t.getAttribute('data-channel') === ch);
+  });
+  if (ch === 'chat') {
+    document.getElementById('comms-chat-panel').style.display = '';
+    document.getElementById('comms-channel-panel').style.display = 'none';
+    commsLoadChat();
+  } else {
+    document.getElementById('comms-chat-panel').style.display = 'none';
+    document.getElementById('comms-channel-panel').style.display = '';
+    commsLoadChannel();
+  }
+}
+
+function _commsEmptyMessage(container, text) {
+  container.textContent = '';
+  var msg = document.createElement('div');
+  msg.style.cssText = 'color:var(--muted-foreground);font-size:13px;text-align:center;padding:40px 0;';
+  msg.textContent = text;
+  container.appendChild(msg);
+}
+
+function commsLoadChat() {
+  apiFetch('/api/comms/history/chat?limit=100').then(function(d) {
+    var feed = document.getElementById('comms-feed');
+    var items = (d.notes || []).concat(d.messages || []);
+    items.sort(function(a, b) { return (a.created_at || '').localeCompare(b.created_at || ''); });
+    if (items.length === 0) {
+      _commsEmptyMessage(feed, 'No messages yet. Start a conversation below.');
+      return;
+    }
+    feed.textContent = '';
+    items.forEach(function(item) { feed.appendChild(_commsBubble(item)); });
+    if (!_commsScrollLock) feed.scrollTop = feed.scrollHeight;
+  }).catch(function() {});
+}
+
+function commsLoadChannel() {
+  var filter = document.getElementById('comms-filter-type').value;
+  apiFetch('/api/comms/history/' + _commsChannel + '?limit=100').then(function(d) {
+    var feed = document.getElementById('comms-channel-feed');
+    var items = [];
+    if (filter !== 'notes') {
+      (d.messages || []).forEach(function(m) { m._type = 'msg'; items.push(m); });
+    }
+    if (filter !== 'messages') {
+      (d.notes || []).forEach(function(n) { n._type = 'note'; items.push(n); });
+    }
+    items.sort(function(a, b) { return (b.created_at || '').localeCompare(a.created_at || ''); });
+    if (items.length === 0) {
+      _commsEmptyMessage(feed, 'No activity in this channel.');
+      return;
+    }
+    feed.textContent = '';
+    items.forEach(function(item) { feed.appendChild(_commsRow(item)); });
+  }).catch(function() {});
+}
+
+function _commsParseBody(bodyJson) {
+  try { return JSON.parse(bodyJson || '{}').text || bodyJson || ''; }
+  catch(e) { return bodyJson || ''; }
+}
+
+function _commsBubble(item) {
+  var from = item.from_agent || item.from || 'unknown';
+  var body = _commsParseBody(item.body_json);
+  var isUser = from === 'user' || from === 'dashboard';
+  var time = (item.created_at || '').slice(11, 16);
+
+  var row = document.createElement('div');
+  row.style.cssText = 'display:flex;margin-bottom:8px;' + (isUser ? 'justify-content:flex-end;' : 'justify-content:flex-start;');
+
+  var bubble = document.createElement('div');
+  bubble.style.cssText = 'max-width:75%;padding:8px 12px;border-radius:12px;font-size:13px;line-height:1.4;' +
+    (isUser
+      ? 'background:var(--primary,#3b82f6);color:#fff;border-bottom-right-radius:4px;'
+      : 'background:var(--muted,#1e293b);color:var(--foreground);border-bottom-left-radius:4px;');
+
+  if (!isUser) {
+    var agent = document.createElement('div');
+    agent.style.cssText = 'font-size:11px;font-weight:600;color:var(--primary,#3b82f6);margin-bottom:2px;';
+    agent.textContent = from;
+    bubble.appendChild(agent);
+  }
+
+  var text = document.createElement('div');
+  text.textContent = body;
+  bubble.appendChild(text);
+
+  var ts = document.createElement('div');
+  ts.style.cssText = 'font-size:10px;opacity:0.6;margin-top:2px;text-align:right;';
+  ts.textContent = time;
+  bubble.appendChild(ts);
+
+  row.appendChild(bubble);
+  return row;
+}
+
+function _commsRow(item) {
+  var from = item.from_agent || 'unknown';
+  var body = _commsParseBody(item.body_json);
+  var time = (item.created_at || '').replace('T', ' ').slice(0, 19);
+  var isNote = item._type === 'note';
+
+  var row = document.createElement('div');
+  row.style.cssText = 'display:flex;gap:10px;padding:8px 0;border-bottom:1px solid var(--border);align-items:flex-start;';
+
+  var icon = document.createElement('span');
+  icon.style.cssText = 'font-size:14px;margin-top:2px;flex-shrink:0;';
+  icon.textContent = isNote ? '\uD83D\uDCDD' : '\u2709\uFE0F';
+
+  var content = document.createElement('div');
+  content.style.cssText = 'flex:1;min-width:0;';
+
+  var header = document.createElement('div');
+  header.style.cssText = 'display:flex;gap:8px;align-items:center;margin-bottom:2px;';
+  var agentName = document.createElement('span');
+  agentName.style.cssText = 'font-weight:600;font-size:12px;color:var(--primary,#3b82f6);';
+  agentName.textContent = from;
+  header.appendChild(agentName);
+  if (item.to_agent) {
+    var toLabel = document.createElement('span');
+    toLabel.style.cssText = 'font-size:10px;color:var(--muted-foreground);';
+    toLabel.textContent = '\u2192 ' + item.to_agent;
+    header.appendChild(toLabel);
+  }
+  var typeLabel = document.createElement('span');
+  typeLabel.style.cssText = 'font-size:10px;color:var(--muted-foreground);background:var(--muted,#1e293b);padding:1px 6px;border-radius:4px;';
+  typeLabel.textContent = isNote ? 'note' : 'msg';
+  header.appendChild(typeLabel);
+
+  var bodyEl = document.createElement('div');
+  bodyEl.style.cssText = 'font-size:13px;color:var(--foreground);word-break:break-word;';
+  bodyEl.textContent = body;
+
+  var tsEl = document.createElement('div');
+  tsEl.style.cssText = 'font-size:10px;color:var(--muted-foreground);margin-top:2px;';
+  tsEl.textContent = time;
+
+  content.appendChild(header);
+  content.appendChild(bodyEl);
+  content.appendChild(tsEl);
+
+  row.appendChild(icon);
+  row.appendChild(content);
+  return row;
+}
+
+function commsSend() {
+  var input = document.getElementById('comms-input');
+  var msg = (input.value || '').trim();
+  if (!msg) return;
+  input.value = '';
+
+  if (_commsChannel === 'chat') {
+    apiFetch('/api/comms/chat', { method: 'POST', body: { message: msg } })
+      .then(function() { commsLoadChat(); })
+      .catch(function() {});
+  } else {
+    apiFetch('/api/comms/send', { method: 'POST', body: { channel: _commsChannel, body: msg } })
+      .then(function() { commsLoadChannel(); })
+      .catch(function() {});
+  }
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
    AUTH — Login overlay, profile picker, setup, header badge
    ══════════════════════════════════════════════════════════════════════ */
 var _currentUser = null;
@@ -4481,6 +4681,13 @@ function hideLoginOverlay() {
   /* Ensure main-wrapper is visible after login completes */
   var mw = document.querySelector('.main-wrapper');
   if (mw) mw.classList.add('ready');
+  /* Auto-start fleet if user's profile has auto_start enabled */
+  if (_currentUser && _currentUser.auto_start) {
+    /* Small delay so the dashboard renders before boot overlay appears */
+    setTimeout(function() {
+      if (typeof fleetStart === 'function') fleetStart();
+    }, 500);
+  }
 }
 
 function showCurrentUser(user) {
