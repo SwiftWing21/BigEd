@@ -1,8 +1,8 @@
-"""Thin skill wrapper for the two-brain audit system."""
+"""Thin skill wrapper for the ScoreRift audit system."""
 import logging
 
 SKILL_NAME = "audit_score"
-DESCRIPTION = "Run two-brain audit scoring and return system health assessment."
+DESCRIPTION = "Run ScoreRift audit scoring and return system health assessment."
 VERSION = "1.0.0"
 COMPLEXITY = "low"
 REQUIRES_NETWORK = False

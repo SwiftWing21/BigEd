@@ -1,7 +1,7 @@
-"""TBA Claim Schema and Gap Taxonomy for fleet audit system.
+"""ScoreRift Claim Schema and Gap Taxonomy for fleet audit system.
 
-Fleet's own copy of the Two-Brain Audit claim types — not imported from
-the TBA codebase.  Provides typed divergence classification and a
+Fleet's own copy of the ScoreRift claim types — not imported from
+the ScoreRift codebase.  Provides typed divergence classification and a
 human-readable tension report.
 """
 from __future__ import annotations

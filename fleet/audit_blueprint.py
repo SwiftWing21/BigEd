@@ -1,4 +1,4 @@
-"""Two-Brain Audit REST API."""
+"""ScoreRift Audit REST API."""
 from __future__ import annotations
 
 import json
@@ -191,7 +191,7 @@ def api_audit_snapshots():
         return jsonify({"error": _safe_error(e)}), 500
 
 
-# ── GET /api/audit/tension — TBA tension report ────────────────────────
+# ── GET /api/audit/tension — ScoreRift tension report ────────────────────────
 
 @audit_bp.route("/api/audit/tension")
 def api_audit_tension():

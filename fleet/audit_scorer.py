@@ -1,5 +1,5 @@
 # fleet/audit_scorer.py
-"""Two-Brain Audit Scoring Engine.
+"""ScoreRift Audit Scoring Engine.
 
 Combines automated quantitative scoring (left brain) with manual qualitative
 grading (right brain). Reconciles them with divergence detection.
@@ -635,7 +635,7 @@ def run_tier(tier: str) -> list[dict]:
             if gap > threshold:
                 divergence = 1
 
-        # --- TBA Claim classification ---
+        # --- ScoreRift Claim classification ---
         claim_dim = _DIMENSION_TO_CLAIM.get(dim_name, ClaimDimension.CORRECTNESS)
         auto_claim = Claim(
             source="auto",
@@ -795,7 +795,7 @@ def reconcile(scores: list[dict]) -> list[dict]:
     Only flags when: gap > DIVERGENCE_THRESHOLD AND dimension confidence >= CONFIDENCE_GATE.
     Mutates and returns the input scores list with updated divergence flags.
     Also enriches each score dict with gap_type, severity, and
-    divergence_explanation from the TBA claim schema.
+    divergence_explanation from the ScoreRift claim schema.
     """
     from tba_claim_schema import (
         Claim, ClaimDimension, classify_divergence,
@@ -832,7 +832,7 @@ def reconcile(scores: list[dict]) -> list[dict]:
         else:
             s["divergence"] = 0
 
-        # --- TBA Claim classification ---
+        # --- ScoreRift Claim classification ---
         claim_dim = _DIMENSION_TO_CLAIM.get(dim_name, ClaimDimension.CORRECTNESS)
         auto_claim = Claim(
             source="auto",
@@ -893,11 +893,11 @@ def run_and_store(tier: str) -> dict:
     write_scores(tier, scores)
     divergences = [s for s in scores if s["divergence"] == 1]
 
-    # --- Build TBA tension report from enriched scores ---
+    # --- Build ScoreRift tension report from enriched scores ---
     report = ""
     try:
         from tba_claim_schema import (
-            Divergence as TBADivergence,
+            Divergence as SRDivergence,
             GapType, Severity, ClaimDimension,
             tension_report,
         )
@@ -906,7 +906,7 @@ def run_and_store(tier: str) -> dict:
             if "gap_type" not in s:
                 continue
             try:
-                div_objects.append(TBADivergence(
+                div_objects.append(SRDivergence(
                     gap_type=GapType(s["gap_type"]),
                     severity=Severity(s["severity"]),
                     dimension=ClaimDimension(
