@@ -193,14 +193,18 @@ class TestEnsureModelAvailable(unittest.TestCase):
     @patch("skills.model_suite.urllib.request.urlopen")
     def test_model_already_installed(self, mock_urlopen):
         from skills.model_suite import ensure_model_available
-        # Mock /api/tags response
+        # Mock /api/version then /api/tags (called in sequence)
+        version_resp = MagicMock()
+        version_resp.read.return_value = json.dumps({"version": "0.20.0"}).encode()
+        version_resp.__enter__ = lambda s: s
+        version_resp.__exit__ = MagicMock(return_value=False)
         tags_resp = MagicMock()
         tags_resp.read.return_value = json.dumps(
             {"models": [{"name": "gemma4:e4b"}]}
         ).encode()
         tags_resp.__enter__ = lambda s: s
         tags_resp.__exit__ = MagicMock(return_value=False)
-        mock_urlopen.return_value = tags_resp
+        mock_urlopen.side_effect = [version_resp, tags_resp]
         result = ensure_model_available("gemma4:e4b", host="http://localhost:11434")
         self.assertEqual(result["status"], "ready")
 
@@ -334,8 +338,9 @@ class TestPartialOffload(unittest.TestCase):
                 }}},
             },
         }
+        # Use skill_name="unknown" to bypass get_local_model_for_skill routing
         _call_local("system", "user", config["models"], max_tokens=100,
-                     skill_name="test", config=config)
+                     skill_name="unknown", config=config)
 
         # Inspect the request body sent to Ollama
         call_args = mock_urlopen.call_args
@@ -370,7 +375,7 @@ class TestPartialOffload(unittest.TestCase):
             },
         }
         _call_local("system", "user", config["models"], max_tokens=100,
-                     skill_name="test", config=config)
+                     skill_name="unknown", config=config)
 
         call_args = mock_urlopen.call_args
         req = call_args[0][0]
@@ -464,8 +469,8 @@ class TestContextOverflow(unittest.TestCase):
         system = "sys"  # 1 word
         user = "a b c d e f g h i j"  # 10 words
         est = _estimate_tokens(system, user, skill_name="analysis")
-        # 11 words * 1.3 = 14.3 -> 15 (int)
-        self.assertEqual(est, int(11 * 1.3))
+        # 11 words * 1.3 = 14.3, int() truncates -> 14
+        self.assertEqual(est, 14)
 ```
 
 - [ ] **Step 2: Run test to verify it fails**
@@ -1227,34 +1232,33 @@ The exploration showed `process_manager.py` already reads `[ollama.optimization]
 
 ```python
 class TestProcessManagerOllamaEnv(unittest.TestCase):
-    @patch("process_manager.tomllib.load")
-    def test_kv_cache_type_from_fleet_toml(self, mock_load):
-        mock_load.return_value = {
+    def test_kv_cache_type_from_fleet_toml(self):
+        from process_manager import ProcessManager
+        pm = ProcessManager.__new__(ProcessManager)
+        # Set config directly — _resolve_ollama_env reads self.config, not tomllib
+        pm.config = {
             "ollama": {"optimization": {
-                "flash_attention": True,
+                "flash_attention": "on",    # actual code expects "on"/"off"/"auto", not bool
                 "kv_cache_type": "q8_0",
                 "num_parallel": "auto",
                 "max_loaded_models": "auto",
             }},
         }
-        from process_manager import ProcessManager
-        pm = ProcessManager.__new__(ProcessManager)
         env = pm._resolve_ollama_env()
         self.assertEqual(env.get("OLLAMA_FLASH_ATTENTION"), "1")
         self.assertEqual(env.get("OLLAMA_KV_CACHE_TYPE"), "q8_0")
 
-    @patch("process_manager.tomllib.load")
-    def test_flash_attention_disabled(self, mock_load):
-        mock_load.return_value = {
+    def test_flash_attention_disabled(self):
+        from process_manager import ProcessManager
+        pm = ProcessManager.__new__(ProcessManager)
+        pm.config = {
             "ollama": {"optimization": {
-                "flash_attention": False,
+                "flash_attention": "off",
                 "kv_cache_type": "q8_0",
                 "num_parallel": "auto",
                 "max_loaded_models": "auto",
             }},
         }
-        from process_manager import ProcessManager
-        pm = ProcessManager.__new__(ProcessManager)
         env = pm._resolve_ollama_env()
         self.assertNotIn("OLLAMA_FLASH_ATTENTION", env)
 ```
@@ -1280,7 +1284,113 @@ git commit -m "fix(process_manager): handle boolean flash_attention + KV-cache e
 
 ---
 
-## Task 12: Full Integration Test + Final Smoke
+## Task 12: RAM Spillover Tracking + OOM Handling
+
+**Files:**
+- Modify: `providers.py` (OOM detection in `_call_local`)
+- Modify: `hw_supervisor.py` (RAM spillover monitoring)
+- Test: `tests/test_benchmark.py`
+
+- [ ] **Step 1: Write OOM handling test**
+
+Add to `tests/test_benchmark.py`:
+
+```python
+class TestOOMHandling(unittest.TestCase):
+    @patch("providers.urllib.request.urlopen")
+    def test_oom_error_detected_and_reported(self, mock_urlopen):
+        """Ollama OOM response should be caught and reported cleanly."""
+        from providers import _call_local
+        mock_urlopen.side_effect = urllib.error.HTTPError(
+            url="http://localhost:11434/api/generate",
+            code=500, msg="out of memory",
+            hdrs=None, fp=None,
+        )
+        config = {"models": {
+            "local": "gemma4:31b", "complex": "gemma4:31b",
+            "ollama_host": "http://localhost:11434",
+        }}
+        with self.assertRaises(Exception) as ctx:
+            _call_local("sys", "user", config["models"], max_tokens=100,
+                        skill_name="unknown", config=config)
+        self.assertIn("memory", str(ctx.exception).lower())
+```
+
+- [ ] **Step 2: Run test to verify it fails**
+
+Run: `cd /c/Users/max/Projects/Education/fleet && python -m pytest tests/test_benchmark.py::TestOOMHandling -v`
+Expected: FAIL — OOM not cleanly caught (raw exception or wrong message)
+
+- [ ] **Step 3: Add OOM detection to _call_local() in providers.py**
+
+In `providers.py`, wrap the Ollama HTTP call in `_call_local()` with OOM detection. Around the `urlopen` call (~line 920):
+
+```python
+    try:
+        req = urllib.request.Request(
+            f"{host}/api/generate", data=body, method="POST",
+            headers={"Content-Type": "application/json"},
+        )
+        with urllib.request.urlopen(req, timeout=300) as r:
+            resp = json.loads(r.read())
+    except urllib.error.HTTPError as e:
+        err_body = ""
+        try:
+            err_body = e.read().decode() if e.fp else ""
+        except Exception:
+            pass
+        if "out of memory" in str(e).lower() or "out of memory" in err_body.lower():
+            raise RuntimeError(
+                f"Model exceeded available memory — try a smaller variant "
+                f"or increase num_gpu_layers offload. Ollama error: {e}"
+            ) from e
+        raise
+```
+
+- [ ] **Step 4: Write RAM spillover tracking test**
+
+Add to `tests/test_benchmark.py`:
+
+```python
+class TestRAMSpillover(unittest.TestCase):
+    @patch("hw_supervisor.psutil.virtual_memory")
+    def test_ram_spillover_calculated(self, mock_vmem):
+        import hw_supervisor
+        # Simulate RAM increase during inference
+        mock_vmem.return_value = MagicMock(used=32 * 1024**3)  # 32 GB used
+        baseline_ram = 28 * 1024**3  # 28 GB baseline before inference
+        spillover = hw_supervisor._calc_ram_spillover(baseline_ram)
+        self.assertAlmostEqual(spillover, 4.0, places=0)  # ~4 GB spillover
+```
+
+- [ ] **Step 5: Add _calc_ram_spillover() to hw_supervisor.py**
+
+Near the `_build_model_sizes` function in `hw_supervisor.py`:
+
+```python
+def _calc_ram_spillover(baseline_bytes: int) -> float:
+    """Calculate RAM spillover in GB since baseline measurement."""
+    import psutil
+    current = psutil.virtual_memory().used
+    delta = current - baseline_bytes
+    return max(0.0, delta / (1024 ** 3))
+```
+
+- [ ] **Step 6: Run tests**
+
+Run: `cd /c/Users/max/Projects/Education/fleet && python -m pytest tests/test_benchmark.py::TestOOMHandling tests/test_benchmark.py::TestRAMSpillover -v`
+Expected: PASS
+
+- [ ] **Step 7: Commit**
+
+```bash
+git add providers.py hw_supervisor.py tests/test_benchmark.py
+git commit -m "feat: add OOM error handling + RAM spillover tracking for partial offload"
+```
+
+---
+
+## Task 13: Full Integration Test + Final Smoke
 
 **Files:**
 - Test: `tests/test_benchmark.py`
@@ -1357,5 +1467,6 @@ git commit -m "test: add full integration test for Gemma 4 benchmark flow"
 | 9 | CLI benchmark command | 5 |
 | 10 | Dashboard endpoint + SSE | 6 |
 | 11 | Process manager verification | 3 |
-| 12 | Integration test + smoke | 4 |
-| **Total** | | **61 steps** |
+| 12 | OOM handling + RAM spillover | 7 |
+| 13 | Integration test + smoke | 4 |
+| **Total** | | **68 steps** |
