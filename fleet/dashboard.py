@@ -1898,6 +1898,17 @@ def api_routing_retrain():
         return jsonify({"error": str(e)}), 500
 
 
+@app.route("/api/benchmarks/compare")
+def api_benchmarks_compare():
+    models_param = request.args.get("models", "")
+    if not models_param:
+        return jsonify({"error": "models parameter required"}), 400
+    models_list = [m.strip() for m in models_param.split(",")]
+    from skills.benchmark_model import compare_models
+    rows = compare_models(models_list)
+    return jsonify(rows)
+
+
 # /api/logs/*, /api/recommendations/*, /api/experiments/*: now in monitoring/knowledge blueprints (Phase 5)
 
 

@@ -260,6 +260,20 @@ def _sse_broadcaster():
                     prev_service_status = svc_snap
                 except Exception:
                     pass
+
+                # Check for MEMORY_PRESSURE tasks
+                try:
+                    mp_tasks = query(
+                        "SELECT id, assigned_to FROM tasks WHERE status = 'MEMORY_PRESSURE'"
+                    )
+                    if mp_tasks:
+                        for t in mp_tasks:
+                            _broadcast_sse({
+                                "type": "memory_pressure",
+                                "data": {"task_id": t["id"], "agent": t["assigned_to"]},
+                            })
+                except Exception:
+                    pass
             except Exception:
                 log.debug("SSE broadcast error", exc_info=True)
         else:

@@ -269,5 +269,33 @@ class TestContextOverflow(unittest.TestCase):
         self.assertEqual(est, 14)
 
 
+class TestBenchmarkEndpoint(unittest.TestCase):
+    def setUp(self):
+        db.init_db()
+        # Insert test data
+        with db.get_conn() as conn:
+            conn.execute(
+                """INSERT INTO benchmarks
+                   (model, variant, metric, value, unit, judge_model, kv_cache_type)
+                   VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                ("gemma4:e4b", "e4b", "tokens_per_sec", 42.5, "tok/s", "", "q8_0"),
+            )
+
+    def test_compare_endpoint_returns_json(self):
+        from dashboard import app
+        with app.test_client() as client:
+            resp = client.get("/api/benchmarks/compare?models=gemma4:e4b")
+            self.assertEqual(resp.status_code, 200)
+            data = resp.get_json()
+            self.assertIsInstance(data, list)
+            self.assertGreater(len(data), 0)
+
+    def tearDown(self):
+        try:
+            os.unlink(os.environ["FLEET_TEST_DB"])
+        except Exception:
+            pass
+
+
 if __name__ == "__main__":
     unittest.main()
