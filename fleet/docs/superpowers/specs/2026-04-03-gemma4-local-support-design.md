@@ -15,7 +15,7 @@ BigEd CC currently runs local inference through Ollama with qwen3 variants (1.7b
 | gemma4:26b-a4b | 27B (4-bit activations) | Multimodal | ~16 GB |
 | gemma4:31b | 33B | Multimodal | ~20 GB |
 
-Goal: wire all four variants into BigEd's local model infrastructure, build a benchmark harness to evaluate them against current models, and make swapping to Gemma 4 as the default a one-line config change. Dev rig may be upgraded to 48 GB system RAM to support partial GPU offload on larger variants.
+Goal: wire all four variants into BigEd's local model infrastructure, build a benchmark harness to evaluate them against current models, and make swapping to Gemma 4 as the default a one-line config change. Dev rig has 48 GB system RAM (non-ideal DIMM config) to support partial GPU offload and KV-cache overflow on larger variants.
 
 ## Prerequisites
 
@@ -87,8 +87,9 @@ Currently `hw_supervisor.py` has a hardcoded `_model_sizes` dict (e.g., `{"qwen3
 
 **Design decisions:**
 - VRAM estimates are conservative starting points, refined by benchmarking.
-- Context length set to 8192 as a safe default; stress tests will determine actual usable max.
+- Context length set to 8192 as a safe default for overflow estimation; actual usable context depends on KV-cache type and available memory. Ollama auto-sizes context based on total memory (48 GB system RAM = up to 32k auto). Stress tests will determine actual usable max per variant/KV-cache combo.
 - `num_gpu_layers = -1` means full GPU. The 31B variant defaults to 24 layers on GPU (partial offload) for rigs with < 24 GB VRAM.
+- With q8_0 KV-cache + flash attention, effective VRAM usage drops significantly — the 26B-A4B variant may fit entirely in GPU with room for extended context.
 
 ---
 
@@ -111,7 +112,44 @@ For variants that need partial GPU offload (`num_gpu_layers != -1`):
 - No Modelfiles needed — Ollama's request-level `num_gpu` option handles this directly.
 - To verify the layer count took effect: check Ollama's `/api/show` response for the loaded model's layer distribution after first inference.
 
-### 2.3 Context Overflow Handling
+### 2.3 KV-Cache Optimization & System RAM Overflow
+
+Ollama supports quantized KV-cache and flash attention, which dramatically reduce memory usage for long-context inference. This is critical for running larger Gemma 4 variants (26B-A4B, 31B) on the dev rig.
+
+**Ollama server environment variables** (configured via fleet.toml, applied by supervisor on Ollama startup):
+
+```toml
+[ollama]
+flash_attention = true           # OLLAMA_FLASH_ATTENTION=1 — required for KV-cache quant
+kv_cache_type = "q8_0"           # OLLAMA_KV_CACHE_TYPE — default f16, q8_0 halves memory, q4_0 quarters it
+# context_length = 0             # OLLAMA_CONTEXT_LENGTH — 0 = use Ollama auto-sizing (recommended)
+```
+
+**KV-cache quantization options:**
+
+| Type | Memory vs f16 | Quality Impact | Recommendation |
+|------|--------------|----------------|----------------|
+| `f16` | 100% (default) | None | Baseline for benchmarking |
+| `q8_0` | ~50% | Negligible | **Recommended default** — best tradeoff |
+| `q4_0` | ~25% | Small-medium, worse at high context | Use when VRAM is tight, benchmark quality first |
+
+**How it works:**
+- Supervisor sets `OLLAMA_FLASH_ATTENTION=1` and `OLLAMA_KV_CACHE_TYPE` from fleet.toml when starting the Ollama process.
+- Flash attention is a prerequisite for KV-cache quantization — if `flash_attention = false`, KV-cache type is ignored.
+- When model weights + KV-cache exceed VRAM, Ollama automatically spills to system RAM. With 48 GB system RAM, this gives substantial overflow headroom for the 31B model.
+- KV-cache type is currently a global Ollama setting (applies to all models). Per-model KV-cache type is not yet supported by Ollama.
+
+**Benchmark harness integration:**
+- Benchmark suite runs each model at f16, q8_0, and q4_0 KV-cache types to measure quality vs. memory tradeoff.
+- Record peak VRAM + system RAM usage at each KV-cache setting.
+- Include KV-cache type in the `benchmarks` table: add `kv_cache_type` column.
+
+**Interaction with partial offload (Section 2.2):**
+- `num_gpu` controls how many model weight layers go on GPU vs RAM.
+- KV-cache quant controls how much memory the attention cache uses.
+- These are independent — both can be combined. E.g., 31B with 24 GPU layers + q8_0 KV-cache minimizes total memory while keeping most compute on GPU.
+
+### 2.4 Context Overflow Handling
 
 Before dispatching to Ollama:
 1. Estimate token count using the existing word-count heuristic in `_models.py` with a 1.3x safety margin (words * 1.3 ≈ tokens). This is intentionally conservative — false positives (unnecessary truncation) are preferable to OOM.
@@ -149,7 +187,7 @@ python lead_client.py benchmark --compare gemma4:e4b,qwen3:8b
 ### 3.3 Storage & Display
 
 - `benchmarks` table added via `CREATE TABLE IF NOT EXISTS` in `init_db()` (same pattern as all other fleet.db tables — no migration needed, auto-created on next startup).
-  - Columns: `id`, `model`, `variant`, `metric`, `value`, `unit`, `judge_model`, `timestamp`
+  - Columns: `id`, `model`, `variant`, `metric`, `value`, `unit`, `judge_model`, `kv_cache_type`, `timestamp`
 - Dashboard endpoint: `GET /api/benchmarks/compare?models=gemma4:e4b,qwen3:8b`
 - Console prints a summary comparison table after suite runs.
 
@@ -211,9 +249,10 @@ When a model uses partial offload (`num_gpu_layers != -1`):
 
 | File | Change |
 |------|--------|
-| `fleet.toml` | New `[models.gemma4.variants]` metadata section |
+| `fleet.toml` | New `[models.gemma4.variants]` metadata section, new `[ollama]` section for flash attention + KV-cache config |
 | `providers.py` | Pass `num_gpu` in Ollama request options, context overflow estimation |
-| `hw_supervisor.py` | Read `vram_estimate_gb` from fleet.toml into `_model_sizes`, `MEMORY_PRESSURE` flag on emergency |
+| `hw_supervisor.py` | Read `vram_estimate_gb` from fleet.toml into `_model_sizes`, `MEMORY_PRESSURE` flag on emergency, RAM spillover tracking for KV-cache overflow |
+| `supervisor.py` | Set `OLLAMA_FLASH_ATTENTION` and `OLLAMA_KV_CACHE_TYPE` env vars from fleet.toml when starting Ollama |
 | `skills/_models.py` | Context overflow safety margin (1.3x) |
 | `skills/model_suite.py` | Expose `_pull_model` / `_get_installed` for reuse by `ensure_model_available()` |
 | `lead_client.py` | `benchmark` CLI command, `ensure_model_available()` wrapper |
@@ -233,3 +272,5 @@ When a model uses partial offload (`num_gpu_layers != -1`):
 - Integration test: full benchmark run against a small model (e2b) if Ollama available.
 - OOM error handling test with mocked Ollama error response.
 - Ollama version check test (below and above 0.20.0).
+- Supervisor Ollama env var injection test (flash attention + KV-cache type from fleet.toml).
+- Benchmark KV-cache sweep test (verify f16/q8_0/q4_0 results stored with correct kv_cache_type).
