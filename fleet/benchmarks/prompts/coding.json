@@ -1,0 +1,26 @@
+[
+  {
+    "id": "code_fizzbuzz",
+    "system": "You are a Python coding assistant. Write clean, idiomatic code.",
+    "prompt": "Write a function called fizzbuzz that takes an integer n and returns a list of strings from 1 to n where multiples of 3 are 'Fizz', multiples of 5 are 'Buzz', multiples of both are 'FizzBuzz', and others are the number as a string.",
+    "expected_output": "def fizzbuzz(n):",
+    "category": "coding",
+    "context_tier": "short"
+  },
+  {
+    "id": "code_binary_search",
+    "system": "You are a Python coding assistant. Write clean, idiomatic code.",
+    "prompt": "Implement a binary search function that takes a sorted list and a target value. Return the index if found, -1 otherwise. Do not use bisect.",
+    "expected_output": "def binary_search(",
+    "category": "coding",
+    "context_tier": "short"
+  },
+  {
+    "id": "code_csv_parser",
+    "system": "You are a Python coding assistant. Write clean, idiomatic code.",
+    "prompt": "Write a function that reads a CSV string (not a file) with headers and returns a list of dictionaries. Handle quoted fields containing commas. Do not use the csv module.",
+    "expected_output": "def parse_csv(",
+    "category": "coding",
+    "context_tier": "medium"
+  }
+]

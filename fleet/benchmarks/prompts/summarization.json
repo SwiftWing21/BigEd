@@ -1,0 +1,18 @@
+[
+  {
+    "id": "summarize_technical",
+    "system": "You are a technical writer. Summarize concisely.",
+    "prompt": "Summarize the key differences between REST and GraphQL APIs in 3-5 bullet points. Focus on practical implications for a team choosing between them for a new project.",
+    "expected_output": "",
+    "category": "summarization",
+    "context_tier": "short"
+  },
+  {
+    "id": "summarize_long_context",
+    "system": "You are a research assistant. Summarize accurately.",
+    "prompt": "The following is a description of the CAP theorem and its implications for distributed systems. The CAP theorem states that a distributed data store can provide at most two out of three guarantees: Consistency (every read receives the most recent write), Availability (every request receives a non-error response), and Partition tolerance (the system continues to operate despite network partitions). In practice, since network partitions are unavoidable in distributed systems, the real choice is between CP and AP systems. CP systems like ZooKeeper and HBase prioritize consistency — during a partition, some nodes may refuse requests to maintain data accuracy. AP systems like Cassandra and DynamoDB prioritize availability — during a partition, all nodes continue serving requests but may return stale data. The PACELC theorem extends CAP by noting that even without partitions, there is a tradeoff between latency and consistency. Summarize the key points in 2-3 sentences.",
+    "expected_output": "",
+    "category": "summarization",
+    "context_tier": "medium"
+  }
+]

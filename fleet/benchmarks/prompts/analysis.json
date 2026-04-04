@@ -1,0 +1,18 @@
+[
+  {
+    "id": "analysis_compare_sort",
+    "system": "You are a computer science teacher explaining algorithms.",
+    "prompt": "Compare the time and space complexity of merge sort vs quicksort. When would you choose one over the other? Give concrete examples.",
+    "expected_output": "",
+    "category": "analysis",
+    "context_tier": "short"
+  },
+  {
+    "id": "analysis_db_indexing",
+    "system": "You are a database performance consultant.",
+    "prompt": "A PostgreSQL table 'orders' with 50M rows has columns: id, customer_id, created_at, total, status. Queries filter by customer_id + created_at range. The table has no indexes besides the primary key. Recommend an indexing strategy and explain the tradeoffs.",
+    "expected_output": "",
+    "category": "analysis",
+    "context_tier": "medium"
+  }
+]

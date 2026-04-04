@@ -1,0 +1,26 @@
+[
+  {
+    "id": "instruct_format_json",
+    "system": "You follow instructions precisely. Output only what is asked.",
+    "prompt": "List exactly 3 programming languages that compile to WebAssembly. Output as a JSON array of strings. No explanation.",
+    "expected_output": "[",
+    "category": "instruction_following",
+    "context_tier": "short"
+  },
+  {
+    "id": "instruct_constraints",
+    "system": "You follow instructions precisely. Output only what is asked.",
+    "prompt": "Write a haiku (5-7-5 syllable pattern) about debugging code. Output only the haiku, nothing else.",
+    "expected_output": "",
+    "category": "instruction_following",
+    "context_tier": "short"
+  },
+  {
+    "id": "instruct_step_by_step",
+    "system": "You are a helpful assistant that follows instructions exactly.",
+    "prompt": "Explain how to make a peanut butter and jelly sandwich. Use exactly 5 numbered steps. Each step must be one sentence. Do not include any text before or after the steps.",
+    "expected_output": "1.",
+    "category": "instruction_following",
+    "context_tier": "short"
+  }
+]
