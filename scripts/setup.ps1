@@ -177,6 +177,14 @@ try {
     Write-Err "pip install failed: $_"
     Write-Warn "You can retry manually: $PythonCmd -m pip install -r $RequirementsFile"
 }
+# pywebview installed separately --no-deps to skip pythonnet (Qt backend doesn't need it)
+Write-Info "Installing pywebview (--no-deps, Qt backend) ..."
+try {
+    & $PythonCmd -m pip install "pywebview>=5.0" --no-deps 2>&1 | Out-Null
+    Write-OK "pywebview installed (Qt backend)."
+} catch {
+    Write-Warn "pywebview install failed: $_"
+}
 
 # Fleet dependencies
 if (Test-Path $FleetRequirementsFile) {

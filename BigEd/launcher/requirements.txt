@@ -5,7 +5,10 @@ psutil>=5.9.0
 nvidia-ml-py>=12.0.0
 anthropic>=0.40.0
 google-genai>=0.3.0
-pywebview>=5.0
+# pywebview deps (skip pythonnet — not needed with Qt backend)
+bottle>=0.12
+proxy_tools>=0.1
+typing_extensions>=4.0
 PyQt6>=6.7.0
 PyQt6-WebEngine>=6.7.0
 qtpy>=2.4.0

@@ -312,6 +312,11 @@ def _add_security_headers(response):
         "img-src 'self' data:; "
         "connect-src 'self'"
     )
+    # Prevent browser from caching HTML pages — ensures template changes
+    # appear without manual hard-refresh during development
+    if response.content_type and 'text/html' in response.content_type:
+        response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
+        response.headers['Pragma'] = 'no-cache'
     return response
 
 

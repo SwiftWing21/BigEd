@@ -223,7 +223,7 @@ def main():
     build_start = time.time()
     step_times = {}
 
-    # Install deps — use PYWEBVIEW_GUI=qt to skip pythonnet (not supported on Python 3.14)
+    # Install deps — pywebview is installed --no-deps to skip pythonnet
     if build_all:
         env = os.environ.copy()
         env["PYWEBVIEW_GUI"] = "qt"
@@ -236,15 +236,15 @@ def main():
         )
         elapsed = time.time() - t0
         if result.returncode != 0:
-            # pythonnet may fail on Python 3.14 — not needed with Qt backend
-            print(f"  {GOLD}⚠ pip returned non-zero (pythonnet likely failed — OK with Qt backend){RESET}")
-            # Retry without pywebview deps, install pywebview --no-deps separately
-            subprocess.run(
-                [sys.executable, "-m", "pip", "install", "pywebview", "--no-deps"],
-                cwd=str(HERE), capture_output=True,
-            )
+            print(f"  {RED}✗ pip install failed{RESET}")
         else:
             print(f"  {GREEN}✓{RESET} {_fmt_time(elapsed)}")
+        # Install pywebview without pythonnet (Qt backend doesn't need it)
+        print(f"  {DIM}$ pip install pywebview --no-deps{RESET}")
+        subprocess.run(
+            [sys.executable, "-m", "pip", "install", "pywebview>=5.0", "--no-deps"],
+            cwd=str(HERE), env=env,
+        )
         step_times["Dependencies"] = elapsed
 
     # Icons — brick.ico + icon_1024.png are locked assets (v0.165.07b+)
