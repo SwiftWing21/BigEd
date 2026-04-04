@@ -910,3 +910,41 @@ def _auto_generate(payload: dict, config: dict) -> dict:
         "hardware": f"{gpu} | {ram}GB RAM | {vram}GB VRAM",
         "note": "Review .generated.toml before replacing profiles.toml",
     }
+
+
+def ensure_model_available(model_name: str, host: str = "http://localhost:11434") -> dict:
+    """Check if a model is available in Ollama, pull if missing. Check Ollama version."""
+    import shutil
+
+    result = {}
+
+    # Version check
+    try:
+        with urllib.request.urlopen(f"{host}/api/version", timeout=5) as r:
+            version_data = json.loads(r.read())
+        version = version_data.get("version", "0.0.0")
+        parts = version.split(".")
+        major, minor = int(parts[0]), int(parts[1]) if len(parts) > 1 else 0
+        if major == 0 and minor < 20:
+            result["warning"] = f"Ollama {version} detected — Gemma 4 requires >= 0.20.0"
+    except Exception:
+        result["warning"] = "Could not check Ollama version"
+
+    # Disk space check
+    disk = shutil.disk_usage("/")
+    free_gb = disk.free / (1024 ** 3)
+    if free_gb < 25:
+        result["disk_warning"] = f"Only {free_gb:.1f} GB free — large models need 20+ GB"
+
+    # Check if installed
+    installed = _get_installed(host)
+    if model_name in installed:
+        result["status"] = "ready"
+        return result
+
+    # Pull
+    pull_result = _pull_model(model_name, host)
+    result["status"] = pull_result.get("status", "error")
+    if "error" in pull_result:
+        result["error"] = pull_result["error"]
+    return result
