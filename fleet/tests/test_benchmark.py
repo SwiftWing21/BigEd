@@ -297,5 +297,37 @@ class TestBenchmarkEndpoint(unittest.TestCase):
             pass
 
 
+class TestProcessManagerOllamaEnv(unittest.TestCase):
+    def test_kv_cache_type_from_fleet_toml(self):
+        from process_manager import ProcessManager
+        pm = ProcessManager.__new__(ProcessManager)
+        # Set config directly — _resolve_ollama_env reads self.config, not tomllib
+        pm.config = {
+            "ollama": {"optimization": {
+                "flash_attention": "on",    # actual code expects "on"/"off"/"auto", not bool
+                "kv_cache_type": "q8_0",
+                "num_parallel": "auto",
+                "max_loaded_models": "auto",
+            }},
+        }
+        env = pm._resolve_ollama_env()
+        self.assertEqual(env.get("OLLAMA_FLASH_ATTENTION"), "1")
+        self.assertEqual(env.get("OLLAMA_KV_CACHE_TYPE"), "q8_0")
+
+    def test_flash_attention_disabled(self):
+        from process_manager import ProcessManager
+        pm = ProcessManager.__new__(ProcessManager)
+        pm.config = {
+            "ollama": {"optimization": {
+                "flash_attention": "off",
+                "kv_cache_type": "q8_0",
+                "num_parallel": "auto",
+                "max_loaded_models": "auto",
+            }},
+        }
+        env = pm._resolve_ollama_env()
+        self.assertNotIn("OLLAMA_FLASH_ATTENTION", env)
+
+
 if __name__ == "__main__":
     unittest.main()
