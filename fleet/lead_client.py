@@ -948,6 +948,52 @@ def cmd_import(args):
         print(f"\nImported: {imported} files, Skipped: {skipped}")
 
 
+def cmd_benchmark(args):
+    """Run model benchmarks."""
+    from skills.benchmark_model import run_benchmark, save_results, compare_models
+    import tomllib
+
+    config_path = os.path.join(os.path.dirname(__file__), "fleet.toml")
+    with open(config_path, "rb") as f:
+        config = tomllib.load(f)
+    host = config.get("models", {}).get("ollama_host", "http://localhost:11434")
+    kv_cache_type = args.kv_cache_type if hasattr(args, "kv_cache_type") else "f16"
+
+    if args.compare:
+        models_list = [m.strip() for m in args.compare.split(",")]
+        rows = compare_models(models_list)
+        if not rows:
+            print("No benchmark data found for those models.")
+            return
+        print(f"\n{'Model':<25} {'Metric':<22} {'Value':>10} {'Unit':<8} {'KV Cache':<8}")
+        print("-" * 75)
+        for r in rows:
+            print(f"{r['model']:<25} {r['metric']:<22} {r['avg_value']:>10.2f} {r['unit']:<8} {r['kv_cache_type']:<8}")
+        return
+
+    if args.suite:
+        gemma4_models = [f"gemma4:{v}" for v in ["e2b", "e4b", "26b-a4b", "31b"]]
+        categories = ["coding", "analysis", "summarization", "instruction_following"]
+    else:
+        gemma4_models = [args.model]
+        categories = [args.category]
+
+    for model in gemma4_models:
+        for category in categories:
+            print(f"\nBenchmarking {model} / {category} / kv={kv_cache_type}...")
+            results = run_benchmark(model, category, host, kv_cache_type)
+            saved = save_results(results)
+            print(f"  -> {saved} metrics saved")
+
+            # Print summary
+            speed = [r for r in results if r["metric"] == "tokens_per_sec"]
+            if speed:
+                avg_tps = sum(r["value"] for r in speed) / len(speed)
+                print(f"  -> Avg tokens/sec: {avg_tps:.1f}")
+
+    print("\nDone. Use --compare to view results.")
+
+
 def cmd_api(args):
     """DO NOT SCRUB: CLI controls for the API gate (enable/disable/status/drain-mode)."""
     action = getattr(args, "api_action", None)
@@ -1252,6 +1298,19 @@ def main():
     p_profile.add_argument("profile_action", choices=["list", "apply", "recommend"])
     p_profile.add_argument("name", nargs="?", default="", help="Profile name (for apply)")
 
+    # Benchmark
+    bench_parser = subparsers.add_parser("benchmark", help="Run model benchmarks")
+    bench_parser.add_argument("model", nargs="?", default="gemma4:e4b",
+                              help="Model to benchmark (e.g., gemma4:e4b)")
+    bench_parser.add_argument("--suite", choices=["gemma4"],
+                              help="Run all variants in a suite")
+    bench_parser.add_argument("--compare", help="Compare models (comma-separated)")
+    bench_parser.add_argument("--category", default="coding",
+                              help="Prompt category (default: coding)")
+    bench_parser.add_argument("--kv-cache-type", default="q8_0",
+                              dest="kv_cache_type",
+                              help="KV cache type: f16, q8_0, q4_0 (default: q8_0)")
+
     # Workflow DSL commands
     subparsers.add_parser("workflow-list", help="List available workflow definitions")
 
@@ -1430,6 +1489,8 @@ def main():
         cmd_model_install(args)
     elif args.command == "model-profile":
         cmd_model_profile(args)
+    elif args.command == "benchmark":
+        cmd_benchmark(args)
     elif args.command == "migrate":
         cmd_migrate(args)
     elif args.command == "workflow-list":

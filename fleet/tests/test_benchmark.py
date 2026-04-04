@@ -233,5 +233,41 @@ class TestBenchmarkCLI(unittest.TestCase):
         mock_run.assert_called_once()
 
 
+class TestContextOverflow(unittest.TestCase):
+    def test_truncation_when_exceeding_context_length(self):
+        from skills._models import _estimate_tokens, _truncate_for_context
+        # Simulate a long input
+        system = "You are a helpful assistant."
+        user = " ".join(["word"] * 10000)  # ~10000 words -> ~13000 estimated tokens
+        estimated = _estimate_tokens(system, user, skill_name="analysis")
+        self.assertGreater(estimated, 8192)
+
+        truncated_system, truncated_user, was_truncated = _truncate_for_context(
+            system, user, context_length=8192, skill_name="analysis"
+        )
+        self.assertTrue(was_truncated)
+        new_est = _estimate_tokens(truncated_system, truncated_user, skill_name="analysis")
+        self.assertLessEqual(new_est, 8192)
+        # System prompt preserved
+        self.assertEqual(truncated_system, system)
+
+    def test_no_truncation_when_within_limit(self):
+        from skills._models import _estimate_tokens, _truncate_for_context
+        system = "You are a helpful assistant."
+        user = "Short prompt."
+        _, _, was_truncated = _truncate_for_context(
+            system, user, context_length=8192, skill_name="analysis"
+        )
+        self.assertFalse(was_truncated)
+
+    def test_estimation_uses_1_3x_default(self):
+        from skills._models import _estimate_tokens
+        system = "sys"  # 1 word
+        user = "a b c d e f g h i j"  # 10 words
+        est = _estimate_tokens(system, user, skill_name="analysis")
+        # 11 words * 1.3 = 14.3, int() truncates -> 14
+        self.assertEqual(est, 14)
+
+
 if __name__ == "__main__":
     unittest.main()
