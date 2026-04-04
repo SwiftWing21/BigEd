@@ -908,11 +908,20 @@ def _call_local(system: str, user: str, models: dict, max_tokens: int,
     except Exception:
         pass  # context is optional — never break inference
     prompt = f"{system}\n\n{user}"
+    # --- Partial offload: inject num_gpu if variant specifies it ---
+    options = {"num_predict": max_tokens}
+    variant_key = model.split(":")[-1] if ":" in model else model
+    gemma4_variants = models.get("gemma4", {}).get("variants", {})
+    variant_cfg = gemma4_variants.get(variant_key, {})
+    num_gpu_layers = variant_cfg.get("num_gpu_layers", -1)
+    if num_gpu_layers != -1:
+        options["num_gpu"] = num_gpu_layers
+
     body = json.dumps({
         "model": model,
         "prompt": prompt,
         "stream": False,
-        "options": {"num_predict": max_tokens},
+        "options": options,
     }).encode()
     req = urllib.request.Request(
         f"{host}/api/generate", data=body,

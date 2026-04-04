@@ -143,7 +143,7 @@ class TestBenchmarkSkill(unittest.TestCase):
 
 
 class TestPartialOffload(unittest.TestCase):
-    @patch("providers.urllib.request.urlopen")
+    @patch("urllib.request.urlopen")
     def test_num_gpu_passed_in_options(self, mock_urlopen):
         """When a model has num_gpu_layers != -1, num_gpu should appear in options."""
         mock_resp = MagicMock()
@@ -179,7 +179,7 @@ class TestPartialOffload(unittest.TestCase):
         body = json.loads(req.data)
         self.assertEqual(body["options"]["num_gpu"], 24)
 
-    @patch("providers.urllib.request.urlopen")
+    @patch("urllib.request.urlopen")
     def test_no_num_gpu_when_full_offload(self, mock_urlopen):
         """When num_gpu_layers is -1, num_gpu should NOT be in options."""
         mock_resp = MagicMock()
@@ -212,6 +212,25 @@ class TestPartialOffload(unittest.TestCase):
         req = call_args[0][0]
         body = json.loads(req.data)
         self.assertNotIn("num_gpu", body["options"])
+
+
+class TestBenchmarkCLI(unittest.TestCase):
+    @patch("skills.benchmark_model.run_benchmark")
+    @patch("skills.benchmark_model.save_results")
+    def test_cmd_benchmark_single_model(self, mock_save, mock_run):
+        mock_run.return_value = [{"model": "gemma4:e4b", "metric": "tokens_per_sec",
+                                   "value": 42.5, "unit": "tok/s",
+                                   "variant": "e4b", "kv_cache_type": "q8_0"}]
+        mock_save.return_value = 1
+        from lead_client import cmd_benchmark
+        import argparse
+        args = argparse.Namespace(
+            model="gemma4:e4b", suite=None, compare=None,
+            category="coding", kv_cache_type="q8_0",
+        )
+        # Should not raise
+        cmd_benchmark(args)
+        mock_run.assert_called_once()
 
 
 if __name__ == "__main__":
