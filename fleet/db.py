@@ -169,6 +169,19 @@ CREATE TABLE IF NOT EXISTS user_feedback (
     actor      TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_feedback_scope_ts ON user_feedback(scope, timestamp);
+
+CREATE TABLE IF NOT EXISTS benchmarks (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    model       TEXT    NOT NULL,
+    variant     TEXT    NOT NULL,
+    metric      TEXT    NOT NULL,
+    value       REAL    NOT NULL,
+    unit        TEXT    NOT NULL DEFAULT '',
+    judge_model TEXT    NOT NULL DEFAULT '',
+    kv_cache_type TEXT  NOT NULL DEFAULT 'f16',
+    timestamp   TEXT    NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_benchmarks_model ON benchmarks(model);
 """
 
 
