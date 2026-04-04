@@ -128,7 +128,7 @@ model_parallelism = "none"           # none | tensor | pipeline (Ollama handles 
 # These are env vars passed to Ollama's process; only take effect on fleet-started Ollama.
 [ollama.optimization]
 flash_attention = "auto"             # auto | on | off — enables OLLAMA_FLASH_ATTENTION=1
-kv_cache_type = "auto"              # auto | f16 | q8_0 | q4_0 | tq — OLLAMA_KV_CACHE_TYPE
+kv_cache_type = "q8_0"              # auto | f16 | q8_0 | q4_0 | tq — OLLAMA_KV_CACHE_TYPE
 num_parallel = "auto"               # auto | 1-8 — OLLAMA_NUM_PARALLEL (concurrent requests)
 max_loaded_models = "auto"          # auto | 1-8 — OLLAMA_MAX_LOADED_MODELS
 # VRAM tier auto-detection (when "auto"):
@@ -176,6 +176,27 @@ default = "qwen3:8b"
 mid = "qwen3:8b"
 low = "qwen3:1.7b"
 critical = "qwen3:0.6b"
+
+# ── Gemma 4 variant reference data (VRAM estimates, offload, context) ────────
+[models.gemma4.variants.e2b]
+vram_estimate_gb = 4
+num_gpu_layers = -1
+context_length = 8192
+
+[models.gemma4.variants.e4b]
+vram_estimate_gb = 7
+num_gpu_layers = -1
+context_length = 8192
+
+[models.gemma4.variants."26b-a4b"]
+vram_estimate_gb = 16
+num_gpu_layers = -1
+context_length = 8192
+
+[models.gemma4.variants."31b"]
+vram_estimate_gb = 20
+num_gpu_layers = 24
+context_length = 8192
 
 [training]
 exclusive_lock = true         # only 1 training process at a time
