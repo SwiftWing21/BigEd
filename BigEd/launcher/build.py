@@ -144,6 +144,7 @@ def build_setup() -> float:
         _pyinstaller_cmd(
             "Setup", "installer.py",
             add_data=["brick.ico", "icon_1024.png"],
+            hidden_imports=["customtkinter", "PIL"],
         ),
         "Building Setup",
     )
