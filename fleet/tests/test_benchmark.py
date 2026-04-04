@@ -4,6 +4,7 @@ import tempfile
 import unittest
 from unittest.mock import patch, MagicMock
 import json
+import urllib.error
 
 # Point at a temp DB for test isolation
 _tmp = tempfile.NamedTemporaryFile(suffix=".db", delete=False)
@@ -327,6 +328,37 @@ class TestProcessManagerOllamaEnv(unittest.TestCase):
         }
         env = pm._resolve_ollama_env()
         self.assertNotIn("OLLAMA_FLASH_ATTENTION", env)
+
+
+class TestOOMHandling(unittest.TestCase):
+    @patch("urllib.request.urlopen")
+    def test_oom_error_detected_and_reported(self, mock_urlopen):
+        """Ollama OOM response should be caught and reported cleanly."""
+        from providers import _call_local
+        mock_urlopen.side_effect = urllib.error.HTTPError(
+            url="http://localhost:11434/api/generate",
+            code=500, msg="out of memory",
+            hdrs=None, fp=None,
+        )
+        config = {"models": {
+            "local": "gemma4:31b", "complex": "gemma4:31b",
+            "ollama_host": "http://localhost:11434",
+        }}
+        with self.assertRaises(Exception) as ctx:
+            _call_local("sys", "user", config["models"], max_tokens=100,
+                        skill_name="unknown", config=config)
+        self.assertIn("memory", str(ctx.exception).lower())
+
+
+class TestRAMSpillover(unittest.TestCase):
+    @patch("hw_supervisor.psutil.virtual_memory")
+    def test_ram_spillover_calculated(self, mock_vmem):
+        import hw_supervisor
+        # Simulate RAM increase during inference
+        mock_vmem.return_value = MagicMock(used=32 * 1024**3)  # 32 GB used
+        baseline_ram = 28 * 1024**3  # 28 GB baseline before inference
+        spillover = hw_supervisor._calc_ram_spillover(baseline_ram)
+        self.assertAlmostEqual(spillover, 4.0, places=0)  # ~4 GB spillover
 
 
 if __name__ == "__main__":

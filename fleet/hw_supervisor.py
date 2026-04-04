@@ -87,6 +87,14 @@ def _build_model_sizes(toml_data: dict) -> dict:
     return sizes
 
 
+def _calc_ram_spillover(baseline_bytes: int) -> float:
+    """Calculate RAM spillover in GB since baseline measurement."""
+    import psutil
+    current = psutil.virtual_memory().used
+    delta = current - baseline_bytes
+    return max(0.0, delta / (1024 ** 3))
+
+
 def load_thermal_config():
     """Load [thermal], [thermal.vram], [models.tiers], [models], [training], [fleet] from fleet.toml."""
     # Last-resort fallback defaults — must match fleet.toml [thermal] / [thermal.vram] / [models.tiers]

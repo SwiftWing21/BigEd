@@ -928,8 +928,21 @@ def _call_local(system: str, user: str, models: dict, max_tokens: int,
         headers={"Content-Type": "application/json"}, method="POST",
     )
     timeout = config.get("fleet", {}).get("local_timeout", 120) if config else 120
-    with urllib.request.urlopen(req, timeout=timeout) as r:
-        data = json.loads(r.read())
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as r:
+            data = json.loads(r.read())
+    except urllib.error.HTTPError as e:
+        err_body = ""
+        try:
+            err_body = e.read().decode() if e.fp else ""
+        except Exception:
+            pass
+        if "out of memory" in str(e).lower() or "out of memory" in err_body.lower():
+            raise RuntimeError(
+                f"Model exceeded available memory — try a smaller variant "
+                f"or increase num_gpu_layers offload. Ollama error: {e}"
+            ) from e
+        raise
 
     # Extract Ollama performance metrics
     eval_count = data.get("eval_count", 0)
