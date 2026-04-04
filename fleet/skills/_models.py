@@ -12,6 +12,7 @@ Providers:
 Note: Provider-specific imports (anthropic, etc.) are deferred to function
 bodies to avoid ImportError when optional dependencies are not installed.
 """
+import logging
 import os
 import threading
 
@@ -58,6 +59,44 @@ def check_budget(skill_name: str, config: dict) -> dict | None:
         }
     except Exception:
         return None
+
+
+_CODE_SKILLS = {"code_write", "code_review", "code_discuss", "refactor_verify", "skill_test", "skill_evolve"}
+
+
+def _estimate_tokens(system: str, user: str, skill_name: str = "unknown") -> int:
+    """Estimate token count using word-count heuristic with safety margin."""
+    multiplier = 2.0 if skill_name in _CODE_SKILLS else 1.3
+    return int((len(system.split()) + len(user.split())) * multiplier)
+
+
+def _truncate_for_context(
+    system: str, user: str, context_length: int, skill_name: str = "unknown"
+) -> tuple[str, str, bool]:
+    """Truncate user input if estimated tokens exceed context_length.
+
+    Preserves system prompt entirely. Trims user text from the front (oldest).
+    Returns (system, user, was_truncated).
+    """
+    estimated = _estimate_tokens(system, user, skill_name)
+    if estimated <= context_length:
+        return system, user, False
+
+    # Budget for user after reserving system tokens + output buffer (512 tokens)
+    system_tokens = _estimate_tokens(system, "", skill_name)
+    output_buffer = 512
+    user_budget = context_length - system_tokens - output_buffer
+    if user_budget <= 0:
+        return system, "", True
+
+    # Trim user words to fit budget
+    multiplier = 2.0 if skill_name in _CODE_SKILLS else 1.3
+    max_words = int(user_budget / multiplier)
+    words = user.split()
+    if len(words) > max_words:
+        # Keep the latest words (trim from front)
+        words = words[-max_words:]
+    return system, " ".join(words), True
 
 
 def call_complex(system: str, user: str, config: dict, max_tokens: int = 2048, cache_system: bool = False,
@@ -127,6 +166,21 @@ def call_complex(system: str, user: str, config: dict, max_tokens: int = 2048, c
                 return f"[COST BLOCKED] Estimated cost ${estimated_cost:.4f} exceeds remaining budget"
     except Exception:
         pass  # cost estimation must never block
+
+    # Context overflow check for models with known context limits
+    gemma4_variants = config.get("models", {}).get("gemma4", {}).get("variants", {})
+    model_name = models.get("local", "") or models.get("complex", "")
+    variant_key = model_name.split(":")[-1] if ":" in model_name else ""
+    variant_cfg = gemma4_variants.get(variant_key, {})
+    context_limit = variant_cfg.get("context_length", 0)
+    if context_limit > 0:
+        system, user, was_truncated = _truncate_for_context(
+            system, user, context_limit, skill_name
+        )
+        if was_truncated:
+            log = logging.getLogger("_models")
+            log.warning("Context truncated for %s (limit %d) on skill %s",
+                        model_name, context_limit, skill_name)
 
     # v0.45: Build fallback chain starting from configured provider
     # Offline mode: no cascade, local-only
