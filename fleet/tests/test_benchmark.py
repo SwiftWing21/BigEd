@@ -142,5 +142,77 @@ class TestBenchmarkSkill(unittest.TestCase):
         self.assertIn("tokens_per_sec", [r["metric"] for r in results])
 
 
+class TestPartialOffload(unittest.TestCase):
+    @patch("providers.urllib.request.urlopen")
+    def test_num_gpu_passed_in_options(self, mock_urlopen):
+        """When a model has num_gpu_layers != -1, num_gpu should appear in options."""
+        mock_resp = MagicMock()
+        mock_resp.read.return_value = json.dumps({
+            "response": "test response",
+            "eval_count": 10, "eval_duration": 1000000000,
+            "prompt_eval_count": 5,
+        }).encode()
+        mock_resp.__enter__ = lambda s: s
+        mock_resp.__exit__ = MagicMock(return_value=False)
+        mock_urlopen.return_value = mock_resp
+
+        from providers import _call_local
+        config = {
+            "models": {
+                "local": "gemma4:31b",
+                "complex": "gemma4:31b",
+                "ollama_host": "http://localhost:11434",
+                "gemma4": {"variants": {"31b": {
+                    "vram_estimate_gb": 20,
+                    "num_gpu_layers": 24,
+                    "context_length": 8192,
+                }}},
+            },
+        }
+        # Use skill_name="unknown" to bypass get_local_model_for_skill routing
+        _call_local("system", "user", config["models"], max_tokens=100,
+                     skill_name="unknown", config=config)
+
+        # Inspect the request body sent to Ollama
+        call_args = mock_urlopen.call_args
+        req = call_args[0][0]  # urllib.request.Request object
+        body = json.loads(req.data)
+        self.assertEqual(body["options"]["num_gpu"], 24)
+
+    @patch("providers.urllib.request.urlopen")
+    def test_no_num_gpu_when_full_offload(self, mock_urlopen):
+        """When num_gpu_layers is -1, num_gpu should NOT be in options."""
+        mock_resp = MagicMock()
+        mock_resp.read.return_value = json.dumps({
+            "response": "test response",
+            "eval_count": 10, "eval_duration": 1000000000,
+            "prompt_eval_count": 5,
+        }).encode()
+        mock_resp.__enter__ = lambda s: s
+        mock_resp.__exit__ = MagicMock(return_value=False)
+        mock_urlopen.return_value = mock_resp
+
+        from providers import _call_local
+        config = {
+            "models": {
+                "local": "gemma4:e4b",
+                "complex": "gemma4:e4b",
+                "ollama_host": "http://localhost:11434",
+                "gemma4": {"variants": {"e4b": {
+                    "vram_estimate_gb": 7,
+                    "num_gpu_layers": -1,
+                    "context_length": 8192,
+                }}},
+            },
+        }
+        _call_local("system", "user", config["models"], max_tokens=100,
+                     skill_name="unknown", config=config)
+
+        call_args = mock_urlopen.call_args
+        req = call_args[0][0]
+        body = json.loads(req.data)
+        self.assertNotIn("num_gpu", body["options"])
+
+
 if __name__ == "__main__":
     unittest.main()
