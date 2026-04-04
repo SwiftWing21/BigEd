@@ -1,7 +1,7 @@
 # Gemma 4 Local Support — Design Spec
 
 **Date:** 2026-04-03
-**Status:** Approved (pending spec review)
+**Status:** Approved
 **Scope:** Benchmark-first integration of Gemma 4 models via Ollama, with swap-ready infrastructure for default replacement.
 
 ## Context
@@ -17,6 +17,10 @@ BigEd CC currently runs local inference through Ollama with qwen3 variants (1.7b
 
 Goal: wire all four variants into BigEd's local model infrastructure, build a benchmark harness to evaluate them against current models, and make swapping to Gemma 4 as the default a one-line config change. Dev rig may be upgraded to 48 GB system RAM to support partial GPU offload on larger variants.
 
+## Prerequisites
+
+- **Ollama >= 0.20.0** — required for Gemma 4 model support. `ensure_model_available()` checks the Ollama version via `/api/version` and warns if below 0.20.0.
+
 ## Out of Scope
 
 - Multimodal/vision skill inputs (follow-up after benchmarks prove value)
@@ -28,15 +32,11 @@ Goal: wire all four variants into BigEd's local model infrastructure, build a be
 
 ## 1. Fleet.toml Model Configuration
 
-Four new model entries under a `[models.gemma4]` section with per-variant tuning.
+Gemma 4 model metadata lives in a `[models.gemma4]` section. This section is **reference data only** — it stores VRAM estimates, layer counts, and context lengths for each variant. It does **not** replace the existing `[models]` routing keys.
+
+### 1.1 Variant Metadata
 
 ```toml
-[models.gemma4]
-# Active model (user picks one, others available for benchmarking)
-# Options: "gemma4:e2b", "gemma4:e4b", "gemma4:26b-a4b", "gemma4:31b"
-local = "gemma4:e4b"
-complex = "gemma4:26b-a4b"
-
 [models.gemma4.variants.e2b]
 vram_estimate_gb = 4
 num_gpu_layers = -1          # -1 = all layers on GPU
@@ -58,7 +58,32 @@ num_gpu_layers = 24          # partial offload default for <24 GB VRAM
 context_length = 8192
 ```
 
-**Swap to default:** Change the main `[models]` section's `local` and `complex` keys to point at Gemma 4 variants. One-line change per key.
+### 1.2 Swapping to Default
+
+To make Gemma 4 the default, update the existing flat `[models]` keys and `[models.tiers]`:
+
+```toml
+[models]
+local = "gemma4:e4b"
+complex = "gemma4:26b-a4b"
+conductor_model = "gemma4:e2b"
+
+[models.tiers]
+default = "gemma4:e4b"
+mid     = "gemma4:e2b"
+low     = "gemma4:e2b"
+crit    = "gemma4:e2b"
+```
+
+This is what `_call_local()`, `get_local_model_for_skill()`, and the tier system already consume — no changes to config loading needed.
+
+### 1.3 Dr. Ders VRAM Size Integration
+
+Currently `hw_supervisor.py` has a hardcoded `_model_sizes` dict (e.g., `{"qwen3:8b": 7.0, ...}`). This changes to:
+
+- On startup, Dr. Ders reads `[models.gemma4.variants]` from fleet.toml and merges `vram_estimate_gb` values into `_model_sizes`.
+- Any model with a `vram_estimate_gb` in fleet.toml takes precedence over the hardcoded default.
+- Unknown models still fall back to the existing 4.0 GB default estimate.
 
 **Design decisions:**
 - VRAM estimates are conservative starting points, refined by benchmarking.
@@ -71,24 +96,27 @@ context_length = 8192
 
 ### 2.1 Pull & Verify
 
-New function `ensure_model_available(model_name)` in the Ollama interaction layer:
-- Checks Ollama's `/api/tags` for the requested model.
-- If missing, pulls via `/api/pull` with progress logging.
+Reuse existing `model_suite._pull_model()` and `_get_installed()` functions via a thin wrapper `ensure_model_available(model_name)`:
+- Calls `_get_installed()` to check if model is present.
+- If missing, calls `_pull_model()` with progress logging.
+- Before pulling, checks available disk space and warns if < 25 GB free (31B variant can be 20+ GB on disk).
+- Checks Ollama version via `/api/version` — warns if below 0.20.0.
 - Called on-demand (benchmark or skill dispatch), never auto-pulled on boot to avoid surprise multi-GB downloads.
 
-### 2.2 Modelfiles for Partial Offload
+### 2.2 Partial Offload via Ollama Request Options
 
-For variants that need non-default Ollama parameters (e.g., 31B with partial offload):
-- Modelfile templates stored in `fleet/modelfiles/` (one per variant that needs custom params).
-- Generated from fleet.toml's `num_gpu_layers` and `context_length` values.
-- Only created when the user explicitly configures partial offload (i.e., `num_gpu_layers` != -1).
+For variants that need partial GPU offload (`num_gpu_layers != -1`):
+- Pass `num_gpu` in the Ollama request options payload: `{"model": model, "prompt": prompt, "options": {"num_gpu": num_gpu_layers, "num_predict": max_tokens}}`.
+- The `num_gpu_layers` value is read from `[models.gemma4.variants.<variant>]` in fleet.toml at dispatch time.
+- No Modelfiles needed — Ollama's request-level `num_gpu` option handles this directly.
+- To verify the layer count took effect: check Ollama's `/api/show` response for the loaded model's layer distribution after first inference.
 
 ### 2.3 Context Overflow Handling
 
 Before dispatching to Ollama:
-1. Estimate token count of the input payload.
-2. Compare against the model's `context_length` from fleet.toml.
-3. If input exceeds limit: truncate oldest messages (preserve system prompt + latest user turn).
+1. Estimate token count using the existing word-count heuristic in `_models.py` with a 1.3x safety margin (words * 1.3 ≈ tokens). This is intentionally conservative — false positives (unnecessary truncation) are preferable to OOM.
+2. Look up the model's `context_length` from `[models.gemma4.variants]` in fleet.toml. Fall back to 8192 if not found.
+3. If estimated tokens exceed limit: truncate oldest messages (preserve system prompt + latest user turn).
 4. Log the truncation to the task record — always visible, never silent.
 
 ---
@@ -101,7 +129,7 @@ New skill `benchmark_model` that runs any local model through a standardized tes
 
 **Metrics collected:**
 - **Speed:** tokens/sec on fixed prompt set (short, medium, long context).
-- **Quality:** responses scored against reference set (coherence, instruction-following, accuracy). Scored by current `complex` model as judge, or manually.
+- **Quality:** responses scored against reference set (coherence, instruction-following, accuracy). Judge model is pinned explicitly in benchmark config (default: `claude-haiku-4-5` if API available, otherwise manual scoring). Judge must remain constant across comparison runs for valid results.
 - **VRAM profile:** peak VRAM usage, RAM spillover amount, time-to-first-token.
 - **Stress test:** max context fill — push tokens until OOM or truncation, record actual usable context length.
 
@@ -120,17 +148,29 @@ python lead_client.py benchmark --compare gemma4:e4b,qwen3:8b
 
 ### 3.3 Storage & Display
 
-- Results stored in a new `benchmarks` table in fleet.db:
-  - Columns: `id`, `model`, `variant`, `metric`, `value`, `unit`, `timestamp`
+- `benchmarks` table added via `CREATE TABLE IF NOT EXISTS` in `init_db()` (same pattern as all other fleet.db tables — no migration needed, auto-created on next startup).
+  - Columns: `id`, `model`, `variant`, `metric`, `value`, `unit`, `judge_model`, `timestamp`
 - Dashboard endpoint: `GET /api/benchmarks/compare?models=gemma4:e4b,qwen3:8b`
 - Console prints a summary comparison table after suite runs.
 
 ### 3.4 Prompt Sets
 
 - Directory: `fleet/benchmarks/prompts/`
-- Categorized prompt files: coding, analysis, summarization, instruction-following.
-- Ships with a reasonable default set; user can add custom prompts.
-- Each prompt has an optional `expected_output` field for quality scoring.
+- JSON files, one per category (coding.json, analysis.json, summarization.json, instruction_following.json).
+- Schema per file:
+  ```json
+  [
+    {
+      "id": "code_fizzbuzz",
+      "system": "You are a coding assistant.",
+      "prompt": "Write a FizzBuzz implementation in Python.",
+      "expected_output": "def fizzbuzz...",
+      "category": "coding",
+      "context_tier": "short"
+    }
+  ]
+  ```
+- Ships with a reasonable default set; user can add custom prompts following the same schema.
 
 ---
 
@@ -138,14 +178,17 @@ python lead_client.py benchmark --compare gemma4:e4b,qwen3:8b
 
 ### 4.1 VRAM Monitoring During Inference
 
-hw_supervisor (Dr. Ders) already polls GPU every 5 seconds. Additions:
-- Track which model is active and its expected VRAM from fleet.toml.
-- **90% VRAM:** log warning to task record, emit SSE event to dashboard.
-- **95% VRAM:** flag task as `MEMORY_PRESSURE` in fleet.db, visible in dashboard. No auto-kill.
+Dr. Ders already has `vram_high` (85%) and `vram_emergency` (92%) thresholds with tier downgrade logic. Rather than adding parallel thresholds, extend the existing system:
+
+- When a model from `[models.gemma4.variants]` is active, Dr. Ders uses its `vram_estimate_gb` for tier downgrade decisions instead of the hardcoded `_model_sizes` default.
+- At `vram_emergency` (92%): existing tier downgrade fires as normal. Additionally, set a `MEMORY_PRESSURE` flag on the active task in fleet.db, visible in the dashboard.
+- Emit an SSE event on `MEMORY_PRESSURE` so the dashboard can surface it in real time.
+
+No new thresholds — leverage the existing 85%/92% system.
 
 ### 4.2 RAM Spillover Tracking
 
-When a model uses partial offload (`num_gpu_layers` < -1):
+When a model uses partial offload (`num_gpu_layers != -1`):
 - Monitor system RAM delta during inference via psutil.
 - Log actual RAM used for spillover in benchmark results and per-task usage records.
 - Dashboard shows "GPU: X GB / RAM spillover: Y GB" for active tasks.
@@ -168,22 +211,25 @@ When a model uses partial offload (`num_gpu_layers` < -1):
 
 | File | Change |
 |------|--------|
-| `fleet.toml` | New `[models.gemma4]` section with variant configs |
-| `providers.py` | `ensure_model_available()`, context overflow estimation |
-| `hw_supervisor.py` | Inference VRAM tracking, RAM spillover monitoring, MEMORY_PRESSURE flag |
-| `lead_client.py` | `benchmark` CLI command |
+| `fleet.toml` | New `[models.gemma4.variants]` metadata section |
+| `providers.py` | Pass `num_gpu` in Ollama request options, context overflow estimation |
+| `hw_supervisor.py` | Read `vram_estimate_gb` from fleet.toml into `_model_sizes`, `MEMORY_PRESSURE` flag on emergency |
+| `skills/_models.py` | Context overflow safety margin (1.3x) |
+| `skills/model_suite.py` | Expose `_pull_model` / `_get_installed` for reuse by `ensure_model_available()` |
+| `lead_client.py` | `benchmark` CLI command, `ensure_model_available()` wrapper |
 | `skills/benchmark_model.py` | New skill — benchmark execution logic |
-| `db.py` / `db_usage.py` | `benchmarks` table schema + queries |
-| `dashboard.py` | `/api/benchmarks/compare` endpoint |
-| `fleet/modelfiles/` | New directory — Ollama Modelfile templates for partial offload |
-| `fleet/benchmarks/prompts/` | New directory — benchmark prompt sets |
+| `db.py` | `benchmarks` table in `init_db()` |
+| `dashboard.py` | `GET /api/benchmarks/compare` endpoint, `MEMORY_PRESSURE` SSE event |
+| `fleet/benchmarks/prompts/` | New directory — JSON benchmark prompt sets |
 | `tests/test_skills.py` | Benchmark skill tests |
 
 ## Testing Strategy
 
-- Unit tests for `ensure_model_available()` with mocked Ollama `/api/tags` responses.
-- Unit tests for context overflow truncation logic.
+- Unit tests for `ensure_model_available()` with mocked `/api/tags` and `/api/version` responses.
+- Unit tests for context overflow truncation logic with the 1.3x safety margin.
 - Benchmark skill dispatch test (mocked Ollama inference).
-- hw_supervisor VRAM/RAM threshold tests with mocked GPU readings.
+- hw_supervisor `_model_sizes` population from fleet.toml test.
+- hw_supervisor `MEMORY_PRESSURE` flag test with mocked GPU readings at 92%+ VRAM.
 - Integration test: full benchmark run against a small model (e2b) if Ollama available.
 - OOM error handling test with mocked Ollama error response.
+- Ollama version check test (below and above 0.20.0).
