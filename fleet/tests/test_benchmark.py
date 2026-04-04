@@ -361,5 +361,40 @@ class TestRAMSpillover(unittest.TestCase):
         self.assertAlmostEqual(spillover, 4.0, places=0)  # ~4 GB spillover
 
 
+class TestFullBenchmarkFlow(unittest.TestCase):
+    """Integration test: config -> ensure_model -> benchmark -> save -> compare."""
+
+    def setUp(self):
+        db.init_db()
+
+    @patch("skills.benchmark_model._run_prompt")
+    @patch("skills.model_suite.ensure_model_available")
+    def test_end_to_end(self, mock_ensure, mock_run):
+        mock_ensure.return_value = {"status": "ready"}
+        mock_run.return_value = {
+            "response": "def fizzbuzz(n): ...",
+            "eval_count": 100,
+            "eval_duration": 2_000_000_000,
+            "prompt_eval_count": 30,
+            "prompt_eval_duration": 500_000_000,
+        }
+
+        from skills.benchmark_model import run_benchmark, save_results, compare_models
+        results = run_benchmark("gemma4:e4b", "coding", "http://localhost:11434", "q8_0")
+        self.assertGreater(len(results), 0)
+
+        saved = save_results(results)
+        self.assertGreater(saved, 0)
+
+        comparison = compare_models(["gemma4:e4b"])
+        self.assertGreater(len(comparison), 0)
+
+    def tearDown(self):
+        try:
+            os.unlink(os.environ["FLEET_TEST_DB"])
+        except Exception:
+            pass
+
+
 if __name__ == "__main__":
     unittest.main()
