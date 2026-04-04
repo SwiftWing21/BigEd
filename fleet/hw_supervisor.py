@@ -70,6 +70,23 @@ sys.path.insert(0, str(FLEET_DIR))
 
 # ── Config ────────────────────────────────────────────────────────────────────
 
+_HARDCODED_MODEL_SIZES = {
+    "qwen3:8b": 7.0, "qwen3:4b": 3.0,
+    "qwen3:1.7b": 1.5, "qwen3:0.6b": 0.5,
+}
+
+
+def _build_model_sizes(toml_data: dict) -> dict:
+    """Build model VRAM size map from hardcoded defaults + fleet.toml variants."""
+    sizes = dict(_HARDCODED_MODEL_SIZES)
+    variants = toml_data.get("models", {}).get("gemma4", {}).get("variants", {})
+    for variant_key, cfg in variants.items():
+        vram = cfg.get("vram_estimate_gb")
+        if vram is not None:
+            sizes[f"gemma4:{variant_key}"] = float(vram)
+    return sizes
+
+
 def load_thermal_config():
     """Load [thermal], [thermal.vram], [models.tiers], [models], [training], [fleet] from fleet.toml."""
     # Last-resort fallback defaults — must match fleet.toml [thermal] / [thermal.vram] / [models.tiers]
@@ -112,8 +129,10 @@ def load_thermal_config():
             "ollama_host": m.get("ollama_host", defaults["ollama_host"]).rstrip("/"),
             "conductor_model": m.get("conductor_model", ""),
             "air_gap_mode": fl.get("air_gap_mode", False),
+            "model_sizes": _build_model_sizes(data),
         }
     except Exception:
+        defaults["model_sizes"] = dict(_HARDCODED_MODEL_SIZES)
         return defaults
 
 
@@ -1176,8 +1195,7 @@ def main():
                 available = get_available_models(host)
                 _total_vram = gpu.get("vram_total_gb", 0) or 0
                 # Estimated model sizes (GB) for headroom check
-                _model_sizes = {"qwen3:8b": 7.0, "qwen3:4b": 3.0,
-                                "qwen3:1.7b": 1.5, "qwen3:0.6b": 0.5}
+                _model_sizes = cfg.get("model_sizes", _HARDCODED_MODEL_SIZES)
                 if vram_pct < cfg["vram_high"]:
                     # VRAM OK — pick largest available tier that fits with headroom
                     # On 8GB GPUs, qwen3:8b (~7GB) would fill 87% → instant downgrade.
@@ -1222,6 +1240,15 @@ def main():
                             log.warning(f"Tier 'crit' model {cfg['tier_crit']} not available, "
                                         f"falling back to {target_model}")
                     emergency = True
+                    # Flag active tasks as MEMORY_PRESSURE
+                    if _HAS_DB:
+                        try:
+                            _db.get_conn().execute(
+                                "UPDATE tasks SET status = 'MEMORY_PRESSURE' "
+                                "WHERE status = 'running'",
+                            )
+                        except Exception:
+                            log.warning("Could not set MEMORY_PRESSURE flag")
                 elif vram_pct > cfg["vram_high"] and not _is_unified_memory:
                     # Step down one tier from current — skip unavailable tiers
                     try:
