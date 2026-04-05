@@ -74,3 +74,14 @@ def test_observed_ups_property():
     gov.record_tick(game_tick=0, wall_time=0.0)
     gov.record_tick(game_tick=60, wall_time=1.0)
     assert abs(gov.observed_ups - 60.0) < 1.0
+
+
+def test_config_fields_exist():
+    """BridgeConfig has the new adaptive delay fields."""
+    from factorio.bridge_config import BridgeConfig
+    cfg = BridgeConfig()
+    assert cfg.ml_tick_delay_min_ms == 200
+    assert cfg.ml_tick_delay_max_ms == 1000
+    assert cfg.ml_teacher_delay_ms == 750
+    assert cfg.ml_teacher_cooldown_ticks == 10
+    assert cfg.ml_ups_window_size == 10
