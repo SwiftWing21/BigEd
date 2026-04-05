@@ -1,12 +1,9 @@
 """Tests for the adaptive tick governor."""
-import time
-from unittest.mock import patch
-
 from factorio.tick_governor import TickGovernor
 
 
-def test_initial_delay_is_midpoint():
-    """Before any UPS samples, governor returns a safe middle-ground delay."""
+def test_initial_delay_is_max():
+    """Before any UPS samples, governor returns max delay (conservative)."""
     gov = TickGovernor(delay_min_ms=200, delay_max_ms=1000, target_ups=120)
     # No samples yet — should default to max delay (conservative)
     assert gov.get_delay_ms() == 1000
