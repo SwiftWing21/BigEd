@@ -102,15 +102,23 @@ class BackupManager:
     def _backup_dir(self, src: Path, dest: Path, manifest: dict):
         if not src.exists():
             return
+        import zipfile
+        zip_path = dest.parent / (src.name + ".zip")
         total = 0
         count = 0
-        shutil.copytree(src, dest, dirs_exist_ok=True)
-        for f in dest.rglob("*"):
-            if f.is_file():
-                total += f.stat().st_size
-                count += 1
-        manifest["files"]["knowledge/"] = {"size_bytes": total, "file_count": count}
-        manifest["total_size_bytes"] += total
+        with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED, compresslevel=6) as zf:
+            for f in src.rglob("*"):
+                if f.is_file():
+                    zf.write(f, f.relative_to(src.parent))
+                    total += f.stat().st_size
+                    count += 1
+        zip_size = zip_path.stat().st_size
+        manifest["files"]["knowledge.zip"] = {
+            "size_bytes": zip_size,
+            "uncompressed_bytes": total,
+            "file_count": count,
+        }
+        manifest["total_size_bytes"] += zip_size
 
     def _checkpoint_wal(self):
         for db_name in ["fleet.db", "rag.db"]:
@@ -148,8 +156,9 @@ class BackupManager:
             return
         if self.depth == 0:
             return  # Infinite — never prune (user opted into "do not clean")
+        # Include ALL backup dirs (with or without manifest) to prevent orphan buildup
         backups = sorted(
-            [d for d in self.location.iterdir() if d.is_dir() and (d / "manifest.json").exists()],
+            [d for d in self.location.iterdir() if d.is_dir()],
             key=lambda d: d.name,
             reverse=True,
         )

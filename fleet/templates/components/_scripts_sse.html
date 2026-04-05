@@ -27,38 +27,47 @@ function handleSSE(msg) {
     case 'status':
       /* Header controls update (always visible, not section-gated) */
       if (msg.data) updateHeaderControls(msg.data);
-      if (document.getElementById('section-dashboard').classList.contains('active')) {
-        var data = msg.data || {};
-        /* Show adaptive push rate in connection indicator */
-        if (data._interval) {
-          var label = data._interval < 3 ? 'Live' : data._interval < 10 ? 'Connected' : 'Idle';
-          document.getElementById('sse-status').textContent = label + ' (' + data._interval + 's)';
-        }
-        /* ── Agents ── */
-        if (data.agents) {
-          var active = data.agents.filter(function(a) { return a.status === 'IDLE' || a.status === 'BUSY'; });
-          var busy = data.agents.filter(function(a) { return a.status === 'BUSY'; }).length;
-          document.getElementById('badge-agents').textContent = active.length + ' Agent' + (active.length !== 1 ? 's' : '');
-          var unitsEl = document.getElementById('metric-active-units');
+      var data = msg.data || {};
+      /* ── Header-level updates (always, regardless of active tab) ── */
+      if (data._interval) {
+        var label = data._interval < 3 ? 'Live' : data._interval < 10 ? 'Connected' : 'Idle';
+        document.getElementById('sse-status').textContent = label + ' (' + data._interval + 's)';
+      }
+      if (data.agents) {
+        var active = data.agents.filter(function(a) { return a.status === 'IDLE' || a.status === 'BUSY'; });
+        var busy = data.agents.filter(function(a) { return a.status === 'BUSY'; }).length;
+        document.getElementById('badge-agents').textContent = active.length + ' Agent' + (active.length !== 1 ? 's' : '');
+        /* Dashboard metric cards (only exist on dashboard tab) */
+        var unitsEl = document.getElementById('metric-active-units');
+        if (unitsEl) {
           unitsEl.textContent = String(active.length);
           var roles = {};
           active.forEach(function(a) { roles[a.role] = (roles[a.role] || 0) + 1; });
           unitsEl.title = Object.keys(roles).sort().map(function(r) { return roles[r] + ' ' + r; }).join(', ') || 'No active agents';
-          var trendEl = document.getElementById('metric-active-trend');
+        }
+        var trendEl = document.getElementById('metric-active-trend');
+        if (trendEl) {
           trendEl.textContent = busy + ' busy';
           trendEl.className = 'card-trend ' + (busy > 0 ? 'up' : 'neutral');
         }
-        /* ── Tasks ── */
-        if (data.tasks) {
-          var pending = data.tasks.PENDING || 0;
-          var running = data.tasks.RUNNING || 0;
-          var done = data.tasks.DONE || 0;
-          var failed = data.tasks.FAILED || 0;
-          document.getElementById('metric-total-requests').textContent = done.toLocaleString();
-          var reqTrend = document.getElementById('metric-requests-trend');
-          reqTrend.textContent = pending + ' queued \u00B7 ' + running + ' running \u00B7 ' + failed + ' failed';
+      }
+      if (data.tasks) {
+        var pending = data.tasks.PENDING || 0;
+        var running = data.tasks.RUNNING || 0;
+        var done = data.tasks.DONE || 0;
+        var failed = data.tasks.FAILED || 0;
+        var activeT = pending + running;
+        var totalEl = document.getElementById('metric-total-requests');
+        if (totalEl) totalEl.textContent = activeT.toLocaleString();
+        var reqTrend = document.getElementById('metric-requests-trend');
+        if (reqTrend) {
+          reqTrend.textContent = pending + ' queued \u00B7 ' + running + ' running';
           reqTrend.className = 'card-trend ' + (running > 0 ? 'up' : pending > 0 ? 'neutral' : 'neutral');
         }
+        var alltime = document.getElementById('metric-tasks-alltime');
+        if (alltime) alltime.textContent = done.toLocaleString() + ' completed \u00B7 ' + failed.toLocaleString() + ' failed (all-time)';
+      }
+      if (document.getElementById('section-dashboard').classList.contains('active')) {
         /* ── Live Activity (real-time from SSE — no polling needed) ── */
         if (data.live && data.live.length > 0) {
           _renderLiveItems(data.live);
@@ -1168,32 +1177,32 @@ function toggleModifier(name) {
      - 30s fallback poll catches missed events or reconnection gaps
      - Static tabs (settings, docs, update) are never auto-refreshed
      - Browser-hidden tabs pause entirely until focus returns */
-  var _sseRefreshSkip = { settings: true, docs: true, update: true };
-  var _dirtyTabs = {};  // tabs that need refresh when switched to
-  var _lastSSERefresh = 0;
+  window._sseRefreshSkip = { settings: true, docs: true, update: true };
+  window._dirtyTabs = {};  // tabs that need refresh when switched to
+  window._lastSSERefresh = 0;
   var _SSE_REFRESH_THROTTLE = 3000; // min 3s between SSE-driven refreshes
 
   /* Mark all non-active tabs dirty when SSE data arrives */
-  function _markOtherTabsDirty() {
+  window._markOtherTabsDirty = function() {
     document.querySelectorAll('.nav-item').forEach(function(n) {
       var sec = n.getAttribute('data-section');
-      if (sec && !n.classList.contains('active') && !_sseRefreshSkip[sec]) {
-        _dirtyTabs[sec] = true;
+      if (sec && !n.classList.contains('active') && !window._sseRefreshSkip[sec]) {
+        window._dirtyTabs[sec] = true;
       }
     });
-  }
+  };
 
   /* 30s fallback poll — only if no SSE refresh happened recently */
   var _fallbackTimer = setInterval(function() {
     if (document.hidden) return;
     var now = Date.now();
-    if (now - _lastSSERefresh > 15000) {
+    if (now - window._lastSSERefresh > 15000) {
       var activeNav = document.querySelector('.nav-item.active');
       if (activeNav) {
         var section = activeNav.getAttribute('data-section');
-        if (section && !_sseRefreshSkip[section]) {
+        if (section && !window._sseRefreshSkip[section]) {
           loadSectionData(section);
-          _lastSSERefresh = now;
+          window._lastSSERefresh = now;
         }
       }
     }

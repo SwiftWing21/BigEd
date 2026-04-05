@@ -33,7 +33,7 @@ else:
     SELF_EXE = Path(__file__)
 
 FLEET_EXE   = EXE_DIR / "BigEdCC.exe"
-UPDATER_EXE = EXE_DIR / "Updater.exe"
+UPDATER_EXE = EXE_DIR / "UpdateHelper.exe"
 BANNER_PNG  = ASSETS  / "icon_1024.png"
 ICON_ICO    = ASSETS  / "brick.ico"
 
@@ -313,7 +313,7 @@ class Setup(ctk.CTk):
         desc = (
             "This will install the following components:\n\n"
             "  •  BigEdCC.exe   —  main dashboard & agent launcher\n"
-            "  •  Updater.exe        —  one-click rebuild tool\n"
+            "  •  UpdateHelper.exe   —  one-click rebuild tool\n"
             "  •  Setup.exe          —  reinstall / uninstall\n\n"
             f"Default location:  {DEFAULT_DIR}\n\n"
             "Click Next to configure the installation."
@@ -325,7 +325,7 @@ class Setup(ctk.CTk):
         if not FLEET_EXE.exists() or not UPDATER_EXE.exists():
             ctk.CTkLabel(
                 parent,
-                text="⚠  BigEdCC.exe or Updater.exe not found in bundle.\n"
+                text="⚠  BigEdCC.exe or UpdateHelper.exe not found in bundle.\n"
                      "Run build.bat first, or use Re-install to build from source.",
                 font=("RuneScape Plain 11", 10), text_color=RED,
             ).pack(padx=32, pady=6, anchor="w")
@@ -685,7 +685,7 @@ class Setup(ctk.CTk):
         steps += [
             (p(0.08), "Creating directory...",        lambda: self._step_mkdir(install_dir)),
             (p(0.25), "Copying BigEdCC.exe...",  lambda: self._step_copy(FLEET_EXE,   install_dir)),
-            (p(0.40), "Copying Updater.exe...",       lambda: self._step_copy(UPDATER_EXE, install_dir)),
+            (p(0.40), "Copying UpdateHelper.exe...",   lambda: self._step_copy(UPDATER_EXE, install_dir)),
             (p(0.50), "Copying Setup.exe...",         lambda: self._step_copy_self(install_dir)),
             (p(0.58), "Copying icon...",              lambda: self._step_copy_optional(ICON_ICO, install_dir)),
             (p(0.65), "Registering with Windows...", lambda: self._step_register(install_dir)),
@@ -1097,7 +1097,7 @@ class Setup(ctk.CTk):
             )
             programs.mkdir(parents=True, exist_ok=True)
             create_shortcut(target, programs / "BigEdCC.lnk", icon)
-            create_shortcut(install_dir / "Updater.exe", programs / "Updater.lnk", icon)
+            create_shortcut(install_dir / "UpdateHelper.exe", programs / "UpdateHelper.lnk", icon)
             create_shortcut(install_dir / "Setup.exe",   programs / "Setup.lnk",   icon)
             created.append("Start Menu folder")
         return ", ".join(created) if created else "No shortcuts requested"

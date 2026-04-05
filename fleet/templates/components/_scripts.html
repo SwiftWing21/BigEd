@@ -700,10 +700,13 @@ function loadDashStatus() {
     var running = d.tasks ? (d.tasks.RUNNING || 0) : 0;
     var done = d.tasks ? (d.tasks.DONE || 0) : 0;
     var failed = d.tasks ? (d.tasks.FAILED || 0) : 0;
-    document.getElementById('metric-total-requests').textContent = done.toLocaleString();
+    var active = pending + running;
+    document.getElementById('metric-total-requests').textContent = active.toLocaleString();
     var reqTrend = document.getElementById('metric-requests-trend');
-    reqTrend.textContent = pending + ' queued \u00B7 ' + running + ' running \u00B7 ' + failed + ' failed';
+    reqTrend.textContent = pending + ' queued \u00B7 ' + running + ' running';
     reqTrend.className = 'card-trend ' + (running > 0 ? 'up' : pending > 0 ? 'neutral' : 'neutral');
+    var alltime = document.getElementById('metric-tasks-alltime');
+    if (alltime) alltime.textContent = done.toLocaleString() + ' completed \u00B7 ' + failed.toLocaleString() + ' failed (all-time)';
   }).catch(function() {});
 }
 
@@ -4319,6 +4322,18 @@ function _launchVSCode() {
   }).catch(function(e) { showToast('Launch failed: ' + (e.message || 'unknown'), 'error'); });
 }
 
+function commsMarkAllRead() {
+  var channels = ['fleet','agent','sup','pool'];
+  Promise.all(channels.map(function(ch) {
+    return apiFetch('/api/comms/' + ch + '/read', { method: 'POST', body: {} });
+  })).then(function() {
+    commsLoadCounts();
+    showToast('All messages marked as read', 'success');
+  }).catch(function() {
+    showToast('Failed to clear messages', 'error');
+  });
+}
+
 function commsLoadCounts() {
   apiFetch('/api/comms').then(function(d) {
     var total = 0;
@@ -4353,6 +4368,12 @@ function commsSelectChannel(ch) {
     document.getElementById('comms-chat-panel').style.display = 'none';
     document.getElementById('comms-channel-panel').style.display = '';
     commsLoadChannel();
+    // Mark channel messages as read and clear badge
+    apiFetch('/api/comms/' + ch + '/read', { method: 'POST', body: {} }).then(function() {
+      var badge = document.getElementById('comms-count-' + ch);
+      if (badge) { badge.textContent = ''; badge.style.display = 'none'; }
+      commsLoadCounts();
+    }).catch(function() {});
   }
 }
 

@@ -1094,6 +1094,24 @@ def api_comms():
     return jsonify(result)
 
 
+@app.route("/api/comms/<channel>/read", methods=["POST"])
+def api_comms_mark_read(channel):
+    """Mark all unread messages in a channel as read."""
+    if channel not in ("sup", "agent", "fleet", "pool"):
+        return jsonify({"error": "invalid channel"}), 400
+    try:
+        with get_conn() as conn:
+            cur = conn.execute(
+                "UPDATE messages SET read_at=datetime('now') "
+                "WHERE channel=? AND read_at IS NULL",
+                (channel,),
+            )
+            count = cur.rowcount
+        return jsonify({"ok": True, "channel": channel, "marked": count})
+    except Exception as e:
+        return jsonify({"error": _safe_error(e)}), 500
+
+
 @app.route("/api/comms/history/<channel>")
 def api_comms_history(channel):
     """Paginated message + note history for a channel."""
