@@ -30,8 +30,6 @@ ENV/
 !fleet/CLAUDE.md
 !BigEd/STABILITY_GUIDE.md
 !docs/WHAT_IS_BIGED.md
-!docs/superpowers/**/*.md
-!fleet/docs/superpowers/**/*.md
 !autoresearch/README.md
 !.github/PULL_REQUEST_TEMPLATE.md
 !docs/flowcharts/README.md

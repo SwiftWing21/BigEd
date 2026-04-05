@@ -1,0 +1,511 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Evidence Ray Tracing — Visualization</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { background: #0a0e1a; color: #e2e8f0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; overflow: hidden; }
+canvas { display: block; }
+#controls {
+  position: fixed; top: 12px; left: 12px; z-index: 10;
+  background: rgba(15,23,42,0.92); border: 1px solid #334155; border-radius: 10px;
+  padding: 14px 18px; min-width: 260px;
+}
+#controls h2 { font-size: 15px; color: #f59e0b; margin-bottom: 10px; }
+#controls label { font-size: 12px; color: #94a3b8; display: block; margin-top: 8px; }
+#controls select, #controls input[type=range] { width: 100%; margin-top: 4px; }
+#controls select { background: #1e293b; color: #e2e8f0; border: 1px solid #475569; border-radius: 4px; padding: 4px 6px; font-size: 12px; }
+#controls input[type=range] { accent-color: #3b82f6; }
+#controls button {
+  margin-top: 12px; width: 100%; padding: 8px; background: #3b82f6; color: #fff;
+  border: none; border-radius: 6px; font-size: 13px; font-weight: 600; cursor: pointer;
+}
+#controls button:hover { background: #2563eb; }
+#controls .val { float: right; color: #f59e0b; font-size: 12px; }
+#legend {
+  position: fixed; bottom: 12px; left: 12px; z-index: 10;
+  background: rgba(15,23,42,0.92); border: 1px solid #334155; border-radius: 10px;
+  padding: 12px 16px; font-size: 11px; color: #94a3b8;
+}
+#legend div { margin: 3px 0; display: flex; align-items: center; gap: 8px; }
+#legend .dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
+#stats {
+  position: fixed; top: 12px; right: 12px; z-index: 10;
+  background: rgba(15,23,42,0.92); border: 1px solid #334155; border-radius: 10px;
+  padding: 14px 18px; min-width: 300px; max-height: 90vh; overflow-y: auto;
+}
+#stats h2 { font-size: 15px; color: #f59e0b; margin-bottom: 10px; }
+#stats table { width: 100%; font-size: 11px; border-collapse: collapse; }
+#stats th { text-align: left; color: #64748b; font-weight: 600; padding: 3px 4px; border-bottom: 1px solid #334155; }
+#stats td { padding: 3px 4px; }
+.score-bar { height: 6px; border-radius: 3px; display: inline-block; vertical-align: middle; }
+#mode-toggle {
+  position: fixed; top: 12px; left: 50%; transform: translateX(-50%); z-index: 10;
+  display: flex; gap: 4px; background: rgba(15,23,42,0.92); border: 1px solid #334155;
+  border-radius: 8px; padding: 4px;
+}
+#mode-toggle button {
+  padding: 6px 16px; font-size: 12px; border: none; border-radius: 6px;
+  background: transparent; color: #94a3b8; cursor: pointer;
+}
+#mode-toggle button.active { background: #3b82f6; color: #fff; }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+
+<div id="mode-toggle">
+  <button id="btn-biged" class="active">BigEd (12 dims)</button>
+  <button id="btn-scorerift">ScoreRift (8 dims)</button>
+</div>
+
+<div id="controls">
+  <h2>Ray Tracing Controls</h2>
+  <label>Cast from: <select id="sel-dim"></select></label>
+  <label>Rays per burst: <span class="val" id="v-rays">20</span>
+    <input type="range" id="sl-rays" min="1" max="100" value="20">
+  </label>
+  <label>Max bounces: <span class="val" id="v-bounces">5</span>
+    <input type="range" id="sl-bounces" min="1" max="10" value="5">
+  </label>
+  <label>Speed: <span class="val" id="v-speed">1.0x</span>
+    <input type="range" id="sl-speed" min="1" max="10" value="5">
+  </label>
+  <button id="btn-cast">Cast Rays</button>
+  <button id="btn-castall" style="background:#f59e0b;margin-top:6px;">Cast All Dimensions</button>
+  <button id="btn-reset" style="background:#475569;margin-top:6px;">Reset</button>
+</div>
+
+<div id="legend">
+  <div><span class="dot" style="background:#3b82f6;"></span> Amplifying ray (+energy)</div>
+  <div><span class="dot" style="background:#ef4444;"></span> Dampening ray (-energy)</div>
+  <div><span class="dot" style="background:#f59e0b;"></span> Dimension node</div>
+  <div style="color:#64748b;margin-top:6px;">Node size = score | Ring = interaction delta</div>
+</div>
+
+<div id="stats">
+  <h2>Dimension Scores</h2>
+  <table id="score-table">
+    <thead><tr>
+      <th>Dimension</th><th>Auto</th><th>Delta</th><th>Combined</th><th></th>
+    </tr></thead>
+    <tbody></tbody>
+  </table>
+</div>
+
+<script>
+// ── Data ──────────────────────────────────────────────────────────────────
+
+const BIGED_DIMS = {
+  testing:          { score: 0.85, color: '#10b981', conf: 0.95 },
+  module_plugin:    { score: 0.78, color: '#8b5cf6', conf: 0.90 },
+  documentation:    { score: 0.72, color: '#06b6d4', conf: 0.85 },
+  performance:      { score: 0.80, color: '#f59e0b', conf: 0.85 },
+  reliability:      { score: 0.75, color: '#3b82f6', conf: 0.85 },
+  observability:    { score: 0.70, color: '#14b8a6', conf: 0.80 },
+  architecture:     { score: 0.82, color: '#a855f7', conf: 0.75 },
+  code_quality:     { score: 0.68, color: '#ec4899', conf: 0.75 },
+  security:         { score: 0.55, color: '#ef4444', conf: 0.60 },
+  usability_ux:     { score: 0.60, color: '#f97316', conf: 0.30 },
+  dynamic_abilities:{ score: 0.65, color: '#22d3ee', conf: 0.60 },
+  data_hitl:        { score: 0.73, color: '#84cc16', conf: 0.55 },
+};
+
+const BIGED_EDGES = [
+  { s: 'security',       t: 'reliability',       w: 0.6, p: -1, l: 'security breaches break reliability' },
+  { s: 'testing',        t: 'performance',        w: 0.4, p:  1, l: 'tests validate perf claims' },
+  { s: 'testing',        t: 'reliability',        w: 0.5, p:  1, l: 'tests catch reliability regressions' },
+  { s: 'architecture',   t: 'code_quality',       w: 0.5, p:  1, l: 'good arch enables clean code' },
+  { s: 'code_quality',   t: 'security',           w: 0.3, p:  1, l: 'clean code has fewer vulns' },
+  { s: 'observability',  t: 'reliability',        w: 0.4, p:  1, l: 'monitoring catches issues early' },
+  { s: 'documentation',  t: 'usability_ux',       w: 0.3, p:  1, l: 'docs improve UX' },
+  { s: 'module_plugin',  t: 'architecture',       w: 0.3, p:  1, l: 'modularity signals good arch' },
+  { s: 'data_hitl',      t: 'dynamic_abilities',  w: 0.4, p:  1, l: 'HITL data feeds ML capabilities' },
+  { s: 'performance',    t: 'usability_ux',       w: 0.4, p:  1, l: 'fast system = good UX' },
+  { s: 'reliability',    t: 'observability',      w: 0.3, p:  1, l: 'reliable system is observable' },
+  { s: 'security',       t: 'code_quality',       w: 0.3, p: -1, l: 'security issues signal code quality gaps' },
+];
+
+const SCORERIFT_DIMS = {
+  test_coverage:  { score: 0.88, color: '#10b981', conf: 0.95 },
+  lint_score:     { score: 0.92, color: '#3b82f6', conf: 0.90 },
+  type_coverage:  { score: 0.75, color: '#8b5cf6', conf: 0.85 },
+  dep_freshness:  { score: 0.70, color: '#f59e0b', conf: 0.85 },
+  doc_coverage:   { score: 0.65, color: '#06b6d4', conf: 0.80 },
+  security:       { score: 0.58, color: '#ef4444', conf: 0.60 },
+  complexity:     { score: 0.72, color: '#ec4899', conf: 0.80 },
+  import_hygiene: { score: 0.85, color: '#14b8a6', conf: 0.85 },
+};
+
+const SCORERIFT_EDGES = [
+  { s: 'security',       t: 'test_coverage',  w: 0.3, p: -1, l: 'security gaps suggest testing gaps' },
+  { s: 'test_coverage',  t: 'complexity',     w: 0.4, p:  1, l: 'good tests enable managing complexity' },
+  { s: 'lint_score',     t: 'import_hygiene', w: 0.5, p:  1, l: 'clean lint correlates with clean imports' },
+  { s: 'complexity',     t: 'security',       w: 0.3, p: -1, l: 'high complexity hides security issues' },
+  { s: 'type_coverage',  t: 'security',       w: 0.3, p:  1, l: 'types catch certain vuln classes' },
+  { s: 'doc_coverage',   t: 'complexity',     w: 0.2, p:  1, l: 'documented code is easier to understand' },
+  { s: 'dep_freshness',  t: 'security',       w: 0.5, p:  1, l: 'fresh deps have security patches' },
+  { s: 'test_coverage',  t: 'dep_freshness',  w: 0.2, p:  1, l: 'tests catch dep upgrade regressions' },
+];
+
+// ── State ─────────────────────────────────────────────────────────────────
+
+let currentProject = 'biged';
+let dims = {}, edges = [], nodes = {}, deltas = {};
+let activeRays = [];
+let canvas, ctx, W, H;
+const DELTA_CAP = 0.15;
+
+function setProject(p) {
+  currentProject = p;
+  document.getElementById('btn-biged').classList.toggle('active', p === 'biged');
+  document.getElementById('btn-scorerift').classList.toggle('active', p === 'scorerift');
+  initProject();
+}
+
+function initProject() {
+  if (currentProject === 'biged') {
+    dims = JSON.parse(JSON.stringify(BIGED_DIMS));
+    edges = BIGED_EDGES;
+  } else {
+    dims = JSON.parse(JSON.stringify(SCORERIFT_DIMS));
+    edges = SCORERIFT_EDGES;
+  }
+  deltas = {};
+  Object.keys(dims).forEach(d => deltas[d] = 0);
+  activeRays = [];
+  layoutNodes();
+  populateSelect();
+  updateStats();
+}
+
+function layoutNodes() {
+  const names = Object.keys(dims);
+  const cx = W / 2, cy = H / 2;
+  const r = Math.min(W, H) * 0.34;
+  nodes = {};
+  names.forEach((n, i) => {
+    const angle = (i / names.length) * Math.PI * 2 - Math.PI / 2;
+    nodes[n] = { x: cx + Math.cos(angle) * r, y: cy + Math.sin(angle) * r };
+  });
+}
+
+// ── Rendering ─────────────────────────────────────────────────────────────
+
+function draw() {
+  ctx.clearRect(0, 0, W, H);
+
+  // Draw edges
+  edges.forEach(e => {
+    const a = nodes[e.s], b = nodes[e.t];
+    if (!a || !b) return;
+    ctx.beginPath();
+    ctx.moveTo(a.x, a.y);
+    ctx.lineTo(b.x, b.y);
+    ctx.strokeStyle = e.p > 0 ? 'rgba(59,130,246,0.15)' : 'rgba(239,68,68,0.15)';
+    ctx.lineWidth = e.w * 4;
+    ctx.stroke();
+    // Arrow at 65% along edge
+    const dx = b.x - a.x, dy = b.y - a.y;
+    const len = Math.sqrt(dx*dx + dy*dy);
+    const ux = dx/len, uy = dy/len;
+    const mx = a.x + dx*0.65, my = a.y + dy*0.65;
+    ctx.beginPath();
+    ctx.moveTo(mx + uy*5, my - ux*5);
+    ctx.lineTo(mx + ux*10, my + uy*10);
+    ctx.lineTo(mx - uy*5, my + ux*5);
+    ctx.fillStyle = e.p > 0 ? 'rgba(59,130,246,0.3)' : 'rgba(239,68,68,0.3)';
+    ctx.fill();
+  });
+
+  // Draw active rays
+  activeRays.forEach(ray => {
+    if (ray.path.length < 2) return;
+    for (let i = 0; i < ray.progress && i < ray.path.length - 1; i++) {
+      const a = nodes[ray.path[i].dim], b = nodes[ray.path[i+1].dim];
+      if (!a || !b) continue;
+      const energy = ray.path[i].energy;
+      const isLast = (i === Math.floor(ray.progress) - 1);
+      const frac = isLast ? (ray.progress - Math.floor(ray.progress)) : 1;
+      const ex = a.x + (b.x - a.x) * frac;
+      const ey = a.y + (b.y - a.y) * frac;
+
+      ctx.beginPath();
+      ctx.moveTo(a.x, a.y);
+      ctx.lineTo(ex, ey);
+      ctx.strokeStyle = ray.polarity > 0
+        ? `rgba(59,130,246,${0.3 + energy * 0.5})`
+        : `rgba(239,68,68,${0.3 + energy * 0.5})`;
+      ctx.lineWidth = 1 + energy * 3;
+      ctx.stroke();
+
+      if (isLast) {
+        ctx.beginPath();
+        ctx.arc(ex, ey, 3 + energy * 4, 0, Math.PI * 2);
+        ctx.fillStyle = ray.polarity > 0
+          ? `rgba(59,130,246,${0.5 + energy * 0.5})`
+          : `rgba(239,68,68,${0.5 + energy * 0.5})`;
+        ctx.fill();
+      }
+    }
+  });
+
+  // Draw nodes
+  Object.keys(dims).forEach(name => {
+    const n = nodes[name], d = dims[name];
+    if (!n) return;
+    const baseR = 18 + d.score * 22;
+    const delta = deltas[name] || 0;
+
+    // Interaction delta ring
+    if (Math.abs(delta) > 0.001) {
+      ctx.beginPath();
+      ctx.arc(n.x, n.y, baseR + 8, 0, Math.PI * 2);
+      ctx.strokeStyle = delta > 0 ? 'rgba(16,185,129,0.6)' : 'rgba(239,68,68,0.6)';
+      ctx.lineWidth = Math.abs(delta) * 40;
+      ctx.stroke();
+    }
+
+    // Node circle
+    ctx.beginPath();
+    ctx.arc(n.x, n.y, baseR, 0, Math.PI * 2);
+    ctx.fillStyle = d.color + '33';
+    ctx.fill();
+    ctx.strokeStyle = d.color;
+    ctx.lineWidth = 2;
+    ctx.stroke();
+
+    // Score arc
+    ctx.beginPath();
+    ctx.arc(n.x, n.y, baseR - 3, -Math.PI/2, -Math.PI/2 + d.score * Math.PI * 2);
+    ctx.strokeStyle = d.color + 'cc';
+    ctx.lineWidth = 4;
+    ctx.stroke();
+
+    // Label
+    const label = name.length > 12 ? name.slice(0, 11) + '\u2026' : name;
+    ctx.fillStyle = '#e2e8f0';
+    ctx.font = '11px system-ui, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText(label, n.x, n.y + baseR + 16);
+
+    // Combined score text inside node
+    const combined = Math.max(0, Math.min(1, d.score + delta));
+    ctx.fillStyle = '#f59e0b';
+    ctx.font = 'bold 13px system-ui, sans-serif';
+    ctx.fillText(combined.toFixed(2), n.x, n.y + 5);
+  });
+
+  // Title
+  ctx.fillStyle = '#64748b';
+  ctx.font = '12px system-ui, sans-serif';
+  ctx.textAlign = 'center';
+  const title = currentProject === 'biged'
+    ? 'Evidence Ray Tracing \u2014 BigEd 12 Dimensions'
+    : 'Evidence Ray Tracing \u2014 ScoreRift 8 Dimensions';
+  ctx.fillText(title, W/2, H - 16);
+}
+
+// ── Ray Simulation ────────────────────────────────────────────────────────
+
+function castRay(startDim, maxBounces) {
+  const scores = {};
+  Object.keys(dims).forEach(d => scores[d] = dims[d].score);
+
+  const adj = {};
+  Object.keys(dims).forEach(d => adj[d] = []);
+  edges.forEach(e => adj[e.s].push(e));
+
+  let current = startDim;
+  let energy = scores[startDim];
+  const path = [{ dim: current, energy: energy }];
+  let lastPolarity = 1;
+
+  for (let b = 0; b < maxBounces; b++) {
+    const neighbors = adj[current];
+    if (!neighbors || neighbors.length === 0) break;
+
+    const totalW = neighbors.reduce((s, e) => s + e.w, 0);
+    let r = Math.random() * totalW;
+    let chosen = neighbors[0];
+    for (const e of neighbors) {
+      r -= e.w;
+      if (r <= 0) { chosen = e; break; }
+    }
+
+    const receiverScore = scores[chosen.t];
+    const gateFactor = chosen.p > 0 ? receiverScore : (1 - receiverScore);
+    energy = energy * chosen.w * gateFactor;
+    lastPolarity = chosen.p;
+
+    if (energy < 0.01) break;
+
+    current = chosen.t;
+    path.push({ dim: current, energy: energy });
+  }
+
+  return { path, polarity: lastPolarity, progress: 0 };
+}
+
+function castBurst() {
+  const dim = document.getElementById('sel-dim').value;
+  const numRays = parseInt(document.getElementById('sl-rays').value);
+  const maxBounces = parseInt(document.getElementById('sl-bounces').value);
+
+  for (let i = 0; i < numRays; i++) {
+    const ray = castRay(dim, maxBounces);
+    ray.startTime = performance.now() + i * 50;
+    activeRays.push(ray);
+  }
+}
+
+function castAll() {
+  const numRays = parseInt(document.getElementById('sl-rays').value);
+  const maxBounces = parseInt(document.getElementById('sl-bounces').value);
+  const dimNames = Object.keys(dims);
+  let delay = 0;
+
+  dimNames.forEach(dim => {
+    for (let i = 0; i < numRays; i++) {
+      const ray = castRay(dim, maxBounces);
+      ray.startTime = performance.now() + delay;
+      activeRays.push(ray);
+      delay += 15;
+    }
+  });
+}
+
+function resetScores() {
+  Object.keys(deltas).forEach(d => deltas[d] = 0);
+  activeRays = [];
+  updateStats();
+}
+
+// ── Animation Loop ────────────────────────────────────────────────────────
+
+function animate(now) {
+  const speed = parseInt(document.getElementById('sl-speed').value) / 5;
+
+  activeRays = activeRays.filter(ray => {
+    if (now < ray.startTime) return true;
+    ray.progress += 0.02 * speed;
+    if (ray.progress >= ray.path.length - 1) {
+      const last = ray.path[ray.path.length - 1];
+      const contribution = last.energy * ray.polarity * 0.01;
+      const current = deltas[last.dim] || 0;
+      deltas[last.dim] = Math.max(-DELTA_CAP, Math.min(DELTA_CAP, current + contribution));
+      updateStats();
+      return false;
+    }
+    return true;
+  });
+
+  draw();
+  requestAnimationFrame(animate);
+}
+
+// ── UI Helpers (safe DOM construction, no innerHTML) ──────────────────────
+
+function populateSelect() {
+  const sel = document.getElementById('sel-dim');
+  while (sel.firstChild) sel.removeChild(sel.firstChild);
+  Object.keys(dims).forEach(d => {
+    const opt = document.createElement('option');
+    opt.value = d;
+    opt.textContent = d;
+    sel.appendChild(opt);
+  });
+}
+
+function updateStats() {
+  const tbody = document.querySelector('#score-table tbody');
+  while (tbody.firstChild) tbody.removeChild(tbody.firstChild);
+
+  const names = Object.keys(dims).sort((a, b) => {
+    const ca = dims[a].score + (deltas[a]||0);
+    const cb = dims[b].score + (deltas[b]||0);
+    return cb - ca;
+  });
+
+  names.forEach(name => {
+    const d = dims[name];
+    const delta = deltas[name] || 0;
+    const combined = Math.max(0, Math.min(1, d.score + delta));
+    const deltaColor = delta > 0.001 ? '#10b981' : delta < -0.001 ? '#ef4444' : '#64748b';
+    const deltaSign = delta > 0 ? '+' : '';
+
+    const tr = document.createElement('tr');
+
+    const td1 = document.createElement('td');
+    td1.textContent = name;
+    td1.style.color = d.color;
+    td1.style.fontWeight = '600';
+    tr.appendChild(td1);
+
+    const td2 = document.createElement('td');
+    td2.textContent = d.score.toFixed(2);
+    tr.appendChild(td2);
+
+    const td3 = document.createElement('td');
+    td3.textContent = deltaSign + delta.toFixed(3);
+    td3.style.color = deltaColor;
+    td3.style.fontWeight = '600';
+    tr.appendChild(td3);
+
+    const td4 = document.createElement('td');
+    td4.textContent = combined.toFixed(2);
+    td4.style.fontWeight = '700';
+    tr.appendChild(td4);
+
+    const td5 = document.createElement('td');
+    const bar = document.createElement('span');
+    bar.className = 'score-bar';
+    bar.style.width = Math.round(combined * 100) + 'px';
+    bar.style.background = d.color;
+    td5.appendChild(bar);
+    tr.appendChild(td5);
+
+    tbody.appendChild(tr);
+  });
+}
+
+// ── Init ──────────────────────────────────────────────────────────────────
+
+function init() {
+  canvas = document.getElementById('c');
+  ctx = canvas.getContext('2d');
+  W = canvas.width = window.innerWidth;
+  H = canvas.height = window.innerHeight;
+
+  window.addEventListener('resize', () => {
+    W = canvas.width = window.innerWidth;
+    H = canvas.height = window.innerHeight;
+    layoutNodes();
+  });
+
+  // Wire up controls
+  document.getElementById('btn-biged').addEventListener('click', () => setProject('biged'));
+  document.getElementById('btn-scorerift').addEventListener('click', () => setProject('scorerift'));
+  document.getElementById('btn-cast').addEventListener('click', castBurst);
+  document.getElementById('btn-castall').addEventListener('click', castAll);
+  document.getElementById('btn-reset').addEventListener('click', resetScores);
+
+  document.getElementById('sl-rays').addEventListener('input', function() {
+    document.getElementById('v-rays').textContent = this.value;
+  });
+  document.getElementById('sl-bounces').addEventListener('input', function() {
+    document.getElementById('v-bounces').textContent = this.value;
+  });
+  document.getElementById('sl-speed').addEventListener('input', function() {
+    document.getElementById('v-speed').textContent = (this.value / 5).toFixed(1) + 'x';
+  });
+
+  initProject();
+  requestAnimationFrame(animate);
+}
+
+init();
+</script>
+</body>
+</html>
