@@ -85,3 +85,45 @@ def test_config_fields_exist():
     assert cfg.ml_teacher_delay_ms == 750
     assert cfg.ml_teacher_cooldown_ticks == 10
     assert cfg.ml_ups_window_size == 10
+
+
+def test_full_lifecycle():
+    """Simulate: RL ticking → teacher interrupts → cooldown → RL resumes."""
+    gov = TickGovernor(delay_min_ms=200, delay_max_ms=1000, target_ups=120,
+                       teacher_delay_ms=750)
+
+    # Phase 1: RL ticking with healthy UPS
+    for i in range(10):
+        gov.record_tick(game_tick=i * 120, wall_time=float(i))
+    assert gov.get_delay_ms() == 200  # healthy → min
+
+    # Phase 2: Teacher takes over
+    gov.set_teacher_mode(True)
+    assert gov.get_delay_ms() == 750
+    assert gov.is_teacher_mode is True
+
+    # UPS samples keep coming (game still runs)
+    gov.record_tick(game_tick=1200, wall_time=10.0)
+    assert gov.get_delay_ms() == 750  # still teacher pace
+
+    # Phase 3: Teacher done, cooldown, resume
+    gov.set_teacher_mode(False)
+    assert gov.is_teacher_mode is False
+    assert gov.get_delay_ms() == 200  # back to adaptive (healthy UPS)
+
+
+def test_degraded_ups_increases_delay():
+    """Simulate UPS degradation as factory grows."""
+    gov = TickGovernor(delay_min_ms=200, delay_max_ms=1000, target_ups=120)
+
+    # Start healthy
+    gov.record_tick(game_tick=0, wall_time=0.0)
+    gov.record_tick(game_tick=120, wall_time=1.0)
+    delay_healthy = gov.get_delay_ms()
+
+    # UPS degrades to 60 (50% of target)
+    gov.record_tick(game_tick=180, wall_time=2.0)  # only 60 ticks in 1s
+    delay_degraded = gov.get_delay_ms()
+
+    assert delay_degraded > delay_healthy, (
+        f"Degraded delay ({delay_degraded}) should exceed healthy ({delay_healthy})")
