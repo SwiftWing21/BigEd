@@ -1,10 +1,10 @@
 <!-- doc-revision
   doc: ROADMAP.md
-  revision: 3
-  updated: 2026-03-31
-  updatedBy: claude-sonnet-4-6
+  revision: 4
+  updated: 2026-04-05
+  updatedBy: claude-opus-4-6
   metrics: skills=129 endpoints=256+ smoke=51/52 tables=34 tests=852
-  status: stale (last full update 0331; 168+ commits since — dual-track, Gemma 4, dashboard decomp, security sweep)
+  status: current (restructured to workstreams; historical phases collapsed)
 -->
 # BigEd CC Roadmap
 
@@ -105,6 +105,199 @@ Example progression:
 
 ---
 
+## Current State (2026-04-05)
+
+> **Skills:** 129 | **Endpoints:** 256+ (19 blueprints) | **DB tables:** 34 | **Smoke:** 51/52 | **Tests:** 852
+> **Rust track:** 50 endpoints, 5-section egui GUI, PyO3 bridge (9/9 tests), 8/8 contract tests
+
+### What shipped since last roadmap update (168 commits, 2026-03-31 → 2026-04-05)
+
+**Architecture — Dual-Track (Rust + Python)**
+- [x] Full Rust production track implemented (Phases A-G in one session)
+- [x] 50 REST endpoints in biged-rs (fleet ops, Ollama, backup, audit, compliance)
+- [x] 5-section egui operator GUI (Overview, Fleet, Tasks, Config, Logs)
+- [x] PyO3 skill bridge verified (9/9 tests, 128 Python skills callable from Rust)
+- [x] 8 shared contract tests (DB schema, skill execution, config parsing)
+- [x] `biged migrate --from` subcommand for Python→Rust fleet import
+- [x] `build-release.ps1` production packaging with SHA-256 manifest
+- [x] UX bridge: "Launch Modules" button in Rust GUI spawns Python launcher
+- [x] Python launcher accepts `--connect-to` for Rust service adoption
+- [x] DEPLOYMENT.md + SHARED_CONTRACTS.md documentation
+
+**Architecture — Dashboard Decomposition**
+- [x] 9,298-line HTML template → 16 component includes
+- [x] 26 blueprint registrations → registry pattern
+- [x] db.py decomposed (1,863→623 lines) into focused modules (db_tasks, db_agents, etc.)
+- [x] SSE-driven live tab refresh + 30s fallback + dirty-tab tracking
+- [x] Master ignition button (start/stop all fleet processing)
+- [x] Two-mode task dispatch (Quick natural language + Advanced JSON)
+- [x] Comms tab with mark-as-read, channel badges, mark-all-read button
+
+**Architecture — Tkinter Removal**
+- [x] Deleted 20K lines of dead tkinter fallback code
+- [x] Deleted old standalone updater (1,488 lines)
+- [x] Deleted old module tabs from BigEd/launcher/modules/
+- [x] PyWebView + Qt is now the only GUI backend
+
+**Security Hardening**
+- [x] SSRF validation for peer URLs (SEC-05/06/07)
+- [x] HMAC compare_digest for all token comparisons
+- [x] Auth on federation heartbeat/HITL/cert endpoints
+- [x] Role checks on all ingest + marketplace endpoints
+- [x] Parameterized SQL in metering_blueprint
+- [x] safe_error() replacing str(e) across all blueprints
+- [x] Adaptive rate limiter (triggers under DDoS, not normal use)
+
+**Gemma 4 Integration**
+- [x] 4 Gemma 4 instruct variants via Ollama (e4b, e2b, e12b, e27b)
+- [x] Benchmark harness + default prompt sets
+- [x] Partial GPU offload with num_gpu parameter
+- [x] KV-cache q8_0 + flash attention env var injection
+- [x] Context overflow detection + truncation for variant limits
+- [x] OOM error handling + RAM spillover tracking
+- [x] MEMORY_PRESSURE flag + SSE event
+- [x] CLI benchmark command in lead_client
+
+**Dashboard UX**
+- [x] Task card shows current queue depth (not all-time totals)
+- [x] SSE variable scoping fix (_dirtyTabs trapped in IIFE — silently broken)
+- [x] Header badges update across all tabs (ungated from dashboard-only)
+- [x] No-cache headers on HTML responses
+- [x] Ingest offline banner CSS fix (duplicate display property)
+- [x] Boot overlay stages with spinners + elapsed timers
+- [x] Login overlay starts active — zero flash guaranteed
+- [x] Dark mode contrast fixes (22 color replacements)
+
+**Audit System**
+- [x] 12-dimension audit scorer with tier runners + DB persistence
+- [x] Claim schema with gap taxonomy (stale_optimism, metric_blindness, false_positive, context_gap)
+- [x] Reconciliation engine + ratchet checks + user feedback
+- [x] 9 REST endpoints via audit_blueprint
+- [x] Dashboard panel with score table + feedback widget
+- [x] Audit sanitizer + snapshot exports
+
+**Auth & User Profiles**
+- [x] Local user profiles with login, roles, session cookies
+- [x] Audit trail for auth events
+- [x] Human-friendly error messages
+
+**Update System**
+- [x] update_manager.py (core update logic)
+- [x] update_helper.py (headless binary swapper with rollback)
+- [x] update_blueprint.py (7 REST endpoints + background checker)
+- [x] Dashboard Update section with SSE progress + changelog
+
+**Backup System**
+- [x] Knowledge directory zip compression (1 GB raw → ~300 MB compressed)
+- [x] Prune fix: catches orphaned backups without manifests (549 orphans cleaned, 18.4 GB → 9.2 GB)
+
+**Fresh Install Fixes**
+- [x] pythonnet bypass: install pywebview --no-deps for Qt backend
+- [x] customtkinter added to requirements.txt + PyInstaller hidden_imports
+- [x] Setup.exe → Updater.exe naming fix
+
+**Factorio RL Module**
+- [x] Adaptive tick governor (200-1000ms based on observed UPS)
+- [x] LLM teacher exclusive control (RL paused during teacher actions)
+- [x] Teacher model swapped from qwen3:8b → gemma4:e4b
+- [x] 10 unit/integration tests passing
+- [x] Moved to BigEd-ModuleHub (private distribution)
+
+**Testing**
+- [x] 852 pytest tests (up from 465/477)
+- [x] New test suites: backup_manager, boot_sequence, comms, filesystem_guard, idle_evolution, process_manager, rag, scheduler
+- [x] Gemma 4 integration test
+- [x] Factorio tick governor integration tests
+- [x] 8 Rust contract tests (DB, skill, config parity)
+- [x] 9 Rust bridge tests (loader, runner, worker lifecycle)
+
+**Research & Planning (not yet coded)**
+- [x] Evidence ray tracing plan v3 (council-reviewed, ready to implement)
+- [x] TurboQuant research (Google KV cache compression — waiting for llama.cpp upstream)
+- [x] Cisco Zero Trust for AI Agents research
+- [x] Dual-track architecture plan (7 phases, all implemented)
+
+**Cleanup**
+- [x] Planning docs moved to Projects/_plans/ (not in any repo)
+- [x] Superpowers plans made private (removed from gitignore whitelist)
+- [x] 87 dev-process screenshots archived
+- [x] GitHub org rebranded from SwiftWing21 to mbachaud
+- [x] ScoreRift branding updated from TBA/Two-Brain-Audit
+- [x] Stale metrics refreshed across 11 docs
+
+---
+
+## Active Workstreams
+
+### WS-1: Evidence Ray Tracing (ScoreRift + BigEd)
+**Plan:** `Projects/_plans/ray_trace_plan.md` (v3, council-reviewed)
+**Status:** Ready to implement. ScoreRift owns the module, BigEd imports via dependency.
+
+- [ ] Create `src/scorerift/ray_trace.py` with dataclasses + core functions
+- [ ] Unit tests with fixed seed (deterministic)
+- [ ] Bootstrap 95% CI + convergence check
+- [ ] `presets/interaction_graphs.py` (8-dimension Python project graph)
+- [ ] Integrate into ScoreRift `engine.py` + `__init__.py`
+- [ ] BigEd: bump scorerift dependency, create `fleet/audit_interaction_graph.py`
+- [ ] Integrate into `audit_scorer.py` + add DB columns
+- [ ] Sensitivity analysis (delta_cap, base_rays, seed, edge weights)
+
+### WS-2: Dashboard UX Completion
+**Status:** Partially done. Dashboard decomposition complete, but some 0.185.00b items remain.
+
+- [ ] Theme system: CSS variables for Classic/Modern/Figma presets
+- [ ] Mobile-responsive layout
+- [ ] First-time user walkthrough (web dashboard version)
+- [ ] System tray integration (pystray — run when window closed)
+- [ ] HITL response panel inline in web dashboard
+
+### WS-3: Rust Production Track — Polish
+**Plan:** `Projects/_plans/dual_track_plan.md`
+**Status:** Phases A-G complete. Production binary functional. Polish items remain.
+
+- [ ] `/api/logs/{source}` endpoint for Logs tab
+- [ ] Worker restart endpoint (`POST /api/fleet/worker/{name}/restart`)
+- [ ] WASM frontend testing + adaptation
+- [ ] GitHub Actions CI for Rust (multi-platform)
+- [ ] Signed release artifacts (Windows + Linux)
+- [ ] Embedded CPython investigation (truly Python-free binary)
+
+### WS-4: TurboQuant Readiness
+**Status:** Monitoring. Not actionable until llama.cpp merges TQ3/TQ4 upstream.
+
+- [ ] Watch llama.cpp discussion #20969 for TQ merge
+- [ ] Update Ollama to latest when TQ lands
+- [ ] Add `kv_cache_type = "tq3"` option to fleet.toml
+- [ ] Benchmark TQ3 vs q8_0 on Gemma 4 / Qwen3 models
+
+### WS-5: Roadmap & Documentation Debt
+**Status:** In progress. Metrics refreshed, structure updated, but body sections still stale.
+
+- [ ] ROADMAP.md: rewrite 0.185.00b section to reflect actual state
+- [ ] FRAMEWORK_BLUEPRINT.md: refresh body (sections 2-16 are v0.41-era)
+- [ ] Version tagging: decide on next tag number (currently v1.0.8)
+- [ ] Phase F docs: DEVELOPMENT.md for Python track
+
+---
+
+## Major Milestones (foundation work DONE, polish ongoing)
+
+| Milestone | Foundation | Status |
+|-----------|-----------|--------|
+| Multi-Fleet & Remote Orchestration (0.100) | 0.085.00b | Federation endpoints, peer discovery, task overflow — DONE |
+| Intelligent Orchestration (0.200) | 0.110.00b | ML routing, predictive scaling, NL fleet control — DONE |
+| Enterprise & Multi-Tenant (0.300) | 0.135.00b | Tenant DB isolation, RBAC, SLA endpoints — DONE |
+| Platform & SaaS (0.400) | 0.160.00b | Control plane, billing, marketplace, geo-fleet — DONE |
+| **Dual-Track Production** | 2026-04-05 | Rust binary (50 endpoints, egui GUI, PyO3 bridge) — DONE |
+| **Beta Graduation (1.000.00)** | — | All workstreams complete + stability gate |
+
+---
+
+## Historical Record (collapsed — all DONE)
+
+<details>
+<summary>Phase 1: Pre-1.0 (v0.31 through v0.48) — click to expand</summary>
+
 ## Phase 1: Pre-1.0 (v0.31 through v0.48)
 
 ### v0.31 — Task Graph & Decomposition (DAG) [DONE]
@@ -194,6 +387,12 @@ Completed 2026-03-19.
 
 ---
 
+
+</details>
+
+<details>
+<summary>Phase 2: Post-1.0 (0.01.xx through 0.15.xx) — click to expand</summary>
+
 ## Phase 2: Post-1.0 (0.01.xx through 0.15.xx)
 
 ### 0.01.01 — Post-Release Stabilization [DONE]
@@ -274,7 +473,13 @@ Completed 2026-03-19. OOM prevention skill, refactor_verify skill, model_manager
 
 ---
 
-## Phase 3: Alpha (Current)
+
+</details>
+
+<details>
+<summary>Phase 3: Beta features (0.050.00b through 0.185.00b) — click to expand</summary>
+
+## Phase 3: Beta features
 
 ### 0.21.01 — Dr. Ders + Token Tracking + HITL UX + Swarm Dashboard [DONE]
 
@@ -1494,6 +1699,9 @@ Completed 2026-03-22. Three new skill systems:
 
 ---
 
+
+</details>
+
 ## Audit Coverage Check (per AUDIT_TRACKER.md)
 
 > Reviewed at v0.400.00b (2026-03-23). Skills: 130+, Smoke: 33/33, DB: 20 tables, Endpoints: 190+.
@@ -1544,6 +1752,12 @@ Completed 2026-03-22. Three new skill systems:
 - All Python files compile: 0 errors across all 3 modified files
 
 ---
+
+
+</details>
+
+<details>
+<summary>Parallel Tracks (all DONE) — click to expand</summary>
 
 ## Parallel Tracks (all DONE)
 
