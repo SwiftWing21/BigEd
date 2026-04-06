@@ -167,7 +167,14 @@ def _get_python() -> str:
 
 
 def _start_supervisor():
-    global _supervisor_proc
+    global _supervisor_proc, DASHBOARD_URL, HEALTH_URL
+    # Phase G: skip supervisor spawn when connected to Rust service tier
+    service_url = os.environ.get("BIGED_SERVICE_URL")
+    if service_url:
+        DASHBOARD_URL = service_url
+        HEALTH_URL = f"{service_url}/api/health"
+        log.info("Connected to Rust service at %s — skipping Python supervisor", service_url)
+        return
     supervisor_py = str(FLEET_DIR / "supervisor.py")
     python = _get_python()
     _supervisor_proc = subprocess.Popen(

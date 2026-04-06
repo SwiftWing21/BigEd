@@ -69,8 +69,16 @@ impl BigEdApp {
                 }
             });
 
+            let launcher_available = tabs::fleet::detect_launcher();
+            if launcher_available {
+                tracing::info!("Python launcher detected — 'Launch Modules' button enabled");
+            }
+
+            let mut state = AppState::new(api);
+            state.launcher_available = launcher_available;
+
             Self {
-                state: AppState::new(api),
+                state,
                 runtime,
             }
         }
