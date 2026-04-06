@@ -1,40 +1,74 @@
 use crate::api::{ActivityLane, AgentInfo, ApiClient, FleetStatus, ThermalInfo};
 
-/// Tab identifiers.
+/// Tab identifiers — 5-section operator GUI (Phase C).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Tab {
-    CommandCenter,
+    Overview,
     Fleet,
-    FleetComm,
-    Settings,
+    Tasks,
+    Config,
+    Logs,
 }
 
-/// Settings sub-sections.
+/// Config sub-sections.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum SettingsSection {
+pub enum ConfigSection {
     General,
     Hardware,
-    Display,
-    Keys,
+    Backup,
+}
+
+/// Log source selector.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LogSource {
+    Supervisor,
+    Worker,
+    Fleet,
+}
+
+/// Log level filter.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LogLevel {
+    All,
+    Warn,
+    Error,
 }
 
 /// Application state — drives all UI rendering.
 pub struct AppState {
     pub active_tab: Tab,
     pub sidebar_open: bool,
-    pub settings_section: SettingsSection,
-    pub chat_input: String,
+    pub config_section: ConfigSection,
     pub api: ApiClient,
+
+    // Tasks tab state
+    pub dispatch_skill: String,
+    pub dispatch_priority: i32,
+    pub queue_paused: bool,
+
+    // Logs tab state
+    pub log_source: LogSource,
+    pub log_level: LogLevel,
+    pub log_lines: Vec<String>,
+
+    // Fleet tab state
+    pub launcher_available: bool,
 }
 
 impl AppState {
     pub fn new(api: ApiClient) -> Self {
         Self {
-            active_tab: Tab::CommandCenter,
+            active_tab: Tab::Overview,
             sidebar_open: true,
-            settings_section: SettingsSection::General,
-            chat_input: String::new(),
+            config_section: ConfigSection::General,
             api,
+            dispatch_skill: String::new(),
+            dispatch_priority: 5,
+            queue_paused: false,
+            log_source: LogSource::Supervisor,
+            log_level: LogLevel::All,
+            log_lines: Vec::new(),
+            launcher_available: false,
         }
     }
 

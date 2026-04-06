@@ -21,6 +21,11 @@ pub const ORANGE: Color32 = Color32::from_rgb(0xf5, 0x9e, 0x0b);
 pub const RED: Color32 = Color32::from_rgb(0xef, 0x44, 0x44);
 pub const BLUE: Color32 = Color32::from_rgb(0x4f, 0xc3, 0xf7);
 pub const YELLOW: Color32 = Color32::from_rgb(0xff, 0xd5, 0x4f);
+// ── Semantic aliases (used by operator GUI tabs)
+pub const SUCCESS: Color32 = GREEN;
+pub const DANGER: Color32 = RED;
+pub const WARN: Color32 = ORANGE;
+pub const PRIMARY: Color32 = Color32::from_rgb(0x3b, 0x82, 0xf6);
 
 // ── Provider
 pub const PROVIDER_LOCAL: Color32 = Color32::from_rgb(0xd4, 0xa8, 0x4b);

@@ -9,20 +9,24 @@ struct NavItem {
 
 const NAV_ITEMS: &[NavItem] = &[
     NavItem {
-        tab: Tab::CommandCenter,
-        label: "Command\nCenter",
+        tab: Tab::Overview,
+        label: "Overview",
     },
     NavItem {
         tab: Tab::Fleet,
         label: "Fleet",
     },
     NavItem {
-        tab: Tab::FleetComm,
-        label: "Fleet\nComm",
+        tab: Tab::Tasks,
+        label: "Tasks",
     },
     NavItem {
-        tab: Tab::Settings,
-        label: "Settings",
+        tab: Tab::Config,
+        label: "Config",
+    },
+    NavItem {
+        tab: Tab::Logs,
+        label: "Logs",
     },
 ];
 
@@ -73,9 +77,8 @@ pub fn show(ui: &mut egui::Ui, state: &mut AppState) {
         let text_color = if is_active { theme::TEXT } else { theme::DIM };
         let font = FontId::new(theme::FONT_SM, egui::FontFamily::Proportional);
 
-        // Use egui's built-in label inside the allocated rect.
         let galley = painter.layout(
-            item.label.replace('\n', " "),
+            item.label.to_string(),
             font,
             text_color,
             btn_width - accent_bar_w - 16.0,

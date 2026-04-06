@@ -50,12 +50,38 @@ pub struct ActivityLane {
 /// Thermal info from /api/thermal.
 #[derive(Debug, Clone, Default, Deserialize)]
 pub struct ThermalInfo {
-    #[serde(alias = "gpu_temp_c")]
-    pub gpu_temp: Option<f32>,
-    #[serde(alias = "cpu_temp_c")]
-    pub cpu_temp: Option<f32>,
-    #[serde(alias = "thermal_state")]
-    pub action: Option<String>,
+    #[serde(default)]
+    pub gpu_temp_c: f32,
+    #[serde(default)]
+    pub cpu_temp_c: f32,
+    #[serde(default)]
+    pub gpu_vram_used_gb: f64,
+    #[serde(default)]
+    pub gpu_vram_total_gb: f64,
+    #[serde(default)]
+    pub ram_used_gb: f64,
+    #[serde(default)]
+    pub ram_total_gb: f64,
+    #[serde(default)]
+    pub thermal_state: String,
+    #[serde(default)]
+    pub current_model: String,
+}
+
+/// Task info for queue display.
+#[derive(Debug, Clone, Default, Deserialize)]
+pub struct TaskInfo {
+    pub id: i64,
+    #[serde(alias = "type", default)]
+    pub skill: String,
+    #[serde(default)]
+    pub status: String,
+    #[serde(default)]
+    pub priority: i32,
+    #[serde(alias = "assigned_to")]
+    pub agent: Option<String>,
+    #[serde(default)]
+    pub created_at: String,
 }
 
 /// Non-blocking API client — spawns requests on tokio, stores results.
@@ -67,6 +93,7 @@ pub struct ApiClient {
     pub agents: Arc<Mutex<Vec<AgentInfo>>>,
     pub lanes: Arc<Mutex<Vec<ActivityLane>>>,
     pub thermal: Arc<Mutex<ThermalInfo>>,
+    pub task_queue_cache: Arc<Mutex<Vec<TaskInfo>>>,
     pub connected: Arc<Mutex<bool>>,
     /// Handle to the tokio runtime for spawning fire-and-forget requests
     /// from non-async contexts (e.g. the GUI thread).
@@ -85,6 +112,7 @@ impl ApiClient {
             agents: Arc::new(Mutex::new(Vec::new())),
             lanes: Arc::new(Mutex::new(Vec::new())),
             thermal: Arc::new(Mutex::new(ThermalInfo::default())),
+            task_queue_cache: Arc::new(Mutex::new(Vec::new())),
             connected: Arc::new(Mutex::new(false)),
             rt_handle: None,
         }
@@ -129,6 +157,44 @@ impl ApiClient {
             if let Err(e) = self.fetch_thermal().await {
                 tracing::warn!("fetch_thermal failed: {e}");
             }
+            if let Err(e) = self.fetch_task_queue().await {
+                tracing::warn!("fetch_task_queue failed: {e}");
+            }
+        }
+    }
+
+    /// Get cached task queue snapshot.
+    pub fn task_queue(&self) -> Vec<TaskInfo> {
+        self.task_queue_cache
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone()
+    }
+
+    /// Fire-and-forget POST to any endpoint (used by Tasks tab).
+    pub fn post_action(&self, path: &str, body: &str) {
+        let Some(handle) = &self.rt_handle else {
+            tracing::warn!("Cannot post action: no tokio runtime handle");
+            return;
+        };
+        let http = self.http.clone();
+        let url = format!("{}{}", self.base_url, path);
+        let body_owned = body.to_string();
+
+        if body == "DELETE" {
+            handle.spawn(async move {
+                if let Err(e) = http.delete(&url).send().await {
+                    tracing::warn!("DELETE {} failed: {e}", url);
+                }
+            });
+        } else {
+            handle.spawn(async move {
+                let parsed: serde_json::Value =
+                    serde_json::from_str(&body_owned).unwrap_or(serde_json::json!({}));
+                if let Err(e) = http.post(&url).json(&parsed).send().await {
+                    tracing::warn!("POST {} failed: {e}", url);
+                }
+            });
         }
     }
 
@@ -157,6 +223,17 @@ impl ApiClient {
         let url = format!("{}/api/thermal", self.base_url);
         let resp: ThermalInfo = self.http.get(&url).send().await?.json().await?;
         *self.thermal.lock().unwrap_or_else(|e| e.into_inner()) = resp;
+        Ok(())
+    }
+
+    async fn fetch_task_queue(&self) -> Result<()> {
+        let url = format!("{}/api/tasks/queue?per_page=50", self.base_url);
+        let resp: serde_json::Value = self.http.get(&url).send().await?.json().await?;
+        let tasks: Vec<TaskInfo> = resp
+            .get("tasks")
+            .and_then(|t| serde_json::from_value(t.clone()).ok())
+            .unwrap_or_default();
+        *self.task_queue_cache.lock().unwrap_or_else(|e| e.into_inner()) = tasks;
         Ok(())
     }
 }
