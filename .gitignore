@@ -30,6 +30,8 @@ ENV/
 !fleet/CLAUDE.md
 !BigEd/STABILITY_GUIDE.md
 !docs/WHAT_IS_BIGED.md
+!biged-rs/DEPLOYMENT.md
+!biged-rs/SHARED_CONTRACTS.md
 !autoresearch/README.md
 !.github/PULL_REQUEST_TEMPLATE.md
 !docs/flowcharts/README.md
