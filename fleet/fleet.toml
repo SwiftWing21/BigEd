@@ -65,14 +65,16 @@ wake_word = ""                       # Empty = disabled. Set to "hey biged" etc.
 tts_enabled = false                  # Local text-to-speech responses
 
 [models]
-local = "qwen3:1.7b"
-complex = "qwen3:8b"
-complex_provider = "local"    # DEPRECATED: superseded by [api_gate]. Kept for backwards compat.
-conductor_model = "qwen3:4b"  # CPU-pinned user chat model (num_gpu=0, ~2-3GB RAM, 0 VRAM)
-vision_model = "llava"        # local multimodal model for image analysis (llava, minicpm-v, qwen-vl)
+local = "gemma4:e4b"            # default fleet worker model (GPU, ~7GB VRAM)
+complex = "gemma4:e4b"          # complex tasks (same for now; upgrade to 26b for quality)
+complex_provider = "local"
+conductor_model = "qwen3:4b"    # CPU-pinned user chat model (num_gpu=0, ~2-3GB RAM, 0 VRAM)
+vision_model = "llava"           # local multimodal model for image analysis
 minimax_model = "MiniMax-M1-80k"
 ollama_host = "http://localhost:11434"
 keep_alive_mins = 30             # model stay loaded (auto-refreshed while app runs)
+# Tier fallback chain: gemma4:e4b → qwen3:8b → qwen3:4b → qwen3:1.7b
+fallback_chain = ["gemma4:e4b", "qwen3:8b", "qwen3:4b", "qwen3:1.7b"]
 
 # Model hopping batch thresholds — don't swap models unless enough demand queued
 # Prevents thrashing between tiers for single low-value tasks
@@ -189,13 +191,13 @@ num_gpu_layers = -1
 context_length = 8192
 
 [models.gemma4.variants."26b-a4b"]
-vram_estimate_gb = 16
-num_gpu_layers = -1
+vram_estimate_gb = 16            # full model ~16GB; partial offload for 12GB GPUs
+num_gpu_layers = 28              # ~10GB VRAM + ~6GB RAM (fits 12GB with headroom)
 context_length = 8192
 
 [models.gemma4.variants."31b"]
-vram_estimate_gb = 20
-num_gpu_layers = 24
+vram_estimate_gb = 20            # full model ~20GB; needs heavy offload on 12GB
+num_gpu_layers = 20              # ~8GB VRAM + ~12GB RAM
 context_length = 8192
 
 [training]
