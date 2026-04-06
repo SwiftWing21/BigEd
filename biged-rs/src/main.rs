@@ -1,4 +1,4 @@
-﻿use clap::{Parser, Subcommand};
+use clap::{Parser, Subcommand};
 
 #[derive(Parser)]
 #[command(name = "biged", version, about = "BigEd CC - Autonomous Agent Fleet")]
@@ -13,11 +13,11 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Commands {
-    /// Run the supervisor (process lifecycle + thermal)
+    /// Run the supervisor (process lifecycle + thermal + worker bridge)
     Supervisor,
-    /// Run the HTTP server
+    /// Run the HTTP server only (no PyO3, no Python required)
     Serve,
-    /// Run as worker only (edge node)
+    /// Run as worker only (PyO3 bridge — requires Python)
     Worker,
     /// Run thermal monitor only
     Thermal,
@@ -35,6 +35,37 @@ enum Commands {
     },
 }
 
+/// Locate the fleet directory: CWD/fleet/ or parent/fleet/.
+fn find_fleet_dir() -> std::path::PathBuf {
+    let cwd = std::env::current_dir().unwrap_or_default();
+    let candidate = cwd.join("fleet");
+    if candidate.exists() {
+        return candidate;
+    }
+    // Try parent (running from biged-rs/ inside Education/)
+    if let Some(parent) = cwd.parent() {
+        let parent_fleet = parent.join("fleet");
+        if parent_fleet.exists() {
+            return parent_fleet;
+        }
+    }
+    candidate // fallback to CWD/fleet/ even if it doesn't exist
+}
+
+fn load_config(fleet_dir: &std::path::Path) -> biged_core::config::FleetConfig {
+    let config_path = fleet_dir.join("fleet.toml");
+    if config_path.exists() {
+        biged_core::config::FleetConfig::from_file(&config_path)
+            .unwrap_or_else(|e| {
+                tracing::warn!("Failed to parse fleet.toml: {}, using defaults", e);
+                biged_core::config::FleetConfig::default()
+            })
+    } else {
+        tracing::info!("No fleet.toml found at {}, using defaults", config_path.display());
+        biged_core::config::FleetConfig::default()
+    }
+}
+
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt()
@@ -43,21 +74,13 @@ async fn main() -> anyhow::Result<()> {
         .init();
 
     let cli = Cli::parse();
+    let fleet_dir = find_fleet_dir();
 
     match cli.command {
-        Some(Commands::Supervisor) | None => {
-            tracing::info!("Starting BigEd supervisor");
-            biged_supervisor::supervisor::run().await?;
-        }
-        Some(Commands::Serve) => {
-            tracing::info!("Starting BigEd HTTP server");
-            let fleet_dir = std::env::current_dir()?.join("fleet");
-            let config_path = fleet_dir.join("fleet.toml");
-            let config = if config_path.exists() {
-                biged_core::config::FleetConfig::from_file(&config_path)?
-            } else {
-                biged_core::config::FleetConfig::default()
-            };
+        // Default (no subcommand): start HTTP server — works without Python
+        Some(Commands::Serve) | None => {
+            tracing::info!("Starting BigEd HTTP server on fleet dir: {}", fleet_dir.display());
+            let config = load_config(&fleet_dir);
             let db_path = fleet_dir.join("fleet.db");
             let db = biged_core::db::Db::open(&db_path)?;
             let (tx, _rx) = biged_supervisor::events::create_event_bus(256);
@@ -69,31 +92,34 @@ async fn main() -> anyhow::Result<()> {
             };
             biged_server::run(state).await?;
         }
+        Some(Commands::Supervisor) => {
+            tracing::info!("Starting BigEd supervisor (requires Python for skill bridge)");
+            biged_supervisor::supervisor::run().await?;
+        }
         Some(Commands::Worker) => {
-            tracing::info!("Starting BigEd worker");
-            let fleet_dir = std::env::current_dir()?.join("fleet");
-            let config_path = fleet_dir.join("fleet.toml");
-            let fleet_config = if config_path.exists() {
-                biged_core::config::FleetConfig::from_file(&config_path)?
-            } else {
-                biged_core::config::FleetConfig::default()
-            };
+            tracing::info!("Starting BigEd worker (requires Python for PyO3)");
+            let config = load_config(&fleet_dir);
             let db_path = fleet_dir.join("fleet.db");
             let db = biged_core::db::Db::open(&db_path)?;
             let bridge_config = biged_bridge::BridgeConfig::new(fleet_dir);
-            let fleet_config_json = serde_json::to_value(&fleet_config)?;
+            let fleet_config_json = serde_json::to_value(&config)?;
             let worker = biged_bridge::worker::Worker::new(db, bridge_config, fleet_config_json)?;
             worker.run_loop("coder").await?;
         }
         Some(Commands::Migrate { from }) => {
             let source = from
                 .map(std::path::PathBuf::from)
-                .unwrap_or_else(|| std::env::current_dir().unwrap().parent().unwrap_or(&std::env::current_dir().unwrap()).join("fleet"));
-            let target = std::env::current_dir()?.join("fleet");
+                .unwrap_or_else(|| {
+                    std::env::current_dir()
+                        .unwrap_or_default()
+                        .parent()
+                        .unwrap_or(&std::env::current_dir().unwrap_or_default())
+                        .join("fleet")
+                });
+            let target = fleet_dir;
 
             tracing::info!("Migrating from {} to {}", source.display(), target.display());
 
-            // Copy fleet.db
             let src_db = source.join("fleet.db");
             let dst_db = target.join("fleet.db");
             if src_db.exists() {
@@ -104,21 +130,14 @@ async fn main() -> anyhow::Result<()> {
                 tracing::warn!("No fleet.db found at {}", src_db.display());
             }
 
-            // Copy rag.db
-            let src_rag = source.join("rag.db");
-            if src_rag.exists() {
-                std::fs::copy(&src_rag, target.join("rag.db"))?;
-                tracing::info!("Copied rag.db");
+            for name in ["rag.db", "fleet.toml"] {
+                let src = source.join(name);
+                if src.exists() {
+                    std::fs::copy(&src, target.join(name))?;
+                    tracing::info!("Copied {}", name);
+                }
             }
 
-            // Copy fleet.toml
-            let src_cfg = source.join("fleet.toml");
-            if src_cfg.exists() {
-                std::fs::copy(&src_cfg, target.join("fleet.toml"))?;
-                tracing::info!("Copied fleet.toml");
-            }
-
-            // Copy skills directory
             let src_skills = source.join("skills");
             let dst_skills = target.join("skills");
             if src_skills.exists() {
@@ -130,7 +149,6 @@ async fn main() -> anyhow::Result<()> {
                 tracing::info!("Copied {} skill files", count);
             }
 
-            // Verify the imported DB
             let db = biged_core::db::Db::open(&dst_db)?;
             let tables = db.table_names()?;
             let counts = db.task_counts_by_status()?;
@@ -145,13 +163,7 @@ async fn main() -> anyhow::Result<()> {
         }
         Some(Commands::Thermal) => {
             tracing::info!("Starting thermal monitor");
-            let fleet_dir = std::env::current_dir()?.join("fleet");
-            let config_path = fleet_dir.join("fleet.toml");
-            let config = if config_path.exists() {
-                biged_core::config::FleetConfig::from_file(&config_path)?
-            } else {
-                biged_core::config::FleetConfig::default()
-            };
+            let config = load_config(&fleet_dir);
             let (tx, _rx) = biged_supervisor::events::create_event_bus(256);
             let mut monitor = biged_supervisor::thermal::ThermalMonitor::new(
                 std::sync::Arc::new(tokio::sync::RwLock::new(config)),
@@ -159,9 +171,6 @@ async fn main() -> anyhow::Result<()> {
                 fleet_dir,
             );
             monitor.run().await;
-        }
-        _ => {
-            tracing::warn!("Command not yet implemented");
         }
     }
 
