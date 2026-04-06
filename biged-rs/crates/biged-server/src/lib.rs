@@ -145,6 +145,23 @@ pub fn router(state: AppState) -> Router {
         )
         // Version
         .route("/api/version", axum::routing::get(handlers::tasks::version))
+        // Ollama management (Phase B P6)
+        .route(
+            "/api/ollama/status",
+            axum::routing::get(handlers::ollama::status),
+        )
+        .route(
+            "/api/ollama/ps",
+            axum::routing::get(handlers::ollama::ps),
+        )
+        .route(
+            "/api/ollama/start",
+            axum::routing::post(handlers::ollama::start),
+        )
+        .route(
+            "/api/ollama/stop",
+            axum::routing::post(handlers::ollama::stop),
+        )
         .with_state(state)
 }
 

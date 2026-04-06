@@ -18,3 +18,4 @@ anyhow.workspace = true
 futures.workspace = true
 async-stream.workspace = true
 tokio-stream.workspace = true
+reqwest.workspace = true
