@@ -243,21 +243,24 @@ Example progression:
 - [ ] Sensitivity analysis (delta_cap, base_rays, seed, edge weights)
 
 ### WS-2: Dashboard UX Completion
-**Status:** Partially done. Dashboard decomposition complete, but some 0.185.00b items remain.
+**Status:** Theme system DONE (light/dark/system toggle). "Figma preset" superseded by CosmicTasha's design system. Mobile/remote access handled by Rust WASM (WS-3), not Flask responsive. Remaining items are Python-track UX polish.
 
-- [ ] Theme system: CSS variables for Classic/Modern/Figma presets
-- [ ] Mobile-responsive layout
+- [x] Theme system: CSS variables with light/dark/system toggle (DONE)
+- [x] Mobile/remote access: handled by Rust WASM frontend (WS-3), not Flask responsive
+- [ ] ~~Figma theme preset~~ — DROPPED (superseded by CosmicTasha design system)
+- [ ] ~~Mobile-responsive Flask layout~~ — DROPPED (WASM operator GUI is the remote access answer)
 - [ ] First-time user walkthrough (web dashboard version)
-- [ ] System tray integration (pystray — run when window closed)
+- [ ] System tray integration (pystray — already in launcher_webview.py, needs polish)
 - [ ] HITL response panel inline in web dashboard
 
 ### WS-3: Rust Production Track — Polish
 **Plan:** `Projects/_plans/dual_track_plan.md`
-**Status:** Phases A-G complete. Production binary functional. Polish items remain.
+**Status:** Phases A-G complete. 51 endpoints. Polish items remain.
 
-- [ ] `/api/logs/{source}` endpoint for Logs tab
+- [x] `/api/logs/{source}` endpoint for Logs tab (DONE)
 - [ ] Worker restart endpoint (`POST /api/fleet/worker/{name}/restart`)
-- [ ] WASM frontend testing + adaptation
+- [ ] WASM frontend: `wasm-pack build`, index.html, serve from Rust server
+- [ ] WASM: pass server_url from page origin (no hardcoded localhost)
 - [ ] GitHub Actions CI for Rust (multi-platform)
 - [ ] Signed release artifacts (Windows + Linux)
 - [ ] Embedded CPython investigation (truly Python-free binary)
