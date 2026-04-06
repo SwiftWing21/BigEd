@@ -162,6 +162,49 @@ pub fn router(state: AppState) -> Router {
             "/api/ollama/stop",
             axum::routing::post(handlers::ollama::stop),
         )
+        // Backup & recovery (Phase B P2)
+        .route(
+            "/api/backup/trigger",
+            axum::routing::post(handlers::backup::trigger),
+        )
+        .route(
+            "/api/backup/list",
+            axum::routing::get(handlers::backup::list),
+        )
+        .route(
+            "/api/backup/restore",
+            axum::routing::post(handlers::backup::restore),
+        )
+        // Audit (Phase B P3)
+        .route(
+            "/api/audit/scores",
+            axum::routing::get(handlers::audit::scores),
+        )
+        .route(
+            "/api/audit/history",
+            axum::routing::get(handlers::audit::history),
+        )
+        .route(
+            "/api/audit/snapshot",
+            axum::routing::get(handlers::audit::snapshot),
+        )
+        // Compliance artifacts (Phase B P4 — the CosmicTasha pattern)
+        .route(
+            "/api/compliance/profiles",
+            axum::routing::post(handlers::compliance::submit_profile),
+        )
+        .route(
+            "/api/compliance/profiles/{id}",
+            axum::routing::get(handlers::compliance::get_profile),
+        )
+        .route(
+            "/api/compliance/profiles/{id}/verify",
+            axum::routing::get(handlers::compliance::verify_profile),
+        )
+        .route(
+            "/api/compliance/audit_log",
+            axum::routing::get(handlers::compliance::audit_log),
+        )
         .with_state(state)
 }
 

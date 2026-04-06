@@ -1,4 +1,7 @@
 pub mod activity;
+pub mod audit;
+pub mod backup;
+pub mod compliance;
 pub mod config;
 pub mod fleet;
 pub mod metrics;
