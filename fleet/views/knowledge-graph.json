@@ -3,15 +3,18 @@
   "name": "knowledge-graph",
   "description": "Knowledge flow: agents -> skills -> knowledge folders (reads and writes)",
   "layout": "radial-cluster",
-  "sources": ["supervisor", "knowledge", "rag", "universe"],
-  "metrics_overlay": ["file_count", "size_mb"],
+  "description": "Knowledge flow: agents -> skills -> knowledge -> wiki synthesis",
+  "sources": ["supervisor", "knowledge", "wiki", "rag", "universe"],
+  "metrics_overlay": ["file_count", "size_mb", "page_count"],
   "animation": {
     "writes": "flow",
     "reads": "flow",
     "assigned": "flow",
     "runs": "flow",
     "communicates": "pulse",
-    "heartbeat": "fade"
+    "heartbeat": "fade",
+    "links_to": "pulse",
+    "summarizes": "flow"
   },
   "zoom_breakpoints": {"labels": 0.3, "metrics": 0.5, "animation": 0.3}
 }

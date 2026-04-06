@@ -7,7 +7,7 @@ from datetime import datetime
 from pathlib import Path
 from collections import Counter
 import logging
-from skills._knowledge import save_report
+from skills._knowledge import save_report, log_operation, ensure_in_index
 from skills._report import ReportBuilder
 
 SKILL_NAME = "stability_report"
@@ -44,6 +44,11 @@ def run(payload: dict, config: dict) -> dict:
             "total_resolutions": len(resolutions),
             **analysis,
         }
+
+    # Wiki maintenance (WS-6)
+    rel = str(report_path.relative_to(FLEET_DIR / "knowledge"))
+    log_operation("stability_report", "ingest", f"stability report ({len(resolutions)} resolutions)")
+    ensure_in_index(rel, "Stability Report", f"{len(resolutions)} resolutions analyzed")
 
     return {
         "status": "ok",

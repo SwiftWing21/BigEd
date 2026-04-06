@@ -517,3 +517,62 @@ def api_feedback_stats():
 
     except Exception as e:
         return jsonify({"error": _safe_error(e)}), 500
+
+
+# ── GET /api/knowledge/wiki/graph — wiki pages as graph nodes (WS-6) ────────
+
+@knowledge_bp.route("/api/knowledge/wiki/graph")
+def api_wiki_graph():
+    """Generate graph nodes + edges from the knowledge wiki.
+
+    Reads knowledge/wiki/*.md for pages and cross-links.
+    Returns {nodes, edges} for the views graph system.
+    Wiki pages connect to each other (links_to) and to
+    knowledge folders they summarize (summarizes).
+    """
+    import re
+
+    wiki_dir = FLEET_DIR / "knowledge" / "wiki"
+    nodes = []
+    edges = []
+
+    if not wiki_dir.exists():
+        return jsonify({"nodes": [], "edges": []})
+
+    for md_file in sorted(wiki_dir.glob("*.md")):
+        page_name = md_file.stem
+        node_id = f"wiki:{page_name}"
+
+        try:
+            content = md_file.read_text(encoding="utf-8")
+            first_line = content.split("\n")[0]
+            label = first_line.lstrip("# ").strip() if first_line.startswith("#") else page_name
+        except Exception:
+            label = page_name
+            content = ""
+
+        nodes.append({
+            "id": node_id,
+            "label": label,
+            "type": "wiki_page",
+            "name": page_name,
+            "status": "active",
+        })
+
+        # Parse cross-links
+        for match in re.finditer(r'\[([^\]]+)\]\(([^)]+)\)', content):
+            link_text, link_target = match.groups()
+            if link_target.endswith(".md") and "/" not in link_target:
+                target_id = f"wiki:{link_target.replace('.md', '')}"
+                edges.append({
+                    "source": node_id, "target": target_id,
+                    "type": "links_to", "label": link_text,
+                })
+            elif link_target.startswith("../") and link_target.endswith("/"):
+                folder_name = link_target.strip("../").rstrip("/")
+                edges.append({
+                    "source": node_id, "target": f"folder:{folder_name}",
+                    "type": "summarizes",
+                })
+
+    return jsonify({"nodes": nodes, "edges": edges, "page_count": len(nodes)})

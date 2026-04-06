@@ -2,7 +2,7 @@
   "schema_version": 1,
   "name": "fleet-overview",
   "description": "Full fleet overview -- agents, skills, tasks, models, knowledge",
-  "sources": ["supervisor", "rag", "reinforcement", "knowledge", "autoresearch", "universe"],
+  "sources": ["supervisor", "rag", "reinforcement", "knowledge", "wiki", "autoresearch", "universe"],
   "layout": "radial",
   "metrics_overlay": ["uptime_s", "worker_count", "task_queue_depth"],
   "animation": {
@@ -15,6 +15,8 @@
     "writes": "flow",
     "reads": "flow",
     "dispatches": "pulse",
-    "heartbeat": "fade"
+    "heartbeat": "fade",
+    "links_to": "pulse",
+    "summarizes": "flow"
   }
 }

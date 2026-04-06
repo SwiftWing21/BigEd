@@ -686,8 +686,9 @@ def write_scores(tier: str, scores: list[dict]) -> None:
             for s in scores:
                 conn.execute(
                     """INSERT INTO audit_scores
-                       (tier, dimension, auto_score, auto_detail, manual_grade, divergence)
-                       VALUES (?, ?, ?, ?, ?, ?)""",
+                       (tier, dimension, auto_score, auto_detail, manual_grade,
+                        divergence, interaction_delta, combined_score, ci_95_lo, ci_95_hi)
+                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                     (
                         tier,
                         s["dimension"],
@@ -695,6 +696,10 @@ def write_scores(tier: str, scores: list[dict]) -> None:
                         s.get("auto_detail", "{}"),
                         s.get("manual_grade", ""),
                         s.get("divergence", 0),
+                        s.get("interaction_delta"),
+                        s.get("combined_score"),
+                        s.get("ci_95_lo"),
+                        s.get("ci_95_hi"),
                     ),
                 )
 
@@ -748,7 +753,8 @@ def get_latest_scores() -> list[dict]:
         with db.get_conn() as conn:
             rows = conn.execute(
                 """SELECT dimension, auto_score, auto_detail, manual_grade,
-                          divergence, tier, timestamp
+                          divergence, tier, timestamp,
+                          interaction_delta, combined_score, ci_95_lo, ci_95_hi
                    FROM audit_scores
                    WHERE id IN (
                        SELECT MAX(id) FROM audit_scores GROUP BY dimension
@@ -885,9 +891,32 @@ def check_ratchets(scores: list[dict], ratchets: dict | None = None) -> list[dic
 
 
 def run_and_store(tier: str) -> dict:
-    """Run a tier, reconcile, check ratchets, store to DB, return summary."""
+    """Run a tier, reconcile, ray-trace, check ratchets, store to DB, return summary."""
     scores = run_tier(tier)
     scores = reconcile(scores)
+
+    # --- Ray tracing: cross-dimension interaction scoring (WS-1) ---
+    try:
+        from scorerift.ray_trace import ray_trace
+        from audit_interaction_graph import BIGED_GRAPH
+
+        scores_dict = {s["dimension"]: s["auto_score"] for s in scores}
+        rt_report = ray_trace(scores_dict, BIGED_GRAPH, seed=0)
+        for s in scores:
+            dim = s["dimension"]
+            if dim in rt_report.results:
+                rt = rt_report.results[dim]
+                s["interaction_delta"] = rt.interaction_delta
+                s["combined_score"] = rt.combined_score
+                s["ci_95_lo"] = rt.ci_95[0]
+                s["ci_95_hi"] = rt.ci_95[1]
+        log.info("Ray tracing complete: %d rays, converged at %d, connection_overall=%.3f",
+                 rt_report.total_rays_cast, rt_report.converged_at, rt_report.connection_overall)
+    except ImportError:
+        log.debug("scorerift.ray_trace not available — skipping ray tracing")
+    except Exception:
+        log.warning("Ray tracing failed — scores stored without interaction deltas", exc_info=True)
+
     baseline = load_baseline()
     ratchet_violations = check_ratchets(scores, baseline.get("ratchets", {}))
     write_scores(tier, scores)
@@ -924,6 +953,13 @@ def run_and_store(tier: str) -> dict:
     except Exception:
         log.warning("run_and_store: tension_report generation failed", exc_info=True)
 
+    # Connection-scope overall (if ray tracing ran)
+    connection_overall = None
+    if any(s.get("combined_score") is not None for s in scores):
+        combined = [s["combined_score"] for s in scores if s.get("combined_score") is not None]
+        if combined:
+            connection_overall = sum(combined) / len(combined)
+
     return {
         "tier": tier,
         "dimensions_scored": len(scores),
@@ -932,6 +968,7 @@ def run_and_store(tier: str) -> dict:
         "scores": scores,
         "ratchet_details": ratchet_violations,
         "tension_report": report,
+        "connection_overall": connection_overall,
     }
 
 

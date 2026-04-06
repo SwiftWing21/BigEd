@@ -194,6 +194,16 @@ def _post_registration_setup(flask_app):
             metrics=["file_count", "total_size_mb"],
         )
         view_registry.register_source(
+            name="wiki",
+            category="knowledge",
+            node_types=["wiki_page", "wiki_section"],
+            edge_types=["links_to", "summarizes"],
+            data_endpoint="/api/knowledge/wiki/graph",
+            icon="book-open",
+            layout_hint="tree",
+            metrics=["page_count"],
+        )
+        view_registry.register_source(
             name="universe",
             category="fleet",
             node_types=["agent", "skill", "task", "folder", "model", "config", "message"],
