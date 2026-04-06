@@ -187,18 +187,26 @@ Thermal flow: `hw_supervisor.py` reads GPU/CPU temps → writes `hw_state.json` 
 - **Actionable messages**: ping (pong), pause (stop claiming), resume, config_reload
 - **Training lock**: Exclusive DB lock — only 1 training process at a time
 
-### Database Schema (fleet.db)
+### Database Schema (fleet.db — 34 tables)
 
+Core tables (shared contract with Rust track — see `biged-rs/SHARED_CONTRACTS.md`):
 ```sql
 agents:   id, name(UNIQUE), role, status, current_task_id, last_heartbeat, pid
-tasks:    id, created_at, assigned_to, status, priority, type, payload_json, result_json, error, review_rounds,
-          parent_id, depends_on
+tasks:    id, created_at, assigned_to, status, priority, type, payload_json, result_json, error,
+          review_rounds, parent_id, depends_on, conditions, classification, intelligence_score, trace_id
 messages: id, from_agent, to_agent, created_at, read_at, body_json, channel(DEFAULT 'fleet')
-notes:    id, channel, from_agent, created_at, body_json  — idx on (channel, created_at)
+notes:    id, channel, from_agent, created_at, body_json
 locks:    name(PK), holder, acquired_at
-usage:    id, created_at, skill, model, input_tokens, output_tokens, cache_read_tokens, cache_create_tokens,
-          cost_usd(REAL), task_id, agent  — idx on (skill), (created_at)
+usage:    id, created_at, skill, model, input_tokens, output_tokens, cache_read_tokens,
+          cache_create_tokens, cost_usd, task_id, provider, eval_duration_ms, tokens_per_sec
+audit_scores: id, timestamp, tier, dimension, auto_score, auto_detail, auto_confidence,
+              manual_grade, divergence, acknowledged, interaction_delta, combined_score, ci_95_lo, ci_95_hi
 ```
+
+Additional tables: trusted_models, idle_runs, output_feedback, phi_audit, audit_log, user_profiles,
+user_sessions, experiments, module_registry, benchmarks + various lazy-created tables.
+
+WAL mode, 34 tables total, 30s busy timeout, retry writes with jittered backoff.
 
 Channel constants: `CH_SUP` (supervisor-to-supervisor), `CH_AGENT` (agent-to-agent), `CH_FLEET` (cross-layer, default), `CH_POOL` (supervisor-to-pool).
 
@@ -229,9 +237,13 @@ Status flow:  WAITING → PENDING → RUNNING → DONE/FAILED
 - `complete_task()` validates `result_json` is valid JSON, auto-wraps non-JSON in `{"raw": ...}`
 - `complete_task()` accepts both str and dict (auto-serializes dicts)
 
-## 4. Dashboard v2
+## 4. Dashboard (decomposed architecture)
 
-### Endpoints (40 total: 27 data + 9 process/fleet + 4 A2A)
+> Refreshed 2026-04-06. Dashboard was decomposed from a single 9,298-line template into
+> 16 component includes + 19 blueprint modules. See `fleet/templates/components/` for HTML
+> and `fleet/*_blueprint.py` for endpoint implementations.
+
+### Endpoints (256+ across dashboard.py + 19 blueprints)
 
 | Endpoint | Data Source | Purpose |
 |----------|-----------|---------|
@@ -872,6 +884,8 @@ These functions are kept for fallback but should be removed once SSE covers all 
 | — | CT-3/CT-4 Cost | Delta comparison CLI + regression endpoint, token budgets [budgets] config, budget enforcement |
 | — | DT-4 Stability | stability_report.py skill, resolutions.jsonl pattern detection, knowledge output |
 | — | Cross-Platform | FleetBridge abstraction, platform packaging, CI/CD matrix (parallel track) |
+| 0.050-0.185 | Beta | Dashboard decomp (16 includes, 19 blueprints), security hardening (P0-P3), Gemma 4, Factorio RL, 852 tests |
+| 2026-04-05 | Dual-Track | Rust production track (52 endpoints, egui GUI, PyO3 bridge), knowledge wiki (Karpathy pattern), ray tracing |
 | — | Diagnostics | Debug reports, issue submission, resolution tracking, stability analysis (parallel track) |
 | — | GR-1/2/3/4 Hardening | VRAM eviction, zombie cleanup, base64 DLP, WSL NAT detection |
 | — | 4.1 God Object | Console/settings/boot extracted to ui/ namespace (5747→3492 lines, -39%) |

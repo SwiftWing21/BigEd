@@ -279,14 +279,35 @@ def _setup_tray():
     def _quit_app(icon, item):
         _shutdown()
 
+    def _fleet_status_text():
+        """Dynamic tooltip with fleet status."""
+        try:
+            resp = urllib.request.urlopen(HEALTH_URL, timeout=2)
+            data = json.loads(resp.read())
+            status = "Online" if data.get("status") == "healthy" else "Degraded"
+            return f"BigEd CC — {status}"
+        except Exception:
+            return "BigEd CC — Offline"
+
     menu = pystray.Menu(
         pystray.MenuItem("Open BigEd", _show_window, default=True),
         pystray.MenuItem("Open in Browser", _open_browser),
+        pystray.MenuItem("Fleet Status", lambda icon, item: None, enabled=False),
         pystray.Menu.SEPARATOR,
         pystray.MenuItem("Quit", _quit_app),
     )
-    _tray_icon = pystray.Icon("BigEd", icon_img, "BigEd CC", menu)
+    _tray_icon = pystray.Icon("BigEd", icon_img, _fleet_status_text(), menu)
     threading.Thread(target=_tray_icon.run, daemon=True).start()
+
+    # Periodic tooltip update (every 30s)
+    def _update_tray_tooltip():
+        while _tray_icon and _tray_icon.visible:
+            try:
+                _tray_icon.title = _fleet_status_text()
+            except Exception:
+                pass
+            time.sleep(30)
+    threading.Thread(target=_update_tray_tooltip, daemon=True).start()
 
 
 # -- Close behavior preferences ------------------------------------------------

@@ -960,6 +960,29 @@ def main():
                         )
                 except Exception:
                     pass  # billing must never block task execution
+                # WS-6: Knowledge wiki maintenance — auto-log + index for any skill that writes to knowledge/
+                try:
+                    if isinstance(result, dict):
+                        _rpath = result.get("report_path", "") or result.get("output_path", "") or ""
+                        if "knowledge" in _rpath:
+                            from skills._knowledge import log_operation, ensure_in_index
+                            from pathlib import Path
+                            _kdir = str(Path(__file__).parent / "knowledge")
+                            if _rpath.startswith(_kdir):
+                                _rel = _rpath[len(_kdir):].lstrip("/\\")
+                            else:
+                                _rel = _rpath
+                            log_operation(
+                                role, "skill_output",
+                                f"{task['type']}: {_rel}",
+                            )
+                            ensure_in_index(
+                                _rel,
+                                f"{task['type']} output",
+                                result.get("message", result.get("status", ""))[:80],
+                            )
+                except Exception:
+                    pass  # wiki maintenance must never block task execution
             except Exception as e:
                 err_str = str(e).lower()
                 # Auth / missing-key errors — fail immediately, never requeue

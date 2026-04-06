@@ -215,6 +215,36 @@ pub fn router(state: AppState) -> Router {
             axum::routing::get(handlers::logs::tail),
         )
         .with_state(state)
+        // WASM frontend — serve static files from wasm/ dir if present
+        .fallback_service(tower::service_fn(|req: axum::http::Request<axum::body::Body>| async move {
+            let path = req.uri().path().trim_start_matches('/');
+            // Try serving from wasm/ directory (index.html + pkg/)
+            let wasm_dir = std::path::Path::new("wasm");
+            let file_path = if path.is_empty() || path == "/" {
+                wasm_dir.join("index.html")
+            } else {
+                wasm_dir.join(path)
+            };
+            if file_path.exists() && file_path.is_file() {
+                let content = tokio::fs::read(&file_path).await.unwrap_or_default();
+                let mime = match file_path.extension().and_then(|e| e.to_str()) {
+                    Some("html") => "text/html",
+                    Some("js") => "application/javascript",
+                    Some("wasm") => "application/wasm",
+                    Some("css") => "text/css",
+                    _ => "application/octet-stream",
+                };
+                Ok(axum::response::Response::builder()
+                    .header("Content-Type", mime)
+                    .body(axum::body::Body::from(content))
+                    .unwrap())
+            } else {
+                Ok(axum::response::Response::builder()
+                    .status(404)
+                    .body(axum::body::Body::from("Not found"))
+                    .unwrap())
+            }
+        }))
 }
 
 /// Start the HTTP server on the configured address and port.
