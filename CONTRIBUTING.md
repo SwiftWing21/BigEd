@@ -38,8 +38,8 @@ We welcome contributions to BigEd CC. This guide covers the workflow, standards,
 - Write descriptive commit messages that explain *why*, not just *what*.
 - Before merging, verify your change against the stability gate checklist:
   ```
-  - [ ] Smoke tests: 22/22
-  - [ ] Soak tests: 13/13
+  - [ ] Smoke tests: 51/52
+  - [ ] Pytest: 852 collected
   - [ ] GUI smoke test: pass
   - [ ] TECH_DEBT.md: reviewed, no P0
   - [ ] ROADMAP: version marked DONE with date

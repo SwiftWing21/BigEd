@@ -3,8 +3,8 @@
   revision: 3
   updated: 2026-03-31
   updatedBy: claude-sonnet-4-6
-  metrics: skills=125 endpoints=228+ smoke=51 tables=29 tests=465/477
-  status: current (sessions 0331/0331b — dashboard decomp, enterprise wiring, Factorio overhaul)
+  metrics: skills=129 endpoints=256+ smoke=51/52 tables=34 tests=852
+  status: stale (last full update 0331; 168+ commits since — dual-track, Gemma 4, dashboard decomp, security sweep)
 -->
 # BigEd CC Roadmap
 

@@ -42,7 +42,7 @@ Download Setup.exe from Releases → Run → Follow wizard
 git clone https://github.com/mbachaud/BigEd.git
 cd BigEd
 python fleet/dependency_check.py          # pre-flight check
-python fleet/smoke_test.py --fast         # verify 33/33 tests
+python fleet/smoke_test.py --fast         # verify 51/52 smoke tests
 python BigEd/launcher/launcher.py         # launch GUI
 ```
 

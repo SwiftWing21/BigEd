@@ -3,8 +3,8 @@
   revision: 1
   updated: 2026-03-18
   updatedBy: unknown
-  metrics: skills=130+ endpoints=236 smoke=38 tables=20
-  status: stale (not updated since initial write)
+  metrics: skills=129 endpoints=256+ smoke=51/52 tables=34 tests=852
+  status: metrics refreshed 2026-04-05 (body still initial write)
 -->
 # BigEd CC — Cross-Platform Architecture
 

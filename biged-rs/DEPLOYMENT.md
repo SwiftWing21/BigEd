@@ -167,5 +167,5 @@ See `SHARED_CONTRACTS.md` for enforcement rules.
 - Host Python modules (CRM, CosmicTasha, etc.)
 - Replace the Python development dashboard
 - Port skills to Rust
-- Maintain feature parity with Python's 228+ endpoints
+- Maintain feature parity with Python's 256+ endpoints
 - Run without Python present (PyO3 needs an interpreter)

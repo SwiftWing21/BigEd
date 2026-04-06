@@ -3,8 +3,8 @@
   revision: 2
   updated: 2026-03-31
   updatedBy: claude-sonnet-4-6
-  metrics: skills=125 endpoints=228+ smoke=51 tables=29 tests=465/477
-  status: current (refreshed at v0.900.00b — sessions 0331/0331b)
+  metrics: skills=129 endpoints=256+ smoke=51/52 tables=34 tests=852
+  status: metrics refreshed 2026-04-05 (body still v0.900.00b era)
 -->
 # BigEd CC — Audit Tracker
 
@@ -40,7 +40,7 @@
 ## Scoreboard
 
 > Last updated: **v0.900.00b** | Audited by: Sonnet (2026-03-31)
-> Skills: 125 | Blueprints: 10 | DB tables: 29 | pytest: 465/477 | Dashboard: 3360 lines (decomposed from 5680)
+> Skills: 129 | Blueprints: 19 | DB tables: 34 | pytest: 852 | Smoke: 51/52 | Dashboard: decomposed into 16 component includes
 
 | Dimension | Grade | Trend | Key Gap |
 |-----------|-------|-------|---------|

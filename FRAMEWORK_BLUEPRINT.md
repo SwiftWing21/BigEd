@@ -3,12 +3,12 @@
   revision: 2
   updated: 2026-03-24
   updatedBy: claude-opus-4.6
-  metrics: skills=130+ endpoints=236 smoke=38 tables=20
-  status: stale (body sections 2-16 still v0.41-era, header updated)
+  metrics: skills=129 endpoints=256+ smoke=51/52 tables=34 tests=852
+  status: metrics refreshed 2026-04-05 (body sections 2-16 still v0.41-era)
 -->
 # BigEd CC — Framework Blueprint
 
-> **Last refreshed:** v0.400.00b (2026-03-23) | **Skills:** 130+ | **Endpoints:** 190+ | **DB tables:** 20 | **Smoke:** 33/33
+> **Last refreshed:** 2026-04-05 (metrics only) | **Skills:** 129 | **Endpoints:** 256+ (19 blueprints) | **DB tables:** 34 | **Smoke:** 51/52 | **Tests:** 852
 >
 > **Production-ready modular AI agent platform.** Autonomous fleet orchestration with multi-tenant SaaS, federation, ML experiment framework, and hybrid visualization.
 >
