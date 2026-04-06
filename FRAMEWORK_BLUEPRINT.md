@@ -4,7 +4,7 @@
   updated: 2026-03-24
   updatedBy: claude-opus-4.6
   metrics: skills=129 endpoints=256+ smoke=51/52 tables=34 tests=852
-  status: metrics refreshed 2026-04-05 (body sections 2-16 still v0.41-era)
+  status: Section 1 refreshed 2026-04-05 (dual-track architecture). Sections 2-16 partially v0.41-era.
 -->
 # BigEd CC — Framework Blueprint
 
@@ -18,59 +18,55 @@
 
 ## 1. Architecture Overview
 
+BigEd CC is a **dual-track system**: Python for development, Rust for production deployment.
+Both tracks share a database schema, a skill contract, and a config format. See `biged-rs/SHARED_CONTRACTS.md`.
+
 ```
-BigEd CC (v0.400.00b)
-├── Launcher (BigEd/launcher/)
-│   ├── launcher.py          — Core app shell
-│   │   ├── Header            — CPU/RAM/GPU/ETH stats (3s poll, hysteresis)
-│   │   ├── Sidebar           — Fleet/Security/Research/Config/Views
-│   │   ├── Core Tabs          — Command Center, Agents, Fleet Comm (always on)
-│   │   ├── Module Tabs        — Loaded via modules/ system
-│   │   ├── Taskbar            — Dispatch entry → fleet queue
-│   │   └── SSE Client         — Reactive push updates (replaces polling)
-│   ├── ui/                    — Decomposed UI components
-│   │   ├── sse_client.py      — SSE event consumer + tkinter bridge
-│   │   ├── skill_picker.py    — Skill selection dialog
-│   │   └── theme.py           — Design tokens, fonts, colors
-│   └── modules/
-│       ├── __init__.py        — Module loader, registry, lifecycle manager
-│       ├── manifest.json      — Module metadata & deprecation state
-│       ├── mod_crm.py         — CRM (contacts, prospecting, lead import)
-│       ├── mod_ingestion.py   — File/folder import to RAG
-│       ├── mod_intelligence.py — Intelligence scoring + weight UI
-│       ├── mod_manual_mode.py — Claude Manual Mode (ToS-compliant hybrid)
-│       └── mod_outputs.py     — Knowledge browser
+BigEd CC (2026-04-05)
 │
-├── Fleet (fleet/)
-│   ├── supervisor.py          — Worker lifecycle, dynamic scaling, stale recovery
-│   ├── hw_supervisor.py       — Thermal governor, VRAM scaling (Dr. Ders)
-│   ├── worker.py              — Skill dispatch, timeouts, affinity routing
-│   ├── db.py                  — SQLite DAL (WAL mode) — 20 tables
-│   ├── data_access.py         — FleetDB high-level DAL (CRUD, aggregation)
-│   ├── lead_client.py         — CLI entry point (status, task, broadcast, inbox)
-│   ├── rag.py                 — FTS5/BM25 + optional vector search, hybrid reranking
-│   ├── config.py              — TOML config loader + is_offline/is_air_gap
-│   ├── dashboard.py           — Flask web dashboard (SSE, 190+ endpoints)
-│   ├── views_blueprint.py     — Hybrid ViewPort REST API (16 routes)
-│   ├── view_registry.py       — ViewPort data source registry
-│   ├── experiment.py          — ML experiment lifecycle (propose→deploy)
-│   ├── providers.py           — Multi-backend LLM routing (Claude/Gemini/Local)
-│   ├── federation_router.py   — Cross-fleet task routing + peer overflow
-│   ├── reinforcement.py       — Human feedback loop + IQ scoring
-│   ├── self_healing.py        — Auto-recovery + circuit breakers
-│   ├── ml_router.py           — ML-based task routing (sklearn)
-│   ├── compliance.py          — SOC 2, audit summary, SLA reports
-│   ├── smoke_test.py          — 33-check startup verification (--fast mode)
-│   ├── fleet.toml             — Master configuration (48 sections)
-│   └── skills/                — 130+ skill modules
-│       ├── _models.py         — Provider routing (Claude/Gemini/Local)
-│       ├── skill_train.py     — Iterative skill improvement
-│       ├── plan_workload.py   — Fleet-aware task planning
-│       └── ...                — web_search, code_review, rag_index, etc.
+├── Python Track — Development & Feature Surface (fleet/ + BigEd/)
+│   │
+│   ├── Launcher (BigEd/launcher/)
+│   │   ├── launcher.py          — PyWebView + Qt GUI shell
+│   │   ├── launcher_webview.py  — Window, splash, supervisor spawn, tray
+│   │   ├── tray.py              — System tray (pystray)
+│   │   └── modules/             — UI tab plugins (9 modules)
+│   │       ├── mod_crm.py, mod_accounts.py, mod_onboarding.py
+│   │       ├── mod_ingestion.py, mod_outputs.py, mod_intelligence.py
+│   │       └── mod_owner_core.py (enterprise-only, gated)
+│   │
+│   ├── Fleet (fleet/)
+│   │   ├── supervisor.py          — Worker lifecycle, dynamic scaling, Ollama
+│   │   ├── hw_supervisor.py       — Thermal governor, VRAM scaling (Dr. Ders)
+│   │   ├── worker.py              — Skill dispatch, timeouts, affinity routing
+│   │   ├── db.py + db_tasks.py    — SQLite DAL (WAL mode) — 34 tables
+│   │   ├── dashboard.py           — Flask web dashboard (SSE)
+│   │   ├── *_blueprint.py (×19)   — 256+ REST endpoints across 19 blueprints
+│   │   ├── rag.py                 — FTS5/BM25 + optional vector search
+│   │   ├── config.py              — TOML config loader
+│   │   ├── providers.py           — Multi-backend LLM routing (Claude/Gemini/Local)
+│   │   ├── audit_scorer.py        — 12-dimension audit with claim schema
+│   │   ├── tba_claim_schema.py    — Gap taxonomy + tension reports
+│   │   ├── backup_manager.py      — Auto-save with zip compression
+│   │   ├── smoke_test.py          — 52-check verification (--fast mode)
+│   │   ├── fleet.toml             — Master configuration
+│   │   └── skills/ (129 modules)  — web_search, code_review, rag_index, etc.
+│   │
+│   ├── autoresearch/              — ML training pipeline
+│   └── deploy/                    — Kubernetes Helm chart
 │
-├── autoresearch/              — ML training pipeline (separate venv, CUDA 12.8)
+├── Rust Track — Production Deployment (biged-rs/)
+│   ├── biged-core/      — Config, DB pool, types, task queue
+│   ├── biged-supervisor/ — Tokio supervisor, thermal, health, backup
+│   ├── biged-server/    — Axum HTTP server, 51 production endpoints
+│   ├── biged-bridge/    — PyO3 skill execution (calls Python skills)
+│   ├── biged-gui/       — egui desktop GUI (5-section operator UI)
+│   └── biged-wasm/      — Browser GUI (WASM target)
 │
-└── deploy/                    — Kubernetes Helm chart for enterprise deployment
+└── Shared Contracts (must match between tracks)
+    ├── fleet.db           — SQLite, 34 tables, WAL mode
+    ├── fleet.toml         — Runtime configuration
+    └── skills/*.py        — run(task, context) → dict
 ```
 
 ## 2. Module System
