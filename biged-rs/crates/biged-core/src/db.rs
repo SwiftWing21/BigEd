@@ -378,6 +378,86 @@ impl Db {
         Ok(msgs)
     }
 
+    // ── Task queue operations (Phase B Priority 1) ────────────────
+
+    /// Paginated queue: PENDING + RUNNING tasks, ordered by priority DESC.
+    pub fn task_queue(&self, page: i64, per_page: i64) -> Result<(Vec<Task>, i64)> {
+        let conn = self.pool.get()?;
+        let total: i64 = conn.query_row(
+            "SELECT COUNT(*) FROM tasks WHERE status IN ('PENDING', 'RUNNING')",
+            [],
+            |row| row.get(0),
+        )?;
+        let offset = (page - 1) * per_page;
+        let mut stmt = conn.prepare(
+            "SELECT id, created_at, assigned_to, status, priority, type,
+                    payload_json, result_json, error, parent_id, depends_on,
+                    intelligence_score
+             FROM tasks WHERE status IN ('PENDING', 'RUNNING')
+             ORDER BY priority DESC, created_at ASC
+             LIMIT ?1 OFFSET ?2",
+        )?;
+        let tasks = stmt
+            .query_map(params![per_page, offset], Self::row_to_task)?
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+        Ok((tasks, total))
+    }
+
+    /// Cancel a PENDING task. Returns true if a row was updated.
+    pub fn cancel_task(&self, id: i64) -> Result<bool> {
+        let conn = self.pool.get()?;
+        let changed = conn.execute(
+            "UPDATE tasks SET status = 'FAILED', result_json = '{\"error\": \"Cancelled by operator\"}'
+             WHERE id = ?1 AND status = 'PENDING'",
+            params![id],
+        )?;
+        Ok(changed > 0)
+    }
+
+    /// Update priority of a PENDING task. Returns true if updated.
+    pub fn update_task_priority(&self, id: i64, priority: i32) -> Result<bool> {
+        let conn = self.pool.get()?;
+        let changed = conn.execute(
+            "UPDATE tasks SET priority = ?1 WHERE id = ?2 AND status = 'PENDING'",
+            params![priority, id],
+        )?;
+        Ok(changed > 0)
+    }
+
+    /// Requeue a FAILED task back to PENDING. Returns true if updated.
+    pub fn requeue_task(&self, id: i64) -> Result<bool> {
+        let conn = self.pool.get()?;
+        let changed = conn.execute(
+            "UPDATE tasks SET status = 'PENDING', assigned_to = NULL,
+                    result_json = NULL, error = NULL
+             WHERE id = ?1 AND status = 'FAILED'",
+            params![id],
+        )?;
+        Ok(changed > 0)
+    }
+
+    /// Running + recently completed tasks for live activity feed.
+    pub fn live_activity(&self, recent_minutes: i64) -> Result<Vec<Task>> {
+        let conn = self.pool.get()?;
+        let mut stmt = conn.prepare(
+            "SELECT id, created_at, assigned_to, status, priority, type,
+                    payload_json, result_json, error, parent_id, depends_on,
+                    intelligence_score
+             FROM tasks
+             WHERE status = 'RUNNING'
+                OR (status IN ('DONE', 'FAILED')
+                    AND created_at >= datetime('now', ?1 || ' minutes'))
+             ORDER BY
+                CASE status WHEN 'RUNNING' THEN 0 WHEN 'DONE' THEN 1 ELSE 2 END,
+                id DESC
+             LIMIT 30",
+        )?;
+        let tasks = stmt
+            .query_map(params![format!("-{}", recent_minutes)], Self::row_to_task)?
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+        Ok(tasks)
+    }
+
     // ── Helpers ──────────────────────────────────────────────────
 
     fn row_to_task(row: &rusqlite::Row) -> rusqlite::Result<Task> {

@@ -100,6 +100,51 @@ pub fn router(state: AppState) -> Router {
             "/api/metrics",
             axum::routing::get(handlers::metrics::metrics),
         )
+        // Task queue management (Phase B P1)
+        .route(
+            "/api/tasks/queue",
+            axum::routing::get(handlers::tasks::queue),
+        )
+        .route(
+            "/api/tasks/recent",
+            axum::routing::get(handlers::tasks::recent),
+        )
+        .route(
+            "/api/tasks/dispatch",
+            axum::routing::post(handlers::tasks::dispatch),
+        )
+        .route(
+            "/api/tasks/{id}",
+            axum::routing::delete(handlers::tasks::cancel),
+        )
+        .route(
+            "/api/tasks/{id}/priority",
+            axum::routing::put(handlers::tasks::set_priority),
+        )
+        .route(
+            "/api/tasks/{id}/requeue",
+            axum::routing::post(handlers::tasks::requeue),
+        )
+        // Queue control
+        .route(
+            "/api/queue/status",
+            axum::routing::get(handlers::tasks::queue_status),
+        )
+        .route(
+            "/api/queue/pause",
+            axum::routing::post(handlers::tasks::queue_pause),
+        )
+        .route(
+            "/api/queue/resume",
+            axum::routing::post(handlers::tasks::queue_resume),
+        )
+        // Live activity feed
+        .route(
+            "/api/activity/live",
+            axum::routing::get(handlers::tasks::activity_live),
+        )
+        // Version
+        .route("/api/version", axum::routing::get(handlers::tasks::version))
         .with_state(state)
 }
 
