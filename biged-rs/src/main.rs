@@ -22,7 +22,11 @@ enum Commands {
     /// Run thermal monitor only
     Thermal,
     /// Migrate database from Python fleet
-    Migrate,
+    Migrate {
+        /// Path to existing Python fleet directory
+        #[arg(long)]
+        from: Option<String>,
+    },
     /// Launch desktop GUI
     Gui {
         /// Server URL to connect to
@@ -81,8 +85,60 @@ async fn main() -> anyhow::Result<()> {
             let worker = biged_bridge::worker::Worker::new(db, bridge_config, fleet_config_json)?;
             worker.run_loop("coder").await?;
         }
-        Some(Commands::Migrate) => {
-            tracing::info!("Running database migration");
+        Some(Commands::Migrate { from }) => {
+            let source = from
+                .map(std::path::PathBuf::from)
+                .unwrap_or_else(|| std::env::current_dir().unwrap().parent().unwrap_or(&std::env::current_dir().unwrap()).join("fleet"));
+            let target = std::env::current_dir()?.join("fleet");
+
+            tracing::info!("Migrating from {} to {}", source.display(), target.display());
+
+            // Copy fleet.db
+            let src_db = source.join("fleet.db");
+            let dst_db = target.join("fleet.db");
+            if src_db.exists() {
+                std::fs::create_dir_all(&target)?;
+                std::fs::copy(&src_db, &dst_db)?;
+                tracing::info!("Copied fleet.db ({} bytes)", dst_db.metadata()?.len());
+            } else {
+                tracing::warn!("No fleet.db found at {}", src_db.display());
+            }
+
+            // Copy rag.db
+            let src_rag = source.join("rag.db");
+            if src_rag.exists() {
+                std::fs::copy(&src_rag, target.join("rag.db"))?;
+                tracing::info!("Copied rag.db");
+            }
+
+            // Copy fleet.toml
+            let src_cfg = source.join("fleet.toml");
+            if src_cfg.exists() {
+                std::fs::copy(&src_cfg, target.join("fleet.toml"))?;
+                tracing::info!("Copied fleet.toml");
+            }
+
+            // Copy skills directory
+            let src_skills = source.join("skills");
+            let dst_skills = target.join("skills");
+            if src_skills.exists() {
+                if dst_skills.exists() {
+                    std::fs::remove_dir_all(&dst_skills)?;
+                }
+                let mut count = 0u32;
+                copy_dir_recursive(&src_skills, &dst_skills, &mut count)?;
+                tracing::info!("Copied {} skill files", count);
+            }
+
+            // Verify the imported DB
+            let db = biged_core::db::Db::open(&dst_db)?;
+            let tables = db.table_names()?;
+            let counts = db.task_counts_by_status()?;
+            tracing::info!(
+                "Migration complete: {} tables, {} total tasks",
+                tables.len(),
+                counts.values().sum::<i64>()
+            );
         }
         Some(Commands::Gui { server_url }) => {
             biged_gui::run_gui(&server_url).expect("GUI failed");
@@ -109,5 +165,25 @@ async fn main() -> anyhow::Result<()> {
         }
     }
 
+    Ok(())
+}
+
+fn copy_dir_recursive(
+    src: &std::path::Path,
+    dst: &std::path::Path,
+    count: &mut u32,
+) -> anyhow::Result<()> {
+    std::fs::create_dir_all(dst)?;
+    for entry in std::fs::read_dir(src)? {
+        let entry = entry?;
+        let ty = entry.file_type()?;
+        let dst_path = dst.join(entry.file_name());
+        if ty.is_dir() {
+            copy_dir_recursive(&entry.path(), &dst_path, count)?;
+        } else {
+            std::fs::copy(entry.path(), &dst_path)?;
+            *count += 1;
+        }
+    }
     Ok(())
 }
