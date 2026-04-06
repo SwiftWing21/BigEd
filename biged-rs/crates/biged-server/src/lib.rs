@@ -205,6 +205,11 @@ pub fn router(state: AppState) -> Router {
             "/api/compliance/audit_log",
             axum::routing::get(handlers::compliance::audit_log),
         )
+        // Logs (Phase C — Logs tab data source)
+        .route(
+            "/api/logs/{source}",
+            axum::routing::get(handlers::logs::tail),
+        )
         .with_state(state)
 }
 

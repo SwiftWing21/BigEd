@@ -4,6 +4,7 @@ pub mod backup;
 pub mod compliance;
 pub mod config;
 pub mod fleet;
+pub mod logs;
 pub mod metrics;
 pub mod ollama;
 pub mod settings;
