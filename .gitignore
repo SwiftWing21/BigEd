@@ -43,6 +43,10 @@ docs/*_punch_list.md
 !docs/screenshots/README.md
 !.claude/skills/**/*.md
 !fleet/templates/**/*.md
+!fleet/knowledge/SCHEMA.md
+!fleet/knowledge/index.md
+!fleet/knowledge/log.md
+!fleet/knowledge/wiki/**/*.md
 
 # ── Fleet — runtime databases ─────────────────────────────────────────────────
 fleet/fleet.db

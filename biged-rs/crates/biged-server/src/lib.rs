@@ -82,6 +82,10 @@ pub fn router(state: AppState) -> Router {
             "/api/fleet/worker/{name}/enable",
             axum::routing::post(handlers::settings::enable_worker),
         )
+        .route(
+            "/api/fleet/worker/{name}/restart",
+            axum::routing::post(handlers::settings::restart_worker),
+        )
         // Config (read-only)
         .route(
             "/api/config",

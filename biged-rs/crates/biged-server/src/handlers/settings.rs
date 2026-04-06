@@ -119,6 +119,54 @@ pub async fn enable_worker(
     })))
 }
 
+/// POST /api/fleet/worker/:name/restart — cycle disable→enable to trigger respawn
+pub async fn restart_worker(
+    State(state): State<AppState>,
+    Path(name): Path<String>,
+) -> Result<Json<Value>, AppError> {
+    // Mark agent as restarting in DB
+    let pool = state.db.pool_ref();
+    let conn = pool.get()?;
+    conn.execute(
+        "UPDATE agents SET status = 'RESTARTING' WHERE name = ?1",
+        rusqlite::params![name],
+    )?;
+
+    // Cycle: add to disabled, persist, remove, persist
+    // The supervisor detects the disable→enable cycle and respawns the worker
+    {
+        let mut config = state.config.write().await;
+        if !config.fleet.disabled_agents.contains(&name) {
+            config.fleet.disabled_agents.push(name.clone());
+        }
+        let toml_str = toml::to_string_pretty(&*config)
+            .map_err(|e| AppError(anyhow::anyhow!("serialize toml: {e}")))?;
+        let toml_path = state.fleet_dir.join("fleet.toml");
+        tokio::fs::write(&toml_path, &toml_str)
+            .await
+            .map_err(|e| AppError(anyhow::anyhow!("write fleet.toml: {e}")))?;
+    }
+
+    // Brief pause to let supervisor notice the disable
+    tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+
+    {
+        let mut config = state.config.write().await;
+        config.fleet.disabled_agents.retain(|a| a != &name);
+        let toml_str = toml::to_string_pretty(&*config)
+            .map_err(|e| AppError(anyhow::anyhow!("serialize toml: {e}")))?;
+        let toml_path = state.fleet_dir.join("fleet.toml");
+        tokio::fs::write(&toml_path, &toml_str)
+            .await
+            .map_err(|e| AppError(anyhow::anyhow!("write fleet.toml: {e}")))?;
+    }
+
+    Ok(Json(json!({
+        "status": "restarting",
+        "agent": name,
+    })))
+}
+
 /// Recursively merge `patch` into `target` (shallow object merge at each level).
 fn merge_json(target: &mut Value, patch: &Value) {
     match (target, patch) {
