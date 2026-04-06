@@ -35,6 +35,7 @@ pyo3 = { version = "0.28", features = ["auto-initialize"] }
 chrono = { version = "0.4", features = ["serde"] }
 zip = { version = "2", default-features = false, features = ["deflate"] }
 sha2 = "0.10"
+regex-lite = "0.1"
 walkdir = "2"
 dirs = "6"
 axum = "0.8"

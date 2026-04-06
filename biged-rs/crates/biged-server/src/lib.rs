@@ -209,6 +209,15 @@ pub fn router(state: AppState) -> Router {
             "/api/compliance/audit_log",
             axum::routing::get(handlers::compliance::audit_log),
         )
+        // Knowledge wiki + universe graph (WS-6)
+        .route(
+            "/api/knowledge/wiki/graph",
+            axum::routing::get(handlers::knowledge::wiki_graph),
+        )
+        .route(
+            "/api/knowledge/universe",
+            axum::routing::get(handlers::knowledge::universe_graph),
+        )
         // Logs (Phase C — Logs tab data source)
         .route(
             "/api/logs/{source}",
