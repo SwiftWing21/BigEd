@@ -21,14 +21,28 @@ This is not a product. It's a reference project for anyone curious about multi-m
 
 ## How It Was Built
 
-Nearly the entire codebase was generated through AI-assisted development. That's part of the point — this project is itself a case study in what vibe-coding produces at scale.
+BigEd is architected and QA-directed by Michael Bachaud; nearly all of the code
+was produced by AI coding agents under spec- and review-gated direction. That
+division is the point — this project is a case study in what an operated
+human-directs-agents loop produces at scale.
 
-| Model | Role | Estimated Contribution |
+**Human:** product thesis, architecture selection, acceptance criteria,
+experiment design, risk decisions, QA and falsification authority.
+**Models:** implementation, refactoring, draft documentation, test generation,
+code-review lenses.
+
+Within the model-produced share, the split of *code production* was roughly:
+
+| Model | Role | Share of code produced |
 |-------|------|----------------------|
-| **Claude Code (Opus 4.6)** | Primary architect — wrote most of the code, designed fleet architecture, built the skill system | ~70% |
+| **Claude Code (Opus 4.6)** | Bulk implementation — fleet subsystems, skill system | ~70% |
 | **Claude (Sonnet 4.6)** | Code review, audits, skill generation, iterative improvements | ~15% |
-| **Gemini Pro (2.5/3.1)** | Independent reviews, architecture audits, second opinions | ~10% |
-| **Human (Max)** | Direction, judgment calls, testing, and the occasional manual fix when models got stuck | ~5% |
+| **Gemini Pro (2.5/3.1)** | Independent review lenses, second opinions | ~10% |
+| **Human (Max)** | Manual fixes when models got stuck | ~5% |
+
+Those percentages describe keystrokes, not authorship of the design. This is a
+laboratory, not a product — a place to run and observe the loop, not a system
+anyone else should depend on yet.
 
 ## Quick Start
 
